@@ -733,34 +733,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   [infallible] readonly attribute boolean isMozBrowser;
 
   /**
-   * Returns true if this docshell corresponds to an isolated <iframe
-   * mozbrowser>.
-   *
-   * <xul:browser> is not considered to be a mozbrowser element.
-   * <iframe mozbrowser noisolation> does not count as isolated since
-   * isolation is disabled.  Isolation can only be disabled if the
-   * containing document is chrome.
-   */
-  [infallible] readonly attribute boolean isIsolatedMozBrowserElement;
-
-  /**
-   * Returns true if this docshell corresponds to an isolated <iframe
-   * mozbrowser> or if the docshell is contained in an isolated <iframe
-   * mozbrowser>.
-   *
-   * <xul:browser> is not considered to be a mozbrowser element. <iframe
-   * mozbrowser noisolation> does not count as isolated since isolation is
-   * disabled.  Isolation can only be disabled if the containing document is
-   * chrome.
-   *
-   * Our notion here of "contained in" means: Walk up the docshell hierarchy in
-   * this process until we hit an <iframe mozbrowser> (or until the hierarchy
-   * ends).  Return true iff the docshell we stopped on has
-   * isIsolatedMozBrowserElement == true.
-   */
-  [infallible] readonly attribute boolean isInIsolatedMozBrowserElement;
-
-  /**
    * Returns true if this docshell corresponds to an <iframe mozbrowser>, or
    * if this docshell is contained in an <iframe mozbrowser>. <xul:browser>
    * returns false here.
@@ -779,12 +751,16 @@ interface nsIDocShell : nsIDocShellTreeItem
   /**
    * Like nsIDocShellTreeItem::GetSameTypeParent, except this ignores <iframe
    * mozbrowser> boundaries.
+   *
+   * @deprecated: Use `BrowsingContext::GetParent()` in the future.
    */
   nsIDocShell getSameTypeParentIgnoreBrowserBoundaries();
 
   /**
    * Like nsIDocShellTreeItem::GetSameTypeRootTreeItem, except this ignores
    * <iframe mozbrowser> boundaries.
+   *
+   * @deprecated: Use `BrowsingContext::Top()` in the future.
    */
   nsIDocShell getSameTypeRootTreeItemIgnoreBrowserBoundaries();
 
@@ -809,17 +785,10 @@ interface nsIDocShell : nsIDocShellTreeItem
   attribute unsigned long sandboxFlags;
 
   /**
-   * When a new browsing context is opened by a sandboxed document, it needs to
-   * keep track of the browsing context that opened it, so that it can be
-   * navigated by it.  This is the "one permitted sandboxed navigator".
-   */
-  attribute nsIDocShell onePermittedSandboxedNavigator;
-
-  /**
    * Returns true if we are sandboxed from aTargetDocShell.
    * aTargetDocShell - the browsing context we are attempting to navigate.
    */
-  [noscript,notxpcom,nostdcall] bool isSandboxedFrom(in nsIDocShell aTargetDocShell);
+  [noscript,notxpcom,nostdcall] bool isSandboxedFrom(in BrowsingContext aTargetBC);
 
   /**
    * This member variable determines whether a document has Mixed Active Content that
@@ -1133,11 +1102,9 @@ interface nsIDocShell : nsIDocShellTreeItem
   [noscript, nostdcall, notxpcom]
   UniqueClientSource TakeInitialClientSource();
 
-  void setColorMatrix([array, size_is(aMatrixLen)] in float aMatrix,
-                      [optional] in unsigned long aMatrixLen);
+  void setColorMatrix(in Array<float> aMatrix);
 
-  void getColorMatrix([optional] out unsigned long aMatrixLen,
-                      [array, size_is(aMatrixLen), retval] out float aMatrix);
+  Array<float> getColorMatrix();
 
   /**
    * Initialize session history for this docshell. The docshell must be the root
@@ -1153,11 +1120,6 @@ interface nsIDocShell : nsIDocShellTreeItem
   mozilla::HTMLEditor* GetHTMLEditor();
   nsresult SetHTMLEditor(mozilla::HTMLEditor* aHTMLEditor);
 %}
-
-  /**
-   * BrowsingContext associated with the DocShell.
-   */
-  readonly attribute BrowsingContext browsingContext;
 
   /**
    * Allowed CSS display modes. This needs to be kept in

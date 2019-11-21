@@ -13,6 +13,7 @@
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/CompositorOptions.h"
+#include "mozilla/layers/NativeLayer.h"
 #include "nsRect.h"
 #include "nsIWidget.h"
 #include "nsWidgetsCID.h"
@@ -434,12 +435,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
                         const ScreenIntSize& aSize) override{};
 #endif
 
-  /**
-   * Whether context menus should only appear on mouseup instead of mousedown,
-   * on OSes where they normally appear on mousedown (macOS, *nix).
-   */
-  static bool ShowContextMenuAfterMouseUp();
-
  protected:
   // These are methods for CompositorWidgetWrapper, and should only be
   // accessed from that class. Derived widgets can choose which methods to
@@ -448,9 +443,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return true;
   }
   virtual void PostRender(mozilla::widget::WidgetRenderingContext* aContext) {}
-  virtual void DrawWindowUnderlay(
-      mozilla::widget::WidgetRenderingContext* aContext,
-      LayoutDeviceIntRect aRect) {}
+  virtual RefPtr<mozilla::layers::NativeLayerRoot> GetNativeLayerRoot() {
+    return nullptr;
+  }
   virtual void DrawWindowOverlay(
       mozilla::widget::WidgetRenderingContext* aContext,
       LayoutDeviceIntRect aRect) {}
@@ -460,8 +455,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return StartRemoteDrawing();
   }
   virtual void EndRemoteDrawing() {}
-  virtual void EndRemoteDrawingInRegion(DrawTarget* aDrawTarget,
-                                        LayoutDeviceIntRegion& aInvalidRegion) {
+  virtual void EndRemoteDrawingInRegion(
+      DrawTarget* aDrawTarget, const LayoutDeviceIntRegion& aInvalidRegion) {
     EndRemoteDrawing();
   }
   virtual void CleanupRemoteDrawing() {}
@@ -470,6 +465,10 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return true;
   }
   virtual uint32_t GetGLFrameBufferFormat();
+  virtual bool CompositorInitiallyPaused() { return false; }
+#ifdef XP_MACOSX
+  virtual LayoutDeviceIntRegion GetOpaqueWidgetRegion() { return {}; }
+#endif
 
  protected:
   void ResolveIconName(const nsAString& aIconName, const nsAString& aIconSuffix,

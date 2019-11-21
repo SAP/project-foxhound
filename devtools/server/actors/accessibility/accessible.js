@@ -19,6 +19,12 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
+  "auditKeyboard",
+  "devtools/server/actors/accessibility/audit/keyboard",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "auditTextLabel",
   "devtools/server/actors/accessibility/audit/text-label",
   true
@@ -36,6 +42,12 @@ loader.lazyRequireGetter(
   true
 );
 loader.lazyRequireGetter(this, "events", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "getBounds",
+  "devtools/server/actors/highlighters/utils/accessibility",
+  true
+);
 
 const RELATIONS_TO_IGNORE = new Set([
   Ci.nsIAccessibleRelation.RELATION_CONTAINING_APPLICATION,
@@ -457,8 +469,9 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     const { walker } = this;
     walker.clearStyles(win);
     const contrastRatio = await getContrastRatioFor(rawNode.parentNode, {
-      bounds,
+      bounds: getBounds(win, bounds),
       win,
+      appliedColorMatrix: this.walker.colorMatrix,
     });
 
     walker.restoreStyles(win);
@@ -480,6 +493,9 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     switch (type) {
       case AUDIT_TYPE.CONTRAST:
         return this._getContrastRatio();
+      case AUDIT_TYPE.KEYBOARD:
+        // Determine if keyboard accessibility is lacking where it is necessary.
+        return auditKeyboard(this.rawAccessible);
       case AUDIT_TYPE.TEXT_LABEL:
         // Determine if text alternative is missing for an accessible where it
         // is necessary.

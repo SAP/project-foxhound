@@ -56,7 +56,7 @@ nsresult HTMLEditor::SetSelectionToAbsoluteOrStaticAsAction(
   }
 
   AutoPlaceholderBatch treatAsOneTransaction(*this);
-  AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
+  AutoEditSubActionNotifier startToHandleEditSubAction(
       *this,
       aEnabled ? EditSubAction::eSetPositionToAbsolute
                : EditSubAction::eSetPositionToStatic,
@@ -84,7 +84,7 @@ nsresult HTMLEditor::SetSelectionToAbsoluteOrStaticAsAction(
 }
 
 already_AddRefed<Element>
-HTMLEditor::GetAbsolutelyPositionedSelectionContainer() {
+HTMLEditor::GetAbsolutelyPositionedSelectionContainer() const {
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return nullptr;
@@ -155,7 +155,7 @@ nsresult HTMLEditor::AddZIndexAsAction(int32_t aChange,
   }
 
   AutoPlaceholderBatch treatAsOneTransaction(*this);
-  AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
+  AutoEditSubActionNotifier startToHandleEditSubAction(
       *this,
       aChange < 0 ? EditSubAction::eDecreaseZIndex
                   : EditSubAction::eIncreaseZIndex,
@@ -528,7 +528,7 @@ nsresult HTMLEditor::SetPositionToAbsolute(Element& aElement) {
   nsINode* parentNode = aElement.GetParentNode();
   if (parentNode->GetChildCount() == 1) {
     RefPtr<Element> newBrElement =
-        InsertBrElementWithTransaction(EditorDOMPoint(parentNode, 0));
+        InsertBRElementWithTransaction(EditorDOMPoint(parentNode, 0));
     if (NS_WARN_IF(!newBrElement)) {
       return NS_ERROR_FAILURE;
     }

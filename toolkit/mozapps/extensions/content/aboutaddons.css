@@ -7,6 +7,10 @@
   display: none !important;
 }
 
+body {
+  cursor: default;
+}
+
 .header-name {
   -moz-user-select: initial;
 }
@@ -27,21 +31,17 @@ message-bar-stack > * {
   margin-bottom: 8px;
 }
 
-/* The margin between pending message-bar-stack and the section heading. */
-addon-list message-bar-stack.pending-uninstall {
-  margin-bottom: 12px;
-}
-
 /* List sections */
 
 .list-section-heading {
   font-size: 17px;
   font-weight: 600;
-  margin-block: 16px;
+  margin-top: 32px;
+  margin-bottom: 16px;
 }
 
 /* The margin is set on the main heading, no need on the first subheading. */
-.list-section-heading:first-of-type {
+addon-list > section:first-of-type .list-section-heading {
   margin-top: 0;
 }
 
@@ -49,6 +49,17 @@ addon-list message-bar-stack.pending-uninstall {
 
 .addon.card {
   margin-bottom: 16px;
+}
+
+addon-card:not([expanded]) > .addon.card[active="false"] {
+  opacity: 0.6;
+  transition: opacity 150ms, box-shadow 150ms;
+}
+
+addon-card:not([expanded])[panelopen] > .addon.card[active="false"],
+addon-card:not([expanded]) > .addon.card[active="false"]:focus-within,
+addon-card:not([expanded]) > .addon.card[active="false"]:hover {
+  opacity: 1;
 }
 
 .addon.card:hover {
@@ -124,16 +135,24 @@ addon-card[expanded] .addon-card-message {
   font-size: 16px;
   font-weight: 600;
   line-height: 22px;
+  margin: 0;
   margin-inline-end: 8px;
 }
 
+.addon-name-link,
+.addon-name-link:hover {
+  color: var(--in-content-text-color);
+  text-decoration: none;
+}
+
 .addon-badge {
+  display: inline-block;
+  margin-inline-end: 8px;
   width: 16px;
   height: 16px;
   background-size: 16px;
   background-repeat: no-repeat;
   background-position: center;
-  margin-inline-end: 8px;
 }
 
 .addon-badge-private-browsing-allowed {
@@ -180,7 +199,7 @@ addon-card:not([expanded]) .addon-description {
 
 /* Recommended add-ons on list views */
 .recommended-heading {
-  margin-bottom: 16px;
+  margin-top: 48px;
 }
 
 /* Discopane extensions to the add-on card */
@@ -217,6 +236,7 @@ recommended-addon-card .addon-description:not(:empty) {
   flex-shrink: 0;
   flex-grow: 0;
   align-self: baseline;
+  margin-inline-end: 0;
 }
 
 .disco-cta-button[action="install-addon"]::before {
@@ -225,7 +245,7 @@ recommended-addon-card .addon-description:not(:empty) {
 }
 
 .discopane-notice {
-  margin: 0.5em 0;
+  margin: 24px 0;
 }
 
 .discopane-notice-content {
@@ -416,11 +436,7 @@ addon-permissions-list > .addon-detail-row:first-of-type {
 }
 
 .deck-tab-group {
-  border-bottom: 1px solid var(--in-content-box-border-color);
-  border-top: 1px solid var(--in-content-box-border-color);
   margin-top: 8px;
   /* Pull the buttons flush with the side of the card */
   margin-inline: calc(var(--card-padding) * -1);
-  font-size: 0;
-  line-height: 0;
 }

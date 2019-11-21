@@ -4,6 +4,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 from filecmp import dircmp
 import json
 import os
@@ -15,6 +17,7 @@ import sys
 import shutil
 import tempfile
 from distutils.version import LooseVersion, StrictVersion
+from mozbuild.util import ensure_subprocess_env
 from mozbuild.nodeutil import (find_node_executable, find_npm_executable,
                                NPM_MIN_VERSION, NODE_MIN_VERSION)
 sys.path.append(os.path.join(
@@ -74,7 +77,7 @@ def eslint_setup(should_clobber=False):
     package_setup(get_project_root(), 'eslint', should_clobber=should_clobber)
 
 
-def package_setup(package_root, package_name, should_clobber=False):
+def package_setup(package_root, package_name, should_clobber=False, no_optional=False):
     """Ensure `package_name` at `package_root` is installed.
 
     This populates `package_root/node_modules`.
@@ -108,6 +111,9 @@ def package_setup(package_root, package_name, should_clobber=False):
             return 1
 
         extra_parameters = ["--loglevel=error"]
+
+        if no_optional:
+            extra_parameters.append('--no-optional')
 
         package_lock_json_path = os.path.join(get_project_root(), "package-lock.json")
         package_lock_json_tmp_path = os.path.join(tempfile.gettempdir(), "package-lock.json.tmp")
@@ -158,7 +164,7 @@ def package_setup(package_root, package_name, should_clobber=False):
 
 def call_process(name, cmd, cwd=None, append_env={}):
     env = dict(os.environ)
-    env.update(append_env)
+    env.update(ensure_subprocess_env(append_env))
 
     try:
         with open(os.devnull, "w") as fnull:

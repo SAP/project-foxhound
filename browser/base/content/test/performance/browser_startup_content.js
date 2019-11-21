@@ -20,9 +20,6 @@ const kDumpAllStacks = false;
 const whitelist = {
   modules: new Set([
     "chrome://mochikit/content/ShutdownLeaksCollector.jsm",
-    "resource://specialpowers/SpecialPowersChild.jsm",
-    "resource://specialpowers/SpecialPowersAPI.jsm",
-    "resource://specialpowers/WrapPrivileged.jsm",
 
     "resource://gre/modules/ContentProcessSingleton.jsm",
 
@@ -52,7 +49,6 @@ const whitelist = {
     "resource://gre/modules/ActorManagerChild.jsm",
     "resource://gre/modules/E10SUtils.jsm",
     "resource://gre/modules/Readerable.jsm",
-    "resource://gre/modules/WebProgressChild.jsm",
 
     // Telemetry
     "resource://gre/modules/TelemetryController.jsm", // bug 1470339
@@ -94,6 +90,9 @@ const intermittently_loaded_whitelist = {
   modules: new Set([
     "resource://gre/modules/nsAsyncShutdown.jsm",
     "resource://gre/modules/sessionstore/Utils.jsm",
+
+    "resource://specialpowers/SpecialPowersChild.jsm",
+    "resource://specialpowers/WrapPrivileged.jsm",
 
     // Webcompat about:config front-end. This is presently nightly-only and
     // part of a system add-on which may not load early enough for the test.
@@ -207,12 +206,12 @@ add_task(async function() {
     );
 
     for (let script of loadedList[scriptType]) {
-      ok(
+      record(
         false,
-        `Unexpected ${scriptType} loaded during content process startup: ${script}`
+        `Unexpected ${scriptType} loaded during content process startup: ${script}`,
+        undefined,
+        loadedInfo[scriptType][script]
       );
-      info(`Stack that loaded ${script}:\n`);
-      info(loadedInfo[scriptType][script]);
     }
 
     is(
@@ -246,14 +245,12 @@ add_task(async function() {
     for (let script of blacklist[scriptType]) {
       let loaded = script in loadedInfo[scriptType];
       if (loaded) {
-        ok(
+        record(
           false,
-          `Unexpected ${scriptType} loaded during content process startup: ${script}`
+          `Unexpected ${scriptType} loaded during content process startup: ${script}`,
+          undefined,
+          loadedInfo[scriptType][script]
         );
-        if (loadedInfo[scriptType][script]) {
-          info(`Stack that loaded ${script}:\n`);
-          info(loadedInfo[scriptType][script]);
-        }
       }
     }
   }

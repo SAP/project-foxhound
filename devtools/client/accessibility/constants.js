@@ -7,6 +7,14 @@ const {
   accessibility: {
     AUDIT_TYPE,
     ISSUE_TYPE: {
+      [AUDIT_TYPE.KEYBOARD]: {
+        FOCUSABLE_NO_SEMANTICS,
+        FOCUSABLE_POSITIVE_TABINDEX,
+        INTERACTIVE_NO_ACTION,
+        INTERACTIVE_NOT_FOCUSABLE,
+        MOUSE_INTERACTIVE_ONLY,
+        NO_FOCUS_VISIBLE,
+      },
       [AUDIT_TYPE.TEXT_LABEL]: {
         AREA_NO_NAME_FROM_ALT,
         DIALOG_NO_NAME,
@@ -57,15 +65,19 @@ exports.ENABLE = "ENABLE";
 exports.DISABLE = "DISABLE";
 exports.UPDATE_CAN_BE_DISABLED = "UPDATE_CAN_BE_DISABLED";
 exports.UPDATE_CAN_BE_ENABLED = "UPDATE_CAN_BE_ENABLED";
+exports.UPDATE_PREF = "UPDATE_PREF";
 exports.FILTER_TOGGLE = "FILTER_TOGGLE";
 exports.AUDIT = "AUDIT";
 exports.AUDITING = "AUDITING";
 exports.AUDIT_PROGRESS = "AUDIT_PROGRESS";
+exports.SIMULATE = "SIMULATE";
 
 // List of filters for accessibility checks.
 exports.FILTERS = {
+  NONE: "NONE",
   ALL: "ALL",
   [AUDIT_TYPE.CONTRAST]: "CONTRAST",
+  [AUDIT_TYPE.KEYBOARD]: "KEYBOARD",
   [AUDIT_TYPE.TEXT_LABEL]: "TEXT_LABEL",
 };
 
@@ -112,6 +124,8 @@ exports.A11Y_LEARN_MORE_LINK =
 exports.A11Y_CONTRAST_LEARN_MORE_LINK =
   "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Perceivable/" +
   "Color_contrast?utm_source=devtools&utm_medium=a11y-panel-checks-color-contrast";
+exports.A11Y_SIMULATION_DOCUMENTATION_LINK =
+  "https://developer.mozilla.org/docs/Tools/Accessibility_inspector/Simulation";
 
 const A11Y_TEXT_LABEL_LINK_BASE =
   "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Text_labels_and_names" +
@@ -148,3 +162,38 @@ for (const key in A11Y_TEXT_LABEL_LINK_IDS) {
   }`;
 }
 exports.A11Y_TEXT_LABEL_LINKS = A11Y_TEXT_LABEL_LINKS;
+
+const A11Y_KEYBOARD_LINK_BASE =
+  "https://developer.mozilla.org/docs/Web/Accessibility/Understanding_WCAG/Keyboard" +
+  "?utm_source=devtools&utm_medium=a11y-panel-checks-keyboard";
+
+const A11Y_KEYBOARD_LINK_IDS = {
+  [FOCUSABLE_NO_SEMANTICS]:
+    "Focusable_elements_should_have_interactive_semantics",
+  [FOCUSABLE_POSITIVE_TABINDEX]:
+    "Avoid_using_tabindex_attribute_greater_than_zero",
+  [INTERACTIVE_NO_ACTION]:
+    "Interactive_elements_must_be_able_to_be_activated_using_a_keyboard",
+  [INTERACTIVE_NOT_FOCUSABLE]: "Interactive_elements_must_be_focusable",
+  [MOUSE_INTERACTIVE_ONLY]:
+    "Clickable_elements_must_be_focusable_and_should_have_interactive_semantics",
+  [NO_FOCUS_VISIBLE]: "Focusable_element_must_have_focus_styling",
+};
+
+const A11Y_KEYBOARD_LINKS = {};
+for (const key in A11Y_KEYBOARD_LINK_IDS) {
+  A11Y_KEYBOARD_LINKS[key] = `${A11Y_KEYBOARD_LINK_BASE}#${
+    A11Y_KEYBOARD_LINK_IDS[key]
+  }`;
+}
+exports.A11Y_KEYBOARD_LINKS = A11Y_KEYBOARD_LINKS;
+
+// Lists of preference names and keys.
+const PREFS = {
+  SCROLL_INTO_VIEW: "SCROLL_INTO_VIEW",
+};
+
+exports.PREFS = PREFS;
+exports.PREF_KEYS = {
+  [PREFS.SCROLL_INTO_VIEW]: "devtools.accessibility.scroll-into-view",
+};

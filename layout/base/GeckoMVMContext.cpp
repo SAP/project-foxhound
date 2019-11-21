@@ -124,10 +124,25 @@ bool GeckoMVMContext::AllowZoomingForDocument() const {
   return nsLayoutUtils::AllowZoomingForDocument(mDocument);
 }
 
-void GeckoMVMContext::SetResolutionAndScaleTo(float aResolution) {
+bool GeckoMVMContext::IsInReaderMode() const {
+  MOZ_ASSERT(mDocument);
+  nsString uri;
+  if (NS_FAILED(mDocument->GetDocumentURI(uri))) {
+    return false;
+  }
+  static auto readerModeUriPrefix = NS_LITERAL_STRING("about:reader");
+  return StringBeginsWith(uri, readerModeUriPrefix);
+}
+
+bool GeckoMVMContext::IsDocumentLoading() const {
+  MOZ_ASSERT(mDocument);
+  return mDocument->GetReadyStateEnum() == Document::READYSTATE_LOADING;
+}
+
+void GeckoMVMContext::SetResolutionAndScaleTo(float aResolution,
+                                              ResolutionChangeOrigin aOrigin) {
   MOZ_ASSERT(mPresShell);
-  mPresShell->SetResolutionAndScaleTo(aResolution,
-                                      ResolutionChangeOrigin::MainThread);
+  mPresShell->SetResolutionAndScaleTo(aResolution, aOrigin);
 }
 
 void GeckoMVMContext::SetVisualViewportSize(const CSSSize& aSize) {
@@ -151,7 +166,8 @@ void GeckoMVMContext::UpdateDisplayPortMargins() {
     // We only create MobileViewportManager for root content documents. If that
     // ever changes we'd need to limit the size of this displayport base rect
     // because non-toplevel documents have no limit on their size.
-    MOZ_ASSERT(mPresShell->GetPresContext()->IsRootContentDocument());
+    MOZ_ASSERT(
+        mPresShell->GetPresContext()->IsRootContentDocumentCrossProcess());
     nsLayoutUtils::SetDisplayPortBaseIfNotSet(root->GetContent(),
                                               displayportBase);
     nsIScrollableFrame* scrollable = do_QueryFrame(root);

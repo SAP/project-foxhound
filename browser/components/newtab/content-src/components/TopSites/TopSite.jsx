@@ -1,15 +1,23 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import {
   MIN_CORNER_FAVICON_SIZE,
   MIN_RICH_FAVICON_SIZE,
   TOP_SITES_CONTEXT_MENU_OPTIONS,
+  TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS,
   TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS,
   TOP_SITES_SOURCE,
 } from "./TopSitesConstants";
 import { LinkMenu } from "content-src/components/LinkMenu/LinkMenu";
+import { ImpressionStats } from "../DiscoveryStreamImpressionStats/ImpressionStats";
 import React from "react";
 import { ScreenshotUtils } from "content-src/lib/screenshot-utils";
 import { TOP_SITES_MAX_SITES_PER_ROW } from "common/Reducers.jsm";
+import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
+const SPOC_TYPE = "SPOC";
 
 export class TopSiteLink extends React.PureComponent {
   constructor(props) {
@@ -167,12 +175,17 @@ export class TopSiteLink extends React.PureComponent {
       smallFaviconStyle = { backgroundImage: `url(${tippyTopIcon})` };
     } else if (link.customScreenshotURL) {
       // assume high quality custom screenshot and use rich icon styles and class names
+
+      // TopSite spoc experiment only
+      const spocImgURL =
+        link.type === SPOC_TYPE ? link.customScreenshotURL : "";
+
       imageClassName = "top-site-icon rich-icon";
       imageStyle = {
         backgroundColor: link.backgroundColor,
         backgroundImage: hasScreenshotImage
           ? `url(${this.state.screenshotImage.url})`
-          : "none",
+          : `url(${spocImgURL})`,
       };
     } else if (tippyTopIcon || faviconSize >= MIN_RICH_FAVICON_SIZE) {
       // styles and class names for top sites with rich icons
@@ -251,8 +264,25 @@ export class TopSiteLink extends React.PureComponent {
               {link.isPinned && <div className="icon icon-pin-small" />}
               <span dir="auto">{title}</span>
             </div>
+            {link.type === SPOC_TYPE ? (
+              <span className="top-site-spoc-label">Sponsored</span>
+            ) : null}
           </a>
           {children}
+          {link.type === SPOC_TYPE ? (
+            <ImpressionStats
+              campaignId={link.campaignId}
+              rows={[
+                {
+                  id: link.id,
+                  pos: link.pos,
+                  shim: link.shim && link.shim.impression,
+                },
+              ]}
+              dispatch={this.props.dispatch}
+              source={TOP_SITES_SOURCE}
+            />
+          ) : null}
         </div>
       </li>
     );
@@ -269,7 +299,6 @@ export class TopSite extends React.PureComponent {
     super(props);
     this.state = { showContextMenu: false };
     this.onLinkClick = this.onLinkClick.bind(this);
-    this.onMenuButtonClick = this.onMenuButtonClick.bind(this);
     this.onMenuUpdate = this.onMenuUpdate.bind(this);
   }
 
@@ -321,6 +350,23 @@ export class TopSite extends React.PureComponent {
           }),
         })
       );
+
+      // Fire off a spoc specific impression.
+      if (this.props.link.type === SPOC_TYPE) {
+        this.props.dispatch(
+          ac.ImpressionStats({
+            source: TOP_SITES_SOURCE,
+            click: 0,
+            tiles: [
+              {
+                id: this.props.link.id,
+                pos: this.props.link.pos,
+                shim: this.props.link.shim && this.props.link.shim.click,
+              },
+            ],
+          })
+        );
+      }
     } else {
       this.props.dispatch(
         ac.OnlyToMain({
@@ -331,22 +377,24 @@ export class TopSite extends React.PureComponent {
     }
   }
 
-  onMenuButtonClick(event) {
-    event.preventDefault();
-    this.props.onActivate(this.props.index);
-    this.setState({ showContextMenu: true });
-  }
-
-  onMenuUpdate(showContextMenu) {
-    this.setState({ showContextMenu });
+  onMenuUpdate(isOpen) {
+    if (isOpen) {
+      this.props.onActivate(this.props.index);
+    } else {
+      this.props.onActivate();
+    }
   }
 
   render() {
     const { props } = this;
     const { link } = props;
-    const isContextMenuOpen =
-      this.state.showContextMenu && props.activeIndex === props.index;
+    const isContextMenuOpen = props.activeIndex === props.index;
     const title = link.label || link.hostname;
+    const menuOptions =
+      link.type !== SPOC_TYPE
+        ? TOP_SITES_CONTEXT_MENU_OPTIONS
+        : TOP_SITES_SPOC_CONTEXT_MENU_OPTIONS;
+
     return (
       <TopSiteLink
         {...props}
@@ -358,14 +406,11 @@ export class TopSite extends React.PureComponent {
         title={title}
       >
         <div>
-          <button
-            aria-haspopup="true"
-            className="context-menu-button icon"
-            data-l10n-id="newtab-menu-content-tooltip"
-            data-l10n-args={JSON.stringify({ title })}
-            onClick={this.onMenuButtonClick}
-          />
-          {isContextMenuOpen && (
+          <ContextMenuButton
+            tooltip="newtab-menu-content-tooltip"
+            tooltipArgs={{ title }}
+            onUpdate={this.onMenuUpdate}
+          >
             <LinkMenu
               dispatch={props.dispatch}
               index={props.index}
@@ -373,13 +418,14 @@ export class TopSite extends React.PureComponent {
               options={
                 link.searchTopSite
                   ? TOP_SITES_SEARCH_SHORTCUTS_CONTEXT_MENU_OPTIONS
-                  : TOP_SITES_CONTEXT_MENU_OPTIONS
+                  : menuOptions
               }
               site={link}
+              shouldSendImpressionStats={link.type === SPOC_TYPE}
               siteInfo={this._getTelemetryInfo()}
               source={TOP_SITES_SOURCE}
             />
-          )}
+          </ContextMenuButton>
         </div>
       </TopSiteLink>
     );

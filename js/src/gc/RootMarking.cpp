@@ -11,12 +11,13 @@
 #include "jstypes.h"
 
 #include "builtin/MapObject.h"
+#include "debugger/DebugAPI.h"
 #include "frontend/BytecodeCompiler.h"
+#include "gc/ClearEdgesTracer.h"
 #include "gc/GCInternals.h"
 #include "gc/Marking.h"
 #include "jit/MacroAssembler.h"
 #include "js/HashTable.h"
-#include "vm/Debugger.h"
 #include "vm/JSContext.h"
 #include "vm/JSONParser.h"
 
@@ -270,12 +271,6 @@ void js::gc::GCRuntime::traceRuntimeForMajorGC(JSTracer* trc,
                                                AutoGCSession& session) {
   MOZ_ASSERT(!TlsContext.get()->suppressGC);
 
-  // FinishRoots will have asserted that every root that we do not expect
-  // is gone, so we can simply skip traceRuntime here.
-  if (rt->isBeingDestroyed()) {
-    return;
-  }
-
   gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::MARK_ROOTS);
   if (atomsZone->isCollecting()) {
     traceRuntimeAtoms(trc, session.checkAtomsAccess());
@@ -371,8 +366,10 @@ void js::gc::GCRuntime::traceRuntimeCommon(JSTracer* trc,
   // Trace the self-hosting global compartment.
   rt->traceSelfHostingGlobal(trc);
 
+#ifdef ENABLE_INTL_API
   // Trace the shared Intl data.
   rt->traceSharedIntlData(trc);
+#endif
 
   // Trace the JSContext.
   rt->mainContextFromOwnThread()->trace(trc);
@@ -390,9 +387,6 @@ void js::gc::GCRuntime::traceRuntimeCommon(JSTracer* trc,
   if (!JS::RuntimeHeapIsMinorCollecting()) {
     gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::MARK_EMBEDDING);
 
-    // The analysis doesn't like the function pointers below.
-    JS::AutoSuppressGCAnalysis nogc;
-
     /*
      * The embedding can register additional roots here.
      *
@@ -400,29 +394,44 @@ void js::gc::GCRuntime::traceRuntimeCommon(JSTracer* trc,
      * the nursery should be in the store buffer, and we want to avoid the
      * time taken to trace all these roots.
      */
-    for (size_t i = 0; i < blackRootTracers.ref().length(); i++) {
-      const Callback<JSTraceDataOp>& e = blackRootTracers.ref()[i];
-      (*e.op)(trc, e.data);
-    }
+    traceEmbeddingBlackRoots(trc);
 
     /* During GC, we don't trace gray roots at this stage. */
-    if (JSTraceDataOp op = grayRootTracer.op) {
-      if (traceOrMark == TraceRuntime) {
-        (*op)(trc, grayRootTracer.data);
-      }
+    if (traceOrMark == TraceRuntime) {
+      traceEmbeddingGrayRoots(trc);
     }
+  }
+}
+
+void GCRuntime::traceEmbeddingBlackRoots(JSTracer* trc) {
+  // The analysis doesn't like the function pointer below.
+  JS::AutoSuppressGCAnalysis nogc;
+
+  for (size_t i = 0; i < blackRootTracers.ref().length(); i++) {
+    const Callback<JSTraceDataOp>& e = blackRootTracers.ref()[i];
+    (*e.op)(trc, e.data);
+  }
+}
+
+void GCRuntime::traceEmbeddingGrayRoots(JSTracer* trc) {
+  // The analysis doesn't like the function pointer below.
+  JS::AutoSuppressGCAnalysis nogc;
+
+  if (JSTraceDataOp op = grayRootTracer.op) {
+    (*op)(trc, grayRootTracer.data);
   }
 }
 
 #ifdef DEBUG
 class AssertNoRootsTracer final : public JS::CallbackTracer {
-  void onChild(const JS::GCCellPtr& thing) override {
-    MOZ_CRASH("There should not be any roots after finishRoots");
+  bool onChild(const JS::GCCellPtr& thing) override {
+    MOZ_CRASH("There should not be any roots during runtime shutdown");
+    return true;
   }
 
  public:
-  AssertNoRootsTracer(JSRuntime* rt, WeakMapTraceKind weakTraceKind)
-      : JS::CallbackTracer(rt, weakTraceKind) {}
+  explicit AssertNoRootsTracer(JSRuntime* rt)
+      : JS::CallbackTracer(rt, TraceWeakMapKeysValues) {}
 };
 #endif  // DEBUG
 
@@ -441,20 +450,18 @@ void js::gc::GCRuntime::finishRoots() {
     r->finishRoots();
   }
 
+  // Clear any remaining roots from the embedding (as otherwise they will be
+  // left dangling after we shut down) and remove the callbacks.
+  ClearEdgesTracer trc(rt);
+  traceEmbeddingBlackRoots(&trc);
+  traceEmbeddingGrayRoots(&trc);
+  clearBlackAndGrayRootTracers();
+}
+
+void js::gc::GCRuntime::checkNoRuntimeRoots(AutoGCSession& session) {
 #ifdef DEBUG
-  // The nsWrapperCache may not be empty before our shutdown GC, so we have
-  // to skip that table when verifying that we are fully unrooted.
-  auto prior = grayRootTracer;
-  grayRootTracer = Callback<JSTraceDataOp>(nullptr, nullptr);
-
-  AssertNoRootsTracer trc(rt, TraceWeakMapKeysValues);
-  AutoTraceSession session(rt);
-  gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PhaseKind::TRACE_HEAP);
-  traceRuntime(&trc, session);
-
-  // Restore the wrapper tracing so that we leak instead of leaving dangling
-  // pointers.
-  grayRootTracer = prior;
+  AssertNoRootsTracer trc(rt);
+  traceRuntimeForMajorGC(&trc, session);
 #endif  // DEBUG
 }
 
@@ -464,18 +471,25 @@ class BufferGrayRootsTracer final : public JS::CallbackTracer {
   // Set to false if we OOM while buffering gray roots.
   bool bufferingGrayRootsFailed;
 
-  void onObjectEdge(JSObject** objp) override { bufferRoot(*objp); }
-  void onStringEdge(JSString** stringp) override { bufferRoot(*stringp); }
-  void onScriptEdge(JSScript** scriptp) override { bufferRoot(*scriptp); }
-  void onSymbolEdge(JS::Symbol** symbolp) override { bufferRoot(*symbolp); }
-  void onBigIntEdge(JS::BigInt** bip) override { bufferRoot(*bip); }
+  bool onObjectEdge(JSObject** objp) override { return bufferRoot(*objp); }
+  bool onStringEdge(JSString** stringp) override {
+    return bufferRoot(*stringp);
+  }
+  bool onScriptEdge(JSScript** scriptp) override {
+    return bufferRoot(*scriptp);
+  }
+  bool onSymbolEdge(JS::Symbol** symbolp) override {
+    return bufferRoot(*symbolp);
+  }
+  bool onBigIntEdge(JS::BigInt** bip) override { return bufferRoot(*bip); }
 
-  void onChild(const JS::GCCellPtr& thing) override {
+  bool onChild(const JS::GCCellPtr& thing) override {
     MOZ_CRASH("Unexpected gray root kind");
+    return true;
   }
 
   template <typename T>
-  inline void bufferRoot(T* thing);
+  inline bool bufferRoot(T* thing);
 
  public:
   explicit BufferGrayRootsTracer(JSRuntime* rt)
@@ -514,7 +528,7 @@ void js::gc::GCRuntime::bufferGrayRoots() {
 }
 
 template <typename T>
-inline void BufferGrayRootsTracer::bufferRoot(T* thing) {
+inline bool BufferGrayRootsTracer::bufferRoot(T* thing) {
   MOZ_ASSERT(JS::RuntimeHeapIsBusy());
   MOZ_ASSERT(thing);
   // Check if |thing| is corrupt by calling a method that touches the heap.
@@ -536,6 +550,8 @@ inline void BufferGrayRootsTracer::bufferRoot(T* thing) {
       bufferingGrayRootsFailed = true;
     }
   }
+
+  return true;
 }
 
 void GCRuntime::markBufferedGrayRoots(JS::Zone* zone) {

@@ -36,10 +36,10 @@
   --in-content-category-background-selected-hover: rgba(12,12,13,0.15);
   --in-content-category-background-selected-active: rgba(12,12,13,0.2);
   --in-content-tab-color: #424f5a;
-  --in-content-link-color: #0a8dff;
-  --in-content-link-color-hover: #0060df;
-  --in-content-link-color-active: #003eaa;
-  --in-content-link-color-visited: #0a8dff;
+  --in-content-link-color: var(--blue-60);
+  --in-content-link-color-hover: var(--blue-70);
+  --in-content-link-color-active: var(--blue-80);
+  --in-content-link-color-visited: var(--blue-60);
   --in-content-button-background: var(--grey-90-a10);
   --in-content-button-background-hover: var(--grey-90-a20);
   --in-content-button-background-active: var(--grey-90-a30);
@@ -49,6 +49,7 @@
   --in-content-table-background: #ebebeb;
   --in-content-table-border-dark-color: #d1d1d1;
   --in-content-table-header-background: #0a84ff;
+  --in-content-dialog-header-background: #f1f1f1;
 
   --panel-border-radius: 2px; /* This is overridden on Windows */
 
@@ -65,7 +66,6 @@
   --grey-20: #ededf0;
   --grey-30: #d7d7db;
   --grey-40: #b1b1b3;
-  --grey-50: #737373;
   --grey-60: #4a4a4f;
   --grey-90: #0c0c0d;
   --grey-90-a10: rgba(12, 12, 13, 0.1);
@@ -80,15 +80,16 @@
   --green-90: #003706;
   --orange-50: #ff9400;
   --purple-70: #6200a4;
-  --purple-70-a40: rgba(98, 0, 164, 0.4);
   --red-50: #ff0039;
   --red-50-a30: rgba(255, 0, 57, 0.3);
   --red-60: #d70022;
   --red-70: #a4000f;
   --red-80: #5a0002;
   --red-90: #3e0200;
+  --yellow-10: #ffff98;
   --yellow-50: #ffe900;
   --yellow-60: #d7b600;
+  --yellow-60-a30: rgba(215, 182, 0, 0.3);
   --yellow-70: #a47f00;
   --yellow-80: #715100;
   --yellow-90: #3e2800;
@@ -132,6 +133,7 @@
     --in-content-table-background: #202023;
     --in-content-table-border-dark-color: rgba(249,249,250,0.2);
     --in-content-table-header-background: #002b57;
+    --in-content-dialog-header-background: rgba(249,249,250,0.05);
 
     --in-content-category-text-selected: var(--blue-40);
     --in-content-category-text-selected-active: var(--blue-50);
@@ -229,6 +231,7 @@ xul|tab[selected] {
 
 html|button {
   padding: 3px;
+  font: inherit;
 }
 
 /* xul buttons and menulists */
@@ -296,6 +299,11 @@ html|select:not([size]):not([multiple]):dir(rtl) {
   background-position: left 3px center;
 }
 
+html|select:not([size]):not([multiple]) > html|option {
+  background-color: var(--in-content-box-background);
+  color: var(--in-content-text-color);
+}
+
 html|button:enabled:hover,
 html|select:not([size]):not([multiple]):enabled:hover,
 html|input[type="color"]:hover,
@@ -323,21 +331,37 @@ xul|menulist[disabled="true"] {
 }
 
 html|button[autofocus],
+html|button[type="submit"],
 *|button.primary {
   background-color: var(--in-content-primary-button-background);
   color: var(--in-content-selected-text) !important;
 }
 
 html|button[autofocus]:enabled:hover,
+html|button[type="submit"]:enabled:hover,
 html|button.primary:enabled:hover,
 xul|button.primary:not([disabled="true"]):hover {
   background-color: var(--in-content-primary-button-background-hover);
 }
 
 html|button[autofocus]:enabled:hover:active,
+html|button[type="submit"]:enabled:hover:active,
 html|button.primary:enabled:hover:active,
 xul|button.primary:not([disabled="true"]):hover:active {
   background-color: var(--in-content-primary-button-background-active);
+}
+
+html|button.danger-button {
+  background-color: var(--red-60);
+  color: white !important;
+}
+
+html|button.danger-button:enabled:hover {
+  background-color: var(--red-70);
+}
+
+html|button.danger-button:enabled:hover:active {
+  background-color: var(--red-80);
 }
 
 html|button.ghost-button {
@@ -937,6 +961,11 @@ xul|treechildren::-moz-tree-image(selected) {
   list-style-image: url("chrome://browser/skin/warning.svg");
 }
 
+input[type="text"][warning]:enabled:not(:focus) {
+  border-color: var(--yellow-60);
+  box-shadow: 0 0 0 1px var(--yellow-60), 0 0 0 4px var(--yellow-60-a30);
+}
+
 .card {
   background: var(--in-content-box-background);
   /* Needed for high-contrast where the border will appear. */
@@ -949,7 +978,7 @@ xul|treechildren::-moz-tree-image(selected) {
   transition: box-shadow 150ms;
 }
 
-.card:hover {
+.card:not(.card-no-hover):hover {
   box-shadow: var(--card-shadow-hover);
 }
 

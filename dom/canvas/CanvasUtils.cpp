@@ -14,7 +14,7 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsIPrincipal.h"
 
 #include "nsGfxCIID.h"
@@ -76,8 +76,7 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
   docURI->GetSpec(docURISpec);
 
   // Allow local files to extract canvas data.
-  bool isFileURL;
-  if (NS_SUCCEEDED(docURI->SchemeIs("file", &isFileURL)) && isFileURL) {
+  if (docURI->SchemeIs("file")) {
     return true;
   }
 

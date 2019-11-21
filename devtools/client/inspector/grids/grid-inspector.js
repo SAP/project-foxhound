@@ -292,6 +292,7 @@ class GridInspector {
    * Updates the grid panel by dispatching the new grid data. This is called when the
    * layout view becomes visible or the view needs to be updated with new grid data.
    */
+  // eslint-disable-next-line complexity
   async updateGridPanel() {
     // Stop refreshing if the inspector or store is already destroyed.
     if (!this.inspector || !this.store) {
@@ -305,6 +306,11 @@ class GridInspector {
     } catch (e) {
       // This call might fail if called asynchrously after the toolbox is finished
       // closing.
+      return;
+    }
+
+    // Stop if the panel has been destroyed during the call to getGrids
+    if (!this.inspector) {
       return;
     }
 
@@ -353,6 +359,10 @@ class GridInspector {
         } catch (e) {
           // This call might fail if called asynchrously after the toolbox is finished
           // closing.
+          return;
+        }
+        // Stop if the panel has been destroyed during the call getNodeFromActor
+        if (!this.inspector) {
           return;
         }
       }
@@ -416,6 +426,12 @@ class GridInspector {
       }
 
       grids.push(gridData);
+    }
+
+    // We need to make sure that nested subgrids are displayed above their parent grid
+    // containers, so update the z-index of each grid before rendering them.
+    for (const root of grids.filter(g => !g.parentNodeActorID)) {
+      this._updateZOrder(grids, root);
     }
 
     this.store.dispatch(updateGrids(grids));
@@ -511,6 +527,10 @@ class GridInspector {
     } catch (e) {
       // This call might fail if called asynchrously after the toolbox is finished
       // closing.
+      return;
+    }
+    // Stop if the panel has been destroyed during the call to getGrids
+    if (!this.inspector) {
       return;
     }
 
@@ -717,6 +737,26 @@ class GridInspector {
       if (grid.highlighted) {
         this.highlighters.showGridHighlighter(grid.nodeFront);
       }
+    }
+  }
+
+  /**
+   * Set z-index of each grids so that nested subgrids are always above their parent grid
+   * container.
+   *
+   * @param {Array} grids
+   *        A list of grid data.
+   * @param {Object} parent
+   *        A grid data of parent.
+   * @param {Number} zIndex
+   *        z-index for the parent.
+   */
+  _updateZOrder(grids, parent, zIndex = 0) {
+    parent.zIndex = zIndex;
+
+    for (const childIndex of parent.subgrids) {
+      // Recurse into children grids.
+      this._updateZOrder(grids, grids[childIndex], zIndex + 1);
     }
   }
 }

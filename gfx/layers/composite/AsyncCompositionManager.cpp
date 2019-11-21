@@ -10,11 +10,12 @@
 #include "Layers.h"                 // for Layer, ContainerLayer, etc
 #include "gfxPoint.h"               // for gfxPoint, gfxSize
 #include "mozilla/ServoBindings.h"  // for Servo_AnimationValue_GetOpacity, etc
-#include "mozilla/StaticPrefs.h"    // for StaticPrefs
-#include "mozilla/WidgetUtils.h"    // for ComputeTransformForRotation
-#include "mozilla/gfx/BaseRect.h"   // for BaseRect
-#include "mozilla/gfx/Point.h"      // for RoundedToInt, PointTyped
-#include "mozilla/gfx/Rect.h"       // for RoundedToInt, RectTyped
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/WidgetUtils.h"      // for ComputeTransformForRotation
+#include "mozilla/gfx/BaseRect.h"     // for BaseRect
+#include "mozilla/gfx/Point.h"        // for RoundedToInt, PointTyped
+#include "mozilla/gfx/Rect.h"         // for RoundedToInt, RectTyped
 #include "mozilla/gfx/ScaleFactor.h"  // for ScaleFactor
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/APZSampler.h"  // for APZSampler
@@ -33,7 +34,7 @@
 #include "nsRect.h"                  // for mozilla::gfx::IntRect
 #include "nsRegion.h"                // for nsIntRegion
 #include "nsTArray.h"                // for nsTArray, nsTArray_Impl, etc
-#include "nsTArrayForwardDeclare.h"  // for InfallibleTArray
+#include "nsTArrayForwardDeclare.h"  // for nsTArray
 #include "UnitTransforms.h"          // for TransformTo
 #if defined(MOZ_WIDGET_ANDROID)
 #  include <android/log.h>

@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ChromeUtilsBinding.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsIScriptSecurityManager.h"
 
 namespace mozilla {
@@ -48,7 +49,8 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
     return mInIsolatedMozBrowser == aOther.mInIsolatedMozBrowser &&
            mUserContextId == aOther.mUserContextId &&
            mPrivateBrowsingId == aOther.mPrivateBrowsingId &&
-           mFirstPartyDomain == aOther.mFirstPartyDomain;
+           mFirstPartyDomain == aOther.mFirstPartyDomain &&
+           mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId;
   }
 
   bool operator!=(const OriginAttributes& aOther) const {
@@ -58,7 +60,8 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   MOZ_MUST_USE bool EqualsIgnoringFPD(const OriginAttributes& aOther) const {
     return mInIsolatedMozBrowser == aOther.mInIsolatedMozBrowser &&
            mUserContextId == aOther.mUserContextId &&
-           mPrivateBrowsingId == aOther.mPrivateBrowsingId;
+           mPrivateBrowsingId == aOther.mPrivateBrowsingId &&
+           mGeckoViewSessionContextId == aOther.mGeckoViewSessionContextId;
   }
 
   // Serializes/Deserializes non-default values into the suffix format, i.e.
@@ -81,7 +84,9 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   void SyncAttributesWithPrivateBrowsing(bool aInPrivateBrowsing);
 
   // check if "privacy.firstparty.isolate" is enabled.
-  static inline bool IsFirstPartyEnabled() { return sFirstPartyIsolation; }
+  static inline bool IsFirstPartyEnabled() {
+    return StaticPrefs::privacy_firstparty_isolate();
+  }
 
   // check if the access of window.opener across different FPDs is restricted.
   // We only restrict the access of window.opener when first party isolation
@@ -89,25 +94,20 @@ class OriginAttributes : public dom::OriginAttributesDictionary {
   static inline bool IsRestrictOpenerAccessForFPI() {
     // We always want to restrict window.opener if first party isolation is
     // disabled.
-    return !sFirstPartyIsolation || sRestrictedOpenerAccess;
+    return !StaticPrefs::privacy_firstparty_isolate() ||
+           StaticPrefs::privacy_firstparty_isolate_restrict_opener_access();
   }
 
   // Check whether we block the postMessage across different FPDs when the
   // targetOrigin is '*'.
   static inline MOZ_MUST_USE bool IsBlockPostMessageForFPI() {
-    return sFirstPartyIsolation && sBlockPostMessageForFPI;
+    return StaticPrefs::privacy_firstparty_isolate() &&
+           StaticPrefs::privacy_firstparty_isolate_block_post_message();
   }
 
   // returns true if the originAttributes suffix has mPrivateBrowsingId value
   // different than 0.
   static bool IsPrivateBrowsing(const nsACString& aOrigin);
-
-  static void InitPrefs();
-
- private:
-  static bool sFirstPartyIsolation;
-  static bool sRestrictedOpenerAccess;
-  static bool sBlockPostMessageForFPI;
 };
 
 class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
@@ -146,6 +146,12 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
       return false;
     }
 
+    if (mGeckoViewSessionContextId.WasPassed() &&
+        mGeckoViewSessionContextId.Value() !=
+            aAttrs.mGeckoViewSessionContextId) {
+      return false;
+    }
+
     return true;
   }
 
@@ -169,6 +175,13 @@ class OriginAttributesPattern : public dom::OriginAttributesPatternDictionary {
 
     if (mFirstPartyDomain.WasPassed() && aOther.mFirstPartyDomain.WasPassed() &&
         mFirstPartyDomain.Value() != aOther.mFirstPartyDomain.Value()) {
+      return false;
+    }
+
+    if (mGeckoViewSessionContextId.WasPassed() &&
+        aOther.mGeckoViewSessionContextId.WasPassed() &&
+        mGeckoViewSessionContextId.Value() !=
+            aOther.mGeckoViewSessionContextId.Value()) {
       return false;
     }
 

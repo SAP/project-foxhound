@@ -166,6 +166,7 @@ enum {
   JS_TELEMETRY_GC_NURSERY_BYTES,
   JS_TELEMETRY_GC_PRETENURE_COUNT,
   JS_TELEMETRY_GC_NURSERY_PROMOTION_RATE,
+  JS_TELEMETRY_GC_TENURED_SURVIVAL_RATE,
   JS_TELEMETRY_GC_MARK_RATE,
   JS_TELEMETRY_GC_TIME_BETWEEN_S,
   JS_TELEMETRY_GC_TIME_BETWEEN_SLICES_MS,
@@ -535,13 +536,13 @@ extern JS_FRIEND_API bool IsSharableCompartment(JS::Compartment* comp);
 namespace shadow {
 
 struct ObjectGroup {
-  const Class* clasp;
+  const JSClass* clasp;
   JSObject* proto;
   JS::Realm* realm;
 };
 
 struct BaseShape {
-  const js::Class* clasp_;
+  const JSClass* clasp_;
   JSObject* parent;
 };
 
@@ -600,17 +601,13 @@ struct Function {
 
 // This is equal to |&JSObject::class_|.  Use it in places where you don't want
 // to #include vm/JSObject.h.
-extern JS_FRIEND_DATA const js::Class* const ObjectClassPtr;
+extern JS_FRIEND_DATA const JSClass* const ObjectClassPtr;
 
-inline const js::Class* GetObjectClass(const JSObject* obj) {
+inline const JSClass* GetObjectClass(const JSObject* obj) {
   return reinterpret_cast<const shadow::Object*>(obj)->group->clasp;
 }
 
-inline const JSClass* GetObjectJSClass(JSObject* obj) {
-  return js::Jsvalify(GetObjectClass(obj));
-}
-
-JS_FRIEND_API const Class* ProtoKeyToClass(JSProtoKey key);
+JS_FRIEND_API const JSClass* ProtoKeyToClass(JSProtoKey key);
 
 // Returns the key for the class inherited by a given standard class (that
 // is to say, the prototype of this standard class's prototype).
@@ -1057,6 +1054,18 @@ MOZ_ALWAYS_INLINE bool CheckRecursionLimitWithStackPointer(JSContext* cx,
   return true;
 }
 
+MOZ_ALWAYS_INLINE bool CheckRecursionLimitWithExtra(JSContext* cx,
+                                                    size_t extra) {
+  char stackDummy;
+  char* sp = &stackDummy;
+#if JS_STACK_GROWTH_DIRECTION > 0
+  sp += extra;
+#else
+  sp -= extra;
+#endif
+  return CheckRecursionLimitWithStackPointer(cx, sp);
+}
+
 MOZ_ALWAYS_INLINE bool CheckSystemRecursionLimit(JSContext* cx) {
   return CheckRecursionLimit(cx,
                              GetNativeStackLimit(cx, JS::StackForSystemCode));
@@ -1096,7 +1105,7 @@ JS_FRIEND_API JSString* GetPCCountScriptContents(JSContext* cx, size_t script);
  */
 JS_FRIEND_API char* GetCodeCoverageSummary(JSContext* cx, size_t* length);
 
-typedef bool (*DOMInstanceClassHasProtoAtDepth)(const Class* instanceClass,
+typedef bool (*DOMInstanceClassHasProtoAtDepth)(const JSClass* instanceClass,
                                                 uint32_t protoID,
                                                 uint32_t depth);
 struct JSDOMCallbacks {
@@ -1110,15 +1119,6 @@ extern JS_FRIEND_API void SetDOMCallbacks(JSContext* cx,
 extern JS_FRIEND_API const DOMCallbacks* GetDOMCallbacks(JSContext* cx);
 
 extern JS_FRIEND_API JSObject* GetTestingFunctions(JSContext* cx);
-
-/**
- * Helper to convert FreeOp to JSFreeOp when the definition of FreeOp is not
- * available and the compiler does not know that FreeOp inherits from
- * JSFreeOp.
- */
-inline JSFreeOp* CastToJSFreeOp(FreeOp* fop) {
-  return reinterpret_cast<JSFreeOp*>(fop);
-}
 
 /* Implemented in jsexn.cpp. */
 
@@ -1238,7 +1238,8 @@ typedef DOMProxyShadowsResult (*DOMProxyShadowsCheck)(JSContext* cx,
                                                       JS::HandleId id);
 JS_FRIEND_API void SetDOMProxyInformation(
     const void* domProxyHandlerFamily,
-    DOMProxyShadowsCheck domProxyShadowsCheck);
+    DOMProxyShadowsCheck domProxyShadowsCheck,
+    const void* domRemoteProxyHandlerFamily);
 
 const void* GetDOMProxyHandlerFamily();
 DOMProxyShadowsCheck GetDOMProxyShadowsCheck();
@@ -1246,6 +1247,10 @@ inline bool DOMProxyIsShadowing(DOMProxyShadowsResult result) {
   return result == Shadows || result == ShadowsViaDirectExpando ||
          result == ShadowsViaIndirectExpando;
 }
+
+const void* GetDOMRemoteProxyHandlerFamily();
+
+extern JS_FRIEND_API bool IsDOMRemoteProxyObject(JSObject* object);
 
 // Callbacks and other information for use by the JITs when optimizing accesses
 // on xray wrappers.
@@ -1651,17 +1656,17 @@ extern JS_FRIEND_API JSObject* UnwrapReadableStream(JSObject* obj);
 
 namespace detail {
 
-extern JS_FRIEND_DATA const Class* const Int8ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Uint8ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Uint8ClampedArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Int16ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Uint16ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Int32ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Uint32ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const BigInt64ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const BigUint64ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Float32ArrayClassPtr;
-extern JS_FRIEND_DATA const Class* const Float64ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Int8ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Uint8ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Uint8ClampedArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Int16ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Uint16ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Int32ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Uint32ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const BigInt64ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const BigUint64ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Float32ArrayClassPtr;
+extern JS_FRIEND_DATA const JSClass* const Float64ArrayClassPtr;
 
 const size_t TypedArrayLengthSlot = 1;
 
@@ -2546,7 +2551,7 @@ extern JS_FRIEND_API JSObject* ConvertArgsToArray(JSContext* cx,
  * functions below.
  */
 extern JS_FRIEND_API void SetWindowProxyClass(JSContext* cx,
-                                              const Class* clasp);
+                                              const JSClass* clasp);
 
 /**
  * Associates a WindowProxy with a Window (global object). `windowProxy` must
@@ -2598,6 +2603,7 @@ MOZ_ALWAYS_INLINE JSObject* ToWindowProxyIfWindow(JSObject* obj) {
  */
 extern JS_FRIEND_API JSObject* ToWindowIfWindowProxy(JSObject* obj);
 
+#if ENABLE_INTL_API
 // Create and add the Intl.MozDateTimeFormat constructor function to the
 // provided object.
 //
@@ -2612,6 +2618,11 @@ extern JS_FRIEND_API JSObject* ToWindowIfWindowProxy(JSObject* obj);
 // standardize, that will also need to be resolved to ship this.)
 extern bool AddMozDateTimeFormatConstructor(JSContext* cx,
                                             JS::Handle<JSObject*> intl);
+
+// Create and add the Intl.Locale constructor function to the provided object.
+// This function throws if called more than once per realm/global object.
+extern bool AddLocaleConstructor(JSContext* cx, JS::Handle<JSObject*> intl);
+#endif  // ENABLE_INTL_API
 
 class MOZ_STACK_CLASS JS_FRIEND_API AutoAssertNoContentJS {
  public:
@@ -2663,6 +2674,28 @@ extern JS_FRIEND_API void LogDtor(void* self, const char* type, uint32_t sz);
  * and not malloc allocated memory associated with GC things.
  */
 extern JS_FRIEND_API uint64_t GetGCHeapUsageForObjectZone(JSObject* obj);
+
+/**
+ * Return whether a global object's realm has had instrumentation enabled by a
+ * Debugger.
+ */
+extern JS_FRIEND_API bool GlobalHasInstrumentation(JSObject* global);
+
+class JS_FRIEND_API CompartmentTransplantCallback {
+ public:
+  virtual JSObject* getObjectToTransplant(JS::Compartment* compartment) = 0;
+};
+
+// Gather a set of remote window proxies by calling the callback on every
+// compartment, then transform them into cross-compartment wrappers to newTarget
+// via brain transplants. If there's a proxy in newTarget's compartment, it will
+// get swapped with newTarget, and the value of newTarget will be updated. If
+// the callback returns null for a compartment, no cross-compartment wrapper
+// will be created for that compartment. Any non-null values it returns must be
+// DOM remote proxies from the compartment that was passed in.
+extern JS_FRIEND_API void RemapRemoteWindowProxies(
+    JSContext* cx, CompartmentTransplantCallback* callback,
+    JS::MutableHandleObject newTarget);
 
 } /* namespace js */
 

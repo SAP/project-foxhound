@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +77,7 @@ const PREF_UA_STYLES = "devtools.inspector.showUserAgentStyles";
 const PREF_DEFAULT_COLOR_UNIT = "devtools.defaultColorUnit";
 const FILTER_CHANGED_TIMEOUT = 150;
 // Removes the flash-out class from an element after 1 second.
-const REMOVE_FLASH_OUT_CLASS_TIMER = 1000;
+const PROPERTY_FLASHING_DURATION = 1000;
 
 // This is used to parse user input when filtering.
 const FILTER_PROP_RE = /\s*([^:\s]*)\s*:\s*(.*?)\s*;?$/;
@@ -322,7 +320,7 @@ CssRuleView.prototype = {
     }
 
     try {
-      const front = this.inspector.inspector;
+      const front = this.inspector.inspectorFront;
       const h = await front.getHighlighterByType("SelectorHighlighter");
       this.selectorHighlighter = h;
       return h;
@@ -1718,24 +1716,22 @@ CssRuleView.prototype = {
    */
   _flashElement(element) {
     flashElementOn(element, {
-      backgroundClass: "ruleview-property-highlight-background-color",
-    });
-    flashElementOff(element, {
-      backgroundClass: "ruleview-property-highlight-background-color",
+      backgroundClass: "theme-bg-yellow-contrast",
     });
 
-    if (this._removeFlashOutTimer) {
+    if (this._flashMutationTimer) {
       clearTimeout(this._removeFlashOutTimer);
-      this._removeFlashOutTimer = null;
+      this._flashMutationTimer = null;
     }
 
-    // Remove the flash-out class to prevent the element from re-flashing when the view
-    // is resized.
-    this._removeFlashOutTimer = setTimeout(() => {
-      element.classList.remove("flash-out");
+    this._flashMutationTimer = setTimeout(() => {
+      flashElementOff(element, {
+        backgroundClass: "theme-bg-yellow-contrast",
+      });
+
       // Emit "scrolled-to-property" for use by tests.
       this.emit("scrolled-to-element");
-    }, REMOVE_FLASH_OUT_CLASS_TIMER);
+    }, PROPERTY_FLASHING_DURATION);
   },
 
   /**

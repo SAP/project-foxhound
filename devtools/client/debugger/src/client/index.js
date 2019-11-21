@@ -5,7 +5,6 @@
 // @flow
 
 import * as firefox from "./firefox";
-import * as chrome from "./chrome";
 
 import { asyncStore, verifyPrefSchema } from "../utils/prefs";
 import { setupHelper } from "../utils/dbg";
@@ -57,10 +56,7 @@ async function loadInitialState() {
 }
 
 function getClient(connection: any) {
-  const {
-    tab: { clientType },
-  } = connection;
-  return clientType == "firefox" ? firefox : chrome;
+  return firefox;
 }
 
 export async function onConnect(
@@ -101,7 +97,7 @@ export async function onConnect(
     client: client.clientCommands,
   });
 
-  bootstrapApp(store);
+  bootstrapApp(store, panel);
   await connected;
   return { store, actions, selectors, client: commands };
 }

@@ -12,7 +12,7 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxPlatformFontList.h"
@@ -1349,9 +1349,7 @@ void gfxUserFontSet::UserFontCache::Entry::ReportMemory(
       spec.ReplaceChar('/', '\\');
       // Some fonts are loaded using horrendously-long data: URIs;
       // truncate those before reporting them.
-      bool isData;
-      if (NS_SUCCEEDED(mURI->get()->SchemeIs("data", &isData)) && isData &&
-          spec.Length() > 255) {
+      if (mURI->get()->SchemeIs("data") && spec.Length() > 255) {
         spec.Truncate(252);
         spec.AppendLiteral("...");
       }

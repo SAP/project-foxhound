@@ -37,6 +37,9 @@
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Unused.h"
 
 #include "Fetch.h"
@@ -421,26 +424,8 @@ nsresult FetchDriver::HttpFetch(
   nsAutoCString url;
   mRequest->GetURL(url);
   nsCOMPtr<nsIURI> uri;
-  rv = NS_NewURI(getter_AddRefs(uri), url, nullptr, nullptr, ios);
+  rv = NS_NewURI(getter_AddRefs(uri), url);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  if (StaticPrefs::browser_tabs_remote_useCrossOriginPolicy()) {
-    // Cross-Origin policy - bug 1525036
-    nsILoadInfo::CrossOriginPolicy corsCredentials =
-        nsILoadInfo::CROSS_ORIGIN_POLICY_NULL;
-    if (mDocument && mDocument->GetBrowsingContext()) {
-      corsCredentials = mDocument->GetBrowsingContext()->GetCrossOriginPolicy();
-    }  // TODO Bug 1532287: else use mClientInfo
-
-    if (mRequest->Mode() == RequestMode::No_cors &&
-        corsCredentials != nsILoadInfo::CROSS_ORIGIN_POLICY_NULL) {
-      mRequest->SetMode(RequestMode::Cors);
-      mRequest->SetCredentialsMode(RequestCredentials::Same_origin);
-      if (corsCredentials == nsILoadInfo::CROSS_ORIGIN_POLICY_USE_CREDENTIALS) {
-        mRequest->SetCredentialsMode(RequestCredentials::Include);
-      }
-    }
-  }
 
   // Unsafe requests aren't allowed with when using no-core mode.
   if (mRequest->Mode() == RequestMode::No_cors && mRequest->UnsafeRequest() &&
@@ -594,10 +579,9 @@ nsresult FetchDriver::HttpFetch(
     // associated referrer policy.
     // Basically, "client" is not in our implementation, we use
     // EnvironmentReferrerPolicy of the worker or document context
-    net::ReferrerPolicy net_referrerPolicy =
-        mRequest->GetEnvironmentReferrerPolicy();
+    ReferrerPolicy referrerPolicy = mRequest->GetEnvironmentReferrerPolicy();
     if (mRequest->ReferrerPolicy_() == ReferrerPolicy::_empty) {
-      mRequest->SetReferrerPolicy(net_referrerPolicy);
+      mRequest->SetReferrerPolicy(referrerPolicy);
     }
     // Step 6 of https://fetch.spec.whatwg.org/#main-fetch
     // If request’s referrer policy is the empty string,
@@ -605,8 +589,8 @@ nsresult FetchDriver::HttpFetch(
     if (mRequest->ReferrerPolicy_() == ReferrerPolicy::_empty) {
       nsCOMPtr<nsILoadInfo> loadInfo = httpChan->LoadInfo();
       bool isPrivate = loadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
-      net::ReferrerPolicy referrerPolicy = static_cast<net::ReferrerPolicy>(
-          ReferrerInfo::GetDefaultReferrerPolicy(httpChan, uri, isPrivate));
+      referrerPolicy =
+          ReferrerInfo::GetDefaultReferrerPolicy(httpChan, uri, isPrivate);
       mRequest->SetReferrerPolicy(referrerPolicy);
     }
 
@@ -1329,13 +1313,6 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
     SetRequestHeaders(httpChannel);
   }
 
-  nsCOMPtr<nsIHttpChannel> oldHttpChannel = do_QueryInterface(aOldChannel);
-  nsAutoCString tRPHeaderCValue;
-  if (oldHttpChannel) {
-    Unused << oldHttpChannel->GetResponseHeader(
-        NS_LITERAL_CSTRING("referrer-policy"), tRPHeaderCValue);
-  }
-
   // "HTTP-redirect fetch": step 14 "Append locationURL to request's URL list."
   // However, ignore internal redirects here.  We don't want to flip
   // Response.redirected to true if an internal redirect occurs.  These
@@ -1367,21 +1344,20 @@ FetchDriver::AsyncOnChannelRedirect(nsIChannel* aOldChannel,
     mRequest->SetURLForInternalRedirect(aFlags, spec, fragment);
   }
 
-  NS_ConvertUTF8toUTF16 tRPHeaderValue(tRPHeaderCValue);
-  // updates request’s associated referrer policy according to the
-  // Referrer-Policy header (if any).
-  if (!tRPHeaderValue.IsEmpty()) {
-    net::ReferrerPolicy net_referrerPolicy =
-        nsContentUtils::GetReferrerPolicyFromHeader(tRPHeaderValue);
-    if (net_referrerPolicy != net::RP_Unset) {
-      mRequest->SetReferrerPolicy(net_referrerPolicy);
-      // Should update channel's referrer policy
-      if (httpChannel) {
-        nsresult rv = FetchUtil::SetRequestReferrer(mPrincipal, mDocument,
-                                                    httpChannel, mRequest);
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
+  // In redirect, httpChannel already took referrer-policy into account, so
+  // updates request’s associated referrer policy from channel.
+  if (httpChannel) {
+    nsAutoString computedReferrerSpec;
+    nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
+    if (referrerInfo) {
+      mRequest->SetReferrerPolicy(referrerInfo->ReferrerPolicy());
+      Unused << referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
     }
+
+    // Step 8 https://fetch.spec.whatwg.org/#main-fetch
+    // If request’s referrer is not "no-referrer" (empty), set request’s
+    // referrer to the result of invoking determine request’s referrer.
+    mRequest->SetReferrer(computedReferrerSpec);
   }
 
   aCallback->OnRedirectVerifyCallback(NS_OK);

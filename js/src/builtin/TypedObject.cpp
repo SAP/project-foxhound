@@ -39,7 +39,7 @@ using mozilla::PointerRangeSize;
 
 using namespace js;
 
-const Class js::TypedObjectModuleObject::class_ = {
+const JSClass js::TypedObjectModuleObject::class_ = {
     "TypedObject", JSCLASS_HAS_RESERVED_SLOTS(SlotCount) |
                        JSCLASS_HAS_CACHED_PROTO(JSProto_TypedObject)};
 
@@ -50,6 +50,28 @@ static void ReportCannotConvertTo(JSContext* cx, HandleValue fromValue,
                                   const char* toType) {
   JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr, JSMSG_CANT_CONVERT_TO,
                             InformalValueTypeName(fromValue), toType);
+}
+
+template <typename T>
+BigInt* CreateBigInt(JSContext* cx, T i);
+template <>
+BigInt* CreateBigInt<int64_t>(JSContext* cx, int64_t i) {
+  return BigInt::createFromInt64(cx, i);
+}
+template <>
+BigInt* CreateBigInt<uint64_t>(JSContext* cx, uint64_t u) {
+  return BigInt::createFromUint64(cx, u);
+}
+
+template <typename T>
+T ConvertBigInt(BigInt* bi);
+template <>
+int64_t ConvertBigInt<int64_t>(BigInt* bi) {
+  return BigInt::toInt64(bi);
+}
+template <>
+uint64_t ConvertBigInt<uint64_t>(BigInt* bi) {
+  return BigInt::toUint64(bi);
 }
 
 template <class T>
@@ -171,7 +193,7 @@ static JSObject* GetPrototype(JSContext* cx, HandleObject obj) {
  * typed object prototypes cannot be mutated.
  */
 
-const Class js::TypedProto::class_ = {
+const JSClass js::TypedProto::class_ = {
     "TypedProto", JSCLASS_HAS_RESERVED_SLOTS(JS_TYPROTO_SLOTS)};
 
 /***************************************************************************
@@ -183,16 +205,16 @@ const Class js::TypedProto::class_ = {
  * distinguish which scalar type object this actually is.
  */
 
-static const ClassOps ScalarTypeDescrClassOps = {nullptr, /* addProperty */
-                                                 nullptr, /* delProperty */
-                                                 nullptr, /* enumerate */
-                                                 nullptr, /* newEnumerate */
-                                                 nullptr, /* resolve */
-                                                 nullptr, /* mayResolve */
-                                                 TypeDescr::finalize,
-                                                 ScalarTypeDescr::call};
+static const JSClassOps ScalarTypeDescrClassOps = {nullptr, /* addProperty */
+                                                   nullptr, /* delProperty */
+                                                   nullptr, /* enumerate */
+                                                   nullptr, /* newEnumerate */
+                                                   nullptr, /* resolve */
+                                                   nullptr, /* mayResolve */
+                                                   TypeDescr::finalize,
+                                                   ScalarTypeDescr::call};
 
-const Class js::ScalarTypeDescr::class_ = {
+const JSClass js::ScalarTypeDescr::class_ = {
     "Scalar",
     JSCLASS_HAS_RESERVED_SLOTS(JS_DESCR_SLOTS) | JSCLASS_BACKGROUND_FINALIZE,
     &ScalarTypeDescrClassOps};
@@ -233,25 +255,38 @@ bool ScalarTypeDescr::call(JSContext* cx, unsigned argc, Value* vp) {
   Rooted<ScalarTypeDescr*> descr(cx, &args.callee().as<ScalarTypeDescr>());
   ScalarTypeDescr::Type type = descr->type();
 
-  double number;
-  if (!ToNumber(cx, args[0], &number)) {
-    return false;
-  }
-
-  if (type == Scalar::Uint8Clamped) {
-    number = ClampDoubleToUint8(number);
-  }
-
   switch (type) {
-#define SCALARTYPE_CALL(constant_, type_, name_)    \
+#define NUMBER_CALL(constant_, type_, name_)        \
   case constant_: {                                 \
+    double number;                                  \
+    if (!ToNumber(cx, args[0], &number)) {          \
+      return false;                                 \
+    }                                               \
+    if (type == Scalar::Uint8Clamped) {             \
+      number = ClampDoubleToUint8(number);          \
+    }                                               \
     type_ converted = ConvertScalar<type_>(number); \
     args.rval().setNumber((double)converted);       \
     return true;                                    \
   }
-
-    JS_FOR_EACH_SCALAR_TYPE_REPR(SCALARTYPE_CALL)
-#undef SCALARTYPE_CALL
+    JS_FOR_EACH_SCALAR_NUMBER_TYPE_REPR(NUMBER_CALL)
+#undef NUMBER_CALL
+#define BIGINT_CALL(constant_, type_, name_)          \
+  case constant_: {                                   \
+    BigInt* bi = ToBigInt(cx, args[0]);               \
+    if (!bi) {                                        \
+      return false;                                   \
+    }                                                 \
+    type_ converted = ConvertBigInt<type_>(bi);       \
+    BigInt* ret = CreateBigInt<type_>(cx, converted); \
+    if (!ret) {                                       \
+      return false;                                   \
+    }                                                 \
+    args.rval().setBigInt(ret);                       \
+    return true;                                      \
+  }
+    JS_FOR_EACH_SCALAR_BIGINT_TYPE_REPR(BIGINT_CALL)
+#undef BIGINT_CALL
     case Scalar::Int64:
     case Scalar::MaxTypedArrayViewType:
       MOZ_CRASH();
@@ -268,7 +303,8 @@ TypeDescr* GlobalObject::getOrCreateScalarTypeDescr(
       slot = TypedObjectModuleObject::Int32Desc;
       break;
     case Scalar::Int64:
-      MOZ_CRASH("No Int64 support yet");
+      slot = TypedObjectModuleObject::Int64Desc;
+      break;
     case Scalar::Float32:
       slot = TypedObjectModuleObject::Float32Desc;
       break;
@@ -322,16 +358,17 @@ TypeDescr* GlobalObject::getOrCreateReferenceTypeDescr(
  * reference type object this actually is.
  */
 
-static const ClassOps ReferenceTypeDescrClassOps = {nullptr, /* addProperty */
-                                                    nullptr, /* delProperty */
-                                                    nullptr, /* enumerate */
-                                                    nullptr, /* newEnumerate */
-                                                    nullptr, /* resolve */
-                                                    nullptr, /* mayResolve */
-                                                    TypeDescr::finalize,
-                                                    ReferenceTypeDescr::call};
+static const JSClassOps ReferenceTypeDescrClassOps = {
+    nullptr, /* addProperty */
+    nullptr, /* delProperty */
+    nullptr, /* enumerate */
+    nullptr, /* newEnumerate */
+    nullptr, /* resolve */
+    nullptr, /* mayResolve */
+    TypeDescr::finalize,
+    ReferenceTypeDescr::call};
 
-const Class js::ReferenceTypeDescr::class_ = {
+const JSClass js::ReferenceTypeDescr::class_ = {
     "Reference",
     JSCLASS_HAS_RESERVED_SLOTS(JS_DESCR_SLOTS) | JSCLASS_BACKGROUND_FINALIZE,
     &ReferenceTypeDescrClassOps};
@@ -462,18 +499,18 @@ static TypedProto* CreatePrototypeObjectForComplexTypeInstance(
                                              SingletonObject);
 }
 
-static const ClassOps ArrayTypeDescrClassOps = {nullptr, /* addProperty */
-                                                nullptr, /* delProperty */
-                                                nullptr, /* enumerate */
-                                                nullptr, /* newEnumerate */
-                                                nullptr, /* resolve */
-                                                nullptr, /* mayResolve */
-                                                TypeDescr::finalize,
-                                                nullptr, /* call */
-                                                nullptr, /* hasInstance */
-                                                TypedObject::construct};
+static const JSClassOps ArrayTypeDescrClassOps = {nullptr, /* addProperty */
+                                                  nullptr, /* delProperty */
+                                                  nullptr, /* enumerate */
+                                                  nullptr, /* newEnumerate */
+                                                  nullptr, /* resolve */
+                                                  nullptr, /* mayResolve */
+                                                  TypeDescr::finalize,
+                                                  nullptr, /* call */
+                                                  nullptr, /* hasInstance */
+                                                  TypedObject::construct};
 
-const Class ArrayTypeDescr::class_ = {
+const JSClass ArrayTypeDescr::class_ = {
     "ArrayType",
     JSCLASS_HAS_RESERVED_SLOTS(JS_DESCR_SLOTS) | JSCLASS_BACKGROUND_FINALIZE,
     &ArrayTypeDescrClassOps};
@@ -711,18 +748,18 @@ bool js::IsTypedObjectArray(JSObject& obj) {
  * StructType class
  */
 
-static const ClassOps StructTypeDescrClassOps = {nullptr, /* addProperty */
-                                                 nullptr, /* delProperty */
-                                                 nullptr, /* enumerate */
-                                                 nullptr, /* newEnumerate */
-                                                 nullptr, /* resolve */
-                                                 nullptr, /* mayResolve */
-                                                 TypeDescr::finalize,
-                                                 StructTypeDescr::call,
-                                                 nullptr, /* hasInstance */
-                                                 TypedObject::construct};
+static const JSClassOps StructTypeDescrClassOps = {nullptr, /* addProperty */
+                                                   nullptr, /* delProperty */
+                                                   nullptr, /* enumerate */
+                                                   nullptr, /* newEnumerate */
+                                                   nullptr, /* resolve */
+                                                   nullptr, /* mayResolve */
+                                                   TypeDescr::finalize,
+                                                   StructTypeDescr::call,
+                                                   nullptr, /* hasInstance */
+                                                   TypedObject::construct};
 
-const Class StructTypeDescr::class_ = {
+const JSClass StructTypeDescr::class_ = {
     "StructType",
     JSCLASS_HAS_RESERVED_SLOTS(JS_DESCR_SLOTS) | JSCLASS_BACKGROUND_FINALIZE,
     &StructTypeDescrClassOps};
@@ -1381,6 +1418,11 @@ bool GlobalObject::initTypedObjectModule(JSContext* cx,
   }
   module->initReservedSlot(TypedObjectModuleObject::Int32Desc, typeDescr);
 
+  if (!JS_GetProperty(cx, module, "int64", &typeDescr)) {
+    return false;
+  }
+  module->initReservedSlot(TypedObjectModuleObject::Int64Desc, typeDescr);
+
   if (!JS_GetProperty(cx, module, "float32", &typeDescr)) {
     return false;
   }
@@ -1563,7 +1605,7 @@ void OutlineTypedObject::setOwnerAndData(JSObject* owner, uint8_t* data) {
 
 /*static*/
 OutlineTypedObject* OutlineTypedObject::createUnattachedWithClass(
-    JSContext* cx, const Class* clasp, HandleTypeDescr descr,
+    JSContext* cx, const JSClass* clasp, HandleTypeDescr descr,
     gc::InitialHeap heap) {
   MOZ_ASSERT(clasp == &OutlineTransparentTypedObject::class_ ||
              clasp == &OutlineOpaqueTypedObject::class_);
@@ -1636,9 +1678,9 @@ OutlineTypedObject* OutlineTypedObject::createDerived(
   MOZ_ASSERT(offset <= typedObj->size());
   MOZ_ASSERT(offset + type->size() <= typedObj->size());
 
-  const js::Class* clasp = typedObj->opaque()
-                               ? &OutlineOpaqueTypedObject::class_
-                               : &OutlineTransparentTypedObject::class_;
+  const JSClass* clasp = typedObj->opaque()
+                             ? &OutlineOpaqueTypedObject::class_
+                             : &OutlineTransparentTypedObject::class_;
   Rooted<OutlineTypedObject*> obj(cx);
   obj = createUnattachedWithClass(cx, clasp, type);
   if (!obj) {
@@ -2148,8 +2190,9 @@ InlineTypedObject* InlineTypedObject::create(JSContext* cx,
                                              gc::InitialHeap heap) {
   gc::AllocKind allocKind = allocKindForTypeDescriptor(descr);
 
-  const Class* clasp = descr->opaque() ? &InlineOpaqueTypedObject::class_
-                                       : &InlineTransparentTypedObject::class_;
+  const JSClass* clasp = descr->opaque()
+                             ? &InlineOpaqueTypedObject::class_
+                             : &InlineTransparentTypedObject::class_;
 
   RootedObjectGroup group(
       cx, ObjectGroup::defaultNewGroup(
@@ -2237,26 +2280,26 @@ const ObjectOps TypedObject::objectOps_ = {
     nullptr, /* thisValue */
 };
 
-#define DEFINE_TYPEDOBJ_CLASS(Name, Trace, Moved)                          \
-  static const ClassOps Name##ClassOps = {                                 \
-      nullptr, /* addProperty */                                           \
-      nullptr, /* delProperty */                                           \
-      nullptr, /* enumerate   */                                           \
-      TypedObject::obj_newEnumerate,                                       \
-      nullptr, /* resolve     */                                           \
-      nullptr, /* mayResolve  */                                           \
-      nullptr, /* finalize    */                                           \
-      nullptr, /* call        */                                           \
-      nullptr, /* hasInstance */                                           \
-      nullptr, /* construct   */                                           \
-      Trace,                                                               \
-  };                                                                       \
-  static const ClassExtension Name##ClassExt = {                           \
-      Moved /* objectMovedOp */                                            \
-  };                                                                       \
-  const Class Name::class_ = {                                             \
-      #Name,           Class::NON_NATIVE | JSCLASS_DELAY_METADATA_BUILDER, \
-      &Name##ClassOps, JS_NULL_CLASS_SPEC,                                 \
+#define DEFINE_TYPEDOBJ_CLASS(Name, Trace, Moved)                            \
+  static const JSClassOps Name##ClassOps = {                                 \
+      nullptr, /* addProperty */                                             \
+      nullptr, /* delProperty */                                             \
+      nullptr, /* enumerate   */                                             \
+      TypedObject::obj_newEnumerate,                                         \
+      nullptr, /* resolve     */                                             \
+      nullptr, /* mayResolve  */                                             \
+      nullptr, /* finalize    */                                             \
+      nullptr, /* call        */                                             \
+      nullptr, /* hasInstance */                                             \
+      nullptr, /* construct   */                                             \
+      Trace,                                                                 \
+  };                                                                         \
+  static const ClassExtension Name##ClassExt = {                             \
+      Moved /* objectMovedOp */                                              \
+  };                                                                         \
+  const JSClass Name::class_ = {                                             \
+      #Name,           JSClass::NON_NATIVE | JSCLASS_DELAY_METADATA_BUILDER, \
+      &Name##ClassOps, JS_NULL_CLASS_SPEC,                                   \
       &Name##ClassExt, &TypedObject::objectOps_}
 
 DEFINE_TYPEDOBJ_CLASS(OutlineTransparentTypedObject,
@@ -2329,7 +2372,7 @@ bool TypedObject::construct(JSContext* cx, unsigned int argc, Value* vp) {
     js::HandleShape shape, js::HandleObjectGroup group) {
   debugCheckNewObject(group, shape, kind, heap);
 
-  const js::Class* clasp = group->clasp();
+  const JSClass* clasp = group->clasp();
   MOZ_ASSERT(::IsTypedObjectClass(clasp));
 
   JSObject* obj =
@@ -2504,7 +2547,7 @@ bool js::GetTypedObjectModule(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-#define JS_STORE_SCALAR_CLASS_IMPL(_constant, T, _name)                     \
+#define JS_STORE_NUMBER_CLASS_IMPL(_constant, T, _name)                     \
   bool js::StoreScalar##T::Func(JSContext* cx, unsigned argc, Value* vp) {  \
     CallArgs args = CallArgsFromVp(argc, vp);                               \
     MOZ_ASSERT(args.length() == 3);                                         \
@@ -2522,6 +2565,29 @@ bool js::GetTypedObjectModule(JSContext* cx, unsigned argc, Value* vp) {
     T* target = reinterpret_cast<T*>(typedObj.typedMem(offset, nogc));      \
     double d = args[2].toNumber();                                          \
     *target = ConvertScalar<T>(d);                                          \
+    args.rval().setUndefined();                                             \
+    return true;                                                            \
+  }
+
+#define JS_STORE_BIGINT_CLASS_IMPL(_constant, T, _name)                     \
+  bool js::StoreScalar##T::Func(JSContext* cx, unsigned argc, Value* vp) {  \
+    CallArgs args = CallArgsFromVp(argc, vp);                               \
+    MOZ_ASSERT(args.length() == 3);                                         \
+    MOZ_ASSERT(args[0].isObject() && args[0].toObject().is<TypedObject>()); \
+    MOZ_RELEASE_ASSERT(args[1].isInt32());                                  \
+    int32_t offset = args[1].toInt32();                                     \
+    BigInt* bi = ToBigInt(cx, args[2]);                                     \
+    if (!bi) {                                                              \
+      return false;                                                         \
+    }                                                                       \
+    TypedObject& typedObj = args[0].toObject().as<TypedObject>();           \
+                                                                            \
+    /* Should be guaranteed by the typed objects API: */                    \
+    MOZ_ASSERT(offset % MOZ_ALIGNOF(T) == 0);                               \
+                                                                            \
+    JS::AutoCheckCannotGC nogc(cx);                                         \
+    T* target = reinterpret_cast<T*>(typedObj.typedMem(offset, nogc));      \
+    *target = ConvertBigInt<T>(bi);                                         \
     args.rval().setUndefined();                                             \
     return true;                                                            \
   }
@@ -2552,7 +2618,7 @@ bool js::GetTypedObjectModule(JSContext* cx, unsigned argc, Value* vp) {
     return true;                                                            \
   }
 
-#define JS_LOAD_SCALAR_CLASS_IMPL(_constant, T, _name)                      \
+#define JS_LOAD_NUMBER_CLASS_IMPL(_constant, T, _name)                      \
   bool js::LoadScalar##T::Func(JSContext* cx, unsigned argc, Value* vp) {   \
     CallArgs args = CallArgsFromVp(argc, vp);                               \
     MOZ_ASSERT(args.length() == 2);                                         \
@@ -2568,6 +2634,32 @@ bool js::GetTypedObjectModule(JSContext* cx, unsigned argc, Value* vp) {
     JS::AutoCheckCannotGC nogc(cx);                                         \
     T* target = reinterpret_cast<T*>(typedObj.typedMem(offset, nogc));      \
     args.rval().setNumber(JS::CanonicalizeNaN((double)*target));            \
+    return true;                                                            \
+  }
+
+#define JS_LOAD_BIGINT_CLASS_IMPL(_constant, T, _name)                      \
+  bool js::LoadScalar##T::Func(JSContext* cx, unsigned argc, Value* vp) {   \
+    CallArgs args = CallArgsFromVp(argc, vp);                               \
+    MOZ_ASSERT(args.length() == 2);                                         \
+    MOZ_ASSERT(args[0].isObject() && args[0].toObject().is<TypedObject>()); \
+    MOZ_RELEASE_ASSERT(args[1].isInt32());                                  \
+                                                                            \
+    TypedObject& typedObj = args[0].toObject().as<TypedObject>();           \
+    int32_t offset = args[1].toInt32();                                     \
+                                                                            \
+    /* Should be guaranteed by the typed objects API: */                    \
+    MOZ_ASSERT(offset % MOZ_ALIGNOF(T) == 0);                               \
+                                                                            \
+    T value;                                                                \
+    {                                                                       \
+      JS::AutoCheckCannotGC nogc(cx);                                       \
+      value = *reinterpret_cast<T*>(typedObj.typedMem(offset, nogc));       \
+    }                                                                       \
+    BigInt* bi = CreateBigInt<T>(cx, value);                                \
+    if (!bi) {                                                              \
+      return false;                                                         \
+    }                                                                       \
+    args.rval().setBigInt(bi);                                              \
     return true;                                                            \
   }
 
@@ -2688,8 +2780,10 @@ void LoadReferencestring::load(GCPtrString* heap, MutableHandleValue v) {
 
 // I was using templates for this stuff instead of macros, but ran
 // into problems with the Unagi compiler.
-JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(JS_STORE_SCALAR_CLASS_IMPL)
-JS_FOR_EACH_UNIQUE_SCALAR_TYPE_REPR_CTYPE(JS_LOAD_SCALAR_CLASS_IMPL)
+JS_FOR_EACH_UNIQUE_SCALAR_NUMBER_TYPE_REPR_CTYPE(JS_STORE_NUMBER_CLASS_IMPL)
+JS_FOR_EACH_UNIQUE_SCALAR_NUMBER_TYPE_REPR_CTYPE(JS_LOAD_NUMBER_CLASS_IMPL)
+JS_FOR_EACH_SCALAR_BIGINT_TYPE_REPR(JS_STORE_BIGINT_CLASS_IMPL)
+JS_FOR_EACH_SCALAR_BIGINT_TYPE_REPR(JS_LOAD_BIGINT_CLASS_IMPL)
 JS_FOR_EACH_REFERENCE_TYPE_REPR(JS_STORE_REFERENCE_CLASS_IMPL)
 JS_FOR_EACH_REFERENCE_TYPE_REPR(JS_LOAD_REFERENCE_CLASS_IMPL)
 
@@ -2935,7 +3029,7 @@ static bool CreateTraceList(JSContext* cx, HandleTypeDescr descr) {
 }
 
 /* static */
-void TypeDescr::finalize(FreeOp* fop, JSObject* obj) {
+void TypeDescr::finalize(JSFreeOp* fop, JSObject* obj) {
   TypeDescr& descr = obj->as<TypeDescr>();
   if (descr.hasTraceList()) {
     auto list = const_cast<uint32_t*>(descr.traceList());

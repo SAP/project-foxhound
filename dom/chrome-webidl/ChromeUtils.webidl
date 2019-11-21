@@ -427,26 +427,43 @@ partial namespace ChromeUtils {
   [ChromeOnly]
   // aError should a nsresult.
   boolean isClassifierBlockingErrorCode(unsigned long aError);
+
+  /**
+   * If leak detection is enabled, print a note to the leak log that this
+   * process will intentionally crash. This should be called only on child
+   * processes for testing purpose.
+   */
+  [ChromeOnly, Throws]
+  void privateNoteIntentionalCrash();
 };
 
-/**
- * Holds information about Firefox running processes & threads.
- *
- * See widget/ProcInfo.h for fields documentation.
+/*
+ * This type is a WebIDL representation of mozilla::ProcType.
  */
-enum ProcType {
+enum WebIDLProcType {
  "web",
  "file",
  "extension",
  "privilegedabout",
  "webLargeAllocation",
+ "browser",
+ "plugin",
+ "ipdlUnitTest",
+ "gmpPlugin",
  "gpu",
+ "vr",
  "rdd",
  "socket",
- "browser",
- "unknown"
+ "remoteSandboxBroker",
+ "unknown",
 };
 
+/**
+ * These dictionaries hold information about Firefox running processes and
+ * threads.
+ *
+ * See widget/ProcInfo.h for fields documentation.
+ */
 dictionary ThreadInfoDictionary {
   long long tid = 0;
   DOMString name = "";
@@ -465,7 +482,7 @@ dictionary ChildProcInfoDictionary {
   sequence<ThreadInfoDictionary> threads = [];
   // Firefox info
   unsigned long long ChildID = 0;
-  ProcType type = "web";
+  WebIDLProcType type = "web";
 };
 
 dictionary ParentProcInfoDictionary {
@@ -479,7 +496,7 @@ dictionary ParentProcInfoDictionary {
   sequence<ThreadInfoDictionary> threads = [];
   sequence<ChildProcInfoDictionary> children = [];
   // Firefox info
-  ProcType type = "browser";
+  WebIDLProcType type = "browser";
 };
 
 /**
@@ -547,12 +564,14 @@ dictionary OriginAttributesDictionary {
   boolean inIsolatedMozBrowser = false;
   unsigned long privateBrowsingId = 0;
   DOMString firstPartyDomain = "";
+  DOMString geckoViewSessionContextId = "";
 };
 dictionary OriginAttributesPatternDictionary {
   unsigned long userContextId;
   boolean inIsolatedMozBrowser;
   unsigned long privateBrowsingId;
   DOMString firstPartyDomain;
+  DOMString geckoViewSessionContextId;
 };
 
 dictionary CompileScriptOptionsDictionary {

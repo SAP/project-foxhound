@@ -58,6 +58,12 @@ RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
   MOZ_ASSERT(mRenderer);
   MOZ_ASSERT(mBridge);
   MOZ_COUNT_CTOR(RendererOGL);
+
+  mNativeLayerRoot = mCompositor->GetWidget()->GetNativeLayerRoot();
+  if (mNativeLayerRoot) {
+    mNativeLayerForEntireWindow = mNativeLayerRoot->CreateLayer();
+    mNativeLayerRoot->AppendLayer(mNativeLayerForEntireWindow);
+  }
 }
 
 RendererOGL::~RendererOGL() {
@@ -67,6 +73,11 @@ RendererOGL::~RendererOGL() {
         << "Failed to make render context current during destroying.";
     // Leak resources!
     return;
+  }
+  if (mNativeLayerRoot) {
+    mNativeLayerRoot->RemoveLayer(mNativeLayerForEntireWindow);
+    mNativeLayerForEntireWindow = nullptr;
+    mNativeLayerRoot = nullptr;
   }
   wr_renderer_delete(mRenderer);
 }
@@ -109,7 +120,20 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   }
   // XXX set clear color if MOZ_WIDGET_ANDROID is defined.
 
-  if (!mCompositor->BeginFrame()) {
+  if (mNativeLayerForEntireWindow) {
+    gfx::IntRect bounds({}, mCompositor->GetBufferSize().ToUnknownSize());
+    mNativeLayerForEntireWindow->SetRect(bounds);
+#ifdef XP_MACOSX
+    mNativeLayerForEntireWindow->SetOpaqueRegion(
+        mCompositor->GetWidget()->GetOpaqueWidgetRegion().ToUnknownRegion());
+#endif
+  }
+
+  if (!mCompositor->BeginFrame(mNativeLayerForEntireWindow)) {
+    if (mCompositor->IsContextLost()) {
+      RenderThread::Get()->HandleDeviceReset("BeginFrame", /* aNotify */ true);
+    }
+    mCompositor->GetWidget()->PostRender(&widgetContext);
     return false;
   }
 
@@ -120,6 +144,7 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
                           aOutStats)) {
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
+    mCompositor->GetWidget()->PostRender(&widgetContext);
     return false;
   }
 
@@ -172,7 +197,13 @@ void RendererOGL::CheckGraphicsResetStatus() {
   }
 }
 
-void RendererOGL::WaitForGPU() { mCompositor->WaitForGPU(); }
+void RendererOGL::WaitForGPU() {
+  if (!mCompositor->WaitForGPU()) {
+    if (mCompositor->IsContextLost()) {
+      RenderThread::Get()->HandleDeviceReset("WaitForGPU", /* aNotify */ true);
+    }
+  }
+}
 
 void RendererOGL::Pause() { mCompositor->Pause(); }
 

@@ -12,6 +12,7 @@
 #include "TimeUnits.h"
 #include "VideoLimits.h"
 #include "mozilla/gfx/Point.h"  // for gfx::IntSize
+#include "mozilla/gfx/Types.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
@@ -80,7 +81,7 @@ class MOZ_STACK_CLASS ReentrantMonitorConditionallyEnter {
   ReentrantMonitorConditionallyEnter(const ReentrantMonitorConditionallyEnter&);
   ReentrantMonitorConditionallyEnter& operator=(
       const ReentrantMonitorConditionallyEnter&);
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
   static void operator delete(void*);
 
   ReentrantMonitor* mReentrantMonitor;
@@ -183,6 +184,7 @@ class AutoSetOnScopeExit {
 enum class MediaThreadType {
   PLAYBACK,          // MediaDecoderStateMachine and MediaFormatReader
   PLATFORM_DECODER,  // MediaDataDecoder
+  PLATFORM_ENCODER,  // MediaDataEncoder
   MSG_CONTROL,
   WEBRTC_DECODER,
   MDSM,
@@ -549,6 +551,11 @@ inline void AppendStringIfNotEmpty(nsACString& aDest, nsACString&& aSrc) {
 // Returns true if we're running on a cellular connection; 2G, 3G, etc.
 // Main thread only.
 bool OnCellularConnection();
+
+inline gfx::YUVColorSpace DefaultColorSpace(const gfx::IntSize& aSize) {
+  return aSize.height < 720 ? gfx::YUVColorSpace::BT601
+                            : gfx::YUVColorSpace::BT709;
+}
 
 }  // end namespace mozilla
 

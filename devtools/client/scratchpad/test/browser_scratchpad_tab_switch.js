@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -65,9 +64,9 @@ async function runTests() {
   );
 
   is(
-    notificationBox.currentNotification,
-    null,
-    "there is no notification currently shown for content context"
+    notificationBox.currentNotification.messageText.textContent,
+    "Scratchpad will be disabled in a future release. Learn more…",
+    "The deprecation warning is displayed in content context"
   );
 
   sp.setText("window.foosbug653108 = 'aloha';");

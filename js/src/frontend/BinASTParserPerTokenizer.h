@@ -138,18 +138,23 @@ class BinASTParserPerTokenizer : public BinASTParserBase,
 
   // Build a function object for a function-producing production. Called AFTER
   // creating the scope.
-  JS::Result<FunctionNode*> makeEmptyFunctionNode(const size_t start,
-                                                  const BinASTKind kind,
-                                                  FunctionBox* funbox);
-
-  JS::Result<FunctionNode*> buildFunction(const size_t start,
-                                          const BinASTKind kind,
-                                          ParseNode* name, ListNode* params,
-                                          ParseNode* body);
   JS::Result<FunctionBox*> buildFunctionBox(GeneratorKind generatorKind,
                                             FunctionAsyncKind functionAsyncKind,
                                             FunctionSyntaxKind syntax,
                                             ParseNode* name);
+
+  JS::Result<FunctionNode*> makeEmptyFunctionNode(const size_t start,
+                                                  const BinASTKind kind,
+                                                  FunctionBox* funbox);
+  MOZ_MUST_USE JS::Result<Ok> setFunctionParametersAndBody(FunctionNode* fun,
+                                                           ListNode* params,
+                                                           ParseNode* body);
+
+  MOZ_MUST_USE JS::Result<Ok> finishEagerFunction(FunctionBox* funbox,
+                                                  uint32_t nargs);
+  MOZ_MUST_USE JS::Result<Ok> finishLazyFunction(FunctionBox* funbox,
+                                                 uint32_t nargs, size_t start,
+                                                 size_t end);
 
   // Add name to a given scope.
   MOZ_MUST_USE JS::Result<Ok> addScopeName(
@@ -288,6 +293,8 @@ class BinASTParserPerTokenizer : public BinASTParserBase,
   mozilla::Maybe<Tokenizer> tokenizer_;
   VariableDeclarationKind variableDeclarationKind_;
 
+  FunctionTreeHolder treeHolder_;
+
   friend class BinASTParseContext;
   friend class AutoVariableDeclarationKind;
 
@@ -324,7 +331,8 @@ class BinASTParseContext : public ParseContext {
   BinASTParseContext(JSContext* cx, BinASTParserPerTokenizer<Tok>* parser,
                      SharedContext* sc, Directives* newDirectives)
       : ParseContext(cx, parser->pc_, sc, *parser, parser->usedNames_,
-                     newDirectives, /* isFull = */ true) {}
+                     parser->treeHolder_, newDirectives,
+                     /* isFull = */ true) {}
 };
 
 void TraceBinASTParser(JSTracer* trc, JS::AutoGCRooter* parser);

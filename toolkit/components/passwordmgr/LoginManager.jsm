@@ -33,7 +33,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("nsLoginManager");
+  let logger = LoginHelper.createLogger("LoginManager");
   return logger;
 });
 
@@ -312,8 +312,9 @@ LoginManager.prototype = {
       login.httpRealm
     );
 
-    if (logins.some(l => login.matches(l, true))) {
-      throw new Error("This login already exists.");
+    let matchingLogin = logins.find(l => login.matches(l, true));
+    if (matchingLogin) {
+      throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
     }
 
     log.debug("Adding login");
@@ -344,7 +345,12 @@ LoginManager.prototype = {
       logins[i].username = usernames[i];
       logins[i].password = passwords[i];
       log.debug("Adding login");
-      let resultLogin = this._storage.addLogin(logins[i], true);
+      let resultLogin = this._storage.addLogin(
+        logins[i],
+        true,
+        plaintextUsername,
+        plaintextPassword
+      );
       // Reset the username and password to keep the same guarantees as addLogin
       logins[i].username = plaintextUsername;
       logins[i].password = plaintextPassword;
@@ -508,9 +514,15 @@ LoginManager.prototype = {
     }
 
     let uri = Services.io.newURI(origin);
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
+      uri,
+      {}
+    );
     return (
-      Services.perms.testPermission(uri, PERMISSION_SAVE_LOGINS) !=
-      Services.perms.DENY_ACTION
+      Services.perms.testPermissionFromPrincipal(
+        principal,
+        PERMISSION_SAVE_LOGINS
+      ) != Services.perms.DENY_ACTION
     );
   },
 
@@ -522,11 +534,15 @@ LoginManager.prototype = {
     LoginHelper.checkOriginValue(origin);
 
     let uri = Services.io.newURI(origin);
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
+      uri,
+      {}
+    );
     if (enabled) {
-      Services.perms.remove(uri, PERMISSION_SAVE_LOGINS);
+      Services.perms.removeFromPrincipal(principal, PERMISSION_SAVE_LOGINS);
     } else {
-      Services.perms.add(
-        uri,
+      Services.perms.addFromPrincipal(
+        principal,
         PERMISSION_SAVE_LOGINS,
         Services.perms.DENY_ACTION
       );

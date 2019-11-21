@@ -11,11 +11,11 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 
+#include "debugger/DebugAPI.h"
 #include "gc/Marking.h"
 #include "jit/BaselineIC.h"
 #include "js/CharacterEncoding.h"
 #include "js/Value.h"
-#include "vm/Debugger.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
 #include "vm/TypedArrayObject.h"
 
@@ -453,7 +453,7 @@ void NativeObject::shrinkSlots(JSContext* cx, uint32_t oldCount,
       ReallocateObjectBuffer<HeapSlot>(cx, this, slots_, oldCount, newCount);
   if (!newslots) {
     cx->recoverFromOutOfMemory();
-    return; // Leave slots at its old size.
+    return;  // Leave slots at its old size.
   }
 
   slots_ = newslots;
@@ -1289,9 +1289,8 @@ static MOZ_ALWAYS_INLINE void UpdateShapeTypeAndValueForWritableDataProp(
 
 void js::AddPropertyTypesAfterProtoChange(JSContext* cx, NativeObject* obj,
                                           ObjectGroup* oldGroup) {
-  AutoSweepObjectGroup sweepObjGroup(obj->group());
   MOZ_ASSERT(obj->group() != oldGroup);
-  MOZ_ASSERT(!obj->group()->unknownProperties(sweepObjGroup));
+  MOZ_ASSERT(!obj->group()->unknownPropertiesDontCheckGeneration());
 
   AutoSweepObjectGroup sweepOldGroup(oldGroup);
   if (oldGroup->unknownProperties(sweepOldGroup)) {

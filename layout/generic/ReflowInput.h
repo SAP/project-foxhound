@@ -225,6 +225,12 @@ struct SizeComputationInput {
     // nsColumnSetFrame is balancing columns
     bool mIsColumnBalancing : 1;
 
+    // True if ColumnSetWrapperFrame has a constrained block-size, and is going
+    // to consume all of its block-size in this fragment. This bit is passed to
+    // nsColumnSetFrame to determine whether to give up balancing and create
+    // overflow columns.
+    bool mColumnSetWrapperHasNoBSizeLeft : 1;
+
     // nsFlexContainerFrame is reflowing this child to measure its intrinsic
     // BSize.
     bool mIsFlexContainerMeasuringBSize : 1;
@@ -284,6 +290,17 @@ struct SizeComputationInput {
     // line with the ellipsis flag and clear it.
     // This flag is not inherited into descendant ReflowInputs.
     bool mApplyLineClamp : 1;
+
+    // Is this frame or one of its ancestors being reflowed in a different
+    // continuation than the one in which it was previously reflowed?  In
+    // other words, has it moved to a different column or page than it was in
+    // the previous reflow?
+    //
+    // FIXME: For now, we only ensure that this is set correctly for blocks.
+    // This is okay because the only thing that uses it only cares about
+    // whether there's been a fragment change within the same block formatting
+    // context.
+    bool mMovedBlockFragments : 1;
   };
 
 #ifdef DEBUG

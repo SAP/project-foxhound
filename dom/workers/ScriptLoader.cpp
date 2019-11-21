@@ -71,9 +71,10 @@
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/dom/ServiceWorkerBinding.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/UniquePtr.h"
 #include "Principal.h"
-#include "WorkerHolder.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 #include "WorkerScope.h"
@@ -157,10 +158,7 @@ nsresult ChannelFromScriptURL(
       principal, uri, true /* aInheritForAboutBlank */,
       false /* aForceInherit */);
 
-  bool isData = false;
-  rv = uri->SchemeIs("data", &isData);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  bool isData = uri->SchemeIs("data");
   bool isURIUniqueOrigin =
       net::nsIOService::IsDataURIUniqueOpaqueOrigin() && isData;
   if (inheritAttrs && !isURIUniqueOrigin) {
@@ -1316,8 +1314,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
     }
     if (NS_SUCCEEDED(rv) && IsMainWorkerScript()) {
       nsCOMPtr<nsIURI> finalURI;
-      rv = NS_NewURI(getter_AddRefs(finalURI), loadInfo.mFullURL, nullptr,
-                     nullptr);
+      rv = NS_NewURI(getter_AddRefs(finalURI), loadInfo.mFullURL);
       if (NS_SUCCEEDED(rv)) {
         mWorkerPrivate->SetBaseURI(finalURI);
       }

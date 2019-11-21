@@ -113,7 +113,9 @@
       }
     }
 
-    h3 {
+    h2 {
+      text-align: start;
+      line-height: inherit;
       color: $violet-20;
       font-size: 22px;
       font-weight: 400;
@@ -324,6 +326,7 @@
   opacity: 0;
   transition: opacity 0.4s;
   transition-delay: 0.1s;
+  grid-auto-rows: 1fr;
 
   &.show {
     opacity: 1;
@@ -405,7 +408,7 @@
 
 .inline-onboarding {
   &.activity-stream.welcome {
-    overflow-y: scroll;
+    overflow-y: hidden;
   }
 
   .modalOverlayInner {

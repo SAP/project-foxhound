@@ -12,6 +12,7 @@
 
 #include "jsfriendapi.h"
 
+#include "debugger/DebugAPI.h"
 #include "gc/Policy.h"
 #include "gc/PublicIterators.h"
 #include "jit/JitOptions.h"
@@ -22,7 +23,6 @@
 #include "js/Wrapper.h"
 #include "proxy/DeadObjectProxy.h"
 #include "vm/DateTime.h"
-#include "vm/Debugger.h"
 #include "vm/Iteration.h"
 #include "vm/JSContext.h"
 #include "vm/WrapperObject.h"
@@ -37,7 +37,8 @@
 
 using namespace js;
 
-ObjectRealm::ObjectRealm(JS::Zone* zone) : innerViews(zone) {}
+ObjectRealm::ObjectRealm(JS::Zone* zone)
+    : innerViews(zone, zone), iteratorCache(zone) {}
 
 ObjectRealm::~ObjectRealm() {
   MOZ_ASSERT(enumerators == iteratorSentinel_.get());
@@ -50,6 +51,7 @@ Realm::Realm(Compartment* comp, const JS::RealmOptions& options)
       creationOptions_(options.creationOptions()),
       behaviors_(options.behaviors()),
       objects_(zone_),
+      varNames_(zone_),
       randomKeyGenerator_(runtime_->forkRandomKeyGenerator()),
       wasm(runtime_) {
   MOZ_ASSERT_IF(creationOptions_.mergeable(),
@@ -60,16 +62,12 @@ Realm::Realm(Compartment* comp, const JS::RealmOptions& options)
 
 Realm::~Realm() {
   MOZ_ASSERT(!hasBeenEnteredIgnoringJit());
+  MOZ_ASSERT(!isDebuggee());
 
   // Write the code coverage information in a file.
   if (coverage::IsLCovEnabled()) {
     runtime_->lcovOutput().writeLCovResult(lcovOutput);
   }
-
-  // We can have a debuggee realm here only if we are destroying the runtime and
-  // leaked GC things.
-  MOZ_ASSERT_IF(runtime_->gc.shutdownCollectedEverything(), !isDebuggee());
-  unsetIsDebuggee();
 
   MOZ_ASSERT(runtime_->numRealms > 0);
   runtime_->numRealms--;
@@ -473,11 +471,11 @@ void Realm::sweepTemplateObjects() {
   }
 }
 
-void Realm::fixupAfterMovingGC() {
+void Realm::fixupAfterMovingGC(JSTracer* trc) {
   purge();
   fixupGlobal();
   objectGroups_.fixupTablesAfterMovingGC();
-  fixupScriptMapsAfterMovingGC();
+  fixupScriptMapsAfterMovingGC(trc);
 }
 
 void Realm::fixupGlobal() {
@@ -487,15 +485,15 @@ void Realm::fixupGlobal() {
   }
 }
 
-void Realm::fixupScriptMapsAfterMovingGC() {
+void Realm::fixupScriptMapsAfterMovingGC(JSTracer* trc) {
   // Map entries are removed by JSScript::finalize, but we need to update the
   // script pointers here in case they are moved by the GC.
 
   if (scriptCountsMap) {
     for (ScriptCountsMap::Enum e(*scriptCountsMap); !e.empty(); e.popFront()) {
       JSScript* script = e.front().key();
-      if (!IsAboutToBeFinalizedUnbarriered(&script) &&
-          script != e.front().key()) {
+      TraceManuallyBarrieredEdge(trc, &script, "Realm::scriptCountsMap::key");
+      if (script != e.front().key()) {
         e.rekeyFront(script);
       }
     }
@@ -563,12 +561,7 @@ void Realm::checkScriptMapsAfterMovingGC() {
       MOZ_ASSERT(script->realm() == this);
       CheckGCThingAfterMovingGC(script);
       DebugScript* ds = r.front().value().get();
-      for (uint32_t i = 0; i < ds->numSites; i++) {
-        BreakpointSite* site = ds->breakpoints[i];
-        if (site && site->type() == BreakpointSite::Type::JS) {
-          CheckGCThingAfterMovingGC(site->asJS()->script);
-        }
-      }
+      DebugAPI::checkDebugScriptAfterMovingGC(ds);
       auto ptr = debugScriptMap->lookup(script);
       MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
     }
@@ -700,8 +693,8 @@ static bool AddLazyFunctionsForRealm(JSContext* cx,
       continue;
     }
 
-    if (fun->isInterpretedLazy()) {
-      LazyScript* lazy = fun->lazyScriptOrNull();
+    if (fun->hasLazyScript()) {
+      LazyScript* lazy = fun->maybeLazyScript();
       if (lazy && lazy->enclosingScriptHasEverBeenCompiled()) {
         if (!lazyFunctions.append(fun)) {
           return false;
@@ -773,22 +766,20 @@ void Realm::updateDebuggerObservesFlag(unsigned flag) {
       zone()->runtimeFromMainThread()->gc.isForegroundSweeping()
           ? unsafeUnbarrieredMaybeGlobal()
           : maybeGlobal();
-  const GlobalObject::DebuggerVector* v = global->getDebuggers();
-  for (auto p = v->begin(); p != v->end(); p++) {
-    // Use unbarrieredGet() to prevent triggering read barrier while collecting,
-    // this is safe as long as dbg does not escape.
-    Debugger* dbg = p->unbarrieredGet();
-    if (flag == DebuggerObservesAllExecution
-            ? dbg->observesAllExecution()
-            : flag == DebuggerObservesCoverage
-                  ? dbg->observesCoverage()
-                  : flag == DebuggerObservesAsmJS && dbg->observesAsmJS()) {
-      debugModeBits_ |= flag;
-      return;
-    }
+  bool observes = false;
+  if (flag == DebuggerObservesAllExecution) {
+    observes = DebugAPI::debuggerObservesAllExecution(global);
+  } else if (flag == DebuggerObservesCoverage) {
+    observes = DebugAPI::debuggerObservesCoverage(global);
+  } else if (flag == DebuggerObservesAsmJS) {
+    observes = DebugAPI::debuggerObservesAsmJS(global);
   }
 
-  debugModeBits_ &= ~flag;
+  if (observes) {
+    debugModeBits_ |= flag;
+  } else {
+    debugModeBits_ &= ~flag;
+  }
 }
 
 void Realm::setIsDebuggee() {
@@ -868,16 +859,6 @@ void Realm::clearScriptCounts() {
 }
 
 void Realm::clearScriptNames() { scriptNameMap.reset(); }
-
-void Realm::clearBreakpointsIn(FreeOp* fop, js::Debugger* dbg,
-                               HandleObject handler) {
-  for (auto script = zone()->cellIter<JSScript>(); !script.done();
-       script.next()) {
-    if (script->realm() == this && script->hasAnyBreakpointsOrStepMode()) {
-      script->clearBreakpointsIn(fop, dbg, handler);
-    }
-  }
-}
 
 void ObjectRealm::addSizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf, size_t* innerViewsArg,

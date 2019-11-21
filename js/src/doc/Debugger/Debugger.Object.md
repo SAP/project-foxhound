@@ -435,26 +435,6 @@ of exotic object like an opaque wrapper.
     `Object.isExtensible` function, except that the object inspected is
     implicit and in a different compartment from the caller.)
 
-<code>copy(<i>value</i>)</code>
-:   Apply the HTML5 "structured cloning" algorithm to create a copy of
-    <i>value</i> in the referent's global object (and thus in the referent's
-    compartment), and return a `Debugger.Object` instance referring to the
-    copy.
-
-    Note that this returns primitive values unchanged. This means you can
-    use `Debugger.Object.prototype.copy` as a generic "debugger value to
-    debuggee value" conversion function—within the limitations of the
-    "structured cloning" algorithm.
-
-<code>create(<i>prototype</i>, [<i>properties</i>])</code>
-:   Create a new object in the referent's global (and thus in the
-    referent's compartment), and return a `Debugger.Object` referring to
-    it. The new object's prototype is <i>prototype</i>, which must be an
-    `Debugger.Object` instance. The new object's properties are as given by
-    <i>properties</i>, as if <i>properties</i> were passed to
-    `Debugger.Object.prototype.defineProperties`, with the new
-    `Debugger.Object` instance as the `this` value.
-
 <code>makeDebuggeeValue(<i>value</i>)</code>
 :   Return the debuggee value that represents <i>value</i> in the debuggee.
     If <i>value</i> is a primitive, we return it unchanged; if <i>value</i>
@@ -472,6 +452,13 @@ of exotic object like an opaque wrapper.
     <code><i>d</i>.makeDebuggeeValue(<i>o</i>)</code> returns a
     `Debugger.Object` instance that presents <i>o</i> as it would be seen
     by code in <i>d</i>'s compartment.
+
+<code>makeDebuggeeNativeFunction(<i>value</i>)</code>
+:   If <i>value</i> is a native function in the debugger's compartment, create
+    an equivalent function for the same native in the debuggee's realm, and
+    return a `Debugger.Object` instance for the new function.  The new function
+    can be accessed by code in the debuggee without going through a cross
+    compartment wrapper.
 
 <code>decompile([<i>pretty</i>])</code>
 :   If the referent is a function that is debuggee code, return the
@@ -548,6 +535,21 @@ of exotic object like an opaque wrapper.
 
     The <i>options</i> argument is as for [`Debugger.Frame.prototype.eval`][fr eval].
 
+<code>createSource(<i>options</i>)</code>
+:    If the referent is a global object, return a new JavaScript source in the
+    global's realm which has its properties filled in according to the `options`
+    object.  If the referent is not a global object, throw a `TypeError`
+    exception.  The `options` object can have the following properties:
+      * `text`: String contents of the JavaScript in the source.
+      * `url`: URL the resulting source should be associated with.
+      * `startLine`: Starting line of the source.
+      * `sourceMapURL`: Optional URL specifying the source's source map URL.
+        If not specified, the source map URL can be filled in if specified by
+        the source's text.
+      * `isScriptElement`: Optional boolean which will set the source's
+        `introductionType` to `"scriptElement"` if specified.  Otherwise, the
+        source's `introductionType` will be `undefined`.
+
 `asEnvironment()`
 :   If the referent is a global object, return the [`Debugger.Environment`][environment]
     instance representing the referent's global lexical scope. The global
@@ -581,3 +583,44 @@ of exotic object like an opaque wrapper.
 <code>forceLexicalInitializationByName(<i>binding</i>)</code>
 :  If <i>binding</i> is in an uninitialized state initialize it to undefined
    and return true, otherwise do nothing and return false.
+
+`setInstrumentation(callback, kinds)`
+:   If the referent is a global object, this specifies how instrumentation
+    should be installed on scripts created in the future in this global's realm.
+    If the referent is not a global object, throw a `TypeError`.  If the global
+    already has instrumentation specified, throw an `Error`. `callback` is a
+    `Debugger.Object` wrapping the callback to invoke, and `kinds` is an array
+    of strings specifying the kinds of operations at which the callback should
+    be invoked. Instrumentation is initially inactive, and can be activated via
+    `DebuggerObject.setInstrumentationActive`. When instrumentation is active
+    and an operation described by one of the instrumentation kinds executes,
+    the callback is invoked with at least three arguments: the string kind of
+    operation executing, the ID for the script specified by
+    `Debugger.Script.setInstrumentationId`, and the bytecode offset
+    of the script location following the instrumentation.  More call arguments
+    are possible for some instrumentation kinds.  If an instrumented script is
+    invoked without having `setInstrumentationId` called on it, it will throw an
+    `Error`.  The possible instrumentation kinds and any extra arguments are as
+    follows:
+      * `main`: The main entry point of a script.
+      * `entry`: Points other than the main entry point where a frame for the
+        script might begin executing when it was not previously on the stack.
+        Only applies to generator/async scripts.
+      * `exit`: Points at which a script's frame will be popped or suspended.
+      * `breakpoint`: Breakpoint sites in a script.
+      * `getProperty`: Property read operations, including `x.f` and
+        destructuring operations. The callback will be additionally invoked with
+        the object and property name.
+      * `setProperty`: Property write operations. The callback will be
+        additionally invoked with the object, property name, and rhs.
+      * `getElement`: Element read operations. The callback will be additionally
+        invoked with the object and element value.
+      * `setElement`: Element write operations. The callback will be
+        additionally invoked with the object, element value, and rhs.
+
+`setInstrumentationActive(active)`
+:   If the referent is a global object, set whether instrumentation is active
+    in the global's realm.  The instrumentation callback is only invoked when
+    instrumentation is active, and code will run faster when instrumentation is
+    inactive. If the referent is not a global object, throw a `TypeError`.
+    If the referent has not had instrumentation installed, throw an `Error`.

@@ -47,6 +47,8 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
                                  public nsStubMutationObserver {
  private:
   // Convenience typedefs:
+  template <typename T>
+  using Span = mozilla::Span<T>;
   using KTableEntry = nsCSSKTableEntry;
   using CSSValue = mozilla::dom::CSSValue;
   using StyleGeometryBox = mozilla::StyleGeometryBox;
@@ -140,7 +142,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   nsMargin GetAdjustedValuesForBoxSizing();
 
   // This indicates error by leaving mComputedStyle null.
-  void UpdateCurrentStyleSources(bool aNeedsLayoutFlush);
+  void UpdateCurrentStyleSources(nsCSSPropertyID);
   void ClearCurrentStyleSources();
 
   // Helper functions called by UpdateCurrentStyleSources.
@@ -187,23 +189,14 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
 
   already_AddRefed<CSSValue> GetTransformValue(const mozilla::StyleTransform&);
 
-  // Appends all aLineNames (may be empty) space-separated to aResult.
-  void AppendGridLineNames(nsString& aResult,
-                           const nsTArray<RefPtr<nsAtom>>& aLineNames);
-  // Appends aLineNames as a CSSValue* to aValueList.  If aLineNames is empty
-  // a value ("[]") is only appended if aSuppressEmptyList is false.
-  void AppendGridLineNames(nsDOMCSSValueList* aValueList,
-                           const nsTArray<RefPtr<nsAtom>>& aLineNames,
-                           bool aSuppressEmptyList = true);
-  // Appends aLineNames1/2 (if non-empty) as a CSSValue* to aValueList.
-  void AppendGridLineNames(nsDOMCSSValueList* aValueList,
-                           const nsTArray<RefPtr<nsAtom>>& aLineNames1,
-                           const nsTArray<RefPtr<nsAtom>>& aLineNames2);
-  already_AddRefed<nsROCSSPrimitiveValue> GetGridTrackSize(const mozilla::StyleTrackSize&);
-  already_AddRefed<nsROCSSPrimitiveValue> GetGridTrackBreadth(const mozilla::StyleTrackBreadth&);
-  void SetValueToTrackBreadth(nsROCSSPrimitiveValue*, const mozilla::StyleTrackBreadth&);
+  already_AddRefed<nsROCSSPrimitiveValue> GetGridTrackSize(
+      const mozilla::StyleTrackSize&);
+  already_AddRefed<nsROCSSPrimitiveValue> GetGridTrackBreadth(
+      const mozilla::StyleTrackBreadth&);
+  void SetValueToTrackBreadth(nsROCSSPrimitiveValue*,
+                              const mozilla::StyleTrackBreadth&);
   already_AddRefed<CSSValue> GetGridTemplateColumnsRows(
-      const nsStyleGridTemplate& aTrackList,
+      const mozilla::StyleGridTemplateComponent& aTrackList,
       const mozilla::ComputedGridTrackInfo* aTrackInfo);
 
   bool GetLineHeightCoord(nscoord& aCoord);
@@ -266,8 +259,6 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   /* Text Properties */
   already_AddRefed<CSSValue> DoGetLineHeight();
   already_AddRefed<CSSValue> DoGetTextDecoration();
-  already_AddRefed<CSSValue> DoGetTextDecorationColor();
-  already_AddRefed<CSSValue> DoGetTextDecorationStyle();
 
   /* Display properties */
   already_AddRefed<CSSValue> DoGetTransform();
@@ -335,8 +326,15 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   bool GetFrameBorderRectHeight(nscoord& aHeight);
 
   // Find out if we can safely skip flushing (i.e. pending restyles do not
-  // affect mElement).
-  bool NeedsToFlush() const;
+  // affect our element).
+  bool NeedsToFlushStyle(nsCSSPropertyID) const;
+  // Find out if we need to flush layout of the document, depending on the
+  // property that was requested.
+  bool NeedsToFlushLayout(nsCSSPropertyID) const;
+  // Flushes the given document, which must be our document, and potentially the
+  // mElement's document.
+  void Flush(Document&, mozilla::FlushType);
+  nsIFrame* GetOuterFrame() const;
 
   static ComputedStyleMap* GetComputedStyleMap();
 
@@ -403,7 +401,7 @@ class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
   bool mResolvedComputedStyle;
 
 #ifdef DEBUG
-  bool mFlushedPendingReflows;
+  bool mFlushedPendingReflows = false;
 #endif
 
   friend struct ComputedStyleMap;

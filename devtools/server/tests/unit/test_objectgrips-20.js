@@ -16,7 +16,7 @@ registerCleanupFunction(() => {
 });
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
+  threadFrontTest(async ({ threadFront, debuggee, client }) => {
     debuggee.eval(
       function stopMe(arg1) {
         debugger;
@@ -117,37 +117,37 @@ add_task(
       },
       {
         evaledObject: `(() => {
-      x = [12, 42];
-      x.foo = 90;
-      return x;
-    })()`,
+          x = [12, 42];
+          x.foo = 90;
+          return x;
+        })()`,
         expectedIndexedProperties: [["0", 12], ["1", 42]],
         expectedNonIndexedProperties: [["length", 2], ["foo", 90]],
       },
       {
         evaledObject: `(() => {
-      x = [12, 42];
-      x.length = 3;
-      return x;
-    })()`,
+          x = [12, 42];
+          x.length = 3;
+          return x;
+        })()`,
         expectedIndexedProperties: [["0", 12], ["1", 42], ["2", undefined]],
         expectedNonIndexedProperties: [["length", 3]],
       },
       {
         evaledObject: `(() => {
-      x = [12, 42];
-      x.length = 1;
-      return x;
-    })()`,
+          x = [12, 42];
+          x.length = 1;
+          return x;
+        })()`,
         expectedIndexedProperties: [["0", 12]],
         expectedNonIndexedProperties: [["length", 1]],
       },
       {
         evaledObject: `(() => {
-      x = [, 42,,];
-      x.foo = 90;
-      return x;
-    })()`,
+          x = [, 42,,];
+          x.foo = 90;
+          return x;
+        })()`,
         expectedIndexedProperties: [
           ["0", undefined],
           ["1", 42],
@@ -157,11 +157,11 @@ add_task(
       },
       {
         evaledObject: `(() => {
-      x = Array(2);
-      x.foo = "bar";
-      x.bar = "foo";
-      return x;
-    })()`,
+          x = Array(2);
+          x.foo = "bar";
+          x.bar = "foo";
+          return x;
+        })()`,
         expectedIndexedProperties: [["0", undefined], ["1", undefined]],
         expectedNonIndexedProperties: [
           ["length", 2],
@@ -171,11 +171,11 @@ add_task(
       },
       {
         evaledObject: `(() => {
-      x = new Int8Array(new ArrayBuffer(2));
-      x.foo = "bar";
-      x.bar = "foo";
-      return x;
-    })()`,
+          x = new Int8Array(new ArrayBuffer(2));
+          x.foo = "bar";
+          x.bar = "foo";
+          return x;
+        })()`,
         expectedIndexedProperties: [["0", 0], ["1", 0]],
         expectedNonIndexedProperties: [
           ["foo", "bar"],
@@ -186,62 +186,53 @@ add_task(
           ["byteOffset", 0],
         ],
       },
+      {
+        evaledObject: `(() => {
+          x = new Int8Array([1, 2]);
+          Object.defineProperty(x, 'length', {value: 0});
+          return x;
+        })()`,
+        expectedIndexedProperties: [["0", 1], ["1", 2]],
+        expectedNonIndexedProperties: [
+          ["length", 0],
+          ["buffer", DO_NOT_CHECK_VALUE],
+          ["byteLength", 2],
+          ["byteOffset", 0],
+        ],
+      },
+      {
+        evaledObject: `(() => {
+          x = new Int32Array([1, 2]);
+          Object.setPrototypeOf(x, null);
+          return x;
+        })()`,
+        expectedIndexedProperties: [["0", 1], ["1", 2]],
+        expectedNonIndexedProperties: [],
+      },
+      {
+        evaledObject: `(() => {
+          return new (class extends Int8Array {})([1, 2]);
+        })()`,
+        expectedIndexedProperties: [["0", 1], ["1", 2]],
+        expectedNonIndexedProperties: [
+          ["length", 2],
+          ["buffer", DO_NOT_CHECK_VALUE],
+          ["byteLength", 2],
+          ["byteOffset", 0],
+        ],
+      },
     ];
 
     for (const test of testCases) {
-      await test_object_grip(debuggee, client, threadClient, test);
+      await test_object_grip(debuggee, client, threadFront, test);
     }
   })
-);
-
-// These tests are not yet supported in workers.
-add_task(
-  threadClientTest(
-    async ({ threadClient, debuggee, client }) => {
-      debuggee.eval(
-        function stopMe(arg1) {
-          debugger;
-        }.toString()
-      );
-
-      const testCases = [
-        {
-          evaledObject: `(() => {
-      x = new Int8Array([1, 2]);
-      Object.defineProperty(x, 'length', {value: 0});
-      return x;
-    })()`,
-          expectedIndexedProperties: [["0", 1], ["1", 2]],
-          expectedNonIndexedProperties: [
-            ["length", 0],
-            ["buffer", DO_NOT_CHECK_VALUE],
-            ["byteLength", 2],
-            ["byteOffset", 0],
-          ],
-        },
-        {
-          evaledObject: `(() => {
-      x = new Int32Array([1, 2]);
-      Object.setPrototypeOf(x, null);
-      return x;
-    })()`,
-          expectedIndexedProperties: [["0", 1], ["1", 2]],
-          expectedNonIndexedProperties: [],
-        },
-      ];
-
-      for (const test of testCases) {
-        await test_object_grip(debuggee, client, threadClient, test);
-      }
-    },
-    { doNotRunWorker: true }
-  )
 );
 
 async function test_object_grip(
   debuggee,
   dbgClient,
-  threadClient,
+  threadFront,
   testData = {}
 ) {
   const {
@@ -251,10 +242,10 @@ async function test_object_grip(
   } = testData;
 
   return new Promise((resolve, reject) => {
-    threadClient.once("paused", async function(packet) {
+    threadFront.once("paused", async function(packet) {
       const [grip] = packet.frame.arguments;
 
-      const objClient = threadClient.pauseGrip(grip);
+      const objClient = threadFront.pauseGrip(grip);
 
       info(`
         Check enumProperties response for
@@ -276,7 +267,7 @@ async function test_object_grip(
       });
       await check_enum_properties(response, expectedNonIndexedProperties);
 
-      await threadClient.resume();
+      await threadFront.resume();
       resolve();
     });
 

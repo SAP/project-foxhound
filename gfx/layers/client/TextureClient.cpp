@@ -11,7 +11,8 @@
 #include "gfxPlatform.h"  // for gfxPlatform
 #include "MainThreadUtils.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/ipc/SharedMemory.h"  // for SharedMemory, etc
 #include "mozilla/layers/CompositableForwarder.h"
@@ -291,13 +292,13 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
 #endif
 
 #ifdef XP_MACOSX
-  if (StaticPrefs::gfx_use_iosurface_textures()) {
+  if (StaticPrefs::gfx_use_iosurface_textures_AtStartup()) {
     return TextureType::MacIOSurface;
   }
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::gfx_use_surfacetexture_textures()) {
+  if (StaticPrefs::gfx_use_surfacetexture_textures_AtStartup()) {
     return TextureType::AndroidNativeWindow;
   }
 #endif
@@ -1334,7 +1335,7 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
     KnowsCompositor* aAllocator, gfx::IntSize aYSize, uint32_t aYStride,
     gfx::IntSize aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
   if (!aAllocator || !aAllocator->GetLayersIPCActor()->IPCOpen()) {
     return nullptr;
   }
@@ -1345,7 +1346,7 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
 
   TextureData* data = BufferTextureData::CreateForYCbCr(
       aAllocator, aYSize, aYStride, aCbCrSize, aCbCrStride, aStereoMode,
-      aColorDepth, aYUVColorSpace, aTextureFlags);
+      aColorDepth, aYUVColorSpace, aColorRange, aTextureFlags);
   if (!data) {
     return nullptr;
   }

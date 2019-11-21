@@ -12,7 +12,6 @@ transforms:
     - taskgraph.transforms.build_attrs:transforms
     - taskgraph.transforms.release_deps:transforms
     - taskgraph.transforms.run_pgo_profile:transforms
-    - taskgraph.transforms.use_toolchains:transforms
     - taskgraph.transforms.job:transforms
     - taskgraph.transforms.task:transforms
 
@@ -20,7 +19,7 @@ transforms:
 job-defaults:
     treeherder:
         symbol: Bpgo(run)
-        kind: test
+        kind: build
         tier: 1
 
 jobs:
@@ -54,8 +53,8 @@ jobs:
                   path: /builds/worker/artifacts/profile-run-2.log
         run:
             using: run-task
+            cwd: '{checkout}'
             command: >
-                cd /builds/worker/checkouts/gecko &&
                 ./taskcluster/scripts/misc/run-profileserver.sh
 
     linux64-shippable/opt:
@@ -88,8 +87,8 @@ jobs:
                   path: /builds/worker/artifacts/profile-run-2.log
         run:
             using: run-task
+            cwd: '{checkout}'
             command: >
-                cd /builds/worker/checkouts/gecko &&
                 ./taskcluster/scripts/misc/run-profileserver.sh
 
     android-api-16/pgo:
@@ -127,8 +126,9 @@ jobs:
                 - android/android_common.py
                 - android/androidarm_4_3.py
                 - android/android_pgo.py
-        toolchains:
-            - linux64-clang
+        fetches:
+            toolchain:
+                - linux64-clang
 
     win32-shippable/opt:
         description: "Win32 Profile Generation"
@@ -157,7 +157,8 @@ jobs:
         run:
             using: run-task
             sparse-profile: profile-generate
-            command: mv fetches build/src && cd build/src && ./taskcluster/scripts/misc/run-profileserver.sh
+            cwd: '{checkout}'
+            command: ./taskcluster/scripts/misc/run-profileserver.sh
 
     win64-shippable/opt:
         description: "Win64 Profile Generation"
@@ -186,4 +187,5 @@ jobs:
         run:
             using: run-task
             sparse-profile: profile-generate
-            command: mv fetches build/src && cd build/src && ./taskcluster/scripts/misc/run-profileserver.sh
+            cwd: '{checkout}'
+            command: ./taskcluster/scripts/misc/run-profileserver.sh

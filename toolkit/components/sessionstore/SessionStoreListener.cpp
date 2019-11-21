@@ -5,18 +5,22 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SessionStoreListener.h"
+#include "mozilla/dom/SessionStoreUtils.h"
+#include "mozilla/dom/SessionStoreUtilsBinding.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "nsGenericHTMLElement.h"
 #include "nsIBrowser.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsImportModule.h"
 #include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsITimer.h"
-#include "nsIXULBrowserWindow.h"
 #include "nsIXULWindow.h"
 #include "nsIWebProgress.h"
 #include "nsPresContext.h"
 #include "nsPrintfCString.h"
+#include "SessionStoreFunctions.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -37,6 +41,7 @@ ContentSessionStore::ContentSessionStore(nsIDocShell* aDocShell)
       mPrivateChanged(false),
       mIsPrivate(false),
       mScrollChanged(NO_CHANGE),
+      mFormDataChanged(NO_CHANGE),
       mDocCapChanged(false) {
   MOZ_ASSERT(mDocShell);
   // Check that value at startup as it might have
@@ -96,6 +101,7 @@ bool ContentSessionStore::GetPrivateModeEnabled() {
 
 void ContentSessionStore::OnDocumentStart() {
   mScrollChanged = PAGELOADEDSTART;
+  mFormDataChanged = PAGELOADEDSTART;
   nsCString caps = CollectDocShellCapabilities();
   if (!mDocCaps.Equals(caps)) {
     mDocCaps = caps;
@@ -127,7 +133,8 @@ TabListener::TabListener(nsIDocShell* aDocShell, Element* aElement)
       mPrefObserverRegistered(false),
       mUpdatedTimer(nullptr),
       mTimeoutDisabled(false),
-      mUpdateInterval(15000) {
+      mUpdateInterval(15000),
+      mEpoch(0) {
   MOZ_ASSERT(mDocShell);
 }
 
@@ -165,6 +172,7 @@ nsresult TabListener::Init() {
   }
   eventTarget->AddSystemEventListener(NS_LITERAL_STRING("mozvisualscroll"),
                                       this, false);
+  eventTarget->AddSystemEventListener(NS_LITERAL_STRING("input"), this, false);
   mEventListenerRegistered = true;
   return NS_OK;
 }
@@ -282,6 +290,9 @@ TabListener::HandleEvent(Event* aEvent) {
   if (eventType.EqualsLiteral("mozvisualscroll")) {
     mSessionStore->SetScrollPositionChanged();
     AddTimerForUpdate();
+  } else if (eventType.EqualsLiteral("input")) {
+    mSessionStore->SetFormDataChanged();
+    AddTimerForUpdate();
   }
   return NS_OK;
 }
@@ -391,11 +402,9 @@ int CollectPositions(BrowsingContext* aBrowsingContext,
   int currentIdx = aPositions.Length() - 1;
 
   /* Collect data from all child frame */
-  nsTArray<RefPtr<BrowsingContext>> children;
-  aBrowsingContext->GetChildren(children);
-  for (uint32_t i = 0; i < children.Length(); i++) {
+  for (auto& child : aBrowsingContext->GetChildren()) {
     aPositionDescendants[currentIdx] +=
-        CollectPositions(children[i], aPositions, aPositionDescendants);
+        CollectPositions(child, aPositions, aPositionDescendants);
   }
 
   return aPositionDescendants[currentIdx] + 1;
@@ -407,10 +416,107 @@ void ContentSessionStore::GetScrollPositions(
     aPositionDescendants.AppendElement(0);
     aPositions.AppendElement(EmptyCString());
   } else {
-    CollectPositions(nsDocShell::Cast(mDocShell)->GetBrowsingContext(),
-                     aPositions, aPositionDescendants);
+    CollectPositions(mDocShell->GetBrowsingContext(), aPositions,
+                     aPositionDescendants);
   }
   mScrollChanged = NO_CHANGE;
+}
+
+void CollectInput(Document& aDocument, InputFormData& aInput,
+                  nsTArray<CollectedInputDataValue>& aIdVals,
+                  nsTArray<CollectedInputDataValue>& aXPathVals) {
+  PresShell* presShell = aDocument.GetPresShell();
+  if (!presShell) {
+    return;
+  }
+
+  uint16_t numXPath = 0;
+  uint16_t numId = 0;
+
+  // textarea element
+  SessionStoreUtils::CollectFromTextAreaElement(aDocument, numXPath, numId,
+                                                aXPathVals, aIdVals);
+  // input element
+  SessionStoreUtils::CollectFromInputElement(aDocument, numXPath, numId,
+                                             aXPathVals, aIdVals);
+  // select element
+  SessionStoreUtils::CollectFromSelectElement(aDocument, numXPath, numId,
+                                              aXPathVals, aIdVals);
+
+  Element* bodyElement = aDocument.GetBody();
+  if (aDocument.HasFlag(NODE_IS_EDITABLE) && bodyElement) {
+    bodyElement->GetInnerHTML(aInput.innerHTML, IgnoreErrors());
+  }
+  if (aInput.innerHTML.IsEmpty() && numXPath == 0 && numId == 0) {
+    return;
+  }
+
+  // Store the frame's current URL with its form data so that we can compare
+  // it when restoring data to not inject form data into the wrong document.
+  nsIURI* uri = aDocument.GetDocumentURI();
+  if (uri) {
+    uri->GetSpecIgnoringRef(aInput.url);
+  }
+  aInput.numId = numId;
+  aInput.numXPath = numXPath;
+}
+
+int CollectInputs(BrowsingContext* aBrowsingContext,
+                  nsTArray<InputFormData>& aInputs,
+                  nsTArray<CollectedInputDataValue>& aIdVals,
+                  nsTArray<CollectedInputDataValue>& aXPathVals) {
+  nsPIDOMWindowOuter* window = aBrowsingContext->GetDOMWindow();
+  if (!window) {
+    return 0;
+  }
+
+  nsIDocShell* docShell = window->GetDocShell();
+  if (!docShell || docShell->GetCreatedDynamically()) {
+    return 0;
+  }
+
+  Document* document = window->GetDoc();
+  if (!document) {
+    return 0;
+  }
+
+  /* Collect data from current frame */
+  InputFormData input;
+  input.descendants = 0;
+  input.numId = 0;
+  input.numXPath = 0;
+  CollectInput(*document, input, aIdVals, aXPathVals);
+  aInputs.AppendElement(input);
+  int currentIdx = aInputs.Length() - 1;
+
+  /* Collect data from all child frame */
+  for (auto& child : aBrowsingContext->GetChildren()) {
+    aInputs[currentIdx].descendants +=
+        CollectInputs(child, aInputs, aIdVals, aXPathVals);
+  }
+
+  return aInputs[currentIdx].descendants + 1;
+}
+
+nsTArray<InputFormData> ContentSessionStore::GetInputs(
+    nsTArray<CollectedInputDataValue>& aIdVals,
+    nsTArray<CollectedInputDataValue>& aXPathVals) {
+  nsTArray<InputFormData> inputs;
+  if (mFormDataChanged == PAGELOADEDSTART) {
+    mFormDataChanged = NO_CHANGE;
+    InputFormData input;
+    input.descendants = 0;
+    input.innerHTML = EmptyString();
+    input.url = EmptyCString();
+    input.numId = 0;
+    input.numXPath = 0;
+    inputs.AppendElement(input);
+  } else {
+    mFormDataChanged = NO_CHANGE;
+    CollectInputs(nsDocShell::Cast(mDocShell)->GetBrowsingContext(), inputs,
+                  aIdVals, aXPathVals);
+  }
+  return inputs;
 }
 
 bool TabListener::ForceFlushFromParent(uint32_t aFlushId, bool aIsFinal) {
@@ -457,25 +563,65 @@ bool TabListener::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
     return false;
   }
 
-  nsCOMPtr<nsIXULBrowserWindow> xulBrowserWindow;
-  window->GetXULBrowserWindow(getter_AddRefs(xulBrowserWindow));
-  if (!xulBrowserWindow) {
-    return false;
-  }
-
+  UpdateSessionStoreData data;
   if (mSessionStore->IsDocCapChanged()) {
-    xulBrowserWindow->UpdateDocShellCaps(mSessionStore->GetDocShellCaps());
+    data.mDocShellCaps.Construct() = mSessionStore->GetDocShellCaps();
   }
   if (mSessionStore->IsPrivateChanged()) {
-    xulBrowserWindow->UpdateIsPrivate(mSessionStore->GetPrivateModeEnabled());
+    data.mIsPrivate.Construct() = mSessionStore->GetPrivateModeEnabled();
   }
   if (mSessionStore->IsScrollPositionChanged()) {
     nsTArray<nsCString> positions;
     nsTArray<int> descendants;
     mSessionStore->GetScrollPositions(positions, descendants);
-    xulBrowserWindow->UpdateScrollPositions(positions, descendants);
+    data.mPositions.Construct().Assign(std::move(positions));
+    data.mPositionDescendants.Construct().Assign(std::move(descendants));
   }
-  xulBrowserWindow->UpdateSessionStore(mOwnerContent, aFlushId, aIsFinal);
+  if (mSessionStore->IsFormDataChanged()) {
+    nsTArray<CollectedInputDataValue> dataWithId, dataWithXpath;
+    nsTArray<InputFormData> inputs =
+        mSessionStore->GetInputs(dataWithId, dataWithXpath);
+    nsTArray<int> descendants, numId, numXPath;
+    nsTArray<nsString> innerHTML;
+    nsTArray<nsCString> url;
+
+    if (dataWithId.Length() != 0) {
+      SessionStoreUtils::ComposeInputData(dataWithId, data.mId.Construct());
+    }
+    if (dataWithXpath.Length() != 0) {
+      SessionStoreUtils::ComposeInputData(dataWithXpath,
+                                          data.mXpath.Construct());
+    }
+
+    for (const InputFormData& input : inputs) {
+      descendants.AppendElement(input.descendants);
+      numId.AppendElement(input.numId);
+      numXPath.AppendElement(input.numXPath);
+      innerHTML.AppendElement(input.innerHTML);
+      url.AppendElement(input.url);
+    }
+    if (descendants.Length() != 0) {
+      data.mInputDescendants.Construct().Assign(std::move(descendants));
+      data.mNumId.Construct().Assign(std::move(numId));
+      data.mNumXPath.Construct().Assign(std::move(numXPath));
+      data.mInnerHTML.Construct().Assign(std::move(innerHTML));
+      data.mUrl.Construct().Assign(std::move(url));
+    }
+  }
+
+  nsCOMPtr<nsISessionStoreFunctions> funcs =
+      do_ImportModule("resource://gre/modules/SessionStoreFunctions.jsm");
+  NS_ENSURE_TRUE(funcs, false);
+  nsCOMPtr<nsIXPConnectWrappedJS> wrapped = do_QueryInterface(funcs);
+  AutoJSAPI jsapi;
+  MOZ_ALWAYS_TRUE(jsapi.Init(wrapped->GetJSObjectGlobal()));
+  JS::Rooted<JS::Value> dataVal(jsapi.cx());
+  bool ok = ToJSValue(jsapi.cx(), data, &dataVal);
+  NS_ENSURE_TRUE(ok, false);
+
+  nsresult rv = funcs->UpdateSessionStore(mOwnerContent, aFlushId, aIsFinal,
+                                          mEpoch, dataVal);
+  NS_ENSURE_SUCCESS(rv, false);
   StopTimerForUpdate();
   return true;
 }
@@ -503,6 +649,8 @@ void TabListener::RemoveListeners() {
     if (eventTarget) {
       eventTarget->RemoveSystemEventListener(
           NS_LITERAL_STRING("mozvisualscroll"), this, false);
+      eventTarget->RemoveSystemEventListener(NS_LITERAL_STRING("input"), this,
+                                             false);
       mEventListenerRegistered = false;
     }
   }

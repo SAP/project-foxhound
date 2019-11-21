@@ -94,6 +94,12 @@ const startupPhases = {
       maxCount: 1,
     },
     {
+      name: "PWebRenderBridge::Msg_GetSnapshot",
+      condition: WIN && WEBRENDER,
+      ignoreIfUnused: true, // Sometimes in the next phase on Windows10 QR
+      maxCount: 1,
+    },
+    {
       name: "PCompositorBridge::Msg_WillClose",
       condition: WIN,
       ignoreIfUnused: true, // Only on Win10 64
@@ -108,6 +114,9 @@ const startupPhases = {
     {
       name: "PGPU::Msg_GetDeviceStatus",
       condition: WIN && WEBRENDER, // bug 1553740 might want to drop the WEBRENDER clause here
+      // If Init() completes before we call EnsureGPUReady we won't send GetDeviceStatus
+      // so we can safely ignore if unused.
+      ignoreIfUnused: true,
       maxCount: 1,
     },
   ],
@@ -148,6 +157,7 @@ const startupPhases = {
     {
       name: "PWebRenderBridge::Msg_GetSnapshot",
       condition: WIN && WEBRENDER,
+      ignoreIfUnused: true, // Sometimes in the next phase on Windows10 QR
       maxCount: 1,
     },
     {
@@ -217,6 +227,18 @@ const startupPhases = {
       condition: MAC,
       ignoreIfUnused: true,
       maxCount: 1,
+    },
+    {
+      name: "PWebRenderBridge::Msg_GetSnapshot",
+      condition: WIN && WEBRENDER,
+      ignoreIfUnused: true,
+      maxCount: 1,
+    },
+    {
+      name: "PCompositorBridge::Msg_WillClose",
+      condition: WIN,
+      ignoreIfUnused: true,
+      maxCount: 2,
     },
   ],
 };

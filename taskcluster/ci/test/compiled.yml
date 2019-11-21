@@ -32,12 +32,15 @@ job-defaults:
 cppunit:
     description: "CPP Unit Tests"
     suite: cppunittest
-    treeherder-symbol: Cpp
+    treeherder-symbol: cppunit
     instance-size:
         by-test-platform:
             android-em.*: xlarge
             default: default
-    tier: default
+    tier:
+        by-test-platform:
+            windows10-aarch64.*: 2
+            default: default
     run-on-projects:
         by-test-platform:
             android-em-4.3-arm7-api-16/opt: []  # bug 1548659
@@ -54,6 +57,7 @@ gtest:
             windows.*-pgo/.*: []  # permafails on pgo too
             windows.*-nightly/.*: []  # permafails on nightly too
             windows10-64-asan/opt: []  # permafails on asan too
+            windows10-aarch64/opt: []  # gtests don't build on Windows PGO
             .*-devedition/.*: []  # don't run on devedition
             default: built-projects
     target:

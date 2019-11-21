@@ -862,6 +862,11 @@ ssl3_config_match(const ssl3CipherSuiteCfg *suite, PRUint8 policy,
     const ssl3CipherSuiteDef *cipher_def;
     const ssl3KEADef *kea_def;
 
+    if (!suite) {
+        PORT_Assert(suite);
+        return PR_FALSE;
+    }
+
     PORT_Assert(policy != SSL_NOT_ALLOWED);
     if (policy == SSL_NOT_ALLOWED)
         return PR_FALSE;
@@ -907,6 +912,27 @@ count_cipher_suites(sslSocket *ss, PRUint8 policy)
         PORT_SetError(SSL_ERROR_SSL_DISABLED);
     }
     return count;
+}
+
+/* For TLS 1.3, when resuming, check for a ciphersuite that is both compatible
+ * with the identified ciphersuite and enabled. */
+static PRBool
+tls13_ResumptionCompatible(sslSocket *ss, ssl3CipherSuite suite)
+{
+    SSLVersionRange vrange = { SSL_LIBRARY_VERSION_TLS_1_3,
+                               SSL_LIBRARY_VERSION_TLS_1_3 };
+    SSLHashType hash = tls13_GetHashForCipherSuite(suite);
+    for (unsigned int i = 0; i < PR_ARRAY_SIZE(cipher_suite_defs); i++) {
+        if (cipher_suite_defs[i].prf_hash == hash) {
+            const ssl3CipherSuiteCfg *suiteCfg =
+                ssl_LookupCipherSuiteCfg(cipher_suite_defs[i].cipher_suite,
+                                         ss->cipherSuites);
+            if (suite && ssl3_config_match(suiteCfg, ss->ssl3.policy, &vrange, ss)) {
+                return PR_TRUE;
+            }
+        }
+    }
+    return PR_FALSE;
 }
 
 /*
@@ -1153,11 +1179,10 @@ ssl3_SignHashes(sslSocket *ss, SSL3Hashes *hash, SECKEYPrivateKey *key,
 
 /* Called from ssl3_VerifySignedHashes and tls13_HandleCertificateVerify. */
 SECStatus
-ssl3_VerifySignedHashesWithSpki(sslSocket *ss, CERTSubjectPublicKeyInfo *spki,
-                                SSLSignatureScheme scheme,
-                                SSL3Hashes *hash, SECItem *buf)
+ssl_VerifySignedHashesWithPubKey(sslSocket *ss, SECKEYPublicKey *key,
+                                 SSLSignatureScheme scheme,
+                                 SSL3Hashes *hash, SECItem *buf)
 {
-    SECKEYPublicKey *key;
     SECItem *signature = NULL;
     SECStatus rv = SECFailure;
     SECItem hashItem;
@@ -1166,14 +1191,7 @@ ssl3_VerifySignedHashesWithSpki(sslSocket *ss, CERTSubjectPublicKeyInfo *spki,
     void *pwArg = ss->pkcs11PinArg;
     PRBool isRsaPssScheme = ssl_IsRsaPssSignatureScheme(scheme);
 
-    PRINT_BUF(60, (NULL, "check signed hashes",
-                   buf->data, buf->len));
-
-    key = SECKEY_ExtractPublicKey(spki);
-    if (key == NULL) {
-        ssl_MapLowLevelError(SSL_ERROR_EXTRACT_PUBLIC_KEY_FAILURE);
-        return SECFailure;
-    }
+    PRINT_BUF(60, (NULL, "check signed hashes", buf->data, buf->len));
 
     hashAlg = ssl3_HashTypeToOID(hash->hashAlg);
     switch (SECKEY_GetPublicKeyType(key)) {
@@ -1281,7 +1299,6 @@ ssl3_VerifySignedHashesWithSpki(sslSocket *ss, CERTSubjectPublicKeyInfo *spki,
     }
 
 loser:
-    SECKEY_DestroyPublicKey(key);
 #ifdef UNSAFE_FUZZER_MODE
     rv = SECSuccess;
     PORT_SetError(0);
@@ -1294,9 +1311,16 @@ SECStatus
 ssl3_VerifySignedHashes(sslSocket *ss, SSLSignatureScheme scheme, SSL3Hashes *hash,
                         SECItem *buf)
 {
-    CERTSubjectPublicKeyInfo *spki = &ss->sec.peerCert->subjectPublicKeyInfo;
-    return ssl3_VerifySignedHashesWithSpki(
-        ss, spki, scheme, hash, buf);
+    SECKEYPublicKey *pubKey =
+        SECKEY_ExtractPublicKey(&ss->sec.peerCert->subjectPublicKeyInfo);
+    if (pubKey == NULL) {
+        ssl_MapLowLevelError(SSL_ERROR_EXTRACT_PUBLIC_KEY_FAILURE);
+        return SECFailure;
+    }
+    SECStatus rv = ssl_VerifySignedHashesWithPubKey(ss, pubKey, scheme,
+                                                    hash, buf);
+    SECKEY_DestroyPublicKey(pubKey);
+    return rv;
 }
 
 /* Caller must set hiLevel error code. */
@@ -4899,14 +4923,20 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
      */
     if (sid) {
         PRBool sidOK = PR_TRUE;
-        const ssl3CipherSuiteCfg *suite;
 
-        /* Check that the cipher suite we need is enabled. */
-        suite = ssl_LookupCipherSuiteCfg(sid->u.ssl3.cipherSuite,
+        if (sid->version >= SSL_LIBRARY_VERSION_TLS_1_3) {
+            if (!tls13_ResumptionCompatible(ss, sid->u.ssl3.cipherSuite)) {
+                sidOK = PR_FALSE;
+            }
+        } else {
+            /* Check that the cipher suite we need is enabled. */
+            const ssl3CipherSuiteCfg *suite =
+                ssl_LookupCipherSuiteCfg(sid->u.ssl3.cipherSuite,
                                          ss->cipherSuites);
-        PORT_Assert(suite);
-        if (!suite || !ssl3_config_match(suite, ss->ssl3.policy, &ss->vrange, ss)) {
-            sidOK = PR_FALSE;
+            SSLVersionRange vrange = { sid->version, sid->version };
+            if (!suite || !ssl3_config_match(suite, ss->ssl3.policy, &vrange, ss)) {
+                sidOK = PR_FALSE;
+            }
         }
 
         /* Check that we can recover the master secret. */
@@ -5051,8 +5081,9 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
         PR_RWLock_Rlock(sid->u.ssl3.lock);
     }
 
-    /* Generate a new random if this is the first attempt. */
-    if (type == client_hello_initial) {
+    /* Generate a new random if this is the first attempt or renegotiation. */
+    if (type == client_hello_initial ||
+        type == client_hello_renegotiation) {
         rv = ssl3_GetNewRandom(ss->ssl3.hs.client_random);
         if (rv != SECSuccess) {
             goto loser; /* err set by GetNewRandom. */
@@ -8681,9 +8712,9 @@ ssl3_HandleClientHello(sslSocket *ss, PRUint8 *b, PRUint32 length)
               !ss->firstHsDone))) {
 
             SSL_AtomicIncrementLong(&ssl3stats.hch_sid_cache_not_ok);
-            ssl_UncacheSessionID(ss);
             ssl_FreeSID(sid);
             sid = NULL;
+            ss->statelessResume = PR_FALSE;
         }
     }
 
@@ -10868,6 +10899,66 @@ loser:
 }
 
 SECStatus
+ssl_SetAuthKeyBits(sslSocket *ss, const SECKEYPublicKey *pubKey)
+{
+    SECStatus rv;
+    PRUint32 minKey;
+    PRInt32 optval;
+
+    ss->sec.authKeyBits = SECKEY_PublicKeyStrengthInBits(pubKey);
+    switch (SECKEY_GetPublicKeyType(pubKey)) {
+        case rsaKey:
+        case rsaPssKey:
+        case rsaOaepKey:
+            rv = NSS_OptionGet(NSS_RSA_MIN_KEY_SIZE, &optval);
+            if (rv == SECSuccess && optval > 0) {
+                minKey = (PRUint32)optval;
+            } else {
+                minKey = SSL_RSA_MIN_MODULUS_BITS;
+            }
+            break;
+
+        case dsaKey:
+            rv = NSS_OptionGet(NSS_DSA_MIN_KEY_SIZE, &optval);
+            if (rv == SECSuccess && optval > 0) {
+                minKey = (PRUint32)optval;
+            } else {
+                minKey = SSL_DSA_MIN_P_BITS;
+            }
+            break;
+
+        case dhKey:
+            rv = NSS_OptionGet(NSS_DH_MIN_KEY_SIZE, &optval);
+            if (rv == SECSuccess && optval > 0) {
+                minKey = (PRUint32)optval;
+            } else {
+                minKey = SSL_DH_MIN_P_BITS;
+            }
+            break;
+
+        case ecKey:
+            /* Don't check EC strength here on the understanding that we only
+             * support curves we like. */
+            minKey = ss->sec.authKeyBits;
+            break;
+
+        default:
+            FATAL_ERROR(ss, SEC_ERROR_LIBRARY_FAILURE, internal_error);
+            return SECFailure;
+    }
+
+    /* Too small: not good enough. Send a fatal alert. */
+    if (ss->sec.authKeyBits < minKey) {
+        FATAL_ERROR(ss, SSL_ERROR_WEAK_SERVER_CERT_KEY,
+                    ss->version >= SSL_LIBRARY_VERSION_TLS_1_0
+                        ? insufficient_security
+                        : illegal_parameter);
+        return SECFailure;
+    }
+    return SECSuccess;
+}
+
+SECStatus
 ssl3_AuthCertificate(sslSocket *ss)
 {
     SECStatus rv;
@@ -10916,74 +11007,19 @@ ssl3_AuthCertificate(sslSocket *ss)
     ss->sec.ci.sid->peerCert = CERT_DupCertificate(ss->sec.peerCert);
 
     if (!ss->sec.isServer) {
-        CERTCertificate *cert = ss->sec.peerCert;
-
-        /* set the server authentication type and size from the value
-        ** in the cert. */
-        SECKEYPublicKey *pubKey = CERT_ExtractPublicKey(cert);
         if (ss->version < SSL_LIBRARY_VERSION_TLS_1_3) {
             /* These are filled in in tls13_HandleCertificateVerify and
-             * tls13_HandleServerKeyShare. */
+             * tls13_HandleServerKeyShare (keaType). */
+            SECKEYPublicKey *pubKey = CERT_ExtractPublicKey(ss->sec.peerCert);
+            if (pubKey) {
+                rv = ssl_SetAuthKeyBits(ss, pubKey);
+                SECKEY_DestroyPublicKey(pubKey);
+                if (rv != SECSuccess) {
+                    return SECFailure; /* Alert sent and code set. */
+                }
+            }
             ss->sec.authType = ss->ssl3.hs.kea_def->authKeyType;
             ss->sec.keaType = ss->ssl3.hs.kea_def->exchKeyType;
-        }
-        if (pubKey) {
-            KeyType pubKeyType;
-            PRUint32 minKey;
-            PRInt32 optval;
-            /* This partly fixes Bug 124230 and may cause problems for
-             * callers which depend on the old (wrong) behavior. */
-            ss->sec.authKeyBits = SECKEY_PublicKeyStrengthInBits(pubKey);
-            pubKeyType = SECKEY_GetPublicKeyType(pubKey);
-            minKey = ss->sec.authKeyBits;
-            switch (pubKeyType) {
-                case rsaKey:
-                case rsaPssKey:
-                case rsaOaepKey:
-                    rv =
-                        NSS_OptionGet(NSS_RSA_MIN_KEY_SIZE, &optval);
-                    if (rv == SECSuccess && optval > 0) {
-                        minKey = (PRUint32)optval;
-                    } else {
-                        minKey = SSL_RSA_MIN_MODULUS_BITS;
-                    }
-                    break;
-                case dsaKey:
-                    rv =
-                        NSS_OptionGet(NSS_DSA_MIN_KEY_SIZE, &optval);
-                    if (rv == SECSuccess && optval > 0) {
-                        minKey = (PRUint32)optval;
-                    } else {
-                        minKey = SSL_DSA_MIN_P_BITS;
-                    }
-                    break;
-                case dhKey:
-                    rv =
-                        NSS_OptionGet(NSS_DH_MIN_KEY_SIZE, &optval);
-                    if (rv == SECSuccess && optval > 0) {
-                        minKey = (PRUint32)optval;
-                    } else {
-                        minKey = SSL_DH_MIN_P_BITS;
-                    }
-                    break;
-                default:
-                    break;
-            }
-
-            /* Too small: not good enough. Send a fatal alert. */
-            /* We aren't checking EC here on the understanding that we only
-             * support curves we like, a decision that might need revisiting. */
-            if (ss->sec.authKeyBits < minKey) {
-                PORT_SetError(SSL_ERROR_WEAK_SERVER_CERT_KEY);
-                (void)SSL3_SendAlert(ss, alert_fatal,
-                                     ss->version >= SSL_LIBRARY_VERSION_TLS_1_0
-                                         ? insufficient_security
-                                         : illegal_parameter);
-                SECKEY_DestroyPublicKey(pubKey);
-                return SECFailure;
-            }
-            SECKEY_DestroyPublicKey(pubKey);
-            pubKey = NULL;
         }
 
         if (ss->version >= SSL_LIBRARY_VERSION_TLS_1_3) {

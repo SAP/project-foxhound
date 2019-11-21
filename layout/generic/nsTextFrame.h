@@ -427,6 +427,7 @@ class nsTextFrame : public nsFrame {
     PropertyProvider* provider = nullptr;
     Range contentRange;
     nsTextPaintStyle* textPaintStyle = nullptr;
+    Range glyphRange;
     explicit PaintTextSelectionParams(const PaintTextParams& aParams)
         : PaintTextParams(aParams) {}
   };
@@ -450,6 +451,7 @@ class nsTextFrame : public nsFrame {
     const nsTextPaintStyle* textStyle = nullptr;
     const nsDisplayText::ClipEdges* clipEdges = nullptr;
     const nscolor* decorationOverrideColor = nullptr;
+    Range glyphRange;
     explicit DrawTextParams(gfxContext* aContext)
         : DrawTextRunParams(aContext) {}
   };
@@ -696,22 +698,22 @@ class nsTextFrame : public nsFrame {
     nscoord mBaselineOffset;
 
     // This represents the offset from the initial position of the underline
-    const mozilla::LengthOrAuto mTextUnderlineOffset;
+    const mozilla::StyleTextDecorationLength mTextUnderlineOffset;
 
-    // for CSS property text-decoration-width, the width refers to the thickness
-    // of the decoration line
-    const mozilla::LengthOrAuto mTextDecorationWidth;
+    // for CSS property text-decoration-thickness, the width refers to the
+    // thickness of the decoration line
+    const mozilla::StyleTextDecorationLength mTextDecorationThickness;
     nscolor mColor;
     uint8_t mStyle;
 
     LineDecoration(nsIFrame* const aFrame, const nscoord aOff,
-                   const mozilla::LengthOrAuto& aUnderline,
-                   const mozilla::LengthOrAuto& aDecWidth, const nscolor aColor,
-                   const uint8_t aStyle)
+                   const mozilla::StyleTextDecorationLength& aUnderline,
+                   const mozilla::StyleTextDecorationLength& aDecThickness,
+                   const nscolor aColor, const uint8_t aStyle)
         : mFrame(aFrame),
           mBaselineOffset(aOff),
           mTextUnderlineOffset(aUnderline),
-          mTextDecorationWidth(aDecWidth),
+          mTextDecorationThickness(aDecThickness),
           mColor(aColor),
           mStyle(aStyle) {}
 
@@ -719,7 +721,7 @@ class nsTextFrame : public nsFrame {
         : mFrame(aOther.mFrame),
           mBaselineOffset(aOther.mBaselineOffset),
           mTextUnderlineOffset(aOther.mTextUnderlineOffset),
-          mTextDecorationWidth(aOther.mTextDecorationWidth),
+          mTextDecorationThickness(aOther.mTextDecorationThickness),
           mColor(aOther.mColor),
           mStyle(aOther.mStyle) {}
 
@@ -728,7 +730,7 @@ class nsTextFrame : public nsFrame {
              mColor == aOther.mColor &&
              mBaselineOffset == aOther.mBaselineOffset &&
              mTextUnderlineOffset == aOther.mTextUnderlineOffset &&
-             mTextDecorationWidth == aOther.mTextDecorationWidth;
+             mTextDecorationThickness == aOther.mTextDecorationThickness;
     }
 
     bool operator!=(const LineDecoration& aOther) const {

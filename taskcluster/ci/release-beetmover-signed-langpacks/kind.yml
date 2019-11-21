@@ -10,19 +10,27 @@ transforms:
     - taskgraph.transforms.task:transforms
 
 kind-dependencies:
-    - release-sign-and-push-langpacks
+    - build-signing
+    - nightly-l10n-signing
 
 only-for-attributes:
     - nightly
     - shippable
 
+only-for-build-platforms:
+    - linux64-shippable/opt
+    - linux64-devedition-nightly/opt
+
 job-template:
     description: Beetmover submission for platform-independent langpacks {locales} in {platform} directory
     worker-type:
         by-release-level:
-            production: scriptworker-prov-v1/beetmoverworker-v1
-            staging: scriptworker-prov-v1/beetmoverworker-dev
+            production: scriptworker-k8s/gecko-3-beetmover
+            staging: scriptworker-k8s/gecko-1-beetmover
     run-on-projects: []
     shipping-phase: promote
     attributes:
-        artifact_map: taskcluster/taskgraph/manifests/firefox_candidates.yml
+        artifact_map:
+            by-release-type:
+                beta|release.*|esr.*: taskcluster/taskgraph/manifests/firefox_candidates.yml
+                default: taskcluster/taskgraph/manifests/firefox_nightly.yml

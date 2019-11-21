@@ -6,10 +6,14 @@
 
 const { Cu } = require("chrome");
 const Services = require("Services");
+const ChromeUtils = require("ChromeUtils");
 const InspectorUtils = require("InspectorUtils");
 const protocol = require("devtools/shared/protocol");
 const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const { nodeSpec, nodeListSpec } = require("devtools/shared/specs/node");
+const {
+  connectToFrame,
+} = require("devtools/server/connectors/frame-connector");
 
 loader.lazyRequireGetter(
   this,
@@ -263,6 +267,13 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
       form.isDocumentElement = true;
     }
 
+    // Flag the remote frame and declare at least one child (the #document element) so
+    // that they can be expanded.
+    if (this.isRemoteFrame) {
+      form.remoteFrame = true;
+      form.numChildren = 1;
+    }
+
     return form;
   },
 
@@ -293,6 +304,18 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
   watchSlotchange: function(callback) {
     this.slotchangeListener = callback;
     this.rawNode.addEventListener("slotchange", this.slotchangeListener);
+  },
+
+  /**
+   * Check if the current node is representing a remote frame.
+   * EXPERIMENTAL: Only works if fission is enabled in the toolbox.
+   */
+  get isRemoteFrame() {
+    return (
+      this.numChildren == 0 &&
+      ChromeUtils.getClassName(this.rawNode) == "XULFrameElement" &&
+      this.rawNode.getAttribute("remote") == "true"
+    );
   },
 
   // Estimate the number of children that the walker will return without making
@@ -660,6 +683,19 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
   },
 
   /**
+   * Finds the background color range for the parent of a single text node
+   * (i.e. for multi-colored backgrounds with gradients, images) or a single
+   * background color for single-colored backgrounds. Defaults to the closest
+   * background color if an error is encountered.
+   *
+   * @return {Object}
+   *         Object with one or more of the following properties: value, min, max
+   */
+  getBackgroundColor: function() {
+    return InspectorActorUtils.getBackgroundColor(this);
+  },
+
+  /**
    * Returns an object with the width and height of the node's owner window.
    *
    * @return {Object}
@@ -670,6 +706,21 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
       innerWidth: win.innerWidth,
       innerHeight: win.innerHeight,
     };
+  },
+
+  /**
+   * Fetch the target actor's form for the current remote frame.
+   *
+   * (to be called only if form.remoteFrame is true)
+   */
+  connectToRemoteFrame() {
+    if (!this.isRemoteFrame) {
+      return {
+        error: "ErrorRemoteFrame",
+        message: "Tried to call `connectToRemoteFrame` on a local frame",
+      };
+    }
+    return connectToFrame(this.conn, this.rawNode);
   },
 });
 

@@ -21,7 +21,7 @@ types.addDictType("available-breakpoint-event", {
 });
 
 const threadSpec = generateActorSpec({
-  typeName: "context",
+  typeName: "thread",
 
   events: {
     paused: {
@@ -42,6 +42,8 @@ const threadSpec = generateActorSpec({
     progress: {
       recording: Option(0, "json"),
       executionPoint: Option(0, "json"),
+      unscannedRegions: Option(0, "json"),
+      cachedPoints: Option(0, "json"),
     },
   },
 
@@ -150,6 +152,13 @@ const threadSpec = generateActorSpec({
       request: {
         pauseOnExceptions: Arg(0, "string"),
         ignoreCaughtExceptions: Arg(1, "string"),
+      },
+    },
+
+    // For testing.
+    debuggerRequests: {
+      response: {
+        value: RetVal("array:json"),
       },
     },
   },

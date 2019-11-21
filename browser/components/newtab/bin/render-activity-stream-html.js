@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* eslint-disable no-console */
 const fs = require("fs");
 const { mkdir } = require("shelljs");
@@ -30,6 +34,7 @@ function templateHTML(options) {
     `${options.baseUrl}vendor/prop-types.js`,
     `${options.baseUrl}vendor/redux.js`,
     `${options.baseUrl}vendor/react-redux.js`,
+    `${options.baseUrl}vendor/react-transition-group.js`,
     `${options.baseUrl}data/content/activity-stream.bundle.js`,
   ];
 
@@ -38,7 +43,12 @@ function templateHTML(options) {
     .map(script => `    <script src="${script}"></script>`)
     .join("\n")}`;
 
-  return `<!doctype html>
+  return `
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
+<!doctype html>
 <html>
   <head>
     <meta charset="utf-8">
@@ -58,7 +68,7 @@ function templateHTML(options) {
     }
   </body>
 </html>
-`;
+`.trimLeft();
 }
 
 /**

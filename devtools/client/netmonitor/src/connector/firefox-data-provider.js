@@ -93,7 +93,7 @@ class FirefoxDataProvider {
         id,
         {
           // Convert the received date/time string to a unix timestamp.
-          startedMillis: Date.parse(startedDateTime),
+          startedMs: Date.parse(startedDateTime),
           method,
           url,
           isXHR,
@@ -341,7 +341,10 @@ class FirefoxDataProvider {
    *         are available, or rejected if something goes wrong.
    */
   getLongString(stringGrip) {
-    return this.webConsoleClient.getString(stringGrip);
+    return this.webConsoleClient.getString(stringGrip).then(payload => {
+      this.emit(EVENTS.LONGSTRING_RESOLVED, { payload });
+      return payload;
+    });
   }
 
   /**
@@ -484,7 +487,7 @@ class FirefoxDataProvider {
    */
   async addFrame(httpChannelId, data) {
     if (this.actionsEnabled && this.actions.addFrame) {
-      await this.actions.addFrame(httpChannelId, data);
+      await this.actions.addFrame(httpChannelId, data, true);
     }
     // TODO: Emit an event for test here
   }

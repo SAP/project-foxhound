@@ -1,6 +1,6 @@
 # Fetch a tooltool manifest.
 
-cd $WORKSPACE/build/src
+cd $MOZ_FETCHES_DIR
 
 case "`uname -s`" in
 Linux)
@@ -18,11 +18,6 @@ if [ -e "$TOOLTOOL_AUTH_FILE" ]; then
     TOOLTOOL_DL_FLAGS="${TOOLTOOL_DL_FLAGS=} --authentication-file=$TOOLTOOL_AUTH_FILE"
 fi
 
-if [ -n "$TASKCLUSTER_PROXY_URL" ]; then
-    # When the worker has the relengapi proxy setup, use it.
-    TOOLTOOL_DL_FLAGS="${TOOLTOOL_DL_FLAGS=} --tooltool-url=${TASKCLUSTER_PROXY_URL}/tooltool.mozilla-releng.net/"
-fi
-
 if [ -n "$UPLOAD_DIR" ]; then
     TOOLTOOL_DL_FLAGS="${TOOLTOOL_DL_FLAGS=} --artifact-manifest $UPLOAD_DIR/toolchains.json"
 fi
@@ -30,6 +25,17 @@ fi
 : TOOLTOOL_CACHE                ${TOOLTOOL_CACHE:=/builds/worker/tooltool-cache}
 export TOOLTOOL_CACHE
 
-./mach artifact toolchain -v${TOOLTOOL_DL_FLAGS}${TOOLTOOL_MANIFEST:+ --tooltool-manifest "${TOOLTOOL_MANIFEST}"}${TOOLTOOL_CACHE:+ --cache-dir ${TOOLTOOL_CACHE}} --retry 5${MOZ_TOOLCHAINS:+ ${MOZ_TOOLCHAINS}}
+if [ -n "$MOZ_TOOLCHAINS" ]; then
+    echo This script should not be used for toolchain downloads anymore
+    echo Use fetches
+    exit 1
+fi
+
+if [ -z "$TOOLTOOL_MANIFEST" ]; then
+    echo This script should not be used when there is no tooltool manifest set
+    exit 1
+fi
+
+${GECKO_PATH}/mach artifact toolchain -v${TOOLTOOL_DL_FLAGS} --tooltool-manifest "${GECKO_PATH}/${TOOLTOOL_MANIFEST}"${TOOLTOOL_CACHE:+ --cache-dir ${TOOLTOOL_CACHE}} --retry 5
 
 cd $OLDPWD

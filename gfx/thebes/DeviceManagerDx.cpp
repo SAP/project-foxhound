@@ -9,7 +9,8 @@
 #include "GfxDriverInfo.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/D3DMessageUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/GPUParent.h"
@@ -183,7 +184,8 @@ bool DeviceManagerDx::CreateCompositorDevices() {
   FeatureState& d3d11 = gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
   MOZ_ASSERT(d3d11.IsEnabled());
 
-  if (int32_t sleepSec = StaticPrefs::gfx_direct3d11_sleep_on_create_device()) {
+  if (int32_t sleepSec =
+          StaticPrefs::gfx_direct3d11_sleep_on_create_device_AtStartup()) {
     printf_stderr("Attach to PID: %d\n", GetCurrentProcessId());
     Sleep(sleepSec * 1000);
   }
@@ -449,10 +451,18 @@ bool DeviceManagerDx::CreateCompositorDeviceHelper(
     return false;
   }
 
-  // Use D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS
-  // to prevent bug 1092260. IE 11 also uses this flag.
-  UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT |
-               D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS;
+  UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+
+  DXGI_ADAPTER_DESC desc;
+  aAdapter->GetDesc(&desc);
+  if (desc.VendorId != 0x1414) {
+    // 0x1414 is Microsoft (e.g. WARP)
+    // When not using WARP, use
+    // D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS to prevent
+    // bug 1092260. IE 11 also uses this flag.
+    flags |= D3D11_CREATE_DEVICE_PREVENT_INTERNAL_THREADING_OPTIMIZATIONS;
+  }
+
   if (aAttemptVideoSupport) {
     flags |= D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
   }
@@ -501,7 +511,7 @@ static inline int32_t GetNextDeviceCounter() {
 }
 
 void DeviceManagerDx::CreateCompositorDevice(FeatureState& d3d11) {
-  if (StaticPrefs::layers_d3d11_force_warp()) {
+  if (StaticPrefs::layers_d3d11_force_warp_AtStartup()) {
     CreateWARPCompositorDevice();
     return;
   }
@@ -571,8 +581,8 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
                                    D3D_DRIVER_TYPE aDriverType, UINT aFlags,
                                    HRESULT& aResOut,
                                    RefPtr<ID3D11Device>& aOutDevice) {
-  if (StaticPrefs::gfx_direct3d11_enable_debug_layer() ||
-      StaticPrefs::gfx_direct3d11_break_on_error()) {
+  if (StaticPrefs::gfx_direct3d11_enable_debug_layer_AtStartup() ||
+      StaticPrefs::gfx_direct3d11_break_on_error_AtStartup()) {
     aFlags |= D3D11_CREATE_DEVICE_DEBUG;
   }
 
@@ -584,7 +594,7 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
   }
   MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { return false; }
 
-  if (StaticPrefs::gfx_direct3d11_break_on_error()) {
+  if (StaticPrefs::gfx_direct3d11_break_on_error_AtStartup()) {
     do {
       if (!aOutDevice) break;
 
@@ -619,8 +629,8 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
 }
 
 void DeviceManagerDx::CreateWARPCompositorDevice() {
-  ScopedGfxFeatureReporter reporterWARP("D3D11-WARP",
-                                        StaticPrefs::layers_d3d11_force_warp());
+  ScopedGfxFeatureReporter reporterWARP(
+      "D3D11-WARP", StaticPrefs::layers_d3d11_force_warp_AtStartup());
   FeatureState& d3d11 = gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
 
   HRESULT hr;
@@ -653,8 +663,8 @@ void DeviceManagerDx::CreateWARPCompositorDevice() {
     textureSharingWorks = D3D11Checks::DoesTextureSharingWork(device);
   }
 
-  DxgiAdapterDesc nullAdapter;
-  PodZero(&nullAdapter);
+  DXGI_ADAPTER_DESC desc;
+  D3D11Checks::GetDxgiDesc(device, &desc);
 
   int featureLevel = device->GetFeatureLevel();
 
@@ -664,9 +674,9 @@ void DeviceManagerDx::CreateWARPCompositorDevice() {
     mCompositorDevice = device;
 
     int32_t sequenceNumber = GetNextDeviceCounter();
-    mDeviceStatus =
-        Some(D3D11DeviceStatus(true, textureSharingWorks, featureLevel,
-                               nullAdapter, sequenceNumber, formatOptions));
+    mDeviceStatus = Some(D3D11DeviceStatus(
+        true, textureSharingWorks, featureLevel, DxgiAdapterDesc::From(desc),
+        sequenceNumber, formatOptions));
   }
   mCompositorDevice->SetExceptionMode(0);
 

@@ -101,8 +101,6 @@ if (typeof Mozilla == "undefined") {
    * <li>appMenu
    * <li>backForward
    * <li>bookmarks
-   * <li>controlCenter-trackingUnblock
-   * <li>controlCenter-trackingBlock
    * <li>customize
    * <li>devtools
    * <li>forget
@@ -123,7 +121,6 @@ if (typeof Mozilla == "undefined") {
    * <li>searchIcon
    * <li>searchPrefsLink
    * <li>selectedTabIcon
-   * <li>trackingProtection
    * <li>urlbar
    * <li>webide
    * </ul>
@@ -319,7 +316,6 @@ if (typeof Mozilla == "undefined") {
    * Valid values:<ul>
    * <li>appMenu
    * <li>bookmarks
-   * <li>controlCenter
    * <li>pocket
    * </ul>
    *
@@ -373,6 +369,14 @@ if (typeof Mozilla == "undefined") {
    */
   Mozilla.UITour.showNewTab = function() {
     _sendEvent("showNewTab");
+  };
+
+  /**
+   * Loads about:protections in the tour tab.
+   * @since 70
+   */
+  Mozilla.UITour.showProtectionReport = function() {
+    _sendEvent("showProtectionReport");
   };
 
   /**

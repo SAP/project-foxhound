@@ -15,7 +15,7 @@
 #include "mozilla/dom/PositionErrorBinding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_geo.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
@@ -503,12 +503,7 @@ NS_INTERFACE_MAP_END
 NS_IMPL_ADDREF(nsGeolocationService)
 NS_IMPL_RELEASE(nsGeolocationService)
 
-static int32_t sProviderTimeout = 6000;  // Time, in milliseconds, to wait for
-                                         // the location provider to spin up.
-
 nsresult nsGeolocationService::Init() {
-  Preferences::AddIntVarCache(&sProviderTimeout, "geo.timeout",
-                              sProviderTimeout);
   if (!StaticPrefs::geo_enabled()) {
     return NS_ERROR_FAILURE;
   }
@@ -688,7 +683,8 @@ void nsGeolocationService::SetDisconnectTimer() {
     mDisconnectTimer->Cancel();
   }
 
-  mDisconnectTimer->Init(this, sProviderTimeout, nsITimer::TYPE_ONE_SHOT);
+  mDisconnectTimer->Init(this, StaticPrefs::geo_timeout(),
+                         nsITimer::TYPE_ONE_SHOT);
 }
 
 bool nsGeolocationService::HighAccuracyRequested() {
@@ -836,18 +832,10 @@ nsresult Geolocation::Init(nsPIDOMWindowInner* aContentDom) {
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (uri) {
-      bool isHttp;
-      rv = uri->SchemeIs("http", &isHttp);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      bool isHttps;
-      rv = uri->SchemeIs("https", &isHttps);
-      NS_ENSURE_SUCCESS(rv, rv);
-
       // Store the protocol to send via telemetry later.
-      if (isHttp) {
+      if (uri->SchemeIs("http")) {
         mProtocolType = ProtocolType::HTTP;
-      } else if (isHttps) {
+      } else if (uri->SchemeIs("https")) {
         mProtocolType = ProtocolType::HTTPS;
       }
     }

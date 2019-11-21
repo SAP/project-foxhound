@@ -411,7 +411,7 @@ static bool SandboxCloneInto(JSContext* cx, unsigned argc, Value* vp) {
   return xpc::CloneInto(cx, args[0], args[1], options, args.rval());
 }
 
-static void sandbox_finalize(js::FreeOp* fop, JSObject* obj) {
+static void sandbox_finalize(JSFreeOp* fop, JSObject* obj) {
   nsIScriptObjectPrincipal* sop =
       static_cast<nsIScriptObjectPrincipal*>(xpc_GetJSPrivate(obj));
   if (!sop) {
@@ -440,7 +440,7 @@ static size_t sandbox_moved(JSObject* obj, JSObject* old) {
 #define XPCONNECT_SANDBOX_CLASS_METADATA_SLOT \
   (XPCONNECT_GLOBAL_EXTRA_SLOT_OFFSET)
 
-static const js::ClassOps SandboxClassOps = {
+static const JSClassOps SandboxClassOps = {
     nullptr,
     nullptr,
     nullptr,
@@ -458,7 +458,7 @@ static const js::ClassExtension SandboxClassExtension = {
     sandbox_moved /* objectMovedOp */
 };
 
-static const js::Class SandboxClass = {
+static const JSClass SandboxClass = {
     "Sandbox",
     XPCONNECT_GLOBAL_FLAGS_WITH_EXTRA_SLOTS(1) | JSCLASS_FOREGROUND_FINALIZE,
     &SandboxClassOps,
@@ -471,7 +471,7 @@ static const JSFunctionSpec SandboxFunctions[] = {
     JS_FN("importFunction", SandboxImport, 1, 0), JS_FS_END};
 
 bool xpc::IsSandbox(JSObject* obj) {
-  const js::Class* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = js::GetObjectClass(obj);
   return clasp == &SandboxClass;
 }
 
@@ -1069,10 +1069,10 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
 
   realmOptions.behaviors().setDiscardSource(options.discardSource);
 
-  const js::Class* clasp = &SandboxClass;
+  const JSClass* clasp = &SandboxClass;
 
-  RootedObject sandbox(cx, xpc::CreateGlobalObject(cx, js::Jsvalify(clasp),
-                                                   principal, realmOptions));
+  RootedObject sandbox(
+      cx, xpc::CreateGlobalObject(cx, clasp, principal, realmOptions));
   if (!sandbox) {
     return NS_ERROR_FAILURE;
   }
@@ -1151,9 +1151,9 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
           JS_ReportErrorASCII(cx, "Sandbox must subsume sandboxPrototype");
           return NS_ERROR_INVALID_ARG;
         }
-        const js::Class* unwrappedClass = js::GetObjectClass(unwrappedProto);
+        const JSClass* unwrappedClass = js::GetObjectClass(unwrappedProto);
         useSandboxProxy = IS_WN_CLASS(unwrappedClass) ||
-                          mozilla::dom::IsDOMClass(Jsvalify(unwrappedClass));
+                          mozilla::dom::IsDOMClass(unwrappedClass);
       }
 
       if (useSandboxProxy) {
@@ -1237,16 +1237,16 @@ nsXPCComponents_utils_Sandbox::Construct(nsIXPConnectWrappedNative* wrapper,
 
 /*
  * For sandbox constructor the first argument can be a URI string in which case
- * we use the related Codebase Principal for the sandbox.
+ * we use the related Content Principal for the sandbox.
  */
-bool ParsePrincipal(JSContext* cx, HandleString codebase,
+bool ParsePrincipal(JSContext* cx, HandleString contentUrl,
                     const OriginAttributes& aAttrs, nsIPrincipal** principal) {
   MOZ_ASSERT(principal);
-  MOZ_ASSERT(codebase);
+  MOZ_ASSERT(contentUrl);
   nsCOMPtr<nsIURI> uri;
-  nsAutoJSString codebaseStr;
-  NS_ENSURE_TRUE(codebaseStr.init(cx, codebase), false);
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), codebaseStr);
+  nsAutoJSString contentStr;
+  NS_ENSURE_TRUE(contentStr.init(cx, contentUrl), false);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), contentStr);
   if (NS_FAILED(rv)) {
     JS_ReportErrorASCII(cx, "Creating URI from string failed");
     return false;
@@ -1256,7 +1256,7 @@ bool ParsePrincipal(JSContext* cx, HandleString codebase,
   // sandbox constructor. But creating a sandbox based on a string is a
   // deprecated API so no need to add features to it.
   nsCOMPtr<nsIPrincipal> prin =
-      BasePrincipal::CreateCodebasePrincipal(uri, aAttrs);
+      BasePrincipal::CreateContentPrincipal(uri, aAttrs);
   prin.forget(principal);
 
   if (!*principal) {
@@ -1339,7 +1339,7 @@ static bool GetExpandedPrincipal(JSContext* cx, HandleObject arrayObj,
   // check to make sure that it is the same as the OA found before.
   // In the second pass, we ignore objects, and use the OA found in pass 0
   // (or the previously computed OA if we have obtained it from the options)
-  // to construct codebase principals.
+  // to construct content principals.
   //
   // The effective OA selected above will also be set as the OA of the
   // expanded principal object.
@@ -1413,7 +1413,7 @@ static bool GetExpandedPrincipal(JSContext* cx, HandleObject arrayObj,
 
     nsCOMPtr<nsIPrincipal> principal;
     if (allowed.isString()) {
-      // In case of string let's try to fetch a codebase principal from it.
+      // In case of string let's try to fetch a content principal from it.
       RootedString str(cx, allowed.toString());
 
       // attrs here is either a default OriginAttributes in case the

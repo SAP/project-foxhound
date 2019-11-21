@@ -228,6 +228,7 @@ EXPORTS.mozilla.layers += [
     'mlgpu/MLGPUScreenshotGrabber.h',
     'mlgpu/ShaderDefinitionsMLGPU.h',
     'mlgpu/UtilityMLGPU.h',
+    'NativeLayer.h',
     'opengl/CompositingRenderTargetOGL.h',
     'opengl/CompositorOGL.h',
     'opengl/MacIOSurfaceTextureClientOGL.h',
@@ -270,7 +271,6 @@ EXPORTS.mozilla.layers += [
     'wr/WebRenderScrollData.h',
     'wr/WebRenderScrollDataWrapper.h',
     'wr/WebRenderTextureHost.h',
-    'wr/WebRenderTextureHostWrapper.h',
     'wr/WebRenderUserData.h',
     'ZoomConstraints.h',
 ]
@@ -294,6 +294,7 @@ if CONFIG['MOZ_X11']:
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     EXPORTS.mozilla.layers += [
+        'NativeLayerCA.h',
         'opengl/GLManager.h',
         'TextureSync.h',
     ]
@@ -302,6 +303,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'MacIOSurfaceImage.h',
     ]
     UNIFIED_SOURCES += [
+        'NativeLayerCA.mm',
         'opengl/GLManager.cpp',
         'TextureSync.cpp',
     ]
@@ -309,6 +311,9 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'ipc/ShadowLayerUtilsMac.cpp',
         'MacIOSurfaceHelpers.cpp',
         'MacIOSurfaceImage.cpp',
+    ]
+    OS_LIBS += [
+        '-framework IOSurface',
     ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
@@ -368,7 +373,6 @@ UNIFIED_SOURCES += [
     'AxisPhysicsMSDModel.cpp',
     'basic/BasicCanvasLayer.cpp',
     'basic/BasicColorLayer.cpp',
-    'basic/BasicCompositor.cpp',
     'basic/BasicContainerLayer.cpp',
     'basic/BasicImages.cpp',
     'basic/BasicLayerManager.cpp',
@@ -521,13 +525,13 @@ UNIFIED_SOURCES += [
     'wr/WebRenderLayerManager.cpp',
     'wr/WebRenderLayersLogging.cpp',
     'wr/WebRenderScrollData.cpp',
-    'wr/WebRenderTextureHostWrapper.cpp',
     'wr/WebRenderUserData.cpp',
     # XXX here are some unified build error.
     #'wr/WebRenderTextureHost.cpp'
 ]
 
 SOURCES += [
+    'basic/BasicCompositor.cpp',
     'basic/BasicImageLayer.cpp',
     'ImageContainer.cpp',
     'PersistentBufferProvider.cpp',

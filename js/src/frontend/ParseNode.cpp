@@ -417,7 +417,9 @@ void TraceListNode::TraceList(JSTracer* trc, TraceListNode* listHead) {
 }
 
 void TraceListNode::trace(JSTracer* trc) {
-  TraceGenericPointerRoot(trc, &gcThing, "parser.traceListNode");
+  if (gcThing) {
+    TraceGenericPointerRoot(trc, &gcThing, "parser.traceListNode");
+  }
 }
 
 void FunctionBox::trace(JSTracer* trc) {
@@ -427,6 +429,9 @@ void FunctionBox::trace(JSTracer* trc) {
   }
   if (explicitName_) {
     TraceRoot(trc, &explicitName_, "funbox-explicitName");
+  }
+  if (functionCreationData_) {
+    functionCreationData_->trace(trc);
   }
 }
 

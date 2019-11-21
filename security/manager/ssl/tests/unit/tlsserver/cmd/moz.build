@@ -5,10 +5,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 GeckoSimplePrograms([
-    'BadCertServer',
+    'BadCertAndPinningServer',
     'GenerateOCSPResponse',
     'OCSPStaplingServer',
-    'SymantecSanctionsServer',
+    'SanctionsTestServer',
 ], linkage=None)
 
 LOCAL_INCLUDES += [

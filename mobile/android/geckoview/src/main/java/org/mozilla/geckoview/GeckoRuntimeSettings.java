@@ -369,10 +369,40 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
          * Sets the WebGL MSAA level.
          *
          * @param level number of MSAA samples, 0 if MSAA should be disabled.
-         * @return This GeckoRuntimeSettings instance.
+         * @return This Builder instance.
          */
         public @NonNull Builder glMsaaLevel(final int level) {
             getSettings().mGlMsaaLevel.set(level);
+            return this;
+        }
+
+        /**
+         * Add a {@link RuntimeTelemetry.Delegate} instance to this
+         * GeckoRuntime.  This delegate can be used by the app to receive
+         * streaming telemetry data from GeckoView.
+         *
+         * @param delegate the delegate that will handle telemetry
+         * @return The builder instance.
+         */
+        public @NonNull Builder telemetryDelegate(
+                final @NonNull RuntimeTelemetry.Delegate delegate) {
+            getSettings().mTelemetryProxy = new RuntimeTelemetry.Proxy(delegate);
+            getSettings().mTelemetryEnabled.set(true);
+            return this;
+        }
+
+        /**
+         * Enables GeckoView and Gecko Logging.
+         * Logging is on by default. Does not control all logging in Gecko.
+         * Logging done in Java code must be stripped out at build time.
+         *
+         * @param enable True if logging is enabled.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder debugLogging(final boolean enable) {
+            getSettings().mDevToolsConsoleToLogcat.set(enable);
+            getSettings().mConsoleServiceToLogcat.set(enable);
+            getSettings().mGeckoViewLogLevel.set(enable ? "Debug" : "Fatal");
             return this;
         }
     }
@@ -411,6 +441,14 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
             "apz.allow_double_tap_zooming", true);
     /* package */ final Pref<Integer> mGlMsaaLevel = new Pref<>(
             "gl.msaa-level", 0);
+    /* package */ final Pref<Boolean> mTelemetryEnabled = new Pref<>(
+            "toolkit.telemetry.geckoview.streaming", false);
+    /* package */ final Pref<String> mGeckoViewLogLevel = new Pref<>(
+            "geckoview.logging", "Debug");
+    /* package */ final Pref<Boolean> mConsoleServiceToLogcat = new Pref<>(
+            "consoleservice.logcat", true);
+    /* package */ final Pref<Boolean> mDevToolsConsoleToLogcat = new Pref<>(
+            "devtools.console.stdout.chrome", true);
 
     /* package */ boolean mDebugPause;
     /* package */ boolean mUseMaxScreenDepth;
@@ -420,6 +458,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     /* package */ int mScreenHeightOverride;
     /* package */ Class<? extends Service> mCrashHandler;
     /* package */ String[] mRequestedLocales;
+    /* package */ RuntimeTelemetry.Proxy mTelemetryProxy;
 
     /**
      * Attach and commit the settings to the given runtime.
@@ -471,6 +510,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
         mCrashHandler = settings.mCrashHandler;
         mRequestedLocales = settings.mRequestedLocales;
         mConfigFilePath = settings.mConfigFilePath;
+        mTelemetryProxy = settings.mTelemetryProxy;
     }
 
     /* package */ void commit() {
@@ -977,6 +1017,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     public @NonNull GeckoRuntimeSettings setGlMsaaLevel(final int level) {
         mGlMsaaLevel.commit(level);
         return this;
+    }
+
+    public @Nullable RuntimeTelemetry.Delegate getTelemetryDelegate() {
+        return mTelemetryProxy.getDelegate();
     }
 
     @Override // Parcelable

@@ -21,6 +21,8 @@
 
 #include "mozilla/TypeTraits.h"
 
+#include "ds/Bitmap.h"
+
 #include "wasm/WasmTypes.h"
 
 namespace js {
@@ -67,21 +69,24 @@ struct CompilerEnvironment {
       Tier tier_;
       OptimizedBackend optimizedBackend_;
       DebugEnabled debug_;
+      bool refTypes_;
       bool gcTypes_;
+      bool hugeMemory_;
     };
   };
 
  public:
-  // Retain a reference to the CompileArgs.  A subsequent computeParameters()
+  // Retain a reference to the CompileArgs. A subsequent computeParameters()
   // will compute all parameters from the CompileArgs and additional values.
   explicit CompilerEnvironment(const CompileArgs& args);
 
   // Save the provided values for mode, tier, and debug, and the initial value
-  // for gcTypes.  A subsequent computeParameters() will compute the final
-  // value of gcTypes.
+  // for gcTypes/refTypes. A subsequent computeParameters() will compute the
+  // final value of gcTypes/refTypes.
   CompilerEnvironment(CompileMode mode, Tier tier,
                       OptimizedBackend optimizedBackend,
-                      DebugEnabled debugEnabled, bool gcTypesConfigured);
+                      DebugEnabled debugEnabled, bool refTypesConfigured,
+                      bool gcTypesConfigured, bool hugeMemory);
 
   // Compute any remaining compilation parameters.
   void computeParameters(Decoder& d, bool gcFeatureOptIn);
@@ -111,6 +116,14 @@ struct CompilerEnvironment {
   bool gcTypes() const {
     MOZ_ASSERT(isComputed());
     return gcTypes_;
+  }
+  bool refTypes() const {
+    MOZ_ASSERT(isComputed());
+    return refTypes_;
+  }
+  bool hugeMemory() const {
+    MOZ_ASSERT(isComputed());
+    return hugeMemory_;
   }
 };
 
@@ -158,6 +171,7 @@ struct ModuleEnvironment {
   Maybe<uint32_t> startFuncIndex;
   ElemSegmentVector elemSegments;
   MaybeSectionRange codeSection;
+  SparseBitmap validForRefFunc;
 
   // Fields decoded as part of the wasm module tail:
   DataSegmentEnvVector dataSegments;
@@ -166,8 +180,7 @@ struct ModuleEnvironment {
   Maybe<Name> moduleName;
   NameVector funcNames;
 
-  explicit ModuleEnvironment(bool gcTypesConfigured,
-                             CompilerEnvironment* compilerEnv,
+  explicit ModuleEnvironment(CompilerEnvironment* compilerEnv,
                              Shareable sharedMemoryEnabled,
                              ModuleKind kind = ModuleKind::Wasm)
       : kind(kind),
@@ -195,11 +208,15 @@ struct ModuleEnvironment {
     return funcTypes.length() - funcImportGlobalDataOffsets.length();
   }
   bool gcTypesEnabled() const { return compilerEnv->gcTypes(); }
+  bool refTypesEnabled() const { return compilerEnv->refTypes(); }
   bool usesMemory() const { return memoryUsage != MemoryUsage::None; }
   bool usesSharedMemory() const { return memoryUsage == MemoryUsage::Shared; }
   bool isAsmJS() const { return kind == ModuleKind::AsmJS; }
   bool debugEnabled() const {
     return compilerEnv->debug() == DebugEnabled::True;
+  }
+  bool hugeMemoryEnabled() const {
+    return !isAsmJS() && compilerEnv->hugeMemory();
   }
   bool funcIsImport(uint32_t funcIndex) const {
     return funcIndex < funcImportGlobalDataOffsets.length();
@@ -224,6 +241,47 @@ struct ModuleEnvironment {
   bool isStructPrefixOf(ValType a, ValType b) const {
     const StructType& other = types[a.refTypeIndex()].structType();
     return types[b.refTypeIndex()].structType().hasPrefix(other);
+  }
+};
+
+// ElemSegmentFlags provides methods for decoding and encoding the flags field
+// of an element segment. This is needed as the flags field has a non-trivial
+// encoding that is effectively split into independent `kind` and `payload`
+// enums.
+class ElemSegmentFlags {
+  enum class Flags : uint32_t {
+    Passive = 0x1,
+    WithIndexOrDeclared = 0x2,
+    ElemExpression = 0x4,
+    // Below this line are convenient combinations of flags
+    KindMask = Passive | WithIndexOrDeclared,
+    PayloadMask = ElemExpression,
+    AllFlags = Passive | WithIndexOrDeclared | ElemExpression,
+  };
+  uint32_t encoded_;
+
+  explicit ElemSegmentFlags(uint32_t encoded) : encoded_(encoded) {}
+
+ public:
+  ElemSegmentFlags(ElemSegmentKind kind, ElemSegmentPayload payload) {
+    encoded_ = uint32_t(kind) | uint32_t(payload);
+  }
+
+  static Maybe<ElemSegmentFlags> construct(uint32_t encoded) {
+    if (encoded > uint32_t(Flags::AllFlags)) {
+      return Nothing();
+    }
+    return Some(ElemSegmentFlags(encoded));
+  }
+
+  uint32_t encoded() const { return encoded_; }
+
+  ElemSegmentKind kind() const {
+    return static_cast<ElemSegmentKind>(encoded_ & uint32_t(Flags::KindMask));
+  }
+  ElemSegmentPayload payload() const {
+    return static_cast<ElemSegmentPayload>(encoded_ &
+                                           uint32_t(Flags::PayloadMask));
   }
 };
 
@@ -596,8 +654,8 @@ class Decoder {
         return ValType::Code(code);
     }
   }
-  MOZ_MUST_USE bool readValType(uint32_t numTypes, bool gcTypesEnabled,
-                                ValType* type) {
+  MOZ_MUST_USE bool readValType(uint32_t numTypes, bool refTypesEnabled,
+                                bool gcTypesEnabled, ValType* type) {
     static_assert(uint8_t(TypeCode::Limit) <= UINT8_MAX, "fits");
     uint8_t code;
     if (!readFixedU8(&code)) {
@@ -613,6 +671,9 @@ class Decoder {
 #ifdef ENABLE_WASM_REFTYPES
       case uint8_t(ValType::FuncRef):
       case uint8_t(ValType::AnyRef):
+        if (!refTypesEnabled) {
+          return fail("reference types not enabled");
+        }
         *type = ValType::Code(code);
         return true;
 #  ifdef ENABLE_WASM_GC
@@ -636,9 +697,10 @@ class Decoder {
         return fail("bad type");
     }
   }
-  MOZ_MUST_USE bool readValType(const TypeDefVector& types, bool gcTypesEnabled,
+  MOZ_MUST_USE bool readValType(const TypeDefVector& types,
+                                bool refTypesEnabled, bool gcTypesEnabled,
                                 ValType* type) {
-    if (!readValType(types.length(), gcTypesEnabled, type)) {
+    if (!readValType(types.length(), refTypesEnabled, gcTypesEnabled, type)) {
       return false;
     }
     if (type->isRef() && !types[type->refTypeIndex()].isStructType()) {
@@ -790,7 +852,7 @@ MOZ_MUST_USE bool DecodeValidatedLocalEntries(Decoder& d,
 // This validates the entries.
 
 MOZ_MUST_USE bool DecodeLocalEntries(Decoder& d, const TypeDefVector& types,
-                                     bool gcTypesEnabled,
+                                     bool refTypesEnabled, bool gcTypesEnabled,
                                      ValTypeVector* locals);
 
 // Returns whether the given [begin, end) prefix of a module's bytecode starts a

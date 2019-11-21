@@ -16,10 +16,16 @@ add_task(async function test_initialize() {
   gOldParentCanRecord = Telemetry.canRecordExtended;
   Telemetry.canRecordExtended = true;
 
-  // Because canRecordExtended is a per-process variable, we need to make sure
-  // that all of the pages load in the same content process. Limit the number
-  // of content processes to at most 1 (or 0 if e10s is off entirely).
-  await SpecialPowers.pushPrefEnv({ set: [["dom.ipc.processCount", 1]] });
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      // Because canRecordExtended is a per-process variable, we need to make sure
+      // that all of the pages load in the same content process. Limit the number
+      // of content processes to at most 1 (or 0 if e10s is off entirely).
+      ["dom.ipc.processCount", 1],
+      ["layout.css.use-counters.enabled", true],
+      ["layout.css.use-counters-unimplemented.enabled", true],
+    ],
+  });
 
   gOldContentCanRecord = await ContentTask.spawn(
     gBrowser.selectedBrowser,
@@ -51,6 +57,30 @@ add_task(async function() {
     "SVGSVGELEMENT_CURRENTSCALE_setter"
   );
 
+  // Check for longhands.
+  await check_use_counter_iframe(
+    "file_use_counter_style.html",
+    "CSS_PROPERTY_BackgroundImage"
+  );
+
+  // Check for shorthands.
+  await check_use_counter_iframe(
+    "file_use_counter_style.html",
+    "CSS_PROPERTY_Padding"
+  );
+
+  // Check for aliases.
+  await check_use_counter_iframe(
+    "file_use_counter_style.html",
+    "CSS_PROPERTY_MozTransform"
+  );
+
+  // Check for counted unknown properties.
+  await check_use_counter_iframe(
+    "file_use_counter_style.html",
+    "CSS_PROPERTY_WebkitPaddingStart"
+  );
+
   // Check that even loads from the imglib cache update use counters.  The
   // images should still be there, because we just loaded them in the last
   // set of tests.  But we won't get updated counts for the document
@@ -76,18 +106,18 @@ add_task(async function() {
   // check for properties here.
   await check_use_counter_img(
     "file_use_counter_svg_getElementById.svg",
-    "PROPERTY_FILL"
+    "CSS_PROPERTY_Fill"
   );
   await check_use_counter_img(
     "file_use_counter_svg_currentScale.svg",
-    "PROPERTY_FILL"
+    "CSS_PROPERTY_Fill"
   );
 
   // Check that use counters are incremented by directly loading SVGs
   // that reference patterns defined in another SVG file.
   await check_use_counter_direct(
     "file_use_counter_svg_fill_pattern.svg",
-    "PROPERTY_FILLOPACITY",
+    "CSS_PROPERTY_FillOpacity",
     /*xfail=*/ true
   );
 
@@ -95,8 +125,9 @@ add_task(async function() {
   // that reference patterns defined in the same file or in data: URLs.
   await check_use_counter_direct(
     "file_use_counter_svg_fill_pattern_internal.svg",
-    "PROPERTY_FILLOPACITY"
+    "CSS_PROPERTY_FillOpacity"
   );
+
   // data: URLs don't correctly propagate to their referring document yet.
   //yield check_use_counter_direct("file_use_counter_svg_fill_pattern_data.svg",
   //                               "PROPERTY_FILL_OPACITY");
@@ -112,9 +143,6 @@ add_task(async function() {
     gBrowser.selectedBrowser,
     { oldCanRecord: gOldContentCanRecord },
     async function(arg) {
-      const { PromiseUtils } = ChromeUtils.import(
-        "resource://gre/modules/PromiseUtils.jsm"
-      );
       await new Promise(resolve => {
         let telemetry = Cc["@mozilla.org/base/telemetry;1"].getService(
           Ci.nsITelemetry
@@ -127,16 +155,13 @@ add_task(async function() {
 });
 
 function waitForDestroyedDocuments() {
-  let deferred = PromiseUtils.defer();
-  SpecialPowers.exactGC(deferred.resolve);
-  return deferred.promise;
+  return new Promise(resolve => {
+    SpecialPowers.exactGC(resolve);
+  });
 }
 
 function waitForPageLoad(browser) {
   return ContentTask.spawn(browser, null, async function() {
-    const { PromiseUtils } = ChromeUtils.import(
-      "resource://gre/modules/PromiseUtils.jsm"
-    );
     await new Promise(resolve => {
       let listener = () => {
         removeEventListener("load", listener, true);
@@ -203,38 +228,22 @@ var check_use_counter_iframe = async function(
   await ContentTask.spawn(gBrowser.selectedBrowser, { file: file }, function(
     opts
   ) {
-    const { PromiseUtils } = ChromeUtils.import(
-      "resource://gre/modules/PromiseUtils.jsm"
-    );
-    let deferred = PromiseUtils.defer();
-
-    let wu = content.window.windowUtils;
-
     let iframe = content.document.getElementById("content");
     iframe.src = opts.file;
-    let listener = event => {
-      event.target.removeEventListener("load", listener, true);
 
-      // We flush the main document first, then the iframe's document to
-      // ensure any propagation that might happen from content->parent should
-      // have already happened when counters are reported to telemetry.
-      wu.forceUseCounterFlush(content.document);
-      wu.forceUseCounterFlush(iframe.contentDocument);
-
-      deferred.resolve();
-    };
-    iframe.addEventListener("load", listener, true);
-
-    return deferred.promise;
+    return new Promise(resolve => {
+      let listener = event => {
+        event.target.removeEventListener("load", listener, true);
+        resolve();
+      };
+      iframe.addEventListener("load", listener, true);
+    });
   });
 
   // Tear down the page.
+  let tabClosed = BrowserTestUtils.waitForTabClosing(newTab);
   gBrowser.removeTab(newTab);
-
-  // The histograms only get recorded when the document actually gets
-  // destroyed, which might not have happened yet due to GC/CC effects, etc.
-  // Try to force document destruction.
-  await waitForDestroyedDocuments();
+  await tabClosed;
 
   // Grab histograms again and compare.
   let [
@@ -294,40 +303,23 @@ var check_use_counter_img = async function(file, use_counter_middlefix) {
     gBrowser.selectedBrowser,
     { file: file },
     async function(opts) {
-      const { PromiseUtils } = ChromeUtils.import(
-        "resource://gre/modules/PromiseUtils.jsm"
-      );
-      let deferred = PromiseUtils.defer();
-
       let img = content.document.getElementById("display");
       img.src = opts.file;
-      let listener = event => {
-        img.removeEventListener("load", listener, true);
 
-        // Flush for the image.  It matters what order we do these in, so that
-        // the image can propagate its use counters to the document prior to the
-        // document reporting its use counters.
-        let wu = content.window.windowUtils;
-        wu.forceUseCounterFlush(img);
-
-        // Flush for the main window.
-        wu.forceUseCounterFlush(content.document);
-
-        deferred.resolve();
-      };
-      img.addEventListener("load", listener, true);
-
-      return deferred.promise;
+      return new Promise(resolve => {
+        let listener = event => {
+          img.removeEventListener("load", listener, true);
+          resolve();
+        };
+        img.addEventListener("load", listener, true);
+      });
     }
   );
 
   // Tear down the page.
+  let tabClosed = BrowserTestUtils.waitForTabClosing(newTab);
   gBrowser.removeTab(newTab);
-
-  // The histograms only get recorded when the document actually gets
-  // destroyed, which might not have happened yet due to GC/CC effects, etc.
-  // Try to force document destruction.
-  await waitForDestroyedDocuments();
+  await tabClosed;
 
   // Grab histograms again and compare.
   let [
@@ -383,16 +375,9 @@ var check_use_counter_direct = async function(
 
   BrowserTestUtils.loadURI(gBrowser.selectedBrowser, gHttpTestRoot + file);
   await ContentTask.spawn(gBrowser.selectedBrowser, null, async function() {
-    const { PromiseUtils } = ChromeUtils.import(
-      "resource://gre/modules/PromiseUtils.jsm"
-    );
     await new Promise(resolve => {
       let listener = () => {
         removeEventListener("load", listener, true);
-
-        let wu = content.window.windowUtils;
-        wu.forceUseCounterFlush(content.document);
-
         setTimeout(resolve, 0);
       };
       addEventListener("load", listener, true);
@@ -400,12 +385,9 @@ var check_use_counter_direct = async function(
   });
 
   // Tear down the page.
+  let tabClosed = BrowserTestUtils.waitForTabClosing(newTab);
   gBrowser.removeTab(newTab);
-
-  // The histograms only get recorded when the document actually gets
-  // destroyed, which might not have happened yet due to GC/CC effects, etc.
-  // Try to force document destruction.
-  await waitForDestroyedDocuments();
+  await tabClosed;
 
   // Grab histograms again and compare.
   let [

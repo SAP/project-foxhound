@@ -1,5 +1,4 @@
-/* vim:set ts=2 sw=2 sts=2 et:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -107,7 +106,12 @@ ChromeUtils.defineModuleGetter(
   "resource://devtools/client/shared/widgets/VariablesViewController.jsm"
 );
 
-loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerServer",
+  "devtools/server/debugger-server",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
@@ -127,8 +131,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "HUDService",
-  "devtools/client/webconsole/hudservice",
+  "BrowserConsoleManager",
+  "devtools/client/webconsole/browser-console-manager",
   true
 );
 loader.lazyRequireGetter(
@@ -560,7 +564,7 @@ var Scratchpad = {
 
     if (response.error) {
       throw new Error(response.error);
-    } else if (response.exception !== null) {
+    } else if (response.exception != null) {
       return [string, response];
     } else {
       return [string, undefined, response.result];
@@ -1586,7 +1590,7 @@ var Scratchpad = {
    * Open the Error Console.
    */
   openErrorConsole: function SP_openErrorConsole() {
-    HUDService.toggleBrowserConsole();
+    BrowserConsoleManager.toggleBrowserConsole();
   },
 
   /**
@@ -1740,6 +1744,27 @@ var Scratchpad = {
         var lines = initialText.split("\n");
 
         this.editor.setFontSize(Services.prefs.getIntPref(EDITOR_FONT_SIZE));
+
+        // Display the deprecation warning for Scratchpad.
+        const deprecationWarning = document.createElement("a");
+        deprecationWarning.setAttribute(
+          "href",
+          "https://developer.mozilla.org/docs/Tools/Deprecated_tools#Scratchpad"
+        );
+        deprecationWarning.setAttribute("target", "_blank");
+        deprecationWarning.append(
+          this.strings.GetStringFromName("scratchpad.deprecated.label")
+        );
+
+        const deprecationFragment = document.createDocumentFragment();
+        deprecationFragment.append(deprecationWarning);
+
+        this.notificationBox.appendNotification(
+          deprecationFragment,
+          "scratchpad.deprecated",
+          null,
+          this.notificationBox.PRIORITY_WARNING_HIGH
+        );
 
         this.editor.on("change", this._onChanged);
         // Keep a reference to the bound version for use in onUnload.
@@ -2306,7 +2331,8 @@ ScratchpadSidebar.prototype = {
               return this._scratchpad.webConsoleClient.longString(actor);
             },
             releaseActor: actor => {
-              this._scratchpad.debuggerClient.release(actor);
+              // Ignore release failure, since the object actor may have been already GC.
+              this._scratchpad.debuggerClient.release(actor).catch(() => {});
             },
           });
         }

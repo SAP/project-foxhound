@@ -224,11 +224,11 @@ nsresult nsJARChannel::Init(nsIURI* uri) {
   // Prevent loading jar:javascript URIs (see bug 290982).
   nsCOMPtr<nsIURI> innerURI;
   rv = mJarURI->GetJARFile(getter_AddRefs(innerURI));
-  if (NS_FAILED(rv)) return rv;
-  bool isJS;
-  rv = innerURI->SchemeIs("javascript", &isJS);
-  if (NS_FAILED(rv)) return rv;
-  if (isJS) {
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (innerURI->SchemeIs("javascript")) {
     NS_WARNING("blocking jar:javascript:");
     return NS_ERROR_INVALID_ARG;
   }
@@ -368,7 +368,7 @@ nsresult CreateLocalJarInput(nsIZipReaderCache* aJarCache, nsIFile* aFile,
   RefPtr<nsJARInputThunk> input =
       new nsJARInputThunk(reader, aJarURI, aJarEntry, aJarCache != nullptr);
   rv = input->Init();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
+  if (NS_FAILED(rv)) {
     return rv;
   }
 
@@ -991,7 +991,9 @@ nsJARChannel::OnStartRequest(nsIRequest* req) {
   mRequest = req;
   nsresult rv = mListener->OnStartRequest(this);
   mRequest = nullptr;
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
 
   // Restrict loadable content types.
   nsAutoCString contentType;

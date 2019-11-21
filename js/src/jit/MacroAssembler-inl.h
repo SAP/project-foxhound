@@ -369,18 +369,23 @@ void MacroAssembler::branchTestFunctionFlags(Register fun, uint32_t flags,
 void MacroAssembler::branchIfFunctionHasNoJitEntry(Register fun,
                                                    bool isConstructing,
                                                    Label* label) {
-  int32_t flags = JSFunction::INTERPRETED;
+  int32_t flags = FunctionFlags::INTERPRETED | FunctionFlags::INTERPRETED_LAZY;
   if (!isConstructing) {
-    flags |= JSFunction::WASM_JIT_ENTRY;
+    flags |= FunctionFlags::WASM_JIT_ENTRY;
   }
+  branchTestFunctionFlags(fun, flags, Assembler::Zero, label);
+}
+
+void MacroAssembler::branchIfFunctionHasNoScript(Register fun, Label* label) {
+  int32_t flags = FunctionFlags::INTERPRETED;
   branchTestFunctionFlags(fun, flags, Assembler::Zero, label);
 }
 
 void MacroAssembler::branchIfInterpreted(Register fun, bool isConstructing,
                                          Label* label) {
-  int32_t flags = JSFunction::INTERPRETED | JSFunction::INTERPRETED_LAZY;
+  int32_t flags = FunctionFlags::INTERPRETED | FunctionFlags::INTERPRETED_LAZY;
   if (!isConstructing) {
-    flags |= JSFunction::WASM_JIT_ENTRY;
+    flags |= FunctionFlags::WASM_JIT_ENTRY;
   }
   branchTestFunctionFlags(fun, flags, Assembler::NonZero, label);
 }
@@ -395,13 +400,13 @@ void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
 
   branchTestClassIsProxy(true, scratch, slowCheck);
 
-  Address flags(scratch, Class::offsetOfFlags());
+  Address flags(scratch, JSClass::offsetOfFlags());
   branchTest32(Assembler::NonZero, flags, Imm32(JSCLASS_EMULATES_UNDEFINED),
                label);
 }
 
 void MacroAssembler::branchFunctionKind(Condition cond,
-                                        JSFunction::FunctionKind kind,
+                                        FunctionFlags::FunctionKind kind,
                                         Register fun, Register scratch,
                                         Label* label) {
   // 16-bit loads are slow and unaligned 32-bit loads may be too so
@@ -409,16 +414,15 @@ void MacroAssembler::branchFunctionKind(Condition cond,
   MOZ_ASSERT(JSFunction::offsetOfNargs() % sizeof(uint32_t) == 0);
   MOZ_ASSERT(JSFunction::offsetOfFlags() == JSFunction::offsetOfNargs() + 2);
   Address address(fun, JSFunction::offsetOfNargs());
-  int32_t mask = IMM32_16ADJ(JSFunction::FUNCTION_KIND_MASK);
-  int32_t bit = IMM32_16ADJ(kind << JSFunction::FUNCTION_KIND_SHIFT);
+  int32_t mask = IMM32_16ADJ(FunctionFlags::FUNCTION_KIND_MASK);
+  int32_t bit = IMM32_16ADJ(kind << FunctionFlags::FUNCTION_KIND_SHIFT);
   load32(address, scratch);
   and32(Imm32(mask), scratch);
   branch32(cond, scratch, Imm32(bit), label);
 }
 
 void MacroAssembler::branchTestObjClass(Condition cond, Register obj,
-                                        const js::Class* clasp,
-                                        Register scratch,
+                                        const JSClass* clasp, Register scratch,
                                         Register spectreRegToZero,
                                         Label* label) {
   MOZ_ASSERT(obj != scratch);
@@ -434,7 +438,7 @@ void MacroAssembler::branchTestObjClass(Condition cond, Register obj,
 }
 
 void MacroAssembler::branchTestObjClassNoSpectreMitigations(
-    Condition cond, Register obj, const js::Class* clasp, Register scratch,
+    Condition cond, Register obj, const JSClass* clasp, Register scratch,
     Label* label) {
   loadPtr(Address(obj, JSObject::offsetOfGroup()), scratch);
   branchPtr(cond, Address(scratch, ObjectGroup::offsetOfClasp()), ImmPtr(clasp),
@@ -586,8 +590,8 @@ void MacroAssembler::branchTestObjGroupNoSpectreMitigations(Condition cond,
 void MacroAssembler::branchTestClassIsProxy(bool proxy, Register clasp,
                                             Label* label) {
   branchTest32(proxy ? Assembler::NonZero : Assembler::Zero,
-               Address(clasp, Class::offsetOfFlags()), Imm32(JSCLASS_IS_PROXY),
-               label);
+               Address(clasp, JSClass::offsetOfFlags()),
+               Imm32(JSCLASS_IS_PROXY), label);
 }
 
 void MacroAssembler::branchTestObjectIsProxy(bool proxy, Register object,

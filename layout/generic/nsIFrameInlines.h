@@ -19,6 +19,11 @@ bool nsIFrame::IsFlexItem() const {
          !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
 }
 
+bool nsIFrame::IsGridItem() const {
+  return GetParent() && GetParent()->IsGridContainerFrame() &&
+         !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
+}
+
 bool nsIFrame::IsFlexOrGridContainer() const {
   return IsFlexContainerFrame() || IsGridContainerFrame();
 }
@@ -56,10 +61,6 @@ bool nsIFrame::IsAbsolutelyPositioned(
     const nsStyleDisplay* aStyleDisplay) const {
   const nsStyleDisplay* disp = StyleDisplayWithOptionalParam(aStyleDisplay);
   return disp->IsAbsolutelyPositioned(this);
-}
-
-bool nsIFrame::IsBlockInside() const {
-  return StyleDisplay()->IsBlockInside(this);
 }
 
 bool nsIFrame::IsBlockOutside() const {

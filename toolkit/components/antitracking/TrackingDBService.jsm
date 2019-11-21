@@ -7,24 +7,36 @@
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
 const { requestIdleCallback } = ChromeUtils.import(
   "resource://gre/modules/Timer.jsm"
 );
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const SCHEMA_VERSION = 1;
+const TRACKERS_BLOCKED_COUNT = "contentblocking.trackers_blocked_count";
 
 XPCOMUtils.defineLazyGetter(this, "DB_PATH", function() {
   return OS.Path.join(OS.Constants.Path.profileDir, "protections.sqlite");
 });
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "social_enabled",
+  "privacy.socialtracking.block_cookies.enabled",
+  false
+);
 
 ChromeUtils.defineModuleGetter(
   this,
   "AsyncShutdown",
   "resource://gre/modules/AsyncShutdown.jsm"
 );
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  readAsyncStream: "resource://gre/modules/AsyncStreamReader.jsm",
+});
 
 /**
  * All SQL statements should be defined here.
@@ -52,6 +64,15 @@ const SQL = {
   deleteEventsRecords: "DELETE FROM events;",
 
   removeRecordsSince: "DELETE FROM events WHERE timestamp >= date(:date);",
+
+  selectByDateRange:
+    "SELECT * FROM events " +
+    "WHERE timestamp BETWEEN date(:dateFrom) AND date(:dateTo);",
+
+  sumAllEvents: "SELECT sum(count) FROM events;",
+
+  getEarliestDate:
+    "SELECT timestamp FROM events ORDER BY timestamp ASC LIMIT 1;",
 };
 
 /**
@@ -121,65 +142,63 @@ TrackingDBService.prototype = {
     await db.close();
   },
 
-  _readAsyncStream(stream) {
-    return new Promise(function(resolve, reject) {
-      let result = "";
-      let source = Cc["@mozilla.org/binaryinputstream;1"].createInstance(
-        Ci.nsIBinaryInputStream
-      );
-      source.setInputStream(stream);
-      function readData() {
-        try {
-          result += source.readBytes(source.available());
-          stream.asyncWait(readData, 0, 0, Services.tm.currentThread);
-        } catch (e) {
-          if (e.result == Cr.NS_BASE_STREAM_CLOSED) {
-            resolve(result);
-          } else {
-            reject(e);
-          }
-        }
-      }
-      stream.asyncWait(readData, 0, 0, Services.tm.currentThread);
-    });
-  },
-
   async recordContentBlockingLog(inputStream) {
-    let json = await this._readAsyncStream(inputStream);
+    /* import-globals-from AsyncStreamReader.jsm */
+    let json = await readAsyncStream(inputStream);
     requestIdleCallback(this.saveEvents.bind(this, json));
   },
 
   identifyType(events) {
     let result = null;
     let isTracker = false;
+    let isSocialTracker = false;
     for (let [state, blocked] of events) {
       if (state & Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT) {
         isTracker = true;
       }
+      if (
+        state & Ci.nsIWebProgressListener.STATE_LOADED_SOCIALTRACKING_CONTENT
+      ) {
+        isSocialTracker = true;
+      }
       if (blocked) {
-        if (state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT) {
-          result = Ci.nsITrackingDBService.TRACKERS_ID;
-        }
         if (
           state & Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT
         ) {
           result = Ci.nsITrackingDBService.FINGERPRINTERS_ID;
-        }
-        if (
-          state & Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT
+        } else if (
+          // If STP is enabled and either a social tracker is blocked,
+          // or a cookie was blocked with a social tracking event
+          social_enabled &&
+          ((isSocialTracker &&
+            state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER) ||
+            state &
+              Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT)
         ) {
-          result = Ci.nsITrackingDBService.CRYPTOMINERS_ID;
-        }
-        if (state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER) {
+          result = Ci.nsITrackingDBService.SOCIAL_ID;
+        } else if (
+          // If there is a tracker blocked. If there is a social tracker blocked, but STP is not enabled.
+          state & Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT ||
+          state & Ci.nsIWebProgressListener.STATE_BLOCKED_SOCIALTRACKING_CONTENT
+        ) {
+          result = Ci.nsITrackingDBService.TRACKERS_ID;
+        } else if (
+          // If a tracking cookie was blocked attribute it to tracking cookies. Possible social tracking content,
+          // but STP is not enabled.
+          state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_TRACKER
+        ) {
           result = Ci.nsITrackingDBService.TRACKING_COOKIES_ID;
-        }
-        if (
+        } else if (
           state &
             Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_BY_PERMISSION ||
           state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_ALL ||
           state & Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_FOREIGN
         ) {
           result = Ci.nsITrackingDBService.OTHER_COOKIES_BLOCKED_ID;
+        } else if (
+          state & Ci.nsIWebProgressListener.STATE_BLOCKED_CRYPTOMINING_CONTENT
+        ) {
+          result = Ci.nsITrackingDBService.CRYPTOMINERS_ID;
         }
       }
     }
@@ -210,6 +229,9 @@ TrackingDBService.prototype = {
           // cookie which is not a tracking cookie. These should not be added to the database.
           let type = this.identifyType(log[thirdParty]);
           if (type) {
+            // Send the blocked event to Telemetry
+            Services.telemetry.scalarAdd(TRACKERS_BLOCKED_COUNT, 1);
+
             // today is a date "YYY-MM-DD" which can compare with what is
             // already saved in the database.
             let today = new Date().toISOString().split("T")[0];
@@ -242,7 +264,41 @@ TrackingDBService.prototype = {
 
   async clearSince(date) {
     let db = await this.ensureDB();
+    date = new Date(date).toISOString();
     await removeRecordsSince(db, date);
+  },
+
+  async getEventsByDateRange(dateFrom, dateTo) {
+    let db = await this.ensureDB();
+    dateFrom = new Date(dateFrom).toISOString();
+    dateTo = new Date(dateTo).toISOString();
+    return db.execute(SQL.selectByDateRange, { dateFrom, dateTo });
+  },
+
+  async sumAllEvents() {
+    let db = await this.ensureDB();
+    let results = await db.execute(SQL.sumAllEvents);
+    if (!results[0]) {
+      return 0;
+    }
+    let total = results[0].getResultByName("sum(count)");
+    return total || 0;
+  },
+
+  async getEarliestRecordedDate() {
+    let db = await this.ensureDB();
+    let date = await db.execute(SQL.getEarliestDate);
+    if (!date[0]) {
+      return null;
+    }
+    let earliestDate = date[0].getResultByName("timestamp");
+
+    // All of our dates are recorded as 00:00 GMT, add 12 hours to the timestamp
+    // to ensure we display the correct date no matter the user's location.
+    let hoursInMS12 = 12 * 60 * 60 * 1000;
+    let earliestDateInMS = new Date(earliestDate).getTime() + hoursInMS12;
+
+    return earliestDateInMS || null;
   },
 };
 

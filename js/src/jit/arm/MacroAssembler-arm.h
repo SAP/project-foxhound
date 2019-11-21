@@ -12,6 +12,7 @@
 #include "jit/arm/Assembler-arm.h"
 #include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
+#include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"
 
 namespace js {
@@ -861,7 +862,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void unboxDouble(const BaseIndex& src, FloatRegister dest);
 
   void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType type);
-  void unboxPrivate(const ValueOperand& src, Register dest);
 
   // See comment in MacroAssembler-x64.h.
   void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {

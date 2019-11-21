@@ -1,8 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac } from "common/Actions.jsm";
 import { CardGrid } from "content-src/components/DiscoveryStreamComponents/CardGrid/CardGrid";
 import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
 import { connect } from "react-redux";
+import { DSDismiss } from "content-src/components/DiscoveryStreamComponents/DSDismiss/DSDismiss";
 import { DSMessage } from "content-src/components/DiscoveryStreamComponents/DSMessage/DSMessage";
+import { DSTextPromo } from "content-src/components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo";
 import { Hero } from "content-src/components/DiscoveryStreamComponents/Hero/Hero";
 import { Highlights } from "content-src/components/DiscoveryStreamComponents/Highlights/Highlights";
 import { HorizontalRule } from "content-src/components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule";
@@ -105,11 +111,80 @@ export class _DiscoveryStreamBase extends React.PureComponent {
   }
 
   renderComponent(component, embedWidth) {
+    const ENGAGEMENT_LABEL_ENABLED = this.props.Prefs.values[
+      `discoverystream.engagementLabelEnabled`
+    ];
+
     switch (component.type) {
       case "Highlights":
         return <Highlights />;
       case "TopSites":
-        return <TopSites header={component.header} />;
+        let promoAlignment;
+        if (
+          component.spocs &&
+          component.spocs.positions &&
+          component.spocs.positions.length
+        ) {
+          promoAlignment =
+            component.spocs.positions[0].index === 0 ? "left" : "right";
+        }
+        return (
+          <TopSites
+            header={component.header}
+            data={component.data}
+            promoAlignment={promoAlignment}
+          />
+        );
+      case "TextPromo":
+        if (
+          !component.data ||
+          !component.data.spocs ||
+          !component.data.spocs[0]
+        ) {
+          return null;
+        }
+        // Grab the first item in the array as we only have 1 spoc position.
+        const [spoc] = component.data.spocs;
+        const {
+          image_src,
+          raw_image_src,
+          alt_text,
+          title,
+          url,
+          context,
+          cta,
+          campaign_id,
+          id,
+          shim,
+        } = spoc;
+
+        return (
+          <DSDismiss
+            data={{
+              url: spoc.url,
+              guid: spoc.id,
+              shim: spoc.shim,
+            }}
+            dispatch={this.props.dispatch}
+            shouldSendImpressionStats={true}
+          >
+            <DSTextPromo
+              dispatch={this.props.dispatch}
+              image={image_src}
+              raw_image_src={raw_image_src}
+              alt_text={alt_text || title}
+              header={title}
+              cta_text={cta}
+              cta_url={url}
+              subtitle={context}
+              campaignId={campaign_id}
+              id={id}
+              pos={0}
+              shim={shim}
+              type={component.type}
+            />
+          </DSDismiss>
+        );
       case "Message":
         return (
           <DSMessage
@@ -140,6 +215,8 @@ export class _DiscoveryStreamBase extends React.PureComponent {
             type={component.type}
             dispatch={this.props.dispatch}
             items={component.properties.items}
+            cta_variant={component.cta_variant}
+            display_engagement_labels={ENGAGEMENT_LABEL_ENABLED}
           />
         );
       case "Hero":

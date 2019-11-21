@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -10,7 +9,7 @@
 const asyncStorage = require("devtools/shared/async-storage");
 Services.prefs.setCharPref(
   "devtools.devices.url",
-  "http://example.com/browser/devtools/client/responsive.html/test/browser/devices.json"
+  "http://example.com/browser/devtools/client/responsive/test/browser/devices.json"
 );
 
 registerCleanupFunction(() => {
@@ -21,7 +20,7 @@ registerCleanupFunction(() => {
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive.html/manager",
+  "devtools/client/responsive/manager",
   true
 );
 

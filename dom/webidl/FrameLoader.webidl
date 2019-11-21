@@ -108,6 +108,11 @@ interface FrameLoader {
   boolean requestTabStateFlush(unsigned long aFlushId);
 
   /**
+   * Force Epoch update in native sessionStoreListeners.
+   */
+  void requestEpochUpdate(unsigned long aEpoch);
+
+  /**
    * Print the current document.
    *
    * @param aOuterWindowID the ID of the outer window to print
@@ -119,30 +124,6 @@ interface FrameLoader {
   void print(unsigned long long aOuterWindowID,
              nsIPrintSettings aPrintSettings,
              optional nsIWebProgressListener? aProgressListener = null);
-
-  /**
-   * Renders a region of the frame into an image bitmap.
-   *
-   * @param x
-   * @param y
-   * @param w
-   * @param h Specify the area of the window to render, in CSS
-   * pixels. This is relative to the current scroll position.
-   * @param scale The scale to render the window at. Use devicePixelRatio
-   * to have comparable rendering to the OS.
-   * @param backgroundColor The background color to use.
-   *
-   * This API can only be used in the parent process, as content processes
-   * cannot access the rendering of out of process iframes. This API works
-   * with remote and local frames.
-   */
-  [Throws]
-  Promise<ImageBitmap> drawSnapshot(double x,
-                                    double y,
-                                    double w,
-                                    double h,
-                                    double scale,
-                                    DOMString backgroundColor);
 
   /**
    * The element which owns this frame loader.

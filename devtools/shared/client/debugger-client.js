@@ -4,8 +4,6 @@
 
 "use strict";
 
-const promise = require("devtools/shared/deprecated-sync-thenables");
-
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const {
   getStack,
@@ -184,18 +182,17 @@ DebuggerClient.prototype = {
    *         and behaviors of the server we connect to. See RootActor).
    */
   connect: function(onConnected) {
-    const deferred = promise.defer();
+    return new Promise(resolve => {
+      this.once("connected", (applicationType, traits) => {
+        this.traits = traits;
+        if (onConnected) {
+          onConnected(applicationType, traits);
+        }
+        resolve([applicationType, traits]);
+      });
 
-    this.once("connected", (applicationType, traits) => {
-      this.traits = traits;
-      if (onConnected) {
-        onConnected(applicationType, traits);
-      }
-      deferred.resolve([applicationType, traits]);
+      this._transport.ready();
     });
-
-    this._transport.ready();
-    return deferred.promise;
   },
 
   /**
@@ -209,36 +206,37 @@ DebuggerClient.prototype = {
    *         Resolves after the underlying transport is closed.
    */
   close: function(onClosed) {
-    const deferred = promise.defer();
-    if (onClosed) {
-      deferred.promise.then(onClosed);
-    }
+    const promise = new Promise(resolve => {
+      // Disable detach event notifications, because event handlers will be in a
+      // cleared scope by the time they run.
+      this._eventsEnabled = false;
 
-    // Disable detach event notifications, because event handlers will be in a
-    // cleared scope by the time they run.
-    this._eventsEnabled = false;
+      const cleanup = () => {
+        if (this._transport) {
+          this._transport.close();
+        }
+        this._transport = null;
+      };
 
-    const cleanup = () => {
-      if (this._transport) {
-        this._transport.close();
+      // If the connection is already closed,
+      // there is no need to detach client
+      // as we won't be able to send any message.
+      if (this._closed) {
+        cleanup();
+        resolve();
+        return;
       }
-      this._transport = null;
-    };
 
-    // If the connection is already closed,
-    // there is no need to detach client
-    // as we won't be able to send any message.
-    if (this._closed) {
+      this.once("closed", resolve);
+
       cleanup();
-      deferred.resolve();
-      return deferred.promise;
+    });
+
+    if (onClosed) {
+      promise.then(onClosed);
     }
 
-    this.once("closed", deferred.resolve);
-
-    cleanup();
-
-    return deferred.promise;
+    return promise;
   },
 
   /**
@@ -283,7 +281,7 @@ DebuggerClient.prototype = {
    *                     and will not close the stream when reading is complete
    *           * done:   If you use the stream directly (instead of |copyTo|
    *                     below), you must signal completion by resolving /
-   *                     rejecting this deferred.  If it's rejected, the
+   *                     rejecting this promise.  If it's rejected, the
    *                     transport will be closed.  If an Error is supplied as a
    *                     rejection value, it will be logged via |dumpn|.  If you
    *                     do use |copyTo|, resolving is taken care of for you
@@ -327,7 +325,7 @@ DebuggerClient.prototype = {
         "' " +
         "can't be sent as the connection is closed.";
       const resp = { error: "connectionClosed", message: msg };
-      return promise.reject(safeOnResponse(resp));
+      return Promise.reject(safeOnResponse(resp));
     }
 
     const request = new Request(packet);
@@ -336,31 +334,33 @@ DebuggerClient.prototype = {
 
     // Implement a Promise like API on the returned object
     // that resolves/rejects on request response
-    const deferred = promise.defer();
-    function listenerJson(resp) {
-      removeRequestListeners();
-      resp = safeOnResponse(resp);
-      if (resp.error) {
-        deferred.reject(resp);
-      } else {
-        deferred.resolve(resp);
+    const promise = new Promise((resolve, reject) => {
+      function listenerJson(resp) {
+        removeRequestListeners();
+        resp = safeOnResponse(resp);
+        if (resp.error) {
+          reject(resp);
+        } else {
+          resolve(resp);
+        }
       }
-    }
-    function listenerBulk(resp) {
-      removeRequestListeners();
-      deferred.resolve(safeOnResponse(resp));
-    }
+      function listenerBulk(resp) {
+        removeRequestListeners();
+        resolve(safeOnResponse(resp));
+      }
 
-    const removeRequestListeners = () => {
-      request.off("json-reply", listenerJson);
-      request.off("bulk-reply", listenerBulk);
-    };
+      const removeRequestListeners = () => {
+        request.off("json-reply", listenerJson);
+        request.off("bulk-reply", listenerBulk);
+      };
 
-    request.on("json-reply", listenerJson);
-    request.on("bulk-reply", listenerBulk);
+      request.on("json-reply", listenerJson);
+      request.on("bulk-reply", listenerBulk);
+    });
 
     this._sendOrQueueRequest(request);
-    request.then = deferred.promise.then.bind(deferred.promise);
+    request.then = promise.then.bind(promise);
+    request.catch = promise.catch.bind(promise);
 
     return request;
   },
@@ -395,7 +395,7 @@ DebuggerClient.prototype = {
    *                       complete
    *           * done:     If you use the stream directly (instead of |copyFrom|
    *                       below), you must signal completion by resolving /
-   *                       rejecting this deferred.  If it's rejected, the
+   *                       rejecting this promise.  If it's rejected, the
    *                       transport will be closed.  If an Error is supplied as
    *                       a rejection value, it will be logged via |dumpn|.  If
    *                       you do use |copyFrom|, resolving is taken care of for
@@ -422,7 +422,7 @@ DebuggerClient.prototype = {
    *                     and will not close the stream when reading is complete
    *           * done:   If you use the stream directly (instead of |copyTo|
    *                     below), you must signal completion by resolving /
-   *                     rejecting this deferred.  If it's rejected, the
+   *                     rejecting this promise.  If it's rejected, the
    *                     transport will be closed.  If an Error is supplied as a
    *                     rejection value, it will be logged via |dumpn|.  If you
    *                     do use |copyTo|, resolving is taken care of for you
@@ -580,7 +580,7 @@ DebuggerClient.prototype = {
       return;
     }
 
-    // support older browsers for Fx69+ for using the old thread client
+    // support older browsers for Fx69+ for using the old thread front
     if (!this.traits.hasThreadFront && packet.from.includes("context")) {
       this.sendToDeprecatedThreadClient(packet);
       return;
@@ -588,7 +588,7 @@ DebuggerClient.prototype = {
 
     // If we have a registered Front for this actor, let it handle the packet
     // and skip all the rest of this unpleasantness.
-    const front = this.getActor(packet.from);
+    const front = this.getFrontByID(packet.from);
     if (front) {
       front.onPacket(packet);
       return;
@@ -635,7 +635,7 @@ DebuggerClient.prototype = {
   // The code duplication here is intentional until we drop support for
   // these versions. Once that happens this code can be deleted.
   sendToDeprecatedThreadClient(packet) {
-    const deprecatedThreadClient = this.getActor(packet.from);
+    const deprecatedThreadClient = this.getFrontByID(packet.from);
     if (deprecatedThreadClient && packet.type) {
       const type = packet.type;
       if (deprecatedThreadClient.events.includes(type)) {
@@ -699,7 +699,7 @@ DebuggerClient.prototype = {
    *                  not close the stream when reading is complete
    *        * done:   If you use the stream directly (instead of |copyTo|
    *                  below), you must signal completion by resolving /
-   *                  rejecting this deferred.  If it's rejected, the transport
+   *                  rejecting this promise.  If it's rejected, the transport
    *                  will be closed.  If an Error is supplied as a rejection
    *                  value, it will be logged via |dumpn|.  If you do use
    *                  |copyTo|, resolving is taken care of for you when copying
@@ -923,7 +923,13 @@ DebuggerClient.prototype = {
   removeActorPool: function(pool) {
     this._pools.delete(pool);
   },
-  getActor: function(actorID) {
+
+  /**
+   * Return the Front for the Actor whose ID is the one passed in argument.
+   *
+   * @param {String} actorID: The actor ID to look for.
+   */
+  getFrontByID: function(actorID) {
     const pool = this.poolFor(actorID);
     return pool ? pool.get(actorID) : null;
   },

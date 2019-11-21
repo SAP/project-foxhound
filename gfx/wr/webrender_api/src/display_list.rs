@@ -2,17 +2,18 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use bincode;
 use euclid::SideOffsets2D;
+use peek_poke::{ensure_red_zone, peek_from_slice, poke_extend_vec};
+use peek_poke::{poke_inplace_slice, poke_into_vec, Poke};
 #[cfg(feature = "deserialize")]
 use serde::de::Deserializer;
 #[cfg(feature = "serialize")]
 use serde::ser::{Serializer, SerializeSeq};
 use serde::{Deserialize, Serialize};
-use std::io::{Read, stdout, Write};
+use std::io::{stdout, Write};
 use std::marker::PhantomData;
 use std::ops::Range;
-use std::{io, mem, ptr, slice};
+use std::mem;
 use std::collections::HashMap;
 use time::precise_time_ns;
 // local imports
@@ -67,18 +68,15 @@ impl<'a, T> ItemRange<'a, T> {
     }
 }
 
-impl<'a, T> ItemRange<'a, T>
-where
-    for<'de> T: Deserialize<'de>,
-{
+impl<'a, T: Default> ItemRange<'a, T> {
     pub fn iter(&self) -> AuxIter<'a, T> {
-        AuxIter::new(self.bytes)
+        AuxIter::new(T::default(), self.bytes)
     }
 }
 
 impl<'a, T> IntoIterator for ItemRange<'a, T>
 where
-    for<'de> T: Deserialize<'de>,
+    T: Copy + Default + peek_poke::Peek,
 {
     type Item = T;
     type IntoIter = AuxIter<'a, T>;
@@ -131,6 +129,7 @@ pub struct BuiltDisplayListIter<'a> {
     cur_glyphs: ItemRange<'a, GlyphInstance>,
     cur_filters: ItemRange<'a, di::FilterOp>,
     cur_filter_data: Vec<TempFilterData<'a>>,
+    cur_filter_primitives: ItemRange<'a, di::FilterPrimitive>,
     cur_clip_chain_items: ItemRange<'a, di::ClipId>,
     cur_complex_clip: ItemRange<'a, di::ComplexClipRegion>,
     peeking: Peek,
@@ -175,7 +174,7 @@ impl DebugStats {
 
     /// Logs the stats for the given serialized slice
     #[cfg(feature = "display_list_stats")]
-    fn log_slice<T: for<'de> Deserialize<'de>>(
+    fn log_slice<T: Peek>(
         &mut self,
         slice_name: &'static str,
         range: &ItemRange<T>,
@@ -185,7 +184,7 @@ impl DebugStats {
         // processed, and the `range` has everything we need.
         self.last_addr = range.bytes.as_ptr() as usize + range.bytes.len();
 
-        self._update_entry(slice_name, range.iter().size_hint().0, range.bytes.len());
+        self._update_entry(slice_name, range.iter().len(), range.bytes.len());
     }
 
     #[cfg(not(feature = "display_list_stats"))]
@@ -216,9 +215,10 @@ enum Peek {
 
 #[derive(Clone)]
 pub struct AuxIter<'a, T> {
+    item: T,
     data: &'a [u8],
     size: usize,
-    _boo: PhantomData<T>,
+//    _boo: PhantomData<T>,
 }
 
 impl BuiltDisplayListDescriptor {}
@@ -267,11 +267,10 @@ impl BuiltDisplayList {
     }
 }
 
-/// Returns the byte-range the slice occupied, and the number of elements
-/// in the slice.
-fn skip_slice<'a, T: for<'de> Deserialize<'de>>(mut data: &mut &'a [u8]) -> ItemRange<'a, T> {
-    let skip_offset: usize = bincode::deserialize_from(&mut data).expect("MEH: malicious input?");
-
+/// Returns the byte-range the slice occupied.
+fn skip_slice<'a, T: peek_poke::Peek>(data: &mut &'a [u8]) -> ItemRange<'a, T> {
+    let mut skip_offset = 0usize;
+    *data = peek_from_slice(data, &mut skip_offset);
     let (skip, rest) = data.split_at(skip_offset);
 
     // Adjust data pointer to skip read values
@@ -297,6 +296,7 @@ impl<'a> BuiltDisplayListIter<'a> {
             cur_glyphs: ItemRange::default(),
             cur_filters: ItemRange::default(),
             cur_filter_data: Vec::new(),
+            cur_filter_primitives: ItemRange::default(),
             cur_clip_chain_items: ItemRange::default(),
             cur_complex_clip: ItemRange::default(),
             peeking: Peek::NotPeeking,
@@ -329,13 +329,17 @@ impl<'a> BuiltDisplayListIter<'a> {
         self.cur_stops = ItemRange::default();
         self.cur_complex_clip = ItemRange::default();
         self.cur_clip_chain_items = ItemRange::default();
+        self.cur_filters = ItemRange::default();
+        self.cur_filter_primitives = ItemRange::default();
+        self.cur_filter_data.clear();
 
         loop {
             self.next_raw()?;
             match self.cur_item {
                 SetGradientStops |
                 SetFilterOps |
-                SetFilterData => {
+                SetFilterData |
+                SetFilterPrimitives => {
                     // These are marker items for populating other display items, don't yield them.
                     continue;
                 }
@@ -354,16 +358,14 @@ impl<'a> BuiltDisplayListIter<'a> {
     pub fn next_raw<'b>(&'b mut self) -> Option<DisplayItemRef<'a, 'b>> {
         use crate::DisplayItem::*;
 
-        if self.data.is_empty() {
+        // A "red zone" of DisplayItem::max_size() bytes has been added to the
+        // end of the serialized display list. If this amount, or less, is
+        // remaining then we've reached the end of the display list.
+        if self.data.len() <= di::DisplayItem::max_size() {
             return None;
         }
 
-        {
-            let reader = bincode::IoReader::new(UnsafeReader::new(&mut self.data));
-            bincode::deserialize_in_place(reader, &mut self.cur_item)
-                .expect("MEH: malicious process?");
-        }
-
+        self.data = peek_from_slice(self.data, &mut self.cur_item);
         self.log_item_stats();
 
         match self.cur_item {
@@ -390,6 +392,10 @@ impl<'a> BuiltDisplayListIter<'a> {
                 self.debug_stats.log_slice("set_filter_data.g_values", &data.g_values);
                 self.debug_stats.log_slice("set_filter_data.b_values", &data.b_values);
                 self.debug_stats.log_slice("set_filter_data.a_values", &data.a_values);
+            }
+            SetFilterPrimitives => {
+                self.cur_filter_primitives = skip_slice::<di::FilterPrimitive>(&mut self.data);
+                self.debug_stats.log_slice("set_filter_primitives.primitives", &self.cur_filter_primitives);
             }
             ClipChain(_) => {
                 self.cur_clip_chain_items = skip_slice::<di::ClipId>(&mut self.data);
@@ -427,7 +433,6 @@ impl<'a> BuiltDisplayListIter<'a> {
                 di::DisplayItem::PopStackingContext => depth -= 1,
                 _ => {}
             }
-            debug_assert!(depth >= 0);
         }
     }
 
@@ -502,6 +507,10 @@ impl<'a, 'b> DisplayItemRef<'a, 'b> {
         &self.iter.cur_filter_data
     }
 
+    pub fn filter_primitives(&self) -> ItemRange<di::FilterPrimitive> {
+        self.iter.cur_filter_primitives
+    }
+
     pub fn clip_chain_items(&self) -> ItemRange<di::ClipId> {
         self.iter.cur_clip_chain_items
     }
@@ -516,34 +525,32 @@ impl<'a, 'b> DisplayItemRef<'a, 'b> {
     }
 }
 
-impl<'de, 'a, T: Deserialize<'de>> AuxIter<'a, T> {
-    pub fn new(mut data: &'a [u8]) -> Self {
-        let size: usize = if data.is_empty() {
-            0 // Accept empty ItemRanges pointing anywhere
-        } else {
-            bincode::deserialize_from(&mut UnsafeReader::new(&mut data)).expect("MEH: malicious input?")
+impl<'a, T> AuxIter<'a, T> {
+    pub fn new(item: T, mut data: &'a [u8]) -> Self {
+        let mut size = 0usize;
+        if !data.is_empty() {
+            data = peek_from_slice(data, &mut size);
         };
 
         AuxIter {
+            item,
             data,
             size,
-            _boo: PhantomData,
+//            _boo: PhantomData,
         }
     }
 }
 
-impl<'a, T: for<'de> Deserialize<'de>> Iterator for AuxIter<'a, T> {
+impl<'a, T: Copy + peek_poke::Peek> Iterator for AuxIter<'a, T> {
     type Item = T;
 
-    fn next(&mut self) -> Option<T> {
+    fn next(&mut self) -> Option<Self::Item> {
         if self.size == 0 {
             None
         } else {
             self.size -= 1;
-            Some(
-                bincode::deserialize_from(&mut UnsafeReader::new(&mut self.data))
-                    .expect("MEH: malicious input?"),
-            )
+            self.data = peek_from_slice(self.data, &mut self.item);
+            Some(self.item)
         }
     }
 
@@ -552,7 +559,7 @@ impl<'a, T: for<'de> Deserialize<'de>> Iterator for AuxIter<'a, T> {
     }
 }
 
-impl<'a, T: for<'de> Deserialize<'de>> ::std::iter::ExactSizeIterator for AuxIter<'a, T> {}
+impl<'a, T: Copy + peek_poke::Peek> ::std::iter::ExactSizeIterator for AuxIter<'a, T> {}
 
 
 #[cfg(feature = "serialize")]
@@ -585,12 +592,14 @@ impl Serialize for BuiltDisplayList {
                     item.iter.cur_filters.iter().collect()
                 ),
                 Real::SetFilterData => {
-                    debug_assert!(!item.iter.cur_filter_data.is_empty());
+                    debug_assert!(!item.iter.cur_filter_data.is_empty(),
+                        "next_raw should have populated cur_filter_data");
                     let temp_filter_data = &item.iter.cur_filter_data[item.iter.cur_filter_data.len()-1];
 
                     let func_types: Vec<di::ComponentTransferFuncType> =
                         temp_filter_data.func_types.iter().collect();
-                    debug_assert!(func_types.len() == 4);
+                    debug_assert!(func_types.len() == 4,
+                        "someone changed the number of filter funcs without updating this code");
                     Debug::SetFilterData(di::FilterData {
                         func_r_type: func_types[0],
                         r_values: temp_filter_data.r_values.iter().collect(),
@@ -602,6 +611,9 @@ impl Serialize for BuiltDisplayList {
                         a_values: temp_filter_data.a_values.iter().collect(),
                     })
                 },
+                Real::SetFilterPrimitives => Debug::SetFilterPrimitives(
+                    item.iter.cur_filter_primitives.iter().collect()
+                ),
                 Real::SetGradientStops => Debug::SetGradientStops(
                     item.iter.cur_stops.iter().collect()
                 ),
@@ -620,6 +632,7 @@ impl Serialize for BuiltDisplayList {
                 Real::PushReferenceFrame(v) => Debug::PushReferenceFrame(v),
                 Real::PushStackingContext(v) => Debug::PushStackingContext(v),
                 Real::PushShadow(v) => Debug::PushShadow(v),
+                Real::BackdropFilter(v) => Debug::BackdropFilter(v),
 
                 Real::PopReferenceFrame => Debug::PopReferenceFrame,
                 Real::PopStackingContext => Debug::PopStackingContext,
@@ -700,6 +713,10 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                     DisplayListBuilder::push_iter_impl(&mut temp, filter_data.a_values);
                     Real::SetFilterData
                 },
+                Debug::SetFilterPrimitives(filter_primitives) => {
+                    DisplayListBuilder::push_iter_impl(&mut temp, filter_primitives);
+                    Real::SetFilterPrimitives
+                }
                 Debug::SetGradientStops(stops) => {
                     DisplayListBuilder::push_iter_impl(&mut temp, stops);
                     Real::SetGradientStops
@@ -717,15 +734,21 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                 Debug::RadialGradient(v) => Real::RadialGradient(v),
                 Debug::PushStackingContext(v) => Real::PushStackingContext(v),
                 Debug::PushShadow(v) => Real::PushShadow(v),
+                Debug::BackdropFilter(v) => Real::BackdropFilter(v),
 
                 Debug::PopStackingContext => Real::PopStackingContext,
                 Debug::PopReferenceFrame => Real::PopReferenceFrame,
                 Debug::PopAllShadows => Real::PopAllShadows,
             };
-            serialize_fast(&mut data, &item);
+            poke_into_vec(&item, &mut data);
             // the aux data is serialized after the item, hence the temporary
             data.extend(temp.drain(..));
         }
+
+        // Add `DisplayItem::max_size` zone of zeroes to the end of display list
+        // so there is at least this amount available in the display list during
+        // serialization.
+        ensure_red_zone::<di::DisplayItem>(&mut data);
 
         Ok(BuiltDisplayList {
             data,
@@ -737,221 +760,6 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                 total_spatial_nodes,
             },
         })
-    }
-}
-
-// This is a replacement for bincode::serialize_into(&vec)
-// The default implementation Write for Vec will basically
-// call extend_from_slice(). Serde ends up calling that for every
-// field of a struct that we're serializing. extend_from_slice()
-// does not get inlined and thus we end up calling a generic memcpy()
-// implementation. If we instead reserve enough room for the serialized
-// struct in the Vec ahead of time we can rely on that and use
-// the following UnsafeVecWriter to write into the vec without
-// any checks. This writer assumes that size returned by the
-// serialize function will not change between calls to serialize_into:
-//
-// For example, the following struct will cause memory unsafety when
-// used with UnsafeVecWriter.
-//
-// struct S {
-//    first: Cell<bool>,
-// }
-//
-// impl Serialize for S {
-//    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//        where S: Serializer
-//    {
-//        if self.first.get() {
-//            self.first.set(false);
-//            ().serialize(serializer)
-//        } else {
-//            0.serialize(serializer)
-//        }
-//    }
-// }
-//
-
-struct UnsafeVecWriter(*mut u8);
-
-impl Write for UnsafeVecWriter {
-    #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        unsafe {
-            ptr::copy_nonoverlapping(buf.as_ptr(), self.0, buf.len());
-            self.0 = self.0.add(buf.len());
-        }
-        Ok(buf.len())
-    }
-
-    #[inline(always)]
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        unsafe {
-            ptr::copy_nonoverlapping(buf.as_ptr(), self.0, buf.len());
-            self.0 = self.0.add(buf.len());
-        }
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn flush(&mut self) -> io::Result<()> { Ok(()) }
-}
-
-struct SizeCounter(usize);
-
-impl<'a> Write for SizeCounter {
-    #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0 += buf.len();
-        Ok(buf.len())
-    }
-
-    #[inline(always)]
-    fn write_all(&mut self, buf: &[u8]) -> io::Result<()> {
-        self.0 += buf.len();
-        Ok(())
-    }
-
-    #[inline(always)]
-    fn flush(&mut self) -> io::Result<()> { Ok(()) }
-}
-
-/// Serializes a value assuming the Serialize impl has a stable size across two
-/// invocations.
-///
-/// If this assumption is incorrect, the result will be Undefined Behaviour. This
-/// assumption should hold for all derived Serialize impls, which is all we currently
-/// use.
-fn serialize_fast<T: Serialize>(vec: &mut Vec<u8>, e: T) {
-    // manually counting the size is faster than vec.reserve(bincode::serialized_size(&e) as usize) for some reason
-    let mut size = SizeCounter(0);
-    bincode::serialize_into(&mut size, &e).unwrap();
-    vec.reserve(size.0);
-
-    let old_len = vec.len();
-    let ptr = unsafe { vec.as_mut_ptr().add(old_len) };
-    let mut w = UnsafeVecWriter(ptr);
-    bincode::serialize_into(&mut w, &e).unwrap();
-
-    // fix up the length
-    unsafe { vec.set_len(old_len + size.0); }
-
-    // make sure we wrote the right amount
-    debug_assert_eq!(((w.0 as usize) - (vec.as_ptr() as usize)), vec.len());
-}
-
-/// Serializes an iterator, assuming:
-///
-/// * The Clone impl is trivial (e.g. we're just memcopying a slice iterator)
-/// * The ExactSizeIterator impl is stable and correct across a Clone
-/// * The Serialize impl has a stable size across two invocations
-///
-/// If the first is incorrect, WebRender will be very slow. If the other two are
-/// incorrect, the result will be Undefined Behaviour! The ExactSizeIterator
-/// bound would ideally be replaced with a TrustedLen bound to protect us a bit
-/// better, but that trait isn't stable (and won't be for a good while, if ever).
-///
-/// Debug asserts are included that should catch all Undefined Behaviour, but
-/// we can't afford to include these in release builds.
-fn serialize_iter_fast<I>(vec: &mut Vec<u8>, iter: I) -> usize
-where I: ExactSizeIterator + Clone,
-      I::Item: Serialize,
-{
-    // manually counting the size is faster than vec.reserve(bincode::serialized_size(&e) as usize) for some reason
-    let mut size = SizeCounter(0);
-    let mut count1 = 0;
-
-    for e in iter.clone() {
-        bincode::serialize_into(&mut size, &e).unwrap();
-        count1 += 1;
-    }
-
-    vec.reserve(size.0);
-
-    let old_len = vec.len();
-    let ptr = unsafe { vec.as_mut_ptr().add(old_len) };
-    let mut w = UnsafeVecWriter(ptr);
-    let mut count2 = 0;
-
-    for e in iter {
-        bincode::serialize_into(&mut w, &e).unwrap();
-        count2 += 1;
-    }
-
-    // fix up the length
-    unsafe { vec.set_len(old_len + size.0); }
-
-    // make sure we wrote the right amount
-    debug_assert_eq!(((w.0 as usize) - (vec.as_ptr() as usize)), vec.len());
-    debug_assert_eq!(count1, count2);
-
-    count1
-}
-
-// This uses a (start, end) representation instead of (start, len) so that
-// only need to update a single field as we read through it. This
-// makes it easier for llvm to understand what's going on. (https://github.com/rust-lang/rust/issues/45068)
-// We update the slice only once we're done reading
-struct UnsafeReader<'a: 'b, 'b> {
-    start: *const u8,
-    end: *const u8,
-    slice: &'b mut &'a [u8],
-}
-
-impl<'a, 'b> UnsafeReader<'a, 'b> {
-    #[inline(always)]
-    fn new(buf: &'b mut &'a [u8]) -> UnsafeReader<'a, 'b> {
-        unsafe {
-            let end = buf.as_ptr().add(buf.len());
-            let start = buf.as_ptr();
-            UnsafeReader { start, end, slice: buf }
-        }
-    }
-
-    // This read implementation is significantly faster than the standard &[u8] one.
-    //
-    // First, it only supports reading exactly buf.len() bytes. This ensures that
-    // the argument to memcpy is always buf.len() and will allow a constant buf.len()
-    // to be propagated through to memcpy which LLVM will turn into explicit loads and
-    // stores. The standard implementation does a len = min(slice.len(), buf.len())
-    //
-    // Second, we only need to adjust 'start' after reading and it's only adjusted by a
-    // constant. This allows LLVM to avoid adjusting the length field after ever read
-    // and lets it be aggregated into a single adjustment.
-    #[inline(always)]
-    fn read_internal(&mut self, buf: &mut [u8]) {
-        // this is safe because we panic if start + buf.len() > end
-        unsafe {
-            assert!(self.start.add(buf.len()) <= self.end, "UnsafeReader: read past end of target");
-            ptr::copy_nonoverlapping(self.start, buf.as_mut_ptr(), buf.len());
-            self.start = self.start.add(buf.len());
-        }
-    }
-}
-
-impl<'a, 'b> Drop for UnsafeReader<'a, 'b> {
-    // this adjusts input slice so that it properly represents the amount that's left.
-    #[inline(always)]
-    fn drop(&mut self) {
-        // this is safe because we know that start and end are contained inside the original slice
-        unsafe {
-            *self.slice = slice::from_raw_parts(self.start, (self.end as usize) - (self.start as usize));
-        }
-    }
-}
-
-impl<'a, 'b> Read for UnsafeReader<'a, 'b> {
-    // These methods were not being inlined and we need them to be so that the memcpy
-    // is for a constant size
-    #[inline(always)]
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.read_internal(buf);
-        Ok(buf.len())
-    }
-    #[inline(always)]
-    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
-        self.read_internal(buf);
-        Ok(())
     }
 }
 
@@ -1090,38 +898,40 @@ impl DisplayListBuilder {
     /// result in WebRender panicking or behaving in unexpected ways.
     #[inline]
     pub fn push_item(&mut self, item: &di::DisplayItem) {
-        serialize_fast(&mut self.data, item);
+        poke_into_vec(item, &mut self.data);
     }
 
     fn push_iter_impl<I>(data: &mut Vec<u8>, iter_source: I)
     where
         I: IntoIterator,
-        I::IntoIter: ExactSizeIterator + Clone,
-        I::Item: Serialize,
+        I::IntoIter: ExactSizeIterator,
+        I::Item: Poke,
     {
         let iter = iter_source.into_iter();
         let len = iter.len();
         // Format:
         // payload_byte_size: usize, item_count: usize, [I; item_count]
 
-        // We write a dummy value so there's room for later
+        // Track the the location of where to write byte size with offsets
+        // instead of pointers because data may be moved in memory during
+        // `serialize_iter_fast`.
         let byte_size_offset = data.len();
-        serialize_fast(data, &0usize);
-        let payload_offset = data.len();
-        serialize_fast(data, &len);
-        let count = serialize_iter_fast(data, iter);
+
+        // We write a dummy value so there's room for later
+        poke_into_vec(&0usize, data);
+        poke_into_vec(&len, data);
+        let count = poke_extend_vec(iter, data);
+        debug_assert_eq!(len, count, "iterator.len() returned two different values");
+
+        // Add red zone
+        ensure_red_zone::<I::Item>(data);
 
         // Now write the actual byte_size
         let final_offset = data.len();
-        let byte_size = final_offset - payload_offset;
-
-        // Note we don't use serialize_fast because we don't want to change the Vec's len
-        bincode::serialize_into(
-            &mut &mut data[byte_size_offset..],
-            &byte_size,
-        ).unwrap();
-
-        debug_assert_eq!(len, count);
+        debug_assert!(final_offset >= (byte_size_offset + mem::size_of::<usize>()),
+            "space was never allocated for this array's byte_size");
+        let byte_size = final_offset - byte_size_offset - mem::size_of::<usize>();
+        poke_inplace_slice(&byte_size, &mut data[byte_size_offset..]);
     }
 
     /// Push items from an iterator to the display list.
@@ -1131,8 +941,8 @@ impl DisplayListBuilder {
     pub fn push_iter<I>(&mut self, iter: I)
     where
         I: IntoIterator,
-        I::IntoIter: ExactSizeIterator + Clone,
-        I::Item: Serialize,
+        I::IntoIter: ExactSizeIterator,
+        I::Item: Poke,
     {
         Self::push_iter_impl(&mut self.data, iter);
     }
@@ -1223,6 +1033,7 @@ impl DisplayListBuilder {
         yuv_data: di::YuvData,
         color_depth: ColorDepth,
         color_space: di::YuvColorSpace,
+        color_range: di::ColorRange,
         image_rendering: di::ImageRendering,
     ) {
         let item = di::DisplayItem::YuvImage(di::YuvImageDisplayItem {
@@ -1231,6 +1042,7 @@ impl DisplayListBuilder {
             yuv_data,
             color_depth,
             color_space,
+            color_range,
             image_rendering,
         });
         self.push_item(&item);
@@ -1425,8 +1237,105 @@ impl DisplayListBuilder {
         mix_blend_mode: di::MixBlendMode,
         filters: &[di::FilterOp],
         filter_datas: &[di::FilterData],
+        filter_primitives: &[di::FilterPrimitive],
         raster_space: di::RasterSpace,
         cache_tiles: bool,
+        is_backdrop_root: bool,
+    ) {
+        self.push_filters(filters, filter_datas, filter_primitives);
+
+        let item = di::DisplayItem::PushStackingContext(di::PushStackingContextDisplayItem {
+            origin,
+            spatial_id,
+            is_backface_visible,
+            stacking_context: di::StackingContext {
+                transform_style,
+                mix_blend_mode,
+                clip_id,
+                raster_space,
+                cache_tiles,
+                is_backdrop_root,
+            },
+        });
+
+        self.push_item(&item);
+    }
+
+    /// Helper for examples/ code.
+    pub fn push_simple_stacking_context(
+        &mut self,
+        origin: LayoutPoint,
+        spatial_id: di::SpatialId,
+        is_backface_visible: bool,
+    ) {
+        self.push_simple_stacking_context_with_filters(
+            origin,
+            spatial_id,
+            is_backface_visible,
+            &[],
+            &[],
+            &[],
+        );
+    }
+
+    /// Helper for examples/ code.
+    pub fn push_simple_stacking_context_with_filters(
+        &mut self,
+        origin: LayoutPoint,
+        spatial_id: di::SpatialId,
+        is_backface_visible: bool,
+        filters: &[di::FilterOp],
+        filter_datas: &[di::FilterData],
+        filter_primitives: &[di::FilterPrimitive],
+    ) {
+        self.push_stacking_context(
+            origin,
+            spatial_id,
+            is_backface_visible,
+            None,
+            di::TransformStyle::Flat,
+            di::MixBlendMode::Normal,
+            filters,
+            filter_datas,
+            filter_primitives,
+            di::RasterSpace::Screen,
+            /* cache_tiles = */ false,
+            /* is_backdrop_root = */ false,
+        );
+    }
+
+    pub fn pop_stacking_context(&mut self) {
+        self.push_item(&di::DisplayItem::PopStackingContext);
+    }
+
+    pub fn push_stops(&mut self, stops: &[di::GradientStop]) {
+        if stops.is_empty() {
+            return;
+        }
+        self.push_item(&di::DisplayItem::SetGradientStops);
+        self.push_iter(stops);
+    }
+
+    pub fn push_backdrop_filter(
+        &mut self,
+        common: &di::CommonItemProperties,
+        filters: &[di::FilterOp],
+        filter_datas: &[di::FilterData],
+        filter_primitives: &[di::FilterPrimitive],
+    ) {
+        self.push_filters(filters, filter_datas, filter_primitives);
+
+        let item = di::DisplayItem::BackdropFilter(di::BackdropFilterDisplayItem {
+            common: *common,
+        });
+        self.push_item(&item);
+    }
+
+    pub fn push_filters(
+        &mut self,
+        filters: &[di::FilterOp],
+        filter_datas: &[di::FilterData],
+        filter_primitives: &[di::FilterPrimitive],
     ) {
         if filters.len() > 0 {
             self.push_item(&di::DisplayItem::SetFilterOps);
@@ -1445,65 +1354,10 @@ impl DisplayListBuilder {
             self.push_iter(&filter_data.a_values);
         }
 
-        let item = di::DisplayItem::PushStackingContext(di::PushStackingContextDisplayItem {
-            origin,
-            spatial_id,
-            is_backface_visible,
-            stacking_context: di::StackingContext {
-                transform_style,
-                mix_blend_mode,
-                clip_id,
-                raster_space,
-                cache_tiles,
-            },
-        });
-
-        self.push_item(&item);
-    }
-
-    /// Helper for examples/ code.
-    pub fn push_simple_stacking_context(
-        &mut self,
-        origin: LayoutPoint,
-        spatial_id: di::SpatialId,
-        is_backface_visible: bool,
-    ) {
-        self.push_simple_stacking_context_with_filters(origin, spatial_id, is_backface_visible, &[], &[]);
-    }
-
-    /// Helper for examples/ code.
-    pub fn push_simple_stacking_context_with_filters(
-        &mut self,
-        origin: LayoutPoint,
-        spatial_id: di::SpatialId,
-        is_backface_visible: bool,
-        filters: &[di::FilterOp],
-        filter_datas: &[di::FilterData],
-    ) {
-        self.push_stacking_context(
-            origin,
-            spatial_id,
-            is_backface_visible,
-            None,
-            di::TransformStyle::Flat,
-            di::MixBlendMode::Normal,
-            filters,
-            filter_datas,
-            di::RasterSpace::Screen,
-            /* cache_tiles = */ false,
-        );
-    }
-
-    pub fn pop_stacking_context(&mut self) {
-        self.push_item(&di::DisplayItem::PopStackingContext);
-    }
-
-    pub fn push_stops(&mut self, stops: &[di::GradientStop]) {
-        if stops.is_empty() {
-            return;
+        if !filter_primitives.is_empty() {
+            self.push_item(&di::DisplayItem::SetFilterPrimitives);
+            self.push_iter(filter_primitives);
         }
-        self.push_item(&di::DisplayItem::SetGradientStops);
-        self.push_iter(stops);
     }
 
     fn generate_clip_index(&mut self) -> di::ClipId {
@@ -1602,7 +1456,7 @@ impl DisplayListBuilder {
         &mut self,
         parent_spatial_id: di::SpatialId,
         frame_rect: LayoutRect,
-        margins: SideOffsets2D<Option<f32>>,
+        margins: SideOffsets2D<Option<f32>, LayoutPixel>,
         vertical_offset_bounds: di::StickyOffsetBounds,
         horizontal_offset_bounds: di::StickyOffsetBounds,
         previously_applied_offset: LayoutVector2D,
@@ -1658,8 +1512,13 @@ impl DisplayListBuilder {
         self.push_item(&di::DisplayItem::PopAllShadows);
     }
 
-    pub fn finalize(self) -> (PipelineId, LayoutSize, BuiltDisplayList) {
+    pub fn finalize(mut self) -> (PipelineId, LayoutSize, BuiltDisplayList) {
         assert!(self.save_state.is_none(), "Finalized DisplayListBuilder with a pending save");
+
+        // Add `DisplayItem::max_size` zone of zeroes to the end of display list
+        // so there is at least this amount available in the display list during
+        // serialization.
+        ensure_red_zone::<di::DisplayItem>(&mut self.data);
 
         let end_time = precise_time_ns();
 

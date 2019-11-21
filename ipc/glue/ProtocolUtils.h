@@ -319,6 +319,10 @@ class IProtocol : public HasResultCodes {
   virtual void ActorDestroy(ActorDestroyReason aWhy) {}
   void DestroySubtree(ActorDestroyReason aWhy);
 
+  // Called when IPC has acquired its first reference to the actor. This method
+  // may take references which will later be freed by `ActorDealloc`.
+  virtual void ActorAlloc() {}
+
   // Called when IPC has released its final reference to the actor. It will call
   // the dealloc method, causing the actor to be actually freed.
   //
@@ -662,15 +666,6 @@ MOZ_NEVER_INLINE void ArrayLengthReadError(const char* aElementName);
 MOZ_NEVER_INLINE void SentinelReadError(const char* aElementName);
 
 struct PrivateIPDLInterface {};
-
-nsresult Bridge(const PrivateIPDLInterface&, MessageChannel*, base::ProcessId,
-                MessageChannel*, base::ProcessId, ProtocolId, ProtocolId);
-
-bool Open(const PrivateIPDLInterface&, MessageChannel*, base::ProcessId,
-          Transport::Mode, ProtocolId, ProtocolId);
-
-bool UnpackChannelOpened(const PrivateIPDLInterface&, const IPC::Message&,
-                         TransportDescriptor*, base::ProcessId*, ProtocolId*);
 
 #if defined(XP_WIN)
 // This is a restricted version of Windows' DuplicateHandle() function

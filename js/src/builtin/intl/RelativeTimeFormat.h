@@ -15,13 +15,13 @@
 #include "js/Class.h"
 #include "vm/NativeObject.h"
 
-namespace js {
+struct URelativeDateTimeFormatter;
 
-class FreeOp;
+namespace js {
 
 class RelativeTimeFormatObject : public NativeObject {
  public:
-  static const Class class_;
+  static const JSClass class_;
 
   static constexpr uint32_t INTERNALS_SLOT = 0;
   static constexpr uint32_t URELATIVE_TIME_FORMAT_SLOT = 1;
@@ -31,10 +31,22 @@ class RelativeTimeFormatObject : public NativeObject {
                 "INTERNALS_SLOT must match self-hosting define for internals "
                 "object slot");
 
- private:
-  static const ClassOps classOps_;
+  URelativeDateTimeFormatter* getRelativeDateTimeFormatter() const {
+    const auto& slot = getFixedSlot(URELATIVE_TIME_FORMAT_SLOT);
+    if (slot.isUndefined()) {
+      return nullptr;
+    }
+    return static_cast<URelativeDateTimeFormatter*>(slot.toPrivate());
+  }
 
-  static void finalize(FreeOp* fop, JSObject* obj);
+  void setRelativeDateTimeFormatter(URelativeDateTimeFormatter* rtf) {
+    setFixedSlot(URELATIVE_TIME_FORMAT_SLOT, PrivateValue(rtf));
+  }
+
+ private:
+  static const JSClassOps classOps_;
+
+  static void finalize(JSFreeOp* fop, JSObject* obj);
 };
 
 extern JSObject* CreateRelativeTimeFormatPrototype(
@@ -62,7 +74,7 @@ extern MOZ_MUST_USE bool intl_RelativeTimeFormat_availableLocales(
  * |numeric| should be "always" or "auto".
  *
  * Usage: formatted = intl_FormatRelativeTime(relativeTimeFormat, t,
- *                                            unit, numeric)
+ *                                            unit, numeric, formatToParts)
  */
 extern MOZ_MUST_USE bool intl_FormatRelativeTime(JSContext* cx, unsigned argc,
                                                  JS::Value* vp);

@@ -266,7 +266,7 @@ function ReadManifest(aURL, aFilter)
             }
         }
 
-        var principal = secMan.createCodebasePrincipal(aURL, {});
+        var principal = secMan.createContentPrincipal(aURL, {});
 
         if (items[0] == "include") {
             if (items.length != 2)
@@ -461,10 +461,12 @@ function BuildConditionSandbox(aURL) {
     sandbox.retainedDisplayList =
       prefs.getBoolPref("layout.display-list.retain");
 
+    sandbox.usesOverlayScrollbars = g.windowUtils.usesOverlayScrollbars;
+
     // Shortcuts for widget toolkits.
     sandbox.Android = xr.OS == "Android";
     sandbox.cocoaWidget = xr.widgetToolkit == "cocoa";
-    sandbox.gtkWidget = xr.widgetToolkit == "gtk3";
+    sandbox.gtkWidget = xr.widgetToolkit == "gtk";
     sandbox.qtWidget = xr.widgetToolkit == "qt";
     sandbox.winWidget = xr.widgetToolkit == "windows";
 
@@ -475,7 +477,7 @@ function BuildConditionSandbox(aURL) {
     sandbox.geckoview = (sandbox.Android && g.browserIsRemote);
 
     // Scrollbars that are semi-transparent. See bug 1169666.
-    sandbox.transparentScrollbars = xr.widgetToolkit == "gtk3";
+    sandbox.transparentScrollbars = xr.widgetToolkit == "gtk";
 
     if (sandbox.Android) {
         var sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
@@ -532,7 +534,7 @@ sandbox.compareRetainedDisplayLists = g.compareRetainedDisplayLists;
     sandbox.windowsDefaultTheme = g.containingWindow.matchMedia("(-moz-windows-default-theme)").matches;
 
     try {
-        sandbox.nativeThemePref = !prefs.getBoolPref("mozilla.widget.disable-native-theme");
+        sandbox.nativeThemePref = !prefs.getBoolPref("widget.disable-native-theme");
     } catch (e) {
         sandbox.nativeThemePref = true;
     }
@@ -667,7 +669,7 @@ function CreateUrls(test) {
         var testURI = g.ioService.newURI(file, null, testbase);
         let isChrome = testURI.scheme == "chrome";
         let principal = isChrome ? secMan.getSystemPrincipal() :
-                                   secMan.createCodebasePrincipal(manifestURL, {});
+                                   secMan.createContentPrincipal(manifestURL, {});
         secMan.checkLoadURIWithPrincipal(principal, testURI,
                                          Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
         return testURI;

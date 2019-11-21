@@ -10,6 +10,8 @@
 
 #include "GeckoProfiler.h"
 #include "LayersLogging.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
@@ -209,7 +211,7 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
       !mWebRenderCommandBuilder.NeedsEmptyTransaction()) {
     bool haveScrollUpdates = false;
     for (auto renderRoot : wr::kRenderRoots) {
-      if (!mPendingScrollUpdates[renderRoot].empty()) {
+      if (!mPendingScrollUpdates[renderRoot].IsEmpty()) {
         haveScrollUpdates = true;
         break;
       }
@@ -251,25 +253,26 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
   for (auto& stateManager : mStateManagers) {
     auto renderRoot = stateManager.GetRenderRoot();
     if (stateManager.mAsyncResourceUpdates ||
-        !mPendingScrollUpdates[renderRoot].empty() ||
+        !mPendingScrollUpdates[renderRoot].IsEmpty() ||
         WrBridge()->HasWebRenderParentCommands(renderRoot)) {
       auto updates = renderRootUpdates.AppendElement();
       updates->mRenderRoot = renderRoot;
+      updates->mPaintSequenceNumber = mPaintSequenceNumber;
       if (stateManager.mAsyncResourceUpdates) {
         stateManager.mAsyncResourceUpdates->Flush(updates->mResourceUpdates,
                                                   updates->mSmallShmems,
                                                   updates->mLargeShmems);
       }
       updates->mScrollUpdates = std::move(mPendingScrollUpdates[renderRoot]);
-      for (const auto& entry : updates->mScrollUpdates) {
-        nsLayoutUtils::NotifyPaintSkipTransaction(/*scroll id=*/entry.first);
+      for (auto it = updates->mScrollUpdates.Iter(); !it.Done(); it.Next()) {
+        nsLayoutUtils::NotifyPaintSkipTransaction(/*scroll id=*/it.Key());
       }
     }
   }
 
   Maybe<wr::IpcResourceUpdateQueue> nothing;
   WrBridge()->EndEmptyTransaction(mFocusTarget, renderRootUpdates,
-                                  mPaintSequenceNumber, mLatestTransactionId,
+                                  mLatestTransactionId,
                                   mTransactionIdAllocator->GetVsyncId(),
                                   mTransactionIdAllocator->GetVsyncStart(),
                                   refreshStart, mTransactionStart, mURL);
@@ -343,7 +346,8 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     mWebRenderCommandBuilder.BuildWebRenderCommands(
         builder, resourceUpdates, aDisplayList, aDisplayListBuilder,
         mScrollDatas, std::move(aFilters));
-    builderDumpIndex = mWebRenderCommandBuilder.GetBuilderDumpIndex();
+    builderDumpIndex =
+        mWebRenderCommandBuilder.GetBuilderDumpIndex(builder.GetRenderRoot());
     containsSVGGroup = mWebRenderCommandBuilder.GetContainsSVGGroup();
   } else {
     // ViewToPaint does not have frame yet, then render only background clolor.
@@ -434,7 +438,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
 
   {
     AUTO_PROFILER_TRACING("Paint", "ForwardDPTransaction", GRAPHICS);
-    InfallibleTArray<RenderRootDisplayListData> renderRootDLs;
+    nsTArray<RenderRootDisplayListData> renderRootDLs;
     for (auto renderRoot : wr::kRenderRoots) {
       if (builder.GetSendSubBuilderDisplayList(renderRoot)) {
         auto renderRootDL = renderRootDLs.AppendElement();

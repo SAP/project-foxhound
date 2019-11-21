@@ -35,6 +35,12 @@ loader.lazyRequireGetter(
   "devtools/shared/css/parsing-utils",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "findCssSelector",
+  "devtools/shared/inspector/css-logic",
+  true
+);
 
 const HTML_NS = "http://www.w3.org/1999/xhtml";
 
@@ -334,7 +340,9 @@ TextPropertyEditor.prototype = {
         multiline: true,
         maxWidth: () => this.container.getBoundingClientRect().width,
         cssProperties: this.cssProperties,
-        cssVariables: this.rule.elementStyle.variables,
+        cssVariables:
+          this.rule.elementStyle.variablesMap.get(this.rule.pseudoElement) ||
+          [],
         getGridLineNames: this.getGridlineNames,
       });
     }
@@ -483,7 +491,8 @@ TextPropertyEditor.prototype = {
       baseURI: this.sheetHref,
       unmatchedVariableClass: "ruleview-unmatched-variable",
       matchedVariableClass: "ruleview-variable",
-      isVariableInUse: varName => this.rule.elementStyle.getVariable(varName),
+      isVariableInUse: varName =>
+        this.rule.elementStyle.getVariable(varName, this.rule.pseudoElement),
     };
     const frag = outputParser.parseCssProperty(name, val, parserOptions);
 
@@ -495,6 +504,12 @@ TextPropertyEditor.prototype = {
         value: frag.textContent,
         priority: this.prop.priority,
       };
+    }
+
+    // Save focused element inside value span if one exists before wiping the innerHTML
+    let focusedElSelector = null;
+    if (this.valueSpan.contains(this.doc.activeElement)) {
+      focusedElSelector = findCssSelector(this.doc.activeElement);
     }
 
     this.valueSpan.innerHTML = "";
@@ -681,6 +696,14 @@ TextPropertyEditor.prototype = {
 
     // Update the rule property highlight.
     this.ruleView._updatePropertyHighlight(this);
+
+    // Restore focus back to the element whose markup was recreated above.
+    if (focusedElSelector) {
+      const elementToFocus = this.doc.querySelector(focusedElSelector);
+      if (elementToFocus) {
+        elementToFocus.focus();
+      }
+    }
   },
   /* eslint-enable complexity */
 
@@ -741,6 +764,10 @@ TextPropertyEditor.prototype = {
       this.element.classList.remove("ruleview-overridden");
     }
 
+    this.updatePropertyUsedIndicator();
+  },
+
+  updatePropertyUsedIndicator: function() {
     const { used } = this.prop.isUsed();
 
     if (this.editing || this.prop.overridden || !this.prop.enabled || used) {

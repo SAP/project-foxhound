@@ -5,19 +5,17 @@
 
 /* exported gInit, gDestroy */
 
-const BrowserLoaderModule = {};
-ChromeUtils.import(
-  "resource://devtools/client/shared/browser-loader.js",
-  BrowserLoaderModule
+const { BrowserLoader } = ChromeUtils.import(
+  "resource://devtools/client/shared/browser-loader.js"
 );
-const { require } = BrowserLoaderModule.BrowserLoader({
+const { require } = BrowserLoader({
   baseURI: "resource://devtools/client/performance-new/",
   window,
 });
 const Perf = require("devtools/client/performance-new/components/Perf");
 const ReactDOM = require("devtools/client/shared/vendor/react-dom");
 const React = require("devtools/client/shared/vendor/react");
-const createStore = require("devtools/client/shared/redux/create-store")();
+const createStore = require("devtools/client/shared/redux/create-store");
 const selectors = require("devtools/client/performance-new/store/selectors");
 const reducers = require("devtools/client/performance-new/store/reducers");
 const actions = require("devtools/client/performance-new/store/actions");

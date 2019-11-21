@@ -1,23 +1,35 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
+const promise = require("promise");
 const {
   FrontClassWithSpec,
   types,
   registerFront,
 } = require("devtools/shared/protocol.js");
-
 const { nodeSpec, nodeListSpec } = require("devtools/shared/specs/node");
-
-const promise = require("promise");
 const { SimpleStringFront } = require("devtools/shared/fronts/string");
+const Services = require("Services");
 
 loader.lazyRequireGetter(
   this,
   "nodeConstants",
   "devtools/shared/dom-node-constants"
+);
+
+loader.lazyRequireGetter(
+  this,
+  "BrowsingContextTargetFront",
+  "devtools/shared/fronts/targets/browsing-context",
+  true
+);
+
+const BROWSER_TOOLBOX_FISSION_ENABLED = Services.prefs.getBoolPref(
+  "devtools.browsertoolbox.fission",
+  false
 );
 
 const HIDDEN_CLASS = "__fx-devtools-hide-shortcut__";
@@ -107,8 +119,8 @@ class AttributeModificationList {
  * to traverse children.
  */
 class NodeFront extends FrontClassWithSpec(nodeSpec) {
-  constructor(conn, form) {
-    super(conn, form);
+  constructor(conn, targetFront, parentFront) {
+    super(conn, targetFront, parentFront);
     // The parent node
     this._parent = null;
     // The first child of this node.
@@ -273,6 +285,9 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
   get numChildren() {
     return this._form.numChildren;
   }
+  get remoteFrame() {
+    return BROWSER_TOOLBOX_FISSION_ENABLED && this._form.remoteFrame;
+  }
   get hasEventListeners() {
     return this._form.hasEventListeners;
   }
@@ -390,6 +405,18 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
     return true;
   }
 
+  get inspectorFront() {
+    return this.parentFront.parentFront;
+  }
+
+  get highlighterFront() {
+    return this.inspectorFront.highlighter;
+  }
+
+  get walkerFront() {
+    return this.parentFront;
+  }
+
   getNodeValue() {
     // backward-compatibility: if nodevalue is null and shortValue is defined, the actual
     // value of the node needs to be fetched on the server.
@@ -488,7 +515,7 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
       console.warn("Tried to use rawNode on a remote connection.");
       return null;
     }
-    const { DebuggerServer } = require("devtools/server/main");
+    const { DebuggerServer } = require("devtools/server/debugger-server");
     const actor = DebuggerServer.searchAllConnectionsForActor(this.actorID);
     if (!actor) {
       // Can happen if we try to get the raw node for an already-expired
@@ -496,6 +523,24 @@ class NodeFront extends FrontClassWithSpec(nodeSpec) {
       return null;
     }
     return actor.rawNode;
+  }
+
+  async connectToRemoteFrame() {
+    if (!this.remoteFrame) {
+      console.warn("Tried to open remote connection to an invalid frame.");
+      return null;
+    }
+    if (this._remoteFrameTarget) {
+      return this._remoteFrameTarget;
+    }
+    // First get the target actor form of this remote frame element
+    const form = await super.connectToRemoteFrame();
+    // Build the related Target object
+    this._remoteFrameTarget = new BrowsingContextTargetFront(this.conn);
+    this._remoteFrameTarget.actorID = form.actor;
+    this._remoteFrameTarget.form(form);
+    this._remoteFrameTarget.manage(this._remoteFrameTarget);
+    return this._remoteFrameTarget;
   }
 }
 

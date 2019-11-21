@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +7,6 @@
 const EventEmitter = require("devtools/shared/event-emitter");
 const { LocalizationHelper, ELLIPSIS } = require("devtools/shared/l10n");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-const JSOL = require("devtools/client/shared/vendor/jsol");
 const { KeyCodes } = require("devtools/client/shared/keycodes");
 const { getUnicodeHostname } = require("devtools/client/shared/unicode-url");
 
@@ -40,6 +38,7 @@ loader.lazyRequireGetter(
   "validator",
   "devtools/client/shared/vendor/stringvalidator/validator"
 );
+loader.lazyRequireGetter(this, "JSON5", "devtools/client/shared/vendor/json5");
 
 /**
  * Localization convenience methods.
@@ -592,25 +591,33 @@ class StorageUI {
         } else {
           for (const name of deleted[type][host]) {
             try {
-              // trying to parse names in case of indexedDB or cache
-              const names = JSON.parse(name);
-              // Is a whole cache, database or objectstore deleted?
-              // Then remove it from the tree.
-              if (names.length < 3) {
-                if (this.tree.isSelected([type, host, ...names])) {
-                  this.table.clear();
-                  this.hideSidebar();
-                  this.tree.selectPreviousItem();
+              if (["indexedDB", "Cache"].includes(type)) {
+                // For indexedDB and Cache, the key is being parsed because
+                // these storages are represented as a tree and the key
+                // used to notify their changes is not a simple string.
+                const names = JSON.parse(name);
+                // Is a whole cache, database or objectstore deleted?
+                // Then remove it from the tree.
+                if (names.length < 3) {
+                  if (this.tree.isSelected([type, host, ...names])) {
+                    this.table.clear();
+                    this.hideSidebar();
+                    this.tree.selectPreviousItem();
+                  }
+                  this.tree.remove([type, host, ...names]);
                 }
-                this.tree.remove([type, host, ...names]);
-              }
 
-              // Remove the item from table if currently displayed.
-              if (names.length > 0) {
-                const tableItemName = names.pop();
-                if (this.tree.isSelected([type, host, ...names])) {
-                  await this.removeItemFromTable(tableItemName);
+                // Remove the item from table if currently displayed.
+                if (names.length > 0) {
+                  const tableItemName = names.pop();
+                  if (this.tree.isSelected([type, host, ...names])) {
+                    await this.removeItemFromTable(tableItemName);
+                  }
                 }
+              } else if (this.tree.isSelected([type, host])) {
+                // For all the other storage types with a simple string key,
+                // remove the item from the table by name without any parsing.
+                await this.removeItemFromTable(name);
               }
             } catch (ex) {
               if (this.tree.isSelected([type, host])) {
@@ -645,8 +652,17 @@ class StorageUI {
     try {
       const toUpdate = [];
       for (const name of changed[type][host]) {
-        const names = JSON.parse(name);
-        if (names[0] == db && names[1] == objectStore && names[2]) {
+        if (["indexedDB", "Cache"].includes(type)) {
+          // For indexedDB and Cache, the key is being parsed because
+          // these storage are represented as a tree and the key
+          // used to notify their changes is not a simple string.
+          const names = JSON.parse(name);
+          if (names[0] == db && names[1] == objectStore && names[2]) {
+            toUpdate.push(name);
+          }
+        } else {
+          // For all the other storage types with a simple string key,
+          // update the item from the table by name without any parsing.
           toUpdate.push(name);
         }
       }
@@ -955,7 +971,7 @@ class StorageUI {
 
     let obj = null;
     try {
-      obj = JSOL.parse(value);
+      obj = JSON5.parse(value);
     } catch (ex) {
       obj = null;
     }

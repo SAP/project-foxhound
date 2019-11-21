@@ -145,6 +145,7 @@ const EXTRA_CLANG_FLAGS: &'static [&'static str] = &[
     "-x", "c++",
     "-std=gnu++14",
     "-fno-sized-deallocation",
+    "-fno-aligned-new",
     "-DRUST_BINDGEN",
 ];
 
@@ -153,7 +154,6 @@ const EXTRA_CLANG_FLAGS: &'static [&'static str] = &[
 const WHITELIST_TYPES: &'static [&'static str] = &[
     "JS::AutoCheckCannotGC",
     "JS::CallArgs",
-    "js::Class",
     "JS::RealmOptions",
     "JS::ContextOptions",
     "js::DOMCallbacks",

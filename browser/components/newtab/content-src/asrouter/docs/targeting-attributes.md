@@ -37,6 +37,9 @@ Please note that some targeting attributes require stricter controls on the tele
 * [hasAccessedFxAPanel](#hasaccessedfxapanel)
 * [isWhatsNewPanelEnabled](#iswhatsnewpanelenabled)
 * [earliestFirefoxVersion](#earliestfirefoxversion)
+* [isFxABadgeEnabled](#isfxabadgeenabled)
+* [totalBlockedCount](#totalblockedcount)
+* [userPrefs](#userprefs)
 
 ## Detailed usage
 
@@ -506,4 +509,43 @@ Integer value of the first Firefox version the profile ran on
 
 ```ts
 declare const earliestFirefoxVersion: boolean;
+```
+
+### `isFxABadgeEnabled`
+
+Boolean pref that controls if the FxA toolbar button is badged by Messaging System.
+
+#### Definition
+
+```ts
+declare const isFxABadgeEnabled: boolean;
+```
+
+### `totalBlockedCount`
+
+Total number of events from the content blocking database
+
+#### Definition
+
+```ts
+declare const totalBlockedCount: number;
+```
+
+### `userPrefs`
+
+Information about user facing prefs configurable from `about:preferences`.
+
+#### Examples
+```java
+userPrefs.cfrFeatures == false
+```
+
+#### Definition
+
+```ts
+declare const userPrefs: {
+  cfrFeatures: boolean;
+  cfrAddons: boolean;
+  snippets: boolean;
+}
 ```

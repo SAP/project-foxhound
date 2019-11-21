@@ -3,8 +3,9 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 body {
+  --sidebar-width: 320px;
   display: grid;
-  grid-template-columns: minmax(320px, max-content) 1fr;
+  grid-template-columns: var(--sidebar-width) 1fr;
   grid-template-rows: 75px 1fr;
   grid-template-areas: "header header"
                        "logins login";
@@ -15,36 +16,52 @@ header {
   display: flex;
   grid-area: header;
   align-items: center;
-  background-color: var(--in-content-box-background);
+  background-color: var(--in-content-page-background);
   border-bottom: 1px solid var(--in-content-box-border-color);
-  padding: 0 18px;
+  padding-inline-end: 23px;
 }
 
 login-filter {
-  flex: auto;
+  min-width: 200px;
+  max-width: 400px;
+  margin-inline: 40px auto;
+  flex-grow: 0.5;
   align-self: center;
+}
+
+fxaccounts-button,
+menu-button {
+  margin-inline-start: 18px;
 }
 
 login-list {
   grid-area: logins;
 }
 
+:root:not(.initialized) login-intro,
+:root:not(.initialized) login-item,
+:root.empty-search login-intro,
+:root:not(.no-logins):not(.empty-search):not(.login-selected) login-intro,
+login-item[data-editing="true"] + login-intro,
+.login-selected login-intro,
+.empty-search:not(.login-selected) login-item:not([data-editing="true"]),
+.no-logins login-item:not([data-editing="true"]) {
+  display: none;
+}
+
+login-intro,
 login-item {
   grid-area: login;
-  max-width: 800px;
+}
+
+login-item {
+  max-width: 700px;
 }
 
 #branding-logo {
+  flex-basis: var(--sidebar-width);
+  flex-shrink: 0;
   height: 32px;
-  margin-inline-end: 18px;
-}
-
-#create-login-button {
-  margin-inline-start: 18px;
-  margin-inline-end: 18px;
-}
-
-#branding-logo {
   -moz-context-properties: fill;
   fill: #20123a;
 }

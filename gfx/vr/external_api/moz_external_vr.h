@@ -40,7 +40,7 @@ enum class GamepadCapabilityFlags : uint16_t;
 #endif  //  MOZILLA_INTERNAL_API
 namespace gfx {
 
-static const int32_t kVRExternalVersion = 8;
+static const int32_t kVRExternalVersion = 9;
 
 // We assign VR presentations to groups with a bitmask.
 // Currently, we will only display either content or chrome.
@@ -118,6 +118,8 @@ enum class ControllerCapabilityFlags : uint16_t {
 
 #endif  // ifndef MOZILLA_INTERNAL_API
 
+enum class VRDisplayBlendMode : uint8_t { Opaque, Additive, AlphaBlend };
+
 enum class VRDisplayCapabilityFlags : uint16_t {
   Cap_None = 0,
   /**
@@ -172,13 +174,31 @@ enum class VRDisplayCapabilityFlags : uint16_t {
    */
   Cap_PositionEmulated = 1 << 9,
   /**
+   * Cap_Inline is set if the device can be used for WebXR inline sessions
+   * where the content is displayed within an element on the page.
+   */
+  Cap_Inline = 1 << 10,
+  /**
+   * Cap_ImmersiveVR is set if the device can give exclusive access to the
+   * XR device display and that content is not intended to be integrated
+   * with the user's environment
+   */
+  Cap_ImmersiveVR = 1 << 11,
+  /**
+   * Cap_ImmersiveAR is set if the device can give exclusive access to the
+   * XR device display and that content is intended to be integrated with
+   * the user's environment.
+   */
+  Cap_ImmersiveAR = 1 << 12,
+  /**
    * Cap_All used for validity checking during IPC serialization
    */
-  Cap_All = (1 << 10) - 1
+  Cap_All = (1 << 13) - 1
 };
 
 #ifdef MOZILLA_INTERNAL_API
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(VRDisplayCapabilityFlags)
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(VRDisplayBlendMode)
 #endif  // MOZILLA_INTERNAL_API
 
 struct VRPose {
@@ -275,6 +295,7 @@ struct VRDisplayState {
   //                             ('B'<<8) + 'A').
   uint64_t eightCC;
   VRDisplayCapabilityFlags capabilityFlags;
+  VRDisplayBlendMode blendMode;
   VRFieldOfView eyeFOV[VRDisplayState::NumEyes];
   Point3D_POD eyeTranslation[VRDisplayState::NumEyes];
   IntSize_POD eyeResolution;
@@ -409,6 +430,23 @@ struct VRSystemState {
   VRControllerState controllerState[kVRControllerMaxCount];
 };
 
+// Data shared via shmem for running Firefox in a VR windowed environment
+struct VRWindowState {
+  // State from Firefox
+  uint64_t hwndFx;
+  uint32_t widthFx;
+  uint32_t heightFx;
+  VRLayerTextureHandle textureFx;
+
+  // State from VRHost
+  uint32_t dxgiAdapterHost;
+  uint32_t widthHost;
+  uint32_t heightHost;
+
+  // Name of synchronization primitive to signal change to this struct
+  char signalName[32];
+};
+
 struct VRExternalShmem {
   int32_t version;
   int32_t size;
@@ -434,6 +472,9 @@ struct VRExternalShmem {
   int64_t geckoGenerationB;
   int64_t servoGenerationB;
 #endif  // !defined(__ANDROID__)
+#if defined(XP_WIN)
+  VRWindowState windowState;
+#endif
 #ifdef MOZILLA_INTERNAL_API
   void Clear() volatile {
 /**

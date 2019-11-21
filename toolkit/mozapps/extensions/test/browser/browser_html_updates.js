@@ -6,10 +6,7 @@ const { AddonTestUtils } = ChromeUtils.import(
 
 AddonTestUtils.initMochitest(this);
 
-add_task(async function enableHtmlViews() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.htmlaboutaddons.enabled", true]],
-  });
+add_task(async function setup() {
   Services.telemetry.clearEvents();
 });
 
@@ -402,7 +399,7 @@ add_task(async function testReleaseNotesLoad() {
 
   info("Switch away and back to release notes");
   // Load details view.
-  let detailsBtn = tabGroup.firstElementChild;
+  let detailsBtn = tabGroup.querySelector('named-deck-button[name="details"]');
   let viewChanged = BrowserTestUtils.waitForEvent(deck, "view-changed");
   detailsBtn.click();
   await viewChanged;
@@ -509,7 +506,7 @@ add_task(async function testReleaseNotesError() {
 
   info("Switch away and back to release notes");
   // Load details view.
-  let detailsBtn = tabGroup.firstElementChild;
+  let detailsBtn = tabGroup.querySelector('named-deck-button[name="details"]');
   let viewChanged = BrowserTestUtils.waitForEvent(deck, "view-changed");
   detailsBtn.click();
   await viewChanged;

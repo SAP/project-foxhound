@@ -9,7 +9,7 @@
 #include "nsIContentPolicy.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/dom/HTMLAllCollection.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "nsCommandManager.h"
 #include "nsCOMPtr.h"
 #include "nsGlobalWindow.h"
@@ -157,10 +157,6 @@ nsHTMLDocument::nsHTMLDocument()
 }
 
 nsHTMLDocument::~nsHTMLDocument() {}
-
-NS_IMPL_CYCLE_COLLECTION_INHERITED(nsHTMLDocument, Document, mAll)
-
-NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED_0(nsHTMLDocument, Document)
 
 JSObject* nsHTMLDocument::WrapNode(JSContext* aCx,
                                    JS::Handle<JSObject*> aGivenProto) {
@@ -347,7 +343,7 @@ void nsHTMLDocument::TryTLD(int32_t& aCharsetSource,
   if (aCharsetSource >= kCharsetFromTopLevelDomain) {
     return;
   }
-  if (!FallbackEncoding::sGuessFallbackFromTopLevelDomain) {
+  if (!StaticPrefs::intl_charset_fallback_tld()) {
     return;
   }
   if (!mDocumentURI) {
@@ -415,12 +411,7 @@ bool ShouldUsePrototypeDocument(nsIChannel* aChannel, Document* aDoc) {
       !StaticPrefs::dom_prototype_document_cache_enabled()) {
     return false;
   }
-  if (!nsContentUtils::IsChromeDoc(aDoc)) {
-    return false;
-  }
-  nsCOMPtr<nsIURI> originalURI;
-  aChannel->GetOriginalURI(getter_AddRefs(originalURI));
-  return IsChromeURI(originalURI);
+  return nsContentUtils::IsChromeDoc(aDoc);
 }
 
 nsresult nsHTMLDocument::StartDocumentLoad(const char* aCommand,
@@ -457,7 +448,9 @@ nsresult nsHTMLDocument::StartDocumentLoad(const char* aCommand,
 
   bool html = contentType.EqualsLiteral(TEXT_HTML);
   bool xhtml = !html && (contentType.EqualsLiteral(APPLICATION_XHTML_XML) ||
-                         contentType.EqualsLiteral(APPLICATION_WAPXHTML_XML));
+                         contentType.EqualsLiteral(APPLICATION_WAPXHTML_XML) ||
+                         contentType.EqualsLiteral(APPLICATION_CACHED_XUL) ||
+                         contentType.EqualsLiteral(TEXT_XUL));
   mIsPlainText =
       !html && !xhtml && nsContentUtils::IsPlainTextType(contentType);
   if (!(html || xhtml || mIsPlainText || viewSource)) {
@@ -484,8 +477,7 @@ nsresult nsHTMLDocument::StartDocumentLoad(const char* aCommand,
     aChannel->GetOriginalURI(getter_AddRefs(uri));
     // Adapted from nsDocShell:
     // GetSpec can be expensive for some URIs, so check the scheme first.
-    bool isAbout = false;
-    if (uri && NS_SUCCEEDED(uri->SchemeIs("about", &isAbout)) && isAbout) {
+    if (uri && uri->SchemeIs("about")) {
       if (uri->GetSpecOrDefault().EqualsLiteral("about:blank")) {
         loadAsHtml5 = false;
       }
@@ -545,7 +537,7 @@ nsresult nsHTMLDocument::StartDocumentLoad(const char* aCommand,
   // and parentContentViewer
   nsCOMPtr<nsIDocShellTreeItem> parentAsItem;
   if (docShell) {
-    docShell->GetSameTypeParent(getter_AddRefs(parentAsItem));
+    docShell->GetInProcessSameTypeParent(getter_AddRefs(parentAsItem));
   }
 
   nsCOMPtr<nsIDocShell> parent(do_QueryInterface(parentAsItem));
@@ -717,14 +709,6 @@ void nsHTMLDocument::RemovedForm() { --mNumForms; }
 
 int32_t nsHTMLDocument::GetNumFormsSynchronous() { return mNumForms; }
 
-void nsHTMLDocument::CaptureEvents() {
-  WarnOnceAbout(Document::eUseOfCaptureEvents);
-}
-
-void nsHTMLDocument::ReleaseEvents() {
-  WarnOnceAbout(Document::eUseOfReleaseEvents);
-}
-
 bool nsHTMLDocument::ResolveName(JSContext* aCx, const nsAString& aName,
                                  JS::MutableHandle<JS::Value> aRetval,
                                  ErrorResult& aError) {
@@ -788,13 +772,6 @@ bool nsHTMLDocument::MatchFormControls(Element* aElement, int32_t aNamespaceID,
   return aElement->IsNodeOfType(nsIContent::eHTML_FORM_CONTROL);
 }
 
-HTMLAllCollection* nsHTMLDocument::All() {
-  if (!mAll) {
-    mAll = new HTMLAllCollection(this);
-  }
-  return mAll;
-}
-
 nsresult nsHTMLDocument::Clone(dom::NodeInfo* aNodeInfo,
                                nsINode** aResult) const {
   NS_ASSERTION(aNodeInfo->NodeInfoManager() == mNodeInfoManager,
@@ -839,9 +816,7 @@ bool nsHTMLDocument::WillIgnoreCharsetOverride() {
   }
   nsIURI* uri = GetOriginalURI();
   if (uri) {
-    bool schemeIs = false;
-    uri->SchemeIs("about", &schemeIs);
-    if (schemeIs) {
+    if (uri->SchemeIs("about")) {
       return true;
     }
     bool isResource;
@@ -899,5 +874,3 @@ void nsHTMLDocument::GetFormsAndFormControls(nsContentList** aFormList,
   NS_ADDREF(*aFormList = holder->mFormList);
   NS_ADDREF(*aFormControlList = holder->mFormControlList);
 }
-
-void nsHTMLDocument::UserInteractionForTesting() { SetUserHasInteracted(); }

@@ -92,11 +92,14 @@
   MACRO(CopyDataPropertiesUnfiltered, CopyDataPropertiesUnfiltered,            \
         "CopyDataPropertiesUnfiltered")                                        \
   MACRO(copyWithin, copyWithin, "copyWithin")                                  \
+  MACRO(compact, compact, "compact")                                           \
+  MACRO(compactDisplay, compactDisplay, "compactDisplay")                      \
   MACRO(count, count, "count")                                                 \
   MACRO(CreateResolvingFunctions, CreateResolvingFunctions,                    \
         "CreateResolvingFunctions")                                            \
   MACRO(currency, currency, "currency")                                        \
   MACRO(currencyDisplay, currencyDisplay, "currencyDisplay")                   \
+  MACRO(currencySign, currencySign, "currencySign")                            \
   MACRO(DateTimeFormat, DateTimeFormat, "DateTimeFormat")                      \
   MACRO(day, day, "day")                                                       \
   MACRO(dayPeriod, dayPeriod, "dayPeriod")                                     \
@@ -141,6 +144,9 @@
   MACRO(escape, escape, "escape")                                              \
   MACRO(eval, eval, "eval")                                                    \
   MACRO(exec, exec, "exec")                                                    \
+  MACRO(exponentInteger, exponentInteger, "exponentInteger")                   \
+  MACRO(exponentMinusSign, exponentMinusSign, "exponentMinusSign")             \
+  MACRO(exponentSeparator, exponentSeparator, "exponentSeparator")             \
   MACRO(export, export_, "export")                                             \
   MACRO(extends, extends, "extends")                                           \
   MACRO(false, false_, "false")                                                \
@@ -165,6 +171,7 @@
   MACRO(forEach, forEach, "forEach")                                           \
   MACRO(format, format, "format")                                              \
   MACRO(fraction, fraction, "fraction")                                        \
+  MACRO(fractionalSecond, fractionalSecond, "fractionalSecond")                \
   MACRO(frame, frame, "frame")                                                 \
   MACRO(from, from, "from")                                                    \
   MACRO(fulfilled, fulfilled, "fulfilled")                                     \
@@ -214,6 +221,7 @@
   MACRO(InitializeCollator, InitializeCollator, "InitializeCollator")          \
   MACRO(InitializeDateTimeFormat, InitializeDateTimeFormat,                    \
         "InitializeDateTimeFormat")                                            \
+  MACRO(InitializeLocale, InitializeLocale, "InitializeLocale")                \
   MACRO(InitializeNumberFormat, InitializeNumberFormat,                        \
         "InitializeNumberFormat")                                              \
   MACRO(InitializePluralRules, InitializePluralRules, "InitializePluralRules") \
@@ -254,6 +262,7 @@
   MACRO(lineNumber, lineNumber, "lineNumber")                                  \
   MACRO(literal, literal, "literal")                                           \
   MACRO(loc, loc, "loc")                                                       \
+  MACRO(Locale, Locale, "Locale")                                              \
   MACRO(locale, locale, "locale")                                              \
   MACRO(lookupGetter, lookupGetter, "__lookupGetter__")                        \
   MACRO(lookupSetter, lookupSetter, "__lookupSetter__")                        \
@@ -299,6 +308,7 @@
   MACRO(noFilename, noFilename, "noFilename")                                  \
   MACRO(nonincrementalReason, nonincrementalReason, "nonincrementalReason")    \
   MACRO(noStack, noStack, "noStack")                                           \
+  MACRO(notation, notation, "notation")                                        \
   MACRO(notes, notes, "notes")                                                 \
   MACRO(NumberFormat, NumberFormat, "NumberFormat")                            \
   MACRO(numeric, numeric, "numeric")                                           \
@@ -341,6 +351,7 @@
   MACRO(proto, proto, "__proto__")                                             \
   MACRO(prototype, prototype, "prototype")                                     \
   MACRO(proxy, proxy, "proxy")                                                 \
+  MACRO(quarter, quarter, "quarter")                                           \
   MACRO(raw, raw, "raw")                                                       \
   MACRO(reason, reason, "reason")                                              \
   MACRO(RegExpBuiltinExec, RegExpBuiltinExec, "RegExpBuiltinExec")             \
@@ -376,6 +387,7 @@
   MACRO(setPrefix, setPrefix, "set ")                                          \
   MACRO(setPrototypeOf, setPrototypeOf, "setPrototypeOf")                      \
   MACRO(shape, shape, "shape")                                                 \
+  MACRO(signDisplay, signDisplay, "signDisplay")                               \
   MACRO(size, size, "size")                                                    \
   MACRO(source, source, "source")                                              \
   MACRO(SpeciesConstructor, SpeciesConstructor, "SpeciesConstructor")          \
@@ -430,7 +442,9 @@
   MACRO(uneval, uneval, "uneval")                                              \
   MACRO(unicode, unicode, "unicode")                                           \
   MACRO(unit, unit, "unit")                                                    \
+  MACRO(unitDisplay, unitDisplay, "unitDisplay")                               \
   MACRO(uninitialized, uninitialized, "uninitialized")                         \
+  MACRO(unknown, unknown, "unknown")                                           \
   MACRO(unsized, unsized, "unsized")                                           \
   MACRO(unwatch, unwatch, "unwatch")                                           \
   MACRO(UnwrapAndCallRegExpBuiltinExec, UnwrapAndCallRegExpBuiltinExec,        \
@@ -456,6 +470,7 @@
   MACRO(WeakSetConstructorInit, WeakSetConstructorInit,                        \
         "WeakSetConstructorInit")                                              \
   MACRO(WeakSet_add, WeakSet_add, "WeakSet_add")                               \
+  MACRO(week, week, "week")                                                    \
   MACRO(weekday, weekday, "weekday")                                           \
   MACRO(weekendEnd, weekendEnd, "weekendEnd")                                  \
   MACRO(weekendStart, weekendStart, "weekendStart")                            \

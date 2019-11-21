@@ -41,14 +41,6 @@ using dom::AutoJSAPI;
 using dom::Promise;
 using std::string;
 
-extern "C" {
-// This function is defined in the profiler rust module at
-// tools/profiler/rust-helper. nsProfiler::SymbolTable and CompactSymbolTable
-// have identical memory layout.
-bool profiler_get_symbol_table(const char* debug_path, const char* breakpad_id,
-                               nsProfiler::SymbolTable* symbol_table);
-}
-
 NS_IMPL_ISUPPORTS(nsProfiler, nsIProfiler, nsIObserver)
 
 nsProfiler::nsProfiler()
@@ -711,10 +703,14 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
 
   mWriter.emplace();
 
+  UniquePtr<ProfilerCodeAddressService> service =
+      profiler_code_address_service_for_presymbolication();
+
   // Start building up the JSON result and grab the profile from this process.
   mWriter->Start();
   if (!profiler_stream_json_for_this_process(*mWriter, aSinceTime,
-                                             /* aIsShuttingDown */ false)) {
+                                             /* aIsShuttingDown */ false,
+                                             service.get())) {
     // The profiler is inactive. This either means that it was inactive even
     // at the time that ProfileGatherer::Start() was called, or that it was
     // stopped on a different thread since that call. Either way, we need to

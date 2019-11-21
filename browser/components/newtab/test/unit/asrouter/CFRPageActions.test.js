@@ -699,13 +699,13 @@ describe("CFRPageActions", () => {
         );
       });
       it("should show the bullet list details", async () => {
-        delete fakeRecommendation.content.addon;
+        fakeRecommendation.content.layout = "message_and_animation";
         await pageAction._showPopupOnClick();
 
         assert.calledOnce(translateElementsStub);
       });
       it("should set the data-l10n-id on the list element", async () => {
-        delete fakeRecommendation.content.addon;
+        fakeRecommendation.content.layout = "message_and_animation";
         await pageAction._showPopupOnClick();
 
         assert.calledOnce(setAttributesStub);
@@ -716,18 +716,18 @@ describe("CFRPageActions", () => {
         );
       });
       it("should set the correct data-notification-category", async () => {
-        delete fakeRecommendation.content.addon;
+        fakeRecommendation.content.layout = "message_and_animation";
         await pageAction._showPopupOnClick();
 
         assert.equal(
           elements["contextual-feature-recommendation-notification"].dataset
             .notificationCategory,
-          fakeRecommendation.content.category
+          fakeRecommendation.content.layout
         );
       });
       it("should send PIN event on primary action click", async () => {
+        fakeRecommendation.content.layout = "message_and_animation";
         sandbox.stub(pageAction, "_sendTelemetry");
-        delete fakeRecommendation.content.addon;
         await pageAction._showPopupOnClick();
 
         const [
@@ -798,6 +798,16 @@ describe("CFRPageActions", () => {
         assert.calledWith(
           PageAction.prototype.showAddressBarNotifier,
           savedRec
+        );
+      });
+      it("should show the pageAction if a recommendation exists and it doesn't have a host defined", () => {
+        const recNoHost = { ...savedRec, host: undefined };
+        CFRPageActions.RecommendationMap.set(fakeBrowser, recNoHost);
+        CFRPageActions.updatePageActions(fakeBrowser);
+        assert.calledOnce(PageAction.prototype.showAddressBarNotifier);
+        assert.calledWith(
+          PageAction.prototype.showAddressBarNotifier,
+          recNoHost
         );
       });
       it("should hideAddressBarNotifier the pageAction and delete the recommendation if the recommendation exists but the host doesn't match", () => {

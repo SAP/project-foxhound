@@ -69,11 +69,12 @@ const walkerSpec = generateActorSpec({
     "picker-node-canceled": {
       type: "pickerNodeCanceled",
     },
+    // This event is no longer emitted on Firefox 70 or newer.
+    // It should still be declared in the specs. Otherwise, when we connect to
+    // Firefox 69 or older, event packets for "highlighter-ready" emitted by
+    // the server will be considered as responses to unrelated requests.
     "highlighter-ready": {
       type: "highlighter-ready",
-    },
-    "highlighter-hide": {
-      type: "highlighter-hide",
     },
     "display-change": {
       type: "display-change",

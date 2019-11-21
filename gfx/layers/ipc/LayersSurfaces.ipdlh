@@ -10,6 +10,7 @@ using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
 using mozilla::WindowsHandle from "ipc/IPCMessageUtils.h";
 using mozilla::gfx::YUVColorSpace from "mozilla/gfx/Types.h";
 using mozilla::gfx::ColorDepth from "mozilla/gfx/Types.h";
+using mozilla::gfx::ColorRange from "mozilla/gfx/Types.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
@@ -35,6 +36,7 @@ struct SurfaceDescriptorD3D10 {
   SurfaceFormat format;
   IntSize size;
   YUVColorSpace yUVColorSpace;
+  ColorRange colorRange;
 };
 
 struct SurfaceDescriptorDXGIYCbCr {
@@ -46,6 +48,7 @@ struct SurfaceDescriptorDXGIYCbCr {
   IntSize sizeCbCr;
   ColorDepth colorDepth;
   YUVColorSpace yUVColorSpace;
+  ColorRange colorRange;
 };
 
 struct SurfaceDescriptorMacIOSurface {
@@ -53,6 +56,16 @@ struct SurfaceDescriptorMacIOSurface {
   double scaleFactor;
   bool isOpaque;
   YUVColorSpace yUVColorSpace;
+};
+
+struct SurfaceDescriptorDMABuf {
+  uint32_t width;
+  uint32_t height;
+  uint32_t format;
+  uint32_t flags;
+  FileDescriptor fd;
+  uint32_t stride;
+  uint32_t offset;
 };
 
 struct SurfaceTextureDescriptor {
@@ -107,6 +120,7 @@ struct YCbCrDescriptor {
   StereoMode stereoMode;
   ColorDepth colorDepth;
   YUVColorSpace yUVColorSpace;
+  ColorRange colorRange;
   bool hasIntermediateBuffer;
 };
 
@@ -144,6 +158,7 @@ union SurfaceDescriptor {
   SurfaceDescriptorFileMapping;
   SurfaceDescriptorDXGIYCbCr;
   SurfaceDescriptorX11;
+  SurfaceDescriptorDMABuf;
   SurfaceTextureDescriptor;
   EGLImageDescriptor;
   SurfaceDescriptorMacIOSurface;

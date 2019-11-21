@@ -12,8 +12,7 @@
 
 #include <algorithm>
 
-#include "builtin/String.h"
-
+#include "debugger/Debugger.h"
 #include "jit/IonCode.h"
 #include "js/Debug.h"
 #include "js/TracingAPI.h"
@@ -23,7 +22,6 @@
 #include "js/Vector.h"
 #include "util/Text.h"
 #include "vm/BigIntType.h"
-#include "vm/Debugger.h"
 #include "vm/EnvironmentObject.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
@@ -34,7 +32,7 @@
 #include "vm/StringType.h"
 #include "vm/SymbolType.h"
 
-#include "vm/Debugger-inl.h"
+#include "debugger/Debugger-inl.h"
 #include "vm/JSObject-inl.h"
 
 using namespace js;
@@ -198,18 +196,18 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
   // True if we should populate the edge's names.
   bool wantNames;
 
-  void onChild(const JS::GCCellPtr& thing) override {
+  bool onChild(const JS::GCCellPtr& thing) override {
     if (!okay) {
-      return;
+      return true;
     }
 
     // Don't trace permanent atoms and well-known symbols that are owned by
     // a parent JSRuntime.
     if (thing.is<JSString>() && thing.as<JSString>().isPermanentAtom()) {
-      return;
+      return true;
     }
     if (thing.is<JS::Symbol>() && thing.as<JS::Symbol>().isWellKnownSymbol()) {
-      return;
+      return true;
     }
 
     char16_t* name16 = nullptr;
@@ -223,7 +221,7 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
       name16 = js_pod_malloc<char16_t>(strlen(name) + 1);
       if (!name16) {
         okay = false;
-        return;
+        return true;
       }
 
       size_t i;
@@ -239,8 +237,10 @@ class EdgeVectorTracer final : public JS::CallbackTracer {
     // retains it, and its destructor will free it.
     if (!vec->append(Edge(name16, Node(thing)))) {
       okay = false;
-      return;
+      return true;
     }
+
+    return true;
   }
 
  public:

@@ -24,6 +24,7 @@
 #include "jit/JitAllocPolicy.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MOpcodes.h"
+#include "jit/TIOracle.h"
 #include "jit/TypedObjectPrediction.h"
 #include "jit/TypePolicy.h"
 #include "js/HeapAPI.h"
@@ -1018,7 +1019,7 @@ class MInstruction : public MDefinition, public InlineListNode<MInstruction> {
   // following code prevents calls to "new(alloc) MFoo" outside the MFoo
   // members.
   inline void* operator new(size_t nbytes,
-                            TempAllocator::Fallible view) throw() {
+                            TempAllocator::Fallible view) noexcept(true) {
     return TempObject::operator new(nbytes, view);
   }
   inline void* operator new(size_t nbytes, TempAllocator& alloc) {
@@ -6697,7 +6698,7 @@ struct LambdaFunctionInfo {
 
   explicit LambdaFunctionInfo(JSFunction* fun)
       : fun_(fun),
-        flags(fun->flags()),
+        flags(fun->flags().toRaw()),
         nargs(fun->nargs()),
         scriptOrLazyScript(fun->hasScript() ? (gc::Cell*)fun->nonLazyScript()
                                             : (gc::Cell*)fun->lazyScript()),
@@ -6707,9 +6708,9 @@ struct LambdaFunctionInfo {
     // right thing. We can't assert this off-thread in CodeGenerator,
     // because fun->isAsync() accesses the script/lazyScript and can race
     // with delazification on the main thread.
-    MOZ_ASSERT_IF(flags & JSFunction::EXTENDED, fun->isArrow() ||
-                                                    fun->allowSuperProperty() ||
-                                                    fun->isSelfHostedBuiltin());
+    MOZ_ASSERT_IF(flags & FunctionFlags::EXTENDED,
+                  fun->isArrow() || fun->allowSuperProperty() ||
+                      fun->isSelfHostedBuiltin());
   }
 
   // Be careful when calling this off-thread. Don't call any JSFunction*
@@ -7187,36 +7188,6 @@ class MTypedArrayElementShift : public MUnaryInstruction,
   }
 
   void computeRange(TempAllocator& alloc) override;
-};
-
-class MSetDisjointTypedElements : public MTernaryInstruction,
-                                  public NoTypePolicy::Data {
-  explicit MSetDisjointTypedElements(MDefinition* target,
-                                     MDefinition* targetOffset,
-                                     MDefinition* source)
-      : MTernaryInstruction(classOpcode, target, targetOffset, source) {
-    MOZ_ASSERT(target->type() == MIRType::Object);
-    MOZ_ASSERT(targetOffset->type() == MIRType::Int32);
-    MOZ_ASSERT(source->type() == MIRType::Object);
-    setResultType(MIRType::None);
-  }
-
- public:
-  INSTRUCTION_HEADER(SetDisjointTypedElements)
-  NAMED_OPERANDS((0, target), (1, targetOffset), (2, source))
-
-  static MSetDisjointTypedElements* New(TempAllocator& alloc,
-                                        MDefinition* target,
-                                        MDefinition* targetOffset,
-                                        MDefinition* source) {
-    return new (alloc) MSetDisjointTypedElements(target, targetOffset, source);
-  }
-
-  AliasSet getAliasSet() const override {
-    return AliasSet::Store(AliasSet::UnboxedElement);
-  }
-
-  ALLOW_CLONE(MSetDisjointTypedElements)
 };
 
 // Load a binary data object's "elements", which is just its opaque
@@ -10642,9 +10613,9 @@ class MIsObject : public MUnaryInstruction, public BoxInputsPolicy::Data {
 };
 
 class MHasClass : public MUnaryInstruction, public SingleObjectPolicy::Data {
-  const Class* class_;
+  const JSClass* class_;
 
-  MHasClass(MDefinition* object, const Class* clasp)
+  MHasClass(MDefinition* object, const JSClass* clasp)
       : MUnaryInstruction(classOpcode, object), class_(clasp) {
     MOZ_ASSERT(object->type() == MIRType::Object ||
                (object->type() == MIRType::Value &&
@@ -10658,7 +10629,7 @@ class MHasClass : public MUnaryInstruction, public SingleObjectPolicy::Data {
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, object))
 
-  const Class* getClass() const { return class_; }
+  const JSClass* getClass() const { return class_; }
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
     if (!ins->isHasClass()) {
@@ -10673,9 +10644,9 @@ class MHasClass : public MUnaryInstruction, public SingleObjectPolicy::Data {
 
 class MGuardToClass : public MUnaryInstruction,
                       public SingleObjectPolicy::Data {
-  const Class* class_;
+  const JSClass* class_;
 
-  MGuardToClass(MDefinition* object, const Class* clasp)
+  MGuardToClass(MDefinition* object, const JSClass* clasp)
       : MUnaryInstruction(classOpcode, object), class_(clasp) {
     MOZ_ASSERT(object->type() == MIRType::Object);
     setResultType(MIRType::Object);
@@ -10691,7 +10662,7 @@ class MGuardToClass : public MUnaryInstruction,
   TRIVIAL_NEW_WRAPPERS
   NAMED_OPERANDS((0, object))
 
-  const Class* getClass() const { return class_; }
+  const JSClass* getClass() const { return class_; }
   AliasSet getAliasSet() const override { return AliasSet::None(); }
   bool congruentTo(const MDefinition* ins) const override {
     if (!ins->isGuardToClass()) {
@@ -11464,6 +11435,19 @@ class MAsmJSStoreHeap
   AliasSet getAliasSet() const override {
     return AliasSet::Store(AliasSet::WasmHeap);
   }
+};
+
+class MWasmFence : public MNullaryInstruction {
+ protected:
+  MWasmFence() : MNullaryInstruction(classOpcode) { setGuard(); }
+
+ public:
+  INSTRUCTION_HEADER(WasmFence)
+  TRIVIAL_NEW_WRAPPERS
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+
+  ALLOW_CLONE(MWasmFence)
 };
 
 class MWasmCompareExchangeHeap : public MVariadicInstruction,

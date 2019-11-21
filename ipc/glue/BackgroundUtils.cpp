@@ -85,7 +85,7 @@ already_AddRefed<nsIPrincipal> PrincipalInfoToPrincipal(
         return nullptr;
       }
 
-      principal = BasePrincipal::CreateCodebasePrincipal(uri, info.attrs());
+      principal = BasePrincipal::CreateContentPrincipal(uri, info.attrs());
       if (NS_WARN_IF(!principal)) {
         return nullptr;
       }
@@ -575,15 +575,16 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetFrameBrowsingContextID(),
       aLoadInfo->GetInitialSecurityCheckDone(),
       aLoadInfo->GetIsInThirdPartyContext(), aLoadInfo->GetIsDocshellReload(),
-      aLoadInfo->GetSendCSPViolationEvents(), aLoadInfo->GetOriginAttributes(),
-      redirectChainIncludingInternalRedirects, redirectChain,
-      ancestorPrincipals, aLoadInfo->AncestorOuterWindowIDs(), ipcClientInfo,
-      ipcReservedClientInfo, ipcInitialClientInfo, ipcController,
+      aLoadInfo->GetIsFormSubmission(), aLoadInfo->GetSendCSPViolationEvents(),
+      aLoadInfo->GetOriginAttributes(), redirectChainIncludingInternalRedirects,
+      redirectChain, ancestorPrincipals, aLoadInfo->AncestorOuterWindowIDs(),
+      ipcClientInfo, ipcReservedClientInfo, ipcInitialClientInfo, ipcController,
       aLoadInfo->CorsUnsafeHeaders(), aLoadInfo->GetForcePreflight(),
       aLoadInfo->GetIsPreflight(), aLoadInfo->GetLoadTriggeredFromExternal(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetDocumentHasLoaded(), cspNonce,
+      aLoadInfo->GetSkipContentSniffing(),
       aLoadInfo->GetIsFromProcessingFrameAttributes(), cookieSettingsArgs,
       aLoadInfo->GetRequestBlockingReason(), maybeCspToInheritInfo));
 
@@ -737,15 +738,16 @@ nsresult LoadInfoArgsToLoadInfo(
       loadInfoArgs.browsingContextID(), loadInfoArgs.frameBrowsingContextID(),
       loadInfoArgs.initialSecurityCheckDone(),
       loadInfoArgs.isInThirdPartyContext(), loadInfoArgs.isDocshellReload(),
-      loadInfoArgs.sendCSPViolationEvents(), loadInfoArgs.originAttributes(),
-      redirectChainIncludingInternalRedirects, redirectChain,
-      std::move(ancestorPrincipals), loadInfoArgs.ancestorOuterWindowIDs(),
-      loadInfoArgs.corsUnsafeHeaders(), loadInfoArgs.forcePreflight(),
-      loadInfoArgs.isPreflight(), loadInfoArgs.loadTriggeredFromExternal(),
+      loadInfoArgs.isFormSubmission(), loadInfoArgs.sendCSPViolationEvents(),
+      loadInfoArgs.originAttributes(), redirectChainIncludingInternalRedirects,
+      redirectChain, std::move(ancestorPrincipals),
+      loadInfoArgs.ancestorOuterWindowIDs(), loadInfoArgs.corsUnsafeHeaders(),
+      loadInfoArgs.forcePreflight(), loadInfoArgs.isPreflight(),
+      loadInfoArgs.loadTriggeredFromExternal(),
       loadInfoArgs.serviceWorkerTaintingSynthesized(),
       loadInfoArgs.documentHasUserInteracted(),
       loadInfoArgs.documentHasLoaded(), loadInfoArgs.cspNonce(),
-      loadInfoArgs.requestBlockingReason());
+      loadInfoArgs.skipContentSniffing(), loadInfoArgs.requestBlockingReason());
 
   if (loadInfoArgs.isFromProcessingFrameAttributes()) {
     loadInfo->SetIsFromProcessingFrameAttributes();
@@ -760,6 +762,7 @@ void LoadInfoToParentLoadInfoForwarder(
   if (!aLoadInfo) {
     *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
         false, false, Nothing(), nsILoadInfo::TAINTING_BASIC,
+        false,  // SkipContentSniffing
         false,  // serviceWorkerTaintingSynthesized
         false,  // documentHasUserInteracted
         false,  // documentHasLoaded
@@ -791,6 +794,7 @@ void LoadInfoToParentLoadInfoForwarder(
   *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
       aLoadInfo->GetAllowInsecureRedirectToDataURI(),
       aLoadInfo->GetBypassCORSChecks(), ipcController, tainting,
+      aLoadInfo->GetSkipContentSniffing(),
       aLoadInfo->GetServiceWorkerTaintingSynthesized(),
       aLoadInfo->GetDocumentHasUserInteracted(),
       aLoadInfo->GetDocumentHasLoaded(), cookieSettingsArgs,
@@ -824,6 +828,9 @@ nsresult MergeParentLoadInfoForwarder(
   } else {
     aLoadInfo->MaybeIncreaseTainting(aForwarderArgs.tainting());
   }
+
+  rv = aLoadInfo->SetSkipContentSniffing(aForwarderArgs.skipContentSniffing());
+  NS_ENSURE_SUCCESS(rv, rv);
 
   MOZ_ALWAYS_SUCCEEDS(aLoadInfo->SetDocumentHasUserInteracted(
       aForwarderArgs.documentHasUserInteracted()));

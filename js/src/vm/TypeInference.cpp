@@ -17,7 +17,6 @@
 #include <new>
 
 #include "jsapi.h"
-#include "builtin/String.h"
 
 #include "gc/HashUtil.h"
 #include "jit/BaselineIC.h"
@@ -651,7 +650,7 @@ void TypeSet::addType(Type type, LifoAlloc* alloc) {
       // the normal object limit.
       if (objectCount == TYPE_FLAG_OBJECT_COUNT_LIMIT) {
         for (unsigned i = 0; i < objectCount; i++) {
-          const Class* clasp = getObjectClass(i);
+          const JSClass* clasp = getObjectClass(i);
           if (clasp && !clasp->isDOMClass()) {
             goto unknownObject;
           }
@@ -1308,6 +1307,9 @@ bool CompilerConstraintInstance<T>::generateTypeConstraint(
   }
 
   AutoSweepObjectGroup sweep(property.object()->maybeGroup());
+  if (property.object()->maybeGroup()->unknownProperties(sweep)) {
+    return false;
+  }
   if (!data.constraintHolds(sweep, cx, property, expected)) {
     return false;
   }
@@ -1320,7 +1322,7 @@ bool CompilerConstraintInstance<T>::generateTypeConstraint(
 
 } /* anonymous namespace */
 
-const Class* TypeSet::ObjectKey::clasp() {
+const JSClass* TypeSet::ObjectKey::clasp() {
   return isGroup() ? group()->clasp() : singleton()->getClass();
 }
 
@@ -1364,7 +1366,9 @@ HeapTypeSetKey TypeSet::ObjectKey::property(jsid id) {
   property.id_ = id;
   if (ObjectGroup* group = maybeGroup()) {
     AutoSweepObjectGroup sweep(group);
-    property.maybeTypes_ = group->maybeGetProperty(sweep, id);
+    if (!group->unknownProperties(sweep)) {
+      property.maybeTypes_ = group->maybeGetProperty(sweep, id);
+    }
   }
 
   return property;
@@ -1511,12 +1515,6 @@ bool js::FinishCompilation(JSContext* cx, HandleScript script,
   for (size_t i = 0; i < constraints->numFrozenScripts(); i++) {
     const CompilerConstraintList::FrozenScript& entry =
         constraints->frozenScript(i);
-    JitScript* jitScript = entry.script->jitScript();
-    if (!jitScript) {
-      succeeded = false;
-      break;
-    }
-
     // It could happen that one of the compiled scripts was made a
     // debuggee mid-compilation (e.g., via setting a breakpoint). If so,
     // throw away the compilation.
@@ -1525,6 +1523,7 @@ bool js::FinishCompilation(JSContext* cx, HandleScript script,
       break;
     }
 
+    JitScript* jitScript = entry.script->jitScript();
     AutoSweepJitScript sweep(entry.script);
     if (!CheckFrozenTypeSet(sweep, cx, entry.thisTypes,
                             jitScript->thisTypes(sweep, entry.script))) {
@@ -1617,7 +1616,6 @@ void js::FinishDefinitePropertiesAnalysis(JSContext* cx,
         constraints->frozenScript(i);
     JSScript* script = entry.script;
     JitScript* jitScript = script->jitScript();
-    MOZ_ASSERT(jitScript);
 
     AutoSweepJitScript sweep(script);
     MOZ_ASSERT(jitScript->thisTypes(sweep, script)->isSubset(entry.thisTypes));
@@ -1631,8 +1629,8 @@ void js::FinishDefinitePropertiesAnalysis(JSContext* cx,
     }
 
     for (size_t j = 0; j < script->numBytecodeTypeSets(); j++) {
-      MOZ_ASSERT(script->jitScript()->typeArray(sweep)[j].isSubset(
-          &entry.bytecodeTypes[j]));
+      MOZ_ASSERT(
+          jitScript->typeArray(sweep)[j].isSubset(&entry.bytecodeTypes[j]));
     }
   }
 #endif
@@ -1642,9 +1640,6 @@ void js::FinishDefinitePropertiesAnalysis(JSContext* cx,
         constraints->frozenScript(i);
     JSScript* script = entry.script;
     JitScript* jitScript = script->jitScript();
-    if (!jitScript) {
-      MOZ_CRASH();
-    }
 
     AutoSweepJitScript sweep(script);
     CheckDefinitePropertiesTypeSet(sweep, cx, entry.thisTypes,
@@ -2344,17 +2339,17 @@ TemporaryTypeSet::DoubleConversion TemporaryTypeSet::convertDoubleElements(
   return DontConvertToDoubles;
 }
 
-const Class* TemporaryTypeSet::getKnownClass(
+const JSClass* TemporaryTypeSet::getKnownClass(
     CompilerConstraintList* constraints) {
   if (unknownObject()) {
     return nullptr;
   }
 
-  const Class* clasp = nullptr;
+  const JSClass* clasp = nullptr;
   unsigned count = getObjectCount();
 
   for (unsigned i = 0; i < count; i++) {
-    const Class* nclasp = getObjectClass(i);
+    const JSClass* nclasp = getObjectClass(i);
     if (!nclasp) {
       continue;
     }
@@ -2390,7 +2385,7 @@ Realm* TemporaryTypeSet::getKnownRealm(CompilerConstraintList* constraints) {
   unsigned count = getObjectCount();
 
   for (unsigned i = 0; i < count; i++) {
-    const Class* clasp = getObjectClass(i);
+    const JSClass* clasp = getObjectClass(i);
     if (!clasp) {
       continue;
     }
@@ -2436,7 +2431,7 @@ void TemporaryTypeSet::getTypedArraySharedness(
 }
 
 TemporaryTypeSet::ForAllResult TemporaryTypeSet::forAllClasses(
-    CompilerConstraintList* constraints, bool (*func)(const Class* clasp)) {
+    CompilerConstraintList* constraints, bool (*func)(const JSClass* clasp)) {
   if (unknownObject()) {
     return ForAllResult::MIXED;
   }
@@ -2449,7 +2444,7 @@ TemporaryTypeSet::ForAllResult TemporaryTypeSet::forAllClasses(
   bool true_results = false;
   bool false_results = false;
   for (unsigned i = 0; i < count; i++) {
-    const Class* clasp = getObjectClass(i);
+    const JSClass* clasp = getObjectClass(i);
     if (!clasp) {
       continue;
     }
@@ -2476,7 +2471,7 @@ TemporaryTypeSet::ForAllResult TemporaryTypeSet::forAllClasses(
 
 Scalar::Type TemporaryTypeSet::getTypedArrayType(
     CompilerConstraintList* constraints, TypedArraySharedness* sharedness) {
-  const Class* clasp = getKnownClass(constraints);
+  const JSClass* clasp = getKnownClass(constraints);
 
   if (clasp && IsTypedArrayClass(clasp)) {
     if (sharedness) {
@@ -2498,7 +2493,7 @@ bool TemporaryTypeSet::isDOMClass(CompilerConstraintList* constraints,
 
   unsigned count = getObjectCount();
   for (unsigned i = 0; i < count; i++) {
-    const Class* clasp = getObjectClass(i);
+    const JSClass* clasp = getObjectClass(i);
     if (!clasp) {
       continue;
     }
@@ -2533,7 +2528,7 @@ bool TemporaryTypeSet::maybeCallable(CompilerConstraintList* constraints) {
 
   unsigned count = getObjectCount();
   for (unsigned i = 0; i < count; i++) {
-    const Class* clasp = getObjectClass(i);
+    const JSClass* clasp = getObjectClass(i);
     if (!clasp) {
       continue;
     }
@@ -2563,7 +2558,7 @@ bool TemporaryTypeSet::maybeEmulatesUndefined(
     // The object emulates undefined if clasp->emulatesUndefined() or if
     // it's a WrapperObject, see EmulatesUndefined. Since all wrappers are
     // proxies, we can just check for that.
-    const Class* clasp = getObjectClass(i);
+    const JSClass* clasp = getObjectClass(i);
     if (!clasp) {
       continue;
     }
@@ -2647,12 +2642,12 @@ bool TemporaryTypeSet::propertyNeedsBarrier(CompilerConstraintList* constraints,
   return false;
 }
 
-bool js::ClassCanHaveExtraProperties(const Class* clasp) {
+bool js::ClassCanHaveExtraProperties(const JSClass* clasp) {
   return clasp->getResolve() || clasp->getOpsLookupProperty() ||
          clasp->getOpsGetProperty() || IsTypedArrayClass(clasp);
 }
 
-void TypeZone::processPendingRecompiles(FreeOp* fop,
+void TypeZone::processPendingRecompiles(JSFreeOp* fop,
                                         RecompileInfoVector& recompiles) {
   MOZ_ASSERT(!recompiles.empty());
 
@@ -2691,18 +2686,23 @@ void TypeZone::addPendingRecompile(JSContext* cx, JSScript* script) {
   // Let the script warm up again before attempting another compile.
   script->resetWarmUpCounterToDelayIonCompilation();
 
-  if (script->hasIonScript()) {
-    addPendingRecompile(
-        cx, RecompileInfo(script, script->ionScript()->compilationId()));
-  }
-
-  // Trigger recompilation of any callers inlining this script.
-  if (JitScript* jitScript = script->jitScript()) {
-    AutoSweepJitScript sweep(script);
-    for (const RecompileInfo& info : jitScript->inlinedCompilations(sweep)) {
-      addPendingRecompile(cx, info);
+  if (JitScript* jitScript = script->maybeJitScript()) {
+    // Trigger recompilation of the IonScript.
+    if (jitScript->hasIonScript()) {
+      addPendingRecompile(
+          cx, RecompileInfo(script, jitScript->ionScript()->compilationId()));
     }
-    jitScript->inlinedCompilations(sweep).clearAndFree();
+
+    // Trigger recompilation of any callers inlining this script.
+    AutoSweepJitScript sweep(script);
+    RecompileInfoVector* inlinedCompilations =
+        jitScript->maybeInlinedCompilations(sweep);
+    if (inlinedCompilations) {
+      for (const RecompileInfo& info : *inlinedCompilations) {
+        addPendingRecompile(cx, info);
+      }
+      inlinedCompilations->clearAndFree();
+    }
   }
 }
 
@@ -2734,7 +2734,7 @@ void js::PrintTypes(JSContext* cx, Compartment* comp, bool force) {
   RootedScript script(cx);
   for (auto iter = zone->cellIter<JSScript>(); !iter.done(); iter.next()) {
     script = iter;
-    if (JitScript* jitScript = script->jitScript()) {
+    if (JitScript* jitScript = script->maybeJitScript()) {
       jitScript->printTypes(cx, script);
     }
   }
@@ -3046,7 +3046,7 @@ void ObjectGroup::markUnknown(const AutoSweepObjectGroup& sweep,
   clearProperties(sweep);
 }
 
-void ObjectGroup::detachNewScript(bool writeBarrier, ObjectGroup* replacement) {
+void ObjectGroup::detachNewScript(bool isSweeping, ObjectGroup* replacement) {
   // Clear the TypeNewScript from this ObjectGroup and, if it has been
   // analyzed, remove it from the newObjectGroups table so that it will not be
   // produced by calling 'new' on the associated function anymore.
@@ -3075,7 +3075,7 @@ void ObjectGroup::detachNewScript(bool writeBarrier, ObjectGroup* replacement) {
     MOZ_ASSERT(!replacement);
   }
 
-  setAddendum(Addendum_None, nullptr, writeBarrier);
+  setAddendum(Addendum_None, nullptr, isSweeping);
 }
 
 void ObjectGroup::maybeClearNewScriptOnOOM() {
@@ -3094,7 +3094,7 @@ void ObjectGroup::maybeClearNewScriptOnOOM() {
   addFlags(sweep, OBJECT_FLAG_NEW_SCRIPT_CLEARED);
 
   // This method is called during GC sweeping, so don't trigger pre barriers.
-  detachNewScript(/* writeBarrier = */ false, nullptr);
+  detachNewScript(/* isSweeping = */ true, nullptr);
 
   js_delete(newScript);
 }
@@ -3118,7 +3118,7 @@ void ObjectGroup::clearNewScript(JSContext* cx,
     newScript->function()->setNewScriptCleared();
   }
 
-  detachNewScript(/* writeBarrier = */ true, replacement);
+  detachNewScript(/* isSweeping = */ false, replacement);
 
   if (!cx->isHelperThreadContext()) {
     bool found = newScript->rollbackPartiallyInitializedObjects(cx, this);
@@ -3443,9 +3443,9 @@ void JitScript::MonitorBytecodeTypeSlow(JSContext* cx, JSScript* script,
 /* static */
 void JitScript::MonitorBytecodeType(JSContext* cx, JSScript* script,
                                     jsbytecode* pc, const js::Value& rval) {
-  MOZ_ASSERT(CodeSpec[*pc].format & JOF_TYPESET);
+  MOZ_ASSERT(BytecodeOpHasTypeSet(JSOp(*pc)));
 
-  if (!script->jitScript()) {
+  if (!script->hasJitScript()) {
     return;
   }
 
@@ -4469,8 +4469,8 @@ void JitScript::sweepTypes(const js::AutoSweepJitScript& sweep, Zone* zone) {
   TypeZone& types = zone->types;
 
   // Sweep the inlinedCompilations Vector.
-  {
-    RecompileInfoVector& inlinedCompilations = this->inlinedCompilations(sweep);
+  if (maybeInlinedCompilations(sweep)) {
+    RecompileInfoVector& inlinedCompilations = *maybeInlinedCompilations(sweep);
     size_t dest = 0;
     for (size_t i = 0; i < inlinedCompilations.length(); i++) {
       if (inlinedCompilations[i].shouldSweep(types)) {
@@ -4493,30 +4493,6 @@ void JitScript::sweepTypes(const js::AutoSweepJitScript& sweep, Zone* zone) {
     // It's possible we OOM'd while copying freeze constraints, so they
     // need to be regenerated.
     flags_.hasFreezeConstraints = false;
-  }
-}
-
-void Zone::addSizeOfIncludingThis(
-    mozilla::MallocSizeOf mallocSizeOf, size_t* typePool, size_t* regexpZone,
-    size_t* jitZone, size_t* baselineStubsOptimized, size_t* cachedCFG,
-    size_t* uniqueIdMap, size_t* shapeCaches, size_t* atomsMarkBitmaps,
-    size_t* compartmentObjects, size_t* crossCompartmentWrappersTables,
-    size_t* compartmentsPrivateData) {
-  *typePool += types.typeLifoAlloc().sizeOfExcludingThis(mallocSizeOf);
-  *regexpZone += regExps().sizeOfExcludingThis(mallocSizeOf);
-  if (jitZone_) {
-    jitZone_->addSizeOfIncludingThis(mallocSizeOf, jitZone,
-                                     baselineStubsOptimized, cachedCFG);
-  }
-  *uniqueIdMap += uniqueIds().shallowSizeOfExcludingThis(mallocSizeOf);
-  *shapeCaches += baseShapes().sizeOfExcludingThis(mallocSizeOf) +
-                  initialShapes().sizeOfExcludingThis(mallocSizeOf);
-  *atomsMarkBitmaps += markedAtoms().sizeOfExcludingThis(mallocSizeOf);
-
-  for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
-    comp->addSizeOfIncludingThis(mallocSizeOf, compartmentObjects,
-                                 crossCompartmentWrappersTables,
-                                 compartmentsPrivateData);
   }
 }
 
@@ -4566,10 +4542,12 @@ AutoClearTypeInferenceStateOnOOM::AutoClearTypeInferenceStateOnOOM(Zone* zone)
 
 AutoClearTypeInferenceStateOnOOM::~AutoClearTypeInferenceStateOnOOM() {
   if (zone->types.hadOOMSweepingTypes()) {
+    gc::AutoSetThreadIsSweeping threadIsSweeping;
     JSRuntime* rt = zone->runtimeFromMainThread();
+    JSFreeOp fop(rt);
     js::CancelOffThreadIonCompile(rt);
     zone->setPreservingCode(false);
-    zone->discardJitCode(rt->defaultFreeOp(), Zone::KeepBaselineCode);
+    zone->discardJitCode(&fop, Zone::KeepBaselineCode);
     zone->types.clearAllNewScriptsOnOOM();
   }
 

@@ -10,6 +10,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsDisplayList.h"
@@ -103,28 +104,44 @@ nscoord nsMathMLmfracFrame::CalcLineThickness(nsPresContext* aPresContext,
   // default: medium
   //
   if (!aThicknessAttribute.IsEmpty()) {
-    if (aThicknessAttribute.EqualsLiteral("thin")) {
-      lineThickness = NSToCoordFloor(defaultThickness * THIN_FRACTION_LINE);
-      minimumThickness = onePixel * THIN_FRACTION_LINE_MINIMUM_PIXELS;
-      // should visually decrease by at least one pixel, if default is not a
-      // pixel
-      if (defaultThickness > onePixel &&
-          lineThickness > defaultThickness - onePixel)
-        lineThickness = defaultThickness - onePixel;
-    } else if (aThicknessAttribute.EqualsLiteral("medium")) {
-      // medium is default
-    } else if (aThicknessAttribute.EqualsLiteral("thick")) {
-      lineThickness = NSToCoordCeil(defaultThickness * THICK_FRACTION_LINE);
-      minimumThickness = onePixel * THICK_FRACTION_LINE_MINIMUM_PIXELS;
-      // should visually increase by at least one pixel
-      if (lineThickness < defaultThickness + onePixel)
-        lineThickness = defaultThickness + onePixel;
-    } else {
+    if (StaticPrefs::mathml_mfrac_linethickness_names_disabled()) {
       // length value
       lineThickness = defaultThickness;
       ParseNumericValue(aThicknessAttribute, &lineThickness,
                         nsMathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
                         aComputedStyle, aFontSizeInflation);
+    } else {
+      bool isDeprecatedLineThicknessValue = true;
+      if (aThicknessAttribute.EqualsLiteral("thin")) {
+        lineThickness = NSToCoordFloor(defaultThickness * THIN_FRACTION_LINE);
+        minimumThickness = onePixel * THIN_FRACTION_LINE_MINIMUM_PIXELS;
+        // should visually decrease by at least one pixel, if default is not a
+        // pixel
+        if (defaultThickness > onePixel &&
+            lineThickness > defaultThickness - onePixel) {
+          lineThickness = defaultThickness - onePixel;
+        }
+      } else if (aThicknessAttribute.EqualsLiteral("medium")) {
+        // medium is default
+      } else if (aThicknessAttribute.EqualsLiteral("thick")) {
+        lineThickness = NSToCoordCeil(defaultThickness * THICK_FRACTION_LINE);
+        minimumThickness = onePixel * THICK_FRACTION_LINE_MINIMUM_PIXELS;
+        // should visually increase by at least one pixel
+        if (lineThickness < defaultThickness + onePixel) {
+          lineThickness = defaultThickness + onePixel;
+        }
+      } else {
+        // length value
+        isDeprecatedLineThicknessValue = false;
+        lineThickness = defaultThickness;
+        ParseNumericValue(aThicknessAttribute, &lineThickness,
+                          nsMathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
+                          aComputedStyle, aFontSizeInflation);
+      }
+      if (isDeprecatedLineThicknessValue) {
+        mContent->OwnerDoc()->WarnOnceAbout(
+            dom::Document::eMathML_DeprecatedLineThicknessValue);
+      }
     }
   }
 
@@ -316,10 +333,6 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                          : gfxMathTable::StackGapMin,
             oneDevPixel);
       }
-      // Factor in axis height
-      // http://www.mathml-association.org/MathMLinHTML5/S3.html#SS3.SSS2
-      numShift += axisHeight;
-      denShift += axisHeight;
 
       nscoord actualClearance =
           (numShift - bmNum.descent) - (bmDen.ascent - denShift);
@@ -422,10 +435,12 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
       nscoord dy;
       // place numerator
       dy = 0;
-      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dxNum, dy, 0);
+      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dxNum, dy,
+                        ReflowChildFlags::Default);
       // place denominator
       dy = aDesiredSize.Height() - sizeDen.Height();
-      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dxDen, dy, 0);
+      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dxDen, dy,
+                        ReflowChildFlags::Default);
       // place the fraction bar - dy is top of bar
       dy = aDesiredSize.BlockStartAscent() -
            (axisHeight + actualRuleThickness / 2);
@@ -548,7 +563,8 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
       dx = MirrorIfRTL(aDesiredSize.Width(), sizeNum.Width(), leadingSpace);
       dy = aDesiredSize.BlockStartAscent() - numShift -
            sizeNum.BlockStartAscent();
-      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dx, dy, 0);
+      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dx, dy,
+                        ReflowChildFlags::Default);
 
       // place the fraction bar
       dx = MirrorIfRTL(aDesiredSize.Width(), mLineRect.width,
@@ -562,7 +578,8 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                        leadingSpace + bmNum.width + mLineRect.width);
       dy = aDesiredSize.BlockStartAscent() + denShift -
            sizeDen.BlockStartAscent();
-      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dx, dy, 0);
+      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dx, dy,
+                        ReflowChildFlags::Default);
     }
   }
 

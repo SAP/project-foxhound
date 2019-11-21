@@ -116,7 +116,7 @@ var ReaderMode = {
     let referrerURI, principal;
     try {
       referrerURI = Services.io.newURI(url);
-      principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      principal = Services.scriptSecurityManager.createContentPrincipal(
         referrerURI,
         win.document.nodePrincipal.originAttributes
       );
@@ -134,7 +134,7 @@ var ReaderMode = {
       triggeringPrincipal: principal,
       loadFlags,
       referrerInfo: new ReferrerInfo(
-        Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
+        Ci.nsIReferrerInfo.EMPTY,
         true,
         referrerURI
       ),

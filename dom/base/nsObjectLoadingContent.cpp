@@ -107,7 +107,6 @@
 static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 
 static const char kPrefYoutubeRewrite[] = "plugins.rewrite_youtube_embeds";
-static const char kPrefBlockURIs[] = "browser.safebrowsing.blockedURIs.enabled";
 static const char kPrefFavorFallbackMode[] = "plugins.favorfallback.mode";
 static const char kPrefFavorFallbackRules[] = "plugins.favorfallback.rules";
 
@@ -1492,7 +1491,7 @@ nsObjectLoadingContent::UpdateObjectParameters() {
   ///
 
   nsAutoString codebaseStr;
-  nsCOMPtr<nsIURI> docBaseURI = thisElement->GetBaseURI();
+  nsIURI* docBaseURI = thisElement->GetBaseURI();
   thisElement->GetAttr(kNameSpaceID_None, nsGkAtoms::codebase, codebaseStr);
 
   if (!codebaseStr.IsEmpty()) {
@@ -1508,6 +1507,11 @@ nsObjectLoadingContent::UpdateObjectParameters() {
     }
   }
 
+  // If we failed to build a valid URI, use the document's base URI
+  if (!newBaseURI) {
+    newBaseURI = docBaseURI;
+  }
+
   nsAutoString rawTypeAttr;
   thisElement->GetAttr(kNameSpaceID_None, nsGkAtoms::type, rawTypeAttr);
   if (!rawTypeAttr.IsEmpty()) {
@@ -1516,11 +1520,6 @@ nsObjectLoadingContent::UpdateObjectParameters() {
     nsAutoString mime;
     nsContentUtils::SplitMimeType(rawTypeAttr, mime, params);
     CopyUTF16toUTF8(mime, newMime);
-  }
-
-  // If we failed to build a valid URI, use the document's base URI
-  if (!newBaseURI) {
-    newBaseURI = docBaseURI;
   }
 
   ///
@@ -1996,9 +1995,7 @@ nsresult nsObjectLoadingContent::LoadObject(bool aNotify, bool aForceLoad,
     while (nestedURI) {
       // view-source should always be an nsINestedURI, loop and check the
       // scheme on this and all inner URIs that are also nested URIs.
-      bool isViewSource = false;
-      rv = tempURI->SchemeIs("view-source", &isViewSource);
-      if (NS_FAILED(rv) || isViewSource) {
+      if (tempURI->SchemeIs("view-source")) {
         LOG(("OBJLC [%p]: Blocking as effective URI has view-source scheme",
              this));
         mType = eType_Null;
@@ -2290,10 +2287,8 @@ nsresult nsObjectLoadingContent::OpenChannel() {
   nsSecurityFlags securityFlags =
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
 
-  bool isData;
-  bool isURIUniqueOrigin = nsIOService::IsDataURIUniqueOpaqueOrigin() &&
-                           NS_SUCCEEDED(mURI->SchemeIs("data", &isData)) &&
-                           isData;
+  bool isURIUniqueOrigin =
+      nsIOService::IsDataURIUniqueOpaqueOrigin() && mURI->SchemeIs("data");
 
   if (inherit && !isURIUniqueOrigin) {
     securityFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
@@ -2945,32 +2940,9 @@ uint32_t nsObjectLoadingContent::GetRunID(SystemCallerGuarantee,
   return mRunID;
 }
 
-static bool sPrefsInitialized;
-static uint32_t sSessionTimeoutMinutes;
-static uint32_t sPersistentTimeoutDays;
-static bool sBlockURIs;
-
-static void initializeObjectLoadingContentPrefs() {
-  if (!sPrefsInitialized) {
-    Preferences::AddUintVarCache(
-        &sSessionTimeoutMinutes,
-        "plugin.sessionPermissionNow.intervalInMinutes", 60);
-    Preferences::AddUintVarCache(
-        &sPersistentTimeoutDays,
-        "plugin.persistentPermissionAlways.intervalInDays", 90);
-
-    Preferences::AddBoolVarCache(&sBlockURIs, kPrefBlockURIs, false);
-    sPrefsInitialized = true;
-  }
-}
-
 bool nsObjectLoadingContent::ShouldBlockContent() {
-  if (!sPrefsInitialized) {
-    initializeObjectLoadingContentPrefs();
-  }
-
   if (mContentBlockingEnabled && mURI && IsFlashMIME(mContentType) &&
-      sBlockURIs) {
+      StaticPrefs::browser_safebrowsing_blockedURIs_enabled()) {
     return true;
   }
 
@@ -2979,10 +2951,6 @@ bool nsObjectLoadingContent::ShouldBlockContent() {
 
 bool nsObjectLoadingContent::ShouldPlay(FallbackType& aReason) {
   nsresult rv;
-
-  if (!sPrefsInitialized) {
-    initializeObjectLoadingContentPrefs();
-  }
 
   if (BrowserTabsRemoteAutostart()) {
     bool shouldLoadInParent =
@@ -3051,7 +3019,7 @@ bool nsObjectLoadingContent::ShouldPlay(FallbackType& aReason) {
   if (!window) {
     return false;
   }
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetInProcessTop();
   NS_ENSURE_TRUE(topWindow, false);
   nsCOMPtr<Document> topDoc = topWindow->GetDoc();
   NS_ENSURE_TRUE(topDoc, false);
@@ -3086,14 +3054,6 @@ bool nsObjectLoadingContent::ShouldPlay(FallbackType& aReason) {
     rv = permissionManager->TestPermissionFromPrincipal(
         topDoc->NodePrincipal(), permissionString, &permission);
     NS_ENSURE_SUCCESS(rv, false);
-    if (permission != nsIPermissionManager::UNKNOWN_ACTION) {
-      uint64_t nowms = PR_Now() / 1000;
-      permissionManager->UpdateExpireTime(
-          topDoc->NodePrincipal(), permissionString, false,
-          nowms + sSessionTimeoutMinutes * 60 * 1000,
-          nowms / 1000 +
-              uint64_t(sPersistentTimeoutDays) * 24 * 60 * 60 * 1000);
-    }
     switch (permission) {
       case nsIPermissionManager::ALLOW_ACTION:
         if (PreferFallback(false /* isPluginClickToPlay */)) {

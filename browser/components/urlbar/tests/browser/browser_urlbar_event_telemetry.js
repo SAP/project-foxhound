@@ -3,21 +3,6 @@
 
 "use strict";
 
-function copyToClipboard(str) {
-  return new Promise((resolve, reject) => {
-    waitForClipboard(
-      str,
-      () => {
-        Cc["@mozilla.org/widget/clipboardhelper;1"]
-          .getService(Ci.nsIClipboardHelper)
-          .copyString(str);
-      },
-      resolve,
-      reject
-    );
-  });
-}
-
 // Each test is a function that executes an urlbar action and returns the
 // expected event object, or null if no event is expected.
 const tests = [
@@ -49,7 +34,9 @@ const tests = [
     info("Paste something, press Enter.");
     gURLBar.select();
     let promise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-    await copyToClipboard("test");
+    await SimpleTest.promiseClipboardChange("test", () => {
+      clipboardHelper.copyString("test");
+    });
     document.commandDispatcher
       .getControllerForCommand("cmd_paste")
       .doCommand("cmd_paste");
@@ -184,7 +171,7 @@ const tests = [
     gURLBar.select();
     let promise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
     await promiseAutocompleteResultPopup("exa", window, true);
-    while (gURLBar.value != "http://example.com/?q=%s") {
+    while (gURLBar.untrimmedValue != "http://example.com/?q=%s") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     let element = UrlbarTestUtils.getSelectedElement(window);
@@ -233,7 +220,7 @@ const tests = [
     gURLBar.select();
     let promise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
     await promiseAutocompleteResultPopup("exa", window, true);
-    while (gURLBar.value != "http://example.com/?q=%s") {
+    while (gURLBar.untrimmedValue != "http://example.com/?q=%s") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     EventUtils.synthesizeKey("VK_RETURN");
@@ -256,7 +243,7 @@ const tests = [
     info("Type @, Enter on a keywordoffer");
     gURLBar.select();
     await promiseAutocompleteResultPopup("@", window, true);
-    while (gURLBar.value != "@test ") {
+    while (gURLBar.untrimmedValue != "@test ") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     EventUtils.synthesizeKey("VK_RETURN");
@@ -303,15 +290,12 @@ const tests = [
   async function() {
     info("Paste & Go something.");
     let promise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
-    await copyToClipboard("www.example.com");
-    let inputBox = document.getAnonymousElementByAttribute(
-      gURLBar.textbox,
-      "anonid",
-      "moz-input-box"
-    );
+    await SimpleTest.promiseClipboardChange("www.example.com", () => {
+      clipboardHelper.copyString("www.example.com");
+    });
+    let inputBox = gURLBar.querySelector("moz-input-box");
     let cxmenu = inputBox.menupopup;
     let cxmenuPromise = BrowserTestUtils.waitForEvent(cxmenu, "popupshown");
-    gURLBar.focus();
     EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {
       type: "contextmenu",
       button: 2,
@@ -343,7 +327,7 @@ const tests = [
       EventUtils.synthesizeKey("KEY_ArrowDown", {});
     });
     await UrlbarTestUtils.promiseSearchComplete(window);
-    while (gURLBar.value != "http://mochi.test:8888/") {
+    while (gURLBar.untrimmedValue != "http://mochi.test:8888/") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     EventUtils.synthesizeKey("VK_RETURN");
@@ -370,7 +354,7 @@ const tests = [
     await UrlbarTestUtils.promisePopupOpen(window, () => {
       EventUtils.synthesizeKey("KEY_ArrowDown", {});
     });
-    while (gURLBar.value != "http://mochi.test:8888/") {
+    while (gURLBar.untrimmedValue != "http://mochi.test:8888/") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     let element = UrlbarTestUtils.getSelectedElement(window);
@@ -398,12 +382,7 @@ const tests = [
         gURLBar.select();
         let promise = BrowserTestUtils.browserLoaded(gBrowser.selectedBrowser);
         await UrlbarTestUtils.promisePopupOpen(window, () => {
-          let dropmarker = document.getAnonymousElementByAttribute(
-            gURLBar.textbox,
-            "anonid",
-            "historydropmarker"
-          );
-          EventUtils.synthesizeMouseAtCenter(dropmarker, {}, window);
+          EventUtils.synthesizeMouseAtCenter(gURLBar.dropmarker, {}, window);
         });
         await promiseAutocompleteResultPopup("x", window, true);
         EventUtils.synthesizeKey("VK_RETURN");
@@ -436,7 +415,7 @@ const tests = [
     });
     Services.prefs.clearUserPref("browser.urlbar.openViewOnFocus");
     await UrlbarTestUtils.promiseSearchComplete(window);
-    while (gURLBar.value != "http://mochi.test:8888/") {
+    while (gURLBar.untrimmedValue != "http://mochi.test:8888/") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     EventUtils.synthesizeKey("VK_RETURN");
@@ -466,7 +445,7 @@ const tests = [
       window.document.getElementById("Browser:OpenLocation").doCommand();
     });
     Services.prefs.clearUserPref("browser.urlbar.openViewOnFocus");
-    while (gURLBar.value != "http://mochi.test:8888/") {
+    while (gURLBar.untrimmedValue != "http://mochi.test:8888/") {
       EventUtils.synthesizeKey("KEY_ArrowDown");
     }
     let element = UrlbarTestUtils.getSelectedElement(window);
@@ -593,12 +572,7 @@ const tests = [
       async browser => {
         gURLBar.select();
         await UrlbarTestUtils.promisePopupOpen(window, () => {
-          let dropmarker = document.getAnonymousElementByAttribute(
-            gURLBar.textbox,
-            "anonid",
-            "historydropmarker"
-          );
-          EventUtils.synthesizeMouseAtCenter(dropmarker, {}, window);
+          EventUtils.synthesizeMouseAtCenter(gURLBar.dropmarker, {}, window);
         });
         EventUtils.synthesizeKey("x");
         gURLBar.blur();

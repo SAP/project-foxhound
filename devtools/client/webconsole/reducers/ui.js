@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,7 +16,9 @@ const {
   TIMESTAMPS_TOGGLE,
   FILTERBAR_DISPLAY_MODE_SET,
   FILTERBAR_DISPLAY_MODES,
+  EDITOR_ONBOARDING_DISMISS,
   EDITOR_TOGGLE,
+  EDITOR_SET_WIDTH,
 } = require("devtools/client/webconsole/constants");
 
 const { PANELS } = require("devtools/client/netmonitor/src/constants");
@@ -38,6 +38,8 @@ const UiState = overrides =>
         reverseSearchInputVisible: false,
         reverseSearchInitialValue: "",
         editor: false,
+        editorWidth: null,
+        showEditorOnboarding: false,
         filterBarDisplayMode: FILTERBAR_DISPLAY_MODES.WIDE,
       },
       overrides
@@ -86,6 +88,16 @@ function ui(state = UiState(), action) {
       return {
         ...state,
         editor: !state.editor,
+      };
+    case EDITOR_ONBOARDING_DISMISS:
+      return {
+        ...state,
+        showEditorOnboarding: false,
+      };
+    case EDITOR_SET_WIDTH:
+      return {
+        ...state,
+        editorWidth: action.width,
       };
   }
 

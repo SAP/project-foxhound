@@ -32,8 +32,7 @@ pub type SVGStrokeDashArray = generic::SVGStrokeDashArray<NonNegativeLengthPerce
 /// Whether the `context-value` value is enabled.
 #[cfg(feature = "gecko")]
 pub fn is_context_value_enabled() -> bool {
-    use crate::gecko_bindings::structs::mozilla;
-    unsafe { mozilla::StaticPrefs::sVarCache_gfx_font_rendering_opentype_svg_enabled }
+    static_prefs::pref!("gfx.font_rendering.opentype_svg.enabled")
 }
 
 /// Whether the `context-value` value is enabled.
@@ -107,13 +106,13 @@ pub enum PaintOrder {
 }
 
 /// Number of non-normal components
-const PAINT_ORDER_COUNT: u8 = 3;
+pub const PAINT_ORDER_COUNT: u8 = 3;
 
 /// Number of bits for each component
-const PAINT_ORDER_SHIFT: u8 = 2;
+pub const PAINT_ORDER_SHIFT: u8 = 2;
 
 /// Mask with above bits set
-const PAINT_ORDER_MASK: u8 = 0b11;
+pub const PAINT_ORDER_MASK: u8 = 0b11;
 
 /// The specified value is tree `PaintOrder` values packed into the
 /// bitfields below, as a six-bit field, of 3 two-bit pairs
@@ -136,6 +135,7 @@ const PAINT_ORDER_MASK: u8 = 0b11;
     ToResolvedValue,
     ToShmem,
 )]
+#[repr(transparent)]
 pub struct SVGPaintOrder(pub u8);
 
 impl SVGPaintOrder {
@@ -147,7 +147,7 @@ impl SVGPaintOrder {
     /// Get variant of `paint-order`
     pub fn order_at(&self, pos: u8) -> PaintOrder {
         // Safe because PaintOrder covers all possible patterns.
-        unsafe { ::std::mem::transmute((self.0 >> pos * PAINT_ORDER_SHIFT) & PAINT_ORDER_MASK) }
+        unsafe { std::mem::transmute((self.0 >> pos * PAINT_ORDER_SHIFT) & PAINT_ORDER_MASK) }
     }
 }
 

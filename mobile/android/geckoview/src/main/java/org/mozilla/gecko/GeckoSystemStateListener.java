@@ -24,7 +24,7 @@ import org.mozilla.gecko.util.ThreadUtils;
 
 public class GeckoSystemStateListener
         implements InputManager.InputDeviceListener {
-    private static final String LOGTAG = "GeckoSystemStateListener";
+    private static final String LOGTAG = "SystemStateListener";
 
     private static final GeckoSystemStateListener listenerInstance = new GeckoSystemStateListener();
 
@@ -132,7 +132,7 @@ public class GeckoSystemStateListener
         onDeviceChanged();
     }
 
-    @WrapForJNI(stubName = "OnDeviceChanged", calledFrom = "ui", dispatchTo = "gecko")
+    @WrapForJNI(stubName = "OnDeviceChanged", calledFrom = "any", dispatchTo = "gecko")
     private static native void nativeOnDeviceChanged();
 
     private static void onDeviceChanged() {

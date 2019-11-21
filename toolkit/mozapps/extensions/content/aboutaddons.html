@@ -1,6 +1,12 @@
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this file,
+   - You can obtain one at http://mozilla.org/MPL/2.0/. -->
+
 <!DOCTYPE html>
 <html>
   <head>
+    <!-- Bug 1571346 Remove 'unsafe-inline' from style-src within about:addons -->
+    <meta http-equiv="Content-Security-Policy" content="default-src chrome:; script-src chrome:; style-src chrome: 'unsafe-inline'; img-src chrome: file: jar: https: http:; connect-src chrome: data: https: http:">
     <link rel="stylesheet" href="chrome://global/content/tabprompts.css">
     <link rel="stylesheet" href="chrome://global/skin/tabprompts.css">
 
@@ -36,7 +42,7 @@
         <panel-item-separator></panel-item-separator>
         <panel-item data-l10n-id="report-addon-button" action="report"></panel-item>
         <panel-item-separator></panel-item-separator>
-        <panel-item data-l10n-id="expand-addon-button" action="expand"></panel-item>
+        <panel-item data-l10n-id="manage-addon-button" action="expand"></panel-item>
       </panel-list>
     </template>
 
@@ -48,7 +54,7 @@
         <panel-item-separator></panel-item-separator>
         <panel-item data-l10n-id="preferences-addon-button" action="preferences"></panel-item>
         <panel-item-separator></panel-item-separator>
-        <panel-item data-l10n-id="expand-addon-button" action="expand"></panel-item>
+        <panel-item data-l10n-id="manage-addon-button" action="expand"></panel-item>
       </panel-list>
     </template>
 
@@ -56,21 +62,32 @@
       <div class="card addon">
         <img class="card-heading-image">
         <div class="addon-card-collapsed">
-          <img class="card-heading-icon addon-icon">
+          <img class="card-heading-icon addon-icon" alt="">
           <div class="card-contents">
             <div class="addon-name-container">
-              <span class="addon-name"></span>
-              <div class="addon-badge addon-badge-recommended"
-                   data-l10n-id="addon-badge-recommended"
-                   hidden></div>
-              <div class="addon-badge addon-badge-private-browsing-allowed"
-                   data-l10n-id="addon-badge-private-browsing-allowed"
-                   hidden></div>
+              <a class="addon-badge addon-badge-recommended"
+                 is="support-link"
+                 support-page="recommended-extensions-program"
+                 data-l10n-id="addon-badge-recommended2"
+                 hidden>
+              </a>
+              <a class="addon-badge addon-badge-private-browsing-allowed"
+                 is="support-link"
+                 support-page="extensions-pb"
+                 data-l10n-id="addon-badge-private-browsing-allowed2"
+                 hidden>
+              </a>
             </div>
-            <span class="addon-description"></span>
+            <!-- This ends up in the tab order when the ellipsis happens, but it isn't necessary. -->
+            <span class="addon-description" tabindex="-1"></span>
           </div>
           <div class="more-options-menu">
-            <button class="more-options-button ghost-button" action="more-options"></button>
+            <button
+              class="more-options-button ghost-button"
+              action="more-options"
+              data-l10n-id="addon-options-button"
+              aria-haspopup="menu"
+              aria-expanded="false"></button>
           </div>
         </div>
         <message-bar class="addon-card-message" align="center" hidden>
@@ -102,10 +119,12 @@
 
     <template name="addon-details">
       <div class="deck-tab-group">
-        <named-deck-button deck="details-deck" name="details" data-l10n-id="details-addon-button"></named-deck-button>
-        <named-deck-button deck="details-deck" name="preferences" data-l10n-id="preferences-addon-button"></named-deck-button>
-        <named-deck-button deck="details-deck" name="permissions" data-l10n-id="permissions-addon-button"></named-deck-button>
-        <named-deck-button deck="details-deck" name="release-notes" data-l10n-id="release-notes-addon-button"></named-deck-button>
+        <named-deck-button-group>
+          <named-deck-button deck="details-deck" name="details" data-l10n-id="details-addon-button"></named-deck-button>
+          <named-deck-button deck="details-deck" name="preferences" data-l10n-id="preferences-addon-button"></named-deck-button>
+          <named-deck-button deck="details-deck" name="permissions" data-l10n-id="permissions-addon-button"></named-deck-button>
+          <named-deck-button deck="details-deck" name="release-notes" data-l10n-id="release-notes-addon-button"></named-deck-button>
+        </named-deck-button-group>
       </div>
       <named-deck id="details-deck">
         <section name="details">
@@ -151,19 +170,19 @@
             </div>
           </div>
           <div class="addon-detail-row addon-detail-help-row" data-l10n-id="addon-detail-private-browsing-help" hidden>
-            <a target="_blank" data-l10n-name="learn-more"></a>
+            <a is="support-link" support-page="extensions-pb" data-l10n-name="learn-more"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-has-help addon-detail-row-private-browsing-disallowed" hidden>
             <label data-l10n-id="detail-private-disallowed-label"></label>
           </div>
-          <div class="addon-detail-row addon-detail-help-row" data-l10n-id="detail-private-disallowed-description" hidden>
-            <label class="text-link" data-l10n-name="detail-private-browsing-learn-more" action="pb-learn-more" aria-role="link" tabindex="0"></label>
+          <div class="addon-detail-row addon-detail-help-row" data-l10n-id="detail-private-disallowed-description2" hidden>
+            <a is="support-link" data-l10n-name="learn-more" support-page="extensions-pb"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-has-help addon-detail-row-private-browsing-required" hidden>
             <label class="learn-more-label-link" data-l10n-id="detail-private-required-label"></label>
           </div>
-          <div class="addon-detail-row addon-detail-help-row" data-l10n-id="detail-private-required-description" hidden>
-            <label class="text-link" data-l10n-name="detail-private-browsing-learn-more" action="pb-learn-more" aria-role="link" tabindex="0"></label>
+          <div class="addon-detail-row addon-detail-help-row" data-l10n-id="detail-private-required-description2" hidden>
+            <a is="support-link" data-l10n-name="learn-more" support-page="extensions-pb"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-author">
             <label data-l10n-id="addon-detail-author-label"></label>
@@ -204,11 +223,11 @@
 
     <template name="panel-list">
       <link rel="stylesheet" href="chrome://mozapps/content/extensions/panel-list.css">
-      <div class="arrow top"></div>
-      <div class="list">
+      <div class="arrow top" role="presentation"></div>
+      <div class="list" role="presentation">
         <slot></slot>
       </div>
-      <div class="arrow bottom"></div>
+      <div class="arrow bottom" role="presentation"></div>
     </template>
 
     <template name="panel-item">
@@ -240,8 +259,9 @@
           <span data-l10n-id="discopane-intro">
             <a
               class="discopane-intro-learn-more-link"
-              data-l10n-name="learn-more-trigger"
-              target="_blank">
+              is="support-link"
+              support-page="recommended-extensions-program"
+              data-l10n-name="learn-more-trigger">
             </a>
           </span>
         </p>

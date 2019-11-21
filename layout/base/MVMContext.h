@@ -10,6 +10,7 @@
 #include "nsISupportsImpl.h"
 #include "nsStringFwd.h"
 #include "nsViewportInfo.h"
+#include "PresShell.h"
 
 class nsIDOMEventListener;
 class nsIObserver;
@@ -50,8 +51,11 @@ class MVMContext {
       const = 0;
   virtual Maybe<LayoutDeviceIntSize> GetContentViewerSize() const = 0;
   virtual bool AllowZoomingForDocument() const = 0;
+  virtual bool IsInReaderMode() const = 0;
+  virtual bool IsDocumentLoading() const = 0;
 
-  virtual void SetResolutionAndScaleTo(float aResolution) = 0;
+  virtual void SetResolutionAndScaleTo(float aResolution,
+                                       ResolutionChangeOrigin aOrigin) = 0;
   virtual void SetVisualViewportSize(const CSSSize& aSize) = 0;
   virtual void UpdateDisplayPortMargins() = 0;
 

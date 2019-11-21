@@ -80,7 +80,8 @@ talos-damp:
         by-test-platform:
             linux64-ccov/.*: ['try']  # Bug 1407593
             windows10-64-ccov/.*: ['try']
-            (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
+            windows7-32(?:-shippable)?/.*: ['try']
+            (?:windows10-64|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
             windows10-aarch64/opt: ['try']  # Bug 1544360
             macosx.*64(?:-shippable)?(?:-qr)?/opt: ['mozilla-central', 'try']
             default: ['mozilla-beta', 'trunk', 'try']
@@ -166,7 +167,6 @@ talos-g4:
         by-test-platform:
             linux64-ccov/.*: ['try']
             windows10-64-ccov/.*: ['try']
-            windows10-64-ux/opt: ['try', 'mozilla-central']
             windows10-64-ref-hw-2017/opt: ['try', 'mozilla-central']
             (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
             windows10-aarch64/opt: ['mozilla-central', 'try']
@@ -325,21 +325,6 @@ talos-perf-reftest-singletons:
         extra-options:
             - --suite=perf-reftest-singletons
 
-talos-speedometer:
-    description: "Talos speedometer"
-    try-name: speedometer
-    treeherder-symbol: T(sp)
-    run-on-projects:
-        by-test-platform:
-            (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
-            windows10-aarch64/opt: ['mozilla-central', 'try']
-            macosx.*64(?:-shippable)?(?:-qr)?/opt: ['mozilla-central', 'try']
-            default: ['mozilla-beta', 'trunk', 'try']
-    max-run-time: 1500
-    mozharness:
-        extra-options:
-            - --suite=speedometer
-
 talos-svgr:
     description: "Talos svgr"
     try-name: svgr
@@ -420,3 +405,20 @@ talos-xperf:
             by-test-platform:
                 windows.*:
                     - talos/windows_vm_config.py
+
+talos-realworld-webextensions:
+    description: "Talos tests with realworld WebExtensions"
+    try-name: "realworld-webextensions"
+    treeherder-symbol: T(realwebext)
+    run-on-projects:
+        by-test-platform:
+            linux64-ccov/.*: ['try']
+            windows10-64-ccov/.*: ['try']
+            (?:windows10-64|windows7-32|linux64)(?:-qr)?/opt: ['mozilla-central', 'try']
+            windows10-aarch64/opt: ['mozilla-central', 'try']
+            macosx.*64(?:-shippable)?(?:-qr)?/opt: ['mozilla-central', 'try']
+            default: ['mozilla-beta', 'trunk', 'try']
+    max-run-time: 1500
+    mozharness:
+        extra-options:
+            - --suite=realworld-webextensions

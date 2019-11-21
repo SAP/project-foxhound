@@ -667,6 +667,75 @@ class BinaryAnnotationWriter : public AnnotationWriter {
   PlatformWriter& mPlatformWriter;
 };
 
+#ifdef MOZ_PHC
+// The stack traces are encoded as a comma-separated list of decimal
+// (not hexadecimal!) addresses, e.g. "12345678,12345679,12345680".
+static void WritePHCStackTrace(AnnotationWriter& aWriter,
+                               const Annotation aName,
+                               const Maybe<phc::StackTrace>& aStack) {
+  if (aStack.isNothing()) {
+    return;
+  }
+
+  // 21 is the max length of a 64-bit decimal address entry, including the
+  // trailing comma or '\0'. And then we add another 32 just to be safe.
+  char addrsString[mozilla::phc::StackTrace::kMaxFrames * 21 + 32];
+  char addrString[32];
+  char* p = addrsString;
+  *p = 0;
+  for (size_t i = 0; i < aStack->mLength; i++) {
+    if (i != 0) {
+      strcat(addrsString, ",");
+      p++;
+    }
+    XP_STOA(uintptr_t(aStack->mPcs[i]), addrString);
+    strcat(addrsString, addrString);
+  }
+  aWriter.Write(aName, addrsString);
+}
+
+static void WritePHCAddrInfo(AnnotationWriter& writer,
+                             const phc::AddrInfo* aAddrInfo) {
+  // Is this a PHC allocation needing special treatment?
+  if (aAddrInfo && aAddrInfo->mKind != phc::AddrInfo::Kind::Unknown) {
+    const char* kindString;
+    switch (aAddrInfo->mKind) {
+      case phc::AddrInfo::Kind::Unknown:
+        kindString = "Unknown(?!)";
+        break;
+      case phc::AddrInfo::Kind::NeverAllocatedPage:
+        kindString = "NeverAllocatedPage";
+        break;
+      case phc::AddrInfo::Kind::InUsePage:
+        kindString = "InUsePage(?!)";
+        break;
+      case phc::AddrInfo::Kind::FreedPage:
+        kindString = "FreedPage";
+        break;
+      case phc::AddrInfo::Kind::GuardPage:
+        kindString = "GuardPage";
+        break;
+      default:
+        kindString = "Unmatched(?!)";
+        break;
+    }
+    writer.Write(Annotation::PHCKind, kindString);
+
+    char baseAddrString[32];
+    XP_STOA(uintptr_t(aAddrInfo->mBaseAddr), baseAddrString);
+    writer.Write(Annotation::PHCBaseAddress, baseAddrString);
+
+    char usableSizeString[32];
+    XP_TTOA(aAddrInfo->mUsableSize, usableSizeString);
+    writer.Write(Annotation::PHCUsableSize, usableSizeString);
+
+    WritePHCStackTrace(writer, Annotation::PHCAllocStack,
+                       aAddrInfo->mAllocStack);
+    WritePHCStackTrace(writer, Annotation::PHCFreeStack, aAddrInfo->mFreeStack);
+  }
+}
+#endif
+
 /**
  * If minidump_id is null, we assume that dump_path contains the full
  * dump file path.
@@ -804,11 +873,10 @@ static bool LaunchProgram(const XP_CHAR* aProgramPath,
  *
  * @param aProgramPath The path of the program to be launched
  * @param aMinidumpPath The path to the crash minidump file
- * @param aSucceeded True if the minidump was obtained successfully
  */
 
 static bool LaunchCrashHandlerService(XP_CHAR* aProgramPath,
-                                      XP_CHAR* aMinidumpPath, bool aSucceeded) {
+                                      XP_CHAR* aMinidumpPath) {
   static XP_CHAR extrasPath[XP_PATH_MAX];
   size_t size = XP_PATH_MAX;
 
@@ -826,15 +894,13 @@ static bool LaunchCrashHandlerService(XP_CHAR* aProgramPath,
           "/system/bin/am", "/system/bin/am", androidStartServiceCommand,
           "--user", androidUserSerial, "-a", "org.mozilla.gecko.ACTION_CRASHED",
           "-n", aProgramPath, "--es", "minidumpPath", aMinidumpPath, "--es",
-          "extrasPath", extrasPath, "--ez", "minidumpSuccess",
-          aSucceeded ? "true" : "false", "--ez", "fatal", "true", (char*)0);
+          "extrasPath", extrasPath, "--ez", "fatal", "true", (char*)0);
     } else {
       Unused << execlp(
           "/system/bin/am", "/system/bin/am", androidStartServiceCommand, "-a",
           "org.mozilla.gecko.ACTION_CRASHED", "-n", aProgramPath, "--es",
           "minidumpPath", aMinidumpPath, "--es", "extrasPath", extrasPath,
-          "--ez", "minidumpSuccess", aSucceeded ? "true" : "false", "--ez",
-          "fatal", "true", (char*)0);
+          "--ez", "fatal", "true", (char*)0);
     }
     _exit(1);
 
@@ -884,6 +950,7 @@ static void WriteMozCrashReason(AnnotationWriter& aWriter) {
 }
 
 static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
+                                                const phc::AddrInfo* addrInfo,
                                                 time_t crashTime) {
   INIAnnotationWriter writer(pw);
   for (auto key : MakeEnumeratedRange(Annotation::Count)) {
@@ -960,6 +1027,10 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
     writer.Write(Annotation::ContainsMemoryReport, "1");
   }
 
+#ifdef MOZ_PHC
+  WritePHCAddrInfo(writer, addrInfo);
+#endif
+
   std::function<void(const char*)> getThreadAnnotationCB =
       [&](const char* aValue) -> void {
     if (aValue) {
@@ -970,6 +1041,7 @@ static void WriteAnnotationsForMainProcessCrash(PlatformWriter& pw,
 }
 
 static void WriteCrashEventFile(time_t crashTime, const char* crashTimeString,
+                                const phc::AddrInfo* addrInfo,
 #ifdef XP_LINUX
                                 const MinidumpDescriptor& descriptor
 #else
@@ -1012,7 +1084,7 @@ static void WriteCrashEventFile(time_t crashTime, const char* crashTimeString,
     WriteLiteral(eventFile, "\n");
     WriteString(eventFile, id_ascii);
     WriteLiteral(eventFile, "\n");
-    WriteAnnotationsForMainProcessCrash(eventFile, crashTime);
+    WriteAnnotationsForMainProcessCrash(eventFile, addrInfo, crashTime);
   }
 }
 
@@ -1032,7 +1104,7 @@ bool MinidumpCallback(
 #ifdef XP_WIN
     EXCEPTION_POINTERS* exinfo, MDRawAssertionInfo* assertion,
 #endif
-    bool succeeded) {
+    const phc::AddrInfo* addrInfo, bool succeeded) {
   bool returnValue = showOSCrashReporter ? false : succeeded;
 
   static XP_CHAR minidumpPath[XP_PATH_MAX];
@@ -1085,7 +1157,7 @@ bool MinidumpCallback(
     WriteString(lastCrashFile, crashTimeString);
   }
 
-  WriteCrashEventFile(crashTime, crashTimeString,
+  WriteCrashEventFile(crashTime, crashTimeString, addrInfo,
 #ifdef XP_LINUX
                       descriptor
 #else
@@ -1099,7 +1171,7 @@ bool MinidumpCallback(
 #else
   OpenAPIData(apiData, dump_path, minidump_id);
 #endif
-  WriteAnnotationsForMainProcessCrash(apiData, crashTime);
+  WriteAnnotationsForMainProcessCrash(apiData, addrInfo, crashTime);
 
   if (!doReport) {
 #ifdef XP_WIN
@@ -1109,8 +1181,7 @@ bool MinidumpCallback(
   }
 
 #if defined(MOZ_WIDGET_ANDROID)  // Android
-  returnValue =
-      LaunchCrashHandlerService(crashReporterPath, minidumpPath, succeeded);
+  returnValue = LaunchCrashHandlerService(crashReporterPath, minidumpPath);
 #else  // Windows, Mac, Linux, etc...
   returnValue = LaunchProgram(crashReporterPath, minidumpPath);
 #  ifdef XP_WIN
@@ -1219,7 +1290,8 @@ static bool BuildTempPath(PathStringT& aResult) {
   return true;
 }
 
-static void PrepareChildExceptionTimeAnnotations(void* context) {
+static void PrepareChildExceptionTimeAnnotations(
+    void* context, const phc::AddrInfo* addrInfo) {
   MOZ_ASSERT(!XRE_IsParentProcess());
 
   FileHandle f;
@@ -1243,6 +1315,10 @@ static void PrepareChildExceptionTimeAnnotations(void* context) {
   }
 
   WriteMozCrashReason(writer);
+
+#ifdef MOZ_PHC
+  WritePHCAddrInfo(writer, addrInfo);
+#endif
 
   std::function<void(const char*)> getThreadAnnotationCB =
       [&](const char* aValue) -> void {
@@ -1274,6 +1350,7 @@ static void FreeBreakpadVM() {
  * Also calls FreeBreakpadVM if appropriate.
  */
 static bool FPEFilter(void* context, EXCEPTION_POINTERS* exinfo,
+                      const phc::AddrInfo* addrInfo,
                       MDRawAssertionInfo* assertion) {
   if (!exinfo) {
     mozilla::IOInterposer::Disable();
@@ -1306,10 +1383,11 @@ static bool FPEFilter(void* context, EXCEPTION_POINTERS* exinfo,
 }
 
 static bool ChildFPEFilter(void* context, EXCEPTION_POINTERS* exinfo,
+                           const phc::AddrInfo* addrInfo,
                            MDRawAssertionInfo* assertion) {
-  bool result = FPEFilter(context, exinfo, assertion);
+  bool result = FPEFilter(context, exinfo, addrInfo, assertion);
   if (result) {
-    PrepareChildExceptionTimeAnnotations(context);
+    PrepareChildExceptionTimeAnnotations(context, addrInfo);
   }
   return result;
 }
@@ -1363,14 +1441,14 @@ static bool ShouldReport() {
 
 #if !defined(XP_WIN)
 
-static bool Filter(void* context) {
+static bool Filter(void* context, const phc::AddrInfo* addrInfo) {
   mozilla::IOInterposer::Disable();
   return true;
 }
 
-static bool ChildFilter(void* context) {
+static bool ChildFilter(void* context, const phc::AddrInfo* addrInfo) {
   mozilla::IOInterposer::Disable();
-  PrepareChildExceptionTimeAnnotations(context);
+  PrepareChildExceptionTimeAnnotations(context, addrInfo);
   return true;
 }
 
@@ -3328,7 +3406,7 @@ static bool PairedDumpCallback(
 #ifdef XP_WIN
     EXCEPTION_POINTERS* /*unused*/, MDRawAssertionInfo* /*unused*/,
 #endif
-    bool succeeded) {
+    const phc::AddrInfo* addrInfo, bool succeeded) {
   nsCOMPtr<nsIFile>& minidump = *static_cast<nsCOMPtr<nsIFile>*>(context);
 
   xpstring path;

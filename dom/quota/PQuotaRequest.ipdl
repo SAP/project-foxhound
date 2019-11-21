@@ -50,7 +50,13 @@ struct PersistResponse
 {
 };
 
-struct ListInitializedOriginsResponse
+struct EstimateResponse
+{
+  uint64_t usage;
+  uint64_t limit;
+};
+
+struct ListOriginsResponse
 {
   nsCString[] origins;
 };
@@ -68,7 +74,8 @@ union RequestResponse
   ResetAllResponse;
   PersistedResponse;
   PersistResponse;
-  ListInitializedOriginsResponse;
+  EstimateResponse;
+  ListOriginsResponse;
 };
 
 protocol PQuotaRequest

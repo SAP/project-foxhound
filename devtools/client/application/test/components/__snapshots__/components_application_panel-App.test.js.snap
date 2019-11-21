@@ -1,0 +1,11 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`App renders the expected snapshot 1`] = `
+<LocalizationProvider>
+  <main
+    className="application"
+  >
+    <Connect(PageSwitcher) />
+  </main>
+</LocalizationProvider>
+`;

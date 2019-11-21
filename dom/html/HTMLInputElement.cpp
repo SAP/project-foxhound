@@ -17,7 +17,7 @@
 #include "mozilla/dom/GetFilesHelper.h"
 #include "mozilla/dom/WheelEventBinding.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsAttrValueInlines.h"
 #include "nsCRTGlue.h"
 #include "nsQueryObject.h"
@@ -194,6 +194,14 @@ static const nsAttrValue::EnumTable kInputInputmodeTable[] = {
 // Default inputmode value is "auto".
 static const nsAttrValue::EnumTable* kInputDefaultInputmode =
     &kInputInputmodeTable[0];
+
+static const nsAttrValue::EnumTable kCaptureTable[] = {
+    {"user", static_cast<int16_t>(nsIFilePicker::captureUser)},
+    {"environment", static_cast<int16_t>(nsIFilePicker::captureEnv)},
+    {"", static_cast<int16_t>(nsIFilePicker::captureDefault)},
+    {nullptr, static_cast<int16_t>(nsIFilePicker::captureNone)}};
+
+static const nsAttrValue::EnumTable* kCaptureDefault = &kCaptureTable[2];
 
 const Decimal HTMLInputElement::kStepScaleFactorDate = Decimal(86400000);
 const Decimal HTMLInputElement::kStepScaleFactorNumberRange = Decimal(1);
@@ -725,15 +733,15 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
   nsAutoString title;
   nsAutoString okButtonLabel;
   if (aType == FILE_PICKER_DIRECTORY) {
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "DirectoryUpload", title);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "DirectoryUpload", title);
 
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "DirectoryPickerOkButtonLabel",
-                                       okButtonLabel);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF,
+        "DirectoryPickerOkButtonLabel", okButtonLabel);
   } else {
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "FileUpload", title);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "FileUpload", title);
   }
 
   nsCOMPtr<nsIFilePicker> filePicker =
@@ -762,6 +770,14 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
   if (HasAttr(kNameSpaceID_None, nsGkAtoms::accept) &&
       aType != FILE_PICKER_DIRECTORY) {
     SetFilePickerFiltersFromAccept(filePicker);
+
+    if (StaticPrefs::dom_capture_enabled()) {
+      const nsAttrValue* captureVal =
+          GetParsedAttr(nsGkAtoms::capture, kNameSpaceID_None);
+      if (captureVal) {
+        filePicker->SetCapture(captureVal->GetEnumValue());
+      }
+    }
   } else {
     filePicker->AppendFilters(nsIFilePicker::filterAll);
   }
@@ -1313,6 +1329,25 @@ nsresult HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       mAutocompleteAttrState = nsContentUtils::eAutocompleteAttrState_Unknown;
       mAutocompleteInfoState = nsContentUtils::eAutocompleteAttrState_Unknown;
     }
+
+    if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
+        !IsExperimentalMobileType(mType)) {
+      if (aName == nsGkAtoms::value || aName == nsGkAtoms::readonly ||
+          aName == nsGkAtoms::tabindex || aName == nsGkAtoms::required ||
+          aName == nsGkAtoms::disabled) {
+        // If original target is this and not the inner text control, we should
+        // pass the focus to the inner text control.
+        if (Element* dateTimeBoxElement = GetDateTimeBoxElement()) {
+          AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
+              dateTimeBoxElement,
+              aName == nsGkAtoms::value
+                  ? NS_LITERAL_STRING("MozDateTimeValueChanged")
+                  : NS_LITERAL_STRING("MozDateTimeAttributeChanged"),
+              CanBubble::eNo, ChromeOnlyDispatch::eNo);
+          dispatcher->RunDOMEventWhenSafe();
+        }
+      }
+    }
   }
 
   return nsGenericHTMLFormElementWithState::AfterSetAttr(
@@ -1357,6 +1392,10 @@ void HTMLInputElement::GetAutocompleteInfo(Nullable<AutocompleteInfo>& aInfo) {
   const nsAttrValue* attributeVal = GetParsedAttr(nsGkAtoms::autocomplete);
   mAutocompleteInfoState = nsContentUtils::SerializeAutocompleteAttribute(
       attributeVal, aInfo.SetValue(), mAutocompleteInfoState, true);
+}
+
+void HTMLInputElement::GetCapture(nsAString& aValue) {
+  GetEnumAttr(nsGkAtoms::capture, kCaptureDefault->tag, aValue);
 }
 
 void HTMLInputElement::GetFormEnctype(nsAString& aValue) {
@@ -1934,12 +1973,6 @@ bool HTMLInputElement::IsDateTimeInputType(uint8_t aType) {
          aType == NS_FORM_INPUT_DATETIME_LOCAL;
 }
 
-void HTMLInputElement::FlushFrames() {
-  if (GetComposedDoc()) {
-    GetComposedDoc()->FlushPendingNotifications(FlushType::Frames);
-  }
-}
-
 void HTMLInputElement::MozGetFileNameArray(nsTArray<nsString>& aArray,
                                            ErrorResult& aRv) {
   if (NS_WARN_IF(mType != NS_FORM_INPUT_FILE)) {
@@ -2346,21 +2379,24 @@ void HTMLInputElement::GetDisplayFileName(nsAString& aValue) const {
     if ((StaticPrefs::dom_input_dirpicker() && Allowdirs()) ||
         (StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
          HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory))) {
-      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                         "NoDirSelected", value);
+      nsContentUtils::GetLocalizedString(
+          nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "NoDirSelected", value);
     } else if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
-      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                         "NoFilesSelected", value);
+      nsContentUtils::GetLocalizedString(
+          nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "NoFilesSelected",
+          value);
     } else {
-      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                         "NoFileSelected", value);
+      nsContentUtils::GetLocalizedString(
+          nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "NoFileSelected",
+          value);
     }
   } else {
     nsString count;
     count.AppendInt(int(mFileData->mFilesOrDirectories.Length()));
 
     nsContentUtils::FormatLocalizedString(
-        value, nsContentUtils::eFORMS_PROPERTIES, "XFilesSelected", count);
+        value, nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "XFilesSelected",
+        count);
   }
 
   aValue = value;
@@ -3358,6 +3394,8 @@ void HTMLInputElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   // Stop the event if the related target's first non-native ancestor is the
   // same as the original target's first non-native ancestor (we are moving
   // inside of the same element).
+  //
+  // FIXME(emilio): Is this still needed now that we use Shadow DOM for this?
   if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
       !IsExperimentalMobileType(mType) && aVisitor.mEvent->IsTrusted() &&
       (aVisitor.mEvent->mMessage == eFocus ||
@@ -5222,6 +5260,10 @@ bool HTMLInputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     if (aAttribute == nsGkAtoms::inputmode) {
       return aResult.ParseEnumValue(aValue, kInputInputmodeTable, false);
     }
+    if (aAttribute == nsGkAtoms::capture) {
+      return aResult.ParseEnumValue(aValue, kCaptureTable, false,
+                                    kCaptureDefault);
+    }
     if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       // We have to call |ParseImageAttribute| unconditionally since we
       // don't know if we're going to have a type="image" attribute yet,
@@ -5789,8 +5831,8 @@ HTMLInputElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
       !HasAttr(kNameSpaceID_None, nsGkAtoms::value)) {
     // Get our default value, which is the same as our default label
     nsAutoString defaultValue;
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "Submit", defaultValue);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "Submit", defaultValue);
     value = defaultValue;
   }
 

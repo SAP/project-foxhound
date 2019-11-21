@@ -10,6 +10,16 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "ToolbarPanelHub",
+  "resource://activity-stream/lib/ToolbarPanelHub.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "Services",
+  "resource://gre/modules/Services.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "setTimeout",
   "resource://gre/modules/Timer.jsm"
 );
@@ -36,6 +46,11 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineModuleGetter(
   this,
   "clearInterval",
+  "resource://gre/modules/Timer.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "requestIdleCallback",
   "resource://gre/modules/Timer.jsm"
 );
 
@@ -138,6 +153,10 @@ class _ToolbarBadgeHub {
 
   executeAction({ id, data, message_id }) {
     switch (id) {
+      case "show-whatsnew-button":
+        ToolbarPanelHub.enableToolbarButton();
+        ToolbarPanelHub.enableAppmenuButton();
+        break;
       case "moments-wnp":
         const { url, expireDelta } = data;
         let { expire } = data;
@@ -283,7 +302,7 @@ class _ToolbarBadgeHub {
 
     if (message.content.delay) {
       this.state.showBadgeTimeoutId = setTimeout(() => {
-        this.registerBadgeToAllWindows(message);
+        requestIdleCallback(() => this.registerBadgeToAllWindows(message));
       }, message.content.delay);
     } else {
       this.registerBadgeToAllWindows(message);

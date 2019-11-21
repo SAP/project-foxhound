@@ -299,6 +299,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetFetchCacheMode(uint32_t* aFetchCacheMode) override;
   NS_IMETHOD SetFetchCacheMode(uint32_t aFetchCacheMode) override;
   NS_IMETHOD GetTopWindowURI(nsIURI** aTopWindowURI) override;
+  NS_IMETHOD GetContentBlockingAllowListPrincipal(
+      nsIPrincipal** aPrincipal) override;
   NS_IMETHOD SetTopWindowURIIfUnknown(nsIURI* aTopWindowURI) override;
   NS_IMETHOD GetProxyURI(nsIURI** proxyURI) override;
   virtual void SetCorsPreflightParameters(
@@ -316,7 +318,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   virtual void SetIPv4Disabled(void) override;
   virtual void SetIPv6Disabled(void) override;
   NS_IMETHOD GetCrossOriginOpenerPolicy(
-      nsILoadInfo::CrossOriginOpenerPolicy* aPolicy) override;
+      nsILoadInfo::CrossOriginOpenerPolicy aInitiatorPolicy,
+      nsILoadInfo::CrossOriginOpenerPolicy* aOutPolicy) override;
   virtual bool GetHasSandboxedAuxiliaryNavigations() override {
     return mHasSandboxedNavigations;
   }
@@ -463,6 +466,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
     return NS_OK;
   }
 
+  void SetContentBlockingAllowListPrincipal(nsIPrincipal* aPrincipal) {
+    mContentBlockingAllowListPrincipal = aPrincipal;
+  }
+
   // Set referrerInfo and compute the referrer header if neccessary.
   nsresult SetReferrerInfo(nsIReferrerInfo* aReferrerInfo, bool aClone,
                            bool aCompute);
@@ -545,6 +552,13 @@ class HttpBaseChannel : public nsHashPropertyBag,
   bool MaybeWaitForUploadStreamLength(nsIStreamListener* aListener,
                                       nsISupports* aContext);
 
+  nsresult GetResponseEmbedderPolicy(
+      nsILoadInfo::CrossOriginEmbedderPolicy* aResponseEmbedderPolicy);
+
+  nsresult GetCrossOriginOpenerPolicyWithInitiator(
+      nsILoadInfo::CrossOriginOpenerPolicy aInitiatorPolicy,
+      nsILoadInfo::CrossOriginOpenerPolicy* aOutPolicy);
+
   friend class PrivateBrowsingChannel<HttpBaseChannel>;
   friend class InterceptFailedOnStop;
 
@@ -564,6 +578,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCOMPtr<nsIURI> mProxyURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsIURI> mTopWindowURI;
+  nsCOMPtr<nsIPrincipal> mContentBlockingAllowListPrincipal;
   nsCOMPtr<nsIStreamListener> mListener;
   // An instance of nsHTTPCompressConv
   nsCOMPtr<nsIStreamListener> mCompressListener;

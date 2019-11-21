@@ -6,6 +6,11 @@
 // from the JSONFile backend to the IDB backend.
 
 AddonTestUtils.init(this);
+
+// Create appInfo before importing any other jsm file, to prevent
+// Services.appinfo to be cached before an appInfo.version is
+// actually defined (which prevent failures to be triggered when
+// the test run in a non nightly build).
 AddonTestUtils.createAppInfo(
   "xpcshell@tests.mozilla.org",
   "XPCShell",
@@ -13,23 +18,20 @@ AddonTestUtils.createAppInfo(
   "42"
 );
 
+const { getTrimmedString } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionTelemetry.jsm"
+);
 const { ExtensionStorage } = ChromeUtils.import(
   "resource://gre/modules/ExtensionStorage.jsm"
+);
+const { ExtensionStorageIDB } = ChromeUtils.import(
+  "resource://gre/modules/ExtensionStorageIDB.jsm"
 );
 const { TelemetryController } = ChromeUtils.import(
   "resource://gre/modules/TelemetryController.jsm"
 );
 const { TelemetryTestUtils } = ChromeUtils.import(
   "resource://testing-common/TelemetryTestUtils.jsm"
-);
-
-const { ExtensionStorageIDB } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionStorageIDB.jsm"
-);
-
-const { getTrimmedString } = ChromeUtils.import(
-  "resource://gre/modules/ExtensionTelemetry.jsm",
-  null
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
@@ -45,7 +47,7 @@ const {
 const CATEGORIES = ["success", "failure"];
 const EVENT_CATEGORY = "extensions.data";
 const EVENT_OBJECT = "storageLocal";
-const EVENT_METHODS = ["migrateResult"];
+const EVENT_METHOD = "migrateResult";
 const LEAVE_STORAGE_PREF = "extensions.webextensions.keepStorageOnUninstall";
 const LEAVE_UUID_PREF = "extensions.webextensions.keepUuidOnUninstall";
 const TELEMETRY_EVENTS_FILTER = {
@@ -92,35 +94,12 @@ function assertMigrationHistogramCount(category, expectedCount) {
   );
 }
 
-function assertTelemetryEvents(extensionId, expectedEvents) {
-  const snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-
-  ok(
-    snapshot.parent && snapshot.parent.length > 0,
-    "Got parent telemetry events in the snapshot"
-  );
-
-  const migrateEvents = snapshot.parent
-    .filter(([timestamp, category, method, object, value]) => {
-      return (
-        category === EVENT_CATEGORY &&
-        EVENT_METHODS.includes(method) &&
-        object === EVENT_OBJECT &&
-        value === extensionId
-      );
-    })
-    .map(event => {
-      return { method: event[2], extra: event[5] };
-    });
-
-  Assert.deepEqual(
-    migrateEvents,
-    expectedEvents,
-    "Got the expected telemetry events"
-  );
+function assertTelemetryEvents(expectedEvents) {
+  TelemetryTestUtils.assertEvents(expectedEvents, {
+    category: EVENT_CATEGORY,
+    method: EVENT_METHOD,
+    object: EVENT_OBJECT,
+  });
 }
 
 add_task(async function setup() {
@@ -140,6 +119,9 @@ add_task(async function setup() {
   registerCleanupFunction(() => {
     Services.telemetry.canRecordBase = oldCanRecordBase;
   });
+
+  // Clear any telemetry events collected so far.
+  Services.telemetry.clearEvents();
 });
 
 // Test that for newly installed extension the IDB backend is enabled without
@@ -360,9 +342,10 @@ add_task(async function test_storage_local_data_migration() {
   assertMigrationHistogramCount("success", 1);
   assertMigrationHistogramCount("failure", 0);
 
-  assertTelemetryEvents(EXTENSION_ID, [
+  assertTelemetryEvents([
     {
       method: "migrateResult",
+      value: EXTENSION_ID,
       extra: {
         backend: "IndexedDB",
         data_migrated: "y",
@@ -468,9 +451,10 @@ add_task(async function test_extensionId_trimmed_in_telemetry_event() {
     "The trimmed version of the extensionId should be 80 chars long"
   );
 
-  assertTelemetryEvents(expectedTrimmedExtensionId, [
+  assertTelemetryEvents([
     {
       method: "migrateResult",
+      value: expectedTrimmedExtensionId,
       extra: {
         backend: "IndexedDB",
         data_migrated: "y",
@@ -576,9 +560,10 @@ add_task(async function test_storage_local_corrupted_data_migration() {
   assertMigrationHistogramCount("success", 1);
   assertMigrationHistogramCount("failure", 0);
 
-  assertTelemetryEvents(EXTENSION_ID, [
+  assertTelemetryEvents([
     {
       method: "migrateResult",
+      value: EXTENSION_ID,
       extra: {
         backend: "IndexedDB",
         data_migrated: "y",
@@ -651,9 +636,10 @@ add_task(async function test_storage_local_data_migration_failure() {
 
   await extension.unload();
 
-  assertTelemetryEvents(EXTENSION_ID, [
+  assertTelemetryEvents([
     {
       method: "migrateResult",
+      value: EXTENSION_ID,
       extra: {
         backend: "JSONFile",
         data_migrated: "n",
@@ -722,3 +708,80 @@ add_task(async function test_storage_local_data_migration_clear_pref() {
   await promiseShutdownManager();
   await TelemetryController.testShutdown();
 });
+
+add_task(async function setup_quota_manager_testing_prefs() {
+  Services.prefs.setBoolPref("dom.quotaManager.testing", true);
+  Services.prefs.setIntPref(
+    "dom.quotaManager.temporaryStorage.fixedLimit",
+    100
+  );
+  await promiseQuotaManagerServiceReset();
+});
+
+add_task(
+  // TODO: temporarily disabled because it currently perma-fails on
+  // android builds (Bug 1564871)
+  { skip_if: () => AppConstants.platform === "android" },
+  // eslint-disable-next-line no-use-before-define
+  test_quota_exceeded_while_migrating_data
+);
+async function test_quota_exceeded_while_migrating_data() {
+  const EXT_ID = "test-data-migration-stuck@mochi.test";
+  const dataSize = 1000 * 1024;
+
+  await createExtensionJSONFileWithData(EXT_ID, {
+    data: new Array(dataSize).fill("x").join(""),
+  });
+
+  const extension = ExtensionTestUtils.loadExtension({
+    manifest: {
+      permissions: ["storage"],
+      applications: { gecko: { id: EXT_ID } },
+    },
+    background() {
+      browser.test.onMessage.addListener(async (msg, dataSize) => {
+        if (msg !== "verify-stored-data") {
+          return;
+        }
+        const res = await browser.storage.local.get();
+        browser.test.assertEq(
+          res.data && res.data.length,
+          dataSize,
+          "Got the expected data"
+        );
+        browser.test.sendMessage("verify-stored-data:done");
+      });
+
+      browser.test.sendMessage("bg-page:ready");
+    },
+  });
+
+  await extension.startup();
+  await extension.awaitMessage("bg-page:ready");
+
+  extension.sendMessage("verify-stored-data", dataSize);
+  await extension.awaitMessage("verify-stored-data:done");
+
+  await ok(
+    !ExtensionStorageIDB.isMigratedExtension(extension),
+    "The extension falls back to the JSONFile backend because of the migration failure"
+  );
+  await extension.unload();
+
+  TelemetryTestUtils.assertEvents(
+    [
+      {
+        value: EXT_ID,
+        extra: {
+          backend: "JSONFile",
+          error_name: "QuotaExceededError",
+        },
+      },
+    ],
+    TELEMETRY_EVENTS_FILTER
+  );
+
+  Services.prefs.clearUserPref("dom.quotaManager.temporaryStorage.fixedLimit");
+  await promiseQuotaManagerServiceClear();
+  Services.prefs.clearUserPref("dom.quotaManager.testing");
+}

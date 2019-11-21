@@ -1,0 +1,71 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+.logged-out-view,
+.logged-in-view {
+  display: flex;
+  align-items: center;
+}
+
+.fxaccounts-extra-text {
+  color: var(--in-content-deemphasized-text);
+  text-align: end;
+}
+
+.fxaccounts-extra-text,
+.fxaccount-email,
+.fxaccounts-enable-button {
+  font-size: 13px;
+}
+
+.fxaccount-avatar,
+.fxaccounts-enable-button {
+  margin-inline-start: 9px;
+}
+
+.fxaccounts-enable-button {
+  min-width: 120px;
+  padding-inline: 16px;
+}
+
+.fxaccounts-avatar-button {
+  cursor: pointer;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.fxaccount-email {
+  vertical-align: middle;
+}
+
+.fxaccount-avatar {
+  display: inline-block;
+  vertical-align: middle;
+  background-image: var(--avatar-url),
+    url(chrome://browser/skin/fxa/avatar-color.svg);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  border: 1px solid var(--in-content-border-color);
+  border-radius: 1000px;
+  width: 32px;
+  height: 32px;
+}
+
+.fxaccounts-avatar-button:hover .fxaccount-avatar {
+  border-color: var(--in-content-border-hover);
+}
+
+.fxaccounts-avatar-button:hover:active .fxaccount-avatar {
+  border-color: var(--in-content-border-active);
+}
+
+.fxaccounts-avatar-button:hover {
+  background-color: transparent !important;
+}
+
+.fxaccounts-avatar-button:hover > .fxaccount-email {
+  text-decoration: underline;
+}

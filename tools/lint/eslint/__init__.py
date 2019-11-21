@@ -4,12 +4,17 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import json
 import os
+import re
 import signal
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), "eslint"))
-import setup_helper
+from eslint import setup_helper
+
 from mozbuild.nodeutil import find_node_executable
 
 from mozprocess import ProcessHandler
@@ -97,7 +102,12 @@ def lint(paths, config, binary=None, fix=None, setup=None, **lintargs):
     try:
         jsonresult = json.loads(proc.output[0])
     except ValueError:
-        print(ESLINT_ERROR_MESSAGE.format("\n".join(proc.output)))
+        output = "\n".join(proc.output)
+        if re.search(r'No files matching the pattern "(.*)" were found.', output):
+            print("warning: no files to lint (eslint)")
+            return []
+
+        print(ESLINT_ERROR_MESSAGE.format(output))
         return 1
 
     results = []

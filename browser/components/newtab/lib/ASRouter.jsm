@@ -19,6 +19,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
     "resource://activity-stream/lib/SnippetsTestMessageProvider.jsm",
   PanelTestProvider: "resource://activity-stream/lib/PanelTestProvider.jsm",
   ToolbarBadgeHub: "resource://activity-stream/lib/ToolbarBadgeHub.jsm",
+  ToolbarPanelHub: "resource://activity-stream/lib/ToolbarPanelHub.jsm",
 });
 const {
   ASRouterActions: ra,
@@ -513,11 +514,13 @@ class _ASRouter {
     if (TARGETING_PREFERENCES.includes(prefName)) {
       // Notify all tabs of messages that have become invalid after pref change
       const invalidMessages = [];
+      const context = this._getMessagesContext();
+
       for (const msg of this._getUnblockedMessages()) {
         if (!msg.targeting) {
           continue;
         }
-        const isMatch = await ASRouterTargeting.isMatch(msg.targeting);
+        const isMatch = await ASRouterTargeting.isMatch(msg.targeting, context);
         if (!isMatch) {
           invalidMessages.push(msg.id);
         }
@@ -738,6 +741,11 @@ class _ASRouter {
       unblockMessageById: this.unblockMessageById,
       dispatch: this.dispatch,
     });
+    ToolbarPanelHub.init(this.waitForInitialized, {
+      getMessages: this.handleMessageRequest,
+      dispatch: this.dispatch,
+      handleUserAction: this.handleUserAction,
+    });
 
     this._loadLocalProviders();
 
@@ -793,6 +801,7 @@ class _ASRouter {
     ASRouterPreferences.removeListener(this.onPrefChange);
     ASRouterPreferences.uninit();
     BookmarkPanelHub.uninit();
+    ToolbarPanelHub.uninit();
     ToolbarBadgeHub.uninit();
 
     // Uninitialise all trigger listeners
@@ -1012,7 +1021,7 @@ class _ASRouter {
     }
 
     // In order for ping centre to pick this up, it MUST contain a substring activity-stream
-    const experimentName = `activity-stream-extended-triplets`;
+    const experimentName = `activity-stream-extended-triplets-v2-1581912`;
     TelemetryEnvironment.setExperimentActive(experimentName, branch);
 
     const state = { extendedTripletsInitialized: true };
@@ -1120,6 +1129,20 @@ class _ASRouter {
         return trailheadTriplet;
       },
     };
+  }
+
+  _findAllMessages(candidateMessages, trigger) {
+    const messages = candidateMessages.filter(m =>
+      this.isBelowFrequencyCaps(m)
+    );
+    const context = this._getMessagesContext();
+
+    return ASRouterTargeting.findAllMatchingMessages({
+      messages,
+      trigger,
+      context,
+      onError: this._handleTargetingError,
+    });
   }
 
   _findMessage(candidateMessages, trigger) {
@@ -1325,7 +1348,7 @@ class _ASRouter {
         } else {
           CFRPageActions.addRecommendation(
             target,
-            trigger.param.host,
+            trigger.param && trigger.param.host,
             message,
             this.dispatch
           );
@@ -1341,10 +1364,12 @@ class _ASRouter {
         ToolbarBadgeHub.registerBadgeNotificationListener(message, { force });
         break;
       default:
-        target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {
-          type: "SET_MESSAGE",
-          data: message,
-        });
+        try {
+          target.sendAsyncMessage(OUTGOING_MESSAGE_NAME, {
+            type: "SET_MESSAGE",
+            data: message,
+          });
+        } catch (e) {}
         break;
     }
   }
@@ -1389,9 +1414,7 @@ class _ASRouter {
         });
       } catch (e) {}
     } else {
-      try {
-        this.routeMessageToTarget(message, target, trigger, force);
-      } catch (e) {}
+      this.routeMessageToTarget(message, target, trigger, force);
     }
   }
 
@@ -1514,6 +1537,7 @@ class _ASRouter {
     triggerContext,
     template,
     provider,
+    returnAll = false,
   }) {
     const msgs = this._getUnblockedMessages().filter(m => {
       if (provider && m.provider !== provider) {
@@ -1528,6 +1552,17 @@ class _ASRouter {
 
       return true;
     });
+
+    if (returnAll) {
+      return this._findAllMessages(
+        msgs,
+        triggerId && {
+          id: triggerId,
+          param: triggerParam,
+          context: triggerContext,
+        }
+      );
+    }
 
     return this._findMessage(
       msgs,
@@ -1905,6 +1940,7 @@ class _ASRouter {
           target,
           action.data && action.data.trigger
         );
+        break;
       case "BLOCK_MESSAGE_BY_ID":
         await this.blockMessageById(action.data.id);
         // Block the message but don't dismiss it in case the action taken has
@@ -1976,6 +2012,7 @@ class _ASRouter {
         break;
       case "DOORHANGER_TELEMETRY":
       case "TOOLBAR_BADGE_TELEMETRY":
+      case "TOOLBAR_PANEL_TELEMETRY":
         if (this.dispatchToAS) {
           this.dispatchToAS(ac.ASRouterUserEvent(action.data));
         }

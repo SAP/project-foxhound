@@ -20,13 +20,14 @@
 
 #include "mozilla/BinarySearch.h"
 
+#include "debugger/Debugger.h"
 #include "ds/Sort.h"
-#include "gc/FreeOp.h"
 #include "jit/ExecutableAllocator.h"
 #include "jit/MacroAssembler.h"
-#include "vm/Debugger.h"
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmValidate.h"
+
+#include "gc/FreeOp-inl.h"
 
 using namespace js;
 using namespace js::jit;
@@ -55,8 +56,7 @@ static const CallSite* SlowCallSiteSearchByOffset(const MetadataTier& metadata,
   return nullptr;
 }
 
-bool DebugState::getLineOffsets(JSContext* cx, size_t lineno,
-                                Vector<uint32_t>* offsets) {
+bool DebugState::getLineOffsets(size_t lineno, Vector<uint32_t>* offsets) {
   const CallSite* callsite =
       SlowCallSiteSearchByOffset(metadata(Tier::Debug), lineno);
   if (callsite && !offsets->append(lineno)) {
@@ -65,7 +65,7 @@ bool DebugState::getLineOffsets(JSContext* cx, size_t lineno,
   return true;
 }
 
-bool DebugState::getAllColumnOffsets(JSContext* cx, Vector<ExprLoc>* offsets) {
+bool DebugState::getAllColumnOffsets(Vector<ExprLoc>* offsets) {
   for (const CallSite& callSite : metadata(Tier::Debug).callSites) {
     if (callSite.kind() != CallSite::Breakpoint) {
       continue;
@@ -126,7 +126,7 @@ bool DebugState::incrementStepperCount(JSContext* cx, uint32_t funcIndex) {
   return true;
 }
 
-bool DebugState::decrementStepperCount(FreeOp* fop, uint32_t funcIndex) {
+bool DebugState::decrementStepperCount(JSFreeOp* fop, uint32_t funcIndex) {
   const CodeRange& codeRange =
       codeRanges(Tier::Debug)[funcToCodeRangeIndex(funcIndex)];
   MOZ_ASSERT(codeRange.isFunction());
@@ -187,13 +187,23 @@ void DebugState::toggleBreakpointTrap(JSRuntime* rt, uint32_t offset,
   toggleDebugTrap(debugTrapOffset, enabled);
 }
 
+WasmBreakpointSite* DebugState::getBreakpointSite(uint32_t offset) const {
+  WasmBreakpointSiteMap::Ptr p = breakpointSites_.lookup(offset);
+  if (!p) {
+    return nullptr;
+  }
+
+  return p->value();
+}
+
 WasmBreakpointSite* DebugState::getOrCreateBreakpointSite(JSContext* cx,
+                                                          Instance* instance,
                                                           uint32_t offset) {
   WasmBreakpointSite* site;
 
   WasmBreakpointSiteMap::AddPtr p = breakpointSites_.lookupForAdd(offset);
   if (!p) {
-    site = cx->new_<WasmBreakpointSite>(this, offset);
+    site = cx->new_<WasmBreakpointSite>(instance, offset);
     if (!site) {
       return nullptr;
     }
@@ -203,6 +213,9 @@ WasmBreakpointSite* DebugState::getOrCreateBreakpointSite(JSContext* cx,
       ReportOutOfMemory(cx);
       return nullptr;
     }
+
+    AddCellMemory(instance->object(), sizeof(WasmBreakpointSite),
+                  MemoryUse::BreakpointSite);
   } else {
     site = p->value();
   }
@@ -213,14 +226,16 @@ bool DebugState::hasBreakpointSite(uint32_t offset) {
   return breakpointSites_.has(offset);
 }
 
-void DebugState::destroyBreakpointSite(FreeOp* fop, uint32_t offset) {
+void DebugState::destroyBreakpointSite(JSFreeOp* fop, Instance* instance,
+                                       uint32_t offset) {
   WasmBreakpointSiteMap::Ptr p = breakpointSites_.lookup(offset);
   MOZ_ASSERT(p);
-  fop->delete_(p->value());
+  fop->delete_(instance->objectUnbarriered(), p->value(),
+               MemoryUse::BreakpointSite);
   breakpointSites_.remove(p);
 }
 
-void DebugState::clearBreakpointsIn(FreeOp* fop, WasmInstanceObject* instance,
+void DebugState::clearBreakpointsIn(JSFreeOp* fop, WasmInstanceObject* instance,
                                     js::Debugger* dbg, JSObject* handler) {
   MOZ_ASSERT(instance);
   if (breakpointSites_.empty()) {
@@ -239,13 +254,13 @@ void DebugState::clearBreakpointsIn(FreeOp* fop, WasmInstanceObject* instance,
       }
     }
     if (site->isEmpty()) {
-      fop->delete_(site);
+      fop->delete_(instance, site, MemoryUse::BreakpointSite);
       e.removeFront();
     }
   }
 }
 
-void DebugState::clearAllBreakpoints(FreeOp* fop,
+void DebugState::clearAllBreakpoints(JSFreeOp* fop,
                                      WasmInstanceObject* instance) {
   clearBreakpointsIn(fop, instance, nullptr, nullptr);
 }
@@ -438,11 +453,9 @@ bool DebugState::getSourceMappingURL(JSContext* cx,
 
 void DebugState::addSizeOfMisc(MallocSizeOf mallocSizeOf,
                                Metadata::SeenSet* seenMetadata,
-                               ShareableBytes::SeenSet* seenBytes,
                                Code::SeenSet* seenCode, size_t* code,
                                size_t* data) const {
   code_->addSizeOfMiscIfNotSeen(mallocSizeOf, seenMetadata, seenCode, code,
                                 data);
-  module_->addSizeOfMisc(mallocSizeOf, seenMetadata, seenBytes, seenCode, code,
-                         data);
+  module_->addSizeOfMisc(mallocSizeOf, seenMetadata, seenCode, code, data);
 }

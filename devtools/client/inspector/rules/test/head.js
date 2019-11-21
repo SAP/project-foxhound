@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
@@ -662,7 +661,7 @@ async function openEyedropper(view, swatch) {
   const onColorPickerReady = view.tooltips
     .getTooltip("colorPicker")
     .once("ready");
-  swatch.click();
+  EventUtils.synthesizeMouseAtCenter(swatch, {}, swatch.ownerGlobal);
   await onColorPickerReady;
 
   const dropperButton = tooltip.container.querySelector("#eyedropper-button");
@@ -931,4 +930,35 @@ function getPseudoClassCheckbox(view, pseudo) {
   return view.pseudoClassCheckboxes.filter(
     checkbox => checkbox.value === pseudo
   )[0];
+}
+
+/**
+ * Check that the CSS variable output has the expected class name and data attribute.
+ *
+ * @param {RulesView} view
+ *        The RulesView instance.
+ * @param {String} selector
+ *        Selector name for a rule. (e.g. "div", "div::before" and ".sample" etc);
+ * @param {String} propertyName
+ *        Property name (e.g. "color" and "padding-top" etc);
+ * @param {String} expectedClassName
+ *        The class name the variable should have.
+ * @param {String} expectedDatasetValue
+ *        The variable data attribute value.
+ */
+function checkCSSVariableOutput(
+  view,
+  selector,
+  propertyName,
+  expectedClassName,
+  expectedDatasetValue
+) {
+  const target = getRuleViewProperty(
+    view,
+    selector,
+    propertyName
+  ).valueSpan.querySelector(`.${expectedClassName}`);
+
+  ok(target, "The target element should exist");
+  is(target.dataset.variable, expectedDatasetValue);
 }

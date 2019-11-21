@@ -1,4 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -38,6 +37,7 @@ function ThreadClient(client, actor) {
   this._actor = actor;
   this._pauseGrips = {};
   this._threadGrips = {};
+  this.targetFront = null;
   this.request = this.client.request;
 }
 
@@ -236,6 +236,7 @@ ThreadClient.prototype = {
   }),
 
   destroy: function() {
+    this.targetFront = null;
     return this.detach();
   },
 

@@ -4,6 +4,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import codecs
 import inspect
 import logging
 import os
@@ -29,12 +30,13 @@ from mozbuild.configure.util import (
     LineIO,
 )
 from mozbuild.util import (
-    encode,
+    ensure_subprocess_env,
     exec_,
     memoize,
     memoized_property,
     ReadOnlyDict,
     ReadOnlyNamespace,
+    system_encoding,
 )
 
 import mozpack.path as mozpath
@@ -468,6 +470,9 @@ class ConfigureSandbox(dict):
                            implied_option.caller[2]))
                 # If the option is known, check that the implied value doesn't
                 # conflict with what value was attributed to the option.
+                if (implied_option.when and
+                        not self._value_for(implied_option.when)):
+                    continue
                 option_value = self._value_for_option(option)
                 if value != option_value:
                     reason = implied_option.reason
@@ -880,7 +885,12 @@ class ConfigureSandbox(dict):
         def wrap(function):
             def wrapper(*args, **kwargs):
                 if 'env' not in kwargs:
-                    kwargs['env'] = encode(self._environ)
+                    kwargs['env'] = dict(self._environ)
+                # Subprocess on older Pythons can't handle unicode keys or
+                # values in environment dicts while subprocess on newer Pythons
+                # needs text in the env. Normalize automagically so callers
+                # don't have to deal with this.
+                kwargs['env'] = ensure_subprocess_env(kwargs['env'], encoding=system_encoding)
                 return function(*args, **kwargs)
             return wrapper
 
@@ -896,9 +906,21 @@ class ConfigureSandbox(dict):
             return self
         # Special case for the open() builtin, because otherwise, using it
         # fails with "IOError: file() constructor not accessible in
-        # restricted mode"
+        # restricted mode". We also make open() look more like python 3's,
+        # decoding to unicode strings unless the mode says otherwise.
         if what == '__builtin__.open':
-            return lambda *args, **kwargs: open(*args, **kwargs)
+            def wrapped_open(name, mode=None, buffering=None):
+                args = (name,)
+                kwargs = {}
+                if buffering is not None:
+                    kwargs['buffering'] = buffering
+                if mode is not None:
+                    args += (mode,)
+                    if 'b' in mode:
+                        return open(*args, **kwargs)
+                kwargs['encoding'] = system_encoding
+                return codecs.open(*args, **kwargs)
+            return wrapped_open
         # Special case os and os.environ so that os.environ is our copy of
         # the environment.
         if what == 'os.environ':

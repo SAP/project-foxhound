@@ -8,6 +8,7 @@
 
 #ifdef MOZILLA_INTERNAL_API
 #  include "nsString.h"
+#  include "nsXULAppAPI.h"
 #endif
 
 #include "gfxVRMutex.h"
@@ -30,10 +31,12 @@ using namespace mozilla::gfx;
 // and mapped files if we have both release and nightlies
 // running at the same time? Or...what if we have multiple
 // release builds running on same machine? (Bug 1563232)
+#define SHMEM_VERSION "0.0.2"
 #ifdef XP_WIN
-static const char* kShmemName = "moz.gecko.vr_ext.0.0.1";
+static const char* kShmemName = "moz.gecko.vr_ext." SHMEM_VERSION;
+static LPCTSTR kMutexName = TEXT("mozilla::vr::ShmemMutex" SHMEM_VERSION);
 #elif defined(XP_MACOSX)
-static const char* kShmemName = "/moz.gecko.vr_ext.0.0.1";
+static const char* kShmemName = "/moz.gecko.vr_ext." SHMEM_VERSION;
 #endif  //  XP_WIN
 
 #if !defined(MOZ_WIDGET_ANDROID)
@@ -48,13 +51,12 @@ void YieldThread() {
 }  // anonymous namespace
 #endif  // !defined(MOZ_WIDGET_ANDROID)
 
-VRShMem::VRShMem(volatile VRExternalShmem* aShmem, bool aSameProcess,
-                 bool aIsParentProcess)
+VRShMem::VRShMem(volatile VRExternalShmem* aShmem, bool aRequiresMutex)
     : mExternalShmem(aShmem),
-      mSameProcess(aSameProcess)
+      mIsSharedExternalShmem(aShmem != nullptr)
 #if defined(XP_WIN)
       ,
-      mIsParentProcess(aIsParentProcess)
+      mRequiresMutex(aRequiresMutex)
 #endif
 #if defined(XP_MACOSX)
       ,
@@ -65,32 +67,60 @@ VRShMem::VRShMem(volatile VRExternalShmem* aShmem, bool aSameProcess,
       mMutex(nullptr)
 #endif
 {
-  // To confirm:
-  // - aShmem is null for VRManager, or for service in multi-proc
-  // - aShmem is !null for VRService in-proc
-  // make this into an assert
-  if (!(aShmem == nullptr || aSameProcess)) {
-    //::DebugBreak();
-  }
-
-  // copied from VRService Ctor
-  // When we have the VR process, we map the memory
-  // of mAPIShmem from GPU process and pass it to the CTOR.
-  // If we don't have the VR process, we will instantiate
-  // mAPIShmem in VRService.
+  // Regarding input parameters,
+  // - aShmem is null for VRManager or for VRService in multi-proc
+  // - aShmem is !null for VRService in-proc (i.e., no VR proc)
 }
 
+// Note: This function should only be called for in-proc scenarios, where the
+// shared memory is only shared within the same proc (rather than across
+// processes). Also, this local heap memory's lifetime is tied to the class.
+// Callers to this must ensure that its reference doesn't outlive the owning
+// VRShMem instance.
+volatile VRExternalShmem* VRShMem::GetExternalShmem() const {
+#if defined(XP_MACOSX)
+  MOZ_ASSERT(mShmemFD == 0);
+#elif defined(XP_WIN)
+  MOZ_ASSERT(mShmemFile == nullptr);
+#endif
+  return mExternalShmem;
+}
+
+bool VRShMem::IsDisplayStateShutdown() const {
+  // adapted from VRService::Refresh
+  // Does this need the mutex for getting .shutdown?
+  return mExternalShmem != nullptr &&
+         mExternalShmem->state.displayState.shutdown;
+}
+
+// This method returns true when there is a Shmem struct allocated and
+// when there is a shmem handle from the OS. This implies that the struct
+// is mapped to shared memory rather than being allocated on the heap by
+// this process.
+bool VRShMem::IsCreatedOnSharedMemory() const {
+#if defined(XP_MACOSX)
+  return HasExternalShmem() && (mShmemFD != 0);
+#elif defined(XP_WIN)
+  return HasExternalShmem() && (mShmemFile != nullptr);
+#else
+  // VRShMem does not support system shared memory on remaining platformss
+  return false;
+#endif
+}
+
+// CreateShMem allocates system shared memory for mExternalShmem and
+// synchronization primitives to protect it.
 // Callers/Processes to CreateShMem should followup with CloseShMem
-// [copied from VRManager::OpenShmem]
-void VRShMem::CreateShMem() {
-  if (mExternalShmem) {
+void VRShMem::CreateShMem(bool aCreateOnSharedMemory) {
+  if (HasExternalShmem()) {
+    MOZ_ASSERT(mIsSharedExternalShmem && !IsCreatedOnSharedMemory());
     return;
   }
 #if defined(XP_WIN)
   if (mMutex == nullptr) {
-    mMutex = CreateMutex(nullptr,  // default security descriptor
-                         false,    // mutex not owned
-                         TEXT("mozilla::vr::ShmemMutex"));  // object name
+    mMutex = CreateMutex(nullptr,      // default security descriptor
+                         false,        // mutex not owned
+                         kMutexName);  // object name
     if (mMutex == nullptr) {
 #  ifdef MOZILLA_INTERNAL_API
       nsAutoCString msg;
@@ -113,20 +143,17 @@ void VRShMem::CreateShMem() {
   // The VR Service accesses all hardware from a separate process
   // and replaces the other VRManager when enabled.
   // If the VR process is not enabled, create an in-process VRService.
-  if (mSameProcess) {
+  if (!aCreateOnSharedMemory) {
+    MOZ_ASSERT(mExternalShmem == nullptr);
     // If the VR process is disabled, attempt to create a
-    // VR service within the current process
+    // VR service within the current process on the heap
     mExternalShmem = new VRExternalShmem();
-#  ifdef MOZILLA_INTERNAL_API
-    // TODO: Create external variant to Clear (Bug 1563233)
-    // VRExternalShmem is asserted to be POD
-    mExternalShmem->Clear();
-#  endif
-    // TODO: move this call to the caller (Bug 1563233)
-    // mServiceHost->CreateService(mExternalShmem);
+    ClearShMem();
     return;
   }
 #endif
+
+  MOZ_ASSERT(aCreateOnSharedMemory);
 
 #if defined(XP_MACOSX)
   if (mShmemFD == 0) {
@@ -169,6 +196,7 @@ void VRShMem::CreateShMem() {
       return;
     }
   }
+
   LARGE_INTEGER length;
   length.QuadPart = sizeof(VRExternalShmem);
   mExternalShmem = (VRExternalShmem*)MapViewOfFile(
@@ -181,12 +209,26 @@ void VRShMem::CreateShMem() {
     CloseShMem();
     return;
   }
-#elif defined(MOZ_WIDGET_ANDROID) && defined(MOZILLA_INTERNAL_API)
+#elif defined(MOZ_WIDGET_ANDROID)
+  MOZ_ASSERT(false,
+             "CreateShMem should not be called for Android. Use "
+             "CreateShMemForAndroid instead");
+#endif
+}
+
+// This function sets mExternalShmem in the Android/GeckoView
+// scenarios where the host creates it in-memory and VRShMem
+// accesses it via GeckVRManager.
+void VRShMem::CreateShMemForAndroid() {
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZILLA_INTERNAL_API)
   mExternalShmem =
       (VRExternalShmem*)mozilla::GeckoVRManager::GetExternalContext();
   if (!mExternalShmem) {
     return;
+  } else {
+    mIsSharedExternalShmem = true;
   }
+
   int32_t version = -1;
   int32_t size = 0;
   if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->systemMutex)) ==
@@ -208,11 +250,22 @@ void VRShMem::CreateShMem() {
 #endif
 }
 
+void VRShMem::ClearShMem() {
+  if (mExternalShmem != nullptr) {
+#ifdef MOZILLA_INTERNAL_API
+    // VRExternalShmem is asserted to be POD
+    mExternalShmem->Clear();
+#else
+    memset((void*)mExternalShmem, 0, sizeof(VRExternalShmem));
+#endif
+  }
+}
+
 // The cleanup corresponding to CreateShMem
-// [copied from VRManager::CloseShmem, dtor]
 void VRShMem::CloseShMem() {
 #if !defined(MOZ_WIDGET_ANDROID)
-  if (mSameProcess) {
+  if (!IsCreatedOnSharedMemory()) {
+    MOZ_ASSERT(!mIsSharedExternalShmem);
     if (mExternalShmem) {
       delete mExternalShmem;
       mExternalShmem = nullptr;
@@ -241,58 +294,27 @@ void VRShMem::CloseShMem() {
 #elif defined(MOZ_WIDGET_ANDROID)
   mExternalShmem = NULL;
 #endif
+
+#if defined(XP_WIN)
+  if (mMutex) {
+    MOZ_ASSERT(mRequiresMutex);
+    CloseHandle(mMutex);
+    mMutex = nullptr;
+  }
+#endif
 }
 
 // Called to use an existing shmem instance created by another process
 // Callers to JoinShMem should call LeaveShMem for cleanup
-// [copied from VRService::InitShmem, VRService::Start]
 bool VRShMem::JoinShMem() {
-  // was if (!mVRProcessEnabled) {
-  if (mSameProcess) {
-    return true;
-  }
-
 #if defined(XP_WIN)
-  const char* kShmemName = "moz.gecko.vr_ext.0.0.1";
-  base::ProcessHandle targetHandle = 0;
+  if (!mMutex && mRequiresMutex) {
+    // Check that there are no errors before making system calls
+    MOZ_ASSERT(GetLastError() == 0);
 
-  // Opening a file-mapping object by name
-  targetHandle = OpenFileMappingA(FILE_MAP_ALL_ACCESS,  // read/write access
-                                  FALSE,        // do not inherit the name
-                                  kShmemName);  // name of mapping object
-
-  MOZ_ASSERT(GetLastError() == 0);
-
-  LARGE_INTEGER length;
-  length.QuadPart = sizeof(VRExternalShmem);
-  mExternalShmem = (VRExternalShmem*)MapViewOfFile(
-      reinterpret_cast<base::ProcessHandle>(
-          targetHandle),    // handle to map object
-      FILE_MAP_ALL_ACCESS,  // read/write permission
-      0, 0, length.QuadPart);
-  MOZ_ASSERT(GetLastError() == 0);
-  // TODO - Implement logging (Bug 1558912)
-  mShmemFile = targetHandle;
-  if (!mExternalShmem) {
-    MOZ_ASSERT(mExternalShmem);
-    return false;
-  }
-#else
-  // TODO: Implement shmem for other platforms.
-  //
-  // TODO: ** Does this mean that ShMem only works in Windows for now? If so,
-  // let's delete the code from other platforms (Bug 1563234)
-#endif
-
-#if defined(XP_WIN)
-  // Adding `!XRE_IsParentProcess()` to avoid Win 7 32-bit WebVR tests
-  // to OpenMutex when there is no GPU process to create
-  // VRSystemManagerExternal and its mutex.
-  // was if (!mMutex && !XRE_IsParentProcess()) {
-  if (!mMutex && !mIsParentProcess) {
     mMutex = OpenMutex(MUTEX_ALL_ACCESS,  // request full access
                        false,             // handle not inheritable
-                       TEXT("mozilla::vr::ShmemMutex"));  // object name
+                       kMutexName);       // object name
 
     if (mMutex == nullptr) {
 #  ifdef MOZILLA_INTERNAL_API
@@ -306,35 +328,78 @@ bool VRShMem::JoinShMem() {
   }
 #endif
 
+  if (HasExternalShmem()) {
+    // An ExternalShmem is already set. No need to override and rejoin
+    return true;
+  }
+
+#if defined(XP_WIN)
+  // Opening a file-mapping object by name
+  base::ProcessHandle targetHandle =
+      OpenFileMappingA(FILE_MAP_ALL_ACCESS,  // read/write access
+                       FALSE,                // do not inherit the name
+                       kShmemName);          // name of mapping object
+
+  MOZ_ASSERT(GetLastError() == 0);
+
+  LARGE_INTEGER length;
+  length.QuadPart = sizeof(VRExternalShmem);
+  mExternalShmem = (VRExternalShmem*)MapViewOfFile(
+      reinterpret_cast<base::ProcessHandle>(
+          targetHandle),    // handle to map object
+      FILE_MAP_ALL_ACCESS,  // read/write permission
+      0, 0, length.QuadPart);
+  MOZ_ASSERT(GetLastError() == 0);
+
+  // TODO - Implement logging (Bug 1558912)
+  mShmemFile = targetHandle;
+  if (!mExternalShmem) {
+    MOZ_ASSERT(mExternalShmem);
+    return false;
+  }
+#else
+  // TODO: Implement shmem for other platforms.
+  //
+  // TODO: ** Does this mean that ShMem only works in Windows for now? If so,
+  // let's delete the code from other platforms (Bug 1563234)
+  MOZ_ASSERT(false, "JoinShMem not implemented");
+#endif
   return true;
 }
 
 // The cleanup corresponding to JoinShMem
-// [copied from VRService::Stop]
 void VRShMem::LeaveShMem() {
 #if defined(XP_WIN)
+  // Check that there are no errors before making system calls
+  MOZ_ASSERT(GetLastError() == 0);
+
   if (mShmemFile) {
     ::CloseHandle(mShmemFile);
     mShmemFile = nullptr;
   }
 #endif
 
-  // was if (mVRProcessEnabled && mAPIShmem) {
-  if (mExternalShmem != nullptr && !mSameProcess) {
+  if (mExternalShmem != nullptr) {
 #if defined(XP_WIN)
-    UnmapViewOfFile((void*)mExternalShmem);
+    if (IsCreatedOnSharedMemory()) {
+      UnmapViewOfFile((void*)mExternalShmem);
+      MOZ_ASSERT(GetLastError() == 0);
+    }
+    // Otherwise, if not created on shared memory, simply null the shared
+    // reference to the heap object. The call to CloseShMem will appropriately
+    // free the allocation.
 #endif
     mExternalShmem = nullptr;
   }
 #if defined(XP_WIN)
   if (mMutex) {
+    MOZ_ASSERT(mRequiresMutex);
     CloseHandle(mMutex);
     mMutex = nullptr;
   }
 #endif
 }
 
-// [copied from from VRManager::PushState]
 void VRShMem::PushBrowserState(VRBrowserState& aBrowserState,
                                bool aNotifyCond) {
   if (!mExternalShmem) {
@@ -365,7 +430,6 @@ void VRShMem::PushBrowserState(VRBrowserState& aBrowserState,
 #endif    // defined(MOZ_WIDGET_ANDROID)
 }
 
-// [copied from VRService::PullState]
 void VRShMem::PullBrowserState(mozilla::gfx::VRBrowserState& aState) {
   if (!mExternalShmem) {
     return;
@@ -389,11 +453,11 @@ void VRShMem::PullBrowserState(mozilla::gfx::VRBrowserState& aState) {
     pthread_mutex_unlock((pthread_mutex_t*)&(mExternalShmem->geckoMutex));
   }
   */
+  MOZ_ASSERT(false, "PullBrowserState not implemented");
 #else
   bool status = true;
 #  if defined(XP_WIN)
-  // was if (!XRE_IsParentProcess()) {
-  if (!mIsParentProcess) {
+  if (mRequiresMutex) {
     // TODO: Is this scoped lock okay? Seems like it should allow some
     // race condition (Bug 1563234)
     WaitForMutex lock(mMutex);
@@ -418,7 +482,6 @@ void VRShMem::PullBrowserState(mozilla::gfx::VRBrowserState& aState) {
 #endif    // defined(MOZ_WIDGET_ANDROID)
 }
 
-// [copied from VRService::PushState]
 void VRShMem::PushSystemState(const mozilla::gfx::VRSystemState& aState) {
   if (!mExternalShmem) {
     return;
@@ -431,6 +494,7 @@ void VRShMem::PushSystemState(const mozilla::gfx::VRSystemState& aState) {
 #if defined(MOZ_WIDGET_ANDROID)
   // TODO: This code is out-of-date and fails to compile, as
   // VRService isn't compiled for Android (Bug 1563234)
+  MOZ_ASSERT(false, "JoinShMem not implemented");
   /*
   if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->systemMutex)) ==
       0) {
@@ -445,8 +509,9 @@ void VRShMem::PushSystemState(const mozilla::gfx::VRSystemState& aState) {
 #else
   bool lockState = true;
 #  if defined(XP_WIN)
-  // was if (!XRE_IsParentProcess()) {
-  if (!mIsParentProcess) {
+  if (mRequiresMutex) {
+    // TODO: Is this scoped lock okay? Seems like it should allow some
+    // race condition (Bug 1563234)
     WaitForMutex lock(mMutex);
     lockState = lock.GetStatus();
   }
@@ -459,7 +524,6 @@ void VRShMem::PushSystemState(const mozilla::gfx::VRSystemState& aState) {
 #endif    // defined(MOZ_WIDGET_ANDROID)
 }
 
-// [copied from void VRManager::PullState]
 #if defined(MOZ_WIDGET_ANDROID)
 void VRShMem::PullSystemState(
     VRDisplayState& aDisplayState, VRHMDSensorState& aSensorState,
@@ -534,7 +598,11 @@ void VRShMem::PullSystemState(
           if (!aWaitCondition || aWaitCondition()) {
             return;
           }
-        }  // if (isCleanCopy)
+        } else if (!aWaitCondition) {
+          // We did not get a clean copy, and we are not waiting for a condition
+          // to exit from PullState call.
+          return;
+        }
         // Yield the thread while polling
         YieldThread();
 #  if defined(XP_WIN)
@@ -550,3 +618,34 @@ void VRShMem::PullSystemState(
   }  // while (!true)
 }
 #endif    // defined(MOZ_WIDGET_ANDROID)
+
+void VRShMem::PushWindowState(VRWindowState& aState) {
+#if defined(XP_WIN)
+  if (!mExternalShmem) {
+    return;
+  }
+
+  bool status = true;
+  WaitForMutex lock(mMutex);
+  status = lock.GetStatus();
+  if (status) {
+    memcpy((void*)&(mExternalShmem->windowState), (void*)&aState,
+           sizeof(VRWindowState));
+  }
+#endif  // defined(XP_WIN)
+}
+void VRShMem::PullWindowState(VRWindowState& aState) {
+#if defined(XP_WIN)
+  if (!mExternalShmem) {
+    return;
+  }
+
+  bool status = true;
+  WaitForMutex lock(mMutex);
+  status = lock.GetStatus();
+  if (status) {
+    memcpy((void*)&aState, (void*)&(mExternalShmem->windowState),
+           sizeof(VRWindowState));
+  }
+#endif  // defined(XP_WIN)
+}

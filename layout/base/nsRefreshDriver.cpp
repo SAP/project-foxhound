@@ -48,7 +48,10 @@
 #include "mozilla/PendingAnimationTracker.h"
 #include "mozilla/PendingFullscreenEvent.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_page_load.h"
 #include "nsViewManager.h"
 #include "GeckoProfiler.h"
 #include "nsNPAPIPluginInstance.h"
@@ -85,6 +88,8 @@
 #ifdef MOZ_XUL
 #  include "nsXULPopupManager.h"
 #endif
+
+#include <numeric>
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -139,6 +144,23 @@ uint64_t sJankLevels[12];
 // disconnected). When this reaches zero we will call
 // nsRefreshDriver::Shutdown.
 static uint32_t sRefreshDriverCount = 0;
+
+// RAII-helper for recording elapsed duration for refresh tick phases.
+class AutoRecordPhase {
+ public:
+  explicit AutoRecordPhase(double* aResultMs)
+      : mTotalMs(aResultMs), mStartTime(TimeStamp::Now()) {
+    MOZ_ASSERT(mTotalMs);
+  }
+  ~AutoRecordPhase() {
+    *mTotalMs = (TimeStamp::Now() - mStartTime).ToMilliseconds();
+  }
+
+ private:
+  double* mTotalMs;
+  mozilla::TimeStamp mStartTime;
+};
+
 }  // namespace
 
 namespace mozilla {
@@ -249,13 +271,14 @@ class RefreshDriverTimer {
     TimeStamp idleEnd = mostRecentRefresh + refreshRate;
 
     if (idleEnd +
-            refreshRate * nsLayoutUtils::QuiescentFramesBeforeIdlePeriod() <
+            refreshRate *
+                StaticPrefs::layout_idle_period_required_quiescent_frames() <
         TimeStamp::Now()) {
       return aDefault;
     }
 
     idleEnd = idleEnd - TimeDuration::FromMilliseconds(
-                            nsLayoutUtils::IdlePeriodDeadlineLimit());
+                            StaticPrefs::layout_idle_period_time_limit());
     return idleEnd < aDefault ? idleEnd : aDefault;
   }
 
@@ -497,15 +520,7 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
 
       NS_IMETHOD Run() override {
         MOZ_ASSERT(NS_IsMainThread());
-        static bool sCacheInitialized = false;
-        static bool sHighPriorityPrefValue = false;
-        if (!sCacheInitialized) {
-          sCacheInitialized = true;
-          Preferences::AddBoolVarCache(&sHighPriorityPrefValue,
-                                       "vsync.parentProcess.highPriority",
-                                       mozilla::BrowserTabsRemoteAutostart());
-        }
-        sHighPriorityEnabled = sHighPriorityPrefValue;
+        sHighPriorityEnabled = mozilla::BrowserTabsRemoteAutostart();
 
         mObserver->TickRefreshDriver(mId, mVsyncTimestamp);
         return NS_OK;
@@ -580,7 +595,9 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
               dom::Performance* perf = win->GetPerformance();
               // Limit slower refresh rate to 5 seconds between the
               // first contentful paint and page load.
-              if (perf && perf->Now() < 5000) {
+              if (perf &&
+                  perf->Now() <
+                      StaticPrefs::page_load_deprioritization_period()) {
                 if (mProcessedVsync) {
                   mProcessedVsync = false;
                   // Handle this case similarly to the code above, but just
@@ -1469,6 +1486,7 @@ nsRefreshDriver::ObserverArray& nsRefreshDriver::ArrayFor(
     case FlushType::Event:
       return mObservers[0];
     case FlushType::Style:
+    case FlushType::Frames:
       return mObservers[1];
     case FlushType::Layout:
       return mObservers[2];
@@ -1688,6 +1706,11 @@ void nsRefreshDriver::RunFrameRequestCallbacks(TimeStamp aNowTime) {
         mozilla::dom::Performance* perf = innerWindow->GetPerformance();
         if (perf) {
           timeStamp = perf->GetDOMTiming()->TimeStampToDOMHighRes(aNowTime);
+          // 0 is an inappropriate mixin for this this area; however CSS Animations
+          // needs to have it's Time Reduction Logic refactored, so it's currently
+          // only clamping for RFP mode. RFP mode gives a much lower time precision,
+          // so we accept the security leak here for now
+          timeStamp = nsRFPService::ReduceTimePrecisionAsMSecs(timeStamp, 0, TimerPrecisionType::RFPOnly);
         }
         // else window is partially torn down already
       }
@@ -1771,14 +1794,6 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
     // Try to survive this by just ignoring the refresh tick.
     return;
   }
-
-#if defined(MOZ_WIDGET_ANDROID)
-  gfx::VRManager* vm = gfx::VRManager::Get();
-  if (vm->IsPresenting()) {
-    RunFrameRequestCallbacks(aNowTime);
-    return;
-  }
-#endif  // defined(MOZ_WIDGET_ANDROID)
 
   AUTO_PROFILER_LABEL("nsRefreshDriver::Tick", LAYOUT);
 
@@ -1894,6 +1909,10 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
   }
   DispatchVisualViewportResizeEvents();
 
+  double phaseMetrics[MOZ_ARRAY_LENGTH(mObservers)] = {
+      0.0,
+  };
+
   /*
    * The timer holds a reference to |this| while calling |Notify|.
    * However, implementations of |WillRefresh| are permitted to destroy
@@ -1901,6 +1920,8 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
    * null.  If this happens, we must stop notifying observers.
    */
   for (uint32_t i = 0; i < ArrayLength(mObservers); ++i) {
+    AutoRecordPhase phaseRecord(&phaseMetrics[i]);
+
     ObserverArray::EndLimitedIterator etor(mObservers[i]);
     while (etor.HasMore()) {
       RefPtr<nsARefreshObserver> obs = etor.GetNext();
@@ -1963,6 +1984,10 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
           // a layout flush).
           presShell->NotifyFontFaceSetOnRefresh();
           mNeedToRecomputeVisibility = true;
+
+          // Record the telemetry for the # of flushes that occurred between
+          // ticks.
+          presShell->PingFlushPerTickTelemetry(FlushType::Style);
         }
       }
     } else if (i == 2) {
@@ -1988,6 +2013,10 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
         // ready promise if it needs to.
         presShell->NotifyFontFaceSetOnRefresh();
         mNeedToRecomputeVisibility = true;
+
+        // Record the telemetry for the # of flushes that occured between
+        // ticks.
+        presShell->PingFlushPerTickTelemetry(FlushType::Layout);
       }
     }
 
@@ -2075,8 +2104,10 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
     }
   }
 
+  double phasePaint = 0.0;
   bool dispatchRunnablesAfterTick = false;
   if (mViewManagerFlushIsPending) {
+    AutoRecordPhase paintRecord(&phasePaint);
     RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
 
     nsTArray<nsDocShell*> profilingDocShells;
@@ -2099,7 +2130,12 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
 
     mViewManagerFlushIsPending = false;
     RefPtr<nsViewManager> vm = mPresContext->GetPresShell()->GetViewManager();
-    {
+    bool skipPaint = false;
+#if defined(MOZ_WIDGET_ANDROID)
+    gfx::VRManager* vrm = gfx::VRManager::Get();
+    skipPaint = vrm->IsPresenting();
+#endif // defined(MOZ_WIDGET_ANDROID)
+    if (!skipPaint) {
       PaintTelemetry::AutoRecordPaint record;
       vm->ProcessPendingUpdates();
     }
@@ -2121,10 +2157,36 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
     mHasScheduleFlush = false;
   }
 
+  double totalMs = (TimeStamp::Now() - mTickStart).ToMilliseconds();
+
 #ifndef ANDROID /* bug 1142079 */
-  mozilla::Telemetry::AccumulateTimeDelta(
-      mozilla::Telemetry::REFRESH_DRIVER_TICK, mTickStart);
+  mozilla::Telemetry::Accumulate(mozilla::Telemetry::REFRESH_DRIVER_TICK,
+                                 static_cast<uint32_t>(totalMs));
 #endif
+
+  // Bug 1568107: If the totalMs is greater than 1/60th second (ie. 1000/60 ms)
+  // then record, via telemetry, the percentage of time spent in each
+  // sub-system.
+  if (totalMs > 1000.0 / 60.0) {
+    auto record = [=](const nsCString& aKey, double aDurationMs) -> void {
+      MOZ_ASSERT(aDurationMs <= totalMs);
+      auto phasePercent = static_cast<uint32_t>(aDurationMs * 100.0 / totalMs);
+      Telemetry::Accumulate(Telemetry::REFRESH_DRIVER_TICK_PHASE_WEIGHT, aKey,
+                            phasePercent);
+    };
+
+    record(NS_LITERAL_CSTRING("Event"), phaseMetrics[0]);
+    record(NS_LITERAL_CSTRING("Style"), phaseMetrics[1]);
+    record(NS_LITERAL_CSTRING("Reflow"), phaseMetrics[2]);
+    record(NS_LITERAL_CSTRING("Display"), phaseMetrics[3]);
+    record(NS_LITERAL_CSTRING("Paint"), phasePaint);
+
+    // Explicitly record the time unaccounted for.
+    double other = totalMs -
+                   std::accumulate(phaseMetrics, ArrayEnd(phaseMetrics), 0.0) -
+                   phasePaint;
+    record(NS_LITERAL_CSTRING("Other"), other);
+  }
 
   if (mNotifyDOMContentFlushed) {
     mNotifyDOMContentFlushed = false;

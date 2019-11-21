@@ -184,7 +184,7 @@ struct Zone {
     return gcState_ == Sweep || gcState_ == Compact;
   }
 
-  static MOZ_ALWAYS_INLINE JS::shadow::Zone* asShadowZone(JS::Zone* zone) {
+  static MOZ_ALWAYS_INLINE JS::shadow::Zone* from(JS::Zone* zone) {
     return reinterpret_cast<JS::shadow::Zone*>(zone);
   }
 };
@@ -583,7 +583,7 @@ static MOZ_ALWAYS_INLINE bool IsIncrementalBarrierNeededOnTenuredGCThing(
   MOZ_ASSERT(!JS::RuntimeHeapIsCollecting());
 
   JS::Zone* zone = JS::GetTenuredGCThingZone(thing);
-  return JS::shadow::Zone::asShadowZone(zone)->needsIncrementalBarrier();
+  return JS::shadow::Zone::from(zone)->needsIncrementalBarrier();
 }
 
 static MOZ_ALWAYS_INLINE void ExposeGCThingToActiveJS(JS::GCCellPtr thing) {
@@ -621,8 +621,7 @@ static MOZ_ALWAYS_INLINE bool EdgeNeedsSweepUnbarriered(JSObject** objp) {
     return false;
   }
 
-  auto zone =
-      JS::shadow::Zone::asShadowZone(detail::GetGCThingZone(uintptr_t(*objp)));
+  auto zone = JS::shadow::Zone::from(detail::GetGCThingZone(uintptr_t(*objp)));
   if (!zone->isGCSweepingOrCompacting()) {
     return false;
   }
@@ -645,12 +644,6 @@ static MOZ_ALWAYS_INLINE void ExposeObjectToActiveJS(JSObject* obj) {
   MOZ_ASSERT(obj);
   MOZ_ASSERT(!js::gc::EdgeNeedsSweepUnbarrieredSlow(&obj));
   js::gc::ExposeGCThingToActiveJS(GCCellPtr(obj));
-}
-
-static MOZ_ALWAYS_INLINE void ExposeScriptToActiveJS(JSScript* script) {
-  MOZ_ASSERT(script);
-  MOZ_ASSERT(!js::gc::EdgeNeedsSweepUnbarrieredSlow(&script));
-  js::gc::ExposeGCThingToActiveJS(GCCellPtr(script));
 }
 
 } /* namespace JS */

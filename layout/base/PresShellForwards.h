@@ -31,14 +31,6 @@ enum class CaptureFlags {
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(CaptureFlags)
 
-enum class RectVisibility {
-  Visible,
-  AboveViewport,
-  BelowViewport,
-  LeftOfViewport,
-  RightOfViewport,
-};
-
 enum class ResizeReflowOptions : uint32_t {
   NoOption = 0,
   // the resulting BSize can be less than the given one, producing
@@ -151,6 +143,7 @@ enum class ScrollFlags {
   IgnoreMarginAndPadding = 1 << 6,
   // ScrollOverflowHidden | ScrollNoParentFrames
   AnchorScrollFlags = (1 << 1) | (1 << 2),
+  ALL_BITS = (1 << 7) - 1,
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(ScrollFlags)
@@ -182,7 +175,8 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(RenderImageFlags)
 
 enum class ResolutionChangeOrigin : uint8_t {
   Apz,
-  MainThread,
+  MainThreadRestore,
+  MainThreadAdjustment,
 };
 
 // See comment at declaration of AddCanvasBackgroundColorItem() for the detail.

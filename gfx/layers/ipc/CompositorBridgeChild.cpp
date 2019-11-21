@@ -11,7 +11,7 @@
 #include "ClientLayerManager.h"  // for ClientLayerManager
 #include "base/message_loop.h"   // for MessageLoop
 #include "base/task.h"           // for NewRunnableMethod, etc
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/layers/ImageBridgeChild.h"
@@ -720,6 +720,13 @@ bool CompositorBridgeChild::SendResume() {
   return PCompositorBridgeChild::SendResume();
 }
 
+bool CompositorBridgeChild::SendResumeAsync() {
+  if (!mCanSend) {
+    return false;
+  }
+  return PCompositorBridgeChild::SendResumeAsync();
+}
+
 bool CompositorBridgeChild::SendNotifyChildCreated(
     const LayersId& id, CompositorOptions* aOptions) {
   if (!mCanSend) {
@@ -802,7 +809,7 @@ bool CompositorBridgeChild::DeallocPTextureChild(PTextureChild* actor) {
 }
 
 mozilla::ipc::IPCResult CompositorBridgeChild::RecvParentAsyncMessages(
-    InfallibleTArray<AsyncParentMessageData>&& aMessages) {
+    nsTArray<AsyncParentMessageData>&& aMessages) {
   for (AsyncParentMessageArray::index_type i = 0; i < aMessages.Length(); ++i) {
     const AsyncParentMessageData& message = aMessages[i];
 
@@ -885,10 +892,10 @@ TextureClientPool* CompositorBridgeChild::GetTexturePool(
       aAllocator->GetCompositorBackendType(),
       aAllocator->SupportsTextureDirectMapping(),
       aAllocator->GetMaxTextureSize(), aFormat, gfx::gfxVars::TileSize(),
-      aFlags, StaticPrefs::layers_tile_pool_shrink_timeout(),
-      StaticPrefs::layers_tile_pool_clear_timeout(),
-      StaticPrefs::layers_tile_initial_pool_size(),
-      StaticPrefs::layers_tile_pool_unused_size(), this));
+      aFlags, StaticPrefs::layers_tile_pool_shrink_timeout_AtStartup(),
+      StaticPrefs::layers_tile_pool_clear_timeout_AtStartup(),
+      StaticPrefs::layers_tile_initial_pool_size_AtStartup(),
+      StaticPrefs::layers_tile_pool_unused_size_AtStartup(), this));
 
   return mTexturePools.LastElement();
 }

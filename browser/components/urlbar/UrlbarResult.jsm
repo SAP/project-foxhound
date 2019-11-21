@@ -139,12 +139,14 @@ class UrlbarResult {
   }
 
   /**
-   * A convenience function that takes a payload annotated with should-highlight
-   * bools and returns the payload and the payload's highlights.  Use this
-   * function when the highlighting required by your payload is based on simple
-   * substring matching, as done by UrlbarUtils.getTokenMatches().  Pass the
-   * return values as the `payload` and `payloadHighlights` params of the
-   * UrlbarResult constructor.
+   * A convenience function that takes a payload annotated with
+   * UrlbarUtils.HIGHLIGHT enums and returns the payload and the payload's
+   * highlights. Use this function when the highlighting required by your
+   * payload is based on simple substring matching, as done by
+   * UrlbarUtils.getTokenMatches(). Pass the return values as the `payload` and
+   * `payloadHighlights` params of the UrlbarResult constructor.
+   * `payloadHighlights` is optional. If omitted, payload will not be
+   * highlighted.
    *
    * If the payload doesn't have a title or has an empty title, and it also has
    * a URL, then this function also sets the title to the URL's domain.
@@ -157,7 +159,7 @@ class UrlbarResult {
    *        Each payloadPropertyInfo may be either a string or an array.  If
    *        it's a string, then the property value will be that string, and no
    *        highlighting will be applied to it.  If it's an array, then it
-   *        should look like this: [payloadPropertyValue, shouldHighlight].
+   *        should look like this: [payloadPropertyValue, highlightType].
    *        payloadPropertyValue may be a string or an array of strings.  If
    *        it's a string, then the payloadHighlights in the return value will
    *        be an array of match highlights as described in
@@ -167,10 +169,10 @@ class UrlbarResult {
    * @returns {array} An array [payload, payloadHighlights].
    */
   static payloadAndSimpleHighlights(tokens, payloadInfo) {
-    // Convert scalar values in payloadInfo to [value, false] arrays.
+    // Convert scalar values in payloadInfo to [value] arrays.
     for (let [name, info] of Object.entries(payloadInfo)) {
       if (!Array.isArray(info)) {
-        payloadInfo[name] = [info, false];
+        payloadInfo[name] = [info];
       }
     }
 
@@ -181,7 +183,10 @@ class UrlbarResult {
     ) {
       // If there's no title, show the domain as the title.  Not all valid URLs
       // have a domain.
-      payloadInfo.title = payloadInfo.title || ["", true];
+      payloadInfo.title = payloadInfo.title || [
+        "",
+        UrlbarUtils.HIGHLIGHT.TYPED,
+      ];
       try {
         payloadInfo.title[0] = new URL(payloadInfo.url[0]).host;
       } catch (e) {}
@@ -216,11 +221,13 @@ class UrlbarResult {
         payload[name] = val;
         return payload;
       }, {}),
-      entries.reduce((highlights, [name, [val, shouldHighlight]]) => {
-        if (shouldHighlight) {
+      entries.reduce((highlights, [name, [val, highlightType]]) => {
+        if (highlightType) {
           highlights[name] = !Array.isArray(val)
-            ? UrlbarUtils.getTokenMatches(tokens, val || "")
-            : val.map(subval => UrlbarUtils.getTokenMatches(tokens, subval));
+            ? UrlbarUtils.getTokenMatches(tokens, val || "", highlightType)
+            : val.map(subval =>
+                UrlbarUtils.getTokenMatches(tokens, subval, highlightType)
+              );
         }
         return highlights;
       }, {}),

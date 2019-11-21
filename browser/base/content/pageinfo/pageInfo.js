@@ -83,19 +83,6 @@ pageInfoTreeView.prototype = {
     this.data = [];
   },
 
-  handleCopy(row) {
-    return row < 0 || this.copycol < 0
-      ? ""
-      : this.data[row][this.copycol] || "";
-  },
-
-  performActionOnRow(action, row) {
-    if (action == "copy") {
-      var data = this.handleCopy(row);
-      this.tree.treeBody.parentNode.setAttribute("copybuffer", data);
-    }
-  },
-
   onPageMediaSort(columnname) {
     var tree = document.getElementById(this.treeid);
     var treecol = tree.columns.getNamedColumn(columnname);
@@ -162,7 +149,10 @@ pageInfoTreeView.prototype = {
     return 0;
   },
   getImageSrc(row, column) {},
-  getCellValue(row, column) {},
+  getCellValue(row, column) {
+    let col = column != null ? column : this.copycol;
+    return row < 0 || col < 0 ? "" : this.data[row][col] || "";
+  },
   toggleOpenState(index) {},
   cycleHeader(col) {},
   selectionChanged() {},
@@ -170,8 +160,6 @@ pageInfoTreeView.prototype = {
   isEditable(row, column) {
     return false;
   },
-  performAction(action) {},
-  performActionOnCell(action, row, column) {},
 };
 
 // mmm, yummy. global variables.
@@ -410,7 +398,7 @@ function loadPageInfo(frameOuterWindowID, imageElement, browser) {
       uri.spec.startsWith("about:certerror")
     ) {
       uri = browser.currentURI;
-      principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      principal = Services.scriptSecurityManager.createContentPrincipal(
         uri,
         browser.contentPrincipal.originAttributes
       );
@@ -760,6 +748,12 @@ async function selectSaveFolder(aCallback) {
 function saveMedia() {
   var tree = document.getElementById("imagetree");
   var rowArray = getSelectedRows(tree);
+  let ReferrerInfo = Components.Constructor(
+    "@mozilla.org/referrer-info;1",
+    "nsIReferrerInfo",
+    "init"
+  );
+
   if (rowArray.length == 1) {
     let row = rowArray[0];
     let item = gImageView.data[row][COL_IMAGE_NODE];
@@ -774,13 +768,19 @@ function saveMedia() {
         titleKey = "SaveAudioTitle";
       }
 
+      // Bug 1565216 to evaluate passing referrer as item.baseURL
+      let referrerInfo = new ReferrerInfo(
+        Ci.nsIReferrerInfo.EMPTY,
+        true,
+        Services.io.newURI(item.baseURI)
+      );
       saveURL(
         url,
         null,
         titleKey,
         false,
         false,
-        Services.io.newURI(item.baseURI),
+        referrerInfo,
         null,
         gDocInfo.isContentWindowPrivate,
         gDocInfo.principal
@@ -791,6 +791,12 @@ function saveMedia() {
       if (aDirectory) {
         var saveAnImage = function(aURIString, aChosenData, aBaseURI) {
           uniqueFile(aChosenData.file);
+
+          let referrerInfo = new ReferrerInfo(
+            Ci.nsIReferrerInfo.EMPTY,
+            true,
+            aBaseURI
+          );
           internalSave(
             aURIString,
             null,
@@ -800,7 +806,7 @@ function saveMedia() {
             false,
             "SaveImageTitle",
             aChosenData,
-            aBaseURI,
+            referrerInfo,
             null,
             false,
             null,
@@ -856,10 +862,18 @@ function onBlockImage() {
 
   var checkbox = document.getElementById("blockImage");
   var uri = Services.io.newURI(document.getElementById("imageurltext").value);
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
+    uri,
+    gDocInfo.principal.originAttributes
+  );
   if (checkbox.checked) {
-    permissionManager.add(uri, "image", nsIPermissionManager.DENY_ACTION);
+    permissionManager.addFromPrincipal(
+      principal,
+      "image",
+      nsIPermissionManager.DENY_ACTION
+    );
   } else {
-    permissionManager.remove(uri, "image");
+    permissionManager.removeFromPrincipal(principal, "image");
   }
 }
 
@@ -1105,7 +1119,14 @@ function makeBlockImage(url) {
       document.l10n.setAttributes(checkbox, "media-block-image", {
         website: uri.host,
       });
-      var perm = permissionManager.testPermission(uri, "image");
+      let principal = Services.scriptSecurityManager.createContentPrincipal(
+        uri,
+        gDocInfo.principal.originAttributes
+      );
+      let perm = permissionManager.testPermissionFromPrincipal(
+        principal,
+        "image"
+      );
       checkbox.checked = perm == nsIPermissionManager.DENY_ACTION;
     } else {
       checkbox.hidden = true;
@@ -1191,13 +1212,10 @@ function doCopy() {
       selection.getRangeAt(i, min, max);
 
       for (var row = min.value; row <= max.value; row++) {
-        view.performActionOnRow("copy", row);
-
-        tmp = elem.getAttribute("copybuffer");
+        tmp = view.getCellValue(row, null);
         if (tmp) {
           text.push(tmp);
         }
-        elem.removeAttribute("copybuffer");
       }
     }
     gClipboardHelper.copyString(text.join("\n"));

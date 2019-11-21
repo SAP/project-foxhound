@@ -14,6 +14,7 @@
 #include "AudioContext.h"
 #include "nsMathUtils.h"
 #include "AlignmentUtils.h"
+#include "blink/Reverb.h"
 
 using namespace mozilla::dom;
 
@@ -50,6 +51,10 @@ AudioNodeStream::AudioNodeStream(AudioNodeEngine* aEngine, Flags aFlags,
 AudioNodeStream::~AudioNodeStream() {
   MOZ_ASSERT(mActiveInputCount == 0);
   MOZ_COUNT_DTOR(AudioNodeStream);
+}
+
+void AudioNodeStream::NotifyForcedShutdown() {
+  mEngine->NotifyForcedShutdown();
 }
 
 void AudioNodeStream::DestroyImpl() {
@@ -201,24 +206,6 @@ void AudioNodeStream::SendTimelineEvent(uint32_t aIndex,
   GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex, aEvent));
 }
 
-void AudioNodeStream::SetThreeDPointParameter(uint32_t aIndex,
-                                              const ThreeDPoint& aValue) {
-  class Message final : public ControlMessage {
-   public:
-    Message(AudioNodeStream* aStream, uint32_t aIndex,
-            const ThreeDPoint& aValue)
-        : ControlMessage(aStream), mValue(aValue), mIndex(aIndex) {}
-    void Run() override {
-      static_cast<AudioNodeStream*>(mStream)->Engine()->SetThreeDPointParameter(
-          mIndex, mValue);
-    }
-    ThreeDPoint mValue;
-    uint32_t mIndex;
-  };
-
-  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aIndex, aValue));
-}
-
 void AudioNodeStream::SetBuffer(AudioChunk&& aBuffer) {
   class Message final : public ControlMessage {
    public:
@@ -232,6 +219,22 @@ void AudioNodeStream::SetBuffer(AudioChunk&& aBuffer) {
   };
 
   GraphImpl()->AppendMessage(MakeUnique<Message>(this, std::move(aBuffer)));
+}
+
+void AudioNodeStream::SetReverb(WebCore::Reverb* aReverb, uint32_t aImpulseChannelCount) {
+  class Message final : public ControlMessage {
+   public:
+    Message(AudioNodeStream* aStream, WebCore::Reverb* aReverb, uint32_t aImpulseChannelCount)
+        : ControlMessage(aStream), mReverb(aReverb), mImpulseChanelCount(aImpulseChannelCount) {}
+    void Run() override {
+      static_cast<AudioNodeStream*>(mStream)->Engine()->SetReverb(
+          mReverb.forget(), mImpulseChanelCount);
+    }
+    nsAutoPtr<WebCore::Reverb> mReverb;
+    uint32_t mImpulseChanelCount;
+  };
+
+  GraphImpl()->AppendMessage(MakeUnique<Message>(this, aReverb, aImpulseChannelCount));
 }
 
 void AudioNodeStream::SetRawArrayData(nsTArray<float>& aData) {

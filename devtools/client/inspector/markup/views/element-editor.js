@@ -72,13 +72,13 @@ const HTML_VOID_ELEMENTS = [
 // Contains only valid computed display property types of the node to display in the
 // element markup and their respective title tooltip text.
 const DISPLAY_TYPES = {
-  flex: INSPECTOR_L10N.getStr("markupView.display.flex.tooltiptext"),
+  flex: INSPECTOR_L10N.getStr("markupView.display.flex.tooltiptext2"),
   "inline-flex": INSPECTOR_L10N.getStr(
-    "markupView.display.inlineFlex.tooltiptext"
+    "markupView.display.inlineFlex.tooltiptext2"
   ),
-  grid: INSPECTOR_L10N.getStr("markupView.display.grid.tooltiptext"),
+  grid: INSPECTOR_L10N.getStr("markupView.display.grid.tooltiptext2"),
   "inline-grid": INSPECTOR_L10N.getStr(
-    "markupView.display.inlineGrid.tooltiptext"
+    "markupView.display.inlineGrid.tooltiptext2"
   ),
   subgrid: INSPECTOR_L10N.getStr("markupView.display.subgrid.tooltiptiptext"),
   "flow-root": INSPECTOR_L10N.getStr("markupView.display.flowRoot.tooltiptext"),
@@ -240,10 +240,14 @@ ElementEditor.prototype = {
       clearTimeout(this.animationTimers[attrName]);
     }
 
-    flashElementOn(this.getAttributeElement(attrName));
+    flashElementOn(this.getAttributeElement(attrName), {
+      backgroundClass: "theme-bg-yellow-contrast",
+    });
 
     this.animationTimers[attrName] = setTimeout(() => {
-      flashElementOff(this.getAttributeElement(attrName));
+      flashElementOff(this.getAttributeElement(attrName), {
+        backgroundClass: "theme-bg-yellow-contrast",
+      });
     }, this.markup.CONTAINER_FLASHING_DURATION);
   },
 
@@ -630,15 +634,17 @@ ElementEditor.prototype = {
     // it (make sure to pass a complete list of existing attributes to the
     // parseAttribute function, by concatenating attribute, because this could
     // be a newly added attribute not yet on this.node).
-    const attributes = this.node.attributes.filter(existingAttribute => {
-      return existingAttribute.name !== attribute.name;
-    });
+    const attributes = this.node.attributes.filter(
+      existingAttribute => existingAttribute.name !== attribute.name
+    );
+
     attributes.push(attribute);
     const parsedLinksData = parseAttribute(
       this.node.namespaceURI,
       this.node.tagName,
       attributes,
-      attribute.name
+      attribute.name,
+      attribute.value
     );
 
     // Create links in the attribute value, and collapse long attributes if

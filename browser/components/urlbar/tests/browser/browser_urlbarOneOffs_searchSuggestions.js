@@ -134,10 +134,6 @@ add_task(async function test_clickAfterSuggestion_nonDefault() {
 
 // Selects a non-default one-off engine and then selects a search suggestion.
 add_task(async function test_selectOneOffThenSuggestion() {
-  if (!UrlbarPrefs.get("quantumbar")) {
-    // The legacy address bar doesn't work correctly for this scenario.
-    return;
-  }
   await BrowserTestUtils.withNewTab(gBrowser, async () => {
     let typedValue = "foo";
     await promiseAutocompleteResultPopup(typedValue, window, true);
@@ -208,6 +204,6 @@ function assertState(result, oneOff, textValue = undefined) {
     "Expected one-off should be selected"
   );
   if (textValue !== undefined) {
-    Assert.equal(gURLBar.textValue, textValue, "Expected textValue");
+    Assert.equal(gURLBar.value, textValue, "Expected textValue");
   }
 }

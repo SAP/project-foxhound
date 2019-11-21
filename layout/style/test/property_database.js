@@ -1,4 +1,5 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* eslint-disable dot-notation */
 /* vim: set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -236,12 +237,8 @@ var validGradientAndElementValues = [
   "repeating-radial-gradient(50px 60px at 15% 20%, red, blue)",
   "repeating-radial-gradient(7em 8em at 45px, red, blue)",
 
-  // FIXME(emilio): We should not be allowing 3-value positions anywhere else
-  // than on `background-position`, see
-  // https://github.com/w3c/csswg-drafts/issues/2140.
-  //
   // When that happens this should be moved to the `invalid` list.
-  "repeating-radial-gradient(circle closest-side at left bottom 7in, hsl(2,2%,5%), rgb(1,6,0))",
+  "repeating-radial-gradient(circle closest-side at left 0px bottom 7in, hsl(2,2%,5%), rgb(1,6,0))",
 
   "-moz-image-rect(url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==), 2, 10, 10, 2)",
   "-moz-image-rect(url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAKElEQVR42u3NQQ0AAAgEoNP+nTWFDzcoQE1udQQCgUAgEAgEAsGTYAGjxAE/G/Q2tQAAAABJRU5ErkJggg==), 10%, 50%, 30%, 0%)",
@@ -706,7 +703,7 @@ var basicShapeOtherValues = [
 
   "circle()",
   "circle(at center)",
-  "circle(at top left 20px)",
+  "circle(at top 0px left 20px)",
   "circle(at bottom right)",
   "circle(20%)",
   "circle(300px)",
@@ -722,7 +719,7 @@ var basicShapeOtherValues = [
 
   "ellipse()",
   "ellipse(at center)",
-  "ellipse(at top left 20px)",
+  "ellipse(at top 0px left 20px)",
   "ellipse(at bottom right)",
   "ellipse(20% 20%)",
   "ellipse(300px 50%)",
@@ -792,6 +789,7 @@ var basicShapeInvalidValues = [
   "circle(20% 20%)",
   "circle(at farthest-side)",
   "circle(calc(20px + rubbish))",
+  "circle(at top left 20px)",
 
   "ellipse(at)",
   "ellipse(at 20% 20% 30%)",
@@ -804,6 +802,7 @@ var basicShapeInvalidValues = [
   "ellipse(20%)",
   "ellipse(at farthest-side farthest-side)",
   "ellipse(at top left calc(20px + rubbish))",
+  "ellipse(at top left 20px)",
 
   "polygon(at)",
   "polygon(at 20% 20% 30%)",
@@ -3036,7 +3035,6 @@ var gCSSProperties = {
     type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
     initial_values: [
       "top 0% left 0%",
-      "top 0% left",
       "top left",
       "left top",
       "0% 0%",
@@ -3096,8 +3094,6 @@ var gCSSProperties = {
       "top 3em right 10px",
       "left 15px",
       "10px top",
-      "left top 15px",
-      "left 10px top",
       "left 20%",
       "right 20%",
     ],
@@ -3117,6 +3113,8 @@ var gCSSProperties = {
       "top 20px bottom 20px",
       "left left",
       "0px calc(0px + rubbish)",
+      "left top 15px",
+      "left 10px top",
     ],
   },
   "mask-position-x": {
@@ -3983,7 +3981,7 @@ var gCSSProperties = {
       "top left / 100px auto",
       "top left / 100px 10%",
       "top left / 100px calc(20px)",
-      "bottom right scroll none transparent repeat",
+      "bottom right 8px scroll none transparent repeat",
       "50% transparent",
       "transparent 50%",
       "50%",
@@ -5289,8 +5287,6 @@ var gCSSProperties = {
       "no-open-quote",
       "no-close-quote",
       "close-quote attr(title) counters(foo, '.', upper-alpha)",
-      "counter(foo, none)",
-      "counters(bar, '.', none)",
       "attr(\\32)",
       "attr(\\2)",
       "attr(-\\2)",
@@ -5309,6 +5305,8 @@ var gCSSProperties = {
       "counters(foo, '.', symbols(numeric '0' '1'))",
     ],
     invalid_values: [
+      "counter(foo, none)",
+      "counters(bar, '.', none)",
       "counters(foo)",
       'counter(foo, ".")',
       'attr("title")',
@@ -5468,6 +5466,8 @@ var gCSSProperties = {
       "flex",
       "inline-flex",
       "list-item",
+      "inline list-item",
+      "inline flow-root list-item",
       "inline-block",
       "table",
       "inline-table",
@@ -5479,6 +5479,7 @@ var gCSSProperties = {
       "table-column",
       "table-cell",
       "table-caption",
+      "block ruby",
       "ruby",
       "ruby-base",
       "ruby-base-container",
@@ -5699,6 +5700,7 @@ var gCSSProperties = {
       "2em",
       "50%",
       "xx-small",
+      "xxx-large",
       "36pt",
       "8px",
       "larger",
@@ -6625,8 +6627,6 @@ var gCSSProperties = {
       "top 3em right 10px",
       "left 15px",
       "10px top",
-      "left top 15px",
-      "left 10px top",
       "left 20%",
       "right 20%",
     ],
@@ -6645,6 +6645,8 @@ var gCSSProperties = {
       "top 20px bottom 20px",
       "left left",
       "20 20",
+      "left top 15px",
+      "left 10px top",
     ],
   },
   opacity: {
@@ -6662,8 +6664,9 @@ var gCSSProperties = {
       "3e0",
       "3e+0",
       "3e-0",
+      "300%",
     ],
-    other_values: ["0", "0.4", "0.0000", "-3", "3e-1"],
+    other_values: ["0", "0.4", "0.0000", "-3", "3e-1", "-100%", "50%"],
     invalid_values: ["0px", "1px"],
   },
   "-moz-orient": {
@@ -7116,12 +7119,15 @@ var gCSSProperties = {
     domProp: "quotes",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
-    initial_values: [
+    initial_values: ["auto"],
+    other_values: [
+      "none",
+      "'\"' '\"'",
+      "'' ''",
       '"\u201C" "\u201D" "\u2018" "\u2019"',
       '"\\201C" "\\201D" "\\2018" "\\2019"',
     ],
-    other_values: ["none", "'\"' '\"'"],
-    invalid_values: [],
+    invalid_values: ["'\"'", '"" "" ""'],
   },
   right: {
     domProp: "right",
@@ -7251,6 +7257,7 @@ var gCSSProperties = {
       "text-decoration-color",
       "text-decoration-line",
       "text-decoration-style",
+      "text-decoration-thickness",
     ],
     initial_values: ["none"],
     other_values: [
@@ -7266,6 +7273,12 @@ var gCSSProperties = {
       "red underline",
       "#ff0000 underline",
       "dotted underline",
+      "solid underline 50px",
+      "underline 50px blue",
+      "50px dotted line-through purple",
+      "overline 2em",
+      "underline from-font",
+      "red from-font overline",
     ],
     invalid_values: [
       "none none",
@@ -7277,6 +7290,9 @@ var gCSSProperties = {
       "underline overline line-through blink none",
       "underline overline line-throuh blink blink",
       "rgb(0, rubbish, 0) underline",
+      "5% underline blue",
+      "dotted line-through 25%",
+      "from font blue underline",
     ],
   },
   "text-decoration-color": {
@@ -7346,10 +7362,33 @@ var gCSSProperties = {
       "wave",
     ],
   },
+  "text-decoration-thickness": {
+    domProp: "textDecorationThickness",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_placeholder: true,
+    applies_to_cue: true,
+    initial_values: ["auto"],
+    other_values: ["from-font", "0", "-14px", "25px", "100em", "-45em"],
+    invalid_values: [
+      "13",
+      "-25",
+      "rubbish",
+      ",./!@#$",
+      "43%",
+      "-10%",
+      "from font",
+    ],
+  },
   "text-decoration-skip-ink": {
     domProp: "textDecorationSkipInk",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_placeholder: true,
     initial_values: ["auto"],
     other_values: ["none"],
     invalid_values: [
@@ -7370,17 +7409,20 @@ var gCSSProperties = {
     domProp: "textUnderlineOffset",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
+    applies_to_first_letter: true,
+    applies_to_first_line: true,
+    applies_to_placeholder: true,
     initial_values: ["auto"],
-    other_values: ["0", "-14px", "25px", "100em", "-45em"],
-    invalid_values: ["13", "-25", "rubbish", ",./!@#$", "43%", "-10%"],
-  },
-  "text-decoration-width": {
-    domProp: "textDecorationWidth",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["auto"],
-    other_values: ["0", "-14px", "25px", "100em", "-45em"],
-    invalid_values: ["13", "-25", "rubbish", ",./!@#$", "43%", "-10%"],
+    other_values: ["from-font", "0", "-14px", "25px", "100em", "-45em"],
+    invalid_values: [
+      "13",
+      "-25",
+      "rubbish",
+      ",./!@#$",
+      "43%",
+      "-10%",
+      "from font",
+    ],
   },
   "text-emphasis": {
     domProp: "textEmphasis",
@@ -8151,13 +8193,10 @@ var gCSSProperties = {
   },
   "dominant-baseline": {
     domProp: "dominantBaseline",
-    inherited: false,
+    inherited: true,
     type: CSS_TYPE_LONGHAND,
     initial_values: ["auto"],
     other_values: [
-      "use-script",
-      "no-change",
-      "reset-size",
       "ideographic",
       "alphabetic",
       "hanging",
@@ -8192,11 +8231,13 @@ var gCSSProperties = {
     domProp: "fillOpacity",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["1", "2.8", "1.000"],
+    initial_values: ["1", "2.8", "1.000", "300%"],
     other_values: [
       "0",
       "0.3",
       "-7.3",
+      "-100%",
+      "50%",
       "context-fill-opacity",
       "context-stroke-opacity",
     ],
@@ -8463,8 +8504,8 @@ var gCSSProperties = {
     domProp: "floodOpacity",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["1", "2.8", "1.000"],
-    other_values: ["0", "0.3", "-7.3"],
+    initial_values: ["1", "2.8", "1.000", "300%"],
+    other_values: ["0", "0.3", "-7.3", "-100%", "50%"],
     invalid_values: [],
   },
   "image-orientation": {
@@ -8580,7 +8621,7 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     applies_to_first_letter: true,
-    initial_values: ["0", "0.0000", "-3"],
+    initial_values: ["0", "0.0000", "-3", "0%", "-100%"],
     other_values: [
       "0.4",
       "1",
@@ -8592,8 +8633,10 @@ var gCSSProperties = {
       "3e0",
       "3e+0",
       "3e-0",
+      "50%",
+      "300%",
     ],
-    invalid_values: ["0px", "1px", "20%", "default", "auto"],
+    invalid_values: ["0px", "1px", "default", "auto"],
   },
   "shape-margin": {
     domProp: "shapeMargin",
@@ -8651,8 +8694,8 @@ var gCSSProperties = {
     domProp: "stopOpacity",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["1", "2.8", "1.000"],
-    other_values: ["0", "0.3", "-7.3"],
+    initial_values: ["1", "2.8", "1.000", "300%"],
+    other_values: ["0", "0.3", "-7.3", "-100%", "50%"],
     invalid_values: [],
   },
   stroke: {
@@ -8730,11 +8773,13 @@ var gCSSProperties = {
     domProp: "strokeOpacity",
     inherited: true,
     type: CSS_TYPE_LONGHAND,
-    initial_values: ["1", "2.8", "1.000"],
+    initial_values: ["1", "2.8", "1.000", "300%"],
     other_values: [
       "0",
       "0.3",
       "-7.3",
+      "-100%",
+      "50%",
       "context-fill-opacity",
       "context-stroke-opacity",
     ],
@@ -11339,6 +11384,8 @@ gCSSProperties["grid-auto-columns"] = {
     "fit-content(1px)",
     "fit-content(calc(1px - 99%))",
     "fit-content(10%)",
+    "40px 12%",
+    "2.5fr min-content fit-content(1px)",
   ],
   invalid_values: [
     "",
@@ -11357,6 +11404,7 @@ gCSSProperties["grid-auto-columns"] = {
     "fit-content(-1px)",
     "fit-content(auto)",
     "fit-content(min-content)",
+    "1px [a] 1px",
   ],
 };
 gCSSProperties["grid-auto-rows"] = {
@@ -11623,6 +11671,7 @@ gCSSProperties["grid"] = {
   initial_values: ["none", "none / none"],
   other_values: [
     "auto-flow 40px / none",
+    "auto-flow 40px 100px / 0",
     "auto-flow / 40px",
     "auto-flow dense auto / auto",
     "dense auto-flow minmax(min-content, 2fr) / auto",
@@ -11642,7 +11691,7 @@ gCSSProperties["grid"] = {
     "0 / auto-flow [a] 0",
     "auto-flow -20px / 0",
     "auto-flow 200ms / 0",
-    "auto-flow 40px 100px / 0",
+    "auto-flow 1px [a] 1px / 0",
   ].concat(
     gCSSProperties["grid-template"].invalid_values,
     gCSSProperties["grid-auto-flow"].other_values,
@@ -12113,8 +12162,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     domProp: "scrollMarginTop",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12123,8 +12170,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     domProp: "scrollMarginRight",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12133,8 +12178,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     domProp: "scrollMarginBottom",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12143,8 +12186,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     domProp: "scrollMarginLeft",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12163,8 +12204,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     logical: true,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12174,8 +12213,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     logical: true,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12194,8 +12231,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     logical: true,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12205,8 +12240,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     logical: true,
-    applies_to_first_letter: true,
-    applies_to_first_line: true,
     initial_values: ["0"],
     other_values: ["-10px", "calc(2em + 3ex)"],
     invalid_values: ["auto", "20%", "-30%", "1px 2px"],
@@ -12523,8 +12556,9 @@ if (false) {
       "3e0",
       "3e+0",
       "3e-0",
+      "300%",
     ],
-    other_values: ["0", "0.4", "0.0000", "-3", "3e-1"],
+    other_values: ["0", "0.4", "0.0000", "-3", "3e-1", "-100%", "50%"],
     invalid_values: ["0px", "1px", "20%", "default", "auto"],
   };
 
@@ -12800,6 +12834,23 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
     initial_values: ["auto"],
     other_values: ["reverse", "0deg", "0rad reverse", "-45deg", "5turn auto"],
     invalid_values: ["none", "10px", "reverse 0deg reverse", "reverse auto"],
+  };
+
+  gCSSProperties["offset-anchor"] = {
+    domProp: "offsetAnchor",
+    inherited: false,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: [
+      "left bottom",
+      "center center",
+      "calc(20% + 10px) center",
+      "right 30em",
+      "10px 20%",
+      "left -10px top -20%",
+      "right 10% bottom 20em",
+    ],
+    invalid_values: ["none", "10deg", "left 10% top"],
   };
 }
 

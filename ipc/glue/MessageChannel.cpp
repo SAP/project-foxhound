@@ -108,7 +108,6 @@ static mozilla::LazyLogModule sLogModule("ipc");
 
 using namespace mozilla;
 using namespace mozilla::ipc;
-using namespace std;
 
 using mozilla::MonitorAutoLock;
 using mozilla::MonitorAutoUnlock;
@@ -556,6 +555,18 @@ static void TryRegisterStrongMemoryReporter() {
 
 Atomic<size_t> MessageChannel::gUnresolvedResponses;
 
+// Channels in record/replay middleman processes can forward messages that
+// originated in a child recording process. Middleman processes are given
+// a large negative sequence number so that sequence numbers on their messages
+// can be distinguished from those on recording process messages.
+static const int32_t MiddlemanStartSeqno = -(1 << 30);
+
+/* static */
+bool MessageChannel::MessageOriginatesFromMiddleman(const Message& aMessage) {
+  MOZ_ASSERT(recordreplay::IsMiddleman());
+  return aMessage.seqno() < MiddlemanStartSeqno;
+}
+
 MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
     : mName(aName),
       mListener(aListener),
@@ -605,6 +616,10 @@ MessageChannel::MessageChannel(const char* aName, IToplevelProtocol* aListener)
 
   TryRegisterStrongMemoryReporter<PendingResponseReporter>();
   TryRegisterStrongMemoryReporter<ChannelCountReporter>();
+
+  if (recordreplay::IsMiddleman()) {
+    mNextSeqno = MiddlemanStartSeqno;
+  }
 }
 
 MessageChannel::~MessageChannel() {
@@ -1940,7 +1955,7 @@ void MessageChannel::RunMessage(MessageTask& aTask) {
 }
 
 NS_IMPL_ISUPPORTS_INHERITED(MessageChannel::MessageTask, CancelableRunnable,
-                            nsIRunnablePriority)
+                            nsIRunnablePriority, nsIRunnableIPCMessageType)
 
 MessageChannel::MessageTask::MessageTask(MessageChannel* aChannel,
                                          Message&& aMessage)
@@ -2041,6 +2056,16 @@ MessageChannel::MessageTask::GetPriority(uint32_t* aPriority) {
     default:
       MOZ_ASSERT(false);
       break;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+MessageChannel::MessageTask::GetType(uint32_t* aType) {
+  if (!Msg().is_valid()) {
+    // If mMessage has been moved already elsewhere, we can't know what the type
+    // has been.
+    return NS_ERROR_FAILURE;
   }
   return NS_OK;
 }

@@ -27,13 +27,13 @@ class BrowserParent;
  */
 class BrowserBridgeParent : public PBrowserBridgeParent {
  public:
-  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeParent);
+  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeParent, final);
 
   BrowserBridgeParent();
 
   // Initialize this actor after performing startup.
   nsresult Init(const nsString& aPresentationURL, const nsString& aRemoteType,
-                CanonicalBrowsingContext* aBrowsingContext,
+                const WindowGlobalInit& aWindowInit,
                 const uint32_t& aChromeFlags, TabId aTabId);
 
   BrowserParent* GetBrowserParent() { return mBrowserParent; }

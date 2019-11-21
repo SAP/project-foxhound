@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_events_test_runner.js */
@@ -91,13 +90,13 @@ const TEST_DATA = [ // eslint-disable-line
     ],
   },
   {
-    selector: "#arraysort",
+    selector: "#math-pow",
     expected: [
       {
         type: "click",
         filename: "[native code]",
         attributes: ["Bubbling", "DOM2"],
-        handler: "function sort(, ) {\n" + "  [native code]\n" + "}",
+        handler: "function pow(, ) {\n" + "  [native code]\n" + "}",
       },
     ],
   },

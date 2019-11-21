@@ -20,7 +20,6 @@ use crate::capture::CaptureConfig;
 use crate::device::TextureFilter;
 use euclid::{point2, size2};
 use crate::glyph_cache::GlyphCache;
-#[cfg(not(feature = "pathfinder"))]
 use crate::glyph_cache::GlyphCacheEntry;
 use crate::glyph_rasterizer::{BaseFontInstance, FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
 use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
@@ -491,6 +490,8 @@ pub struct ResourceCache {
     /// updates to the texture cache. Images in this category trigger
     /// invalidations for picture caching tiles.
     dirty_image_keys: FastHashSet<ImageKey>,
+    /// A set of the image keys that are used for render.
+    active_image_keys: FastHashSet<ImageKey>,
 }
 
 impl ResourceCache {
@@ -521,6 +522,7 @@ impl ResourceCache {
             // We want to keep three frames worth of delete blob keys
             deleted_blob_keys: vec![Vec::new(), Vec::new(), Vec::new()].into(),
             dirty_image_keys: FastHashSet::default(),
+            active_image_keys: FastHashSet::default(),
         }
     }
 
@@ -553,7 +555,10 @@ impl ResourceCache {
         user_data: Option<[f32; 3]>,
         is_opaque: bool,
         f: F,
-    ) -> RenderTaskCacheEntryHandle where F: FnOnce(&mut RenderTaskGraph) -> RenderTaskId {
+    ) -> RenderTaskCacheEntryHandle
+    where
+        F: FnOnce(&mut RenderTaskGraph) -> RenderTaskId,
+    {
         self.cached_render_tasks.request_render_task(
             key,
             &mut self.texture_cache,
@@ -561,7 +566,7 @@ impl ResourceCache {
             render_tasks,
             user_data,
             is_opaque,
-            |render_task_tree| Ok(f(render_task_tree))
+            |render_graph| Ok(f(render_graph))
         ).expect("Failed to request a render task from the resource cache!")
     }
 
@@ -602,6 +607,7 @@ impl ResourceCache {
                             &img.dirty_rect
                         ),
                     );
+                    self.discard_tiles_outside_visible_area(img.key, &img.visible_rect);
                 }
                 ResourceUpdate::DeleteImage(img) => {
                     self.delete_image_template(img);
@@ -636,6 +642,7 @@ impl ResourceCache {
                         &img.descriptor,
                         img.tiling,
                         Arc::clone(&img.data),
+                        &img.visible_rect,
                     );
                 }
                 ResourceUpdate::UpdateBlobImage(ref img) => {
@@ -644,6 +651,7 @@ impl ResourceCache {
                         &img.descriptor,
                         &img.dirty_rect,
                         Arc::clone(&img.data),
+                        &img.visible_rect,
                     );
                 }
                 ResourceUpdate::SetBlobImageVisibleArea(ref key, ref area) => {
@@ -713,16 +721,16 @@ impl ResourceCache {
             };
 
             tiles.retain(|tile, _| {
-                !req.original_tile_range.contains(tile) ||
-                req.actual_tile_range.contains(tile)
+                !req.original_tile_range.contains(*tile) ||
+                req.actual_tile_range.contains(*tile)
             });
 
             let texture_cache = &mut self.texture_cache;
             match self.cached_images.try_get_mut(&req.key.as_image()) {
                 Some(&mut ImageResult::Multi(ref mut entries)) => {
                     entries.retain(|key, entry| {
-                        if !req.original_tile_range.contains(&key.tile.unwrap()) ||
-                           req.actual_tile_range.contains(&key.tile.unwrap()) {
+                        if !req.original_tile_range.contains(key.tile.unwrap()) ||
+                           req.actual_tile_range.contains(key.tile.unwrap()) {
                             return true;
                         }
                         entry.mark_unused(texture_cache);
@@ -918,6 +926,10 @@ impl ResourceCache {
             _ => {}
         }
 
+        if image.descriptor.format != descriptor.format {
+            // could be a stronger warning/error?
+            trace!("Format change {:?} -> {:?}", image.descriptor.format, descriptor.format);
+        }
         *image = ImageResource {
             descriptor,
             data,
@@ -932,11 +944,14 @@ impl ResourceCache {
         descriptor: &ImageDescriptor,
         mut tiling: Option<TileSize>,
         data: Arc<BlobImageData>,
+        visible_rect: &DeviceIntRect,
     ) {
         let max_texture_size = self.max_texture_size();
         tiling = get_blob_tiling(tiling, descriptor, max_texture_size);
 
-        self.blob_image_handler.as_mut().unwrap().add(key, data, tiling);
+        let viewport_tiles = tiling.map(|tile_size| compute_tile_range(&visible_rect, tile_size));
+
+        self.blob_image_handler.as_mut().unwrap().add(key, data, visible_rect, tiling);
 
         self.blob_image_templates.insert(
             key,
@@ -944,7 +959,7 @@ impl ResourceCache {
                 descriptor: *descriptor,
                 tiling,
                 dirty_rect: DirtyRect::All,
-                viewport_tiles: None,
+                viewport_tiles,
             },
         );
     }
@@ -956,8 +971,9 @@ impl ResourceCache {
         descriptor: &ImageDescriptor,
         dirty_rect: &BlobDirtyRect,
         data: Arc<BlobImageData>,
+        visible_rect: &DeviceIntRect,
     ) {
-        self.blob_image_handler.as_mut().unwrap().update(key, data, dirty_rect);
+        self.blob_image_handler.as_mut().unwrap().update(key, data, visible_rect, dirty_rect);
 
         let max_texture_size = self.max_texture_size();
 
@@ -967,11 +983,13 @@ impl ResourceCache {
 
         let tiling = get_blob_tiling(image.tiling, descriptor, max_texture_size);
 
+        let viewport_tiles = image.tiling.map(|tile_size| compute_tile_range(&visible_rect, tile_size));
+
         *image = BlobImageTemplate {
             descriptor: *descriptor,
             tiling,
             dirty_rect: dirty_rect.union(&image.dirty_rect),
-            viewport_tiles: image.viewport_tiles,
+            viewport_tiles,
         };
     }
 
@@ -1005,6 +1023,20 @@ impl ResourceCache {
         image_key: ImageKey,
     ) -> bool {
         self.dirty_image_keys.contains(&image_key)
+    }
+
+    pub fn is_image_active(
+        &self,
+        image_key: ImageKey,
+    ) -> bool {
+        self.active_image_keys.contains(&image_key)
+    }
+
+    pub fn set_image_active(
+        &mut self,
+        image_key: ImageKey,
+    ) {
+        self.active_image_keys.insert(image_key);
     }
 
     pub fn request_image(
@@ -1361,13 +1393,13 @@ impl ResourceCache {
             tile_size,
         );
 
-        tiles.retain(|tile, _| { tile_range.contains(tile) });
+        tiles.retain(|tile, _| { tile_range.contains(*tile) });
 
         let texture_cache = &mut self.texture_cache;
         match self.cached_images.try_get_mut(&key.as_image()) {
             Some(&mut ImageResult::Multi(ref mut entries)) => {
                 entries.retain(|key, entry| {
-                    if key.tile.is_none() || tile_range.contains(&key.tile.unwrap()) {
+                    if key.tile.is_none() || tile_range.contains(key.tile.unwrap()) {
                         return true;
                     }
                     entry.mark_unused(texture_cache);
@@ -1403,57 +1435,6 @@ impl ResourceCache {
         self.texture_cache.pending_updates()
     }
 
-    #[cfg(feature = "pathfinder")]
-    pub fn fetch_glyphs<F>(
-        &self,
-        mut font: FontInstance,
-        glyph_keys: &[GlyphKey],
-        fetch_buffer: &mut Vec<GlyphFetchResult>,
-        gpu_cache: &mut GpuCache,
-        mut f: F,
-    ) where
-        F: FnMut(TextureSource, GlyphFormat, &[GlyphFetchResult]),
-    {
-        debug_assert_eq!(self.state, State::QueryResources);
-
-        self.glyph_rasterizer.prepare_font(&mut font);
-
-        let mut current_texture_id = TextureSource::Invalid;
-        let mut current_glyph_format = GlyphFormat::Subpixel;
-        debug_assert!(fetch_buffer.is_empty());
-
-        for (loop_index, key) in glyph_keys.iter().enumerate() {
-           let (cache_item, glyph_format) =
-                match self.glyph_rasterizer.get_cache_item_for_glyph(key,
-                                                                     &font,
-                                                                     &self.cached_glyphs,
-                                                                     &self.texture_cache,
-                                                                     &self.cached_render_tasks) {
-                    None => continue,
-                    Some(result) => result,
-                };
-            if current_texture_id != cache_item.texture_id ||
-                current_glyph_format != glyph_format {
-                if !fetch_buffer.is_empty() {
-                    f(current_texture_id, current_glyph_format, fetch_buffer);
-                    fetch_buffer.clear();
-                }
-                current_texture_id = cache_item.texture_id;
-                current_glyph_format = glyph_format;
-            }
-            fetch_buffer.push(GlyphFetchResult {
-                index_in_text_run: loop_index as i32,
-                uv_rect_address: gpu_cache.get_address(&cache_item.uv_rect_handle),
-            });
-        }
-
-        if !fetch_buffer.is_empty() {
-            f(current_texture_id, current_glyph_format, fetch_buffer);
-            fetch_buffer.clear();
-        }
-    }
-
-    #[cfg(not(feature = "pathfinder"))]
     pub fn fetch_glyphs<F>(
         &self,
         mut font: FontInstance,
@@ -1595,6 +1576,7 @@ impl ResourceCache {
         );
         self.cached_render_tasks.begin_frame(&mut self.texture_cache);
         self.current_frame_id = stamp.frame_id();
+        self.active_image_keys.clear();
 
         // pop the old frame and push a new one
         self.deleted_blob_keys.pop_front();
@@ -2221,6 +2203,8 @@ impl ResourceCache {
                     self.texture_cache.max_texture_layers(),
                     &self.texture_cache.picture_tile_sizes(),
                     DeviceIntSize::zero(),
+                    self.texture_cache.color_formats(),
+                    self.texture_cache.swizzle_settings(),
                 );
             }
         }

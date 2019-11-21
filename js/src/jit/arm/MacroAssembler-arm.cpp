@@ -2821,11 +2821,6 @@ void MacroAssemblerARMCompat::unboxValue(const ValueOperand& src,
   }
 }
 
-void MacroAssemblerARMCompat::unboxPrivate(const ValueOperand& src,
-                                           Register dest) {
-  ma_mov(src.payloadReg(), dest);
-}
-
 void MacroAssemblerARMCompat::boxDouble(FloatRegister src,
                                         const ValueOperand& dest,
                                         FloatRegister) {
@@ -3450,8 +3445,7 @@ Assembler::Condition MacroAssemblerARMCompat::testBigIntTruthy(
   ScratchRegisterScope scratch(asMasm());
   SecondScratchRegisterScope scratch2(asMasm());
 
-  ma_dtr(IsLoad, bi, Imm32(BigInt::offsetOfLengthSignAndReservedBits()),
-         scratch, scratch2);
+  ma_dtr(IsLoad, bi, Imm32(BigInt::offsetOfDigitLength()), scratch, scratch2);
   as_cmp(scratch, Imm8(0));
   return truthy ? Assembler::NotEqual : Assembler::Equal;
 }
@@ -4307,13 +4301,11 @@ void MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
   *u32 = (targetOffset - addOffset) - 8;
 }
 
-CodeOffset MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
+CodeOffset MacroAssembler::nopPatchableToCall() {
   AutoForbidPoolsAndNops afp(this,
                              /* max number of instructions in scope = */ 1);
-  CodeOffset offset(currentOffset());
   ma_nop();
-  append(desc, CodeOffset(currentOffset()));
-  return offset;
+  return CodeOffset(currentOffset());
 }
 
 void MacroAssembler::patchNopToCall(uint8_t* call, uint8_t* target) {
@@ -4322,6 +4314,7 @@ void MacroAssembler::patchNopToCall(uint8_t* call, uint8_t* target) {
              reinterpret_cast<Instruction*>(inst)->is<InstNOP>());
 
   new (inst) InstBLImm(BOffImm(target - inst), Assembler::Always);
+  AutoFlushICache::flush(uintptr_t(inst), 4);
 }
 
 void MacroAssembler::patchCallToNop(uint8_t* call) {
@@ -4329,6 +4322,7 @@ void MacroAssembler::patchCallToNop(uint8_t* call) {
   MOZ_ASSERT(reinterpret_cast<Instruction*>(inst)->is<InstBLImm>() ||
              reinterpret_cast<Instruction*>(inst)->is<InstNOP>());
   new (inst) InstNOP();
+  AutoFlushICache::flush(uintptr_t(inst), 4);
 }
 
 void MacroAssembler::pushReturnAddress() { push(lr); }
@@ -5751,6 +5745,15 @@ void MacroAssembler::flexibleDivMod32(Register rhs, Register lhsOutput,
   }
 }
 
+CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {
+  return movWithPatch(ImmPtr(nullptr), dest);
+}
+
+void MacroAssembler::patchNearAddressMove(CodeLocationLabel loc,
+                                          CodeLocationLabel target) {
+  PatchDataWithValueCheck(loc, ImmPtr(target.raw()), ImmPtr(nullptr));
+}
+
 // ========================================================================
 // Spectre Mitigations.
 
@@ -5925,7 +5928,7 @@ void MacroAssemblerARM::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
   MOZ_ASSERT(ptr == ptrScratch);
 
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   Scalar::Type type = access.type();
 
@@ -5996,7 +5999,7 @@ void MacroAssemblerARM::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
   MOZ_ASSERT(ptr == ptrScratch);
 
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   unsigned byteSize = access.byteSize();
   Scalar::Type type = access.type();
@@ -6057,7 +6060,7 @@ void MacroAssemblerARM::wasmUnalignedLoadImpl(
   MOZ_ASSERT(tmp != ptr);
 
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   if (offset) {
     ScratchRegisterScope scratch(asMasm());
@@ -6149,7 +6152,7 @@ void MacroAssemblerARM::wasmUnalignedStoreImpl(
                 valOrTmp != val64.high && valOrTmp != val64.low);
 
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   unsigned byteSize = access.byteSize();
   MOZ_ASSERT(byteSize == 8 || byteSize == 4 || byteSize == 2);

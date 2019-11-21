@@ -459,7 +459,7 @@ JSObject* CreateGlobalObject(JSContext* cx, const JSClass* clasp,
     // thing.  Also note that we only check this for JSCLASS_DOM_GLOBAL
     // classes because xpc::TraceXPCGlobal won't call
     // TraceProtoAndIfaceCache unless that flag is set.
-    if (!((const js::Class*)clasp)->isWrappedNative()) {
+    if (!((const JSClass*)clasp)->isWrappedNative()) {
       VerifyTraceProtoAndIfaceCacheCalledTracer trc(cx);
       TraceChildren(&trc, GCCellPtr(global.get()));
       MOZ_ASSERT(trc.ok,
@@ -973,7 +973,8 @@ static nsresult WriteScriptOrFunction(nsIObjectOutputStream* stream,
   }
   rv = stream->Write32(size);
   if (NS_SUCCEEDED(rv)) {
-    rv = stream->WriteBytes(reinterpret_cast<char*>(buffer.begin()), size);
+    // Ideally we could just pass "buffer" here.  See bug 1566574.
+    rv = stream->WriteBytes(MakeSpan(buffer.begin(), size));
   }
 
   return rv;
@@ -1208,4 +1209,22 @@ void xpc::YieldCooperativeContext() {
 
 void xpc::ResumeCooperativeContext() {
   JS_ResumeCooperativeContext(XPCJSContext::Get()->Context());
+}
+
+void xpc::CacheAutomationPref(bool* aMirror) {
+  // The obvious thing is to make this pref a static pref. But then it would
+  // always be defined and always show up in about:config, and users could flip
+  // it, which we don't want. Instead we roll our own callback so that if the
+  // pref is undefined (the normal case) then sAutomationPrefIsSet is false and
+  // nothing shows up in about:config.
+  nsresult rv = mozilla::Preferences::RegisterCallbackAndCall(
+      [](const char* aPrefName, void* aData) {
+        auto aMirror = static_cast<bool*>(aData);
+        *aMirror =
+            mozilla::Preferences::GetBool(aPrefName, /* aFallback */ false);
+      },
+      "security."
+      "turn_off_all_security_so_that_viruses_can_take_over_this_computer",
+      static_cast<void*>(aMirror));
+  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 }

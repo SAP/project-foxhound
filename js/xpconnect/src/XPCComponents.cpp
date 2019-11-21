@@ -30,6 +30,7 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/BindingUtils.h"
+#include "mozilla/dom/RemoteObjectProxy.h"
 #include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/WindowBinding.h"
 #include "nsZipArchive.h"
@@ -1447,7 +1448,7 @@ nsXPCComponents_Utils::ReportError(HandleValue error, HandleValue stack,
 
   nsresult rv =
       scripterr->InitWithWindowID(msg, fileName, EmptyString(), lineNo, 0, 0,
-                                  "XPConnect JavaScript", innerWindowID);
+                                  "XPConnect JavaScript", innerWindowID, true);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
   console->LogMessage(scripterr);
@@ -1914,6 +1915,17 @@ nsXPCComponents_Utils::IsDeadWrapper(HandleValue obj, bool* out) {
 }
 
 NS_IMETHODIMP
+nsXPCComponents_Utils::IsRemoteProxy(HandleValue val, bool* out) {
+  if (val.isObject()) {
+    *out = dom::IsRemoteObjectProxy(UncheckedUnwrap(&val.toObject()));
+    ;
+  } else {
+    *out = false;
+  }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsXPCComponents_Utils::IsCrossProcessWrapper(HandleValue obj, bool* out) {
   *out = false;
   if (obj.isPrimitive()) {
@@ -2049,7 +2061,6 @@ nsXPCComponents_Utils::Dispatch(HandleValue runnableArg, HandleValue scope,
 GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Strict, extraWarnings, setExtraWarnings)
 GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Werror, werror, setWerror)
 GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Strict_mode, strictMode, setStrictMode)
-GENERATE_JSCONTEXTOPTION_GETTER_SETTER(Ion, ion, setIon)
 
 #undef GENERATE_JSCONTEXTOPTION_GETTER_SETTER
 

@@ -24,7 +24,7 @@ from mozbuild.base import MachCommandConditions as Conditions
 HERE = os.path.dirname(os.path.realpath(__file__))
 
 BENCHMARK_REPOSITORY = 'https://github.com/mozilla/perf-automation'
-BENCHMARK_REVISION = '2720cdc790828952964524bb44ce8b4c14670e90'
+BENCHMARK_REVISION = 'e19a0865c946ae2f9a64dd25614b1c275a3996b2'
 
 FIREFOX_ANDROID_BROWSERS = ["fennec", "geckoview", "refbrow", "fenix"]
 
@@ -157,6 +157,18 @@ class RaptorRunner(MozbuildObject):
             'is_release_build': self.is_release_build,
         }
 
+        sys.path.insert(0, os.path.join(self.topsrcdir, 'tools', 'browsertime'))
+        try:
+            import mach_commands as browsertime
+            # We don't set `browsertime_{chromedriver,geckodriver} -- those will be found by
+            # browsertime in its `node_modules` directory, which is appropriate for local builds.
+            self.config.update({
+                'browsertime_node': browsertime.node_path(),
+                'browsertime_browsertimejs': browsertime.browsertime_path(),
+            })
+        finally:
+            sys.path = sys.path[1:]
+
     def make_args(self):
         self.args = {
             'config': {},
@@ -189,11 +201,11 @@ def create_parser():
 
 @CommandProvider
 class MachRaptor(MachCommandBase):
-    @Command('raptor-test', category='testing',
-             description='Run raptor performance tests.',
+    @Command('raptor', category='testing',
+             description='Run Raptor performance tests.',
              parser=create_parser)
-    def run_raptor_test(self, **kwargs):
-        build_obj = MozbuildObject.from_environment(cwd=HERE)
+    def run_raptor(self, **kwargs):
+        build_obj = self
 
         is_android = Conditions.is_android(build_obj) or \
             kwargs['app'] in FIREFOX_ANDROID_BROWSERS
@@ -201,7 +213,9 @@ class MachRaptor(MachCommandBase):
         if is_android:
             from mozrunner.devices.android_device import verify_android_device
             from mozdevice import ADBAndroid, ADBHost
-            if not verify_android_device(build_obj, install=True, app=kwargs['binary'],
+            if not verify_android_device(build_obj,
+                                         install=not kwargs.pop('noinstall', False),
+                                         app=kwargs['binary'],
                                          xre=True):  # Equivalent to 'run_local' = True.
                 return 1
 
@@ -237,3 +251,9 @@ class MachRaptor(MachCommandBase):
                     adbhost.command_output(["disconnect", device_serial])
             except Exception:
                 adbhost.command_output(["kill-server"])
+
+    @Command('raptor-test', category='testing',
+             description='Run Raptor performance tests.',
+             parser=create_parser)
+    def run_raptor_test(self, **kwargs):
+        return self.run_raptor(**kwargs)

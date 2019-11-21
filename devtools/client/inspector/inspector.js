@@ -1,10 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-
-/* global window, BrowserLoader */
 
 "use strict";
 
@@ -151,18 +147,9 @@ function Inspector(toolbox) {
   this.telemetry = toolbox.telemetry;
   this.store = Store();
 
-  this._markupBox = this.panelDoc.getElementById("markup-box");
-
   // Map [panel id => panel instance]
   // Stores all the instances of sidebar panels like rule view, computed view, ...
   this._panels = new Map();
-
-  this.reflowTracker = new ReflowTracker(this._target);
-  this.styleChangeTracker = new InspectorStyleChangeTracker(this);
-
-  // Store the URL of the target page prior to navigation in order to ensure
-  // telemetry counts in the Grid Inspector are not double counted on reload.
-  this.previousURL = this.target.url;
 
   this._clearSearchResultsLabel = this._clearSearchResultsLabel.bind(this);
   this._handleRejectionIfNotDestroyed = this._handleRejectionIfNotDestroyed.bind(
@@ -188,29 +175,33 @@ function Inspector(toolbox) {
   this.onSidebarToggle = this.onSidebarToggle.bind(this);
   this.handleThreadPaused = this.handleThreadPaused.bind(this);
   this.handleThreadResumed = this.handleThreadResumed.bind(this);
-
-  this._target.on("will-navigate", this._onBeforeNavigate);
 }
 
 Inspector.prototype = {
   /**
-   * open is effectively an asynchronous constructor
+   * InspectorPanel.open() is effectively an asynchronous constructor.
+   * Set any attributes or listeners that rely on the document being loaded or fronts
+   * from the InspectorFront and Target here.
    */
   async init() {
     // Localize all the nodes containing a data-localization attribute.
     localizeMarkup(this.panelDoc);
 
     // When replaying, we need to listen to changes in the target's pause state.
-    if (this._target.isReplayEnabled()) {
+    if (this.target.isReplayEnabled()) {
       let dbg = this._toolbox.getPanel("jsdebugger");
       if (!dbg) {
         dbg = await this._toolbox.loadTool("jsdebugger");
       }
       this._replayResumed = !dbg.isPaused();
 
-      this._target.threadClient.on("paused", this.handleThreadPaused);
-      this._target.threadClient.on("resumed", this.handleThreadResumed);
+      this.target.threadFront.on("paused", this.handleThreadPaused);
+      this.target.threadFront.on("resumed", this.handleThreadResumed);
     }
+
+    await this.initInspectorFront();
+
+    this.target.on("will-navigate", this._onBeforeNavigate);
 
     await Promise.all([
       this._getCssProperties(),
@@ -220,27 +211,25 @@ Inspector.prototype = {
       this._getChangesFront(),
     ]);
 
+    // Store the URL of the target page prior to navigation in order to ensure
+    // telemetry counts in the Grid Inspector are not double counted on reload.
+    this.previousURL = this.target.url;
+    this.reflowTracker = new ReflowTracker(this.target);
+    this.styleChangeTracker = new InspectorStyleChangeTracker(this);
+
+    this._markupBox = this.panelDoc.getElementById("markup-box");
+
     return this._deferredOpen();
+  },
+
+  async initInspectorFront() {
+    this.inspectorFront = await this.target.getFront("inspector");
+    this.highlighter = this.inspectorFront.highlighter;
+    this.walker = this.inspectorFront.walker;
   },
 
   get toolbox() {
     return this._toolbox;
-  },
-
-  get inspector() {
-    return this.toolbox.inspector;
-  },
-
-  get walker() {
-    return this.toolbox.walker;
-  },
-
-  get selection() {
-    return this.toolbox.selection;
-  },
-
-  get highlighter() {
-    return this.toolbox.highlighter;
   },
 
   get highlighters() {
@@ -291,14 +280,6 @@ Inspector.prototype = {
     }
   },
 
-  get notificationBox() {
-    if (!this._notificationBox) {
-      this._notificationBox = this.toolbox.getNotificationBox();
-    }
-
-    return this._notificationBox;
-  },
-
   get search() {
     if (!this._search) {
       this._search = new InspectorSearch(
@@ -309,6 +290,10 @@ Inspector.prototype = {
     }
 
     return this._search;
+  },
+
+  get selection() {
+    return this.toolbox.selection;
   },
 
   get cssProperties() {
@@ -322,12 +307,13 @@ Inspector.prototype = {
    * while still initializing (and making protocol requests).
    */
   _handleRejectionIfNotDestroyed: function(e) {
-    if (!this._panelDestroyer) {
+    if (!this._destroyed) {
       console.error(e);
     }
   },
 
   _deferredOpen: async function() {
+    const onMarkupLoaded = this.once("markuploaded");
     this._initMarkup();
     this.isReady = false;
 
@@ -349,9 +335,9 @@ Inspector.prototype = {
       "visible";
 
     // Setup the sidebar panels.
-    this.setupSidebar();
+    await this.setupSidebar();
 
-    await this.once("markuploaded");
+    await onMarkupLoaded;
     this.isReady = true;
 
     // All the components are initialized. Take care of the remaining initialization
@@ -404,7 +390,7 @@ Inspector.prototype = {
     // the ChangesActor. We want the ChangesActor to be guaranteed available before
     // the user makes any changes.
     this.changesFront = await this.toolbox.target.getFront("changes");
-    this.changesFront.start();
+    await this.changesFront.start();
     return this.changesFront;
   },
 
@@ -417,7 +403,7 @@ Inspector.prototype = {
   },
 
   _getPageStyle: function() {
-    return this.inspector.getPageStyle().then(pageStyle => {
+    return this.inspectorFront.getPageStyle().then(pageStyle => {
       this.pageStyle = pageStyle;
     }, this._handleRejectionIfNotDestroyed);
   },
@@ -1208,7 +1194,7 @@ Inspector.prototype = {
    */
   async supportsEyeDropper() {
     try {
-      return await this.inspector.supportsHighlighters();
+      return await this.inspectorFront.supportsHighlighters();
     } catch (e) {
       console.error(e);
       return false;
@@ -1378,7 +1364,7 @@ Inspector.prototype = {
    * reload
    */
   set selectionCssSelector(cssSelector = null) {
-    if (this._panelDestroyer) {
+    if (this._destroyed) {
       return;
     }
 
@@ -1563,12 +1549,13 @@ Inspector.prototype = {
    * Destroy the inspector.
    */
   destroy: function() {
-    if (this._panelDestroyer) {
-      return this._panelDestroyer;
+    if (this._destroyed) {
+      return;
     }
+    this._destroyed = true;
 
-    this._target.threadClient.off("paused", this.handleThreadPaused);
-    this._target.threadClient.off("resumed", this.handleThreadResumed);
+    this._target.threadFront.off("paused", this.handleThreadPaused);
+    this._target.threadFront.off("resumed", this.handleThreadResumed);
 
     if (this.walker) {
       this.walker.off("new-root", this.onNewRoot);
@@ -1611,11 +1598,11 @@ Inspector.prototype = {
       this._search = null;
     }
 
-    const sidebarDestroyer = this.sidebar.destroy();
-    const ruleViewSideBarDestroyer = this.ruleViewSideBar
-      ? this.ruleViewSideBar.destroy()
-      : null;
-    const markupDestroyer = this._destroyMarkup();
+    this.sidebar.destroy();
+    if (this.ruleViewSideBar) {
+      this.ruleViewSideBar.destroy();
+    }
+    this._destroyMarkup();
 
     this.teardownToolbar();
 
@@ -1628,7 +1615,6 @@ Inspector.prototype = {
     this._is3PaneModeEnabled = null;
     this._markupBox = null;
     this._markupFrame = null;
-    this._notificationBox = null;
     this._target = null;
     this._toolbox = null;
     this.breadcrumbs = null;
@@ -1641,14 +1627,6 @@ Inspector.prototype = {
     this.sidebar = null;
     this.store = null;
     this.telemetry = null;
-
-    this._panelDestroyer = promise.all([
-      markupDestroyer,
-      sidebarDestroyer,
-      ruleViewSideBarDestroyer,
-    ]);
-
-    return this._panelDestroyer;
   },
 
   _initMarkup: function() {
@@ -1706,14 +1684,14 @@ Inspector.prototype = {
   },
 
   startEyeDropperListeners: function() {
-    this.inspector.once("color-pick-canceled", this.onEyeDropperDone);
-    this.inspector.once("color-picked", this.onEyeDropperDone);
+    this.inspectorFront.once("color-pick-canceled", this.onEyeDropperDone);
+    this.inspectorFront.once("color-picked", this.onEyeDropperDone);
     this.walker.once("new-root", this.onEyeDropperDone);
   },
 
   stopEyeDropperListeners: function() {
-    this.inspector.off("color-pick-canceled", this.onEyeDropperDone);
-    this.inspector.off("color-picked", this.onEyeDropperDone);
+    this.inspectorFront.off("color-pick-canceled", this.onEyeDropperDone);
+    this.inspectorFront.off("color-picked", this.onEyeDropperDone);
     this.walker.off("new-root", this.onEyeDropperDone);
   },
 
@@ -1736,7 +1714,7 @@ Inspector.prototype = {
     this.telemetry.scalarSet(TELEMETRY_EYEDROPPER_OPENED, 1);
     this.eyeDropperButton.classList.add("checked");
     this.startEyeDropperListeners();
-    return this.inspector
+    return this.inspectorFront
       .pickColorFromPage({ copyOnSelect: true })
       .catch(console.error);
   },
@@ -1753,7 +1731,7 @@ Inspector.prototype = {
 
     this.eyeDropperButton.classList.remove("checked");
     this.stopEyeDropperListeners();
-    return this.inspector.cancelPickColorFromPage().catch(console.error);
+    return this.inspectorFront.cancelPickColorFromPage().catch(console.error);
   },
 
   /**
@@ -1844,11 +1822,11 @@ Inspector.prototype = {
    *         Options passed to the highlighter actor.
    */
   onShowBoxModelHighlighterForNode(nodeFront, options) {
-    const toolbox = this.toolbox;
-    toolbox.highlighter.highlight(nodeFront, options);
+    nodeFront.highlighterFront.highlight(nodeFront, options);
   },
 
   async inspectNodeActor(nodeActor, inspectFromAnnotation) {
+    // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
     const nodeFront = await this.walker.gripToNodeFront({ actor: nodeActor });
     if (!nodeFront) {
       console.error(

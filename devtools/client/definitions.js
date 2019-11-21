@@ -99,7 +99,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive.html/manager",
+  "devtools/client/responsive/manager",
   true
 );
 loader.lazyImporter(
@@ -113,6 +113,10 @@ const L10N = new MultiLocalizationHelper(
   "devtools/client/locales/startup.properties",
   "devtools/startup/locales/key-shortcuts.properties"
 );
+
+// URL to direct people to the deprecated tools panel
+const DEPRECATION_URL =
+  "https://developer.mozilla.org/docs/Tools/Deprecated_tools";
 
 var Tools = {};
 exports.Tools = Tools;
@@ -160,8 +164,11 @@ Tools.inspector = {
   inMenu: true,
 
   preventClosingOnKey: true,
+  // preventRaisingOnKey is used to keep the focus on the content window for shortcuts
+  // that trigger the element picker.
+  preventRaisingOnKey: true,
   onkey: function(panel, toolbox) {
-    toolbox.inspector.nodePicker.togglePicker();
+    toolbox.nodePicker.togglePicker();
   },
 
   isTargetSupported: function(target) {
@@ -386,6 +393,8 @@ Tools.storage = {
 
 Tools.scratchpad = {
   id: "scratchpad",
+  deprecated: true,
+  deprecationURL: `${DEPRECATION_URL}#Scratchpad`,
   ordinal: 12,
   visibilityswitch: "devtools.scratchpad.enabled",
   icon: "chrome://devtools/skin/images/tool-scratchpad.svg",
@@ -616,8 +625,8 @@ function createHighlightButton(highlighterName, id) {
     description: l10n(`toolbox.buttons.${id}`),
     isTargetSupported: target => !target.chrome,
     async onClick(event, toolbox) {
-      await toolbox.initInspector();
-      const highlighter = await toolbox.inspector.getOrCreateHighlighterByType(
+      const inspectorFront = await toolbox.target.getFront("inspector");
+      const highlighter = await inspectorFront.getOrCreateHighlighterByType(
         highlighterName
       );
       if (highlighter.isShown()) {
@@ -631,11 +640,7 @@ function createHighlightButton(highlighterName, id) {
     isChecked(toolbox) {
       // if the inspector doesn't exist, then the highlighter has not yet been connected
       // to the front end.
-      // TODO: we are using target._inspector here, but we should be using
-      // target.getCachedFront. This is a temporary solution until the inspector no
-      // longer relies on the toolbox and can be destroyed the same way any other
-      // front would be. Related: #1487677
-      const inspectorFront = toolbox.target._inspector;
+      const inspectorFront = toolbox.target.getCachedFront("inspector");
       if (!inspectorFront) {
         // initialize the inspector front asyncronously. There is a potential for buggy
         // behavior here, but we need to change how the buttons get data (have them

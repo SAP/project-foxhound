@@ -327,8 +327,14 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
    *        Downloads View.
    */
   showStatusWithDetails(stateLabel, hoverStatus) {
+    let referrer =
+      this.download.source.referrerInfo &&
+      this.download.source.referrerInfo.originalReferrer
+        ? this.download.source.referrerInfo.originalReferrer.spec
+        : null;
+
     let [displayHost] = DownloadUtils.getURIHost(
-      this.download.source.referrer || this.download.source.url
+      referrer || this.download.source.url
     );
     let [displayDate] = DownloadUtils.getReadableDates(
       new Date(this.download.endTime)
@@ -681,7 +687,10 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
       case "downloadsCmd_pauseResume":
         return this.download.hasPartialData && !this.download.error;
       case "downloadsCmd_openReferrer":
-        return !!this.download.source.referrer;
+        return (
+          !!this.download.source.referrerInfo &&
+          !!this.download.source.referrerInfo.originalReferrer
+        );
       case "downloadsCmd_confirmBlock":
       case "downloadsCmd_chooseUnblock":
       case "downloadsCmd_chooseOpen":
@@ -738,7 +747,9 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
   },
 
   downloadsCmd_openReferrer() {
-    this.element.ownerGlobal.openURL(this.download.source.referrer);
+    this.element.ownerGlobal.openURL(
+      this.download.source.referrerInfo.originalReferrer
+    );
   },
 
   downloadsCmd_pauseResume() {

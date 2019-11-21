@@ -100,20 +100,31 @@ add_task(async function setup() {
   Services.telemetry.canRecordExtended = true;
 
   Services.prefs.setBoolPref("permissions.eventTelemetry.enabled", true);
+  Services.prefs.setBoolPref(
+    "permissions.desktop-notification.notNow.enabled",
+    true
+  );
 
   // Add some example permissions.
   let uri = Services.io.newURI(PERMISSIONS_PAGE);
   let uri2 = Services.io.newURI("https://example.org");
   let uri3 = Services.io.newURI("http://sub.example.org");
-  Services.perms.add(uri, "geo", Services.perms.ALLOW_ACTION);
-  Services.perms.add(uri3, "desktop-notification", Services.perms.ALLOW_ACTION);
-  Services.perms.add(uri2, "microphone", Services.perms.DENY_ACTION);
-  Services.perms.add(uri, "camera", Services.perms.DENY_ACTION);
-  Services.perms.add(uri2, "geo", Services.perms.DENY_ACTION);
+  PermissionTestUtils.add(uri, "geo", Services.perms.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    uri3,
+    "desktop-notification",
+    Services.perms.ALLOW_ACTION
+  );
+  PermissionTestUtils.add(uri2, "microphone", Services.perms.DENY_ACTION);
+  PermissionTestUtils.add(uri, "camera", Services.perms.DENY_ACTION);
+  PermissionTestUtils.add(uri2, "geo", Services.perms.DENY_ACTION);
 
   registerCleanupFunction(() => {
     Services.perms.removeAll();
     Services.prefs.clearUserPref("permissions.eventTelemetry.enabled");
+    Services.prefs.clearUserPref(
+      "permissions.desktop-notification.notNow.enabled"
+    );
     Services.telemetry.canRecordExtended = oldCanRecord;
   });
 
@@ -132,10 +143,7 @@ add_task(async function testAccept() {
     checkEventTelemetry("accept");
 
     Services.telemetry.clearEvents();
-    Services.perms.remove(
-      Services.io.newURI(PERMISSIONS_PAGE),
-      "desktop-notification"
-    );
+    PermissionTestUtils.remove(PERMISSIONS_PAGE, "desktop-notification");
   });
 });
 
@@ -151,10 +159,7 @@ add_task(async function testDeny() {
     checkEventTelemetry("deny");
 
     Services.telemetry.clearEvents();
-    Services.perms.remove(
-      Services.io.newURI(PERMISSIONS_PAGE),
-      "desktop-notification"
-    );
+    PermissionTestUtils.remove(PERMISSIONS_PAGE, "desktop-notification");
   });
 });
 
@@ -174,8 +179,5 @@ add_task(async function testLeave() {
   checkEventTelemetry("leave");
 
   Services.telemetry.clearEvents();
-  Services.perms.remove(
-    Services.io.newURI(PERMISSIONS_PAGE),
-    "desktop-notification"
-  );
+  PermissionTestUtils.remove(PERMISSIONS_PAGE, "desktop-notification");
 });

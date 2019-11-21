@@ -241,7 +241,7 @@ function PopupNotifications(tabbrowser, panel, iconBox, options = {}) {
   this.buttonDelay = Services.prefs.getIntPref(PREF_SECURITY_DELAY);
 
   this.panel.addEventListener("popuphidden", this, true);
-  this.panel.classList.add("popup-notification-panel");
+  this.panel.classList.add("popup-notification-panel", "panel-no-padding");
 
   // This listener will be attached to the chrome window whenever a notification
   // is showing, to allow the user to dismiss notifications using the escape key.
@@ -346,20 +346,24 @@ PopupNotifications.prototype = {
   },
 
   /**
-   * Retrieve a Notification object associated with the browser/ID pair.
-   * @param id
-   *        The Notification ID to search for.
-   * @param browser
+   * Retrieve one or many Notification object/s associated with the browser/ID pair.
+   * @param {string|string[]} id
+   *        The Notification ID or an array of IDs to search for.
+   * @param [browser]
    *        The browser whose notifications should be searched. If null, the
    *        currently selected browser's notifications will be searched.
    *
-   * @returns the corresponding Notification object, or null if no such
+   * @returns {Notification|Notification[]|null} If passed a single id, returns the corresponding Notification object, or null if no such
    *          notification exists.
+   *          If passed an id array, returns an array of Notification objects which match the ids.
    */
   getNotification: function PopupNotifications_getNotification(id, browser) {
     let notifications = this._getNotificationsForBrowser(
       browser || this.tabbrowser.selectedBrowser
     );
+    if (Array.isArray(id)) {
+      return notifications.filter(x => id.includes(x.id));
+    }
     return notifications.find(x => x.id == id) || null;
   },
 
@@ -400,6 +404,8 @@ PopupNotifications.prototype = {
    *                - "menucommand" if a menu was activated.
    *          - [optional] dismiss (boolean): If this is true, the notification
    *            will be dismissed instead of removed after running the callback.
+   *          - [optional] disabled (boolean): If this is true, the button
+   *            will be disabled.
    *          - [optional] disableHighlight (boolean): If this is true, the button
    *            will not apply the default highlight style.
    *        If null, the notification will have a default "OK" action button
@@ -520,6 +526,9 @@ PopupNotifications.prototype = {
    *                     Esc key is pressed. This should be set to the name of the
    *                     command to run. If not provided, "secondarybuttoncommand"
    *                     will be used.
+   *        extraAttr:
+   *                     An optional string value which will be given to the
+   *                     extraAttr attribute on the notification's anchorElement
    * @returns the Notification object corresponding to the added notification.
    */
   show: function PopupNotifications_show(
@@ -729,15 +738,18 @@ PopupNotifications.prototype = {
   /**
    * Removes one or many Notifications.
    * @param {Notification|Notification[]} notification - The Notification object/s to remove.
+   * @param {Boolean} [isCancel] - Whether to signal,  in the notification event, that removal
+   *  should be treated as cancel. This is currently used to cancel permission requests
+   *  when their Notifications are removed.
    */
-  remove: function PopupNotifications_remove(notification) {
+  remove: function PopupNotifications_remove(notification, isCancel = false) {
     let notificationArray = Array.isArray(notification)
       ? notification
       : [notification];
     let activeBrowser;
 
     notificationArray.forEach(n => {
-      this._remove(n);
+      this._remove(n, isCancel);
       if (!activeBrowser && this._isActiveBrowser(n.browser)) {
         activeBrowser = n.browser;
       }
@@ -763,7 +775,7 @@ PopupNotifications.prototype = {
           }
           break;
         }
-
+      // fall through
       case "TabSelect":
         let self = this;
         // setTimeout(..., 0) needed, otherwise openPopup from "activate" event
@@ -793,7 +805,10 @@ PopupNotifications.prototype = {
       : [];
   },
 
-  _remove: function PopupNotifications_removeHelper(notification) {
+  _remove: function PopupNotifications_removeHelper(
+    notification,
+    isCancel = false
+  ) {
     // This notification may already be removed, in which case let's just fail
     // silently.
     let notifications = this._getNotificationsForBrowser(notification.browser);
@@ -815,7 +830,8 @@ PopupNotifications.prototype = {
     this._fireCallback(
       notification,
       NOTIFICATION_EVENT_REMOVED,
-      this.nextRemovalReason
+      this.nextRemovalReason,
+      isCancel
     );
   },
 
@@ -1121,7 +1137,8 @@ PopupNotifications.prototype = {
         }
       } else {
         popupnotification.checkboxState = null;
-        popupnotification.setAttribute("warninghidden", "true");
+        // Reset the UI state to avoid previous state bleeding into this prompt.
+        this._setNotificationUIState(popupnotification);
       }
 
       this.panel.appendChild(popupnotification);
@@ -1136,7 +1153,9 @@ PopupNotifications.prototype = {
   },
 
   _setNotificationUIState(notification, state = {}) {
+    let mainAction = notification.notification.mainAction;
     if (
+      (mainAction && mainAction.disabled) ||
       state.disableMainAction ||
       notification.hasAttribute("invalidselection")
     ) {
@@ -1767,18 +1786,21 @@ PopupNotifications.prototype = {
     let notificationEl = getNotificationFromElement(event.target);
 
     let notification = notificationEl.notification;
-    if (notification.options.checkbox) {
-      if (notificationEl.checkbox.checked) {
-        this._setNotificationUIState(
-          notificationEl,
-          notification.options.checkbox.checkedState
-        );
-      } else {
-        this._setNotificationUIState(
-          notificationEl,
-          notification.options.checkbox.uncheckedState
-        );
-      }
+    if (!notification.options.checkbox) {
+      this._setNotificationUIState(notificationEl);
+      return;
+    }
+
+    if (notificationEl.checkbox.checked) {
+      this._setNotificationUIState(
+        notificationEl,
+        notification.options.checkbox.checkedState
+      );
+    } else {
+      this._setNotificationUIState(
+        notificationEl,
+        notification.options.checkbox.uncheckedState
+      );
     }
   },
 
@@ -1863,6 +1885,7 @@ PopupNotifications.prototype = {
         action.callback.call(undefined, {
           checkboxChecked: notificationEl.checkbox.checked,
           source,
+          event,
         });
       } catch (error) {
         Cu.reportError(error);

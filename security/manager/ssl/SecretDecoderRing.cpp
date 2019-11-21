@@ -26,6 +26,8 @@
 #include "pk11sdr.h"  // For PK11SDR_Encrypt, PK11SDR_Decrypt
 #include "ssl.h"      // For SSL_ClearSessionCache
 
+static mozilla::LazyLogModule gSDRLog("sdrlog");
+
 using namespace mozilla;
 using dom::Promise;
 
@@ -35,7 +37,7 @@ void BackgroundSdrEncryptStrings(const nsTArray<nsCString>& plaintexts,
                                  RefPtr<Promise>& aPromise) {
   nsCOMPtr<nsISecretDecoderRing> sdrService =
       do_GetService(NS_SECRETDECODERRING_CONTRACTID);
-  InfallibleTArray<nsString> cipherTexts(plaintexts.Length());
+  nsTArray<nsString> cipherTexts(plaintexts.Length());
 
   nsresult rv = NS_ERROR_FAILURE;
   for (const auto& plaintext : plaintexts) {
@@ -66,18 +68,32 @@ void BackgroundSdrDecryptStrings(const nsTArray<nsCString>& encryptedStrings,
                                  RefPtr<Promise>& aPromise) {
   nsCOMPtr<nsISecretDecoderRing> sdrService =
       do_GetService(NS_SECRETDECODERRING_CONTRACTID);
-  InfallibleTArray<nsString> plainTexts(encryptedStrings.Length());
+  nsTArray<nsString> plainTexts(encryptedStrings.Length());
 
   nsresult rv = NS_ERROR_FAILURE;
   for (const auto& encryptedString : encryptedStrings) {
     nsCString plainText;
     rv = sdrService->DecryptString(encryptedString, plainText);
 
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      break;
+    if (NS_FAILED(rv)) {
+      if (rv == NS_ERROR_NOT_AVAILABLE) {
+        // Master Password entry was canceled. Don't keep prompting again.
+        break;
+      }
+
+      // NS_ERROR_ILLEGAL_VALUE or NS_ERROR_FAILURE could be due to bad data for
+      // a single string but we still want to decrypt the others.
+      // Callers of `decryptMany` in crypto-SDR.js assume there will be an
+      // equal number of usernames and passwords so use an empty string to keep
+      // this assumption true.
+      MOZ_LOG(gSDRLog, LogLevel::Warning,
+              ("Couldn't decrypt string: %s", encryptedString.get()));
+      plainTexts.AppendElement(nullptr);
+      rv = NS_OK;
+      continue;
     }
 
-    plainTexts.AppendElement(NS_ConvertASCIItoUTF16(plainText));
+    plainTexts.AppendElement(NS_ConvertUTF8toUTF16(plainText));
   }
 
   nsCOMPtr<nsIRunnable> runnable(

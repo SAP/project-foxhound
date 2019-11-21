@@ -11,7 +11,7 @@
 
 // This file uses ContentTask & frame scripts, where these are available.
 /* global addEventListener, removeEventListener, sendAsyncMessage,
-          addMessageListener, removeMessageListener, privateNoteIntentionalCrash */
+          addMessageListener, removeMessageListener, ContentTaskUtils */
 
 "use strict";
 
@@ -86,6 +86,23 @@ var gSynthesizeCompositionChangeCount = 0;
 
 const kAboutPageRegistrationContentScript =
   "chrome://mochikit/content/tests/BrowserTestUtils/content-about-page-utils.js";
+
+/**
+ * Create and register BrowserTestUtils Window Actor.
+ */
+function registerActor() {
+  let actorOptions = {
+    child: {
+      moduleURI: "resource://testing-common/BrowserTestUtilsChild.jsm",
+    },
+
+    allFrames: true,
+    includeChrome: true,
+  };
+  ChromeUtils.registerWindowActor("BrowserTestUtils", actorOptions);
+}
+
+registerActor();
 
 var BrowserTestUtils = {
   /**
@@ -348,13 +365,13 @@ var BrowserTestUtils = {
    *
    * @param {xul:browser} browser
    *        A xul:browser.
-   * @param {Boolean} includeSubFrames
+   * @param {Boolean} [includeSubFrames = false]
    *        A boolean indicating if loads from subframes should be included.
-   * @param {optional string or function} wantLoad
+   * @param {string|function} [wantLoad = null]
    *        If a function, takes a URL and returns true if that's the load we're
    *        interested in. If a string, gives the URL of the load we're interested
    *        in. If not present, the first load resolves the promise.
-   * @param {optional boolean} maybeErrorPage
+   * @param {boolean} [maybeErrorPage = false]
    *        If true, this uses DOMContentLoaded event instead of load event.
    *        Also wantLoad will be called with visible URL, instead of
    *        'about:neterror?...' for error page.
@@ -512,15 +529,17 @@ var BrowserTestUtils = {
   /**
    * Waits for a tab to open and load a given URL.
    *
-   * The method doesn't wait for the tab contents to load.
+   * By default, the method doesn't wait for the tab contents to load.
    *
    * @param {tabbrowser} tabbrowser
    *        The tabbrowser to look for the next new tab in.
-   * @param {string} url
-   *        A string URL to look for in the new tab. If null, allows any non-blank URL.
-   * @param {boolean} waitForLoad
+   * @param {string|function} [wantLoad = null]
+   *        If a function, takes a URL and returns true if that's the load we're
+   *        interested in. If a string, gives the URL of the load we're interested
+   *        in. If not present, the first non-about:blank load is used.
+   * @param {boolean} [waitForLoad = false]
    *        True to wait for the page in the new tab to load. Defaults to false.
-   * @param {boolean} waitForAnyTab
+   * @param {boolean} [waitForAnyTab = false]
    *        True to wait for the url to be loaded in any new tab, not just the next
    *        one opened.
    *
@@ -531,10 +550,20 @@ var BrowserTestUtils = {
    * NB: this method will not work if you open a new tab with e.g. BrowserOpenTab
    * and the tab does not load a URL, because no onLocationChange will fire.
    */
-  waitForNewTab(tabbrowser, url, waitForLoad = false, waitForAnyTab = false) {
-    let urlMatches = url
-      ? urlToMatch => urlToMatch == url
-      : urlToMatch => urlToMatch != "about:blank";
+  waitForNewTab(
+    tabbrowser,
+    wantLoad = null,
+    waitForLoad = false,
+    waitForAnyTab = false
+  ) {
+    let urlMatches;
+    if (wantLoad && typeof wantLoad == "function") {
+      urlMatches = wantLoad;
+    } else if (wantLoad) {
+      urlMatches = urlToMatch => urlToMatch == wantLoad;
+    } else {
+      urlMatches = urlToMatch => urlToMatch != "about:blank";
+    }
     return new Promise((resolve, reject) => {
       tabbrowser.tabContainer.addEventListener(
         "TabOpen",
@@ -748,6 +777,25 @@ var BrowserTestUtils = {
   },
 
   /**
+   * Maybe create a preloaded browser and ensure it's finished loading.
+   *
+   * @param gBrowser (<xul:tabbrowser>)
+   *        The tabbrowser in which to preload a browser.
+   */
+  async maybeCreatePreloadedBrowser(gBrowser) {
+    let win = gBrowser.ownerGlobal;
+    win.NewTabPagePreloading.maybeCreatePreloadedBrowser(win);
+
+    // We cannot use the regular BrowserTestUtils helper for waiting here, since that
+    // would try to insert the preloaded browser, which would only break things.
+    await ContentTask.spawn(gBrowser.preloadedBrowser, null, async () => {
+      await ContentTaskUtils.waitForCondition(() => {
+        return content.document && content.document.readyState == "complete";
+      });
+    });
+  },
+
+  /**
    * @param win (optional)
    *        The window we should wait to have "domwindowopened" sent through
    *        the observer service for. If this is not supplied, we'll just
@@ -765,7 +813,7 @@ var BrowserTestUtils = {
     return new Promise(resolve => {
       async function observer(subject, topic, data) {
         if (topic == "domwindowopened" && (!win || subject === win)) {
-          let observedWindow = subject.QueryInterface(Ci.nsIDOMWindow);
+          let observedWindow = subject;
           if (checkFn && !(await checkFn(observedWindow))) {
             return;
           }
@@ -791,7 +839,7 @@ var BrowserTestUtils = {
       function observer(subject, topic, data) {
         if (topic == "domwindowclosed" && (!win || subject === win)) {
           Services.ww.unregisterNotification(observer);
-          resolve(subject.QueryInterface(Ci.nsIDOMWindow));
+          resolve(subject);
         }
       }
       Services.ww.registerNotification(observer);
@@ -1578,7 +1626,7 @@ var BrowserTestUtils = {
   },
 
   /**
-   * Crashes a remote browser tab and cleans up the generated minidumps.
+   * Crashes a remote frame tab and cleans up the generated minidumps.
    * Resolves with the data from the .extra file (the crash annotations).
    *
    * @param (Browser) browser
@@ -1589,15 +1637,19 @@ var BrowserTestUtils = {
    *        tab crash page has loaded.
    * @param (bool) shouldClearMinidumps
    *        True if the minidumps left behind by the crash should be removed.
+   * @param (BrowsingContext) browsingContext
+   *        The context where the frame leaves. Default to
+   *        top level context if not supplied.
    *
    * @returns (Promise)
    * @resolves An Object with key-value pairs representing the data from the
    *           crash report's extra file (if applicable).
    */
-  async crashBrowser(
+  async crashFrame(
     browser,
     shouldShowTabCrashPage = true,
-    shouldClearMinidumps = true
+    shouldClearMinidumps = true,
+    browsingContext
   ) {
     let extra = {};
     let KeyValueParser = {};
@@ -1639,26 +1691,6 @@ var BrowserTestUtils = {
         file.remove(false);
       }
     }
-
-    // This frame script is injected into the remote browser, and used to
-    // intentionally crash the tab. We crash by using js-ctypes and dereferencing
-    // a bad pointer. The crash should happen immediately upon loading this
-    // frame script.
-    let frame_script = () => {
-      const { ctypes } = ChromeUtils.import(
-        "resource://gre/modules/ctypes.jsm"
-      );
-
-      let dies = function() {
-        privateNoteIntentionalCrash();
-        let zero = new ctypes.intptr_t(8);
-        let badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
-        badptr.contents;
-      };
-
-      dump("\nEt tu, Brute?\n");
-      dies();
-    };
 
     let expectedPromises = [];
 
@@ -1751,10 +1783,12 @@ var BrowserTestUtils = {
       );
     }
 
-    // This frame script will crash the remote browser as soon as it is
-    // evaluated.
-    let mm = browser.messageManager;
-    mm.loadFrameScript("data:,(" + frame_script.toString() + ")();", false);
+    // Trigger crash by sending a message to BrowserTestUtils actor.
+    this.sendAsyncMessage(
+      browsingContext || browser.browsingContext,
+      "BrowserTestUtils:CrashFrame",
+      {}
+    );
 
     await Promise.all(expectedPromises);
 
@@ -1786,7 +1820,7 @@ var BrowserTestUtils = {
     return new Promise(resolve => {
       let mut = new MutationObserver(mutations => {
         if (
-          (!value && element.getAttribute(attr)) ||
+          (!value && element.hasAttribute(attr)) ||
           (value && element.getAttribute(attr) === value)
         ) {
           resolve();
@@ -2186,5 +2220,25 @@ var BrowserTestUtils = {
       );
     }
     return tabbrowser.addTab(uri, params);
+  },
+
+  /**
+   * Sends a message to a specific BrowserTestUtils window actor.
+   * @param aBrowsingContext
+   *        The browsing context where the actor lives.
+   * @param {string} aMessageName
+   *        Name of the message to be sent to the actor.
+   * @param {object} aMessageData
+   *        Extra information to pass to the actor.
+   */
+  async sendAsyncMessage(aBrowsingContext, aMessageName, aMessageData) {
+    if (!aBrowsingContext.currentWindowGlobal) {
+      await this.waitForCondition(() => aBrowsingContext.currentWindowGlobal);
+    }
+
+    let actor = aBrowsingContext.currentWindowGlobal.getActor(
+      "BrowserTestUtils"
+    );
+    actor.sendAsyncMessage(aMessageName, aMessageData);
   },
 };

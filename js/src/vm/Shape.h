@@ -110,7 +110,7 @@
  * a single BaseShape.
  */
 
-MOZ_ALWAYS_INLINE size_t JSSLOT_FREE(const js::Class* clasp) {
+MOZ_ALWAYS_INLINE size_t JSSLOT_FREE(const JSClass* clasp) {
   // Proxy classes have reserved slots, but proxies manage their own slot
   // layout.
   MOZ_ASSERT(!clasp->isProxy());
@@ -515,9 +515,9 @@ class ShapeCachePtr {
     p = icptr;
   }
 
-  void destroy(FreeOp* fop, BaseShape* base);
+  void destroy(JSFreeOp* fop, BaseShape* base);
 
-  void maybePurgeCache(FreeOp* fop, BaseShape* base);
+  void maybePurgeCache(JSFreeOp* fop, BaseShape* base);
 
   void trace(JSTracer* trc);
 
@@ -654,7 +654,7 @@ class BaseShape : public gc::TenuredCell {
   };
 
  private:
-  const Class* clasp_; /* Class of referring object. */
+  const JSClass* clasp_; /* Class of referring object. */
   uint32_t flags;      /* Vector of above flags. */
   uint32_t slotSpan_;  /* Object slot span for BaseShapes at
                         * dictionary last properties. */
@@ -669,14 +669,14 @@ class BaseShape : public gc::TenuredCell {
   BaseShape& operator=(const BaseShape& other) = delete;
 
  public:
-  void finalize(FreeOp* fop);
+  void finalize(JSFreeOp* fop);
 
   explicit inline BaseShape(const StackBaseShape& base);
 
   /* Not defined: BaseShapes must not be stack allocated. */
   ~BaseShape();
 
-  const Class* clasp() const { return clasp_; }
+  const JSClass* clasp() const { return clasp_; }
 
   bool isOwned() const { return !!(flags & OWNED_SHAPE); }
 
@@ -740,7 +740,7 @@ class BaseShape : public gc::TenuredCell {
     return (cache_.isIC()) ? cache_.getICPointer() : nullptr;
   }
 
-  void maybePurgeCache(FreeOp* fop) { cache_.maybePurgeCache(fop, this); }
+  void maybePurgeCache(JSFreeOp* fop) { cache_.maybePurgeCache(fop, this); }
 
   uint32_t slotSpan() const {
     MOZ_ASSERT(isOwned());
@@ -812,17 +812,17 @@ UnownedBaseShape* BaseShape::baseUnowned() {
 /* Entries for the per-zone baseShapes set of unowned base shapes. */
 struct StackBaseShape : public DefaultHasher<WeakHeapPtr<UnownedBaseShape*>> {
   uint32_t flags;
-  const Class* clasp;
+  const JSClass* clasp;
 
   explicit StackBaseShape(BaseShape* base)
       : flags(base->flags & BaseShape::OBJECT_FLAG_MASK), clasp(base->clasp_) {}
 
-  inline StackBaseShape(const Class* clasp, uint32_t objectFlags);
+  inline StackBaseShape(const JSClass* clasp, uint32_t objectFlags);
   explicit inline StackBaseShape(Shape* shape);
 
   struct Lookup {
     uint32_t flags;
-    const Class* clasp;
+    const JSClass* clasp;
 
     MOZ_IMPLICIT Lookup(const StackBaseShape& base)
         : flags(base.flags), clasp(base.clasp) {}
@@ -1110,7 +1110,7 @@ class Shape : public gc::TenuredCell {
     }
   };
 
-  const Class* getObjectClass() const { return base()->clasp_; }
+  const JSClass* getObjectClass() const { return base()->clasp_; }
 
   static Shape* setObjectFlags(JSContext* cx, BaseShape::Flag flag,
                                TaggedProto proto, Shape* last);
@@ -1232,7 +1232,7 @@ class Shape : public gc::TenuredCell {
     return JSID_IS_EMPTY(propid_);
   }
 
-  uint32_t slotSpan(const Class* clasp) const {
+  uint32_t slotSpan(const JSClass* clasp) const {
     MOZ_ASSERT(!inDictionary());
     // Proxy classes have reserved slots, but proxies manage their own slot
     // layout. This means all non-native object shapes have nfixed == 0 and
@@ -1353,9 +1353,9 @@ class Shape : public gc::TenuredCell {
   void dumpSubtree(int level, js::GenericPrinter& out) const;
 #endif
 
-  void sweep();
-  void finalize(FreeOp* fop);
-  void removeChild(Shape* child);
+  void sweep(JSFreeOp* fop);
+  void finalize(JSFreeOp* fop);
+  void removeChild(JSFreeOp* fop, Shape* child);
 
   static const JS::TraceKind TraceKind = JS::TraceKind::Shape;
 
@@ -1454,10 +1454,10 @@ struct EmptyShape : public js::Shape {
    * Lookup an initial shape matching the given parameters, creating an empty
    * shape if none was found.
    */
-  static Shape* getInitialShape(JSContext* cx, const Class* clasp,
+  static Shape* getInitialShape(JSContext* cx, const JSClass* clasp,
                                 TaggedProto proto, size_t nfixed,
                                 uint32_t objectFlags = 0);
-  static Shape* getInitialShape(JSContext* cx, const Class* clasp,
+  static Shape* getInitialShape(JSContext* cx, const JSClass* clasp,
                                 TaggedProto proto, gc::AllocKind kind,
                                 uint32_t objectFlags = 0);
 
@@ -1503,12 +1503,12 @@ struct InitialShapeEntry {
 
   /* State used to determine a match on an initial shape. */
   struct Lookup {
-    const Class* clasp;
+    const JSClass* clasp;
     TaggedProto proto;
     uint32_t nfixed;
     uint32_t baseFlags;
 
-    Lookup(const Class* clasp, const TaggedProto& proto, uint32_t nfixed,
+    Lookup(const JSClass* clasp, const TaggedProto& proto, uint32_t nfixed,
            uint32_t baseFlags)
         : clasp(clasp), proto(proto), nfixed(nfixed), baseFlags(baseFlags) {}
 

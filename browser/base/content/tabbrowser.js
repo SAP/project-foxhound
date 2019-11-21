@@ -1201,7 +1201,7 @@
 
         this._startMultiSelectChange();
         this._multiSelectChangeSelected = true;
-        this.clearMultiSelectedTabs(true);
+        this.clearMultiSelectedTabs({ isLastMultiSelectChange: true });
 
         if (oldBrowser != newBrowser && oldBrowser.getInPermitUnload) {
           oldBrowser.getInPermitUnload(inPermitUnload => {
@@ -1325,7 +1325,7 @@
       // if the tab is a blank one.
       if (newBrowser._urlbarFocused && gURLBar) {
         // Explicitly close the popup if the URL bar retains focus
-        gURLBar.closePopup();
+        gURLBar.view.close();
 
         // If the user happened to type into the URL bar for this browser
         // by the time we got here, focusing will cause the text to be
@@ -1403,21 +1403,36 @@
       aTab.dispatchEvent(event);
     },
 
-    setBrowserSharing(aBrowser, aState) {
+    resetBrowserSharing(aBrowser) {
       let tab = this.getTabForBrowser(aBrowser);
       if (!tab) {
         return;
       }
+      tab._sharingState = {};
+      tab.removeAttribute("sharing");
+      this._tabAttrModified(tab, ["sharing"]);
+      if (aBrowser == this.selectedBrowser) {
+        gIdentityHandler.updateSharingIndicator();
+      }
+    },
 
-      if (aState.sharing) {
-        tab._sharingState = aState;
-        if (aState.paused) {
+    updateBrowserSharing(aBrowser, aState) {
+      let tab = this.getTabForBrowser(aBrowser);
+      if (!tab) {
+        return;
+      }
+      if (tab._sharingState == null) {
+        tab._sharingState = {};
+      }
+      tab._sharingState = Object.assign(tab._sharingState, aState);
+      if (aState.webRTC && aState.webRTC.sharing) {
+        if (aState.webRTC.paused) {
           tab.removeAttribute("sharing");
         } else {
-          tab.setAttribute("sharing", aState.sharing);
+          tab.setAttribute("sharing", aState.webRTC.sharing);
         }
       } else {
-        tab._sharingState = null;
+        tab._sharingState.webRTC = null;
         tab.removeAttribute("sharing");
       }
       this._tabAttrModified(tab, ["sharing"]);
@@ -1429,7 +1444,10 @@
 
     getTabSharingState(aTab) {
       // Normalize the state object for consumers (ie.extensions).
-      let state = Object.assign({}, aTab._sharingState);
+      let state = Object.assign(
+        {},
+        aTab._sharingState && aTab._sharingState.webRTC
+      );
       return {
         camera: !!state.camera,
         microphone: !!state.microphone,
@@ -2445,9 +2463,9 @@
         return false;
       }
 
-      // Reset webrtc sharing state.
+      // Reset sharing state.
       if (aTab._sharingState) {
-        this.setBrowserSharing(browser, {});
+        this.resetBrowserSharing(browser);
       }
       webrtcUI.forgetStreamsFromBrowser(browser);
 
@@ -4032,31 +4050,33 @@
 
     hideTab(aTab, aSource) {
       if (
-        !aTab.hidden &&
-        !aTab.pinned &&
-        !aTab.selected &&
-        !aTab.closing &&
-        !aTab._sharingState
+        aTab.hidden ||
+        aTab.pinned ||
+        aTab.selected ||
+        aTab.closing ||
+        // Tabs that are sharing the screen, microphone or camera cannot be hidden.
+        (aTab._sharingState && aTab._sharingState.webRTC)
       ) {
-        aTab.setAttribute("hidden", "true");
-        this._invalidateCachedTabs();
+        return;
+      }
+      aTab.setAttribute("hidden", "true");
+      this._invalidateCachedTabs();
 
-        this.tabContainer._updateCloseButtons();
-        this.tabContainer._updateHiddenTabsStatus();
+      this.tabContainer._updateCloseButtons();
+      this.tabContainer._updateHiddenTabsStatus();
 
-        this.tabContainer._setPositionalAttributes();
+      this.tabContainer._setPositionalAttributes();
 
-        // Splice this tab out of any lines of succession before any events are
-        // dispatched.
-        this.replaceInSuccession(aTab, aTab.successor);
-        this.setSuccessor(aTab, null);
+      // Splice this tab out of any lines of succession before any events are
+      // dispatched.
+      this.replaceInSuccession(aTab, aTab.successor);
+      this.setSuccessor(aTab, null);
 
-        let event = document.createEvent("Events");
-        event.initEvent("TabHide", true, false);
-        aTab.dispatchEvent(event);
-        if (aSource) {
-          SessionStore.setCustomTabValue(aTab, "hiddenBy", aSource);
-        }
+      let event = document.createEvent("Events");
+      event.initEvent("TabHide", true, false);
+      aTab.dispatchEvent(event);
+      if (aSource) {
+        SessionStore.setCustomTabValue(aTab, "hiddenBy", aSource);
       }
     },
 
@@ -4364,7 +4384,7 @@
       return SessionStore.duplicateTab(window, aTab, 0, aRestoreTabImmediately);
     },
 
-    addToMultiSelectedTabs(aTab, multiSelectMayChangeMore) {
+    addToMultiSelectedTabs(aTab, { isLastMultiSelectChange = false } = {}) {
       if (aTab.multiselected) {
         return;
       }
@@ -4379,10 +4399,12 @@
         this._multiSelectChangeAdditions.add(aTab);
       }
 
-      if (!multiSelectMayChangeMore) {
+      if (isLastMultiSelectChange) {
         let { selectedTab } = this;
         if (!selectedTab.multiselected) {
-          this.addToMultiSelectedTabs(selectedTab, true);
+          this.addToMultiSelectedTabs(selectedTab, {
+            isLastMultiSelectChange: false,
+          });
         }
         this.tabContainer._setPositionalAttributes();
       }
@@ -4406,12 +4428,17 @@
           : [indexOfTab2, indexOfTab1];
 
       for (let i = lowerIndex; i <= higherIndex; i++) {
-        this.addToMultiSelectedTabs(tabs[i], true);
+        this.addToMultiSelectedTabs(tabs[i], {
+          isLastMultiSelectChange: false,
+        });
       }
       this.tabContainer._setPositionalAttributes();
     },
 
-    removeFromMultiSelectedTabs(aTab, isLastMultiSelectChange) {
+    removeFromMultiSelectedTabs(
+      aTab,
+      { isLastMultiSelectChange = false } = {}
+    ) {
       if (!aTab.multiselected) {
         return;
       }
@@ -4433,7 +4460,7 @@
       }
     },
 
-    clearMultiSelectedTabs(isLastMultiSelectChange) {
+    clearMultiSelectedTabs({ isLastMultiSelectChange = false } = {}) {
       if (this._clearMultiSelectionLocked) {
         if (this._clearMultiSelectionLockedOnce) {
           this._clearMultiSelectionLockedOnce = false;
@@ -4447,7 +4474,9 @@
       }
 
       for (let tab of this.selectedTabs) {
-        this.removeFromMultiSelectedTabs(tab, false);
+        this.removeFromMultiSelectedTabs(tab, {
+          isLastMultiSelectChange: false,
+        });
       }
       this._lastMultiSelectedTabRef = null;
       if (isLastMultiSelectChange) {
@@ -4508,7 +4537,7 @@
      */
     avoidSingleSelectedTab() {
       if (this.multiSelectedTabsCount == 1) {
-        this.clearMultiSelectedTabs();
+        this.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
       }
     },
 
@@ -4535,11 +4564,13 @@
     },
 
     set selectedTabs(tabs) {
-      this.clearMultiSelectedTabs(false);
+      this.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
       this.selectedTab = tabs[0];
       if (tabs.length > 1) {
         for (let tab of tabs) {
-          this.addToMultiSelectedTabs(tab, true);
+          this.addToMultiSelectedTabs(tab, {
+            isLastMultiSelectChange: false,
+          });
         }
       }
       this.tabContainer._setPositionalAttributes();
@@ -4745,6 +4776,40 @@
       }
     },
 
+    getTabTooltip(tab, includeLabel = true) {
+      let label = "";
+      if (includeLabel) {
+        label = tab._fullLabel || tab.getAttribute("label");
+      }
+      if (AppConstants.NIGHTLY_BUILD) {
+        if (tab.linkedBrowser) {
+          // On Nightly builds, show the PID of the content process, and if
+          // we're running with fission enabled, try to include PIDs for
+          // every remote subframe.
+          let [contentPid, ...framePids] = E10SUtils.getBrowserPids(
+            tab.linkedBrowser,
+            gFissionBrowser
+          );
+          if (contentPid) {
+            label += " (pid " + contentPid + ")";
+            if (gFissionBrowser) {
+              label += " [F " + framePids.join(", ") + "]";
+            }
+          }
+        }
+      }
+      if (tab.userContextId) {
+        label = gTabBrowserBundle.formatStringFromName(
+          "tabs.containers.tooltip",
+          [
+            label,
+            ContextualIdentityService.getUserContextLabel(tab.userContextId),
+          ]
+        );
+      }
+      return label;
+    },
+
     createTooltip(event) {
       event.stopPropagation();
       let tab = document.tooltipNode
@@ -4809,42 +4874,7 @@
           ).replace("#1", affectedTabsLength);
         }
       } else {
-        label = tab._fullLabel || tab.getAttribute("label");
-        if (AppConstants.NIGHTLY_BUILD) {
-          if (
-            tab.linkedBrowser &&
-            tab.linkedBrowser.isRemoteBrowser &&
-            tab.linkedBrowser.frameLoader
-          ) {
-            label +=
-              " (pid " + tab.linkedBrowser.frameLoader.remoteTab.osPid + ")";
-
-            // If we're running with fission enabled, try to include PID
-            // information for every remote subframe.
-            if (gFissionBrowser) {
-              let pids = new Set();
-              let stack = [tab.linkedBrowser.browsingContext];
-              while (stack.length) {
-                let bc = stack.pop();
-                stack.push(...bc.getChildren());
-                if (bc.currentWindowGlobal) {
-                  pids.add(bc.currentWindowGlobal.osPid);
-                }
-              }
-
-              label += " [F " + Array.from(pids).join(", ") + "]";
-            }
-          }
-        }
-        if (tab.userContextId) {
-          label = gTabBrowserBundle.formatStringFromName(
-            "tabs.containers.tooltip",
-            [
-              label,
-              ContextualIdentityService.getUserContextLabel(tab.userContextId),
-            ]
-          );
-        }
+        label = this.getTabTooltip(tab);
       }
 
       event.target.setAttribute("label", label);
@@ -5239,12 +5269,6 @@
           return;
         }
 
-        if (!event.isTopFrame) {
-          let bc = BrowsingContext.get(event.browsingContextId);
-          SubframeCrashHandler.onSubframeCrash(bc);
-          return;
-        }
-
         let browser = event.originalTarget;
 
         // Preloaded browsers do not actually have any tabs. If one crashes,
@@ -5375,8 +5399,8 @@
           return;
         }
 
-        SitePermissions.set(
-          event.detail.url,
+        SitePermissions.setForPrincipal(
+          browser.contentPrincipal,
           "autoplay-media",
           SitePermissions.BLOCK,
           SitePermissions.SCOPE_GLOBAL,
@@ -6395,7 +6419,7 @@ var TabContextMenu = {
       }
 
       /* Create a triggering principal that is able to load the new tab
-         For codebase principals that are about: chrome: or resource: we need system to load them.
+         For content principals that are about: chrome: or resource: we need system to load them.
          Anything other than system principal needs to have the new userContextId.
       */
       let triggeringPrincipal;
@@ -6422,8 +6446,8 @@ var TabContextMenu = {
         triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal(
           { userContextId }
         );
-      } else if (triggeringPrincipal.isCodebasePrincipal) {
-        triggeringPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      } else if (triggeringPrincipal.isContentPrincipal) {
+        triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
           triggeringPrincipal.URI,
           { userContextId }
         );

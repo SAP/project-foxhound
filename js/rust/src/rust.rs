@@ -178,11 +178,6 @@ impl Runtime {
                 STACK_QUOTA - SYSTEM_CODE_BUFFER,
                 STACK_QUOTA - SYSTEM_CODE_BUFFER - TRUSTED_SCRIPT_BUFFER);
 
-            let opts = JS::ContextOptionsRef(js_context);
-            (*opts).set_baseline_(true);
-            (*opts).set_ion_(true);
-            (*opts).set_nativeRegExp_(true);
-
             CONTEXT.with(|context| {
                 assert!(context.get().is_null());
                 context.set(js_context);
@@ -1053,7 +1048,9 @@ pub static SIMPLE_GLOBAL_CLASS: JSClass = JSClass {
     name: b"Global\0" as *const u8 as *const _,
     flags: (JSCLASS_IS_GLOBAL | ((JSCLASS_GLOBAL_SLOT_COUNT & JSCLASS_RESERVED_SLOTS_MASK) << JSCLASS_RESERVED_SLOTS_SHIFT)) as u32,
     cOps: &SIMPLE_GLOBAL_CLASS_OPS as *const JSClassOps,
-    reserved: [0 as *mut _; 3]
+    spec: 0 as *mut _,
+    ext: 0 as *mut _,
+    oOps: 0 as *mut _
 };
 
 #[inline]

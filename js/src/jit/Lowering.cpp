@@ -2848,25 +2848,6 @@ void LIRGenerator::visitTypedArrayElementShift(MTypedArrayElementShift* ins) {
          ins);
 }
 
-void LIRGenerator::visitSetDisjointTypedElements(
-    MSetDisjointTypedElements* ins) {
-  MOZ_ASSERT(ins->type() == MIRType::None);
-
-  MDefinition* target = ins->target();
-  MOZ_ASSERT(target->type() == MIRType::Object);
-
-  MDefinition* targetOffset = ins->targetOffset();
-  MOZ_ASSERT(targetOffset->type() == MIRType::Int32);
-
-  MDefinition* source = ins->source();
-  MOZ_ASSERT(source->type() == MIRType::Object);
-
-  auto lir = new (alloc())
-      LSetDisjointTypedElements(useRegister(target), useRegister(targetOffset),
-                                useRegister(source), temp());
-  add(lir, ins);
-}
-
 void LIRGenerator::visitTypedObjectDescr(MTypedObjectDescr* ins) {
   MOZ_ASSERT(ins->type() == MIRType::Object);
   define(new (alloc()) LTypedObjectDescr(useRegisterAtStart(ins->object())),
@@ -4225,9 +4206,6 @@ void LIRGenerator::visitWasmLoadTls(MWasmLoadTls* ins) {
 }
 
 void LIRGenerator::visitWasmBoundsCheck(MWasmBoundsCheck* ins) {
-#ifdef WASM_HUGE_MEMORY
-  MOZ_CRASH("No bounds checking on huge memory");
-#else
   MOZ_ASSERT(!ins->isRedundant());
 
   MDefinition* index = ins->index();
@@ -4245,7 +4223,6 @@ void LIRGenerator::visitWasmBoundsCheck(MWasmBoundsCheck* ins) {
         useRegisterAtStart(index), useRegisterAtStart(boundsCheckLimit));
     add(lir, ins);
   }
-#endif
 }
 
 void LIRGenerator::visitWasmAlignmentCheck(MWasmAlignmentCheck* ins) {
@@ -5069,6 +5046,10 @@ void LIRGenerator::visitWasmSelect(MWasmSelect* ins) {
                   useRegister(ins->condExpr()));
 
   defineReuseInput(lir, ins, LWasmSelect::TrueExprIndex);
+}
+
+void LIRGenerator::visitWasmFence(MWasmFence* ins) {
+  add(new (alloc()) LWasmFence, ins);
 }
 
 static_assert(!std::is_polymorphic<LIRGenerator>::value,

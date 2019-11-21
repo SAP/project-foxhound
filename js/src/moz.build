@@ -47,18 +47,25 @@ for stlfile in ['jsdate.*', 'jsnum.*']:
 with Files('builtin/intl/*'):
     BUG_COMPONENT = component_intl
 
-if CONFIG['JS_BUNDLED_EDITLINE']:
-    DIRS += ['editline']
+if CONFIG['ENABLE_WASM_CRANELIFT']:
+    CONFIGURE_SUBST_FILES += ['rust/extra-bindgen-flags']
 
 if not CONFIG['JS_DISABLE_SHELL']:
-    DIRS += ['shell']
-
-TEST_DIRS += ['jsapi-tests', 'tests', 'gdb']
-
-if CONFIG['FUZZING_INTERFACES']:
-    TEST_DIRS += [
-        'fuzz-tests',
+    DIRS += [
+        'rust',
+        'shell',
     ]
+
+    TEST_DIRS += [
+        'gdb',
+        'jsapi-tests',
+        'tests',
+    ]
+
+    if CONFIG['FUZZING_INTERFACES']:
+        TEST_DIRS += [
+            'fuzz-tests',
+        ]
 
 if CONFIG['FUZZING_INTERFACES'] and CONFIG['LIBFUZZER']:
     # In addition to regular coverage provided by trace-pc-guard,
@@ -208,14 +215,6 @@ UNIFIED_SOURCES += [
     'builtin/Boolean.cpp',
     'builtin/DataViewObject.cpp',
     'builtin/Eval.cpp',
-    'builtin/intl/Collator.cpp',
-    'builtin/intl/CommonFunctions.cpp',
-    'builtin/intl/DateTimeFormat.cpp',
-    'builtin/intl/IntlObject.cpp',
-    'builtin/intl/NumberFormat.cpp',
-    'builtin/intl/PluralRules.cpp',
-    'builtin/intl/RelativeTimeFormat.cpp',
-    'builtin/intl/SharedIntlData.cpp',
     'builtin/JSON.cpp',
     'builtin/MapObject.cpp',
     'builtin/ModuleObject.cpp',
@@ -225,6 +224,19 @@ UNIFIED_SOURCES += [
     'builtin/Reflect.cpp',
     'builtin/ReflectParse.cpp',
     'builtin/Stream.cpp',
+    'builtin/streams/MiscellaneousOperations.cpp',
+    'builtin/streams/PullIntoDescriptor.cpp',
+    'builtin/streams/QueueingStrategies.cpp',
+    'builtin/streams/QueueWithSizes.cpp',
+    'builtin/streams/ReadableStream.cpp',
+    'builtin/streams/ReadableStreamDefaultController.cpp',
+    'builtin/streams/ReadableStreamDefaultControllerOperations.cpp',
+    'builtin/streams/ReadableStreamDefaultReader.cpp',
+    'builtin/streams/ReadableStreamInternals.cpp',
+    'builtin/streams/ReadableStreamOperations.cpp',
+    'builtin/streams/ReadableStreamReader.cpp',
+    'builtin/streams/StreamAPI.cpp',
+    'builtin/streams/TeeState.cpp',
     'builtin/String.cpp',
     'builtin/Symbol.cpp',
     'builtin/TestingFunctions.cpp',
@@ -258,6 +270,7 @@ UNIFIED_SOURCES += [
     'proxy/Wrapper.cpp',
     'threading/Mutex.cpp',
     'threading/ProtectedData.cpp',
+    'threading/Thread.cpp',
     'util/AllocPolicy.cpp',
     'util/CompleteFile.cpp',
     'util/NativeStack.cpp',
@@ -282,8 +295,6 @@ UNIFIED_SOURCES += [
     'vm/CompilationAndEvaluation.cpp',
     'vm/Compression.cpp',
     'vm/DateTime.cpp',
-    'vm/Debugger.cpp',
-    'vm/DebuggerMemory.cpp',
     'vm/EnvironmentObject.cpp',
     'vm/EqualityOperations.cpp',
     'vm/ErrorObject.cpp',
@@ -295,6 +306,7 @@ UNIFIED_SOURCES += [
     'vm/HelperThreads.cpp',
     'vm/Id.cpp',
     'vm/Initialization.cpp',
+    'vm/Instrumentation.cpp',
     'vm/Iteration.cpp',
     'vm/JSAtom.cpp',
     'vm/JSContext.cpp',
@@ -359,6 +371,19 @@ SOURCES += [
     'vm/ProfilingStack.cpp',
 ]
 
+if CONFIG['ENABLE_INTL_API']:
+    UNIFIED_SOURCES += [
+        'builtin/intl/Collator.cpp',
+        'builtin/intl/CommonFunctions.cpp',
+        'builtin/intl/DateTimeFormat.cpp',
+        'builtin/intl/IntlObject.cpp',
+        'builtin/intl/Locale.cpp',
+        'builtin/intl/NumberFormat.cpp',
+        'builtin/intl/PluralRules.cpp',
+        'builtin/intl/RelativeTimeFormat.cpp',
+        'builtin/intl/SharedIntlData.cpp',
+    ]
+
 if CONFIG['MOZ_INSTRUMENTS']:
     SOURCES += [
         'devtools/Instruments.cpp',
@@ -374,12 +399,12 @@ if CONFIG['ENABLE_TRACE_LOGGING']:
 if CONFIG['OS_ARCH'] == 'WINNT':
     UNIFIED_SOURCES += [
         'threading/windows/CpuCount.cpp',
-        'threading/windows/Thread.cpp',
+        'threading/windows/WindowsThread.cpp',
     ]
 else:
     UNIFIED_SOURCES += [
         'threading/posix/CpuCount.cpp',
-        'threading/posix/Thread.cpp',
+        'threading/posix/PosixThread.cpp',
     ]
 
 if CONFIG['JS_HAS_CTYPES']:
@@ -403,6 +428,7 @@ if CONFIG['MOZ_VTUNE']:
 
 DIRS += [
     'build',
+    'debugger',
     'frontend',
     'gc',
     'jit',
@@ -424,20 +450,12 @@ selfhosted.inputs = [
     'builtin/Array.js',
     'builtin/AsyncFunction.js',
     'builtin/AsyncIteration.js',
+    'builtin/BigInt.js',
     'builtin/Classes.js',
     'builtin/Date.js',
     'builtin/Error.js',
     'builtin/Function.js',
     'builtin/Generator.js',
-    'builtin/intl/Collator.js',
-    'builtin/intl/CommonFunctions.js',
-    'builtin/intl/CurrencyDataGenerated.js',
-    'builtin/intl/DateTimeFormat.js',
-    'builtin/intl/IntlObject.js',
-    'builtin/intl/LangTagMappingsGenerated.js',
-    'builtin/intl/NumberFormat.js',
-    'builtin/intl/PluralRules.js',
-    'builtin/intl/RelativeTimeFormat.js',
     'builtin/Iterator.js',
     'builtin/Map.js',
     'builtin/Module.js',
@@ -456,6 +474,21 @@ selfhosted.inputs = [
     'builtin/WeakMap.js',
     'builtin/WeakSet.js'
 ]
+
+if CONFIG['ENABLE_INTL_API']:
+    selfhosted.inputs += [
+        'builtin/intl/Collator.js',
+        'builtin/intl/CommonFunctions.js',
+        'builtin/intl/CurrencyDataGenerated.js',
+        'builtin/intl/DateTimeFormat.js',
+        'builtin/intl/IntlObject.js',
+        'builtin/intl/LangTagMappingsGenerated.js',
+        'builtin/intl/Locale.js',
+        'builtin/intl/NumberFormat.js',
+        'builtin/intl/PluralRules.js',
+        'builtin/intl/RelativeTimeFormat.js',
+        'builtin/intl/UnicodeExtensionsGenerated.js',
+    ]
 
 if CONFIG['JS_HAS_CTYPES']:
     if CONFIG['MOZ_SYSTEM_FFI']:

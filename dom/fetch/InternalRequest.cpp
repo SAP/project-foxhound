@@ -16,6 +16,8 @@
 
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 
 namespace mozilla {
 namespace dom {
@@ -87,7 +89,7 @@ InternalRequest::InternalRequest(const nsACString& aURL,
       mContentPolicyType(nsIContentPolicy::TYPE_FETCH),
       mReferrer(NS_LITERAL_STRING(kFETCH_CLIENT_REFERRER_STR)),
       mReferrerPolicy(ReferrerPolicy::_empty),
-      mEnvironmentReferrerPolicy(net::RP_Unset),
+      mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(RequestMode::No_cors),
       mCredentialsMode(RequestCredentials::Omit),
       mResponseTainting(LoadTainting::Basic),
@@ -122,7 +124,7 @@ InternalRequest::InternalRequest(
       mContentPolicyType(aContentPolicyType),
       mReferrer(aReferrer),
       mReferrerPolicy(aReferrerPolicy),
-      mEnvironmentReferrerPolicy(net::RP_Unset),
+      mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(aMode),
       mCredentialsMode(aRequestCredentials),
       mResponseTainting(LoadTainting::Basic),
@@ -171,7 +173,72 @@ InternalRequest::InternalRequest(const InternalRequest& aOther)
   // NOTE: does not copy body stream... use the fallible Clone() for that
 }
 
+InternalRequest::InternalRequest(const IPCInternalRequest& aIPCRequest)
+    : mMethod(aIPCRequest.method()),
+      mURLList(aIPCRequest.urlList()),
+      mHeaders(new InternalHeaders(aIPCRequest.headers(),
+                                   aIPCRequest.headersGuard())),
+      mBodyStream(mozilla::ipc::DeserializeIPCStream(aIPCRequest.body())),
+      mBodyLength(aIPCRequest.bodySize()),
+      mPreferredAlternativeDataType(aIPCRequest.preferredAlternativeDataType()),
+      mContentPolicyType(
+          static_cast<nsContentPolicyType>(aIPCRequest.contentPolicyType())),
+      mReferrer(aIPCRequest.referrer()),
+      mReferrerPolicy(aIPCRequest.referrerPolicy()),
+      mMode(aIPCRequest.requestMode()),
+      mCredentialsMode(aIPCRequest.requestCredentials()),
+      mCacheMode(aIPCRequest.cacheMode()),
+      mRedirectMode(aIPCRequest.requestRedirect()),
+      mIntegrity(aIPCRequest.integrity()),
+      mFragment(aIPCRequest.fragment()),
+      mCreatedByFetchEvent(aIPCRequest.createdByFetchEvent()) {
+  if (aIPCRequest.principalInfo()) {
+    mPrincipalInfo = MakeUnique<mozilla::ipc::PrincipalInfo>(
+        aIPCRequest.principalInfo().ref());
+  }
+}
+
 InternalRequest::~InternalRequest() {}
+
+template void InternalRequest::ToIPC<mozilla::ipc::PBackgroundChild>(
+    IPCInternalRequest* aIPCRequest, mozilla::ipc::PBackgroundChild* aManager,
+    UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoStream);
+
+template <typename M>
+void InternalRequest::ToIPC(
+    IPCInternalRequest* aIPCRequest, M* aManager,
+    UniquePtr<mozilla::ipc::AutoIPCStream>& aAutoStream) {
+  MOZ_ASSERT(aIPCRequest);
+  MOZ_ASSERT(aManager);
+  MOZ_ASSERT(!mURLList.IsEmpty());
+
+  aIPCRequest->method() = mMethod;
+  aIPCRequest->urlList() = mURLList;
+  mHeaders->ToIPC(aIPCRequest->headers(), aIPCRequest->headersGuard());
+
+  if (mBodyStream) {
+    aAutoStream.reset(new mozilla::ipc::AutoIPCStream(aIPCRequest->body()));
+    DebugOnly<bool> ok = aAutoStream->Serialize(mBodyStream, aManager);
+    MOZ_ASSERT(ok);
+  }
+
+  aIPCRequest->bodySize() = mBodyLength;
+  aIPCRequest->preferredAlternativeDataType() = mPreferredAlternativeDataType;
+  aIPCRequest->contentPolicyType() = static_cast<uint32_t>(mContentPolicyType);
+  aIPCRequest->referrer() = mReferrer;
+  aIPCRequest->referrerPolicy() = mReferrerPolicy;
+  aIPCRequest->requestMode() = mMode;
+  aIPCRequest->requestCredentials() = mCredentialsMode;
+  aIPCRequest->cacheMode() = mCacheMode;
+  aIPCRequest->requestRedirect() = mRedirectMode;
+  aIPCRequest->integrity() = mIntegrity;
+  aIPCRequest->fragment() = mFragment;
+  aIPCRequest->createdByFetchEvent() = mCreatedByFetchEvent;
+
+  if (mPrincipalInfo) {
+    aIPCRequest->principalInfo().emplace(*mPrincipalInfo);
+  }
+}
 
 void InternalRequest::SetContentPolicyType(
     nsContentPolicyType aContentPolicyType) {
@@ -254,6 +321,8 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_FONT:

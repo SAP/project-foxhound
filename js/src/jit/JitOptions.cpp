@@ -130,7 +130,16 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(disableOptimizationLevels, false);
 
   // Whether the Baseline Interpreter is enabled.
-  SET_DEFAULT(baselineInterpreter, false);
+  SET_DEFAULT(baselineInterpreter, true);
+
+  // Whether the Baseline JIT is enabled.
+  SET_DEFAULT(baselineJit, true);
+
+  // Whether the IonMonkey JIT is enabled.
+  SET_DEFAULT(ion, true);
+
+  // Whether the RegExp JIT is enabled.
+  SET_DEFAULT(nativeRegExp, true);
 
   // Whether IonBuilder should prefer IC generation above specialized MIR.
   SET_DEFAULT(forceInlineCaches, false);
@@ -151,7 +160,7 @@ DefaultJitOptions::DefaultJitOptions() {
   // How many invocations or loop iterations are needed before functions
   // are compiled with the baseline compiler.
   // Duplicated in all.js - ensure both match.
-  SET_DEFAULT(baselineWarmUpThreshold, 10);
+  SET_DEFAULT(baselineJitWarmUpThreshold, 100);
 
   // How many invocations or loop iterations are needed before functions
   // are compiled with the Ion compiler at OptimizationLevel::Normal.
@@ -235,6 +244,10 @@ DefaultJitOptions::DefaultJitOptions() {
   SET_DEFAULT(spectreJitToCxxCalls, true);
 #endif
 
+  // These are set to their actual values in InitializeJit.
+  SET_DEFAULT(supportsFloatingPoint, false);
+  SET_DEFAULT(supportsUnalignedAccesses, false);
+
   // Toggles the optimization whereby offsets are folded into loads and not
   // included in the bounds check.
   SET_DEFAULT(wasmFoldOffsets, true);
@@ -274,8 +287,13 @@ bool DefaultJitOptions::isSmallFunction(JSScript* script) const {
 
 void DefaultJitOptions::enableGvn(bool enable) { disableGvn = !enable; }
 
+void DefaultJitOptions::setEagerBaselineCompilation() {
+  baselineInterpreterWarmUpThreshold = 0;
+  baselineJitWarmUpThreshold = 0;
+}
+
 void DefaultJitOptions::setEagerIonCompilation() {
-  baselineWarmUpThreshold = 0;
+  setEagerBaselineCompilation();
   normalIonWarmUpThreshold = 0;
   fullIonWarmUpThreshold = 0;
 }

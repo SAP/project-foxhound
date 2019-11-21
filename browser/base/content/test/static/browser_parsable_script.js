@@ -18,6 +18,12 @@ const kESModuleList = new Set([
   /browser\/res\/payments\/PaymentsStore\.js$/,
   /browser\/aboutlogins\/components\/.*\.js$/,
   /browser\/aboutlogins\/.*\.js$/,
+  /browser\/protections.js$/,
+  /browser\/lockwise-card.js$/,
+  /browser\/monitor-card.js$/,
+  /browser\/proxy-card.js$/,
+  /toolkit\/content\/global\/certviewer\/components\/.*\.js$/,
+  /toolkit\/content\/global\/certviewer\/.*\.js$/,
 ]);
 
 // Normally we would use reflect.jsm to get Reflect.parse. However, if

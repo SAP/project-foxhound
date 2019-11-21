@@ -1921,10 +1921,6 @@ VARIABLES = {
                                         """List of manifest files defining firefox-ui-functional tests.
         """),
 
-    'FIREFOX_UI_UPDATE_MANIFESTS': (ManifestparserManifestList, list,
-                                    """List of manifest files defining firefox-ui-update tests.
-        """),
-
     'PUPPETEER_FIREFOX_MANIFESTS': (ManifestparserManifestList, list,
                                     """List of manifest files defining puppeteer unit tests for Firefox.
         """),
@@ -2473,7 +2469,7 @@ SPECIAL_VARIABLES = {
         """),
 
     'CONFIG': (lambda context: ReadOnlyKeyedDefaultDict(
-            lambda key: context.config.substs_unicode.get(key)), dict,
+            lambda key: context.config.substs.get(key)), dict,
         """Dictionary containing the current configuration variables.
 
         All the variables defined by the configuration system are available

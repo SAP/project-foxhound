@@ -139,6 +139,10 @@ bool IsEnableAudioCompetingForAllAgents() {
 namespace mozilla {
 namespace dom {
 
+extern void NotifyMediaStarted(uint64_t aWindowID);
+extern void NotifyMediaStopped(uint64_t aWindowID);
+extern void NotifyMediaAudibleChanged(uint64_t aWindowID, bool aAudible);
+
 const char* SuspendTypeToStr(const nsSuspendedTypes& aSuspend) {
   MOZ_ASSERT(aSuspend == nsISuspendedTypes::NONE_SUSPENDED ||
              aSuspend == nsISuspendedTypes::SUSPENDED_PAUSE ||
@@ -346,7 +350,8 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
       config.mSuspend = window->GetMediaSuspend();
     }
 
-    nsCOMPtr<nsPIDOMWindowOuter> win = window->GetScriptableParentOrNull();
+    nsCOMPtr<nsPIDOMWindowOuter> win =
+        window->GetInProcessScriptableParentOrNull();
     if (!win) {
       break;
     }
@@ -419,7 +424,7 @@ void AudioChannelService::RefreshAgents(
     const std::function<void(AudioChannelAgent*)>& aFunc) {
   MOZ_ASSERT(aWindow);
 
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetInProcessScriptableTop();
   if (!topWindow) {
     return;
   }
@@ -458,7 +463,7 @@ void AudioChannelService::SetWindowAudioCaptured(nsPIDOMWindowOuter* aWindow,
            "aCapture = %d\n",
            aWindow, aCapture));
 
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetInProcessScriptableTop();
   if (!topWindow) {
     return;
   }
@@ -515,7 +520,7 @@ AudioChannelService::AudioChannelWindow* AudioChannelService::GetWindowData(
 bool AudioChannelService::IsWindowActive(nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* window = nsPIDOMWindowOuter::From(aWindow)->GetScriptableTop();
+  auto* window = nsPIDOMWindowOuter::From(aWindow)->GetInProcessScriptableTop();
   if (!window) {
     return false;
   }
@@ -546,7 +551,7 @@ void AudioChannelService::NotifyMediaResumedFromBlock(
     nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(aWindow);
 
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetInProcessScriptableTop();
   if (!topWindow) {
     return;
   }
@@ -769,6 +774,7 @@ void AudioChannelService::AudioChannelWindow::AppendAgentAndIncreaseAgentsNum(
   if (mConfig.mNumberOfAgents == 1) {
     NotifyChannelActive(aAgent->WindowID(), true);
   }
+  NotifyMediaStarted(aAgent->WindowID());
 }
 
 void AudioChannelService::AudioChannelWindow::RemoveAgentAndReduceAgentsNum(
@@ -784,6 +790,7 @@ void AudioChannelService::AudioChannelWindow::RemoveAgentAndReduceAgentsNum(
   if (mConfig.mNumberOfAgents == 0) {
     NotifyChannelActive(aAgent->WindowID(), false);
   }
+  NotifyMediaStopped(aAgent->WindowID());
 }
 
 void AudioChannelService::AudioChannelWindow::AudioCapturedChanged(
@@ -823,6 +830,7 @@ void AudioChannelService::AudioChannelWindow::AppendAudibleAgentIfNotContained(
       NotifyAudioAudibleChanged(aAgent->Window(), AudibleState::eAudible,
                                 aReason);
     }
+    NotifyMediaAudibleChanged(aAgent->WindowID(), true);
   }
 }
 
@@ -836,6 +844,7 @@ void AudioChannelService::AudioChannelWindow::RemoveAudibleAgentIfContained(
       NotifyAudioAudibleChanged(aAgent->Window(), AudibleState::eNotAudible,
                                 aReason);
     }
+    NotifyMediaAudibleChanged(aAgent->WindowID(), false);
   }
 }
 

@@ -2,8 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this,
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# If we add unicode_literals, Python 2.6.1 (required for OS X 10.6) breaks.
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 
 import errno
 import os
@@ -152,6 +151,12 @@ def get_paths(os_name):
     return (mozbuild_path, sdk_path, ndk_path)
 
 
+def sdkmanager_tool(sdk_path):
+    # sys.platform is win32 even if Python/Win64.
+    sdkmanager = 'sdkmanager.bat' if sys.platform.startswith('win') else 'sdkmanager'
+    return os.path.join(sdk_path, 'tools', 'bin', sdkmanager)
+
+
 def ensure_dir(dir):
     '''Ensures the given directory exists'''
     if dir and not os.path.exists(dir):
@@ -191,8 +196,8 @@ def ensure_android(os_name, artifact_mode=False, ndk_only=False, no_interactive=
 
     # We expect the |sdkmanager| tool to be at
     # ~/.mozbuild/android-sdk-$OS_NAME/tools/bin/sdkmanager.
-    sdkmanager_tool = os.path.join(sdk_path, 'tools', 'bin', 'sdkmanager')
-    ensure_android_packages(sdkmanager_tool=sdkmanager_tool, no_interactive=no_interactive)
+    ensure_android_packages(sdkmanager_tool=sdkmanager_tool(sdk_path),
+                            no_interactive=no_interactive)
 
 
 def ensure_android_sdk_and_ndk(mozbuild_path, os_name, sdk_path, sdk_url, ndk_path, ndk_url,
@@ -221,7 +226,7 @@ def ensure_android_sdk_and_ndk(mozbuild_path, os_name, sdk_path, sdk_url, ndk_pa
     # |sdkmanager| tool to install additional parts of the Android
     # toolchain.  If we overwrite, we lose whatever Android packages
     # the user may have already installed.
-    if os.path.isfile(os.path.join(sdk_path, 'tools', 'bin', 'sdkmanager')):
+    if os.path.isfile(sdkmanager_tool(sdk_path)):
         print(ANDROID_SDK_EXISTS % sdk_path)
     elif os.path.isdir(sdk_path):
         raise NotImplementedError(ANDROID_SDK_TOO_OLD % sdk_path)
@@ -275,7 +280,7 @@ def ensure_android_packages(sdkmanager_tool, packages=None, no_interactive=False
 
     # Emulate yes.  For a discussion of passing input to check_output,
     # see https://stackoverflow.com/q/10103551.
-    yes = '\n'.join(['y']*100)
+    yes = '\n'.join(['y']*100).encode("UTF-8")
     proc = subprocess.Popen(args,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,

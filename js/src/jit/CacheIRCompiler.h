@@ -20,19 +20,19 @@ class IonCacheIRCompiler;
 // The ops below are defined in CacheIRCompiler and codegen is shared between
 // BaselineCacheIRCompiler and IonCacheIRCompiler.
 #define CACHE_IR_SHARED_OPS(_)            \
-  _(GuardIsObject)                        \
+  _(GuardToObject)                        \
   _(GuardIsNullOrUndefined)               \
   _(GuardIsNotNullOrUndefined)            \
   _(GuardIsNull)                          \
   _(GuardIsUndefined)                     \
   _(GuardIsObjectOrNull)                  \
-  _(GuardIsBoolean)                       \
-  _(GuardIsString)                        \
-  _(GuardIsSymbol)                        \
-  _(GuardIsBigInt)                        \
+  _(GuardToBoolean)                       \
+  _(GuardToString)                        \
+  _(GuardToSymbol)                        \
+  _(GuardToBigInt)                        \
   _(GuardIsNumber)                        \
-  _(GuardIsInt32)                         \
-  _(GuardIsInt32Index)                    \
+  _(GuardToInt32)                         \
+  _(GuardToInt32Index)                    \
   _(GuardType)                            \
   _(GuardClass)                           \
   _(GuardGroupHasUnanalyzedNewScript)     \
@@ -895,9 +895,9 @@ class MOZ_RAII CacheIRCompiler {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
     return (JS::Compartment*)readStubWord(offset, StubField::Type::RawWord);
   }
-  const Class* classStubField(uintptr_t offset) {
+  const JSClass* classStubField(uintptr_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);
-    return (const Class*)readStubWord(offset, StubField::Type::RawWord);
+    return (const JSClass*)readStubWord(offset, StubField::Type::RawWord);
   }
   const void* proxyHandlerStubField(uintptr_t offset) {
     MOZ_ASSERT(stubFieldPolicy_ == StubFieldPolicy::Constant);

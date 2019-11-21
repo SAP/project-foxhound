@@ -21,8 +21,7 @@ namespace js {
 
 class AutoLockGC;
 class AutoLockGCBgAlloc;
-class FreeOp;
-class NurseryDecommitChunksTask;
+class NurseryDecommitTask;
 
 namespace gc {
 
@@ -441,7 +440,7 @@ class Arena {
   inline size_t& atomBitmapStart();
 
   template <typename T>
-  size_t finalize(FreeOp* fop, AllocKind thingKind, size_t thingSize);
+  size_t finalize(JSFreeOp* fop, AllocKind thingKind, size_t thingSize);
 
   static void staticAsserts();
 
@@ -543,7 +542,7 @@ struct ChunkInfo {
 
  private:
   friend class ChunkPool;
-  friend class js::NurseryDecommitChunksTask;
+  friend class js::NurseryDecommitTask;
   Chunk* next;
   Chunk* prev;
 

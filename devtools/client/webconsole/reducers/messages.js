@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -58,6 +56,11 @@ loader.lazyRequireGetter(
 ChromeUtils.defineModuleGetter(
   this,
   "pointPrecedes",
+  "resource://devtools/shared/execution-point-utils.js"
+);
+ChromeUtils.defineModuleGetter(
+  this,
+  "pointEquals",
   "resource://devtools/shared/execution-point-utils.js"
 );
 
@@ -187,6 +190,22 @@ function addMessage(newMessage, state, filtersState, prefsState, uiState) {
 
   if (newMessage.executionPoint) {
     state.hasExecutionPoints = true;
+  }
+
+  // When replaying, we might get two messages with the same execution point and
+  // logpoint ID. In this case the first message is provisional and should be
+  // removed.
+  const removedIds = [];
+  if (newMessage.logpointId) {
+    const existingMessage = [...state.messagesById.values()].find(existing => {
+      return (
+        existing.logpointId == newMessage.logpointId &&
+        pointEquals(existing.executionPoint, newMessage.executionPoint)
+      );
+    });
+    if (existingMessage) {
+      removedIds.push(existingMessage.id);
+    }
   }
 
   // Check if the current message could be placed in a Warning Group.
@@ -331,7 +350,7 @@ function addMessage(newMessage, state, filtersState, prefsState, uiState) {
     state.networkMessagesUpdateById[newMessage.actor] = newMessage;
   }
 
-  return state;
+  return removeMessagesFromState(state, removedIds);
 }
 /* eslint-enable complexity */
 
@@ -356,7 +375,14 @@ function messages(
 
   let newState;
   switch (action.type) {
-    case constants.PAUSED_EXCECUTION_POINT:
+    case constants.PAUSED_EXECUTION_POINT:
+      if (
+        state.pausedExecutionPoint &&
+        action.executionPoint &&
+        pointEquals(state.pausedExecutionPoint, action.executionPoint)
+      ) {
+        return state;
+      }
       return { ...state, pausedExecutionPoint: action.executionPoint };
     case constants.MESSAGES_ADD:
       // Preemptively remove messages that will never be rendered

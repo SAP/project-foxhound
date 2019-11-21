@@ -9,6 +9,12 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
+const LoginInfo = new Components.Constructor(
+  "@mozilla.org/login-manager/loginInfo;1",
+  Ci.nsILoginInfo,
+  "init"
+);
+
 XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 ChromeUtils.defineModuleGetter(
@@ -163,8 +169,8 @@ this.LoginManagerParent = {
         break;
       }
 
-      case "PasswordManager:onGeneratedPasswordFilled": {
-        this._onGeneratedPasswordFilled(data);
+      case "PasswordManager:onGeneratedPasswordFilledOrEdited": {
+        this._onGeneratedPasswordFilledOrEdited(data);
         break;
       }
 
@@ -194,6 +200,31 @@ this.LoginManagerParent = {
     }
 
     return undefined;
+  },
+
+  // Observers are added in BrowserGlue.jsm on desktop
+  observe(subject, topic, data) {
+    if (
+      topic == "passwordmgr-autosaved-login-merged" ||
+      (topic == "passwordmgr-storage-changed" && data == "removeLogin")
+    ) {
+      let { origin, guid } = subject;
+      let generatedPW = this._generatedPasswordsByPrincipalOrigin.get(origin);
+
+      // in the case where an autosaved login removed or merged into an existing login,
+      // clear the guid associated with the generated-password cache entry
+      if (
+        generatedPW &&
+        (guid == generatedPW.storageGUID ||
+          topic == "passwordmgr-autosaved-login-merged")
+      ) {
+        log(
+          "Removing storageGUID for generated-password cache entry on origin:",
+          origin
+        );
+        generatedPW.storageGUID = null;
+      }
+    }
   },
 
   /**
@@ -410,7 +441,8 @@ this.LoginManagerParent = {
     if (
       isPasswordField &&
       autocompleteInfo.fieldName == "new-password" &&
-      Services.logins.getLoginSavingEnabled(formOrigin)
+      Services.logins.getLoginSavingEnabled(formOrigin) &&
+      !PrivateBrowsingUtils.isWindowPrivate(target.ownerGlobal)
     ) {
       generatedPassword = this.getGeneratedPassword(browsingContextId);
     }
@@ -460,14 +492,43 @@ this.LoginManagerParent = {
     }
 
     generatedPW = {
-      value: PasswordGenerator.generatePassword(),
+      edited: false,
       filled: false,
+      /**
+       * GUID of a login that was already saved for this generated password that
+       * will be automatically updated with password changes. This shouldn't be
+       * an existing saved login for the site unless the user chose to
+       * merge/overwrite via a doorhanger.
+       */
+      storageGUID: null,
+      value: PasswordGenerator.generatePassword(),
     };
     this._generatedPasswordsByPrincipalOrigin.set(
       framePrincipalOrigin,
       generatedPW
     );
     return generatedPW.value;
+  },
+
+  _getPrompter(browser, openerTopWindowID) {
+    let prompterSvc = Cc[
+      "@mozilla.org/login-manager/prompter;1"
+    ].createInstance(Ci.nsILoginManagerPrompter);
+    prompterSvc.init(browser.ownerGlobal);
+    prompterSvc.browser = browser;
+
+    for (let win of Services.wm.getEnumerator(null)) {
+      let tabbrowser = win.gBrowser;
+      if (tabbrowser) {
+        let browser = tabbrowser.getBrowserForOuterWindowID(openerTopWindowID);
+        if (browser) {
+          prompterSvc.openerBrowser = browser;
+          break;
+        }
+      }
+    }
+
+    return prompterSvc;
   },
 
   onFormSubmit(
@@ -483,29 +544,6 @@ this.LoginManagerParent = {
       dismissedPrompt,
     }
   ) {
-    function getPrompter() {
-      let prompterSvc = Cc[
-        "@mozilla.org/login-manager/prompter;1"
-      ].createInstance(Ci.nsILoginManagerPrompter);
-      prompterSvc.init(browser.ownerGlobal);
-      prompterSvc.browser = browser;
-
-      for (let win of Services.wm.getEnumerator(null)) {
-        let tabbrowser = win.gBrowser;
-        if (tabbrowser) {
-          let browser = tabbrowser.getBrowserForOuterWindowID(
-            openerTopWindowID
-          );
-          if (browser) {
-            prompterSvc.openerBrowser = browser;
-            break;
-          }
-        }
-      }
-
-      return prompterSvc;
-    }
-
     function recordLoginUse(login) {
       if (!browser || PrivateBrowsingUtils.isBrowserPrivate(browser)) {
         // don't record non-interactive use in private browsing
@@ -525,10 +563,7 @@ this.LoginManagerParent = {
       return;
     }
 
-    let formLogin = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
-      Ci.nsILoginInfo
-    );
-    formLogin.init(
+    let formLogin = new LoginInfo(
       origin,
       formActionOrigin,
       null,
@@ -560,11 +595,17 @@ this.LoginManagerParent = {
       formActionOrigin,
     });
 
+    let generatedPW = this._generatedPasswordsByPrincipalOrigin.get(origin);
+    let autoSavedStorageGUID = "";
+    if (generatedPW && generatedPW.storageGUID) {
+      autoSavedStorageGUID = generatedPW.storageGUID;
+    }
+
     // If we didn't find a username field, but seem to be changing a
     // password, allow the user to select from a list of applicable
     // logins to update the password for.
     if (!usernameField && oldPasswordField && logins.length > 0) {
-      let prompter = getPrompter();
+      let prompter = this._getPrompter(browser, openerTopWindowID);
 
       if (logins.length == 1) {
         let oldLogin = logins[0];
@@ -581,16 +622,21 @@ this.LoginManagerParent = {
         formLogin.username = oldLogin.username;
         formLogin.usernameField = oldLogin.usernameField;
 
-        prompter.promptToChangePassword(oldLogin, formLogin, dismissedPrompt);
-      } else {
+        prompter.promptToChangePassword(
+          oldLogin,
+          formLogin,
+          dismissedPrompt,
+          false, // notifySaved
+          autoSavedStorageGUID
+        );
+        return;
+      } else if (!generatedPW || generatedPW.value != newPasswordField.value) {
         // Note: It's possible that that we already have the correct u+p saved
         // but since we don't have the username, we don't know if the user is
         // changing a second account to the new password so we ask anyways.
-
         prompter.promptToChangePasswordWithUsernames(logins, formLogin);
+        return;
       }
-
-      return;
     }
 
     let existingLogin = null;
@@ -636,19 +682,23 @@ this.LoginManagerParent = {
       // Change password if needed.
       if (existingLogin.password != formLogin.password) {
         log("...passwords differ, prompting to change.");
-        let prompter = getPrompter();
+        let prompter = this._getPrompter(browser, openerTopWindowID);
         prompter.promptToChangePassword(
           existingLogin,
           formLogin,
-          dismissedPrompt
+          dismissedPrompt,
+          false, // notifySaved
+          autoSavedStorageGUID
         );
       } else if (!existingLogin.username && formLogin.username) {
         log("...empty username update, prompting to change.");
-        let prompter = getPrompter();
+        let prompter = this._getPrompter(browser, openerTopWindowID);
         prompter.promptToChangePassword(
           existingLogin,
           formLogin,
-          dismissedPrompt
+          dismissedPrompt,
+          false, // notifySaved
+          autoSavedStorageGUID
         );
       } else {
         recordLoginUse(existingLogin);
@@ -658,11 +708,24 @@ this.LoginManagerParent = {
     }
 
     // Prompt user to save login (via dialog or notification bar)
-    let prompter = getPrompter();
+    let prompter = this._getPrompter(browser, openerTopWindowID);
     prompter.promptToSavePassword(formLogin, dismissedPrompt);
   },
 
-  _onGeneratedPasswordFilled({ browsingContextId, formActionOrigin }) {
+  _onGeneratedPasswordFilledOrEdited({
+    browsingContextId,
+    formActionOrigin,
+    openerTopWindowID,
+    password,
+    username = "",
+  }) {
+    log("_onGeneratedPasswordFilledOrEdited");
+
+    if (!password) {
+      log("_onGeneratedPasswordFilledOrEdited: The password field is empty");
+      return;
+    }
+
     let browsingContext = BrowsingContext.get(browsingContextId);
     let {
       originNoSuffix,
@@ -670,8 +733,19 @@ this.LoginManagerParent = {
     let formOrigin = LoginHelper.getLoginOrigin(originNoSuffix);
     if (!formOrigin) {
       log(
-        "_onGeneratedPasswordFilled: Invalid form origin:",
+        "_onGeneratedPasswordFilledOrEdited: Invalid form origin:",
         browsingContext.currentWindowGlobal.documentPrincipal
+      );
+      return;
+    }
+
+    if (!Services.logins.getLoginSavingEnabled(formOrigin)) {
+      // No UI should be shown to offer generation in thie case but a user may
+      // disable saving for the site after already filling one and they may then
+      // edit it.
+      log(
+        "_onGeneratedPasswordFilledOrEdited: saving is disabled for:",
+        formOrigin
       );
       return;
     }
@@ -681,8 +755,70 @@ this.LoginManagerParent = {
     let generatedPW = this._generatedPasswordsByPrincipalOrigin.get(
       framePrincipalOrigin
     );
+
+    let shouldAutoSaveLogin = true;
+    let loginToChange = null;
+    let autoSavedLogin = null;
+
+    if (password != generatedPW.value) {
+      // The user edited the field after generation to a non-empty value.
+      log("The field containing the generated password has changed");
+
+      // Record telemetry for the first edit
+      if (!generatedPW.edited) {
+        Services.telemetry.recordEvent(
+          "pwmgr",
+          "filled_field_edited",
+          "generatedpassword"
+        );
+        log("filled_field_edited telemetry event recorded");
+        generatedPW.edited = true;
+      }
+
+      // The edit was to a login that was auto-saved.
+      // Note that it could have been saved in a totally different tab in the session.
+      if (generatedPW.storageGUID) {
+        let existingLogins = LoginHelper.searchLoginsWithObject({
+          guid: generatedPW.storageGUID,
+        });
+
+        if (existingLogins.length) {
+          log(
+            "_onGeneratedPasswordFilledOrEdited: login to change is the auto-saved login"
+          );
+          loginToChange = existingLogins[0];
+          autoSavedLogin = loginToChange;
+        }
+        // The generated password login may have been deleted in the meantime.
+        // Proceed to maybe save a new login below.
+      }
+
+      generatedPW.value = password;
+    }
+
+    let formLogin = new LoginInfo(
+      formOrigin,
+      formActionOrigin,
+      null,
+      username,
+      generatedPW.value
+    );
+
+    let formLoginWithoutUsername = new LoginInfo(
+      formOrigin,
+      formActionOrigin,
+      null,
+      "",
+      generatedPW.value
+    );
+
     // This will throw if we can't look up the entry in the password/origin map
     if (!generatedPW.filled) {
+      if (generatedPW.storageGUID) {
+        throw new Error(
+          "Generated password was saved in storage without being filled first"
+        );
+      }
       // record first use of this generated password
       Services.telemetry.recordEvent(
         "pwmgr",
@@ -693,31 +829,103 @@ this.LoginManagerParent = {
       generatedPW.filled = true;
     }
 
-    if (!Services.logins.getLoginSavingEnabled(formOrigin)) {
-      log("_onGeneratedPasswordFilled: saving is disabled for:", formOrigin);
-      return;
+    if (!loginToChange) {
+      // Check if we already have a login saved for this site since we don't want to overwrite it in
+      // case the user still needs their old password to successfully complete a password change.
+      // An empty formActionOrigin is used as a wildcard to not restrict to action matches.
+      let logins = this._searchAndDedupeLogins(formOrigin, {
+        acceptDifferentSubdomains: false,
+        httpRealm: null,
+        ignoreActionAndRealm: false,
+      });
+
+      let matchedLogin = logins.find(login =>
+        formLoginWithoutUsername.matches(login, true)
+      );
+      if (matchedLogin) {
+        shouldAutoSaveLogin = false;
+        if (matchedLogin.password == formLoginWithoutUsername.password) {
+          // This login is already saved so show no new UI.
+          log(
+            "_onGeneratedPasswordFilledOrEdited: Matching login already saved"
+          );
+          return;
+        }
+        log(
+          "_onGeneratedPasswordFilledOrEdited: Login with empty username already saved for this site"
+        );
+      }
+
+      if (
+        (matchedLogin = logins.find(login => formLogin.matches(login, true)))
+      ) {
+        // We're updating a previously-saved login
+        loginToChange = matchedLogin;
+      }
     }
 
-    // Check if we already have a login saved for this site since we don't want to overwrite it in
-    // case the user still needs their old password to succesffully complete a password change.
-    // An empty formActionOrigin is used as a wildcard to not restrict to action matches.
-    let logins = this._searchAndDedupeLogins(formOrigin, {
-      acceptDifferentSubdomains: false,
-      httpRealm: null,
-      ignoreActionAndRealm: false,
-    });
+    if (shouldAutoSaveLogin) {
+      if (loginToChange && loginToChange == autoSavedLogin) {
+        log(
+          "_onGeneratedPasswordFilledOrEdited: updating auto-saved login with changed password"
+        );
 
-    if (logins.length > 0) {
-      log("_onGeneratedPasswordFilled: Login already saved for this site");
+        Services.logins.modifyLogin(
+          loginToChange,
+          LoginHelper.newPropertyBag({
+            password,
+          })
+        );
+        // Update `loginToChange` with the new password if modifyLogin didn't
+        // throw so that the prompts later uses the new password.
+        loginToChange.password = password;
+      } else {
+        log(
+          "_onGeneratedPasswordFilledOrEdited: auto-saving new login with empty username"
+        );
+        loginToChange = Services.logins.addLogin(formLoginWithoutUsername);
+        // Remember the GUID where we saved the generated password so we can update
+        // the login if the user later edits the generated password.
+        generatedPW.storageGUID = loginToChange.guid;
+      }
+    } else {
+      log(
+        "_onGeneratedPasswordFilledOrEdited: not auto-saving/updating this login"
+      );
+    }
+    let browser = browsingContext.top.embedderElement;
+    let prompter = this._getPrompter(browser, openerTopWindowID);
+
+    if (loginToChange) {
+      // Show a change doorhanger to allow modifying an already-saved login
+      // e.g. to add a username or update the password.
+      let autoSavedStorageGUID = "";
+      if (
+        generatedPW.value == loginToChange.password &&
+        generatedPW.storageGUID == loginToChange.guid
+      ) {
+        autoSavedStorageGUID = generatedPW.storageGUID;
+      }
+
+      log(
+        "_onGeneratedPasswordFilledOrEdited: promptToChangePassword with autoSavedStorageGUID: " +
+          autoSavedStorageGUID
+      );
+      prompter.promptToChangePassword(
+        loginToChange,
+        formLogin,
+        true, // dismissed prompt
+        shouldAutoSaveLogin, // notifySaved
+        autoSavedStorageGUID // autoSavedLoginGuid
+      );
       return;
     }
-
-    let password = generatedPW.value;
-    let formLogin = Cc["@mozilla.org/login-manager/loginInfo;1"].createInstance(
-      Ci.nsILoginInfo
+    log("_onGeneratedPasswordFilledOrEdited: no matching login to save/update");
+    prompter.promptToSavePassword(
+      formLogin,
+      true, // dismissed prompt
+      shouldAutoSaveLogin // notifySaved
     );
-    formLogin.init(formOrigin, formActionOrigin, null, "", password);
-    Services.logins.addLogin(formLogin);
   },
 
   /**

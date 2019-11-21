@@ -75,6 +75,8 @@ user_pref("browser.warnOnQuit", false);
 // Enable webapps testing mode, which bypasses native installation.
 user_pref("browser.webapps.testing", true);
 user_pref("captivedetect.canonicalURL", "http://{server}/captive-detect/success.txt");
+// Enable android logcat for better diagnostics on beta/release
+user_pref("consoleservice.logcat", true);
 // Point Firefox Health Report at a local server. We don't care if it actually
 // works. It just can't hit the default production endpoint.
 user_pref("datareporting.healthreport.documentServerURI", "http://{server}/healthreport/");
@@ -84,7 +86,7 @@ user_pref("devtools.debugger.remote-port", 6023);
 user_pref("devtools.testing", true);
 user_pref("dom.allow_scripts_to_close_windows", true);
 user_pref("dom.disable_open_during_load", false);
-user_pref("dom.ipc.reportProcessHangs", false); // process hang monitor
+user_pref("dom.ipc.reportProcessHangs", true); // process hang monitor
 // Don't forceably kill content processes after a timeout
 user_pref("dom.ipc.tabs.shutdownTimeoutSecs", 0);
 user_pref("dom.min_background_timeout_value", 1000);
@@ -111,7 +113,7 @@ user_pref("extensions.defaultProviders.enabled", true);
 user_pref("extensions.getAddons.cache.enabled", false);
 // Make sure AddonRepository won't hit the network
 user_pref("extensions.getAddons.get.url", "http://{server}/extensions-dummy/repositoryGetURL");
-user_pref("extensions.getAddons.getWithPerformance.url", "http://{server}/extensions-dummy/repositoryGetWithPerformanceURL");
+user_pref("extensions.getAddons.compatOverides.url", "http://{server}/extensions-dummy/repositoryCompatOverridesURL");
 user_pref("extensions.getAddons.search.browseURL", "http://{server}/extensions-dummy/repositoryBrowseURL");
 user_pref("extensions.hotfix.url", "http://{server}/extensions-dummy/hotfixURL");
 // Disable intalling any distribution add-ons
@@ -244,3 +246,4 @@ user_pref("security.data_uri.block_toplevel_data_uri_navigations", false);
 
 // We use data: to tell the Quitter extension to quit.
 user_pref("security.data_uri.block_toplevel_data_uri_navigations", false);
+

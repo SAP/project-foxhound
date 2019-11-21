@@ -27,8 +27,14 @@ class ContentProcessTargetFront extends TargetMixin(
     // Save the full form for Target class usage.
     // Do not use `form` name to avoid colliding with protocol.js's `form` method
     this.targetForm = json;
-    this.targetForm.contextActor = json.chromeDebugger;
-    this._threadActor = json.chromeDebugger;
+    // FF69 chromeDebugger naming has been renamed into threadActor and could be removed when FF69
+    // is no longer supported
+    this._threadActor = json.threadActor || json.chromeDebugger;
+    this.targetForm.contextActor = this._threadActor;
+  }
+
+  get name() {
+    return `Content Process ${this.processID}`;
   }
 
   attach() {

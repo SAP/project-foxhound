@@ -186,10 +186,9 @@ class MediaDecoderStateMachine
   RefPtr<GenericPromise> RequestDebugInfo(
       dom::MediaDecoderStateMachineDebugInfo& aInfo);
 
-  void SetOutputStreamPrincipal(const nsCOMPtr<nsIPrincipal>& aPrincipal);
-  void SetOutputStreamCORSMode(CORSMode aCORSMode);
+  void SetOutputStreamPrincipal(nsIPrincipal* aPrincipal);
   // If an OutputStreamManager does not exist, one will be created.
-  void EnsureOutputStreamManager(MediaStreamGraph* aGraph);
+  void EnsureOutputStreamManager(SharedDummyStream* aDummyStream);
   // If an OutputStreamManager exists, tracks matching aLoadedInfo will be
   // created unless they already exist in the manager.
   void EnsureOutputStreamManagerHasTracks(const MediaInfo& aLoadedInfo);
@@ -199,12 +198,6 @@ class MediaDecoderStateMachine
   // Remove an output stream added with AddOutputStream. If the last output
   // stream was removed, we will also tear down the OutputStreamManager.
   void RemoveOutputStream(DOMMediaStream* aStream);
-  // Set the TrackID to be used as the initial id by the next DecodedStream
-  // sink.
-  void SetNextOutputStreamTrackID(TrackID aNextTrackID);
-  // Get the next TrackID to be allocated by DecodedStream,
-  // or the last set TrackID if there is no DecodedStream sink.
-  TrackID GetNextOutputStreamTrackID();
 
   // Seeks to the decoder to aTarget asynchronously.
   RefPtr<MediaDecoder::SeekPromise> InvokeSeek(const SeekTarget& aTarget);
@@ -686,13 +679,6 @@ class MediaDecoderStateMachine
   // Principal used by output streams. Main thread only.
   nsCOMPtr<nsIPrincipal> mOutputStreamPrincipal;
 
-  // CORSMode used by output streams. Main thread only.
-  CORSMode mOutputStreamCORSMode = CORS_NONE;
-
-  // The next TrackID to be used when a DecodedStream allocates a track.
-  // Main thread only.
-  TrackID mNextOutputStreamTrackID = 1;
-
   // Track the current video decode mode.
   VideoDecodeMode mVideoDecodeMode;
 
@@ -746,10 +732,6 @@ class MediaDecoderStateMachine
   // Whether to seek back to the start of the media resource
   // upon reaching the end.
   Mirror<bool> mLooping;
-
-  // True if the media is same-origin with the element. Data can only be
-  // passed to MediaStreams when this is true.
-  Mirror<bool> mSameOriginMedia;
 
   // Duration of the media. This is guaranteed to be non-null after we finish
   // decoding the first frame.

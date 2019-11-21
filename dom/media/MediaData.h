@@ -296,6 +296,13 @@ class MediaData {
 
   media::TimeUnit GetEndTime() const { return mTime + mDuration; }
 
+  media::TimeUnit GetEndTimecode() const { return mTimecode + mDuration; }
+
+  bool HasValidTime() const {
+    return mTime.IsValid() && mTimecode.IsValid() && mDuration.IsValid() &&
+           GetEndTime().IsValid() && GetEndTimecode().IsValid();
+  }
+
   // Return true if the adjusted time is valid. Caller should handle error when
   // the result is invalid.
   virtual bool AdjustForStartTime(const media::TimeUnit& aStartTime) {
@@ -415,6 +422,7 @@ class VideoData : public MediaData {
   typedef gfx::IntRect IntRect;
   typedef gfx::IntSize IntSize;
   typedef gfx::ColorDepth ColorDepth;
+  typedef gfx::ColorRange ColorRange;
   typedef gfx::YUVColorSpace YUVColorSpace;
   typedef layers::ImageContainer ImageContainer;
   typedef layers::Image Image;
@@ -438,8 +446,9 @@ class VideoData : public MediaData {
     };
 
     Plane mPlanes[3];
-    YUVColorSpace mYUVColorSpace = YUVColorSpace::BT601;
+    YUVColorSpace mYUVColorSpace = YUVColorSpace::UNKNOWN;
     ColorDepth mColorDepth = ColorDepth::COLOR_8;
+    ColorRange mColorRange = ColorRange::LIMITED;
   };
 
   class Listener {

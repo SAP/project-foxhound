@@ -7,7 +7,8 @@
 /*
  * Module that listens for requests to start a `DebuggerServer` for an entire content
  * process.  Loaded into content processes by the main process during
- * `DebuggerServer.connectToContentProcess` via the process script `content-process.js`.
+ * content-process-connector.js' `connectToContentProcess` via the process
+ * script `content-process.js`.
  *
  * The actual server startup itself is in this JSM so that code can be cached.
  */
@@ -32,9 +33,10 @@ function setupServer(mm) {
   // Init a custom, invisible DebuggerServer, in order to not pollute the
   // debugger with all devtools modules, nor break the debugger itself with
   // using it in the same process.
-  gLoader = new DevToolsLoader();
-  gLoader.invisibleToDebugger = true;
-  const { DebuggerServer } = gLoader.require("devtools/server/main");
+  gLoader = new DevToolsLoader({
+    invisibleToDebugger: true,
+  });
+  const { DebuggerServer } = gLoader.require("devtools/server/debugger-server");
 
   DebuggerServer.init();
   // For browser content toolbox, we do need a regular root actor and all tab
@@ -63,7 +65,7 @@ function init(msg) {
 
   // Connect both parent/child processes debugger servers RDP via message
   // managers
-  const { DebuggerServer } = loader.require("devtools/server/main");
+  const { DebuggerServer } = loader.require("devtools/server/debugger-server");
   const conn = DebuggerServer.connectToParent(prefix, mm);
   conn.parentMessageManager = mm;
 

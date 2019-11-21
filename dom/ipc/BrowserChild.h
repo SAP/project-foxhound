@@ -190,7 +190,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                const TabContext& aContext, BrowsingContext* aBrowsingContext,
                uint32_t aChromeFlags, bool aIsTopLevel);
 
-  nsresult Init(mozIDOMWindowProxy* aParent);
+  nsresult Init(mozIDOMWindowProxy* aParent,
+                WindowGlobalChild* aInitialWindowChild);
 
   /** Return a BrowserChild with the given attributes. */
   static already_AddRefed<BrowserChild> Create(
@@ -283,7 +284,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvSizeModeChanged(const nsSizeMode& aSizeMode);
 
   mozilla::ipc::IPCResult RecvChildToParentMatrix(
-      const mozilla::gfx::Matrix4x4& aMatrix);
+      const mozilla::Maybe<mozilla::gfx::Matrix4x4>& aMatrix);
 
   mozilla::ipc::IPCResult RecvActivate();
 
@@ -323,7 +324,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvRealDragEvent(const WidgetDragEvent& aEvent,
                                             const uint32_t& aDragAction,
                                             const uint32_t& aDropEffect,
-                                            nsIPrincipal* aPrincipal);
+                                            nsIPrincipal* aPrincipal,
+                                            nsIContentSecurityPolicy* aCsp);
 
   mozilla::ipc::IPCResult RecvRealKeyEvent(
       const mozilla::WidgetKeyboardEvent& aEvent);
@@ -359,6 +361,8 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvFlushTabState(const uint32_t& aFlushId,
                                             const bool& aIsFinal);
 
+  mozilla::ipc::IPCResult RecvUpdateEpoch(const uint32_t& aEpoch);
+
   mozilla::ipc::IPCResult RecvNativeSynthesisResponse(
       const uint64_t& aObserverId, const nsCString& aResponse);
 
@@ -391,7 +395,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
                                                const bool& aRunInGlobalScope);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMessage,
-                                           InfallibleTArray<CpowEntry>&& aCpows,
+                                           nsTArray<CpowEntry>&& aCpows,
                                            nsIPrincipal* aPrincipal,
                                            const ClonedMessageData& aData);
   mozilla::ipc::IPCResult RecvSwappedWithOtherRemoteLoader(
@@ -421,14 +425,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   bool IsTransparent() const { return mIsTransparent; }
 
   const EffectsInfo& GetEffectsInfo() const { return mEffectsInfo; }
-
-  void GetMaxTouchPoints(uint32_t* aTouchPoints) {
-    *aTouchPoints = mMaxTouchPoints;
-  }
-
-  void SetMaxTouchPoints(uint32_t aMaxTouchPoints) {
-    mMaxTouchPoints = aMaxTouchPoints;
-  }
 
   hal::ScreenOrientation GetOrientation() const { return mOrientation; }
 
@@ -550,6 +546,7 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   bool AsyncPanZoomEnabled() const;
 
   ScreenIntSize GetInnerSize();
+  CSSSize GetUnscaledInnerSize() { return mUnscaledInnerSize; }
 
   Maybe<LayoutDeviceIntRect> GetVisibleRect() const;
 
@@ -665,17 +662,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
  protected:
   virtual ~BrowserChild();
 
-  PWindowGlobalChild* AllocPWindowGlobalChild(const WindowGlobalInit& aInit);
-
-  bool DeallocPWindowGlobalChild(PWindowGlobalChild* aActor);
-
-  PBrowserBridgeChild* AllocPBrowserBridgeChild(
-      const nsString& aName, const nsString& aRemoteType,
-      BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags,
-      const TabId& aTabId);
-
-  bool DeallocPBrowserBridgeChild(PBrowserBridgeChild* aActor);
-
   mozilla::ipc::IPCResult RecvDestroy();
 
   mozilla::ipc::IPCResult RecvSetDocShellIsActive(const bool& aIsActive);
@@ -684,14 +670,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   mozilla::ipc::IPCResult RecvRenderLayers(
       const bool& aEnabled, const bool& aForce,
       const layers::LayersObserverEpoch& aEpoch);
-
-  mozilla::ipc::IPCResult RecvRequestRootPaint(
-      const IntRect& aRect, const float& aScale,
-      const nscolor& aBackgroundColor, RequestRootPaintResolver&& aResolve);
-
-  mozilla::ipc::IPCResult RecvRequestSubPaint(
-      const float& aScale, const nscolor& aBackgroundColor,
-      RequestSubPaintResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
                                             const bool& aForDocumentNavigation);
@@ -819,7 +797,6 @@ class BrowserChild final : public nsMessageManagerScriptExecutor,
   uint32_t mChromeFlags;
   uint32_t mMaxTouchPoints;
   layers::LayersId mLayersId;
-  int64_t mBeforeUnloadListeners;
   CSSRect mUnscaledOuterRect;
   Maybe<bool> mLayersConnected;
   EffectsInfo mEffectsInfo;

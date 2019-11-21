@@ -109,8 +109,42 @@ In this case users identified as being in the US region would use the WebExtensi
 with identifier ``webext-engine1``, version 1.1. GB region users would get
 ``webext-gb`` version 1.2, and all other users would get ``webext`` version 1.0.
 
+Special Attributes
+------------------
+
+If a ``webExtensionLocale`` attribute is specified with the value
+``"$USER_LOCALE"`` then the special value will be replaced in the
+configuration object with the users locale. For example:
+
+.. code-block:: js
+
+    "engine1": {
+      "webExtensionId": "webext",
+      "webExtensionVersion": "1.0",
+      "appliesTo": [{
+        "included": {
+          "locales": {
+            "matches": ["us", "gb"]
+          },
+          "webExtensionLocale": "$USER_LOCALE",
+        },
+
+Will report either ``us`` or ``gb`` as the ``webExtensionLocale``
+depending on the user.
+
 Engine Defaults
 ---------------
+
+An engine may be specified as the default for one of two purposes:
+
+#. normal browsing mode,
+#. private browsing mode.
+
+If there is no engine specified for private browsing mode for a particular region/locale
+pair, then the normal mode engine is used.
+
+If the instance of the application does not support a separate private browsing mode engine,
+then it will only use the normal mode engine.
 
 An engine may or may not be default for particular regions/locales. The ``default``
 property is a tri-state value with states of ``yes``, ``yes-if-no-other`` and
@@ -146,13 +180,27 @@ property is a tri-state value with states of ``yes``, ``yes-if-no-other`` and
           "everywhere": true
         },
       }]
-    }
+    },
+    "engine4": {
+      "defaultPrivate": "yes",
+      "appliesTo": [{
+        "included": {
+          "region": "fr"
+        }
+      }]
 
-In this example:
+In this example, for normal mode:
 
-    - engine1 is default in the US region, and all other regions except for GB.
+    - engine1 is default in the US region, and all other regions except for GB
+    - engine2 is default in only the GB region
+    - engine3 and engine4 are never default anywhere
+
+In private browsing mode:
+
+    - engine1 is default in the US region, and all other regions execpt for GB and FR
     - engine2 is default in only the GB region
     - engine3 is never default anywhere
+    - engine4 is default in the FR region.
 
 Engine Ordering
 ---------------
@@ -161,11 +209,12 @@ The ``orderHint`` field indicates the suggested ordering of an engine relative t
 other engines when displayed to the user, unless the user has customized their
 ordering.
 
-If the engine is default, then it will be displayed as the first engine
-regardless of the ``orderHint`` field, unless the user has customized their
-ordering.
+The default ordering of engines is based on a combination of if the engine is
+default, and the ``orderHint`` fields. The ordering is structured as follows:
 
-For the ``orderHint`` field, a higher number indicates a higher rank.
+#. Default engine in normal mode
+#. Default engine in private browsing mode (if different from the normal mode engine)
+#. Other engines in order from the highest ``orderHint`` to the lowest.
 
 Example:
 

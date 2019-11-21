@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/publicdomain/zero/1.0/
 
@@ -511,6 +510,42 @@ function runChecks(dbgObject, environment, sandbox) {
 
   results = propertyProvider("testHyphenated['prop");
   test_has_result(results, `'prop-A'`);
+
+  results = propertyProvider(`//t`);
+  Assert.ok(results === null, "Does not complete in inline comment");
+
+  results = propertyProvider(`// t`);
+  Assert.ok(
+    results === null,
+    "Does not complete in inline comment after space"
+  );
+
+  results = propertyProvider(`//I'm a comment\nt`);
+  test_has_result(results, "testObject");
+
+  results = propertyProvider(`1/t`);
+  test_has_result(results, "testObject");
+
+  results = propertyProvider(`/* t`);
+  Assert.ok(results === null, "Does not complete in multiline comment");
+
+  results = propertyProvider(`/*I'm\nt`);
+  Assert.ok(
+    results === null,
+    "Does not complete in multiline comment after line break"
+  );
+
+  results = propertyProvider(`/*I'm a comment\n \t * /t`);
+  Assert.ok(
+    results === null,
+    "Does not complete in multiline comment after line break and invalid comment end"
+  );
+
+  results = propertyProvider(`/*I'm a comment\n \t */t`);
+  test_has_result(results, "testObject");
+
+  results = propertyProvider(`/*I'm a comment\n \t */\n\nt`);
+  test_has_result(results, "testObject");
 }
 
 /**

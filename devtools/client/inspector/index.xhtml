@@ -32,8 +32,8 @@
     var isInChrome = window.location.href.includes("chrome:");
     if (isInChrome) {
       var exports = {};
-      var { require, loader } = Cu.import("resource://devtools/shared/Loader.jsm", {});
-      var { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js", {});
+      var { require, loader } = Cu.import("resource://devtools/shared/Loader.jsm");
+      var { BrowserLoader } = Cu.import("resource://devtools/client/shared/browser-loader.js");
     }
   </script>
 
@@ -138,10 +138,6 @@
             <div id="computed-no-results" class="devtools-sidepanel-no-result" hidden="" data-localization="content=inspector.noProperties"></div>
           </div>
         </div>
-      </div>
-
-      <div id="sidebar-panel-animationinspector" class="theme-sidebar inspector-tabpanel">
-        <iframe class="devtools-inspector-tab-frame"></iframe>
       </div>
     </div>
 

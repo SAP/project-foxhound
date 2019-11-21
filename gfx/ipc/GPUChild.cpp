@@ -8,7 +8,7 @@
 #include "GPUProcessHost.h"
 #include "GPUProcessManager.h"
 #include "VRProcessManager.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
 #include "mozilla/dom/CheckerboardReportService.h"
@@ -17,7 +17,6 @@
 #if defined(XP_WIN)
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #endif
-#include "mozilla/ipc/CrashReporterHost.h"
 #include "mozilla/layers/APZInputBridgeChild.h"
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
 #include "mozilla/Unused.h"
@@ -89,19 +88,6 @@ base::ProcessHandle GPUChild::GetChildProcessHandle() {
   return mHost->GetChildProcessHandle();
 }
 
-PAPZInputBridgeChild* GPUChild::AllocPAPZInputBridgeChild(
-    const LayersId& aLayersId) {
-  APZInputBridgeChild* child = new APZInputBridgeChild();
-  child->AddRef();
-  return child;
-}
-
-bool GPUChild::DeallocPAPZInputBridgeChild(PAPZInputBridgeChild* aActor) {
-  APZInputBridgeChild* child = static_cast<APZInputBridgeChild*>(aActor);
-  child->Release();
-  return true;
-}
-
 mozilla::ipc::IPCResult GPUChild::RecvInitComplete(const GPUDeviceData& aData) {
   // We synchronously requested GPU parameters before this arrived.
   if (mGPUReady) {
@@ -131,18 +117,10 @@ mozilla::ipc::IPCResult GPUChild::RecvGraphicsError(const nsCString& aError) {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult GPUChild::RecvInitCrashReporter(
-    Shmem&& aShmem, const NativeThreadId& aThreadId) {
-  mCrashReporter = MakeUnique<ipc::CrashReporterHost>(GeckoProcessType_GPU,
-                                                      aShmem, aThreadId);
-
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult GPUChild::RecvCreateVRProcess() {
   // Make sure create VR process at the main process
   MOZ_ASSERT(XRE_IsParentProcess());
-  if (StaticPrefs::dom_vr_process_enabled()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     VRProcessManager::Initialize();
     VRProcessManager* vr = VRProcessManager::Get();
     MOZ_ASSERT(vr, "VRProcessManager must be initialized first.");
@@ -158,7 +136,7 @@ mozilla::ipc::IPCResult GPUChild::RecvCreateVRProcess() {
 mozilla::ipc::IPCResult GPUChild::RecvShutdownVRProcess() {
   // Make sure stopping VR process at the main process
   MOZ_ASSERT(XRE_IsParentProcess());
-  if (StaticPrefs::dom_vr_process_enabled()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     VRProcessManager::Shutdown();
   }
 
@@ -176,27 +154,27 @@ mozilla::ipc::IPCResult GPUChild::RecvNotifyUiObservers(
 }
 
 mozilla::ipc::IPCResult GPUChild::RecvAccumulateChildHistograms(
-    InfallibleTArray<HistogramAccumulation>&& aAccumulations) {
+    nsTArray<HistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildHistograms(Telemetry::ProcessID::Gpu,
                                           aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUChild::RecvAccumulateChildKeyedHistograms(
-    InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations) {
+    nsTArray<KeyedHistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildKeyedHistograms(Telemetry::ProcessID::Gpu,
                                                aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUChild::RecvUpdateChildScalars(
-    InfallibleTArray<ScalarAction>&& aScalarActions) {
+    nsTArray<ScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildScalars(Telemetry::ProcessID::Gpu, aScalarActions);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult GPUChild::RecvUpdateChildKeyedScalars(
-    InfallibleTArray<KeyedScalarAction>&& aScalarActions) {
+    nsTArray<KeyedScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildKeyedScalars(Telemetry::ProcessID::Gpu,
                                         aScalarActions);
   return IPC_OK();
@@ -250,12 +228,7 @@ mozilla::ipc::IPCResult GPUChild::RecvFinishMemoryReport(
 
 void GPUChild::ActorDestroy(ActorDestroyReason aWhy) {
   if (aWhy == AbnormalShutdown) {
-    if (mCrashReporter) {
-      mCrashReporter->GenerateCrashReport(OtherPid());
-      mCrashReporter = nullptr;
-    } else {
-      CrashReporter::FinalizeOrphanedMinidump(OtherPid(), GeckoProcessType_GPU);
-    }
+    GenerateCrashReport(OtherPid());
 
     Telemetry::Accumulate(
         Telemetry::SUBPROCESS_ABNORMAL_ABORT,

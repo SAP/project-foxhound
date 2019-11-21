@@ -34,6 +34,7 @@ loader.lazyRequireGetter(
   "devtools/client/shared/link",
   true
 );
+const EventEmitter = require("devtools/shared/event-emitter");
 
 var gHudId = 0;
 const isMacOS = Services.appinfo.OS === "Darwin";
@@ -50,48 +51,36 @@ const isMacOS = Services.appinfo.OS === "Darwin";
 class WebConsole {
   /*
    * @constructor
-   * @param object target
-   *        The target that the web console will connect to.
+   * @param object toolbox
+   *        The toolbox where the web console is displayed.
    * @param nsIDOMWindow iframeWindow
    *        The window where the web console UI is already loaded.
    * @param nsIDOMWindow chromeWindow
    *        The window of the web console owner.
-   * @param object hudService
-   *        The parent HUD Service
    * @param bool isBrowserConsole
    */
-  constructor(
-    target,
-    iframeWindow,
-    chromeWindow,
-    hudService,
-    isBrowserConsole = false
-  ) {
+  constructor(toolbox, iframeWindow, chromeWindow, isBrowserConsole = false) {
+    this.toolbox = toolbox;
     this.iframeWindow = iframeWindow;
     this.chromeWindow = chromeWindow;
     this.hudId = "hud_" + ++gHudId;
-    this.target = target;
     this.browserWindow = this.chromeWindow.top;
-    this.hudService = hudService;
-    this._browserConsole = isBrowserConsole;
+    this.isBrowserConsole = isBrowserConsole;
 
     const element = this.browserWindow.document.documentElement;
     if (element.getAttribute("windowtype") != gDevTools.chromeWindowType) {
-      this.browserWindow = this.hudService.currentContext();
+      this.browserWindow = Services.wm.getMostRecentWindow(
+        gDevTools.chromeWindowType
+      );
     }
     this.ui = new WebConsoleUI(this);
     this._destroyer = null;
+
+    EventEmitter.decorate(this);
   }
 
-  /**
-   * Getter for a function to to listen for every request that completes. Used
-   * by unit tests. The callback takes one argument: the HTTP activity object as
-   * received from the remote Web Console.
-   *
-   * @type function
-   */
-  get lastFinishedRequestCallback() {
-    return this.hudService.lastFinishedRequest.callback;
+  get currentTarget() {
+    return this.toolbox.target;
   }
 
   /**
@@ -109,14 +98,6 @@ class WebConsole {
     return this.chromeWindow.top;
   }
 
-  /**
-   * Getter for the output element that holds messages we display.
-   * @type Element
-   */
-  get outputNode() {
-    return this.ui ? this.ui.outputNode : null;
-  }
-
   get gViewSourceUtils() {
     return this.chromeUtilsWindow.gViewSourceUtils;
   }
@@ -128,7 +109,7 @@ class WebConsole {
    *         A promise for the initialization.
    */
   init() {
-    return this.ui.init().then(() => this);
+    return this.ui.init();
   }
 
   /**
@@ -163,14 +144,6 @@ class WebConsole {
     }
 
     this.jsterm._setValue(newValue);
-  }
-
-  /**
-   * Alias for the WebConsoleUI.setFilterState() method.
-   * @see webconsole.js::WebConsoleUI.setFilterState()
-   */
-  setFilterState() {
-    this.ui && this.ui.setFilterState.apply(this.ui, arguments);
   }
 
   /**
@@ -217,7 +190,7 @@ class WebConsole {
    *        The line number which you want to place the caret.
    */
   viewSourceInStyleEditor(sourceURL, sourceLine) {
-    const toolbox = gDevTools.getToolbox(this.target);
+    const toolbox = this.toolbox;
     if (!toolbox) {
       this.viewSource(sourceURL, sourceLine);
       return;
@@ -240,7 +213,7 @@ class WebConsole {
    *        The column number which you want to place the caret.
    */
   viewSourceInDebugger(sourceURL, sourceLine, sourceColumn) {
-    const toolbox = gDevTools.getToolbox(this.target);
+    const toolbox = this.toolbox;
     if (!toolbox) {
       this.viewSource(sourceURL, sourceLine, sourceColumn);
       return;
@@ -270,14 +243,14 @@ class WebConsole {
    *
    * @return object|null
    *         An object which holds:
-   *         - frames: the active ThreadClient.cachedFrames array.
+   *         - frames: the active ThreadFront.cachedFrames array.
    *         - selected: depth/index of the selected stackframe in the debugger
    *         UI.
    *         If the debugger is not open or if it's not paused, then |null| is
    *         returned.
    */
   getDebuggerFrames() {
-    const toolbox = gDevTools.getToolbox(this.target);
+    const toolbox = this.toolbox;
     if (!toolbox) {
       return null;
     }
@@ -288,18 +261,6 @@ class WebConsole {
     }
 
     return panel.getFrames();
-  }
-
-  /**
-   * Return the console client to use when interacting with a thread.
-   *
-   * @param {String} thread: The ID of the target thread.
-   * @returns {Object} The console client associated with the thread.
-   */
-  lookupConsoleClient(thread) {
-    const toolbox = gDevTools.getToolbox(this.target);
-    const panel = toolbox.getPanel("jsdebugger");
-    return panel.lookupConsoleClient(thread);
   }
 
   /**
@@ -318,7 +279,7 @@ class WebConsole {
    *                               `originalExpression`.
    */
   getMappedExpression(expression) {
-    const toolbox = gDevTools.getToolbox(this.target);
+    const toolbox = this.toolbox;
 
     // We need to check if the debugger is open, since it may perform a variable name
     // substitution for sourcemapped script (i.e. evaluated `myVar.trim()` might need to
@@ -373,7 +334,7 @@ class WebConsole {
    *         then |null| is returned.
    */
   getInspectorSelection() {
-    const toolbox = gDevTools.getToolbox(this.target);
+    const toolbox = this.toolbox;
     if (!toolbox) {
       return null;
     }
@@ -391,36 +352,25 @@ class WebConsole {
    * @return object
    *         A promise object that is resolved once the Web Console is closed.
    */
-  async destroy() {
-    if (this._destroyer) {
-      return this._destroyer;
+  destroy() {
+    if (!this.hudId) {
+      return;
     }
 
-    this._destroyer = (async () => {
-      this.hudService.consoles.delete(this.hudId);
+    if (this.ui) {
+      this.ui.destroy();
+    }
 
-      if (this.ui) {
-        await this.ui.destroy();
-      }
+    if (this._parserService) {
+      this._parserService.stop();
+      this._parserService = null;
+    }
 
-      if (!this._browserConsole) {
-        try {
-          await this.target.focus();
-        } catch (ex) {
-          // Tab focus can fail if the tab or target is closed.
-        }
-      }
+    const id = Utils.supportsString(this.hudId);
+    Services.obs.notifyObservers(id, "web-console-destroyed");
+    this.hudId = null;
 
-      if (this._parserService) {
-        this._parserService.stop();
-        this._parserService = null;
-      }
-
-      const id = Utils.supportsString(this.hudId);
-      Services.obs.notifyObservers(id, "web-console-destroyed");
-    })();
-
-    return this._destroyer;
+    this.emit("destroyed");
   }
 }
 

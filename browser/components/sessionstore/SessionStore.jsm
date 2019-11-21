@@ -913,6 +913,11 @@ var SessionStoreInternal = {
       return;
     }
 
+    // Ignore sessionStore update from previous epochs
+    if (!this.isCurrentEpoch(aBrowser, aData.epoch)) {
+      return;
+    }
+
     TabState.update(aBrowser, aData);
     let win = aBrowser.ownerGlobal;
     this.saveStateDelayed(win);
@@ -2653,7 +2658,7 @@ var SessionStoreInternal = {
     // embedded within a normal tab. We can't do one of these swaps for a
     // cross-origin frame.
     if (browsingContext.embedderElement) {
-      let tabbrowser = browsingContext.embedderElement.ownerGlobal.gBrowser;
+      let tabbrowser = browsingContext.embedderElement.getTabBrowser();
       if (!tabbrowser) {
         debug(
           `[process-switch]: cannot find tabbrowser for loading tab - ignoring`
@@ -5814,10 +5819,10 @@ var SessionStoreInternal = {
           let { frameLoader } = browser;
           if (frameLoader.remoteTab) {
             let attrs = browser.contentPrincipal.originAttributes;
-            let dataPrincipal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+            let dataPrincipal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
               origin
             );
-            let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+            let principal = Services.scriptSecurityManager.createContentPrincipal(
               dataPrincipal.URI,
               attrs
             );
@@ -5833,6 +5838,10 @@ var SessionStoreInternal = {
       "SessionStore:restoreHistory",
       options
     );
+
+    if (browser && browser.frameLoader) {
+      browser.frameLoader.requestEpochUpdate(options.epoch);
+    }
   },
 };
 

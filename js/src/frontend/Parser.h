@@ -187,6 +187,7 @@
 #include "frontend/SharedContext.h"
 #include "frontend/SyntaxParseHandler.h"
 #include "frontend/TokenStream.h"
+#include "js/Vector.h"
 
 #include "vm/ErrorReporting.h"
 
@@ -205,7 +206,7 @@ class SourceParseContext : public ParseContext {
   SourceParseContext(GeneralParser<ParseHandler, Unit>* prs, SharedContext* sc,
                      Directives* newDirectives)
       : ParseContext(prs->cx_, prs->pc_, sc, prs->tokenStream, prs->usedNames_,
-                     newDirectives,
+                     prs->getTreeHolder(), newDirectives,
                      mozilla::IsSame<ParseHandler, FullParseHandler>::value) {}
 };
 
@@ -290,6 +291,97 @@ class MOZ_STACK_CLASS ParserSharedBase : private JS::AutoGCRooter {
   BigIntBox* newBigIntBox(BigInt* val);
 };
 
+// A tree of function nodes pointing to a FunctionBox and all its
+// nested inner functions.
+class FunctionTree {
+  FunctionBox* funbox_;
+
+  Vector<FunctionTree> children_;
+
+ public:
+  explicit FunctionTree(JSContext* cx) : funbox_(nullptr), children_(cx) {}
+
+  // Note: If we're using vector type, the pointer returned here
+  // is only valid if the tree is only added to in DFS order
+  //
+  // Open to suggestions about how to do that better.
+  FunctionTree* add(JSContext* cx) {
+    if (!children_.emplaceBack(cx)) {
+      return nullptr;
+    }
+    return &children_.back();
+  }
+
+  void reset() {
+    funbox_ = nullptr;
+    children_.clear();
+  }
+
+  FunctionBox* funbox() { return funbox_; }
+  void setFunctionBox(FunctionBox* node) { funbox_ = node; }
+
+  typedef bool (*FunctionTreeVisitorFunction)(ParserBase*, FunctionTree*);
+  bool visitRecursively(JSContext* cx, ParserBase* parser,
+                        FunctionTreeVisitorFunction func) {
+    if (!CheckRecursionLimit(cx)) {
+      return false;
+    }
+
+    for (auto& child : children_) {
+      if (!child.visitRecursively(cx, parser, func)) {
+        return false;
+      }
+    }
+
+    return func(parser, this);
+  }
+
+  void dump(JSContext* cx) { dump(cx, *this, 1); }
+
+ private:
+  static void dump(JSContext* cx, FunctionTree& node, int indent);
+};
+
+// Owner of a function tree
+//
+// The holder mode can be eager or deferred:
+//
+// - In Eager mode, deferred items happens right away and the tree is not
+//   constructed.
+// - In Deferred mode, deferred items happens only when publishDeferredItems
+//   is called.
+//
+// Note: Function trees point to function boxes, which only have the lifetime of
+//       the BytecodeCompiler, so exercise caution when holding onto a
+//       holder.
+class FunctionTreeHolder {
+ public:
+  enum Mode { Eager, Deferred };
+
+ private:
+  FunctionTree treeRoot_;
+  FunctionTree* currentParent_;
+  Mode mode_;
+
+ public:
+  explicit FunctionTreeHolder(JSContext* cx, Mode mode = Mode::Eager)
+      : treeRoot_(cx), currentParent_(&treeRoot_), mode_(mode) {}
+
+  FunctionTree* getFunctionTree() { return &treeRoot_; }
+  FunctionTree* getCurrentParent() { return currentParent_; }
+  void setCurrentParent(FunctionTree* parent) { currentParent_ = parent; }
+
+  bool isEager() { return mode_ == Mode::Eager; }
+  bool isDeferred() { return mode_ == Mode::Deferred; }
+
+  // When a parse has failed, we need to reset the root of the
+  // function tree as we don't want a reparse to have old entries.
+  void resetFunctionTree() {
+    treeRoot_.reset();
+    currentParent_ = &treeRoot_;
+  }
+};
+
 class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
                                    public ErrorReportMixin {
   using Base = ErrorReportMixin;
@@ -317,7 +409,31 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
 
   /* ParseGoal */ uint8_t parseGoal_ : 1;
 
+  FunctionTreeHolder treeHolder_;
+
  public:
+  FunctionTreeHolder& getTreeHolder() { return treeHolder_; }
+
+  bool publishDeferredItems() {
+    return publishDeferredItems(getTreeHolder().getFunctionTree());
+  }
+
+  bool publishDeferredItems(FunctionTree* root) {
+    // Publish deferred functions before LazyScripts, as the
+    // LazyScripts need the functions.
+    if (!publishDeferredFunctions(root)) {
+      return false;
+    }
+    if (!publishLazyScripts(root)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  bool publishLazyScripts(FunctionTree* root);
+  bool publishDeferredFunctions(FunctionTree* root);
+
   bool awaitIsKeyword() const { return awaitHandling_ != AwaitIsName; }
 
   bool inParametersOfAsyncFunction() const {
@@ -401,8 +517,7 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
    */
   JSFunction* newFunction(HandleAtom atom, FunctionSyntaxKind kind,
                           GeneratorKind generatorKind,
-                          FunctionAsyncKind asyncKind,
-                          HandleObject proto = nullptr);
+                          FunctionAsyncKind asyncKind);
 
   // A Parser::Mark is the extension of the LifoAlloc::Mark to the entire
   // Parser's state. Note: clients must still take care that any ParseContext
@@ -548,8 +663,8 @@ class MOZ_STACK_CLASS PerHandlerParser : public ParserBase {
   bool propagateFreeNamesAndMarkClosedOverBindings(ParseContext::Scope& scope);
 
   bool finishFunctionScopes(bool isStandaloneFunction);
-  LexicalScopeNodeType finishLexicalScope(ParseContext::Scope& scope,
-                                          Node body);
+  LexicalScopeNodeType finishLexicalScope(ParseContext::Scope& scope, Node body,
+                                          ScopeKind kind = ScopeKind::Lexical);
   bool finishFunction(
       bool isStandaloneFunction = false,
       IsFieldInitializer isFieldInitializer = IsFieldInitializer::No);
@@ -610,6 +725,12 @@ class MOZ_STACK_CLASS PerHandlerParser : public ParserBase {
   }
 
   FunctionBox* newFunctionBox(FunctionNodeType funNode, JSFunction* fun,
+                              uint32_t toStringStart, Directives directives,
+                              GeneratorKind generatorKind,
+                              FunctionAsyncKind asyncKind);
+
+  FunctionBox* newFunctionBox(FunctionNodeType funNode,
+                              Handle<FunctionCreationData> fcd,
                               uint32_t toStringStart, Directives directives,
                               GeneratorKind generatorKind,
                               FunctionAsyncKind asyncKind);
@@ -1054,10 +1175,10 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
                                       ListNodeType nodeList, TokenKind* ttp);
 
   inline bool trySyntaxParseInnerFunction(
-      FunctionNodeType* funNode, HandleFunction fun, uint32_t toStringStart,
-      InHandling inHandling, YieldHandling yieldHandling,
-      FunctionSyntaxKind kind, GeneratorKind generatorKind,
-      FunctionAsyncKind asyncKind, bool tryAnnexB,
+      FunctionNodeType* funNode, Handle<FunctionCreationData> fcd,
+      uint32_t toStringStart, InHandling inHandling,
+      YieldHandling yieldHandling, FunctionSyntaxKind kind,
+      GeneratorKind generatorKind, FunctionAsyncKind asyncKind, bool tryAnnexB,
       Directives inheritedDirectives, Directives* newDirectives);
 
   inline bool skipLazyInnerFunction(FunctionNodeType funNode,
@@ -1433,12 +1554,13 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
 
   ListNodeType statementList(YieldHandling yieldHandling);
 
-  MOZ_MUST_USE FunctionNodeType innerFunction(
-      FunctionNodeType funNode, ParseContext* outerpc, HandleFunction fun,
-      uint32_t toStringStart, InHandling inHandling,
-      YieldHandling yieldHandling, FunctionSyntaxKind kind,
-      GeneratorKind generatorKind, FunctionAsyncKind asyncKind, bool tryAnnexB,
-      Directives inheritedDirectives, Directives* newDirectives);
+  MOZ_MUST_USE FunctionNodeType
+  innerFunction(FunctionNodeType funNode, ParseContext* outerpc,
+                Handle<FunctionCreationData> fcd, uint32_t toStringStart,
+                InHandling inHandling, YieldHandling yieldHandling,
+                FunctionSyntaxKind kind, GeneratorKind generatorKind,
+                FunctionAsyncKind asyncKind, bool tryAnnexB,
+                Directives inheritedDirectives, Directives* newDirectives);
 
   // Implements Automatic Semicolon Insertion.
   //
@@ -1589,10 +1711,10 @@ class MOZ_STACK_CLASS Parser<SyntaxParseHandler, Unit> final
   inline bool checkExportedNameForClause(NameNodeType nameNode);
 
   bool trySyntaxParseInnerFunction(
-      FunctionNodeType* funNode, HandleFunction fun, uint32_t toStringStart,
-      InHandling inHandling, YieldHandling yieldHandling,
-      FunctionSyntaxKind kind, GeneratorKind generatorKind,
-      FunctionAsyncKind asyncKind, bool tryAnnexB,
+      FunctionNodeType* funNode, Handle<FunctionCreationData> fcd,
+      uint32_t toStringStart, InHandling inHandling,
+      YieldHandling yieldHandling, FunctionSyntaxKind kind,
+      GeneratorKind generatorKind, FunctionAsyncKind asyncKind, bool tryAnnexB,
       Directives inheritedDirectives, Directives* newDirectives);
 
   bool skipLazyInnerFunction(FunctionNodeType funNode, uint32_t toStringStart,
@@ -1742,10 +1864,10 @@ class MOZ_STACK_CLASS Parser<FullParseHandler, Unit> final
   inline bool checkExportedNameForClause(NameNodeType nameNode);
 
   bool trySyntaxParseInnerFunction(
-      FunctionNodeType* funNode, HandleFunction fun, uint32_t toStringStart,
-      InHandling inHandling, YieldHandling yieldHandling,
-      FunctionSyntaxKind kind, GeneratorKind generatorKind,
-      FunctionAsyncKind asyncKind, bool tryAnnexB,
+      FunctionNodeType* funNode, Handle<FunctionCreationData> fcd,
+      uint32_t toStringStart, InHandling inHandling,
+      YieldHandling yieldHandling, FunctionSyntaxKind kind,
+      GeneratorKind generatorKind, FunctionAsyncKind asyncKind, bool tryAnnexB,
       Directives inheritedDirectives, Directives* newDirectives);
 
   bool skipLazyInnerFunction(FunctionNodeType funNode, uint32_t toStringStart,
@@ -1907,12 +2029,15 @@ mozilla::Maybe<LexicalScope::Data*> NewLexicalScopeData(
     JSContext* context, ParseContext::Scope& scope, LifoAlloc& alloc,
     ParseContext* pc);
 
-JSFunction* AllocNewFunction(JSContext* cx, HandleAtom atom,
-                             FunctionSyntaxKind kind,
-                             GeneratorKind generatorKind,
-                             FunctionAsyncKind asyncKind, HandleObject proto,
-                             bool isSelfHosting = false,
-                             bool inFunctionBox = false);
+FunctionCreationData GenerateFunctionCreationData(HandleAtom atom,
+                                                  FunctionSyntaxKind kind,
+                                                  GeneratorKind generatorKind,
+                                                  FunctionAsyncKind asyncKind,
+                                                  bool isSelfHosting = false,
+                                                  bool inFunctionBox = false);
+
+JSFunction* AllocNewFunction(JSContext* cx,
+                             Handle<FunctionCreationData> dataHandle);
 
 } /* namespace frontend */
 } /* namespace js */

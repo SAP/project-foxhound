@@ -3,10 +3,12 @@
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
 <panel id="protections-popup"
+       class="panel-no-padding"
        type="arrow"
        hidden="true"
-       photon="true"
        role="alertdialog"
+       aria-labelledby="protections-popup-main-header-label"
+       onpopupshowing="gProtectionsHandler.reorderCategoryItems()"
        onpopupshown="gProtectionsHandler.onPopupShown(event);"
        onpopuphidden="gProtectionsHandler.onPopupHidden(event);"
        orient="vertical">
@@ -14,26 +16,39 @@
   <panelmultiview id="protections-popup-multiView"
                   mainViewId="protections-popup-mainView">
     <panelview id="protections-popup-mainView"
+               role="document"
                descriptionheightworkaround="true">
-      <hbox id="protections-popup-mainView-panel-header"
-            onclick="gProtectionsHandler.onHeaderClicked(event);">
-        <label id="protections-popup-main-header-label">
-          <html:span id="protections-popup-mainView-panel-header-span"/>
-        </label>
-        <description id="protections-popup-toast-panel-tp-on-desc">Enhanced Tracking Protection is ON for this site</description>
-        <description id="protections-popup-toast-panel-tp-off-desc">Enhanced Tracking Protection is OFF for this site</description>
-      </hbox>
+      <vbox id="protections-popup-mainView-panel-header-section">
+        <hbox id="protections-popup-mainView-panel-header"
+              onclick="gProtectionsHandler.onHeaderClicked(event);">
+          <label id="protections-popup-main-header-label" flex="1"
+                 role="heading" aria-level="1">
+            <html:span id="protections-popup-mainView-panel-header-span"/>
+          </label>
+          <toolbarbutton id="protections-popup-info-button" class="panel-info-button"
+                         aria-label="&protections.etpMoreInfo.label;">
+            <image/>
+          </toolbarbutton>
+          <description id="protections-popup-toast-panel-tp-on-desc">&protections.etpON.header;</description>
+          <description id="protections-popup-toast-panel-tp-off-desc">&protections.etpOFF.header;</description>
+        </hbox>
 
-      <hbox id="protections-popup-tp-switch-section" class="identity-popup-section">
+        <html:div id="messaging-system-message-container" disabled="true">
+          <!-- Messaging System Messages will render in this container -->
+        </html:div>
+      </vbox>
+
+      <hbox id="protections-popup-tp-switch-section" class="protections-popup-section">
         <vbox class="protections-popup-tp-switch-label-box" flex="1">
           <label class="protections-popup-tp-switch-on-header"
-                 hidden="true">Tracking protection is ON for this site</label>
+                 role="heading"
+                 aria-level="2">&protections.etpON.header;</label>
           <label class="protections-popup-tp-switch-off-header"
-                 hidden="true">Tracking protection is OFF for this site</label>
+                 role="heading"
+                 aria-level="2">&protections.etpOFF.header;</label>
           <label id="protections-popup-tp-switch-breakage-link"
                  class="text-link"
-                 onclick="gProtectionsHandler.showSiteNotWorkingView();"
-                 hidden="true">Site not working?</label>
+                 onclick="gProtectionsHandler.showSiteNotWorkingView(); gProtectionsHandler.recordClick('sitenotworking_link');">&protections.siteNotWorking.label;</label>
         </vbox>
         <vbox class="protections-popup-tp-switch-box">
           <toolbarbutton id="protections-popup-tp-switch"
@@ -43,36 +58,119 @@
         </vbox>
       </hbox>
 
-      <vbox id="protections-popup-settings-section"
-            class="identity-popup-section">
-        <toolbarbutton id="protections-popup-settings-button"
-                       oncommand="ContentBlocking.openPreferences();">
-          <image class="protection-settings-icon"/>
-          <label class="protections-popup-settings-label" flex="1">Protection Settings</label>
-        </toolbarbutton>
+      <!-- Tracking Protection Section -->
+      <vbox id="tracking-protection-container" class="protections-popup-section">
+        <description id="protections-popup-no-trackers-found-description">&protections.noTrackersFound.description;</description>
+        <tooltip id="protections-popup-not-blocking-why-etp-on-tooltip">&protections.notBlocking.why.etpOn.tooltip;</tooltip>
+        <tooltip id="protections-popup-not-blocking-why-etp-off-tooltip">&protections.notBlocking.why.etpOff.tooltip;</tooltip>
+        <vbox id="protections-popup-content" flex="1">
+          <vbox id="protections-popup-category-list">
+            <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+            <toolbarbutton id="protections-popup-category-tracking-protection"
+                           oncommand="gProtectionsHandler.showTrackersSubview(event); gProtectionsHandler.recordClick('trackers');"
+                           class="protections-popup-category" align="center"
+                           wrap="true">
+              <image class="protections-popup-category-icon tracking-protection-icon"/>
+              <label flex="1" class="protections-popup-category-label">&contentBlocking.trackingProtection4.label;</label>
+            </toolbarbutton>
+            <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+            <toolbarbutton id="protections-popup-category-socialblock"
+                           oncommand="gProtectionsHandler.showSocialblockerSubview(event); gProtectionsHandler.recordClick('social');"
+                           class="protections-popup-category" align="center"
+                           wrap="true">
+              <image class="protections-popup-category-icon socialblock-icon"/>
+              <label flex="1"
+              class="protections-popup-category-label">&contentBlocking.socialblock.label;</label>
+            </toolbarbutton>
+            <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+            <toolbarbutton id="protections-popup-category-cookies"
+                           oncommand="gProtectionsHandler.showCookiesSubview(event); gProtectionsHandler.recordClick('cookies');"
+                           class="protections-popup-category" align="center"
+                           wrap="true">
+              <image class="protections-popup-category-icon thirdpartycookies-icon"/>
+              <label flex="1" id="protections-popup-cookies-category-label-disabled"
+                     class="protections-popup-category-label">&contentBlocking.cookies2.label;</label>
+              <label flex="1" id="protections-popup-cookies-category-label-enabled"
+                     class="protections-popup-category-label"
+                     hidden="true"></label>
+            </toolbarbutton>
+            <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+            <toolbarbutton id="protections-popup-category-cryptominers"
+                           oncommand="gProtectionsHandler.showCryptominersSubview(event); gProtectionsHandler.recordClick('cryptominers');"
+                           class="protections-popup-category" align="center"
+                           wrap="true">
+              <image class="protections-popup-category-icon cryptominers-icon"/>
+              <label flex="1" class="protections-popup-category-label">&contentBlocking.cryptominers.label;</label>
+            </toolbarbutton>
+            <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+            <toolbarbutton id="protections-popup-category-fingerprinters"
+                           oncommand="gProtectionsHandler.showFingerprintersSubview(event); gProtectionsHandler.recordClick('fingerprinters');"
+                           class="protections-popup-category" align="center"
+                           wrap="true">
+              <image class="protections-popup-category-icon fingerprinters-icon"/>
+              <label flex="1" class="protections-popup-category-label">&contentBlocking.fingerprinters.label;</label>
+            </toolbarbutton>
+            <description id="protections-popup-blocking-section-header"
+                         role="heading"
+                         aria-level="2">&protections.blocking2.label;</description>
+            <hbox id="protections-popup-not-blocking-section-header" flex="1">
+              <description id="protections-popup-not-blocking-section-description" flex="1" role="heading" aria-level="2">&protections.notBlocking2.label;</description>
+              <label id="protections-popup-not-blocking-section-why"
+                     class="text-link"
+                     onmouseover="document.getElementById(event.target.tooltip).openPopup(event.target);"
+                     onfocus="document.getElementById(event.target.tooltip).openPopup(event.target);"
+                     onmouseout="document.getElementById(event.target.tooltip).hidePopup()"
+                     onblur="document.getElementById(event.target.tooltip).hidePopup()">&protections.notBlocking.why.label;</label>
+            </hbox>
+            <description id="protections-popup-not-found-section-header"
+                         role="heading"
+                         aria-level="2">&protections.notFound.label;</description>
+          </vbox>
+        </vbox>
       </vbox>
 
-      <hbox id="protections-popup-footer">
-        <description id="protections-popup-trackers-blocked-counter-description"
-                     flex="1"/>
-        <label id="protections-popup-show-full-report-link"
-               is="text-link"
-               useoriginprincipal="true"
-               href="about:protections">Show Full Report</label>
-      </hbox>
+      <vbox id="protections-popup-footer" class="protections-popup-section">
+        <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+        <toolbarbutton id="protections-popup-settings-button"
+                       class="protections-popup-footer-button"
+                       wrap="true"
+                       oncommand="gProtectionsHandler.openPreferences(); gProtectionsHandler.recordClick('settings');">
+          <image class="protections-popup-footer-icon protections-popup-settings-icon"/>
+          <label class="protections-popup-footer-button-label" flex="1">&protections.settings.label;</label>
+        </toolbarbutton>
+        <stack id="protections-popup-show-report-stack">
+          <!-- wrap=true is needed for descriptionheightworkaround, see bug 1564077 -->
+          <toolbarbutton id="protections-popup-show-report-button"
+                         class="protections-popup-footer-button"
+                         wrap="true"
+                         oncommand="gProtectionsHandler.openProtections(true); gProtectionsHandler.recordClick('full_report');">
+            <image class="protections-popup-footer-icon protections-popup-show-report-icon"/>
+            <label class="protections-popup-footer-button-label" flex="1">&protections.showreport.label;</label>
+          </toolbarbutton>
+          <hbox id="protections-popup-trackers-blocked-counter-box"
+                align="center"
+                end="0">
+            <description id="protections-popup-trackers-blocked-counter-description"
+                         onclick="gProtectionsHandler.openProtections(true);"/>
+          </hbox>
+        </stack>
+      </vbox>
     </panelview>
 
     <!-- Site Not Working? SubView -->
     <panelview id="protections-popup-siteNotWorkingView"
-               title="Site Not Working?"
+               role="document"
+               title="&protections.siteNotWorkingView.title;"
                descriptionheightworkaround="true"
                flex="1">
         <hbox id="protections-popup-siteNotWorkingView-header">
           <vbox class="protections-popup-tp-switch-label-box" flex="1">
             <label class="protections-popup-tp-switch-on-header"
-              hidden="true">Tracking protection is ON for this site</label>
+                   role="heading"
+                   aria-level="1">&protections.etpON.header;</label>
             <label class="protections-popup-tp-switch-off-header"
-              hidden="true">Tracking protection is OFF for this site</label>
+                   role="heading"
+                   aria-level="1">&protections.etpOFF.header;</label>
           </vbox>
           <vbox class="protections-popup-tp-switch-box">
             <toolbarbutton id="protections-popup-siteNotWorking-tp-switch"
@@ -81,45 +179,127 @@
                            oncommand="gProtectionsHandler.onTPSwitchCommand();" />
           </vbox>
         </hbox>
-        <vbox id="protections-popup-siteNotWorkingView-body" flex="1">
-          <label>Turn off Tracking Protection if you're having issues with:</label>
+        <vbox id="protections-popup-siteNotWorkingView-body">
+          <label role="heading" aria-level="2">&protections.siteNotWorkingView.header;</label>
           <label>
             <html:ul id="protections-popup-siteNotWorkingView-body-issue-list">
-              <html:li>Log in fields</html:li>
-              <html:li>Forms</html:li>
-              <html:li>Payments</html:li>
-              <html:li>Comments</html:li>
-              <html:li>Videos</html:li>
+              <html:li>&protections.siteNotWorkingView.issueList.logInFields;</html:li>
+              <html:li>&protections.siteNotWorkingView.issueList.forms;</html:li>
+              <html:li>&protections.siteNotWorkingView.issueList.payments;</html:li>
+              <html:li>&protections.siteNotWorkingView.issueList.comments;</html:li>
+              <html:li>&protections.siteNotWorkingView.issueList.videos;</html:li>
             </html:ul>
           </label>
-        </vbox>
-        <hbox id="protections-popup-siteNotWorkingView-footer"
-              class="panel-footer">
-          <label id="protections-popup-siteNotWorkingView-siteStillBroken" flex="1">Site Still Broken?</label>
           <label id="protections-popup-siteNotWorkingView-sendReport"
-            onclick="gProtectionsHandler.showSendReportView();"
-            class="text-link">Send Report</label>
-        </hbox>
+            onclick="gProtectionsHandler.showSendReportView(); gProtectionsHandler.recordClick('send_report_link');"
+            class="text-link">&protections.siteNotWorkingView.sendReport.label;</label>
+        </vbox>
     </panelview>
 
+    <!-- Trackers SubView -->
+    <panelview id="protections-popup-trackersView"
+               role="document"
+               descriptionheightworkaround="true">
+        <vbox id="protections-popup-trackersView-description" class="protections-popup-description">
+          <description>&protections.trackingContent2.description;</description>
+        </vbox>
+        <vbox id="protections-popup-trackersView-list" class="protections-popup-list">
+        </vbox>
+        <vbox class="panel-footer">
+          <button id="protections-popup-trackersView-settings-button"
+                  label="&contentBlocking.manageSettings2.label;"
+                  accesskey="&contentBlocking.manageSettings2.accesskey;"
+                  oncommand="gProtectionsHandler.openPreferences(); gProtectionsHandler.recordClick('subview_settings', 'trackers');"/>
+        </vbox>
+    </panelview>
+
+    <!-- Social Block SubView -->
+    <panelview id="protections-popup-socialblockView"
+               role="document"
+               descriptionheightworkaround="true">
+        <vbox id="protections-popup-socialblockView-heading" class="protections-popup-description">
+          <description>&protections.socialMediaTrackers.description;</description>
+        </vbox>
+        <vbox id="protections-popup-socialblockView-list" class="protections-popup-list">
+        </vbox>
+        <vbox class="panel-footer">
+          <button id="protections-popup-socialblockView-settings-button"
+                  label="&contentBlocking.manageSettings2.label;"
+                  accesskey="&contentBlocking.manageSettings2.accesskey;"
+                  oncommand="gProtectionsHandler.openPreferences(); gProtectionsHandler.recordClick('subview_settings', 'social');"/>
+        </vbox>
+    </panelview>
+
+    <!-- Cookies SubView -->
+    <panelview id="protections-popup-cookiesView"
+               role="document"
+               descriptionheightworkaround="true">
+        <vbox id="protections-popup-cookiesView-heading" class="protections-popup-description">
+          <description>&protections.crossSiteTrackingCookies.description;</description>
+        </vbox>
+        <vbox id="protections-popup-cookiesView-list" class="protections-popup-list">
+        </vbox>
+        <vbox class="panel-footer">
+          <button id="protections-popup-cookiesView-settings-button"
+                  label="&contentBlocking.manageSettings2.label;"
+                  accesskey="&contentBlocking.manageSettings2.accesskey;"
+                  oncommand="gProtectionsHandler.openPreferences(); gProtectionsHandler.recordClick('subview_settings', 'cookies');"/>
+        </vbox>
+    </panelview>
+
+    <!-- Fingerprinters SubView -->
+    <panelview id="protections-popup-fingerprintersView"
+               role="document"
+               descriptionheightworkaround="true">
+        <vbox id="protections-popup-fingerprinters-heading" class="protections-popup-description">
+          <description>&protections.fingerprinters.description;</description>
+        </vbox>
+        <vbox id="protections-popup-fingerprintersView-list" class="protections-popup-list">
+        </vbox>
+        <vbox class="panel-footer">
+          <button id="protections-popup-fingerprintersView-settings-button"
+                  label="&contentBlocking.manageSettings2.label;"
+                  accesskey="&contentBlocking.manageSettings2.accesskey;"
+                  oncommand="gProtectionsHandler.openPreferences(); gProtectionsHandler.recordClick('subview_settings', 'fingerprinters');"/>
+        </vbox>
+    </panelview>
+
+    <!-- Cryptominers SubView -->
+    <panelview id="protections-popup-cryptominersView"
+               role="document"
+               descriptionheightworkaround="true">
+        <vbox id="protections-popup-cryptominers-heading" class="protections-popup-description">
+          <description>&protections.cryptominers.description;</description>
+        </vbox>
+        <vbox id="protections-popup-cryptominersView-list" class="protections-popup-list">
+        </vbox>
+        <vbox class="panel-footer">
+          <button id="protections-popup-cryptominersView-settings-button"
+                  label="&contentBlocking.manageSettings2.label;"
+                  accesskey="&contentBlocking.manageSettings2.accesskey;"
+                  oncommand="gProtectionsHandler.openPreferences(); gProtectionsHandler.recordClick('subview_settings', 'cryptominers');"/>
+        </vbox>
+    </panelview>
 
     <!-- Send Report SubView -->
     <panelview id="protections-popup-sendReportView"
-               title="Send Report"
+               title="&contentBlocking.breakageReportView.title;"
                descriptionheightworkaround="true">
         <vbox id="protections-popup-sendReportView-heading">
-          <description>&contentBlocking.breakageReportView2.description;</description>
-          <label id="protections-popup-sendReportView-learn-more"
-                 is="text-link">&contentBlocking.breakageReportView.learnMore;</label>
+          <description>
+            &contentBlocking.breakageReportView3.description;
+            <label id="protections-popup-sendReportView-learn-more"
+                   is="text-link">&contentBlocking.breakageReportView2.learnMore;</label>
+          </description>
         </vbox>
         <vbox id="protections-popup-sendReportView-body" class="panel-view-body-unscrollable">
           <vbox class="protections-popup-sendReportView-collection-section">
-            <label>&contentBlocking.breakageReportView.collection.url.label;</label>
-            <html:input readonly="readonly" id="protections-popup-sendReportView-collection-url"/>
+            <label control="protections-popup-sendReportView-collection-url">&contentBlocking.breakageReportView.collection.url.label;</label>
+            <html:input readonly="readonly" id="protections-popup-sendReportView-collection-url" aria-label="&contentBlocking.breakageReportView.collection.url.label;"/>
           </vbox>
           <vbox class="protections-popup-sendReportView-collection-section">
-            <label>&contentBlocking.breakageReportView.collection.comments.label;</label>
-            <html:textarea id="protections-popup-sendReportView-collection-comments"/>
+            <label control="protections-popup-sendReportView-collection-comments">&contentBlocking.breakageReportView2.collection.comments.label;</label>
+            <html:textarea id="protections-popup-sendReportView-collection-comments" aria-label="&contentBlocking.breakageReportView2.collection.comments.label;"/>
           </vbox>
         </vbox>
         <vbox id="protections-popup-sendReportView-footer"
@@ -130,7 +310,7 @@
           <button id="protections-popup-sendReportView-submit"
                   default="true"
                   label="&contentBlocking.breakageReportView.sendReport.label;"
-                  oncommand="gProtectionsHandler.onSendReportClicked();"/>
+                  oncommand="gProtectionsHandler.onSendReportClicked(); gProtectionsHandler.recordClick('send_report_submit');"/>
         </vbox>
     </panelview>
   </panelmultiview>

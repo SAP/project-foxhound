@@ -1,7 +1,7 @@
 # Writing Tests
 
 If you haven't already, it's strongly recommended to read
-the [introduction](../introduction) first, as it introduces the various test types.
+the [introduction](../index) first, as it introduces the various test types.
 
 There's also a load of [general guidelines](general-guidelines) that apply to all tests.
 
@@ -18,13 +18,19 @@ There's also a load of [general guidelines](general-guidelines) that apply to al
    h2tests
    lint-tool
    manual
+   reftest-tutorial
    reftests
    rendering
    server-features
    submission-process
+   testdriver
+   testdriver-tutorial
    testharness
+   tools
    visual
    wdspec
+   test-templates
+   github-intro
 ```
 
 ## Test Type

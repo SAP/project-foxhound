@@ -2,17 +2,26 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+DIRS += [
+    'parsers',
+]
+
 DevToolsModules(
+    'FrameFilterMenu.js',
+    'FrameListColumnData.js',
     'FrameListColumnFinBit.js',
     'FrameListColumnMaskBit.js',
     'FrameListColumnOpCode.js',
-    'FrameListColumnPayload.js',
     'FrameListColumnSize.js',
     'FrameListColumnTime.js',
-    'FrameListColumnType.js',
     'FrameListContent.js',
+    'FrameListContextMenu.js',
     'FrameListHeader.js',
+    'FrameListHeaderContextMenu.js',
     'FrameListItem.js',
     'FramePayload.js',
+    'RawData.js',
+    'StatusBar.js',
+    'Toolbar.js',
     'WebSocketsPanel.js',
 )

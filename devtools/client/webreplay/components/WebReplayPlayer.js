@@ -107,6 +107,8 @@ class WebReplayPlayer extends Component {
       paused: false,
       messages: [],
       highlightedMessage: null,
+      unscannedRegions: [],
+      cachedPoints: [],
       start: 0,
       end: 1,
     };
@@ -116,9 +118,9 @@ class WebReplayPlayer extends Component {
 
   componentDidMount() {
     this.overlayWidth = this.updateOverlayWidth();
-    this.threadClient.on("paused", this.onPaused.bind(this));
-    this.threadClient.on("resumed", this.onResumed.bind(this));
-    this.threadClient.on("progress", this.onProgress.bind(this));
+    this.threadFront.on("paused", this.onPaused.bind(this));
+    this.threadFront.on("resumed", this.onResumed.bind(this));
+    this.threadFront.on("progress", this.onProgress.bind(this));
 
     this.toolbox.getPanelWhenReady("webconsole").then(panel => {
       const consoleFrame = panel.hud.ui;
@@ -143,8 +145,8 @@ class WebReplayPlayer extends Component {
     return this.toolbox.getPanel("webconsole");
   }
 
-  get threadClient() {
-    return this.toolbox.threadClient;
+  get threadFront() {
+    return this.toolbox.threadFront;
   }
 
   isRecording() {
@@ -200,7 +202,12 @@ class WebReplayPlayer extends Component {
   }
 
   onProgress(packet) {
-    const { recording, executionPoint } = packet;
+    const {
+      recording,
+      executionPoint,
+      unscannedRegions,
+      cachedPoints,
+    } = packet;
     log(`progress: ${recording ? "rec" : "play"} ${executionPoint.progress}`);
 
     if (this.state.seeking) {
@@ -212,7 +219,12 @@ class WebReplayPlayer extends Component {
       return;
     }
 
-    const newState = { recording, executionPoint };
+    const newState = {
+      recording,
+      executionPoint,
+      unscannedRegions,
+      cachedPoints,
+    };
     if (recording) {
       newState.recordingEndpoint = executionPoint;
     }
@@ -226,10 +238,11 @@ class WebReplayPlayer extends Component {
     } = consoleState;
 
     if (visibleMessages != this.state.visibleMessages) {
-      const messages = sortBy(
-        visibleMessages.map(id => messagesById.get(id)),
-        message => getMessageProgress(message)
-      );
+      let messages = visibleMessages
+        .map(id => messagesById.get(id))
+        .filter(message => message.source == "console-api");
+
+      messages = sortBy(messages, message => getMessageProgress(message));
 
       this.setState({ messages, visibleMessages });
     }
@@ -296,7 +309,7 @@ class WebReplayPlayer extends Component {
 
     // set seeking to the current execution point to avoid a progress bar jump
     this.setState({ seeking: true });
-    return this.threadClient.timeWarp(executionPoint);
+    return this.threadFront.timeWarp(executionPoint);
   }
 
   next() {
@@ -319,7 +332,7 @@ class WebReplayPlayer extends Component {
 
   async previous() {
     if (this.isRecording()) {
-      await this.threadClient.interrupt();
+      await this.threadFront.interrupt();
     }
 
     if (!this.isPaused()) {
@@ -341,19 +354,19 @@ class WebReplayPlayer extends Component {
       return null;
     }
 
-    return this.threadClient.resume();
+    return this.threadFront.resume();
   }
 
   async rewind() {
     if (this.isRecording()) {
-      await this.threadClient.interrupt();
+      await this.threadFront.interrupt();
     }
 
     if (!this.isPaused()) {
       return null;
     }
 
-    return this.threadClient.rewind();
+    return this.threadFront.rewind();
   }
 
   pause() {
@@ -361,7 +374,7 @@ class WebReplayPlayer extends Component {
       return null;
     }
 
-    return this.threadClient.interrupt();
+    return this.threadFront.interrupt();
   }
 
   renderCommands() {
@@ -453,7 +466,12 @@ class WebReplayPlayer extends Component {
   }
 
   renderMessage(message, index) {
-    const { messages, executionPoint, highlightedMessage } = this.state;
+    const {
+      messages,
+      executionPoint,
+      highlightedMessage,
+      cachedPoints,
+    } = this.state;
 
     const offset = this.getVisibleOffset(message.executionPoint);
     const previousMessage = messages[index - 1];
@@ -477,11 +495,16 @@ class WebReplayPlayer extends Component {
 
     const isHighlighted = highlightedMessage == message.id;
 
+    const uncached =
+      message.executionPoint &&
+      !cachedPoints.includes(message.executionPoint.progress);
+
     return dom.a({
       className: classname("message", {
         overlayed: isOverlayed,
         future: isFuture,
         highlighted: isHighlighted,
+        uncached,
       }),
       style: {
         left: `${Math.max(offset - markerWidth / 2, 0)}px`,
@@ -525,6 +548,37 @@ class WebReplayPlayer extends Component {
     });
   }
 
+  renderUnscannedRegions() {
+    return this.state.unscannedRegions.map(
+      this.renderUnscannedRegion.bind(this)
+    );
+  }
+
+  renderUnscannedRegion({ start, end }) {
+    let startOffset = this.getVisibleOffset({ progress: start });
+    let endOffset = this.getVisibleOffset({ progress: end });
+
+    if (startOffset > this.overlayWidth || endOffset < 0) {
+      return null;
+    }
+
+    if (startOffset < 0) {
+      startOffset = 0;
+    }
+
+    if (endOffset > this.overlayWidth) {
+      endOffset = this.overlayWidth;
+    }
+
+    return dom.span({
+      className: classname("unscanned"),
+      style: {
+        left: `${startOffset}px`,
+        width: `${endOffset - startOffset}px`,
+      },
+    });
+  }
+
   render() {
     const percent = this.getVisiblePercent(this.state.executionPoint);
     const recording = this.isRecording();
@@ -560,7 +614,8 @@ class WebReplayPlayer extends Component {
               style: { left: `${percent}%`, width: `${100 - percent}%` },
             }),
             ...this.renderMessages(),
-            ...this.renderTicks()
+            ...this.renderTicks(),
+            ...this.renderUnscannedRegions()
           )
         )
       )

@@ -78,7 +78,18 @@ add_task(async function test_multiple_parents() {
     localTimeSeconds: now / 1000,
     remoteTimeSeconds: now / 1000,
   });
-  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+  deepEqual(
+    await buf.fetchUnmergedGuids(),
+    [
+      "bookmarkAAAA",
+      "bookmarkBBBB",
+      PlacesUtils.bookmarks.menuGuid,
+      PlacesUtils.bookmarks.mobileGuid,
+      PlacesUtils.bookmarks.toolbarGuid,
+      PlacesUtils.bookmarks.unfiledGuid,
+    ],
+    "Should leave items with new remote structure unmerged"
+  );
 
   let datesAdded = await promiseManyDatesAdded([
     PlacesUtils.bookmarks.menuGuid,
@@ -238,12 +249,7 @@ add_task(async function test_multiple_parents() {
 
   await storeChangesInMirror(buf, changesToUpload);
 
-  ok(
-    !(await buf.hasChanges()),
-    "Should not report local or remote changes after updating mirror"
-  );
-
-  let newChangesToUpload = await buf.forceApply({
+  let newChangesToUpload = await buf.apply({
     localTimeSeconds: now / 1000,
     remoteTimeSeconds: now / 1000,
   });
@@ -364,7 +370,18 @@ add_task(async function test_reupload_replace() {
 
   info("Apply remote");
   let changesToUpload = await buf.apply();
-  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+  deepEqual(
+    await buf.fetchUnmergedGuids(),
+    [
+      "bookmarkAAAA",
+      "bookmarkEEEE",
+      "folderBBBBBB",
+      PlacesUtils.bookmarks.menuGuid,
+      "queryCCCCCCC",
+      "queryDDDDDDD",
+    ],
+    "Should leave invalid A, E, D; reuploaded C; B, menu with new remote structure unmerged"
+  );
 
   let datesAdded = await promiseManyDatesAdded([
     PlacesUtils.bookmarks.menuGuid,
@@ -453,6 +470,9 @@ add_task(async function test_reupload_replace() {
     },
   });
 
+  await storeChangesInMirror(buf, changesToUpload);
+  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
@@ -503,7 +523,7 @@ add_task(async function test_corrupt_local_roots() {
     );
     await Assert.rejects(
       buf.apply(),
-      /Local tree has misparented root/,
+      /The Places roots are invalid/,
       "Should abort merge if local tree has misparented syncable root"
     );
 
@@ -522,7 +542,7 @@ add_task(async function test_corrupt_local_roots() {
     });
     await Assert.rejects(
       buf.apply(),
-      /Local tree has misparented root/,
+      /The Places roots are invalid/,
       "Should abort merge if local tree has misparented Places root"
     );
   } finally {
@@ -644,7 +664,15 @@ add_task(async function test_corrupt_remote_roots() {
   ]);
 
   let changesToUpload = await buf.apply();
-  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+  deepEqual(
+    await buf.fetchUnmergedGuids(),
+    [
+      PlacesUtils.bookmarks.menuGuid,
+      PlacesUtils.bookmarks.toolbarGuid,
+      PlacesUtils.bookmarks.unfiledGuid,
+    ],
+    "Should leave deleted roots unmerged"
+  );
 
   let datesAdded = await promiseManyDatesAdded([
     PlacesUtils.bookmarks.menuGuid,
@@ -758,6 +786,9 @@ add_task(async function test_corrupt_remote_roots() {
     "Should not corrupt local roots"
   );
 
+  await storeChangesInMirror(buf, changesToUpload);
+  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
@@ -795,7 +826,11 @@ add_task(async function test_missing_children() {
       ])
     );
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      [PlacesUtils.bookmarks.menuGuid],
+      "Should leave menu with new remote structure unmerged"
+    );
 
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
@@ -850,7 +885,11 @@ add_task(async function test_missing_children() {
       ])
     );
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      ["bookmarkBBBB", "bookmarkEEEE"],
+      "Should leave B, E with new remote structure unmerged"
+    );
 
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
@@ -909,7 +948,11 @@ add_task(async function test_missing_children() {
       },
     ]);
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      ["bookmarkDDDD"],
+      "Should leave D with new remote structure unmerged"
+    );
 
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
@@ -963,6 +1006,8 @@ add_task(async function test_missing_children() {
     await storeChangesInMirror(buf, changesToUpload);
   }
 
+  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
@@ -1008,7 +1053,16 @@ add_task(async function test_new_orphan_without_local_parent() {
   info("Apply remote with (B C D)");
   {
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      [
+        "bookmarkBBBB",
+        "bookmarkCCCC",
+        "bookmarkDDDD",
+        PlacesUtils.bookmarks.unfiledGuid,
+      ],
+      "Should leave orphans B, C, D unmerged"
+    );
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
       idsToUpload,
@@ -1071,7 +1125,11 @@ add_task(async function test_new_orphan_without_local_parent() {
   info("Apply remote with A");
   {
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      ["folderAAAAAA"],
+      "Should leave A with new remote structure unmerged"
+    );
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
       idsToUpload,
@@ -1146,7 +1204,11 @@ add_task(async function test_new_orphan_without_local_parent() {
   info("Apply remote with E");
   {
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      ["folderEEEEEE"],
+      "Should leave E with new remote structure unmerged"
+    );
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
       idsToUpload,
@@ -1455,7 +1517,11 @@ add_task(async function test_move_into_orphaned() {
 
   info("Apply remote");
   let changesToUpload = await buf.apply();
-  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+  deepEqual(
+    await buf.fetchUnmergedGuids(),
+    ["bookmarkAAAA", "folderCCCCCC"],
+    "Should leave orphaned A, C with new remote structure unmerged"
+  );
 
   let idsToUpload = inspectChangeRecords(changesToUpload);
   deepEqual(
@@ -1568,6 +1634,9 @@ add_task(async function test_move_into_orphaned() {
     "Should treat local tree as canonical if server is missing new parent"
   );
 
+  await storeChangesInMirror(buf, changesToUpload);
+  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
   await PlacesSyncUtils.bookmarks.reset();
@@ -1658,7 +1727,11 @@ add_task(async function test_new_orphan_with_local_parent() {
   info("Apply remote with (C D)");
   {
     let changesToUpload = await buf.apply();
-    deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+    deepEqual(
+      await buf.fetchUnmergedGuids(),
+      ["bookmarkCCCC", "bookmarkDDDD"],
+      "Should leave orphaned C, D unmerged"
+    );
     let idsToUpload = inspectChangeRecords(changesToUpload);
     deepEqual(
       idsToUpload,
@@ -2114,7 +2187,19 @@ add_task(async function test_non_syncable_items() {
   ]);
 
   let changesToUpload = await buf.apply();
-  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+  deepEqual(
+    await buf.fetchUnmergedGuids(),
+    [
+      "bookmarkIIII",
+      "bookmarkJJJJ",
+      "folderLEFTPF",
+      "folderLEFTPR",
+      PlacesUtils.bookmarks.menuGuid,
+      "rootHHHHHHHH",
+      PlacesUtils.bookmarks.unfiledGuid,
+    ],
+    "Should leave non-syncable items unmerged"
+  );
 
   let datesAdded = await promiseManyDatesAdded([
     PlacesUtils.bookmarks.menuGuid,
@@ -2331,6 +2416,9 @@ add_task(async function test_non_syncable_items() {
     },
     "Should exclude non-syncable items from new local structure"
   );
+
+  await storeChangesInMirror(buf, changesToUpload);
+  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
 
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();
@@ -2641,7 +2729,11 @@ add_task(async function test_invalid_guid() {
   ]);
 
   let changesToUpload = await buf.apply();
-  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
+  deepEqual(
+    await buf.fetchUnmergedGuids(),
+    ["bad!guid~", PlacesUtils.bookmarks.menuGuid],
+    "Should leave bad GUID and menu with new remote structure unmerged"
+  );
 
   let datesAdded = await promiseManyDatesAdded([
     PlacesUtils.bookmarks.menuGuid,
@@ -2741,6 +2833,9 @@ add_task(async function test_invalid_guid() {
       },
     ],
   });
+
+  await storeChangesInMirror(buf, changesToUpload);
+  deepEqual(await buf.fetchUnmergedGuids(), [], "Should merge all items");
 
   await buf.finalize();
   await PlacesUtils.bookmarks.eraseEverything();

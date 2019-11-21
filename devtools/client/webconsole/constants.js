@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,6 +13,8 @@ const actionTypes = {
   BATCH_ACTIONS: "BATCH_ACTIONS",
   CLEAR_HISTORY: "CLEAR_HISTORY",
   EDITOR_TOGGLE: "EDITOR_TOGGLE",
+  EDITOR_ONBOARDING_DISMISS: "EDITOR_ONBOARDING_DISMISS",
+  EVALUATE_EXPRESSION: "EVALUATE_EXPRESSION",
   FILTER_TEXT_SET: "FILTER_TEXT_SET",
   FILTER_TOGGLE: "FILTER_TOGGLE",
   FILTERS_CLEAR: "FILTERS_CLEAR",
@@ -44,9 +44,10 @@ const actionTypes = {
   REVERSE_SEARCH_INPUT_CHANGE: "REVERSE_SEARCH_INPUT_CHANGE",
   REVERSE_SEARCH_NEXT: "REVERSE_SEARCH_NEXT",
   REVERSE_SEARCH_BACK: "REVERSE_SEARCH_BACK",
-  PAUSED_EXCECUTION_POINT: "PAUSED_EXCECUTION_POINT",
+  PAUSED_EXECUTION_POINT: "PAUSED_EXECUTION_POINT",
   WARNING_GROUPS_TOGGLE: "WARNING_GROUPS_TOGGLE",
   WILL_NAVIGATE: "WILL_NAVIGATE",
+  EDITOR_SET_WIDTH: "EDITOR_SET_WIDTH",
 };
 
 const prefs = {
@@ -74,14 +75,18 @@ const prefs = {
       CONTENT_MESSAGES: "devtools.browserconsole.contentMessages",
       // Display timestamp in messages.
       MESSAGE_TIMESTAMP: "devtools.webconsole.timestampMessages",
+      // Store the editor width.
+      EDITOR_WIDTH: "input.editorWidth",
+      // Show the Editor onboarding UI
+      EDITOR_ONBOARDING: "devtools.webconsole.input.editorOnboarding",
     },
     FEATURES: {
       // We use the same pref to enable the sidebar on webconsole and browser console.
       SIDEBAR_TOGGLE: "devtools.webconsole.sidebarToggle",
-      JSTERM_CODE_MIRROR: "devtools.webconsole.jsterm.codeMirror",
       AUTOCOMPLETE: "devtools.webconsole.input.autocomplete",
       GROUP_WARNINGS: "devtools.webconsole.groupWarningMessages",
       EDITOR: "devtools.webconsole.features.editor",
+      BROWSER_TOOLBOX_FISSION: "devtools.browsertoolbox.fission",
     },
   },
 };

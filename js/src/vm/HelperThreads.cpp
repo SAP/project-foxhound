@@ -21,7 +21,6 @@
 #include "js/Utility.h"
 #include "threading/CpuCount.h"
 #include "util/NativeStack.h"
-#include "vm/Debugger.h"
 #include "vm/ErrorReporting.h"
 #include "vm/SharedImmutableStringsCache.h"
 #include "vm/Time.h"
@@ -29,6 +28,7 @@
 #include "vm/Xdr.h"
 #include "wasm/WasmGenerator.h"
 
+#include "debugger/DebugAPI-inl.h"
 #include "gc/PrivateIterators-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
@@ -65,8 +65,17 @@ GlobalHelperThreadState* gHelperThreadState = nullptr;
 
 bool js::CreateHelperThreadsState() {
   MOZ_ASSERT(!gHelperThreadState);
-  gHelperThreadState = js_new<GlobalHelperThreadState>();
-  return gHelperThreadState != nullptr;
+  UniquePtr<GlobalHelperThreadState> helperThreadState =
+      MakeUnique<GlobalHelperThreadState>();
+  if (!helperThreadState) {
+    return false;
+  }
+  gHelperThreadState = helperThreadState.release();
+  if (!gHelperThreadState->ensureContextListForThreadCount()) {
+    js_delete(gHelperThreadState);
+    return false;
+  }
+  return true;
 }
 
 void js::DestroyHelperThreadsState() {
@@ -97,12 +106,17 @@ static size_t ThreadCountForCPUCount(size_t cpuCount) {
   return Max<size_t>(cpuCount, 2);
 }
 
-void js::SetFakeCPUCount(size_t count) {
+bool js::SetFakeCPUCount(size_t count) {
   // This must be called before the threads have been initialized.
   MOZ_ASSERT(!HelperThreadState().threads);
 
   HelperThreadState().cpuCount = count;
   HelperThreadState().threadCount = ThreadCountForCPUCount(count);
+
+  if (!HelperThreadState().ensureContextListForThreadCount()) {
+    return false;
+  }
+  return true;
 }
 
 void JS::SetProfilingThreadCallbacks(
@@ -245,7 +259,6 @@ static JSRuntime* GetSelectorRuntime(const CompilationSelector& selector) {
     JSRuntime* operator()(Zone* zone) { return zone->runtimeFromMainThread(); }
     JSRuntime* operator()(ZonesInState zbs) { return zbs.runtime; }
     JSRuntime* operator()(JSRuntime* runtime) { return runtime; }
-    JSRuntime* operator()(AllCompilations all) { return nullptr; }
     JSRuntime* operator()(CompilationsUsingNursery cun) { return cun.runtime; }
   };
 
@@ -259,7 +272,6 @@ static bool JitDataStructuresExist(const CompilationSelector& selector) {
     bool operator()(Zone* zone) { return !!zone->jitZone(); }
     bool operator()(ZonesInState zbs) { return zbs.runtime->hasJitRuntime(); }
     bool operator()(JSRuntime* runtime) { return runtime->hasJitRuntime(); }
-    bool operator()(AllCompilations all) { return true; }
     bool operator()(CompilationsUsingNursery cun) {
       return cun.runtime->hasJitRuntime();
     }
@@ -283,7 +295,6 @@ static bool IonBuilderMatches(const CompilationSelector& selector,
     bool operator()(JSRuntime* runtime) {
       return runtime == builder_->script()->runtimeFromAnyThread();
     }
-    bool operator()(AllCompilations all) { return true; }
     bool operator()(ZonesInState zbs) {
       return zbs.runtime == builder_->script()->runtimeFromAnyThread() &&
              zbs.state == builder_->script()->zoneFromAnyThread()->gcState();
@@ -298,7 +309,6 @@ static bool IonBuilderMatches(const CompilationSelector& selector,
 }
 
 static void CancelOffThreadIonCompileLocked(const CompilationSelector& selector,
-                                            bool discardLazyLinkList,
                                             AutoLockHelperThreadState& lock) {
   if (!HelperThreadState().threads) {
     return;
@@ -350,29 +360,25 @@ static void CancelOffThreadIonCompileLocked(const CompilationSelector& selector,
   }
 
   /* Cancel lazy linking for pending builders (attached to the ionScript). */
-  if (discardLazyLinkList) {
-    MOZ_ASSERT(!selector.is<AllCompilations>());
-    JSRuntime* runtime = GetSelectorRuntime(selector);
-    jit::IonBuilder* builder =
-        runtime->jitRuntime()->ionLazyLinkList(runtime).getFirst();
-    while (builder) {
-      jit::IonBuilder* next = builder->getNext();
-      if (IonBuilderMatches(selector, builder)) {
-        jit::FinishOffThreadBuilder(runtime, builder, lock);
-      }
-      builder = next;
+  JSRuntime* runtime = GetSelectorRuntime(selector);
+  jit::IonBuilder* builder =
+      runtime->jitRuntime()->ionLazyLinkList(runtime).getFirst();
+  while (builder) {
+    jit::IonBuilder* next = builder->getNext();
+    if (IonBuilderMatches(selector, builder)) {
+      jit::FinishOffThreadBuilder(runtime, builder, lock);
     }
+    builder = next;
   }
 }
 
-void js::CancelOffThreadIonCompile(const CompilationSelector& selector,
-                                   bool discardLazyLinkList) {
+void js::CancelOffThreadIonCompile(const CompilationSelector& selector) {
   if (!JitDataStructuresExist(selector)) {
     return;
   }
 
   AutoLockHelperThreadState lock;
-  CancelOffThreadIonCompileLocked(selector, discardLazyLinkList, lock);
+  CancelOffThreadIonCompileLocked(selector, lock);
 }
 
 #ifdef DEBUG
@@ -434,6 +440,43 @@ struct MOZ_RAII AutoSetContextParse {
   }
   ~AutoSetContextParse() { TlsContext.get()->setParseTask(nullptr); }
 };
+
+// We want our default stack size limit to be approximately 2MB, to be safe, but
+// expect most threads to use much less. On Linux, however, requesting a stack
+// of 2MB or larger risks the kernel allocating an entire 2MB huge page for it
+// on first access, which we do not want. To avoid this possibility, we subtract
+// 2 standard VM page sizes from our default.
+static const uint32_t kDefaultHelperStackSize = 2048 * 1024 - 2 * 4096;
+static const uint32_t kDefaultHelperStackQuota = 1800 * 1024;
+
+// TSan enforces a minimum stack size that's just slightly larger than our
+// default helper stack size.  It does this to store blobs of TSan-specific
+// data on each thread's stack.  Unfortunately, that means that even though
+// we'll actually receive a larger stack than we requested, the effective
+// usable space of that stack is significantly less than what we expect.
+// To offset TSan stealing our stack space from underneath us, double the
+// default.
+//
+// Note that we don't need this for ASan/MOZ_ASAN because ASan doesn't
+// require all the thread-specific state that TSan does.
+#if defined(MOZ_TSAN)
+static const uint32_t HELPER_STACK_SIZE = 2 * kDefaultHelperStackSize;
+static const uint32_t HELPER_STACK_QUOTA = 2 * kDefaultHelperStackQuota;
+#else
+static const uint32_t HELPER_STACK_SIZE = kDefaultHelperStackSize;
+static const uint32_t HELPER_STACK_QUOTA = kDefaultHelperStackQuota;
+#endif
+
+AutoSetHelperThreadContext::AutoSetHelperThreadContext() {
+  AutoLockHelperThreadState lock;
+  cx = HelperThreadState().getFirstUnusedContext(lock);
+  MOZ_ASSERT(cx);
+  cx->setHelperThread(lock);
+  cx->nativeStackBase = GetNativeStackBase();
+  // When we set the JSContext, we need to reset the computed stack limits for
+  // the current thread, so we also set the native stack quota.
+  JS_SetNativeStackQuota(cx, HELPER_STACK_QUOTA);
+}
 
 static const JSClass parseTaskGlobalClass = {"internal-parse-task-global",
                                              JSCLASS_GLOBAL_FLAGS,
@@ -497,11 +540,14 @@ size_t ParseTask::sizeOfExcludingThis(
 }
 
 void ParseTask::runTask() {
+  AutoSetHelperThreadContext usesContext;
+
   JSContext* cx = TlsContext.get();
   JSRuntime* runtime = parseGlobal->runtimeFromAnyThread();
 
   AutoSetContextRuntime ascr(runtime);
   AutoSetContextParse parsetask(this);
+  gc::AutoSuppressNurseryCellAlloc noNurseryAlloc(cx);
 
   Zone* zone = parseGlobal->zoneFromAnyThread();
   zone->setHelperThreadOwnerContext(cx);
@@ -1074,32 +1120,6 @@ bool js::CurrentThreadIsParseThread() {
 }
 #endif
 
-// We want our default stack size limit to be approximately 2MB, to be safe, but
-// expect most threads to use much less. On Linux, however, requesting a stack
-// of 2MB or larger risks the kernel allocating an entire 2MB huge page for it
-// on first access, which we do not want. To avoid this possibility, we subtract
-// 2 standard VM page sizes from our default.
-static const uint32_t kDefaultHelperStackSize = 2048 * 1024 - 2 * 4096;
-static const uint32_t kDefaultHelperStackQuota = 1800 * 1024;
-
-// TSan enforces a minimum stack size that's just slightly larger than our
-// default helper stack size.  It does this to store blobs of TSan-specific
-// data on each thread's stack.  Unfortunately, that means that even though
-// we'll actually receive a larger stack than we requested, the effective
-// usable space of that stack is significantly less than what we expect.
-// To offset TSan stealing our stack space from underneath us, double the
-// default.
-//
-// Note that we don't need this for ASan/MOZ_ASAN because ASan doesn't
-// require all the thread-specific state that TSan does.
-#if defined(MOZ_TSAN)
-static const uint32_t HELPER_STACK_SIZE = 2 * kDefaultHelperStackSize;
-static const uint32_t HELPER_STACK_QUOTA = 2 * kDefaultHelperStackQuota;
-#else
-static const uint32_t HELPER_STACK_SIZE = kDefaultHelperStackSize;
-static const uint32_t HELPER_STACK_QUOTA = kDefaultHelperStackQuota;
-#endif
-
 bool GlobalHelperThreadState::ensureInitialized() {
   MOZ_ASSERT(CanUseExtraThreads());
 
@@ -1164,6 +1184,7 @@ void GlobalHelperThreadState::finish() {
   while (!freeList.empty()) {
     jit::FreeIonBuilder(freeList.popCopy());
   }
+  destroyHelperContexts(lock);
 }
 
 void GlobalHelperThreadState::finishThreads() {
@@ -1178,9 +1199,53 @@ void GlobalHelperThreadState::finishThreads() {
   threads.reset(nullptr);
 }
 
-void GlobalHelperThreadState::lock() { helperLock.lock(); }
+bool GlobalHelperThreadState::ensureContextListForThreadCount() {
+  if (helperContexts_.length() >= threadCount) {
+    return true;
+  }
+  AutoLockHelperThreadState lock;
 
-void GlobalHelperThreadState::unlock() { helperLock.unlock(); }
+  // SetFakeCPUCount() may cause the context list to contain less contexts
+  // than there are helper threads, which could potentially lead to a crash.
+  // Append more initialized contexts to the list until there are enough.
+  while (helperContexts_.length() < threadCount) {
+    UniquePtr<JSContext> cx =
+        js::MakeUnique<JSContext>(nullptr, JS::ContextOptions());
+    // To initialize context-specific protected data, the context must
+    // temporarily set itself to the main thread. After initialization,
+    // cx can clear itself from the thread.
+    cx->setHelperThread(lock);
+    if (!cx->init(ContextKind::HelperThread)) {
+      return false;
+    }
+    cx->clearHelperThread(lock);
+    if (!helperContexts_.append(cx.release())) {
+      return false;
+    }
+  }
+  return true;
+}
+
+JSContext* GlobalHelperThreadState::getFirstUnusedContext(
+    AutoLockHelperThreadState& locked) {
+  for (auto& cx : helperContexts_) {
+    if (cx->contextAvailable(locked)) {
+      return cx;
+    }
+  }
+  MOZ_CRASH("Expected available JSContext");
+}
+
+void GlobalHelperThreadState::destroyHelperContexts(
+    AutoLockHelperThreadState& lock) {
+  while (helperContexts_.length() > 0) {
+    JSContext* cx = helperContexts_.popCopy();
+    // Before cx can be destroyed, it has to set itself to the main thread.
+    // This enables it to pass its context-specific data checks.
+    cx->setHelperThread(lock);
+    js_delete(cx);
+  }
+}
 
 #ifdef DEBUG
 bool GlobalHelperThreadState::isLockedByCurrentThread() const {
@@ -1226,8 +1291,6 @@ void GlobalHelperThreadState::waitForAllThreads() {
 
 void GlobalHelperThreadState::waitForAllThreadsLocked(
     AutoLockHelperThreadState& lock) {
-  CancelOffThreadIonCompileLocked(CompilationSelector(AllCompilations()), false,
-                                  lock);
   CancelOffThreadWasmTier2GeneratorLocked(lock);
 
   while (hasActiveThreads(lock)) {
@@ -1298,10 +1361,16 @@ void GlobalHelperThreadState::triggerFreeUnusedMemory() {
   }
 
   AutoLockHelperThreadState lock;
-  for (auto& thread : *threads) {
-    thread.shouldFreeUnusedMemory = true;
+  for (auto& context : helperContexts_) {
+    if (context->shouldFreeUnusedMemory() && context->contextAvailable(lock)) {
+      // This context hasn't been used since the last time freeUnusedMemory
+      // was set. Free the temp LifoAlloc from the main thread.
+      context->tempLifoAllocNoCheck().freeAll();
+      context->setFreeUnusedMemory(false);
+    } else {
+      context->setFreeUnusedMemory(true);
+    }
   }
-  notifyAll(PRODUCER, lock);
 }
 
 static inline bool IsHelperThreadSimulatingOOM(js::ThreadType threadType) {
@@ -1652,7 +1721,7 @@ void js::GCParallelTask::startOrRunIfIdle(AutoLockHelperThreadState& lock) {
   // if the thread has never been started.
   joinWithLockHeld(lock);
 
-  if (!startWithLockHeld(lock)) {
+  if (!(CanUseExtraThreads() && startWithLockHeld(lock))) {
     AutoUnlockHelperThreadState unlock(lock);
     runFromMainThread(runtime());
   }
@@ -1707,11 +1776,11 @@ void js::GCParallelTask::runFromMainThread(JSRuntime* rt) {
 void js::GCParallelTask::runFromHelperThread(AutoLockHelperThreadState& lock) {
   MOZ_ASSERT(isDispatched(lock));
 
-  AutoSetContextRuntime ascr(runtime());
-  gc::AutoSetThreadIsPerformingGC performingGC;
-
   {
     AutoUnlockHelperThreadState parallelSection(lock);
+    AutoSetHelperThreadContext usesContext;
+    AutoSetContextRuntime ascr(runtime());
+    gc::AutoSetThreadIsPerformingGC performingGC;
     TimeStamp timeStart = ReallyNow();
     runTask();
     duration_ = TimeSince(timeStart);
@@ -1846,7 +1915,7 @@ JSScript* GlobalHelperThreadState::finishSingleParseTask(
 
   // The Debugger only needs to be told about the topmost script that was
   // compiled.
-  Debugger::onNewScript(cx, script);
+  DebugAPI::onNewScript(cx, script);
 
   return script;
 }
@@ -1888,7 +1957,7 @@ bool GlobalHelperThreadState::finishMultiParseTask(
     MOZ_ASSERT(script->isGlobalCode());
 
     rooted = script;
-    Debugger::onNewScript(cx, rooted);
+    DebugAPI::onNewScript(cx, rooted);
   }
 
   return true;
@@ -2115,7 +2184,6 @@ void HelperThread::handleIonWorkload(AutoLockHelperThreadState& locked) {
 
   {
     AutoUnlockHelperThreadState unlock(locked);
-    AutoSetContextRuntime ascr(rt);
 
     builder->runTask();
   }
@@ -2483,20 +2551,8 @@ void HelperThread::threadLoop() {
 
   ensureRegisteredWithProfiler();
 
-  JSContext cx(nullptr, JS::ContextOptions());
-  {
-    AutoEnterOOMUnsafeRegion oomUnsafe;
-    if (!cx.init(ContextKind::HelperThread)) {
-      oomUnsafe.crash("HelperThread cx.init()");
-    }
-  }
-  gc::AutoSuppressNurseryCellAlloc noNurseryAlloc(&cx);
-  JS_SetNativeStackQuota(&cx, HELPER_STACK_QUOTA);
-
   while (!terminate) {
     MOZ_ASSERT(idle());
-
-    maybeFreeUnusedMemory(&cx);
 
     // The selectors may depend on the HelperThreadState not changing
     // between task selection and task execution, in particular, on new
@@ -2530,15 +2586,4 @@ const HelperThread::TaskSpec* HelperThread::findHighestPriorityTask(
   }
 
   return nullptr;
-}
-
-void HelperThread::maybeFreeUnusedMemory(JSContext* cx) {
-  MOZ_ASSERT(idle());
-
-  cx->tempLifoAlloc().releaseAll();
-
-  if (shouldFreeUnusedMemory) {
-    cx->tempLifoAlloc().freeAll();
-    shouldFreeUnusedMemory = false;
-  }
 }

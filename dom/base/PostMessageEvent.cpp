@@ -78,7 +78,7 @@ PostMessageEvent::Run() {
   // be delivered in the same order they were posted, regardless of which window
   // they were posted to.
   if (nsCOMPtr<nsPIDOMWindowOuter> topWindow =
-          targetWindow->GetOuterWindow()->GetTop()) {
+          targetWindow->GetOuterWindow()->GetInProcessTop()) {
     if (nsCOMPtr<nsPIDOMWindowInner> topInner =
             topWindow->GetCurrentInnerWindow()) {
       if (topInner->GetExtantDoc() &&
@@ -117,10 +117,6 @@ PostMessageEvent::Run() {
       MOZ_DIAGNOSTIC_ASSERT(
           sourceAttrs.mUserContextId == targetAttrs.mUserContextId,
           "Target and source should have the same userContextId attribute.");
-      MOZ_DIAGNOSTIC_ASSERT(sourceAttrs.mInIsolatedMozBrowser ==
-                                targetAttrs.mInIsolatedMozBrowser,
-                            "Target and source should have the same "
-                            "inIsolatedMozBrowser attribute.");
 
       nsAutoString providedOrigin, targetOrigin;
       nsresult rv = nsContentUtils::GetUTFOrigin(targetPrin, targetOrigin);

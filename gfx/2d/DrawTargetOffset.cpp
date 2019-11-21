@@ -8,8 +8,6 @@
 #include "Logging.h"
 #include "PathHelpers.h"
 
-using namespace std;
-
 namespace mozilla {
 namespace gfx {
 
@@ -62,9 +60,9 @@ OFFSET_COMMAND5(StrokeGlyphs, ScaledFont*, const GlyphBuffer&, const Pattern&,
 OFFSET_COMMAND3(FillRoundedRect, const RoundedRect&, const Pattern&,
                 const DrawOptions&)
 
-bool DrawTargetOffset::Draw3DTransformedSurface(SourceSurface *aSrc,
+bool DrawTargetOffset::Draw3DTransformedSurface(SourceSurface* aSrc,
                                                 const Matrix4x4& aMatrix) {
-    return mDrawTarget->Draw3DTransformedSurface(aSrc, aMatrix);
+  return mDrawTarget->Draw3DTransformedSurface(aSrc, aMatrix);
 }
 
 OFFSET_COMMAND3(Mask, const Pattern&, const Pattern&, const DrawOptions&)

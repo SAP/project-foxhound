@@ -15,14 +15,15 @@
 #include "js/RootingAPI.h"
 #include "vm/NativeObject.h"
 
+using UDateFormat = void*;
+
 namespace js {
 
-class FreeOp;
 class GlobalObject;
 
 class DateTimeFormatObject : public NativeObject {
  public:
-  static const Class class_;
+  static const JSClass class_;
 
   static constexpr uint32_t INTERNALS_SLOT = 0;
   static constexpr uint32_t UDATE_FORMAT_SLOT = 1;
@@ -32,10 +33,22 @@ class DateTimeFormatObject : public NativeObject {
                 "INTERNALS_SLOT must match self-hosting define for internals "
                 "object slot");
 
- private:
-  static const ClassOps classOps_;
+  UDateFormat* getDateFormat() const {
+    const auto& slot = getFixedSlot(UDATE_FORMAT_SLOT);
+    if (slot.isUndefined()) {
+      return nullptr;
+    }
+    return static_cast<UDateFormat*>(slot.toPrivate());
+  }
 
-  static void finalize(FreeOp* fop, JSObject* obj);
+  void setDateFormat(UDateFormat* dateFormat) {
+    setFixedSlot(UDATE_FORMAT_SLOT, PrivateValue(dateFormat));
+  }
+
+ private:
+  static const JSClassOps classOps_;
+
+  static void finalize(JSFreeOp* fop, JSObject* obj);
 };
 
 extern JSObject* CreateDateTimeFormatPrototype(

@@ -431,6 +431,12 @@ browsing-search-on-start-typing =
     .label = Search for text when you start typing
     .accesskey = x
 
+browsing-picture-in-picture-toggle-enabled =
+    .label = Enable picture-in-picture video controls
+    .accesskey = E
+
+browsing-picture-in-picture-learn-more = Learn more
+
 browsing-cfr-recommendations =
     .label = Recommend extensions as you browse
     .accesskey = R
@@ -502,7 +508,6 @@ choose-bookmark =
 
 home-prefs-content-header = Firefox Home Content
 home-prefs-content-description = Choose what content you want on your Firefox Home screen.
-home-prefs-content-discovery-description = Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.
 
 home-prefs-search-header =
     .label = Web Search
@@ -749,6 +754,13 @@ forms-exceptions =
 forms-generate-passwords =
     .label = Suggest and generate strong passwords
     .accesskey = u
+forms-breach-alerts =
+    .label = Show alerts about passwords for breached websites
+    .accesskey = b
+forms-breach-alerts-learn-more-link = Learn more
+forms-fill-logins-and-passwords =
+    .label = Autofill logins and passwords
+    .accesskey = i
 forms-saved-logins =
     .label = Saved Logins…
     .accesskey = L
@@ -841,8 +853,10 @@ sitedata-disallow-cookies-option =
 sitedata-block-desc = Type blocked
     .accesskey = T
 
-sitedata-option-block-trackers =
-    .label = Third-party trackers
+sitedata-option-block-cross-site-trackers =
+    .label = Cross-site trackers
+sitedata-option-block-cross-site-and-social-media-trackers =
+    .label = Cross-site and social media trackers
 sitedata-option-block-unvisited =
     .label = Cookies from unvisited websites
 sitedata-option-block-all-third-party =
@@ -882,48 +896,52 @@ addressbar-suggestions-settings = Change preferences for search engine suggestio
 
 ## Privacy Section - Content Blocking
 
-content-blocking-header = Content Blocking
+content-blocking-enhanced-tracking-protection = Enhanced Tracking Protection
 
-content-blocking-section-description = Protect your privacy while you browse. Block invisible content that tracks the sites you visit and profiles you. Blocking some of this content may make pages load faster.
+content-blocking-section-top-level-description = Trackers follow you around online to collect information about your browsing habits and interests. { -brand-short-name } blocks many of these trackers and other malicious scripts.
 
 content-blocking-learn-more = Learn more
 
-# The terminology used to refer to categories of Content Blocking is also used in chrome/browser/browser.properties and should be translated consistently.
+## These strings are used to define the different levels of
+## Enhanced Tracking Protection.
+
 # "Standard" in this case is an adjective, meaning "default" or "normal".
-content-blocking-setting-standard =
+enhanced-tracking-protection-setting-standard =
   .label = Standard
   .accesskey = d
-content-blocking-setting-strict =
+enhanced-tracking-protection-setting-strict =
   .label = Strict
   .accesskey = r
-content-blocking-setting-custom =
+enhanced-tracking-protection-setting-custom =
   .label = Custom
   .accesskey = C
+##
 
-content-blocking-standard-desc = Balanced for protection and performance. Allows some trackers so websites function properly.
-content-blocking-strict-description = Stronger protection, may cause some sites to break.
-content-blocking-custom-desc = Choose what to block.
+content-blocking-etp-standard-desc = Balanced for protection and performance. Pages will load normally.
+content-blocking-etp-strict-desc = Stronger protection, but may cause some sites or content to break.
+content-blocking-etp-custom-desc = Choose which trackers and scripts to block.
 
-content-blocking-private-trackers = Known trackers only in Private Windows
-content-blocking-third-party-cookies = Third-party tracking cookies
+content-blocking-private-windows = Tracking content in Private Windows
+content-blocking-cross-site-tracking-cookies = Cross-site tracking cookies
+content-blocking-social-media-trackers = Social media trackers
 content-blocking-all-cookies = All cookies
 content-blocking-unvisited-cookies = Cookies from unvisited sites
-content-blocking-all-windows-trackers = Known trackers in all windows
+content-blocking-all-windows-tracking-content = Tracking content in all windows
 content-blocking-all-third-party-cookies = All third-party cookies
 content-blocking-cryptominers = Cryptominers
 content-blocking-fingerprinters = Fingerprinters
 
 content-blocking-warning-title = Heads up!
-content-blocking-warning-description = Blocking content can cause some websites to break. It’s easy to disable blocking for sites you trust.
-content-blocking-learn-how = Learn how
+content-blocking-etp-warning-description = Blocking trackers could impact the functionality of some sites. Reload a page with trackers to load all content.
+content-blocking-warning-learn-how = Learn how
 
 content-blocking-reload-description = You will need to reload your tabs to apply these changes.
 content-blocking-reload-tabs-button =
   .label = Reload All Tabs
   .accesskey = R
 
-content-blocking-trackers-label =
-  .label = Trackers
+content-blocking-tracking-content-label =
+  .label = Tracking content
   .accesskey = T
 content-blocking-tracking-protection-option-all-windows =
   .label = In all windows

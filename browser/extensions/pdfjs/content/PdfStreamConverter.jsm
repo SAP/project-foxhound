@@ -238,9 +238,8 @@ class ChromeActions {
     this.telemetryState = {
       documentInfo: false,
       firstPageInfo: false,
-      streamTypesUsed: [],
-      fontTypesUsed: [],
-      startAt: Date.now(),
+      streamTypesUsed: {},
+      fontTypesUsed: {},
     };
   }
 
@@ -400,18 +399,17 @@ class ChromeActions {
     switch (probeInfo.type) {
       case "documentInfo":
         if (!this.telemetryState.documentInfo) {
-          PdfJsTelemetry.onDocumentVersion(probeInfo.version | 0);
-          PdfJsTelemetry.onDocumentGenerator(probeInfo.generator | 0);
+          PdfJsTelemetry.onDocumentVersion(probeInfo.version);
+          PdfJsTelemetry.onDocumentGenerator(probeInfo.generator);
           if (probeInfo.formType) {
-            PdfJsTelemetry.onForm(probeInfo.formType === "acroform");
+            PdfJsTelemetry.onForm(probeInfo.formType);
           }
           this.telemetryState.documentInfo = true;
         }
         break;
       case "pageInfo":
         if (!this.telemetryState.firstPageInfo) {
-          var duration = Date.now() - this.telemetryState.startAt;
-          PdfJsTelemetry.onTimeToView(duration);
+          PdfJsTelemetry.onTimeToView(probeInfo.timestamp);
           this.telemetryState.firstPageInfo = true;
         }
         break;
@@ -424,24 +422,29 @@ class ChromeActions {
           break;
         }
         var i,
-          streamTypes = documentStats.streamTypes;
-        if (Array.isArray(streamTypes)) {
-          var STREAM_TYPE_ID_LIMIT = 20;
-          for (i = 0; i < STREAM_TYPE_ID_LIMIT; i++) {
-            if (streamTypes[i] && !this.telemetryState.streamTypesUsed[i]) {
-              PdfJsTelemetry.onStreamType(i);
-              this.telemetryState.streamTypesUsed[i] = true;
-            }
+          streamTypes = documentStats.streamTypes,
+          key;
+        var STREAM_TYPE_ID_LIMIT = 20;
+        i = 0;
+        for (key in streamTypes) {
+          if (++i > STREAM_TYPE_ID_LIMIT) {
+            break;
+          }
+          if (!this.telemetryState.streamTypesUsed[key]) {
+            PdfJsTelemetry.onStreamType(key);
+            this.telemetryState.streamTypesUsed[key] = true;
           }
         }
         var fontTypes = documentStats.fontTypes;
-        if (Array.isArray(fontTypes)) {
-          var FONT_TYPE_ID_LIMIT = 20;
-          for (i = 0; i < FONT_TYPE_ID_LIMIT; i++) {
-            if (fontTypes[i] && !this.telemetryState.fontTypesUsed[i]) {
-              PdfJsTelemetry.onFontType(i);
-              this.telemetryState.fontTypesUsed[i] = true;
-            }
+        var FONT_TYPE_ID_LIMIT = 20;
+        i = 0;
+        for (key in fontTypes) {
+          if (++i > FONT_TYPE_ID_LIMIT) {
+            break;
+          }
+          if (!this.telemetryState.fontTypesUsed[key]) {
+            PdfJsTelemetry.onFontType(key);
+            this.telemetryState.fontTypesUsed[key] = true;
           }
         }
         break;
@@ -930,6 +933,45 @@ class FindEventManager {
   }
 }
 
+/**
+ * Forwards zoom events from the browser chrome to the currently active viewer.
+ */
+class ZoomEventManager {
+  constructor(contentWindow) {
+    this.contentWindow = contentWindow;
+    this.winmm = contentWindow.docShell.messageManager;
+  }
+
+  bind() {
+    this.contentWindow.addEventListener(
+      "unload",
+      evt => {
+        this.unbind();
+      },
+      { once: true }
+    );
+
+    this.winmm.addMessageListener("PDFJS:ZoomIn", this);
+    this.winmm.addMessageListener("PDFJS:ZoomOut", this);
+    this.winmm.addMessageListener("PDFJS:ZoomReset", this);
+  }
+
+  receiveMessage(msg) {
+    const type = msg.name.split("PDFJS:")[1].toLowerCase();
+    const contentWindow = this.contentWindow;
+
+    const forward = contentWindow.document.createEvent("CustomEvent");
+    forward.initCustomEvent(type, true, true, null);
+    contentWindow.dispatchEvent(forward);
+  }
+
+  unbind() {
+    this.winmm.removeMessageListener("PDFJS:ZoomIn", this);
+    this.winmm.removeMessageListener("PDFJS:ZoomOut", this);
+    this.winmm.removeMessageListener("PDFJS:ZoomReset", this);
+  }
+}
+
 function PdfStreamConverter() {}
 
 PdfStreamConverter.prototype = {
@@ -1109,6 +1151,9 @@ PdfStreamConverter.prototype = {
           var findEventManager = new FindEventManager(domWindow);
           findEventManager.bind();
         }
+        const zoomEventManager = new ZoomEventManager(domWindow);
+        zoomEventManager.bind();
+
         listener.onStopRequest(aRequest, statusCode);
 
         if (domWindow.frameElement) {
@@ -1129,7 +1174,7 @@ PdfStreamConverter.prototype = {
     // e.g. useful for NoScript. Make make sure we reuse the origin attributes
     // from the request channel to keep isolation consistent.
     var uri = NetUtil.newURI(PDF_VIEWER_WEB_PAGE);
-    var resourcePrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+    var resourcePrincipal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       aRequest.loadInfo.originAttributes
     );

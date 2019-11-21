@@ -74,9 +74,7 @@ var EXPORTED_SYMBOLS = ["AddonStudies"];
 const DB_NAME = "shield";
 const STORE_NAME = "addon-studies";
 const VERSION_STORE_NAME = "addon-studies-version";
-const DB_OPTIONS = {
-  version: 2,
-};
+const DB_VERSION = 2;
 const STUDY_ENDED_TOPIC = "shield-study-ended";
 const log = LogManager.getLogger("addon-studies");
 
@@ -84,7 +82,7 @@ const log = LogManager.getLogger("addon-studies");
  * Create a new connection to the database.
  */
 function openDatabase() {
-  return IndexedDB.open(DB_NAME, DB_OPTIONS, async (db, event) => {
+  return IndexedDB.open(DB_NAME, DB_VERSION, async (db, event) => {
     if (event.oldVersion < 1) {
       db.createObjectStore(STORE_NAME, {
         keyPath: "recipeId",
@@ -160,8 +158,6 @@ var AddonStudies = {
   },
 
   async init() {
-    await this.migrations();
-
     // If an active study's add-on has been removed since we last ran, stop the
     // study.
     const activeStudies = (await this.getAll()).filter(study => study.active);
@@ -179,48 +175,52 @@ var AddonStudies = {
     });
   },
 
-  async migrations() {
+  /**
+   * Change from "name" and "description" to "slug", "userFacingName",
+   * and "userFacingDescription".
+   *
+   * This is called as needed by NormandyMigrations.jsm, which handles tracking
+   * if this migration has already been run.
+   */
+  async migrateAddonStudyFieldsToSlugAndUserFacingFields() {
     const db = await getDatabase();
-    const oldVersion =
-      (await db.objectStore(VERSION_STORE_NAME, "readonly").get("version")) ||
-      0;
+    const studies = await db.objectStore(STORE_NAME, "readonly").getAll();
 
-    if (oldVersion < 2) {
-      log.debug(`Running data migrations from ${oldVersion} to 2`);
-      // this object store expires after the first await, so don't save it
-      const studies = await db.objectStore(STORE_NAME, "readonly").getAll();
-
-      const writePromises = [];
-      const objectStore = db.objectStore(STORE_NAME, "readwrite");
-
-      for (const study of studies) {
-        // use existing name as slug
-        if (!study.slug) {
-          study.slug = study.name;
-        }
-
-        // Rename `name` and `description` as `userFacingName` and `userFacingDescription`
-        if (study.name && !study.userFacingName) {
-          study.userFacingName = study.name;
-          delete study.name;
-        }
-        if (study.description && !study.userFacingDescription) {
-          study.userFacingDescription = study.description;
-          delete study.description;
-        }
-
-        // Specify that existing recipes don't have branches
-        if (!study.branch) {
-          study.branch = AddonStudies.NO_BRANCHES_MARKER;
-        }
-
-        writePromises.push(objectStore.put(study));
-      }
-
-      await Promise.all(writePromises);
+    // If there are no studies, stop here to avoid opening the DB again.
+    if (studies.length === 0) {
+      return;
     }
 
-    await db.objectStore(VERSION_STORE_NAME, "readwrite").put("version", 2);
+    // Object stores expire after `await`, so this method accumulates a bunch of
+    // promises, and then awaits them at the end.
+    const writePromises = [];
+    const objectStore = db.objectStore(STORE_NAME, "readwrite");
+
+    for (const study of studies) {
+      // use existing name as slug
+      if (!study.slug) {
+        study.slug = study.name;
+      }
+
+      // Rename `name` and `description` as `userFacingName` and `userFacingDescription`
+      if (study.name && !study.userFacingName) {
+        study.userFacingName = study.name;
+      }
+      delete study.name;
+      if (study.description && !study.userFacingDescription) {
+        study.userFacingDescription = study.description;
+      }
+      delete study.description;
+
+      // Specify that existing recipes don't have branches
+      if (!study.branch) {
+        study.branch = AddonStudies.NO_BRANCHES_MARKER;
+      }
+
+      writePromises.push(objectStore.put(study));
+    }
+
+    await Promise.all(writePromises);
   },
 
   /**

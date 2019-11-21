@@ -13,12 +13,20 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
+#include "gfxFont.h"
+#include "ScaledFontBase.h"
+#include "SkTextBlob.h"
+#include "SkTypeface.h"
+#include "SkFont.h"
+#include "SkPoint.h"
+#include "SkScalar.h"
 
 #include "BorderConsts.h"
 #include "nsStyleConsts.h"
@@ -52,6 +60,7 @@
 #include "nsCSSRenderingBorders.h"
 #include "mozilla/css/ImageLoader.h"
 #include "ImageContainer.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Telemetry.h"
 #include "gfxUtils.h"
 #include "gfxGradientCache.h"
@@ -749,10 +758,9 @@ ImgDrawResult nsCSSRendering::CreateWebRenderCommandsForBorderWithStyleBorder(
 }
 
 static nsCSSBorderRenderer ConstructBorderRenderer(
-    nsPresContext* aPresContext, ComputedStyle* aStyle,
-    DrawTarget* aDrawTarget, nsIFrame* aForFrame, const nsRect& aDirtyRect,
-    const nsRect& aBorderArea, const nsStyleBorder& aStyleBorder,
-    Sides aSkipSides, bool* aNeedsClip) {
+    nsPresContext* aPresContext, ComputedStyle* aStyle, DrawTarget* aDrawTarget,
+    nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
+    const nsStyleBorder& aStyleBorder, Sides aSkipSides, bool* aNeedsClip) {
   nsMargin border = aStyleBorder.GetComputedBorder();
 
   // Compute the outermost boundary of the area that might be painted.
@@ -888,8 +896,8 @@ ImgDrawResult nsCSSRendering::PaintBorderWithStyleBorder(
 
   bool needsClip = false;
   nsCSSBorderRenderer br = ConstructBorderRenderer(
-      aPresContext, aStyle, &aDrawTarget, aForFrame, aDirtyRect,
-      aBorderArea, aStyleBorder, aSkipSides, &needsClip);
+      aPresContext, aStyle, &aDrawTarget, aForFrame, aDirtyRect, aBorderArea,
+      aStyleBorder, aSkipSides, &needsClip);
   if (needsClip) {
     aDrawTarget.PushClipRect(NSRectToSnappedRect(
         aBorderArea, aForFrame->PresContext()->AppUnitsPerDevPixel(),
@@ -947,8 +955,8 @@ nsCSSRendering::CreateNullBorderRendererWithStyleBorder(
 
   bool needsClip = false;
   nsCSSBorderRenderer br = ConstructBorderRenderer(
-      aPresContext, aStyle, aDrawTarget, aForFrame, aDirtyRect,
-      aBorderArea, aStyleBorder, aSkipSides, &needsClip);
+      aPresContext, aStyle, aDrawTarget, aForFrame, aDirtyRect, aBorderArea,
+      aStyleBorder, aSkipSides, &needsClip);
   return Some(br);
 }
 
@@ -1021,7 +1029,7 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRendererForOutline(
 
   StyleBorderStyle outlineStyle;
   if (ourOutline->mOutlineStyle.IsAuto()) {
-    if (nsLayoutUtils::IsOutlineStyleAutoEnabled()) {
+    if (StaticPrefs::layout_css_outline_style_auto_enabled()) {
       nsITheme* theme = aPresContext->GetTheme();
       if (theme && theme->ThemeSupportsWidget(aPresContext, aForFrame,
                                               StyleAppearance::FocusOutline)) {
@@ -2357,8 +2365,7 @@ static nscolor GetBackgroundColor(nsIFrame* aFrame, ComputedStyle* aStyle) {
     default:
       break;
   }
-  return aStyle->GetVisitedDependentColor(
-      &nsStyleBackground::mBackgroundColor);
+  return aStyle->GetVisitedDependentColor(&nsStyleBackground::mBackgroundColor);
 }
 
 nscolor nsCSSRendering::DetermineBackgroundColor(nsPresContext* aPresContext,
@@ -3704,6 +3711,313 @@ Rect nsCSSRendering::ExpandPaintingRectForDecorationLine(
   return rect;
 }
 
+// Converts a GfxFont to an SkFont
+// Either returns true if it was successful, or false if something went wrong
+static bool GetSkFontFromGfxFont(DrawTarget& aDrawTarget, gfxFont* aFont,
+                                 SkFont& aSkFont) {
+  RefPtr<ScaledFont> scaledFont = aFont->GetScaledFont(&aDrawTarget);
+  if (!scaledFont) {
+    return false;
+  }
+
+  ScaledFontBase* fontBase = static_cast<ScaledFontBase*>(scaledFont.get());
+
+  SkTypeface* typeface = fontBase->GetSkTypeface();
+  if (!typeface) {
+    return false;
+  }
+
+  aSkFont = SkFont(sk_ref_sp(typeface), SkFloatToScalar(fontBase->GetSize()));
+  return true;
+}
+
+// Computes data used to position the decoration line within a
+// SkTextBlob, data is returned through aBounds
+static void GetPositioning(
+    const nsCSSRendering::PaintDecorationLineParams& aParams, const Rect& aRect,
+    Float aOneCSSPixel, Float aCenterBaselineOffset, SkScalar aBounds[]) {
+  /**
+   * How Positioning in Skia Works
+   *  Take the letter "n" for example
+   *  We set textPos as 0, 0
+   *  This is represented in Skia like so (not to scale)
+   *        ^
+   *  -10px |  _ __
+   *        | | '_ \
+   *   -5px | | | | |
+   * y-axis | |_| |_|
+   *  (0,0) ----------------------->
+   *        |     5px        10px
+   *    5px |
+   *        |
+   *   10px |
+   *        v
+   *  0 on the x axis is a line that touches the bottom of the n
+   *  (0,0) is the bottom left-hand corner of the n character
+   *  Moving "up" from the n is going in a negative y direction
+   *  Moving "down" from the n is going in a positive y direction
+   *
+   *  The intercepts that are returned in this arrangement will be
+   *  offset by the original point it starts at. (This happens in
+   *  the SkipInk function below).
+   *
+   *  In Skia, text MUST be laid out such that the next character
+   *  in the RunBuffer is further along the x-axis than the previous
+   *  character, otherwise there is undefined/strange behavior.
+   */
+
+  Float rectThickness = aParams.vertical ? aRect.Width() : aRect.Height();
+
+  // the upper and lower lines/edges of the under or over line
+  SkScalar upperLine, lowerLine;
+  if (aParams.decoration == mozilla::StyleTextDecorationLine_OVERLINE) {
+    lowerLine =
+        -aParams.offset + aParams.defaultLineThickness - aCenterBaselineOffset;
+    upperLine = lowerLine - rectThickness;
+  } else {
+    // underlines in vertical text are offset from the center of
+    // the text, and not the baseline
+    // Skia sets the text at it's baseline so we have to offset it
+    // for text in vertical-* writing modes
+    upperLine = -aParams.offset - aCenterBaselineOffset;
+    lowerLine = upperLine + rectThickness;
+  }
+
+  // set up the bounds, add in a little padding to the thickness of the line
+  // (unless the line is <= 1 CSS pixel thick)
+  Float lineThicknessPadding = aParams.lineSize.height > aOneCSSPixel
+                                   ? 0.25f * aParams.lineSize.height
+                                   : 0;
+  // don't allow padding greater than 0.75 CSS pixel
+  lineThicknessPadding = std::min(lineThicknessPadding, 0.75f * aOneCSSPixel);
+  aBounds[0] = upperLine - lineThicknessPadding;
+  aBounds[1] = lowerLine + lineThicknessPadding;
+}
+
+// positions an individual glyph according to the given offset
+static SkPoint GlyphPosition(const gfxTextRun::DetailedGlyph& aGlyph,
+                             const SkPoint& aTextPos,
+                             int32_t aAppUnitsPerDevPixel) {
+  SkPoint point = {aGlyph.mOffset.x, aGlyph.mOffset.y};
+
+  // convert to device pixels
+  point.fX /= (float)aAppUnitsPerDevPixel;
+  point.fY /= (float)aAppUnitsPerDevPixel;
+
+  // add offsets
+  point.fX += aTextPos.fX;
+  point.fY += aTextPos.fY;
+  return point;
+}
+
+// returns a count of all the glyphs that will be rendered
+// excludes ligature continuations, includes the number of individual
+// glyph records. This includes the number of DetailedGlyphs that a single
+// CompressedGlyph record points to. This function is necessary because Skia
+// needs the total length of glyphs to add to it's run buffer before it creates
+// the RunBuffer object, and this cannot be resized later.
+static uint32_t CountAllGlyphs(
+    const gfxTextRun* aTextRun,
+    const gfxTextRun::CompressedGlyph* aCompressedGlyph, uint32_t aStringStart,
+    uint32_t aStringEnd) {
+  uint32_t totalGlyphCount = 0;
+
+  for (const gfxTextRun::CompressedGlyph* cg = aCompressedGlyph + aStringStart;
+       cg < aCompressedGlyph + aStringEnd; ++cg) {
+    totalGlyphCount += cg->IsSimpleGlyph() ? 1 : cg->GetGlyphCount();
+  }
+
+  return totalGlyphCount;
+}
+
+static void AddDetailedGlyph(const SkTextBlobBuilder::RunBuffer& aRunBuffer,
+                             const gfxTextRun::DetailedGlyph& aGlyph,
+                             int aIndex, float aAppUnitsPerDevPixel,
+                             SkPoint& aTextPos) {
+  // add glyph ID to the run buffer at i
+  aRunBuffer.glyphs[aIndex] = aGlyph.mGlyphID;
+
+  // position the glyph correctly using the detailed offsets
+  SkPoint position = GlyphPosition(aGlyph, aTextPos, aAppUnitsPerDevPixel);
+  aRunBuffer.pos[2 * aIndex] = position.fX;
+  aRunBuffer.pos[(2 * aIndex) + 1] = position.fY;
+
+  // increase aTextPos.fx by the advance
+  aTextPos.fX += ((float)aGlyph.mAdvance / aAppUnitsPerDevPixel);
+}
+
+static void AddSimpleGlyph(const SkTextBlobBuilder::RunBuffer& aRunBuffer,
+                           const gfxTextRun::CompressedGlyph& aGlyph,
+                           int aIndex, float aAppUnitsPerDevPixel,
+                           SkPoint& aTextPos) {
+  aRunBuffer.glyphs[aIndex] = aGlyph.GetSimpleGlyph();
+
+  // simple glyphs are offset from 0, so we'll just use textPos
+  aRunBuffer.pos[2 * aIndex] = aTextPos.fX;
+  aRunBuffer.pos[(2 * aIndex) + 1] = aTextPos.fY;
+
+  // increase aTextPos.fX by the advance
+  aTextPos.fX += ((float)aGlyph.GetSimpleAdvance() / aAppUnitsPerDevPixel);
+}
+
+// Sets up a Skia TextBlob of the specified font, text position, and made up of
+// the glyphs between aStringStart and aStringEnd. Handles RTL and LTR text
+// and positions each glyph within the text blob
+static sk_sp<const SkTextBlob> CreateTextBlob(
+    const gfxTextRun* aTextRun,
+    const gfxTextRun::CompressedGlyph* aCompressedGlyph, const SkFont& aFont,
+    const gfxTextRun::PropertyProvider::Spacing* aSpacing,
+    uint32_t aStringStart, uint32_t aStringEnd, float aAppUnitsPerDevPixel,
+    SkPoint& aTextPos, int32_t& aSpacingOffset) {
+  // allocate space for the run buffer, then fill it with the glyphs
+  uint32_t len =
+      CountAllGlyphs(aTextRun, aCompressedGlyph, aStringStart, aStringEnd);
+  if (len <= 0) {
+    return nullptr;
+  }
+
+  SkTextBlobBuilder builder;
+  const SkTextBlobBuilder::RunBuffer& run = builder.allocRunPos(aFont, len);
+
+  // RTL text should be read in by glyph starting at aStringEnd - 1 down until
+  // aStringStart.
+  bool isRTL = aTextRun->IsRightToLeft();
+  uint32_t currIndex = isRTL ? aStringEnd - 1 : aStringStart;  // textRun index
+  // currIndex will be advanced by |step| until it reaches |limit|, which is the
+  // final index to be handled (NOT one beyond the final index)
+  int step = isRTL ? -1 : 1;
+  uint32_t limit = isRTL ? aStringStart : aStringEnd - 1;
+
+  uint32_t i = 0;  // index into the SkTextBlob we're building
+  while (true) {
+    // Loop exit test is below, just before we update currIndex.
+    aTextPos.fX +=
+        isRTL ? aSpacing[aSpacingOffset].mAfter / aAppUnitsPerDevPixel
+              : aSpacing[aSpacingOffset].mBefore / aAppUnitsPerDevPixel;
+
+    if (aCompressedGlyph[currIndex].IsSimpleGlyph()) {
+      MOZ_ASSERT(i < len, "glyph count error!");
+      AddSimpleGlyph(run, aCompressedGlyph[currIndex], i, aAppUnitsPerDevPixel,
+                     aTextPos);
+      i++;
+    } else {
+      // if it's detailed, potentially add multiple into run.glyphs
+      uint32_t count = aCompressedGlyph[currIndex].GetGlyphCount();
+      if (count > 0) {
+        gfxTextRun::DetailedGlyph* detailGlyph =
+            aTextRun->GetDetailedGlyphs(currIndex);
+        for (uint32_t d = isRTL ? count - 1 : 0; count; count--, d += step) {
+          MOZ_ASSERT(i < len, "glyph count error!");
+          AddDetailedGlyph(run, detailGlyph[d], i, aAppUnitsPerDevPixel,
+                           aTextPos);
+          i++;
+        }
+      }
+    }
+    aTextPos.fX += isRTL
+                       ? aSpacing[aSpacingOffset].mBefore / aAppUnitsPerDevPixel
+                       : aSpacing[aSpacingOffset].mAfter / aAppUnitsPerDevPixel;
+    aSpacingOffset += step;
+
+    if (currIndex == limit) {
+      break;
+    }
+    currIndex += step;
+  }
+
+  MOZ_ASSERT(i == len, "glyph count error!");
+
+  return builder.make();
+}
+
+// Given a TextBlob, the bounding lines, and the set of current intercepts this
+// function adds the intercepts for the current TextBlob into the given set of
+// previoulsy calculated intercepts. This set is either of length 0, or a
+// multiple of 2 (since every intersection with a piece of text results in two
+// intercepts: entering/exiting)
+static void GetTextIntercepts(const sk_sp<const SkTextBlob>& aBlob,
+                              const SkScalar aBounds[],
+                              nsTArray<SkScalar>& aIntercepts) {
+  // https://skia.org/user/api/SkTextBlob_Reference#Text_Blob_Text_Intercepts
+  int count = aBlob->getIntercepts(aBounds, nullptr);
+  if (count < 2) {
+    return;
+  }
+  aBlob->getIntercepts(aBounds, aIntercepts.AppendElements(count));
+}
+
+// This function, given a set of intercepts that represent each intersection
+// between an under/overline and text, makes a series of calls to
+// PaintDecorationLineInternal that paints a series of clip rects which
+// implement the text-decoration-skip-ink property
+// Logic for where to place each clipped rect, and the length of each rect is
+// included here
+static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
+                    const nsCSSRendering::PaintDecorationLineParams& aParams,
+                    const nsTArray<SkScalar>& aIntercepts, Rect& aRect) {
+  nsCSSRendering::PaintDecorationLineParams clipParams = aParams;
+  double padding = aParams.lineSize.height;
+  double oneCSSPixel = aFrame->PresContext()->CSSPixelsToDevPixels(1.0f);
+  padding = std::max(padding, oneCSSPixel);
+  int length = aIntercepts.Length();
+
+  SkScalar startIntercept = 0;
+  SkScalar endIntercept = 0;
+
+  // keep track of the direction we are drawing the clipped rects in
+  // for sideways text, our intercepts from the first glyph are actually
+  // decreasing (towards the top edge of the page), so we use a negative
+  // direction
+  Float dir = 1.0f;
+  Float lineStart = aParams.vertical ? aParams.pt.y : aParams.pt.x;
+  Float lineEnd = lineStart + aParams.lineSize.width;
+  if (aParams.sidewaysLeft) {
+    dir = -1.0f;
+    std::swap(lineStart, lineEnd);
+  }
+
+  for (int i = 0; i <= length; i += 2) {
+    // handle start/end edge cases and set up general case
+    startIntercept = (i > 0) ? (dir * aIntercepts[i - 1]) + lineStart
+                             : lineStart - (dir * padding);
+    endIntercept = (i < length) ? (dir * aIntercepts[i]) + lineStart
+                                : lineEnd + (dir * padding);
+
+    // remove padding at both ends for width
+    // the start of the line is calculated so the padding removes just
+    // enough so that the line starts at its normal position
+    clipParams.lineSize.width =
+        (dir * (endIntercept - startIntercept)) - (2.0 * padding);
+
+    if (aParams.vertical) {
+      aRect.height = clipParams.lineSize.width;
+    } else {
+      aRect.width = clipParams.lineSize.width;
+    }
+
+    // Don't draw decoration lines that have a smaller width than 1, or half the
+    // decoration thickness
+    if (clipParams.lineSize.width <
+        std::max(0.5 * clipParams.lineSize.height, 1.0)) {
+      continue;
+    }
+
+    // start the line right after the intercept's location plus room for
+    // padding
+    if (aParams.vertical) {
+      clipParams.pt.y = aParams.sidewaysLeft ? endIntercept + padding
+                                             : startIntercept + padding;
+      aRect.y = clipParams.pt.y;
+    } else {
+      clipParams.pt.x = startIntercept + padding;
+      aRect.x = clipParams.pt.x;
+    }
+
+    nsCSSRendering::PaintDecorationLineInternal(aFrame, aDrawTarget, clipParams,
+                                                aRect);
+  }
+}
+
 void nsCSSRendering::PaintDecorationLine(
     nsIFrame* aFrame, DrawTarget& aDrawTarget,
     const PaintDecorationLineParams& aParams) {
@@ -3722,6 +4036,126 @@ void nsCSSRendering::PaintDecorationLine(
     return;
   }
 
+  // Check if decoration line will skip past ascenders/descenders
+  // text-decoration-skip-ink only applies to overlines/underlines
+  mozilla::StyleTextDecorationSkipInk skipInk =
+      aFrame->StyleText()->mTextDecorationSkipInk;
+  bool skipInkEnabled =
+      skipInk == mozilla::StyleTextDecorationSkipInk::Auto &&
+      aParams.decoration != StyleTextDecorationLine_LINE_THROUGH &&
+      StaticPrefs::layout_css_text_decoration_skip_ink_enabled();
+
+  if (!skipInkEnabled || aParams.glyphRange.Length() == 0) {
+    PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
+    return;
+  }
+
+  // check if the frame is a text frame or not
+  nsTextFrame* textFrame = nullptr;
+  if (aFrame->IsTextFrame()) {
+    textFrame = static_cast<nsTextFrame*>(aFrame);
+  } else {
+    PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
+    return;
+  }
+
+  // get text run and current text offset (for line wrapping)
+  gfxTextRun* textRun =
+      textFrame->GetTextRun(nsTextFrame::TextRunType::eInflated);
+
+  // used for conversions from app units to device pixels
+  int32_t appUnitsPerDevPixel = aFrame->PresContext()->AppUnitsPerDevPixel();
+
+  // pointer to the array of glyphs for this TextRun
+  gfxTextRun::CompressedGlyph* characterGlyphs = textRun->GetCharacterGlyphs();
+
+  // get positioning info
+  SkPoint textPos = {0, aParams.baselineOffset};
+  SkScalar bounds[] = {0, 0};
+  Float oneCSSPixel = aFrame->PresContext()->CSSPixelsToDevPixels(1.0f);
+  if (!textRun->UseCenterBaseline()) {
+    GetPositioning(aParams, rect, oneCSSPixel, 0, bounds);
+  }
+
+  // array for the text intercepts
+  AutoTArray<SkScalar, 256> intercepts;
+
+  // array for spacing data
+  AutoTArray<gfxTextRun::PropertyProvider::Spacing, 64> spacing;
+  spacing.SetLength(aParams.glyphRange.Length());
+  if (aParams.provider != nullptr) {
+    aParams.provider->GetSpacing(aParams.glyphRange, spacing.Elements());
+  }
+
+  // loop through each glyph run
+  // in most cases there will only be one
+  bool isRTL = textRun->IsRightToLeft();
+  int32_t spacingOffset = isRTL ? aParams.glyphRange.Length() - 1 : 0;
+  gfxTextRun::GlyphRunIterator iter(textRun, aParams.glyphRange, isRTL);
+
+  while (iter.NextRun()) {
+    if (iter.GetGlyphRun()->mOrientation ==
+            mozilla::gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT ||
+        iter.GetGlyphRun()->mIsCJK) {
+      // We don't support upright text in vertical modes currently
+      // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1572294),
+      // but we do need to update textPos so that following runs will be
+      // correctly positioned.
+      // We also don't apply skip-ink to CJK text runs because many fonts
+      // have an underline that looks really bad if this is done
+      // (see https://bugzilla.mozilla.org/show_bug.cgi?id=1573249).
+      textPos.fX +=
+          textRun->GetAdvanceWidth(
+              gfxTextRun::Range(iter.GetStringStart(), iter.GetStringEnd()),
+              aParams.provider) /
+          appUnitsPerDevPixel;
+      continue;
+    }
+
+    // get the glyph run's font
+    SkFont font;
+    if (!GetSkFontFromGfxFont(aDrawTarget, iter.GetGlyphRun()->mFont, font)) {
+      PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
+      return;
+    }
+
+    // Create a text blob with correctly positioned glyphs. This also updates
+    // textPos.fX with the advance of the glyphs.
+    sk_sp<const SkTextBlob> textBlob =
+        CreateTextBlob(textRun, characterGlyphs, font, spacing.Elements(),
+                       iter.GetStringStart(), iter.GetStringEnd(),
+                       (float)appUnitsPerDevPixel, textPos, spacingOffset);
+
+    if (!textBlob) {
+      continue;
+    }
+
+    if (textRun->UseCenterBaseline()) {
+      // writing modes that use a center baseline need to be adjusted on a
+      // font-by-font basis since Skia lines up the text on a alphabetic
+      // baseline, but for some vertical-* writing modes the offset is from the
+      // center.
+      gfxFont::Metrics metrics =
+          iter.GetGlyphRun()->mFont->GetMetrics(nsFontMetrics::eHorizontal);
+      Float centerToBaseline = (metrics.emAscent - metrics.emDescent) / 2.0f;
+      GetPositioning(aParams, rect, oneCSSPixel, centerToBaseline, bounds);
+    }
+
+    // compute the text intercepts that need to be skipped
+    GetTextIntercepts(textBlob, bounds, intercepts);
+  }
+  bool needsSkipInk = intercepts.Length() > 0;
+
+  if (needsSkipInk) {
+    SkipInk(aFrame, aDrawTarget, aParams, intercepts, rect);
+  } else {
+    PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
+  }
+}
+
+void nsCSSRendering::PaintDecorationLineInternal(
+    nsIFrame* aFrame, DrawTarget& aDrawTarget,
+    const PaintDecorationLineParams& aParams, Rect aRect) {
   Float lineThickness = std::max(NS_round(aParams.lineSize.height), 1.0);
 
   Color color = ToDeviceColor(aParams.color);
@@ -3743,22 +4177,22 @@ void nsCSSRendering::PaintDecorationLine(
     case NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE:
       break;
     case NS_STYLE_TEXT_DECORATION_STYLE_DASHED: {
-      autoPopClips.PushClipRect(rect);
+      autoPopClips.PushClipRect(aRect);
       Float dashWidth = lineThickness * DOT_LENGTH * DASH_LENGTH;
       dash[0] = dashWidth;
       dash[1] = dashWidth;
       strokeOptions.mDashPattern = dash;
       strokeOptions.mDashLength = MOZ_ARRAY_LENGTH(dash);
       strokeOptions.mLineCap = CapStyle::BUTT;
-      rect = ExpandPaintingRectForDecorationLine(
-          aFrame, aParams.style, rect, aParams.icoordInFrame, dashWidth * 2,
+      aRect = ExpandPaintingRectForDecorationLine(
+          aFrame, aParams.style, aRect, aParams.icoordInFrame, dashWidth * 2,
           aParams.vertical);
       // We should continue to draw the last dash even if it is not in the rect.
-      rect.width += dashWidth;
+      aRect.width += dashWidth;
       break;
     }
     case NS_STYLE_TEXT_DECORATION_STYLE_DOTTED: {
-      autoPopClips.PushClipRect(rect);
+      autoPopClips.PushClipRect(aRect);
       Float dashWidth = lineThickness * DOT_LENGTH;
       if (lineThickness > 2.0) {
         dash[0] = 0.f;
@@ -3770,15 +4204,15 @@ void nsCSSRendering::PaintDecorationLine(
       }
       strokeOptions.mDashPattern = dash;
       strokeOptions.mDashLength = MOZ_ARRAY_LENGTH(dash);
-      rect = ExpandPaintingRectForDecorationLine(
-          aFrame, aParams.style, rect, aParams.icoordInFrame, dashWidth * 2,
+      aRect = ExpandPaintingRectForDecorationLine(
+          aFrame, aParams.style, aRect, aParams.icoordInFrame, dashWidth * 2,
           aParams.vertical);
       // We should continue to draw the last dot even if it is not in the rect.
-      rect.width += dashWidth;
+      aRect.width += dashWidth;
       break;
     }
     case NS_STYLE_TEXT_DECORATION_STYLE_WAVY:
-      autoPopClips.PushClipRect(rect);
+      autoPopClips.PushClipRect(aRect);
       if (lineThickness > 2.0) {
         drawOptions.mAntialiasMode = AntialiasMode::SUBPIXEL;
       } else {
@@ -3795,17 +4229,17 @@ void nsCSSRendering::PaintDecorationLine(
 
   // The block-direction position should be set to the middle of the line.
   if (aParams.vertical) {
-    rect.x += lineThickness / 2;
+    aRect.x += lineThickness / 2;
   } else {
-    rect.y += lineThickness / 2;
+    aRect.y += lineThickness / 2;
   }
 
   switch (aParams.style) {
     case NS_STYLE_TEXT_DECORATION_STYLE_SOLID:
     case NS_STYLE_TEXT_DECORATION_STYLE_DOTTED:
     case NS_STYLE_TEXT_DECORATION_STYLE_DASHED: {
-      Point p1 = rect.TopLeft();
-      Point p2 = aParams.vertical ? rect.BottomLeft() : rect.TopRight();
+      Point p1 = aRect.TopLeft();
+      Point p2 = aParams.vertical ? aRect.BottomLeft() : aRect.TopRight();
       if (textDrawer) {
         textDrawer->AppendDecoration(p1, p2, lineThickness, aParams.vertical,
                                      color, aParams.style);
@@ -3829,17 +4263,17 @@ void nsCSSRendering::PaintDecorationLine(
        * |XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX| v
        * +-------------------------------------------+
        */
-      Point p1a = rect.TopLeft();
-      Point p2a = aParams.vertical ? rect.BottomLeft() : rect.TopRight();
+      Point p1a = aRect.TopLeft();
+      Point p2a = aParams.vertical ? aRect.BottomLeft() : aRect.TopRight();
 
       if (aParams.vertical) {
-        rect.width -= lineThickness;
+        aRect.width -= lineThickness;
       } else {
-        rect.height -= lineThickness;
+        aRect.height -= lineThickness;
       }
 
-      Point p1b = aParams.vertical ? rect.TopRight() : rect.BottomLeft();
-      Point p2b = rect.BottomRight();
+      Point p1b = aParams.vertical ? aRect.TopRight() : aRect.BottomLeft();
+      Point p2b = aRect.BottomRight();
 
       if (textDrawer) {
         textDrawer->AppendDecoration(p1a, p2a, lineThickness, aParams.vertical,
@@ -3887,9 +4321,9 @@ void nsCSSRendering::PaintDecorationLine(
        * directions in the above description.
        */
 
-      Float& rectICoord = aParams.vertical ? rect.y : rect.x;
-      Float& rectISize = aParams.vertical ? rect.height : rect.width;
-      const Float rectBSize = aParams.vertical ? rect.width : rect.height;
+      Float& rectICoord = aParams.vertical ? aRect.y : aRect.x;
+      Float& rectISize = aParams.vertical ? aRect.height : aRect.width;
+      const Float rectBSize = aParams.vertical ? aRect.width : aRect.height;
 
       const Float adv = rectBSize - lineThickness;
       const Float flatLengthAtVertex =
@@ -3897,16 +4331,16 @@ void nsCSSRendering::PaintDecorationLine(
 
       // Align the start of wavy lines to the nearest ancestor block.
       const Float cycleLength = 2 * (adv + flatLengthAtVertex);
-      rect = ExpandPaintingRectForDecorationLine(aFrame, aParams.style, rect,
-                                                 aParams.icoordInFrame,
-                                                 cycleLength, aParams.vertical);
+      aRect = ExpandPaintingRectForDecorationLine(
+          aFrame, aParams.style, aRect, aParams.icoordInFrame, cycleLength,
+          aParams.vertical);
 
       if (textDrawer) {
         // Undo attempted centering
-        Float& rectBCoord = aParams.vertical ? rect.x : rect.y;
+        Float& rectBCoord = aParams.vertical ? aRect.x : aRect.y;
         rectBCoord -= lineThickness / 2;
 
-        textDrawer->AppendWavyDecoration(rect, lineThickness, aParams.vertical,
+        textDrawer->AppendWavyDecoration(aRect, lineThickness, aParams.vertical,
                                          color);
         return;
       }
@@ -3924,7 +4358,7 @@ void nsCSSRendering::PaintDecorationLine(
 
       rectICoord += lineThickness / 2.0;
 
-      Point pt(rect.TopLeft());
+      Point pt(aRect.TopLeft());
       Float& ptICoord = aParams.vertical ? pt.y : pt.x;
       Float& ptBCoord = aParams.vertical ? pt.x : pt.y;
       if (aParams.vertical) {
@@ -4171,9 +4605,9 @@ gfxRect nsCSSRendering::GetTextDecorationRectInternal(
     extra = std::max(extra, lineThickness);
     // computes offset for when user specifies a decoration width since
     // aParams.offset is derived from the font metric's line height
-    gfxFloat decorationWidthOffset =
+    gfxFloat decorationThicknessOffset =
         (lineThickness - defaultLineThickness) / 2.0;
-    offset = aParams.offset - lineThickness + extra + decorationWidthOffset;
+    offset = aParams.offset - lineThickness + extra + decorationThicknessOffset;
   } else {
     MOZ_ASSERT_UNREACHABLE("Invalid text decoration value");
   }

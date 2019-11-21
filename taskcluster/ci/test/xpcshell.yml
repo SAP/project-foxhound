@@ -8,6 +8,10 @@ job-defaults:
         by-test-platform:
             linux64/debug: ['fission', 'serviceworker']
             default: ['fission']
+    target:
+        by-test-platform:
+            android-em-7.*: geckoview-androidTest.apk
+            default: null
     mozharness:
         script:
             by-test-platform:
@@ -31,6 +35,10 @@ job-defaults:
         requires-signed-builds:
             by-test-platform:
                 windows10-64-asan/opt: false    # No XPCShell on ASAN yet
+                windows7-32-mingwclang/opt: false
+                windows7-32-mingwclang/debug: false
+                windows10-64-mingwclang/opt: false
+                windows10-64-mingwclang/debug: false
                 windows.*: true
                 default: false
 
@@ -60,8 +68,12 @@ xpcshell:
             default: default
     max-run-time:
         by-test-platform:
-            android-em-4.*\/debug: 7200
-            default: 5400
+            android-em-4.*: 7200
+            macosx.*(?!-ccov)...../.*: 3600
+            windows10-aarch64/.*: 3600
+            windows7-32(-shippable)?/opt: 3600
+            .*-ccov/debug: 5400
+            default: 2700
     allow-software-gl-layers: false
     tier:
         by-test-platform:

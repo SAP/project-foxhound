@@ -8,7 +8,7 @@
 #include "nsIFrame.h"
 #include "PointerEvent.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/MouseEventBinding.h"
 
 namespace mozilla {
@@ -372,8 +372,7 @@ void PointerEventHandler::ReleaseIfCaptureByDescendant(nsIContent* aContent) {
   for (auto iter = sPointerCaptureList->Iter(); !iter.Done(); iter.Next()) {
     PointerCaptureInfo* data = iter.UserData();
     if (data && data->mPendingContent &&
-        nsContentUtils::ContentIsDescendantOf(data->mPendingContent,
-                                              aContent)) {
+        data->mPendingContent->IsInclusiveDescendantOf(aContent)) {
       ReleasePointerCaptureById(iter.Key());
     }
   }

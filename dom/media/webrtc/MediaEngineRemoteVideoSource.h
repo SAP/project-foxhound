@@ -84,28 +84,22 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
 
   bool ChooseCapability(const NormalizedConstraints& aConstraints,
                         const MediaEnginePrefs& aPrefs,
-                        const nsString& aDeviceId,
                         webrtc::CaptureCapability& aCapability,
                         const DistanceCalculation aCalculate);
 
   uint32_t GetDistance(const webrtc::CaptureCapability& aCandidate,
                        const NormalizedConstraintSet& aConstraints,
-                       const nsString& aDeviceId,
                        const DistanceCalculation aCalculate) const;
 
-  uint32_t GetFitnessDistance(const webrtc::CaptureCapability& aCandidate,
-                              const NormalizedConstraintSet& aConstraints,
-                              const nsString& aDeviceId) const;
+  uint32_t GetFitnessDistance(
+      const webrtc::CaptureCapability& aCandidate,
+      const NormalizedConstraintSet& aConstraints) const;
 
-  uint32_t GetFeasibilityDistance(const webrtc::CaptureCapability& aCandidate,
-                                  const NormalizedConstraintSet& aConstraints,
-                                  const nsString& aDeviceId) const;
+  uint32_t GetFeasibilityDistance(
+      const webrtc::CaptureCapability& aCandidate,
+      const NormalizedConstraintSet& aConstraints) const;
 
   static void TrimLessFitCandidates(nsTArray<CapabilityCandidate>& aSet);
-
-  uint32_t GetBestFitnessDistance(
-      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
-      const nsString& aDeviceId) const override;
 
  public:
   MediaEngineRemoteVideoSource(int aIndex, camera::CaptureEngine aCapEngine,
@@ -118,7 +112,7 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   // MediaEngineSource
   dom::MediaSourceEnum GetMediaSource() const override;
   nsresult Allocate(const dom::MediaTrackConstraints& aConstraints,
-                    const MediaEnginePrefs& aPrefs, const nsString& aDeviceId,
+                    const MediaEnginePrefs& aPrefs,
                     const ipc::PrincipalInfo& aPrincipalInfo,
                     const char** aOutBadConstraint) override;
   nsresult Deallocate() override;
@@ -127,11 +121,13 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   nsresult Start() override;
   nsresult Reconfigure(const dom::MediaTrackConstraints& aConstraints,
                        const MediaEnginePrefs& aPrefs,
-                       const nsString& aDeviceId,
                        const char** aOutBadConstraint) override;
   nsresult FocusOnSelectedSource() override;
   nsresult Stop() override;
 
+  uint32_t GetBestFitnessDistance(
+      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets)
+      const override;
   void GetSettings(dom::MediaTrackSettings& aOutSettings) const override;
 
   void Refresh(int aIndex);
@@ -168,8 +164,10 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
    * Returns the capability with index `aIndex` for our assigned device.
    *
    * It is an error to call this with `aIndex >= NumCapabilities()`.
+   *
+   * The lifetime of the returned capability is the same as for this source.
    */
-  webrtc::CaptureCapability GetCapability(size_t aIndex) const;
+  webrtc::CaptureCapability& GetCapability(size_t aIndex) const;
 
   int mCaptureIndex;
   const camera::CaptureEngine mCapEngine;  // source of media (cam, screen etc)
@@ -233,15 +231,28 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   /**
    * Capabilities that we choose between when applying constraints.
    *
-   * This is mutable so that the const method NumCapabilities() can reset it.
-   * Owning thread only.
+   * This allows for memoization of capabilities as they're requested from the
+   * parent process.
+   *
+   * This is mutable so that the const methods NumCapabilities() and
+   * GetCapability() can reset it. Owning thread only.
    */
-  mutable nsTArray<webrtc::CaptureCapability> mHardcodedCapabilities;
+  mutable nsTArray<UniquePtr<webrtc::CaptureCapability>> mCapabilities;
+
+  /**
+   * True if mCapabilities only contains hardcoded capabilities. This can happen
+   * if the underlying device is not reporting any capabilities. These can be
+   * affected by constraints, so they're evaluated in ChooseCapability() rather
+   * than GetCapability().
+   *
+   * This is mutable so that the const methods NumCapabilities() and
+   * GetCapability() can reset it. Owning thread only.
+   */
+  mutable bool mCapabilitiesAreHardcoded = false;
 
   nsString mDeviceName;
   nsCString mUniqueId;
-  nsString mGroupId;
-  nsString mFacingMode;
+  Maybe<nsString> mFacingMode;
 
   // Whether init has successfully completed.
   // Set in Init(), reset in Shutdown().

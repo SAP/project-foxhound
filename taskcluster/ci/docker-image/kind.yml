@@ -75,8 +75,6 @@ jobs:
         symbol: I(deb7-bb)
         parent: debian7-base
         definition: debian-build
-        packages:
-            - deb7-valgrind
         args:
             ARCH: amd64
     debian7-amd64-build:
@@ -166,12 +164,40 @@ jobs:
         symbol: I(toolchain-arm64)
         parent: debian9-arm64-build
         definition: toolchain-build
+    # Neither the debian10-raw nor the debian10-packages images can have
+    # packages dependencies.
+    debian10-raw:
+        symbol: I(deb10-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: debian:buster-20190708
+            DIST: buster
+            SNAPSHOT: '20190708T222404Z'
+    debian10-packages:
+        symbol: I(deb10-pkg)
+        definition: debian-packages
+        parent: debian10-raw
+    debian10-base:
+        symbol: I(deb10-base)
+        definition: debian-base
+        parent: debian10-raw
+        packages:
+            - deb10-mercurial
+            - deb10-python-zstandard
+    debian10-amd64-build:
+        symbol: I(deb10)
+        parent: debian10-base
+        definition: debian-build
+        args:
+            ARCH: amd64
     android-build:
         symbol: I(agb)
         parent: debian9-base
     fetch:
         symbol: I(fetch)
-        parent: debian9-raw
+        parent: debian10-raw
+        packages:
+            - deb10-python-zstandard
     static-analysis-build:
         symbol: I(static-analysis-build)
         parent: android-build
@@ -188,7 +214,7 @@ jobs:
         symbol: I(uv)
     diffoscope:
         symbol: I(diff)
-        parent: debian9-base
+        parent: debian10-base
     partner-repack:
         symbol: I(PR)
         parent: debian9-base
@@ -201,4 +227,7 @@ jobs:
         symbol: I(snap)
     webrender:
         symbol: I(webrender)
+        parent: debian9-base
+    webrender-updater:
+        symbol: I(wrupdater)
         parent: debian9-base

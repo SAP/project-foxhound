@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint-disable no-undef */
@@ -31,26 +29,18 @@ function getComputedViewProperty(view, name) {
 add_task(async function() {
   const dbg = await attachRecordingDebugger("doc_inspector_styles.html", {
     waitForRecording: true,
+    disableLogging: true,
   });
-  const { threadClient, tab, toolbox } = dbg;
-
-  await threadClient.interrupt();
-  await threadClient.resume();
-
-  await threadClient.interrupt();
 
   const { inspector, view } = await openComputedView();
   await checkBackgroundColor("body", "rgb(0, 128, 0)");
   await checkBackgroundColor("#maindiv", "rgb(0, 0, 255)");
 
-  const bp = await setBreakpoint(threadClient, "doc_inspector_styles.html", 11);
-
-  await rewindToLine(threadClient, 11);
+  await addBreakpoint(dbg, "doc_inspector_styles.html", 11);
+  await rewindToLine(dbg, 11);
   await checkBackgroundColor("#maindiv", "rgb(255, 0, 0)");
 
-  await threadClient.removeBreakpoint(bp);
-  await toolbox.closeToolbox();
-  await gBrowser.removeTab(tab);
+  await shutdownDebugger(dbg);
 
   async function checkBackgroundColor(node, color) {
     await selectNode(node, inspector);

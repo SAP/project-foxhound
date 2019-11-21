@@ -7,7 +7,7 @@
 #include "ScriptLoadRequest.h"
 
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
@@ -28,9 +28,10 @@ NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mElement, mTriggeringPrincipal)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ScriptFetchOptions, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ScriptFetchOptions, Release)
 
-ScriptFetchOptions::ScriptFetchOptions(
-    mozilla::CORSMode aCORSMode, mozilla::net::ReferrerPolicy aReferrerPolicy,
-    nsIScriptElement* aElement, nsIPrincipal* aTriggeringPrincipal)
+ScriptFetchOptions::ScriptFetchOptions(mozilla::CORSMode aCORSMode,
+                                       ReferrerPolicy aReferrerPolicy,
+                                       nsIScriptElement* aElement,
+                                       nsIPrincipal* aTriggeringPrincipal)
     : mCORSMode(aCORSMode),
       mReferrerPolicy(aReferrerPolicy),
       mIsPreload(false),
@@ -198,12 +199,7 @@ bool ScriptLoadRequest::ShouldAcceptBinASTEncoding() const {
 #ifdef JS_BUILD_BINAST
   // We accept the BinAST encoding if we're using a secure connection.
 
-  bool isHTTPS = false;
-  nsresult rv = mURI->SchemeIs("https", &isHTTPS);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
-
-  if (!isHTTPS) {
+  if (!mURI->SchemeIs("https")) {
     return false;
   }
 

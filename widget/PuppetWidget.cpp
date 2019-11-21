@@ -19,6 +19,7 @@
 #include "mozilla/layers/WebRenderLayerManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
@@ -76,9 +77,6 @@ static bool MightNeedIMEFocus(const nsWidgetInitData* aInitData) {
 // Arbitrary, fungible.
 const size_t PuppetWidget::kMaxDimension = 4000;
 
-static bool gRemoteDesktopBehaviorEnabled = false;
-static bool gRemoteDesktopBehaviorInitialized = false;
-
 NS_IMPL_ISUPPORTS_INHERITED(PuppetWidget, nsBaseWidget,
                             TextEventDispatcherListener)
 
@@ -96,12 +94,6 @@ PuppetWidget::PuppetWidget(BrowserChild* aBrowserChild)
       mIgnoreCompositionEvents(false) {
   // Setting 'Unknown' means "not yet cached".
   mInputContext.mIMEState.mEnabled = IMEState::UNKNOWN;
-
-  if (!gRemoteDesktopBehaviorInitialized) {
-    Preferences::AddBoolVarCache(&gRemoteDesktopBehaviorEnabled,
-                                 "browser.tabs.remote.desktopbehavior", false);
-    gRemoteDesktopBehaviorInitialized = true;
-  }
 }
 
 PuppetWidget::~PuppetWidget() { Destroy(); }
@@ -1072,7 +1064,8 @@ void PuppetWidget::OnMemoryPressure(layers::MemoryPressureReason aWhy) {
 bool PuppetWidget::NeedsPaint() {
   // e10s popups are handled by the parent process, so never should be painted
   // here
-  if (XRE_IsContentProcess() && gRemoteDesktopBehaviorEnabled &&
+  if (XRE_IsContentProcess() &&
+      StaticPrefs::browser_tabs_remote_desktopbehavior() &&
       mWindowType == eWindowType_popup) {
     NS_WARNING("Trying to paint an e10s popup in the child process!");
     return false;
@@ -1168,11 +1161,7 @@ LayoutDeviceIntSize PuppetWidget::GetCompositionSize() {
 }
 
 uint32_t PuppetWidget::GetMaxTouchPoints() const {
-  uint32_t maxTouchPoints = 0;
-  if (mBrowserChild) {
-    mBrowserChild->GetMaxTouchPoints(&maxTouchPoints);
-  }
-  return maxTouchPoints;
+  return mBrowserChild ? mBrowserChild->MaxTouchPoints() : 0;
 }
 
 void PuppetWidget::StartAsyncScrollbarDrag(
@@ -1232,6 +1221,20 @@ PuppetScreenManager::~PuppetScreenManager() {}
 NS_IMETHODIMP
 PuppetScreenManager::GetPrimaryScreen(nsIScreen** outScreen) {
   NS_IF_ADDREF(*outScreen = mOneScreen.get());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+PuppetScreenManager::GetTotalScreenPixels(int64_t* aTotalScreenPixels) {
+  MOZ_ASSERT(aTotalScreenPixels);
+  if (mOneScreen) {
+    int32_t x, y, width, height;
+    x = y = width = height = 0;
+    mOneScreen->GetRect(&x, &y, &width, &height);
+    *aTotalScreenPixels = width * height;
+  } else {
+    *aTotalScreenPixels = 0;
+  }
   return NS_OK;
 }
 

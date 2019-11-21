@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 var EXPORTED_SYMBOLS = ["ActionSchemas"];
 
 const ActionSchemas = {
@@ -94,6 +98,40 @@ const ActionSchemas = {
         description: "If true, new users will not be enrolled in the study.",
         type: "boolean",
         default: false,
+      },
+    },
+  },
+
+  "addon-rollout": {
+    $schema: "http://json-schema.org/draft-04/schema#",
+    title: "Install add-on permanently",
+    type: "object",
+    required: ["extensionApiId", "slug"],
+    properties: {
+      extensionApiId: {
+        description:
+          "The record ID of the extension used for Normandy API calls.",
+        type: "integer",
+      },
+      slug: {
+        description:
+          "Unique identifer for the rollout, used in telemetry and rollbacks.",
+        type: "string",
+        pattern: "^[a-z0-9\\-_]+$",
+      },
+    },
+  },
+
+  "addon-rollback": {
+    $schema: "http://json-schema.org/draft-04/schema#",
+    title: "Undo an add-on rollout",
+    type: "object",
+    required: ["rolloutSlug"],
+    properties: {
+      rolloutSlug: {
+        description: "Unique identifer for the rollout to undo.",
+        type: "string",
+        pattern: "^[a-z0-9\\-_]+$",
       },
     },
   },
@@ -226,7 +264,7 @@ const ActionSchemas = {
     },
   },
 
-  "multiple-preference-experiment": {
+  "multi-preference-experiment": {
     $schema: "http://json-schema.org/draft-04/schema#",
     title: "Run a feature experiment activated by a set of preferences.",
     type: "object",

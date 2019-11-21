@@ -59,6 +59,8 @@ class ShowTaskGraphSubCommand(SubCommand):
                                  "or their dependencies."),
             CommandArgument('-F', '--fast', dest='fast', default=False, action='store_true',
                             help="enable fast task generation for local debugging."),
+            CommandArgument('-o', '--output-file', default=None,
+                            help="file path to store generated output."),
 
         ]
         for arg in args:
@@ -250,7 +252,8 @@ class MachCommands(MachCommandBase):
     @CommandArgument('--root', '-r', default='taskcluster/ci',
                      help="root of the taskgraph definition relative to topsrcdir")
     def action_callback(self, **options):
-        import taskgraph.actions
+        from taskgraph.actions import trigger_action_callback
+        from taskgraph.actions.util import get_parameters
         try:
             self.setup_logging()
 
@@ -260,10 +263,11 @@ class MachCommands(MachCommandBase):
             task_group_id = os.environ.get('ACTION_TASK_GROUP_ID', None)
             input = json.loads(os.environ.get('ACTION_INPUT', 'null'))
             callback = os.environ.get('ACTION_CALLBACK', None)
-            parameters = json.loads(os.environ.get('ACTION_PARAMETERS', '{}'))
             root = options['root']
 
-            return taskgraph.actions.trigger_action_callback(
+            parameters = get_parameters(task_group_id)
+
+            return trigger_action_callback(
                     task_group_id=task_group_id,
                     task_id=task_id,
                     input=input,
@@ -376,18 +380,23 @@ class MachCommands(MachCommandBase):
 
             show_method = getattr(self, 'show_taskgraph_' + (options['format'] or 'labels'))
             tg = self.get_filtered_taskgraph(tg, options["tasks_regex"])
-            show_method(tg)
+
+            fh = options['output_file']
+            if fh:
+                fh = open(fh, 'w')
+            show_method(tg, file=fh)
         except Exception:
             traceback.print_exc()
             sys.exit(1)
 
-    def show_taskgraph_labels(self, taskgraph):
+    def show_taskgraph_labels(self, taskgraph, file=None):
         for index in taskgraph.graph.visit_postorder():
-            print(taskgraph.tasks[index].label)
+            print(taskgraph.tasks[index].label, file=file)
 
-    def show_taskgraph_json(self, taskgraph):
+    def show_taskgraph_json(self, taskgraph, file=None):
         print(json.dumps(taskgraph.to_json(),
-              sort_keys=True, indent=2, separators=(',', ': ')))
+              sort_keys=True, indent=2, separators=(',', ': ')),
+              file=file)
 
     def get_filtered_taskgraph(self, taskgraph, tasksregex):
         from taskgraph.graph import Graph

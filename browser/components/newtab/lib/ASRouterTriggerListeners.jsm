@@ -392,6 +392,49 @@ this.ASRouterTriggerListeners = new Map([
       },
     },
   ],
+
+  /**
+   * Add an observer notification to notify the trigger handler whenever the user saves a new login
+   * via the login capture doorhanger.
+   */
+  [
+    "newSavedLogin",
+    {
+      _initialized: false,
+      _triggerHandler: null,
+
+      /**
+       * If the listener is already initialised, `init` will replace the trigger
+       * handler.
+       */
+      init(triggerHandler) {
+        if (!this._initialized) {
+          Services.obs.addObserver(this, "LoginStats:NewSavedPassword");
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.obs.removeObserver(this, "LoginStats:NewSavedPassword");
+
+          this._initialized = false;
+          this._triggerHandler = null;
+        }
+      },
+
+      observe(aSubject, aTopic, aData) {
+        if (aSubject.currentURI.asciiHost === "accounts.firefox.com") {
+          // Don't notify about saved logins on the FxA login origin since this
+          // trigger is used to promote login Sync and getting a recommendation
+          // to enable Sync during the sign up process is a bad UX.
+          return;
+        }
+        this._triggerHandler(aSubject, { id: "newSavedLogin" });
+      },
+    },
+  ],
 ]);
 
 const EXPORTED_SYMBOLS = ["ASRouterTriggerListeners"];

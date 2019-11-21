@@ -8,36 +8,32 @@
   <head>
     <meta name="viewport" content="width=device-width" />
     <meta http-equiv="Content-Security-Policy" content="default-src chrome:" />
-    <script defer="defer" src="chrome://global/content/certviewer/certviewer.js"></script>
-    <script defer="defer" src="chrome://global/content/certviewer/components/info-item.js"></script>
-    <script defer="defer" src="chrome://global/content/certviewer/components/info-group.js"></script>
-    <script defer="defer" src="chrome://global/content/certviewer/components/dummy-info.js"></script>
-    <script defer="defer" src="chrome://global/content/certviewer/components/handshake-section.js"></script>
-    <script defer="defer" src="chrome://global/content/certviewer/components/certificate-tab.js"></script>
-    <script defer="defer" src="chrome://global/content/certviewer/components/certificate-section.js"></script>
+    <!-- rename to toolkit/certviewer.ftl when exposing to l10n -->
+    <link rel="localization" href="preview/certviewer.ftl">
+    <link rel="localization" href="branding/brand.ftl">
+    <script defer="defer" src="chrome://global/content/certviewer/pvutils_bundle.js"></script>
+    <script defer="defer" src="chrome://global/content/certviewer/asn1js_bundle.js"></script>
+    <script defer="defer" src="chrome://global/content/certviewer/pkijs_bundle.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/ctlognames.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/strings.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/utils.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/certDecoder.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/certviewer.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/components/info-group.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/components/info-item.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/components/certificate-section.js"></script>
+    <script defer="defer" type="module" src="chrome://global/content/certviewer/components/error-section.js"></script>
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
     <link rel="stylesheet" href="chrome://global/content/certviewer/certviewer.css">
     <title>about:certificate</title>
   </head>
   <body>
-    <h1>Certificate Viewer</h1>
-
-    <handshake-section></handshake-section> 
-
-    <certificate-section></certificate-section> 
-    
-    <template id="handshake-section-template" class="section">
-      <link rel="stylesheet" href="chrome://global/content/certviewer/components/handshake-section.css">
-      <h1 class="title"></h1>
-    </template>
-
     <template id="certificate-section-template" class="section">
       <link rel="stylesheet" href="chrome://global/content/certviewer/components/certificate-section.css">
       <h1 class="title"></h1>
-      <div class="certificate-tabs"></div>
+      <div class="certificate-tabs" role="tablist"></div>
       <div class="info-groups"></div>
     </template>
-
 
     <template id="info-item-template">
       <link rel="stylesheet" href="chrome://global/content/certviewer/components/info-item.css">
@@ -51,9 +47,10 @@
       <span class="info-group-title-hr"></span>
     </template>
 
-    <template id="certificate-tab-template">
-      <link rel="stylesheet" href="chrome://global/content/certviewer/components/certificate-tab.css">
-      <span class="tab"></span>
+    <template id="error-section-template">
+      <link rel="stylesheet" href="chrome://global/content/certviewer/components/error-section.css">
+      <h1 class="title"></h1>
+      <span class="error"></span>
     </template>
   </body>
 </html>

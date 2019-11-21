@@ -22,7 +22,7 @@ Here's a trivial example:
 
 no-eval.yml
 
-.. code-block::
+.. code-block:: yaml
 
     EvalLinter:
         description: Ensures the string eval doesn't show up.
@@ -109,6 +109,11 @@ let's call the file ``flake8_lint.py``:
 
     from mozlint import result
 
+    try:
+        from shutil import which
+    except ImportError:
+        from shutil_which import which
+
 
     FLAKE8_NOT_FOUND = """
     Could not find flake8! Install flake8 and try again.
@@ -116,13 +121,10 @@ let's call the file ``flake8_lint.py``:
 
 
     def lint(files, config, **lintargs):
-        import which
-
         binary = os.environ.get('FLAKE8')
         if not binary:
-            try:
-                binary = which.which('flake8')
-            except which.WhichError:
+            binary = which('flake8')
+            if not binary:
                 print(FLAKE8_NOT_FOUND)
                 return 1
 
@@ -160,7 +162,7 @@ let's call the file ``flake8_lint.py``:
 
 Now here is the linter definition that would call it:
 
-.. code-block:: yml
+.. code-block:: yaml
 
     flake8:
         description: Python linter
@@ -195,7 +197,7 @@ automated bootstrapping of all their dependencies. To help with this,
 ``mozlint`` allows linters to define a ``setup`` config, which has the same
 path object format as an external payload. For example:
 
-.. code-block:: yml
+.. code-block:: yaml
 
     flake8:
         description: Python linter

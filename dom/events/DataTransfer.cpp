@@ -7,6 +7,8 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/Span.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 #include "DataTransfer.h"
 
@@ -82,22 +84,6 @@ enum CustomClipboardTypeId {
   eCustomClipboardTypeId_String
 };
 
-// The dom.events.dataTransfer.protected.enabled preference controls whether or
-// not the `protected` dataTransfer state is enabled. If the `protected`
-// dataTransfer stae is disabled, then the DataTransfer will be read-only
-// whenever it should be protected, and will not be disconnected after a drag
-// event is completed.
-static bool PrefProtected() {
-  static bool sInitialized = false;
-  static bool sValue = false;
-  if (!sInitialized) {
-    sInitialized = true;
-    Preferences::AddBoolVarCache(&sValue,
-                                 "dom.events.dataTransfer.protected.enabled");
-  }
-  return sValue;
-}
-
 static DataTransfer::Mode ModeForEvent(EventMessage aEventMessage) {
   switch (aEventMessage) {
     case eCut:
@@ -114,8 +100,9 @@ static DataTransfer::Mode ModeForEvent(EventMessage aEventMessage) {
       // the DataTransfer, rather than just the type information.
       return DataTransfer::Mode::ReadOnly;
     default:
-      return PrefProtected() ? DataTransfer::Mode::Protected
-                             : DataTransfer::Mode::ReadOnly;
+      return StaticPrefs::dom_events_dataTransfer_protected_enabled()
+                 ? DataTransfer::Mode::Protected
+                 : DataTransfer::Mode::ReadOnly;
   }
 }
 
@@ -329,6 +316,16 @@ void DataTransfer::GetMozTriggeringPrincipalURISpec(
   }
 
   CopyUTF8toUTF16(spec, aPrincipalURISpec);
+}
+
+nsIContentSecurityPolicy* DataTransfer::GetMozCSP() {
+  nsCOMPtr<nsIDragSession> dragSession = nsContentUtils::GetDragSession();
+  if (!dragSession) {
+    return nullptr;
+  }
+  nsCOMPtr<nsIContentSecurityPolicy> csp;
+  dragSession->GetCsp(getter_AddRefs(csp));
+  return csp;
 }
 
 already_AddRefed<FileList> DataTransfer::GetFiles(
@@ -1104,8 +1101,12 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
                 totalCustomLength = 0;
                 continue;
               }
-              rv = stream->WriteBytes((const char*)type.get(),
-                                      formatLength.value());
+              MOZ_ASSERT(formatLength.isValid() &&
+                             formatLength.value() ==
+                                 type.Length() * sizeof(nsString::char_type),
+                         "Why is formatLength off?");
+              rv = stream->WriteBytes(
+                  AsBytes(MakeSpan(type.BeginReading(), type.Length())));
               if (NS_WARN_IF(NS_FAILED(rv))) {
                 totalCustomLength = 0;
                 continue;
@@ -1115,7 +1116,13 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
                 totalCustomLength = 0;
                 continue;
               }
-              rv = stream->WriteBytes((const char*)data.get(), lengthInBytes);
+              // XXXbz it's not obvious to me that lengthInBytes is the actual
+              // length of "data" if the variant contained an nsISupportsString
+              // as VTYPE_INTERFACE, say.  We used lengthInBytes above for
+              // sizing, so just keep doing that.
+              rv = stream->WriteBytes(MakeSpan(
+                  reinterpret_cast<const uint8_t*>(data.BeginReading()),
+                  lengthInBytes));
               if (NS_WARN_IF(NS_FAILED(rv))) {
                 totalCustomLength = 0;
                 continue;
@@ -1269,7 +1276,7 @@ bool DataTransfer::ConvertFromVariant(nsIVariant* aVariant,
 
 void DataTransfer::Disconnect() {
   SetMode(Mode::Protected);
-  if (PrefProtected()) {
+  if (StaticPrefs::dom_events_dataTransfer_protected_enabled()) {
     ClearAll();
   }
 }
@@ -1570,7 +1577,8 @@ void DataTransfer::FillInExternalCustomTypes(nsIVariant* aData, uint32_t aIndex,
 }
 
 void DataTransfer::SetMode(DataTransfer::Mode aMode) {
-  if (!PrefProtected() && aMode == Mode::Protected) {
+  if (!StaticPrefs::dom_events_dataTransfer_protected_enabled() &&
+      aMode == Mode::Protected) {
     mMode = Mode::ReadOnly;
   } else {
     mMode = aMode;

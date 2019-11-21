@@ -61,16 +61,6 @@ WINDOWS_WORKER_TYPES = {
       'virtual-with-gpu': 't-win7-32-gpu',
       'hardware': 't-win10-64-hw',
     },
-    'windows7-32-pgo': {
-      'virtual': 't-win7-32',
-      'virtual-with-gpu': 't-win7-32-gpu',
-      'hardware': 't-win10-64-hw',
-    },
-    'windows7-32-nightly': {
-      'virtual': 't-win7-32',
-      'virtual-with-gpu': 't-win7-32-gpu',
-      'hardware': 't-win10-64-hw',
-    },
     'windows7-32-shippable': {
       'virtual': 't-win7-32',
       'virtual-with-gpu': 't-win7-32-gpu',
@@ -81,9 +71,14 @@ WINDOWS_WORKER_TYPES = {
       'virtual-with-gpu': 't-win7-32-gpu',
       'hardware': 't-win10-64-hw',
     },
+    'windows7-32-mingwclang': {
+      'virtual': 't-win7-32',
+      'virtual-with-gpu': 't-win7-32-gpu',
+      'hardware': 't-win10-64-hw',
+    },
     'windows10-64': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
     'windows10-aarch64': {
@@ -93,64 +88,48 @@ WINDOWS_WORKER_TYPES = {
     },
     'windows10-64-ccov': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
-      'hardware': 't-win10-64-hw',
-    },
-    'windows10-64-pgo': {
-      'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
     'windows10-64-devedition': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
-      'hardware': 't-win10-64-hw',
-    },
-    'windows10-64-nightly': {
-      'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
     'windows10-64-shippable': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
     'windows10-64-asan': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
     'windows10-64-qr': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
-      'hardware': 't-win10-64-hw',
-    },
-    'windows10-64-pgo-qr': {
-      'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
     'windows10-64-shippable-qr': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
       'hardware': 't-win10-64-hw',
     },
-    'windows10-64-ux': {
+    'windows10-64-mingwclang': {
       'virtual': 't-win10-64',
-      'virtual-with-gpu': 't-win10-64-gpu',
-      'hardware': 't-win10-64-ux',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
+      'hardware': 't-win10-64-hw',
     },
-    # 'windows10-64-ref-hw-2017': {
-    #   'virtual': 't-win10-64',
-    #   'virtual-with-gpu': 't-win10-64-gpu',
-    #   'hardware': 't-win10-64-ref-hw',
-    # },
+    'windows10-64-ref-hw-2017': {
+      'virtual': 't-win10-64',
+      'virtual-with-gpu': 't-win10-64-gpu-s',
+      'hardware': 't-win10-64-ref-hw',
+    },
 }
 
 # os x worker types keyed by test-platform
 MACOSX_WORKER_TYPES = {
-    'macosx1010-64': 't-osx-1010',
     'macosx1014-64': 'releng-hardware/gecko-t-osx-1014',
 }
 
@@ -203,8 +182,8 @@ TEST_VARIANTS = {
         'merge': {
             'mozharness': {
                 'extra-options': [
-                    '--setpref="media.peerconnection.mtransport_process=true"',
-                    '--setpref="network.process.enabled=true"',
+                    '--setpref=media.peerconnection.mtransport_process=true',
+                    '--setpref=network.process.enabled=true',
                 ],
             }
         }
@@ -669,6 +648,65 @@ def setup_raptor(config, tests):
         if test['require-signed-extensions']:
             extra_options.append('--is-release-build')
 
+        # add urlparams based on platform, test names and projects
+        testurlparams_by_platform_and_project = {
+            "android-hw-g5": [
+                {
+                    "branches": [],  # For all branches
+                    "testnames": ["youtube-playback"],
+                    "urlparams": [
+                        # param used for excluding youtube-playback tests from executing
+                        # it excludes the tests with videos >1080p
+                        "exclude=1,2,9,10,17,18,21,22,26,28,30,32,39,40,47,"
+                        "48,55,56,63,64,71,72,79,80,83,84,89,90,95,96",
+                    ]
+                },
+            ]
+        }
+
+        for platform, testurlparams_by_project_definitions \
+                in testurlparams_by_platform_and_project.items():
+
+            if test['test-platform'].startswith(platform):
+                # For every platform it may have several definitions
+                for testurlparams_by_project in testurlparams_by_project_definitions:
+                    # The test should contain at least one defined testname
+                    if any(
+                        testname in test['test-name']
+                        for testname in testurlparams_by_project['testnames']
+                    ):
+                        branches = testurlparams_by_project['branches']
+                        if (
+                            branches == [] or
+                            config.params.get('project') in branches or
+                            config.params.is_try() and 'try' in branches
+                        ):
+                            params_query = '&'.join(testurlparams_by_project['urlparams'])
+                            add_extra_params_option = "--test-url-params={}".format(params_query)
+                            extra_options.append(add_extra_params_option)
+
+        yield test
+
+
+@transforms.add
+def setup_browsertime_flag(config, tests):
+    """Optionally add `--browsertime` flag to Raptor pageload tests."""
+
+    browsertime_flag = config.params['try_task_config'].get('browsertime', False)
+
+    for test in tests:
+        if not browsertime_flag or test['suite'] != 'raptor':
+            yield test
+            continue
+
+        if test['treeherder-symbol'].startswith('Rap'):
+            # The Rap group is subdivided as Rap{-fenix,-refbrow,-fennec}(...),
+            # so `taskgraph.util.treeherder.replace_group` isn't appropriate.
+            test['treeherder-symbol'] = test['treeherder-symbol'].replace('Rap', 'Btime', 1)
+
+        extra_options = test.setdefault('mozharness', {}).setdefault('extra-options', [])
+        extra_options.append('--browsertime')
+
         yield test
 
 
@@ -720,9 +758,6 @@ def set_treeherder_machine_platform(config, tests):
         # treeherder.
         'linux64-asan/opt': 'linux64/asan',
         'linux64-pgo/opt': 'linux64/pgo',
-        'macosx1010-64/debug': 'osx-10-10/debug',
-        'macosx1010-64/opt': 'osx-10-10/opt',
-        'macosx1010-64-shippable/opt': 'osx-10-10-shippable/opt',
         'macosx1014-64/debug': 'osx-10-14/debug',
         'macosx1014-64/opt': 'osx-10-14/opt',
         'macosx1014-64-shippable/opt': 'osx-10-14-shippable/opt',
@@ -737,7 +772,6 @@ def set_treeherder_machine_platform(config, tests):
         'android-api-16/opt': 'android-em-4-3-armv7-api16/opt',
         'android-api-16-pgo/opt': 'android-em-4-3-armv7-api16/pgo',
         'android-x86/opt': 'android-em-4-2-x86/opt',
-        'android-api-16-gradle/opt': 'android-api-16-gradle/opt',
     }
     for test in tests:
         # For most desktop platforms, the above table is not used for "regular"
@@ -810,14 +844,6 @@ def set_tier(config, tests):
                                          'windows10-64-qr/debug',
                                          'windows10-64-pgo-qr/opt',
                                          'windows10-64-shippable-qr/opt',
-                                         'macosx1010-64/opt',
-                                         'macosx1010-64/debug',
-                                         'macosx1010-64-nightly/opt',
-                                         'macosx1010-64-shippable/opt',
-                                         'macosx1010-64-devedition/opt',
-                                         'macosx1010-64-qr/opt',
-                                         'macosx1010-64-shippable-qr/opt',
-                                         'macosx1010-64-qr/debug',
                                          'macosx1014-64/opt',
                                          'macosx1014-64/debug',
                                          'macosx1014-64-nightly/opt',
@@ -1043,6 +1069,52 @@ def split_variants(config, tests):
 
 
 @transforms.add
+def enable_fission_on_central(config, tests):
+    """Enable select fission tasks on mozilla-central."""
+    for test in tests:
+        if test['attributes'].get('unittest_variant') != 'fission':
+            yield test
+            continue
+
+        # Mochitest only (with exceptions)
+        exceptions = ('gpu', 'remote', 'screenshots')
+        if (test['attributes']['unittest_category'] != 'mochitest' or
+                any(s in test['attributes']['unittest_suite'] for s in exceptions)):
+            yield test
+            continue
+
+        # Linux and Windows (except debug) 64 bit only.
+        platform = test['build-attributes']['build_platform']
+        btype = test['build-attributes']['build_type']
+        if not (platform == 'linux64' or (platform == 'win64' and btype != 'debug')):
+            yield test
+            continue
+
+        if not runs_on_central(test):
+            test['run-on-projects'].append('mozilla-central')
+        yield test
+
+
+@transforms.add
+def ensure_spi_disabled_on_all_but_spi(config, tests):
+    for test in tests:
+        variant = test['attributes'].get('unittest_variant', '')
+        has_setpref = ('gtest' not in test['suite'] and
+                       'cppunit' not in test['suite'] and
+                       'jittest' not in test['suite'] and
+                       'junit' not in test['suite'] and
+                       'raptor' not in test['suite'])
+
+        if has_setpref and variant != 'socketprocess':
+            test['mozharness']['extra-options'].append(
+                    '--setpref=media.peerconnection.mtransport_process=false')
+            test['mozharness']['extra-options'].append(
+                    '--setpref=network.process.enabled=false')
+
+        yield test
+
+
+@transforms.add
 def split_e10s(config, tests):
     for test in tests:
         e10s = test['e10s']
@@ -1131,9 +1203,22 @@ def enable_webrender(config, tests):
     """
     for test in tests:
         if test.get('webrender'):
-            test['mozharness'].setdefault('extra-options', [])\
-                              .append("--enable-webrender")
+            extra_options = test['mozharness'].setdefault('extra-options', [])
+            extra_options.append("--enable-webrender")
+            # We only want to 'setpref' on tests that have a profile
+            if not test['attributes']['unittest_category'] in ['cppunittest', 'gtest', 'raptor']:
+                extra_options.append("--setpref=layers.d3d11.enable-blacklist=false")
 
+        yield test
+
+
+@transforms.add
+def set_schedules_for_webrender_android(config, tests):
+    """android-hw has limited resources, we need webrender on phones"""
+    for test in tests:
+        if test['suite'] in ['crashtest', 'reftest'] and \
+           test['test-platform'].startswith('android-hw'):
+            test['schedules-component'] = 'android-hw-gfx'
         yield test
 
 
@@ -1204,18 +1289,14 @@ def set_worker_type(config, tests):
         if test.get('worker-type'):
             # This test already has its worker type defined, so just use that (yields below)
             pass
-        elif test_platform.startswith('macosx1010-64'):
-            test['worker-type'] = MACOSX_WORKER_TYPES['macosx1010-64']
         elif test_platform.startswith('macosx1014-64'):
             test['worker-type'] = MACOSX_WORKER_TYPES['macosx1014-64']
         elif test_platform.startswith('win'):
             # figure out what platform the job needs to run on
             if test['virtualization'] == 'hardware':
                 # some jobs like talos and reftest run on real h/w - those are all win10
-                if test_platform.startswith('windows10-64-ux'):
-                    win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-64-ux']
-                # elif test_platform.startswith('windows10-64-ref-hw-2017'):
-                #     win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-64-ref-hw-2017']
+                if test_platform.startswith('windows10-64-ref-hw-2017'):
+                    win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-64-ref-hw-2017']
                 elif test_platform.startswith('windows10-aarch64'):
                     win_worker_type_platform = WINDOWS_WORKER_TYPES['windows10-aarch64']
                 else:
@@ -1261,7 +1342,12 @@ def make_job_description(config, tests):
     taskgraph.transforms.job)"""
 
     for test in tests:
-        label = '{}-{}-{}'.format(config.kind, test['test-platform'], test['test-name'])
+        mobile = get_mobile_project(test)
+        if mobile and (mobile not in test['test-name']):
+            label = '{}-{}-{}-{}'.format(config.kind, test['test-platform'], mobile,
+                                         test['test-name'])
+        else:
+            label = '{}-{}-{}'.format(config.kind, test['test-platform'], test['test-name'])
         if test['chunks'] > 1:
             label += '-{}'.format(test['this-chunk'])
 
@@ -1330,15 +1416,16 @@ def make_job_description(config, tests):
             schedules = [category, platform_family(test['build-platform'])]
 
         if test.get('when'):
+            # This may still be used by comm-central.
             jobdesc['when'] = test['when']
         elif 'optimization' in test:
             jobdesc['optimization'] = test['optimization']
-        elif not config.params.is_try() and category not in INCLUSIVE_COMPONENTS:
-            # for non-try branches and non-inclusive suites, include SETA
-            jobdesc['optimization'] = {'skip-unless-schedules-or-seta': schedules}
+        elif config.params.is_try():
+            jobdesc['optimization'] = {'test-try': schedules}
+        elif category in INCLUSIVE_COMPONENTS:
+            jobdesc['optimization'] = {'test-inclusive': schedules}
         else:
-            # otherwise just use skip-unless-schedules
-            jobdesc['optimization'] = {'skip-unless-schedules': schedules}
+            jobdesc['optimization'] = {'test': schedules}
 
         run = jobdesc['run'] = {}
         run['using'] = 'mozharness-test'

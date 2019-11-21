@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,6 +34,8 @@ const EventEmitter = require("devtools/shared/event-emitter");
 const App = createFactory(require("devtools/client/webconsole/components/App"));
 const ObjectClient = require("devtools/shared/client/object-client");
 const LongStringClient = require("devtools/shared/client/long-string-client");
+const DataProvider = require("devtools/client/netmonitor/src/connector/firefox-data-provider");
+
 loader.lazyRequireGetter(
   this,
   "Constants",
@@ -74,17 +75,26 @@ class WebConsoleWrapper {
     this.queuedMessageUpdates = [];
     this.queuedRequestUpdates = [];
     this.throttledDispatchPromise = null;
-
     this.telemetry = new Telemetry();
   }
 
   init() {
-    return new Promise(resolve => {
+    return new Promise(async resolve => {
       const attachRefToWebConsoleUI = (id, node) => {
         this.webConsoleUI[id] = node;
       };
       const { webConsoleUI } = this;
-      const debuggerClient = this.hud.target.client;
+      const debuggerClient = this.hud.currentTarget.client;
+
+      const webConsoleClient = await this.hud.currentTarget.getFront("console");
+      this.networkDataProvider = new DataProvider({
+        actions: {
+          updateRequest: (id, data) => {
+            return this.batchedRequestUpdates({ id, data });
+          },
+        },
+        webConsoleClient,
+      });
 
       const serviceContainer = {
         attachRefToWebConsoleUI,
@@ -100,31 +110,37 @@ class WebConsoleWrapper {
             ])
           );
         },
-        proxy: webConsoleUI.proxy,
         openLink: (url, e) => {
           webConsoleUI.hud.openLink(url, e);
         },
         canRewind: () => {
-          if (
-            !(
-              webConsoleUI.hud &&
-              webConsoleUI.hud.target &&
-              webConsoleUI.hud.target.traits
-            )
-          ) {
-            return false;
-          }
-
-          return webConsoleUI.hud.target.traits.canRewind;
+          const target = webConsoleUI.hud && webConsoleUI.hud.currentTarget;
+          const traits = target && target.traits;
+          return traits && traits.canRewind;
         },
         createElement: nodename => {
           return this.document.createElement(nodename);
         },
-        getLongString: grip => {
-          return webConsoleUI.proxy.webConsoleClient.getString(grip);
+        fetchObjectProperties: async (grip, ignoreNonIndexedProperties) => {
+          const client = new ObjectClient(this.hud.currentTarget.client, grip);
+          const { iterator } = await client.enumProperties({
+            ignoreNonIndexedProperties,
+          });
+          const { ownProperties } = await iterator.slice(0, iterator.count);
+          return ownProperties;
         },
-        requestData(id, type) {
-          return webConsoleUI.proxy.networkDataProvider.requestData(id, type);
+        fetchObjectEntries: async grip => {
+          const client = new ObjectClient(this.hud.currentTarget.client, grip);
+          const { iterator } = await client.enumEntries();
+          const { ownProperties } = await iterator.slice(0, iterator.count);
+          return ownProperties;
+        },
+        getLongString: grip => {
+          const proxy = webConsoleUI.getProxy();
+          return proxy.webConsoleClient.getString(grip);
+        },
+        requestData: (id, type) => {
+          return this.networkDataProvider.requestData(id, type);
         },
         onViewSource(frame) {
           if (webConsoleUI && webConsoleUI.hud && webConsoleUI.hud.viewSource) {
@@ -153,30 +169,23 @@ class WebConsoleWrapper {
           return debuggerClient.release(actor);
         },
 
-        getWebConsoleClient: () => {
-          return webConsoleUI.webConsoleClient;
-        },
-
         /**
          * Retrieve the FrameActor ID given a frame depth, or the selected one if no
          * frame depth given.
          *
-         * @param {Number} frame: optional frame depth.
          * @return { frameActor: String|null, client: Object }:
          *         frameActor is the FrameActor ID for the given frame depth
          *         (or the selected frame if it exists), null if no frame was found.
          *         client is the WebConsole client for the thread the frame is
          *         associated with.
          */
-        getFrameActor: (frame = null) => {
+        getFrameActor: () => {
           const state = this.hud.getDebuggerFrames();
           if (!state) {
             return { frameActor: null, client: webConsoleUI.webConsoleClient };
           }
 
-          const grip = Number.isInteger(frame)
-            ? state.frames[frame]
-            : state.frames[state.selected];
+          const grip = state.frames[state.selected];
 
           if (!grip) {
             return { frameActor: null, client: webConsoleUI.webConsoleClient };
@@ -184,19 +193,24 @@ class WebConsoleWrapper {
 
           return {
             frameActor: grip.actor,
-            client: this.hud.lookupConsoleClient(grip.thread),
+            client: state.target.activeConsole,
           };
         },
 
         inputHasSelection: () => {
-          const { editor, inputNode } = webConsoleUI.jsterm || {};
-          return editor
-            ? !!editor.getSelection()
-            : inputNode && inputNode.selectionStart !== inputNode.selectionEnd;
+          const { editor } = webConsoleUI.jsterm || {};
+          return editor && !!editor.getSelection();
         },
 
         getInputValue: () => {
           return this.hud.getInputValue();
+        },
+
+        getInputSelection: () => {
+          if (!webConsoleUI.jsterm || !webConsoleUI.jsterm.editor) {
+            return null;
+          }
+          return webConsoleUI.jsterm.editor.getSelection();
         },
 
         setInputValue: value => {
@@ -207,12 +221,8 @@ class WebConsoleWrapper {
           return webConsoleUI.jsterm && webConsoleUI.jsterm.focus();
         },
 
-        evaluateInput: expression => {
-          return webConsoleUI.jsterm && webConsoleUI.jsterm.execute(expression);
-        },
-
         requestEvaluation: (string, options) => {
-          return webConsoleUI.webConsoleClient.evaluateJSAsync(string, options);
+          return webConsoleUI.evaluateJSAsync(string, options);
         },
 
         getInputCursor: () => {
@@ -228,11 +238,11 @@ class WebConsoleWrapper {
         },
 
         getJsTermTooltipAnchor: () => {
-          if (jstermCodeMirror) {
-            return webConsoleUI.jsterm.node.querySelector(".CodeMirror-cursor");
-          }
-          return webConsoleUI.jsterm.completeNode;
+          return webConsoleUI.outputNode.querySelector(".CodeMirror-cursor");
         },
+        getMappedExpression: this.hud.getMappedExpression.bind(this.hud),
+        getPanelWindow: () => webConsoleUI.window,
+        inspectObjectActor: webConsoleUI.inspectObjectActor.bind(webConsoleUI),
       };
 
       // Set `openContextMenu` this way so, `serviceContainer` variable
@@ -311,8 +321,8 @@ class WebConsoleWrapper {
       };
 
       if (this.toolbox) {
-        this.toolbox.threadClient.on("paused", this.dispatchPaused);
-        this.toolbox.threadClient.on("progress", this.dispatchProgress);
+        this.toolbox.threadFront.on("paused", this.dispatchPaused);
+        this.toolbox.threadFront.on("progress", this.dispatchProgress);
 
         const { highlight, unhighlight } = this.toolbox.getHighlighter(true);
 
@@ -373,12 +383,15 @@ class WebConsoleWrapper {
           highlightDomElement: highlight,
           unHighlightDomElement: unhighlight,
           openNodeInInspector: async grip => {
-            await this.toolbox.initInspector();
             const onSelectInspector = this.toolbox.selectTool(
               "inspector",
               "inspect_dom"
             );
-            const onGripNodeToFront = this.toolbox.walker.gripToNodeFront(grip);
+            // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
+            const walkerFront = (await this.toolbox.target.getFront(
+              "inspector"
+            )).walker;
+            const onGripNodeToFront = walkerFront.gripToNodeFront(grip);
             const [front, inspector] = await Promise.all([
               onGripNodeToFront,
               onSelectInspector,
@@ -392,7 +405,7 @@ class WebConsoleWrapper {
             return Promise.all([onNodeFrontSet, onInspectorUpdated]);
           },
           jumpToExecutionPoint: executionPoint =>
-            this.toolbox.threadClient.timeWarp(executionPoint),
+            this.toolbox.threadFront.timeWarp(executionPoint),
 
           onMessageHover: (type, messageId) => {
             const message = getMessage(store.getState(), messageId);
@@ -409,8 +422,6 @@ class WebConsoleWrapper {
       });
 
       const { prefs } = store.getState();
-      const jstermCodeMirror =
-        prefs.jstermCodeMirror && !Services.appinfo.accessibilityEnabled;
       const autocomplete = prefs.autocomplete;
       const editorFeatureEnabled = prefs.editor;
 
@@ -436,7 +447,6 @@ class WebConsoleWrapper {
         webConsoleUI,
         onFirstMeaningfulPaint: resolve,
         closeSplitConsole: this.closeSplitConsole.bind(this),
-        jstermCodeMirror,
         autocomplete,
         editorFeatureEnabled,
         hideShowContentMessagesCheckbox: !webConsoleUI.isBrowserConsole,
@@ -571,15 +581,10 @@ class WebConsoleWrapper {
     // that networkInfo.updates has all we need.
     // Note that 'requestPostData' is sent only for POST requests, so we need
     // to count with that.
-    // 'fetchCacheDescriptor' will also cause a network update and increment
-    // the number of networkInfo.updates
     const NUMBER_OF_NETWORK_UPDATE = 8;
 
     let expectedLength = NUMBER_OF_NETWORK_UPDATE;
-    if (
-      this.webConsoleUI.webConsoleClient.traits.fetchCacheDescriptor &&
-      res.networkInfo.updates.includes("responseCache")
-    ) {
+    if (res.networkInfo.updates.includes("responseCache")) {
       expectedLength++;
     }
     if (res.networkInfo.updates.includes("requestPostData")) {
@@ -589,10 +594,6 @@ class WebConsoleWrapper {
     if (res.networkInfo.updates.length === expectedLength) {
       this.batchedMessageUpdates({ res, message });
     }
-  }
-
-  dispatchRequestUpdate(id, data) {
-    this.batchedRequestUpdates({ id, data });
   }
 
   dispatchSidebarClose() {
@@ -620,7 +621,7 @@ class WebConsoleWrapper {
       packet.type = "will-navigate";
       this.dispatchMessageAdd(packet);
     } else {
-      this.webConsoleUI.webConsoleClient.clearNetworkRequests();
+      this.webConsoleUI.clearNetworkRequests();
       this.dispatchMessagesClear();
       store.dispatch({
         type: Constants.WILL_NAVIGATE,
@@ -635,7 +636,7 @@ class WebConsoleWrapper {
 
   batchedRequestUpdates(message) {
     this.queuedRequestUpdates.push(message);
-    this.setTimeoutIfNeeded();
+    return this.setTimeoutIfNeeded();
   }
 
   batchedMessageAdd(message) {
@@ -657,6 +658,14 @@ class WebConsoleWrapper {
   }
 
   /**
+   *
+   * @param {String} expression: The expression to evaluate
+   */
+  dispatchEvaluateExpression(expression) {
+    store.dispatch(actions.evaluateExpression(expression));
+  }
+
+  /**
    * Returns a Promise that resolves once any async dispatch is finally dispatched.
    */
   waitAsyncDispatches() {
@@ -668,11 +677,10 @@ class WebConsoleWrapper {
 
   setTimeoutIfNeeded() {
     if (this.throttledDispatchPromise) {
-      return;
+      return this.throttledDispatchPromise;
     }
-
     this.throttledDispatchPromise = new Promise(done => {
-      setTimeout(() => {
+      setTimeout(async () => {
         this.throttledDispatchPromise = null;
 
         if (!store) {
@@ -702,16 +710,18 @@ class WebConsoleWrapper {
         this.queuedMessageAdds = [];
 
         if (this.queuedMessageUpdates.length > 0) {
-          this.queuedMessageUpdates.forEach(({ message, res }) => {
-            store.dispatch(actions.networkMessageUpdate(message, null, res));
+          for (const { message, res } of this.queuedMessageUpdates) {
+            await store.dispatch(
+              actions.networkMessageUpdate(message, null, res)
+            );
             this.webConsoleUI.emit("network-message-updated", res);
-          });
+          }
           this.queuedMessageUpdates = [];
         }
         if (this.queuedRequestUpdates.length > 0) {
-          this.queuedRequestUpdates.forEach(({ id, data }) => {
-            store.dispatch(actions.networkUpdateRequest(id, data));
-          });
+          for (const { id, data } of this.queuedRequestUpdates) {
+            await store.dispatch(actions.networkUpdateRequest(id, data));
+          }
           this.queuedRequestUpdates = [];
 
           // Fire an event indicating that all data fetched from
@@ -726,6 +736,7 @@ class WebConsoleWrapper {
         done();
       }, 50);
     });
+    return this.throttledDispatchPromise;
   }
 
   // Should be used for test purpose only.

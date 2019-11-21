@@ -1401,11 +1401,6 @@ void MacroAssemblerMIPSCompat::unboxValue(const ValueOperand& src,
   }
 }
 
-void MacroAssemblerMIPSCompat::unboxPrivate(const ValueOperand& src,
-                                            Register dest) {
-  ma_move(dest, src.payloadReg());
-}
-
 void MacroAssemblerMIPSCompat::boxDouble(FloatRegister src,
                                          const ValueOperand& dest,
                                          FloatRegister) {
@@ -2463,7 +2458,7 @@ void MacroAssemblerMIPSCompat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.

@@ -55,6 +55,9 @@ add_task(async function() {
 
   let alreadyFocused = false;
   let inRange = (val, min, max) => min <= val && val <= max;
+  let fxaAccountsButton = document
+    .getElementById("fxa-toolbar-menu-button")
+    .getBoundingClientRect();
   let expectations = {
     expectedReflows: EXPECTED_REFLOWS,
     frames: {
@@ -80,12 +83,7 @@ add_task(async function() {
             inRange(r.h, 13, 14) &&
             inRange(r.w, 14, 16) && // icon size
             inRange(r.y1, 40, 80) && // in the toolbar
-            // near the left side of the screen
-            // The reload icon is shifted on devedition builds
-            // where there's an additional devtools toolbar icon.
-            AppConstants.MOZ_DEV_EDITION
-              ? inRange(r.x1, 100, 120)
-              : inRange(r.x1, 65, 100),
+            inRange(r.x1, 65, 100), // near the left side of the screen
         },
         {
           name: "bug 1555842 - the urlbar shouldn't flicker",
@@ -101,6 +99,14 @@ add_task(async function() {
               r.y2 <= inputFieldRect.bottom
             );
           },
+        },
+        {
+          name: "FxA accounts button is intentionally badged 10s after startup",
+          condition: r =>
+            r.x1 >= fxaAccountsButton.left &&
+            r.x2 <= fxaAccountsButton.right &&
+            r.y1 >= fxaAccountsButton.top &&
+            r.y2 <= fxaAccountsButton.bottom,
         },
       ],
     },

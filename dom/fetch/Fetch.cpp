@@ -186,6 +186,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
   // Touched only on the worker thread.
   RefPtr<FetchObserver> mFetchObserver;
   RefPtr<WeakWorkerRef> mWorkerRef;
+  bool mIsShutdown;
 
  public:
   // Returns null if worker is shutting down.
@@ -248,6 +249,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
   Promise* WorkerPromise(WorkerPrivate* aWorkerPrivate) const {
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
+    MOZ_ASSERT(!mIsShutdown);
 
     return mPromiseProxy->WorkerPromise();
   }
@@ -271,6 +273,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
 
+    mIsShutdown = true;
     mPromiseProxy->CleanUp();
 
     mFetchObserver = nullptr;
@@ -282,12 +285,19 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     mWorkerRef = nullptr;
   }
 
+  bool IsShutdown(WorkerPrivate* aWorkerPrivate) const {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+    return mIsShutdown;
+  }
+
  private:
   WorkerFetchResolver(PromiseWorkerProxy* aProxy,
                       AbortSignalProxy* aSignalProxy, FetchObserver* aObserver)
       : mPromiseProxy(aProxy),
         mSignalProxy(aSignalProxy),
-        mFetchObserver(aObserver) {
+        mFetchObserver(aObserver),
+        mIsShutdown(false) {
     MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(mPromiseProxy);
   }
@@ -479,10 +489,7 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       loadGroup = doc->GetDocumentLoadGroup();
       cookieSettings = doc->CookieSettings();
 
-      nsAutoCString fileNameString;
-      if (nsJSUtils::GetCallingLocation(cx, fileNameString)) {
-        isTrackingFetch = doc->IsScriptTracking(fileNameString);
-      }
+      isTrackingFetch = doc->IsScriptTracking(cx);
     } else {
       principal = aGlobal->PrincipalOrNull();
       if (NS_WARN_IF(!principal)) {
@@ -721,6 +728,10 @@ class WorkerFetchResponseEndRunnable final : public MainThreadWorkerRunnable,
         mReason(aReason) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
+    if (mResolver->IsShutdown(aWorkerPrivate)) {
+      return true;
+    }
+
     if (mReason == FetchDriverObserver::eAborted) {
       mResolver->WorkerPromise(aWorkerPrivate)
           ->MaybeReject(NS_ERROR_DOM_ABORT_ERR);

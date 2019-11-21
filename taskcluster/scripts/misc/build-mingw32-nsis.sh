@@ -11,17 +11,12 @@ set -x -e -v
 #   DEBUG: | Error initalizing CEXEBuild: error setting
 #   ERROR: Failed to get nsis version.
 
-WORKSPACE=$HOME/workspace
-HOME_DIR=$WORKSPACE/build
-INSTALL_DIR=$WORKSPACE/build/src/mingw32
-TOOLTOOL_DIR=$WORKSPACE/build/src
-UPLOAD_DIR=$HOME/artifacts
+INSTALL_DIR=$MOZ_FETCHES_DIR/mingw32
 
 mkdir -p $INSTALL_DIR
 
-cd $TOOLTOOL_DIR
-. taskcluster/scripts/misc/tooltool-download.sh
-# After tooltool runs, we move the stuff we just downloaded.
+cd $MOZ_FETCHES_DIR
+
 # As explained above, we have to build nsis to the directory it
 # will eventually be run from, which is the same place we just
 # installed our compiler. But at the end of the script we want
@@ -29,9 +24,7 @@ cd $TOOLTOOL_DIR
 # we will package up the compiler we downloaded along with the
 # stuff we just built.
 mv mingw32 mingw32-gcc
-export PATH="$TOOLTOOL_DIR/mingw32-gcc/bin:$PATH"
-
-cd $HOME_DIR
+export PATH="$MOZ_FETCHES_DIR/mingw32-gcc/bin:$PATH"
 
 # --------------
 
@@ -45,7 +38,8 @@ scons XGCC_W32_PREFIX=i686-w64-mingw32- ZLIB_W32=../zlib-1.2.11 SKIPUTILS="NSIS 
 
 # --------------
 
-cd $WORKSPACE/build/src
+cd $MOZ_FETCHES_DIR
+
 tar caf nsis.tar.xz mingw32
 
 mkdir -p $UPLOAD_DIR

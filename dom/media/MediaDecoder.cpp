@@ -7,6 +7,7 @@
 #include "MediaDecoder.h"
 
 #include "DOMMediaStream.h"
+#include "DecoderBenchmark.h"
 #include "ImageContainer.h"
 #include "Layers.h"
 #include "MediaDecoderStateMachine.h"
@@ -20,7 +21,7 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Telemetry.h"
 #include "Visibility.h"
@@ -237,18 +238,12 @@ RefPtr<GenericPromise> MediaDecoder::SetSink(AudioDeviceInfo* aSink) {
   return GetStateMachine()->InvokeSetSink(aSink);
 }
 
-void MediaDecoder::SetOutputStreamCORSMode(CORSMode aCORSMode) {
-  MOZ_ASSERT(NS_IsMainThread());
-  AbstractThread::AutoEnter context(AbstractMainThread());
-  mDecoderStateMachine->SetOutputStreamCORSMode(aCORSMode);
-}
-
-void MediaDecoder::AddOutputStream(DOMMediaStream* aStream) {
+void MediaDecoder::AddOutputStream(DOMMediaStream* aStream,
+                                   SharedDummyStream* aDummyStream) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
   AbstractThread::AutoEnter context(AbstractMainThread());
-  mDecoderStateMachine->EnsureOutputStreamManager(
-      aStream->GetInputStream()->Graph());
+  mDecoderStateMachine->EnsureOutputStreamManager(aDummyStream);
   if (mInfo) {
     mDecoderStateMachine->EnsureOutputStreamManagerHasTracks(*mInfo);
   }
@@ -262,18 +257,11 @@ void MediaDecoder::RemoveOutputStream(DOMMediaStream* aStream) {
   mDecoderStateMachine->RemoveOutputStream(aStream);
 }
 
-void MediaDecoder::SetNextOutputStreamTrackID(TrackID aNextTrackID) {
+void MediaDecoder::SetOutputStreamPrincipal(nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
   AbstractThread::AutoEnter context(AbstractMainThread());
-  mDecoderStateMachine->SetNextOutputStreamTrackID(aNextTrackID);
-}
-
-TrackID MediaDecoder::GetNextOutputStreamTrackID() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
-  AbstractThread::AutoEnter context(AbstractMainThread());
-  return mDecoderStateMachine->GetNextOutputStreamTrackID();
+  mDecoderStateMachine->SetOutputStreamPrincipal(aPrincipal);
 }
 
 double MediaDecoder::GetDuration() {
@@ -300,6 +288,7 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
       mOwner(aInit.mOwner),
       mAbstractMainThread(aInit.mOwner->AbstractMainThread()),
       mFrameStats(new FrameStatistics()),
+      mDecoderBenchmark(new DecoderBenchmark()),
       mVideoFrameContainer(aInit.mOwner->GetVideoFrameContainer()),
       mMinimizePreroll(aInit.mMinimizePreroll),
       mFiredMetadataLoaded(false),
@@ -319,7 +308,7 @@ MediaDecoder::MediaDecoder(MediaDecoderInit& aInit)
       INIT_CANONICAL(mPreservesPitch, aInit.mPreservesPitch),
       INIT_CANONICAL(mLooping, aInit.mLooping),
       INIT_CANONICAL(mPlayState, PLAY_STATE_LOADING),
-      INIT_CANONICAL(mSameOriginMedia, false),
+      mSameOriginMedia(false),
       mVideoDecodingOberver(
           new BackgroundVideoDecodingPermissionObserver(this)),
       mIsBackgroundVideoDecodingAllowed(false),
@@ -381,6 +370,7 @@ void MediaDecoder::Shutdown() {
     mOnWaitingForKey.Disconnect();
     mOnDecodeWarning.Disconnect();
     mOnNextFrameStatus.Disconnect();
+    mOnStoreDecoderBenchmark.Disconnect();
 
     mDecoderStateMachine->BeginShutdown()->Then(
         mAbstractMainThread, __func__, this, &MediaDecoder::FinishShutdown,
@@ -513,6 +503,29 @@ void MediaDecoder::OnNextFrameStatus(
   }
 }
 
+void MediaDecoder::OnStoreDecoderBenchmark(const VideoInfo& aInfo) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  int32_t videoFrameRate = aInfo.GetFrameRate().ref();
+
+  if (mFrameStats && videoFrameRate) {
+    DecoderBenchmarkInfo benchmarkInfo{
+        aInfo.mMimeType,
+        aInfo.mDisplay.width,
+        aInfo.mDisplay.height,
+        videoFrameRate,
+        BitDepthForColorDepth(aInfo.mColorDepth),
+    };
+
+    LOG("Store benchmark: Video width=%d, height=%d, frameRate=%d, content "
+        "type = %s\n",
+        benchmarkInfo.mWidth, benchmarkInfo.mHeight, benchmarkInfo.mFrameRate,
+        benchmarkInfo.mContentType.BeginReading());
+
+    mDecoderBenchmark->Store(benchmarkInfo, mFrameStats);
+  }
+}
+
 void MediaDecoder::FinishShutdown() {
   MOZ_ASSERT(NS_IsMainThread());
   SetStateMachine(nullptr);
@@ -558,6 +571,8 @@ void MediaDecoder::SetStateMachineParameters() {
       mAbstractMainThread, this, &MediaDecoder::OnMediaNotSeekable);
   mOnNextFrameStatus = mDecoderStateMachine->OnNextFrameStatus().Connect(
       mAbstractMainThread, this, &MediaDecoder::OnNextFrameStatus);
+  mOnStoreDecoderBenchmark = mReader->OnStoreDecoderBenchmark().Connect(
+      mAbstractMainThread, this, &MediaDecoder::OnStoreDecoderBenchmark);
 
   mOnEncrypted = mReader->OnEncrypted().Connect(
       mAbstractMainThread, GetOwner(), &MediaDecoderOwner::DispatchEncrypted);
@@ -612,7 +627,6 @@ void MediaDecoder::DiscardOngoingSeekIfExists() {
   MOZ_ASSERT(NS_IsMainThread());
   AbstractThread::AutoEnter context(AbstractMainThread());
   mSeekRequest.DisconnectIfExists();
-  GetOwner()->AsyncRejectSeekDOMPromiseIfExists();
 }
 
 void MediaDecoder::CallSeek(const SeekTarget& aTarget) {
@@ -760,8 +774,6 @@ void MediaDecoder::DecodeError(const MediaResult& aError) {
 void MediaDecoder::UpdateSameOriginStatus(bool aSameOrigin) {
   MOZ_ASSERT(NS_IsMainThread());
   AbstractThread::AutoEnter context(AbstractMainThread());
-  nsCOMPtr<nsIPrincipal> principal = GetCurrentPrincipal();
-  mDecoderStateMachine->SetOutputStreamPrincipal(principal);
   mSameOriginMedia = aSameOrigin;
 }
 
@@ -823,14 +835,14 @@ void MediaDecoder::OnSeekResolved() {
   mSeekRequest.Complete();
 
   GetOwner()->SeekCompleted();
-  GetOwner()->AsyncResolveSeekDOMPromiseIfExists();
 }
 
 void MediaDecoder::OnSeekRejected() {
   MOZ_ASSERT(NS_IsMainThread());
   mSeekRequest.Complete();
   mLogicallySeeking = false;
-  GetOwner()->AsyncRejectSeekDOMPromiseIfExists();
+
+  GetOwner()->SeekAborted();
 }
 
 void MediaDecoder::SeekingStarted() {

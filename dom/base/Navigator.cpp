@@ -31,7 +31,9 @@
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
 #include "mozilla/dom/CredentialsContainer.h"
@@ -154,6 +156,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaDevices)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mServiceWorkerContainer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaCapabilities)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAddonManager)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
@@ -224,6 +227,7 @@ void Navigator::Invalidate() {
   }
 
   mMediaCapabilities = nullptr;
+  mAddonManager = nullptr;
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
@@ -498,18 +502,18 @@ bool Navigator::CookieEnabled() {
     return cookieEnabled;
   }
 
-  nsCOMPtr<nsIURI> codebaseURI;
-  doc->NodePrincipal()->GetURI(getter_AddRefs(codebaseURI));
+  nsCOMPtr<nsIURI> contentURI;
+  doc->NodePrincipal()->GetURI(getter_AddRefs(contentURI));
 
-  if (!codebaseURI) {
-    // Not a codebase, so technically can't set cookies, but let's
+  if (!contentURI) {
+    // Not a content, so technically can't set cookies, but let's
     // just return the default value.
     return cookieEnabled;
   }
 
   uint32_t rejectedReason = 0;
   bool granted = AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-      mWindow, codebaseURI, &rejectedReason);
+      mWindow, contentURI, &rejectedReason);
 
   AntiTrackingCommon::NotifyBlockingDecision(
       mWindow,
@@ -545,7 +549,7 @@ void Navigator::GetBuildID(nsAString& aBuildID, CallerType aCallerType,
       if (doc) {
         nsIURI* uri = doc->GetDocumentURI();
         if (uri) {
-          MOZ_ALWAYS_SUCCEEDS(uri->SchemeIs("https", &isHTTPS));
+          isHTTPS = uri->SchemeIs("https");
           if (isHTTPS) {
             MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
           }
@@ -1118,10 +1122,7 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
   }
 
   // Spec disallows any schemes save for HTTP/HTTPs
-  bool isValidScheme;
-  if (!(NS_SUCCEEDED(uri->SchemeIs("http", &isValidScheme)) && isValidScheme) &&
-      !(NS_SUCCEEDED(uri->SchemeIs("https", &isValidScheme)) &&
-        isValidScheme)) {
+  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
     aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Beacon"),
                                                aUrl);
     return false;
@@ -1276,14 +1277,12 @@ void Navigator::MozGetUserMediaDevices(
   }
   if (Document* doc = mWindow->GetExtantDoc()) {
     if (!mWindow->IsSecureContext()) {
-      doc->SetDocumentAndPageUseCounter(
-          eUseCounter_custom_MozGetUserMediaInsec);
+      doc->SetUseCounter(eUseCounter_custom_MozGetUserMediaInsec);
     }
     nsINode* node = doc;
     while ((node = nsContentUtils::GetCrossDocParentNode(node))) {
       if (NS_FAILED(nsContentUtils::CheckSameOrigin(doc, node))) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_MozGetUserMediaXOrigin);
+        doc->SetUseCounter(eUseCounter_custom_MozGetUserMediaXOrigin);
         break;
       }
     }
@@ -1759,9 +1758,6 @@ already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
                                                 mWindow->IsSecureContext())
                     .get());
 
-  Telemetry::Accumulate(Telemetry::MEDIA_EME_SECURE_CONTEXT,
-                        mWindow->IsSecureContext());
-
   if (!mWindow->IsSecureContext()) {
     Document* doc = mWindow->GetExtantDoc();
     AutoTArray<nsString, 1> params;
@@ -1830,6 +1826,24 @@ Clipboard* Navigator::Clipboard() {
     mClipboard = new dom::Clipboard(GetWindow());
   }
   return mClipboard;
+}
+
+AddonManager* Navigator::GetMozAddonManager(ErrorResult& aRv) {
+  if (!mAddonManager) {
+    nsPIDOMWindowInner* win = GetWindow();
+    if (!win) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    mAddonManager = ConstructJSImplementation<AddonManager>(
+        "@mozilla.org/addon-web-api/manager;1", win->AsGlobal(), aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+  }
+
+  return mAddonManager;
 }
 
 /* static */

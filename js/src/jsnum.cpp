@@ -21,15 +21,14 @@
 #  include <locale.h>
 #endif
 #include <math.h>
-#include <string.h>
+#include <string.h>  // memmove
 
 #include "jstypes.h"
 
-#include "builtin/String.h"
 #include "double-conversion/double-conversion.h"
 #include "js/CharacterEncoding.h"
 #include "js/Conversions.h"
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
 #  include "js/LocaleSensitive.h"
 #endif
 #include "js/PropertySpec.h"
@@ -55,6 +54,7 @@ using mozilla::IsAsciiDigit;
 using mozilla::Maybe;
 using mozilla::MinNumberValue;
 using mozilla::NegativeInfinity;
+using mozilla::NumberEqualsInt32;
 using mozilla::PositiveInfinity;
 using mozilla::RangedPtr;
 using mozilla::Utf8AsUnsignedChars;
@@ -627,7 +627,7 @@ static const JSFunctionSpec number_functions[] = {
     JS_SELF_HOSTED_FN(js_isFinite_str, "Global_isFinite", 1, JSPROP_RESOLVING),
     JS_FS_END};
 
-const Class NumberObject::class_ = {
+const JSClass NumberObject::class_ = {
     js_Number_str,
     JSCLASS_HAS_RESERVED_SLOTS(1) | JSCLASS_HAS_CACHED_PROTO(JSProto_Number)};
 
@@ -889,7 +889,7 @@ bool js::num_toString(JSContext* cx, unsigned argc, Value* vp) {
   return CallNonGenericMethod<IsNumber, num_toString_impl>(cx, args);
 }
 
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
 MOZ_ALWAYS_INLINE bool num_toLocaleString_impl(JSContext* cx,
                                                const CallArgs& args) {
   MOZ_ASSERT(IsNumber(args.thisv()));
@@ -1031,7 +1031,7 @@ static bool num_toLocaleString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<IsNumber, num_toLocaleString_impl>(cx, args);
 }
-#endif /* !EXPOSE_INTL_API */
+#endif /* !ENABLE_INTL_API */
 
 MOZ_ALWAYS_INLINE bool num_valueOf_impl(JSContext* cx, const CallArgs& args) {
   MOZ_ASSERT(IsNumber(args.thisv()));
@@ -1244,7 +1244,7 @@ static bool num_toPrecision(JSContext* cx, unsigned argc, Value* vp) {
 static const JSFunctionSpec number_methods[] = {
     JS_FN(js_toSource_str, num_toSource, 0, 0),
     JS_FN(js_toString_str, num_toString, 1, 0),
-#if EXPOSE_INTL_API
+#if ENABLE_INTL_API
     JS_SELF_HOSTED_FN(js_toLocaleString_str, "Number_toLocaleString", 0, 0),
 #else
     JS_FN(js_toLocaleString_str, num_toLocaleString, 0, 0),
@@ -1268,10 +1268,10 @@ static const JSFunctionSpec number_static_methods[] = {
     JS_FS_END};
 
 bool js::InitRuntimeNumberState(JSRuntime* rt) {
-  // XXX If EXPOSE_INTL_API becomes true all the time at some point,
+  // XXX If ENABLE_INTL_API becomes true all the time at some point,
   //     js::InitRuntimeNumberState is no longer fallible, and we should
   //     change its return type.
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
   /* Copy locale-specific separators into the runtime strings. */
   const char* thousandsSeparator;
   const char* decimalPoint;
@@ -1320,11 +1320,11 @@ bool js::InitRuntimeNumberState(JSRuntime* rt) {
 
   js_memcpy(storage, grouping, groupingSize);
   rt->numGrouping = grouping;
-#endif /* !EXPOSE_INTL_API */
+#endif /* !ENABLE_INTL_API */
   return true;
 }
 
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
 void js::FinishRuntimeNumberState(JSRuntime* rt) {
   /*
    * The free also releases the memory for decimalSeparator and numGrouping
@@ -1440,7 +1440,7 @@ static char* FracNumberToCString(JSContext* cx, ToCStringBuf* cbuf, double d,
 #ifdef DEBUG
   {
     int32_t _;
-    MOZ_ASSERT(!mozilla::NumberEqualsInt32(d, &_));
+    MOZ_ASSERT(!NumberEqualsInt32(d, &_));
   }
 #endif
 
@@ -1468,13 +1468,35 @@ static char* FracNumberToCString(JSContext* cx, ToCStringBuf* cbuf, double d,
   return numStr;
 }
 
+void JS::NumberToString(double d, char (&out)[MaximumNumberToStringLength]) {
+  int32_t i;
+  if (NumberEqualsInt32(d, &i)) {
+    ToCStringBuf cbuf;
+    size_t len;
+    char* loc = Int32ToCString(&cbuf, i, &len, 10);
+    memmove(out, loc, len);
+    out[len] = '\0';
+  } else {
+    const double_conversion::DoubleToStringConverter& converter =
+        double_conversion::DoubleToStringConverter::EcmaScriptConverter();
+
+    double_conversion::StringBuilder builder(out, sizeof(out));
+    converter.ToShortest(d, &builder);
+
+#ifdef DEBUG
+    char* result =
+#endif
+        builder.Finalize();
+    MOZ_ASSERT(out == result);
+  }
+}
+
 char* js::NumberToCString(JSContext* cx, ToCStringBuf* cbuf, double d,
                           int base /* = 10*/) {
   int32_t i;
   size_t len;
-  return mozilla::NumberEqualsInt32(d, &i)
-             ? Int32ToCString(cbuf, i, &len, base)
-             : FracNumberToCString(cx, cbuf, d, base);
+  return NumberEqualsInt32(d, &i) ? Int32ToCString(cbuf, i, &len, base)
+                                  : FracNumberToCString(cx, cbuf, d, base);
 }
 
 template <AllowGC allowGC>
@@ -1489,7 +1511,7 @@ static JSString* NumberToStringWithBase(JSContext* cx, double d, int base) {
 
   int32_t i;
   bool isBase10Int = false;
-  if (mozilla::NumberEqualsInt32(d, &i)) {
+  if (NumberEqualsInt32(d, &i)) {
     isBase10Int = (base == 10);
     if (isBase10Int && StaticStrings::hasInt(i)) {
       return cx->staticStrings().getInt(i);
@@ -1561,7 +1583,7 @@ JSString* js::NumberToStringHelperPure(JSContext* cx, double d) {
 
 JSAtom* js::NumberToAtom(JSContext* cx, double d) {
   int32_t si;
-  if (mozilla::NumberEqualsInt32(d, &si)) {
+  if (NumberEqualsInt32(d, &si)) {
     return Int32ToAtom(cx, si);
   }
 
@@ -1787,8 +1809,7 @@ JS_PUBLIC_API bool js::ToNumberSlow(JSContext* cx, HandleValue v_,
 
 // BigInt proposal section 3.1.6
 bool js::ToNumericSlow(JSContext* cx, MutableHandleValue vp) {
-  MOZ_ASSERT(!vp.isNumber());
-  MOZ_ASSERT(!vp.isBigInt());
+  MOZ_ASSERT(!vp.isNumeric());
 
   // Step 1.
   if (!vp.isPrimitive()) {

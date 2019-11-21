@@ -51,12 +51,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 const { nsIBlocklistService } = Ci;
 
 // These are injected from XPIProvider.jsm
-/* globals
- *         BOOTSTRAP_REASONS,
- *         DB_SCHEMA,
- *         XPIStates,
- *         migrateAddonLoader
- */
+/* globals BOOTSTRAP_REASONS, DB_SCHEMA, XPIStates, migrateAddonLoader */
 
 for (let sym of [
   "BOOTSTRAP_REASONS",
@@ -3096,8 +3091,6 @@ this.XPIDatabaseReconcile = {
       return (aManifests[loc.name] && aManifests[loc.name][id]) || null;
     };
 
-    let addonExists = addon => addon._sourceBundle.exists();
-
     let previousAddons = new ExtensionUtils.DefaultMap(() => new Map());
     let currentAddons = new ExtensionUtils.DefaultMap(() => new Map());
 
@@ -3219,9 +3212,7 @@ this.XPIDatabaseReconcile = {
         if (addon.location.name == KEY_APP_BUILTINS) {
           continue;
         }
-        if (addonExists(addon)) {
-          XPIInternal.BootstrapScope.get(addon).uninstall();
-        }
+        XPIInternal.BootstrapScope.get(addon).uninstall();
         addon.location.removeAddon(id);
         addon.visible = false;
         addon.active = false;

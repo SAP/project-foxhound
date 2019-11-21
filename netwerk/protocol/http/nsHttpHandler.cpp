@@ -31,6 +31,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Printf.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsSocketTransportService2.h"
 #include "nsAlgorithm.h"
@@ -107,7 +109,7 @@
 #define H2MANDATORY_SUITE "security.ssl3.ecdhe_rsa_aes_128_gcm_sha256"
 #define SAFE_HINT_HEADER_VALUE "safeHint.enabled"
 #define SECURITY_PREFIX "security."
-
+#define DOM_SECURITY_PREFIX "dom.security"
 #define TCP_FAST_OPEN_ENABLE "network.tcp.tcp_fastopen_enable"
 #define TCP_FAST_OPEN_FAILURE_LIMIT \
   "network.tcp.tcp_fastopen_consecutive_failure_limit"
@@ -160,9 +162,9 @@ static nsCString GetDeviceModelId() {
     deviceString.Trim(" ", true, true);
     deviceString.ReplaceSubstring(NS_LITERAL_CSTRING("%DEVICEID%"),
                                   deviceModelId);
-    return deviceString;
+    return std::move(deviceString);
   }
-  return deviceModelId;
+  return std::move(deviceModelId);
 }
 #endif
 
@@ -267,6 +269,7 @@ nsHttpHandler::nsHttpHandler()
       mRequestTokenBucketHz(100),
       mRequestTokenBucketBurst(32),
       mCriticalRequestPrioritization(true),
+      mRespectDocumentNoSniff(true),
       mTCPKeepaliveShortLivedEnabled(false),
       mTCPKeepaliveShortLivedTimeS(60),
       mTCPKeepaliveShortLivedIdleTimeS(10),
@@ -275,6 +278,8 @@ nsHttpHandler::nsHttpHandler()
       mEnforceH1Framing(FRAMECHECK_BARELY),
       mDefaultHpackBuffer(4096),
       mBug1563538(true),
+      mBug1563695(true),
+      mBug1556491(true),
       mMaxHttpResponseHeaderSize(393216),
       mFocusedWindowTransactionRatio(0.9f),
       mSpeculativeConnectEnabled(false),
@@ -427,6 +432,7 @@ static const char* gCallbackPrefs[] = {
     HTTP_PREF("tcp_keepalive.long_lived_connections"),
     SAFE_HINT_HEADER_VALUE,
     SECURITY_PREFIX,
+    DOM_SECURITY_PREFIX,
     TCP_FAST_OPEN_ENABLE,
     TCP_FAST_OPEN_FAILURE_LIMIT,
     TCP_FAST_OPEN_STALLS_LIMIT,
@@ -1323,6 +1329,16 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
     }
   }
 
+  if (PREF_CHANGED(HTTP_PREF("proxy.respect-be-conservative"))) {
+    rv =
+        Preferences::GetBool(HTTP_PREF("proxy.respect-be-conservative"), &cVar);
+    if (NS_SUCCEEDED(rv) && mConnMgr) {
+      Unused << mConnMgr->UpdateParam(
+          nsHttpConnectionMgr::PROXY_BE_CONSERVATIVE,
+          static_cast<int32_t>(cVar));
+    }
+  }
+
   if (PREF_CHANGED(HTTP_PREF("qos"))) {
     rv = Preferences::GetInt(HTTP_PREF("qos"), &val);
     if (NS_SUCCEEDED(rv)) mQoSBits = (uint8_t)clamped(val, 0, 0xff);
@@ -1553,6 +1569,14 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
     rv = Preferences::GetBool(
         HTTP_PREF("rendering-critical-requests-prioritization"), &cVar);
     if (NS_SUCCEEDED(rv)) mCriticalRequestPrioritization = cVar;
+  }
+
+  // Whether to respect X-Content-Type nosniff on Page loads
+  if (PREF_CHANGED("dom.security.respect_document_nosniff")) {
+    rv = Preferences::GetBool("dom.security.respect_document_nosniff", &cVar);
+    if (NS_SUCCEEDED(rv)) {
+      mRespectDocumentNoSniff = cVar;
+    }
   }
 
   // on transition of network.http.diagnostics to true print
@@ -1885,6 +1909,18 @@ void nsHttpHandler::PrefsChanged(const char* pref) {
       mBug1563538 = cVar;
     }
   }
+  if (PREF_CHANGED(HTTP_PREF("spdy.bug1563695"))) {
+    rv = Preferences::GetBool(HTTP_PREF("spdy.bug1563695"), &cVar);
+    if (NS_SUCCEEDED(rv)) {
+      mBug1563695 = cVar;
+    }
+  }
+  if (PREF_CHANGED(HTTP_PREF("spdy.bug1556491"))) {
+    rv = Preferences::GetBool(HTTP_PREF("spdy.bug1556491"), &cVar);
+    if (NS_SUCCEEDED(rv)) {
+      mBug1556491 = cVar;
+    }
+  }
 
   // Enable HTTP response timeout if TCP Keepalives are disabled.
   mResponseTimeoutEnabled =
@@ -1983,18 +2019,10 @@ nsHttpHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
   NS_ENSURE_ARG_POINTER(uri);
   NS_ENSURE_ARG_POINTER(result);
 
-  bool isHttp = false, isHttps = false;
-
   // Verify that we have been given a valid scheme
-  nsresult rv = uri->SchemeIs("http", &isHttp);
-  if (NS_FAILED(rv)) return rv;
-  if (!isHttp) {
-    rv = uri->SchemeIs("https", &isHttps);
-    if (NS_FAILED(rv)) return rv;
-    if (!isHttps) {
-      NS_WARNING("Invalid URI scheme");
-      return NS_ERROR_UNEXPECTED;
-    }
+  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
+    NS_WARNING("Invalid URI scheme");
+    return NS_ERROR_UNEXPECTED;
   }
 
   return NewProxiedChannel(uri, nullptr, 0, nullptr, aLoadInfo, result);
@@ -2033,10 +2061,6 @@ nsHttpHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
     NS_ENSURE_ARG(proxyInfo);
   }
 
-  bool https;
-  nsresult rv = uri->SchemeIs("https", &https);
-  if (NS_FAILED(rv)) return rv;
-
   if (IsNeckoChild()) {
     httpChannel = new HttpChannelChild();
   } else {
@@ -2056,7 +2080,7 @@ nsHttpHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
   }
 
   uint64_t channelId;
-  rv = NewChannelId(channelId);
+  nsresult rv = NewChannelId(channelId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsContentPolicyType contentPolicyType =
@@ -2115,6 +2139,11 @@ NS_IMETHODIMP
 nsHttpHandler::GetMisc(nsACString& value) {
   value = mMisc;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsHttpHandler::GetAltSvcCacheKeys(nsTArray<nsCString>& value) {
+  return mConnMgr->GetAltSvcCacheKeys(value);
 }
 
 //-----------------------------------------------------------------------------
@@ -2413,11 +2442,7 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
     return NS_ERROR_UNEXPECTED;
 
   // Construct connection info object
-  bool usingSSL = false;
-  rv = aURI->SchemeIs("https", &usingSSL);
-  if (NS_FAILED(rv)) return rv;
-
-  if (usingSSL && !mSpeculativeConnectEnabled) {
+  if (aURI->SchemeIs("https") && !mSpeculativeConnectEnabled) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -2438,7 +2463,7 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   // and all of its consumers.
   RefPtr<nsHttpConnectionInfo> ci = new nsHttpConnectionInfo(
       host, port, EmptyCString(), username, EmptyCString(), nullptr,
-      originAttributes, usingSSL);
+      originAttributes, aURI->SchemeIs("https"));
   ci->SetAnonymous(anonymous);
 
   return SpeculativeConnect(ci, aCallbacks);
@@ -2530,8 +2555,9 @@ nsHttpsHandler::AllowPort(int32_t aPort, const char* aScheme, bool* _retval) {
   return NS_OK;
 }
 
-nsresult nsHttpHandler::EnsureHSTSDataReadyNative(
-    already_AddRefed<mozilla::net::HSTSDataCallbackWrapper> aCallback) {
+NS_IMETHODIMP
+nsHttpHandler::EnsureHSTSDataReadyNative(
+    RefPtr<mozilla::net::HSTSDataCallbackWrapper> aCallback) {
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIURI> uri;
@@ -2541,15 +2567,14 @@ nsresult nsHttpHandler::EnsureHSTSDataReadyNative(
   bool shouldUpgrade = false;
   bool willCallback = false;
   OriginAttributes originAttributes;
-  RefPtr<HSTSDataCallbackWrapper> callback = aCallback;
-  auto func = [callback](bool aResult, nsresult aStatus) {
+  auto func = [callback(aCallback)](bool aResult, nsresult aStatus) {
     callback->DoCallback(aResult);
   };
   rv = NS_ShouldSecureUpgrade(uri, nullptr, nullptr, false, false,
                               originAttributes, shouldUpgrade, std::move(func),
                               willCallback);
   if (NS_FAILED(rv) || !willCallback) {
-    callback->DoCallback(false);
+    aCallback->DoCallback(false);
     return rv;
   }
 
@@ -2595,7 +2620,7 @@ nsHttpHandler::EnsureHSTSDataReady(JSContext* aCx, Promise** aPromise) {
   RefPtr<HSTSDataCallbackWrapper> wrapper =
       new HSTSDataCallbackWrapper(std::move(callback));
   promise.forget(aPromise);
-  return EnsureHSTSDataReadyNative(wrapper.forget());
+  return EnsureHSTSDataReadyNative(wrapper);
 }
 
 void nsHttpHandler::ShutdownConnectionManager() {

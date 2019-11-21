@@ -57,21 +57,24 @@ SourceMapURLService.prototype._getLoadingPromise = function() {
       if (this._target.isWorkerTarget) {
         return;
       }
-      this._stylesheetsFront = await this._target.getFront("stylesheets");
-      this._stylesheetsFront.on("stylesheet-added", this._onNewStyleSheet);
-      const styleSheetsLoadingPromise = this._stylesheetsFront
-        .getStyleSheets()
-        .then(
-          sheets => {
-            sheets.forEach(this._registerNewStyleSheet, this);
-          },
-          () => {
-            // Ignore any protocol-based errors.
-          }
-        );
+      let styleSheetsLoadingPromise;
+      if (this._target.hasActor("styleSheets")) {
+        this._stylesheetsFront = await this._target.getFront("stylesheets");
+        this._stylesheetsFront.on("stylesheet-added", this._onNewStyleSheet);
+        styleSheetsLoadingPromise = this._stylesheetsFront
+          .getStyleSheets()
+          .then(
+            sheets => {
+              sheets.forEach(this._registerNewStyleSheet, this);
+            },
+            () => {
+              // Ignore any protocol-based errors.
+            }
+          );
+      }
 
       // Start fetching the sources now.
-      const loadingPromise = this._toolbox.threadClient.getSources().then(
+      const loadingPromise = this._toolbox.threadFront.getSources().then(
         ({ sources }) => {
           // Ignore errors.  Register the sources we got; we can't rely on
           // an event to arrive if the source actor already existed.
@@ -84,7 +87,9 @@ SourceMapURLService.prototype._getLoadingPromise = function() {
         }
       );
 
-      await styleSheetsLoadingPromise;
+      if (styleSheetsLoadingPromise) {
+        await styleSheetsLoadingPromise;
+      }
       await loadingPromise;
     })();
   }

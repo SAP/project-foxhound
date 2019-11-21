@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_events_test_runner.js */
@@ -21,7 +20,7 @@ const TEST_URL = `
 `;
 
 add_task(async function() {
-  const { inspector, toolbox } = await openInspectorForURL(
+  const { inspector } = await openInspectorForURL(
     "data:text/html;charset=utf-8," + encodeURI(TEST_URL)
   );
 
@@ -75,7 +74,7 @@ add_task(async function() {
   await onShown;
 
   info("Click on the computed view tab");
-  const onHighlighterHidden = toolbox.highlighter.once("node-unhighlight");
+  const onHighlighterHidden = inspector.highlighter.once("node-unhighlight");
   const onTabComputedViewSelected = inspector.sidebar.once(
     "computedview-selected"
   );

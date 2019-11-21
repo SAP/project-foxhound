@@ -94,29 +94,29 @@
 
     get _markup() {
       return `
-      <image class="ac-type-icon"></image>
-      <image class="ac-site-icon"></image>
+      <image class="ac-type-icon"/>
+      <image class="ac-site-icon"/>
       <hbox class="ac-title" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-title-text"></description>
+          <description class="ac-title-text"/>
         </description>
       </hbox>
       <hbox class="ac-tags" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-tags-text"></description>
+          <description class="ac-tags-text"/>
         </description>
       </hbox>
       <hbox class="ac-separator" align="center">
-        <description class="ac-separator-text" value="—"></description>
+        <description class="ac-separator-text" value="—"/>
       </hbox>
       <hbox class="ac-url" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-url-text"></description>
+          <description class="ac-url-text"/>
         </description>
       </hbox>
       <hbox class="ac-action" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-action-text"></description>
+          <description class="ac-action-text"/>
         </description>
       </hbox>
     `;
@@ -705,9 +705,9 @@
       this._tags.setAttribute("empty", "true");
 
       if (type == "tag" || type == "bookmark-tag") {
-        // The title is separated from the tags by \x1F
+        // The title is separated from the tags by an endash
         let tags;
-        [title, tags] = title.split("\x1F");
+        [, title, tags] = title.match(/^(.+) \u2013 (.+)$/);
 
         // Each tag is split by a comma in an undefined order, so sort it
         let sortedTags = tags.split(/\s*,\s*/).sort((a, b) => {
@@ -961,29 +961,29 @@
 
     get _markup() {
       return `
-      <image class="ac-type-icon"></image>
-      <image class="ac-site-icon"></image>
+      <image class="ac-type-icon"/>
+      <image class="ac-site-icon"/>
       <vbox class="ac-title" align="left">
         <description class="ac-text-overflow-container">
-          <description class="ac-title-text"></description>
+          <description class="ac-title-text"/>
         </description>
       </vbox>
       <hbox class="ac-tags" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-tags-text"></description>
+          <description class="ac-tags-text"/>
         </description>
       </hbox>
       <hbox class="ac-separator" align="center">
-        <description class="ac-separator-text" value="—"></description>
+        <description class="ac-separator-text" value="—"/>
       </hbox>
       <hbox class="ac-url" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-url-text"></description>
+          <description class="ac-url-text"/>
         </description>
       </hbox>
       <hbox class="ac-action" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-action-text"></description>
+          <description class="ac-action-text"/>
         </description>
       </hbox>
     `;

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -9,7 +7,7 @@
  * Make sure the listTabs request works as specified.
  */
 
-var { DebuggerServer } = require("devtools/server/main");
+var { DebuggerServer } = require("devtools/server/debugger-server");
 var { DebuggerClient } = require("devtools/shared/client/debugger-client");
 
 const TAB1_URL = EXAMPLE_URL + "doc_empty-tab-01.html";

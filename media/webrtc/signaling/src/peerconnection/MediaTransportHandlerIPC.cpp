@@ -7,6 +7,8 @@
 #include "nsThreadUtils.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/ipc/PBackgroundChild.h"
 
 namespace mozilla {
 
@@ -20,14 +22,25 @@ MediaTransportHandlerIPC::MediaTransportHandlerIPC(
     nsISerialEventTarget* aCallbackThread)
     : MediaTransportHandler(aCallbackThread) {
   mInitPromise = net::SocketProcessBridgeChild::GetSocketProcessBridge()->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [this, self = RefPtr<MediaTransportHandlerIPC>(this)](
           const RefPtr<net::SocketProcessBridgeChild>& aBridge) {
-        mChild = new MediaTransportChild(this);
-        // SocketProcessBridgeChild owns mChild! When it is done with it,
+        ipc::PBackgroundChild* actor =
+            ipc::BackgroundChild::GetOrCreateSocketActorForCurrentThread();
+        if (!actor) {
+          NS_WARNING(
+              "MediaTransportHandlerIPC async init failed! Webrtc networking "
+              "will not work!");
+          return InitPromise::CreateAndReject(
+              nsCString("GetOrCreateSocketActorForCurrentThread failed!"),
+              __func__);
+        }
+        MediaTransportChild* child = new MediaTransportChild(this);
+        actor->SetEventTargetForActor(child, mCallbackThread);
+        // PBackgroungChild owns mChild! When it is done with it,
         // mChild will let us know it it going away.
-        aBridge->SetEventTargetForActor(mChild, GetMainThreadEventTarget());
-        aBridge->SendPMediaTransportConstructor(mChild);
+        mChild = actor->SendPMediaTransportConstructor(child);
+        CSFLogDebug(LOGTAG, "%s Init done", __func__);
         return InitPromise::CreateAndResolve(true, __func__);
       },
       [=](const nsCString& aError) {
@@ -45,7 +58,7 @@ MediaTransportHandlerIPC::MediaTransportHandlerIPC(
 RefPtr<MediaTransportHandler::IceLogPromise>
 MediaTransportHandlerIPC::GetIceLog(const nsCString& aPattern) {
   return mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /* dummy */) {
         if (!mChild) {
           return IceLogPromise::CreateAndReject(NS_ERROR_FAILURE, __func__);
@@ -56,7 +69,7 @@ MediaTransportHandlerIPC::GetIceLog(const nsCString& aPattern) {
         // differs (ipc::ResponseRejectReason vs nsresult) so we need to
         // convert.
         RefPtr<IceLogPromise> promise = mChild->SendGetIceLog(aPattern)->Then(
-            GetMainThreadSerialEventTarget(), __func__,
+            mCallbackThread, __func__,
             [](WebrtcGlobalLog&& aLogLines) {
               return IceLogPromise::CreateAndResolve(std::move(aLogLines),
                                                      __func__);
@@ -73,7 +86,7 @@ MediaTransportHandlerIPC::GetIceLog(const nsCString& aPattern) {
 
 void MediaTransportHandlerIPC::ClearIceLog() {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendClearIceLog();
@@ -84,7 +97,7 @@ void MediaTransportHandlerIPC::ClearIceLog() {
 
 void MediaTransportHandlerIPC::EnterPrivateMode() {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendEnterPrivateMode();
@@ -95,7 +108,7 @@ void MediaTransportHandlerIPC::EnterPrivateMode() {
 
 void MediaTransportHandlerIPC::ExitPrivateMode() {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendExitPrivateMode();
@@ -107,6 +120,7 @@ void MediaTransportHandlerIPC::ExitPrivateMode() {
 nsresult MediaTransportHandlerIPC::CreateIceCtx(
     const std::string& aName, const nsTArray<dom::RTCIceServer>& aIceServers,
     dom::RTCIceTransportPolicy aIcePolicy) {
+  CSFLogDebug(LOGTAG, "MediaTransportHandlerIPC::CreateIceCtx start");
   // Run some validation on this side of the IPC boundary so we can return
   // errors synchronously. We don't actually use the results. It might make
   // sense to move this check to PeerConnection and have this API take the
@@ -120,10 +134,13 @@ nsresult MediaTransportHandlerIPC::CreateIceCtx(
   }
 
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
-          mChild->SendCreateIceCtx(aName, aIceServers, aIcePolicy);
+          CSFLogDebug(LOGTAG, "%s starting", __func__);
+          if (!mChild->SendCreateIceCtx(aName, aIceServers, aIcePolicy)) {
+            CSFLogError(LOGTAG, "%s failed!", __func__);
+          }
         }
       },
       [](const nsCString& aError) {});
@@ -133,7 +150,7 @@ nsresult MediaTransportHandlerIPC::CreateIceCtx(
 
 void MediaTransportHandlerIPC::Destroy() {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           MediaTransportChild::Send__delete__(mChild);
@@ -148,7 +165,7 @@ void MediaTransportHandlerIPC::Destroy() {
 void MediaTransportHandlerIPC::SetProxyServer(
     NrSocketProxyConfig&& aProxyConfig) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [aProxyConfig = std::move(aProxyConfig), this,
        self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) mutable {
         if (mChild) {
@@ -164,11 +181,24 @@ void MediaTransportHandlerIPC::EnsureProvisionalTransport(
     const std::string& aTransportId, const std::string& aLocalUfrag,
     const std::string& aLocalPwd, size_t aComponentCount) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendEnsureProvisionalTransport(aTransportId, aLocalUfrag,
                                                  aLocalPwd, aComponentCount);
+        }
+      },
+      [](const nsCString& aError) {});
+}
+
+void MediaTransportHandlerIPC::SetTargetForDefaultLocalAddressLookup(
+    const std::string& aTargetIp, uint16_t aTargetPort) {
+  mInitPromise->Then(
+      mCallbackThread, __func__,
+      [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
+        if (mChild) {
+          mChild->SendSetTargetForDefaultLocalAddressLookup(aTargetIp,
+                                                            aTargetPort);
         }
       },
       [](const nsCString& aError) {});
@@ -179,14 +209,15 @@ void MediaTransportHandlerIPC::EnsureProvisionalTransport(
 // change between Init (ie; when the PC is created) and StartIceGathering
 // (ie; when we set the local description).
 void MediaTransportHandlerIPC::StartIceGathering(
-    bool aDefaultRouteOnly,
+    bool aDefaultRouteOnly, bool aObfuscateHostAddresses,
     // TODO(bug 1522205): It probably makes sense to look this up internally
     const nsTArray<NrIceStunAddr>& aStunAddrs) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
-          mChild->SendStartIceGathering(aDefaultRouteOnly, aStunAddrs);
+          mChild->SendStartIceGathering(aDefaultRouteOnly,
+                                        aObfuscateHostAddresses, aStunAddrs);
         }
       },
       [](const nsCString& aError) {});
@@ -200,7 +231,7 @@ void MediaTransportHandlerIPC::ActivateTransport(
     SSLKEAType aAuthType, bool aDtlsClient, const DtlsDigestList& aDigests,
     bool aPrivacyRequested) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendActivateTransport(
@@ -217,7 +248,7 @@ void MediaTransportHandlerIPC::RemoveTransportsExcept(
   std::vector<std::string> transportIds(aTransportIds.begin(),
                                         aTransportIds.end());
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendRemoveTransportsExcept(transportIds);
@@ -227,13 +258,12 @@ void MediaTransportHandlerIPC::RemoveTransportsExcept(
 }
 
 void MediaTransportHandlerIPC::StartIceChecks(
-    bool aIsControlling, bool aIsOfferer,
-    const std::vector<std::string>& aIceOptions) {
+    bool aIsControlling, const std::vector<std::string>& aIceOptions) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
-          mChild->SendStartIceChecks(aIsControlling, aIsOfferer, aIceOptions);
+          mChild->SendStartIceChecks(aIsControlling, aIceOptions);
         }
       },
       [](const nsCString& aError) {});
@@ -242,7 +272,7 @@ void MediaTransportHandlerIPC::StartIceChecks(
 void MediaTransportHandlerIPC::SendPacket(const std::string& aTransportId,
                                           MediaPacket&& aPacket) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [this, self = RefPtr<MediaTransportHandlerIPC>(this), aTransportId,
        aPacket = std::move(aPacket)](bool /*dummy*/) mutable {
         if (mChild) {
@@ -256,7 +286,7 @@ void MediaTransportHandlerIPC::AddIceCandidate(const std::string& aTransportId,
                                                const std::string& aCandidate,
                                                const std::string& aUfrag) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendAddIceCandidate(aTransportId, aCandidate, aUfrag);
@@ -267,7 +297,7 @@ void MediaTransportHandlerIPC::AddIceCandidate(const std::string& aTransportId,
 
 void MediaTransportHandlerIPC::UpdateNetworkState(bool aOnline) {
   mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
           mChild->SendUpdateNetworkState(aOnline);
@@ -281,7 +311,7 @@ MediaTransportHandlerIPC::GetIceStats(
     const std::string& aTransportId, DOMHighResTimeStamp aNow,
     std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) {
   return mInitPromise->Then(
-      GetMainThreadSerialEventTarget(), __func__,
+      mCallbackThread, __func__,
       [aReport = std::move(aReport), aTransportId, aNow, this,
        self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) mutable {
         if (!mChild) {
@@ -290,7 +320,7 @@ MediaTransportHandlerIPC::GetIceStats(
         RefPtr<StatsPromise> promise =
             mChild->SendGetIceStats(aTransportId, aNow, *aReport)
                 ->Then(
-                    GetMainThreadSerialEventTarget(), __func__,
+                    mCallbackThread, __func__,
                     [](const dom::MovableRTCStatsReportInternal& aReport) {
                       std::unique_ptr<dom::RTCStatsReportInternal> report(
                           new dom::RTCStatsReportInternal(aReport));
@@ -311,35 +341,28 @@ MediaTransportHandlerIPC::GetIceStats(
 MediaTransportChild::MediaTransportChild(MediaTransportHandlerIPC* aUser)
     : mUser(aUser) {}
 
-MediaTransportChild::~MediaTransportChild() {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
-  mUser->mChild = nullptr;
-}
+MediaTransportChild::~MediaTransportChild() { mUser->mChild = nullptr; }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnCandidate(
     const string& transportId, const CandidateInfo& candidateInfo) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   mUser->OnCandidate(transportId, candidateInfo);
   return ipc::IPCResult::Ok();
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnAlpnNegotiated(
     const string& alpn) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   mUser->OnAlpnNegotiated(alpn);
   return ipc::IPCResult::Ok();
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnGatheringStateChange(
     const int& state) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   mUser->OnGatheringStateChange(static_cast<dom::RTCIceGatheringState>(state));
   return ipc::IPCResult::Ok();
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnConnectionStateChange(
     const int& state) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   mUser->OnConnectionStateChange(
       static_cast<dom::RTCIceConnectionState>(state));
   return ipc::IPCResult::Ok();
@@ -347,7 +370,6 @@ mozilla::ipc::IPCResult MediaTransportChild::RecvOnConnectionStateChange(
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnPacketReceived(
     const string& transportId, const MediaPacket& packet) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   MediaPacket copy(packet);  // Laaaaaame! Might be safe to const_cast?
   mUser->OnPacketReceived(transportId, copy);
   return ipc::IPCResult::Ok();
@@ -355,7 +377,6 @@ mozilla::ipc::IPCResult MediaTransportChild::RecvOnPacketReceived(
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnEncryptedSending(
     const string& transportId, const MediaPacket& packet) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   MediaPacket copy(packet);  // Laaaaaame! Might be safe to const_cast?
   mUser->OnEncryptedSending(transportId, copy);
   return ipc::IPCResult::Ok();
@@ -363,14 +384,12 @@ mozilla::ipc::IPCResult MediaTransportChild::RecvOnEncryptedSending(
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnStateChange(
     const string& transportId, const int& state) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   mUser->OnStateChange(transportId, static_cast<TransportLayer::State>(state));
   return ipc::IPCResult::Ok();
 }
 
 mozilla::ipc::IPCResult MediaTransportChild::RecvOnRtcpStateChange(
     const string& transportId, const int& state) {
-  MOZ_ASSERT(GetMainThreadEventTarget()->IsOnCurrentThread());
   mUser->OnRtcpStateChange(transportId,
                            static_cast<TransportLayer::State>(state));
   return ipc::IPCResult::Ok();

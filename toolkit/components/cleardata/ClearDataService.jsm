@@ -49,7 +49,7 @@ XPCOMUtils.defineLazyServiceGetter(
 const CookieCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      Services.cookies.removeCookiesFromRootDomain(
+      Services.cookies.removeCookiesFromExactHost(
         aHost,
         JSON.stringify(aOriginAttributes)
       );
@@ -130,11 +130,11 @@ const NetworkCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpURI,
         aOriginAttributes
       );
-      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpsURI,
         aOriginAttributes
       );
@@ -170,11 +170,11 @@ const ImageCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpURI,
         aOriginAttributes
       );
-      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpsURI,
         aOriginAttributes
       );
@@ -467,11 +467,11 @@ const QuotaCleaner = {
         // delete data from both HTTP and HTTPS sites
         let httpURI = Services.io.newURI("http://" + aHost);
         let httpsURI = Services.io.newURI("https://" + aHost);
-        let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
           httpURI,
           aOriginAttributes
         );
-        let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
           httpsURI,
           aOriginAttributes
         );
@@ -515,7 +515,7 @@ const QuotaCleaner = {
           // wiped if we are provided an aHost of "example.com".
           promises.push(
             new Promise((aResolve, aReject) => {
-              Services.qms.listInitializedOrigins(aRequest => {
+              Services.qms.listOrigins(aRequest => {
                 if (aRequest.resultCode != Cr.NS_OK) {
                   aReject({ message: "Delete by host failed" });
                   return;
@@ -523,7 +523,7 @@ const QuotaCleaner = {
 
                 let promises = [];
                 for (let item of aRequest.result) {
-                  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+                  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
                     item.origin
                   );
                   let host;
@@ -613,7 +613,7 @@ const QuotaCleaner = {
 
             let promises = [];
             for (let item of aRequest.result) {
-              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+              let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
                 item.origin
               );
               if (

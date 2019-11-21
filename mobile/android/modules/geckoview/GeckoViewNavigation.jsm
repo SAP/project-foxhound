@@ -17,6 +17,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   LoadURIDelegate: "resource://gre/modules/LoadURIDelegate.jsm",
   Services: "resource://gre/modules/Services.jsm",
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
@@ -34,11 +35,7 @@ const createReferrerInfo = aReferrer => {
     referrerUri = Services.io.newURI(aReferrer);
   } catch (ignored) {}
 
-  return new ReferrerInfo(
-    Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-    true,
-    referrerUri
-  );
+  return new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, referrerUri);
 };
 
 // Handles navigation requests between Gecko and a GeckoView.
@@ -58,6 +55,8 @@ class GeckoViewNavigation extends GeckoViewModule {
   }
 
   onInit() {
+    debug`onInit`;
+
     this.registerListener([
       "GeckoView:GoBack",
       "GeckoView:GoForward",
@@ -68,6 +67,23 @@ class GeckoViewNavigation extends GeckoViewModule {
     ]);
 
     this.messageManager.addMessageListener("Browser:LoadURI", this);
+    this._initialAboutBlank = true;
+
+    debug`sessionContextId=${this.settings.sessionContextId}`;
+
+    if (this.settings.sessionContextId !== null) {
+      // Gecko may have issues with strings containing special characters,
+      // so we restrict the string format to a specific pattern.
+      if (!/^gvctx(-)?([a-f0-9]+)$/.test(this.settings.sessionContextId)) {
+        throw new Error("sessionContextId has illegal format");
+      }
+      this.browser.webNavigation.setOriginAttributesBeforeLoading({
+        geckoViewSessionContextId: this.settings.sessionContextId,
+        privateBrowsingId: PrivateBrowsingUtils.isBrowserPrivate(this.browser)
+          ? 1
+          : 0,
+      });
+    }
   }
 
   // Bundle event handler.
@@ -85,7 +101,7 @@ class GeckoViewNavigation extends GeckoViewModule {
         this.browser.gotoIndex(aData.index);
         break;
       case "GeckoView:LoadUri":
-        const { uri, referrer, flags } = aData;
+        const { uri, referrerUri, referrerSessionId, flags } = aData;
 
         let navFlags = 0;
 
@@ -110,38 +126,84 @@ class GeckoViewNavigation extends GeckoViewModule {
           navFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER;
         }
 
+        if (flags & (1 << 5)) {
+          navFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_FORCE_ALLOW_DATA_URI;
+        }
+
+        if (flags & (1 << 6)) {
+          navFlags |= Ci.nsIWebNavigation.LOAD_FLAGS_REPLACE_HISTORY;
+        }
+
         if (this.settings.useMultiprocess) {
           this.moduleManager.updateRemoteTypeForURI(uri);
         }
 
-        let parsedUri;
-        let triggeringPrincipal;
-        try {
-          parsedUri = Services.io.newURI(uri);
-          if (
-            parsedUri.schemeIs("about") ||
-            parsedUri.schemeIs("data") ||
-            parsedUri.schemeIs("file") ||
-            parsedUri.schemeIs("resource") ||
-            parsedUri.schemeIs("moz-extension")
-          ) {
-            // Only allow privileged loading for certain URIs.
-            triggeringPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
-              parsedUri,
-              {}
-            );
-          }
-        } catch (ignored) {}
+        let triggeringPrincipal, referrerInfo, csp;
+        if (referrerSessionId) {
+          const referrerWindow = Services.ww.getWindowByName(
+            referrerSessionId,
+            this.window
+          );
+          triggeringPrincipal = referrerWindow.browser.contentPrincipal;
+          csp = referrerWindow.browser.csp;
+
+          const referrerPolicy = referrerWindow.browser.referrerInfo
+            ? referrerWindow.browser.referrerInfo.referrerPolicy
+            : Ci.nsIReferrerInfo.EMPTY;
+
+          referrerInfo = new ReferrerInfo(
+            referrerPolicy,
+            true,
+            referrerWindow.browser.documentURI
+          );
+        } else {
+          try {
+            const parsedUri = Services.io.newURI(uri);
+            if (
+              parsedUri.schemeIs("about") ||
+              parsedUri.schemeIs("data") ||
+              parsedUri.schemeIs("file") ||
+              parsedUri.schemeIs("resource") ||
+              parsedUri.schemeIs("moz-extension")
+            ) {
+              // Only allow privileged loading for certain URIs.
+              triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+                parsedUri,
+                {}
+              );
+            }
+          } catch (ignored) {}
+
+          referrerInfo = createReferrerInfo(referrerUri);
+        }
+
         if (!triggeringPrincipal) {
           triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal(
             {}
           );
         }
 
-        this.browser.loadURI(parsedUri ? parsedUri.spec : uri, {
+        // For any navigation here, we should have an appropriate triggeringPrincipal:
+        //
+        // 1) If we have a referring session, triggeringPrincipal is the contentPrincipal from the
+        //    referring document.
+        // 2) For certain URI schemes listed above, we will have a codebase principal.
+        // 3) In all other cases, we create a NullPrincipal.
+        //
+        // The navigation flags are driven by the app. We purposely do not propagate these from
+        // the referring document, but expect that the app will in most cases.
+        //
+        // The referrerInfo is derived from the referring document, if present, by propagating any
+        // referrer policy. If we only have the referrerUri from the app, we create a referrerInfo
+        // with the specified URI and no policy set. If no referrerUri is present and we have no
+        // referring session, the referrerInfo is null.
+        //
+        // csp is only present if we have a referring document, null otherwise.
+        this.browser.loadURI(uri, {
           flags: navFlags,
-          referrerInfo: createReferrerInfo(referrer),
+          referrerInfo,
           triggeringPrincipal,
+          csp,
         });
         break;
       case "GeckoView:Reload":
@@ -170,7 +232,7 @@ class GeckoViewNavigation extends GeckoViewModule {
         const {
           uri,
           flags,
-          referrer,
+          referrerInfo,
           triggeringPrincipal,
         } = aMsg.data.loadOptions;
 
@@ -178,7 +240,7 @@ class GeckoViewNavigation extends GeckoViewModule {
 
         this.browser.loadURI(uri, {
           flags,
-          referrerInfo: createReferrerInfo(referrer),
+          referrerInfo: E10SUtils.deserializeReferrerInfo(referrerInfo),
           triggeringPrincipal: E10SUtils.deserializePrincipal(
             triggeringPrincipal
           ),
@@ -297,7 +359,7 @@ class GeckoViewNavigation extends GeckoViewModule {
       return null;
     }
 
-    return browser.contentWindow;
+    return browser.browsingContext;
   }
 
   // nsIBrowserDOMWindow.
@@ -351,6 +413,7 @@ class GeckoViewNavigation extends GeckoViewModule {
     aFlags,
     aTriggeringPrincipal,
     aCsp,
+    aReferrerInfo,
     aNextRemoteTabId
   ) {
     debug`handleOpenUri: uri=${aUri && aUri.spec}
@@ -390,9 +453,11 @@ class GeckoViewNavigation extends GeckoViewModule {
       return null;
     }
 
+    // 3) We have a new session and a browser element, load the requested URI.
     browser.loadURI(aUri.spec, {
       triggeringPrincipal: aTriggeringPrincipal,
       csp: aCsp,
+      referrerInfo: aReferrerInfo,
     });
     return browser;
   }
@@ -406,9 +471,10 @@ class GeckoViewNavigation extends GeckoViewModule {
       aFlags,
       aTriggeringPrincipal,
       aCsp,
+      null,
       null
     );
-    return browser && browser.contentWindow;
+    return browser && browser.browsingContext;
   }
 
   // nsIBrowserDOMWindow.
@@ -420,6 +486,7 @@ class GeckoViewNavigation extends GeckoViewModule {
       aFlags,
       aParams.triggeringPrincipal,
       aParams.csp,
+      aParams.referrerInfo,
       aNextRemoteTabId
     );
     return browser;
@@ -466,6 +533,15 @@ class GeckoViewNavigation extends GeckoViewModule {
     try {
       fixedURI = Services.uriFixup.createExposableURI(aLocationURI);
     } catch (ex) {}
+
+    // We manually fire the initial about:blank messages to make sure that we
+    // consistently send them so there's nothing to do here.
+    const ignore = this._initialAboutBlank && fixedURI.spec === "about:blank";
+    this._initialAboutBlank = false;
+
+    if (ignore) {
+      return;
+    }
 
     const message = {
       type: "GeckoView:LocationChange",

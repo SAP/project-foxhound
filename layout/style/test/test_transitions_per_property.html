@@ -42,6 +42,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=435441
 <script type="application/javascript">
 
 /* eslint no-shadow: ["error", {"allow": ["prop", "div"]}] */
+/* eslint-disable dot-notation */
+
 
 /** Test for Bug 435441 **/
 
@@ -321,7 +323,7 @@ var supported_properties = {
     "-webkit-text-stroke-color": [ test_color_transition,
                                    test_currentcolor_transition ],
     "text-underline-offset": [ test_length_transition ],
-    "text-decoration-width": [ test_length_transition ],
+    "text-decoration-thickness": [ test_length_transition ],
 };
 
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
@@ -372,6 +374,11 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   supported_properties["offset-rotate"] =
     [ test_angle_transition,
       test_offset_rotate_transition ];
+
+  // Note: offset-anchor supports "auto | <position>", and the tests for
+  // `auto` are already in wpt, so we don't test it here again.
+  supported_properties["offset-anchor"] =
+    [ test_background_position_transition ];
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.clip-path-path.enabled")) {
@@ -1830,10 +1837,9 @@ function test_shape_or_url_equals(computedValStr, expected)
   if (expectedList.length == 0) {
     if (computedValStr == "") {
       return true;
-    } else {
-      ok(false, "expected basic shape");
-      return false;
-    }
+    } 
+    ok(false, "expected basic shape");
+    return false;
   }
 
   // The regular expression does not filter out the last parenthesis.
@@ -2492,16 +2498,8 @@ function test_rect_transition(prop) {
                        "rect(3px, 13px, 10px, 5px)",
                        "rect(0px, 4px, 4px, 2px)");
   div.style.setProperty(prop, "rect(0px, 6px, 4px, auto)", "");
-  if (prop == "clip") {
-    is(cs.getPropertyValue(prop), "rect(0px, 6px, 4px, auto)",
-       "rect-valued property " + prop + ": can't interpolate auto components");
-  } else {
-    is(prop, "-moz-image-region");
-    // Bug 1390067: -moz-image-region should behave just like clip does.
-    todo_is(cs.getPropertyValue(prop), "rect(0px, 6px, 4px, auto)",
-            "rect-valued property " + prop +
-            ": can't interpolate auto components");
-  }
+  is(cs.getPropertyValue(prop), "rect(0px, 6px, 4px, auto)",
+     "rect-valued property " + prop + ": can't interpolate auto components");
   div.style.setProperty(prop, "rect(0px, 6px, 4px, 2px)", "");
   div.style.setProperty(prop, "auto", "");
   is(cs.getPropertyValue(prop), "auto",

@@ -62,11 +62,13 @@ const INITIAL_STATE = {
     },
     spocs: {
       spocs_endpoint: "",
+      spocs_per_domain: 1,
       lastUpdated: null,
       data: {}, // {spocs: []}
       loaded: false,
       frequency_caps: [],
       blocked: [],
+      placements: [],
     },
   },
   Search: {
@@ -520,15 +522,33 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
   const isNotReady = () =>
     !action.data || !prevState.spocs.loaded || !prevState.feeds.loaded;
 
+  const handlePlacements = handleSites => {
+    const { data, placements } = prevState.spocs;
+    const result = {};
+
+    const forPlacement = placement => {
+      const placementSpocs = data[placement.name];
+
+      if (!placementSpocs || !placementSpocs.length) {
+        return;
+      }
+
+      result[placement.name] = handleSites(placementSpocs);
+    };
+
+    if (!placements || !placements.length) {
+      [{ name: "spocs" }].forEach(forPlacement);
+    } else {
+      placements.forEach(forPlacement);
+    }
+    return result;
+  };
+
   const nextState = handleSites => ({
     ...prevState,
     spocs: {
       ...prevState.spocs,
-      data: prevState.spocs.data.spocs
-        ? {
-            spocs: handleSites(prevState.spocs.data.spocs),
-          }
-        : {},
+      data: handlePlacements(handleSites),
     },
     feeds: {
       ...prevState.feeds,
@@ -551,7 +571,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
 
   switch (action.type) {
     case at.DISCOVERY_STREAM_CONFIG_CHANGE:
-    // The reason this is a separate action is so it doesn't trigger a listener update on init
+    // Fall through to a separate action is so it doesn't trigger a listener update on init
     case at.DISCOVERY_STREAM_CONFIG_SETUP:
       return { ...prevState, config: action.data || {} };
     case at.DISCOVERY_STREAM_LAYOUT_UPDATE:
@@ -597,7 +617,21 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         spocs: {
           ...INITIAL_STATE.DiscoveryStream.spocs,
           spocs_endpoint:
-            action.data || INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint,
+            action.data.url ||
+            INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint,
+          spocs_per_domain:
+            action.data.spocs_per_domain ||
+            INITIAL_STATE.DiscoveryStream.spocs.spocs_per_domain,
+        },
+      };
+    case at.DISCOVERY_STREAM_SPOCS_PLACEMENTS:
+      return {
+        ...prevState,
+        spocs: {
+          ...prevState.spocs,
+          placements:
+            action.data.placements ||
+            INITIAL_STATE.DiscoveryStream.spocs.placements,
         },
       };
     case at.DISCOVERY_STREAM_SPOCS_UPDATE:
@@ -634,6 +668,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           return Object.assign({}, item, {
             open_url: action.data.open_url,
             pocket_id: action.data.pocket_id,
+            context_type: "pocket",
           });
         }
         return item;
@@ -658,6 +693,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             bookmarkGuid,
             bookmarkTitle,
             bookmarkDateCreated: dateAdded,
+            context_type: "bookmark",
           });
         }
         return item;
@@ -673,6 +709,9 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           delete newSite.bookmarkGuid;
           delete newSite.bookmarkTitle;
           delete newSite.bookmarkDateCreated;
+          if (!newSite.context_type || newSite.context_type === "bookmark") {
+            newSite.context_type = "removedBookmark";
+          }
           return newSite;
         }
         return item;

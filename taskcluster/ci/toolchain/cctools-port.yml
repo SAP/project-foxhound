@@ -7,9 +7,10 @@ job-defaults:
     worker-type: b-linux
     worker:
         max-run-time: 1800
-    run:
-        resources:
-            - 'taskcluster/scripts/misc/tooltool-download.sh'
+    fetches:
+        fetch:
+            - cctools-port
+            - libtapi
 
 linux64-cctools-port:
     treeherder:
@@ -17,5 +18,8 @@ linux64-cctools-port:
     run:
         script: build-cctools-port.sh
         toolchain-artifact: public/build/cctools.tar.xz
-    toolchains:
-        - linux64-clang-8
+        tooltool-downloads: internal
+    fetches:
+        toolchain:
+            - linux64-clang-8
+            - linux64-binutils

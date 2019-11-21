@@ -9,6 +9,7 @@
 
 #include "builtin/Eval.h"
 #include "builtin/RegExp.h"
+#include "builtin/String.h"
 #include "jit/BaselineIC.h"
 #include "jit/IonIC.h"
 #include "jit/JitRealm.h"
@@ -16,6 +17,7 @@
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
 #include "vm/EqualityOperations.h"
+#include "vm/Instrumentation.h"
 #include "vm/Interpreter.h"
 #include "vm/TypedArrayObject.h"
 
@@ -107,6 +109,7 @@ namespace jit {
   _(FinishBoundFunctionInit, JSFunction::finishBoundFunctionInit)              \
   _(FreshenLexicalEnv, js::jit::FreshenLexicalEnv)                             \
   _(FunWithProtoOperation, js::FunWithProtoOperation)                          \
+  _(GeneratorThrowOrReturn, js::jit::GeneratorThrowOrReturn)                   \
   _(GetAndClearException, js::GetAndClearException)                            \
   _(GetElementOperation, js::GetElementOperation)                              \
   _(GetFirstDollarIndexRaw, js::GetFirstDollarIndexRaw)                        \
@@ -131,6 +134,9 @@ namespace jit {
   _(InitPropGetterSetterOperation, js::InitPropGetterSetterOperation)          \
   _(InitRestParameter, js::jit::InitRestParameter)                             \
   _(InlineTypedObjectCreateCopy, js::InlineTypedObject::createCopy)            \
+  _(InstrumentationActiveOperation, js::InstrumentationActiveOperation)        \
+  _(InstrumentationCallbackOperation, js::InstrumentationCallbackOperation)    \
+  _(InstrumentationScriptIdOperation, js::InstrumentationScriptIdOperation)    \
   _(Int32ToString, js::Int32ToString<CanGC>)                                   \
   _(InterpretResume, js::jit::InterpretResume)                                 \
   _(InterruptCheck, js::jit::InterruptCheck)                                   \
@@ -277,8 +283,7 @@ namespace jit {
   _(DoToBoolFallback, js::jit::DoToBoolFallback, 0)             \
   _(DoTypeMonitorFallback, js::jit::DoTypeMonitorFallback, 0)   \
   _(DoTypeOfFallback, js::jit::DoTypeOfFallback, 0)             \
-  _(DoUnaryArithFallback, js::jit::DoUnaryArithFallback, 1)     \
-  _(GeneratorThrowOrReturn, js::jit::GeneratorThrowOrReturn, 0)
+  _(DoUnaryArithFallback, js::jit::DoUnaryArithFallback, 1)
 
 #define DEF_ID(name, ...) name,
 enum class VMFunctionId { VMFUNCTION_LIST(DEF_ID) Count };

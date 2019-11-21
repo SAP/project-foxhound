@@ -6,6 +6,7 @@
 
 #include "nsISupports.idl"
 #include "nsIContentPolicy.idl"
+#include "nsIScriptSecurityManager.idl"
 
 interface nsIChannel;
 interface nsIContentSecurityPolicy;
@@ -257,7 +258,7 @@ interface nsILoadInfo : nsISupports
    * this, never set the loadingPrincipal to the system principal when
    * the URI to be loaded is controlled by a webpage.
    * If the loadingPrincipal and triggeringPrincipal are both
-   * codebase-principals, then we will always call into
+   * content principals, then we will always call into
    * nsIContentPolicies and CheckLoadURI. The call to nsIContentPolicies
    * and CheckLoadURI happen even if the URI to be loaded is same-origin
    * with the loadingPrincipal or triggeringPrincipal.
@@ -298,7 +299,7 @@ interface nsILoadInfo : nsISupports
    * this, never set the triggeringPrincipal to the system principal when
    * the URI to be loaded is controlled by a webpage.
    * If the loadingPrincipal and triggeringPrincipal are both
-   * codebase-principals, then we will always call into
+   * content principals, then we will always call into
    * nsIContentPolicies and CheckLoadURI. The call to nsIContentPolicies
    * and CheckLoadURI happen even if the URI to be loaded is same-origin
    * with the loadingPrincipal or triggeringPrincipal.
@@ -398,7 +399,7 @@ interface nsILoadInfo : nsISupports
    */
   readonly attribute nsSecurityFlags securityFlags;
 
-%{ C++
+%{C++
   inline nsSecurityFlags GetSecurityFlags()
   {
     nsSecurityFlags result;
@@ -413,6 +414,15 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] readonly attribute unsigned long securityMode;
 
+
+  /**
+   * This flag is used for any browsing context where we should not sniff
+   * the content type. E.g if an iframe has the XCTO nosniff header, then
+   * that flag is set to true so we skip content sniffing for that browsing
+   * context.
+   */
+  [infallible] attribute boolean skipContentSniffing;
+  
   /**
    * True if this request is embedded in a context that can't be third-party
    * (i.e. an iframe embedded in a cross-origin parent window). If this is
@@ -485,6 +495,19 @@ interface nsILoadInfo : nsISupports
    */
   [infallible] readonly attribute boolean disallowScript;
 
+%{C++
+  uint32_t CheckLoadURIFlags() {
+    uint32_t flags = nsIScriptSecurityManager::STANDARD;
+    if (GetAllowChrome()) {
+      flags |= nsIScriptSecurityManager::ALLOW_CHROME;
+    }
+    if (GetDisallowScript()) {
+      flags |= nsIScriptSecurityManager::DISALLOW_SCRIPT;
+    }
+    return flags;
+  }
+%}
+
   /**
    * Returns true if SEC_DONT_FOLLOW_REDIRECTS is set.
    */
@@ -503,6 +526,12 @@ interface nsILoadInfo : nsISupports
    * so they can't be used to infer this value.
    */
   [infallible] attribute boolean isDocshellReload;
+
+  /**
+   * True if the load was initiated by a form request. 
+   * This is important to know to handle the CSP directive navigate-to.
+   */
+  [infallible] attribute boolean isFormSubmission;
 
   /**
    * The external contentPolicyType of the channel, used for security checks
@@ -1167,17 +1196,23 @@ interface nsILoadInfo : nsISupports
   [infallible] readonly attribute boolean isFromProcessingFrameAttributes;
 
   cenum CrossOriginOpenerPolicy : 8 {
-    OPENER_POLICY_NULL           = 0,
-    OPENER_POLICY_SAME_ORIGIN    = 1,
-    OPENER_POLICY_SAME_SITE      = 2,
+    OPENER_POLICY_NULL = 0,
+    OPENER_POLICY_SAME_ORIGIN = 1,
+    OPENER_POLICY_SAME_SITE = 2,
+    OPENER_POLICY_SAMENESS_MASK = 0x0f,
+    OPENER_POLICY_EMBEDDER_POLICY_REQUIRE_CORP_FLAG = 0x10,
     OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG = 0x80,
-    OPENER_POLICY_SAME_ORIGIN_ALLOW_OUTGOING = OPENER_POLICY_SAME_ORIGIN | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG,
-    OPENER_POLICY_SAME_SITE_ALLOW_OUTGOING = OPENER_POLICY_SAME_SITE | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG
+    OPENER_POLICY_SAME_ORIGIN_EMBEDDER_POLICY_REQUIRE_CORP =
+        OPENER_POLICY_SAME_ORIGIN |
+        OPENER_POLICY_EMBEDDER_POLICY_REQUIRE_CORP_FLAG,
+    OPENER_POLICY_SAME_ORIGIN_ALLOW_OUTGOING =
+        OPENER_POLICY_SAME_ORIGIN | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG,
+    OPENER_POLICY_SAME_SITE_ALLOW_OUTGOING =
+        OPENER_POLICY_SAME_SITE | OPENER_POLICY_UNSAFE_ALLOW_OUTGOING_FLAG
   };
 
-  cenum CrossOriginPolicy : 8 {
-    CROSS_ORIGIN_POLICY_NULL            = 0,
-    CROSS_ORIGIN_POLICY_ANONYMOUS       = 1,
-    CROSS_ORIGIN_POLICY_USE_CREDENTIALS = 2
+  cenum CrossOriginEmbedderPolicy : 8 {
+    EMBEDDER_POLICY_NULL = 0,
+    EMBEDDER_POLICY_REQUIRE_CORP = 1,
   };
 };

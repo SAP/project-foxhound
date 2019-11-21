@@ -113,10 +113,10 @@ class ArtifactJob(object):
     # dest_prefix is the prefix to be added that will yield the final path relative
     # to dist/.
     test_artifact_patterns = {
-        ('bin/BadCertServer', ('bin', 'bin')),
+        ('bin/BadCertAndPinningServer', ('bin', 'bin')),
         ('bin/GenerateOCSPResponse', ('bin', 'bin')),
         ('bin/OCSPStaplingServer', ('bin', 'bin')),
-        ('bin/SymantecSanctionsServer', ('bin', 'bin')),
+        ('bin/SanctionsTestServer', ('bin', 'bin')),
         ('bin/certutil', ('bin', 'bin')),
         ('bin/fileid', ('bin', 'bin')),
         ('bin/geckodriver', ('bin', 'bin')),
@@ -554,10 +554,10 @@ class WinArtifactJob(ArtifactJob):
 
     # These are a subset of TEST_HARNESS_BINS in testing/mochitest/Makefile.in.
     test_artifact_patterns = {
-        ('bin/BadCertServer.exe', ('bin', 'bin')),
+        ('bin/BadCertAndPinningServer.exe', ('bin', 'bin')),
         ('bin/GenerateOCSPResponse.exe', ('bin', 'bin')),
         ('bin/OCSPStaplingServer.exe', ('bin', 'bin')),
-        ('bin/SymantecSanctionsServer.exe', ('bin', 'bin')),
+        ('bin/SanctionsTestServer.exe', ('bin', 'bin')),
         ('bin/certutil.exe', ('bin', 'bin')),
         ('bin/fileid.exe', ('bin', 'bin')),
         ('bin/geckodriver.exe', ('bin', 'bin')),
@@ -1073,7 +1073,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
             if re.match(r'[0-9a-fA-F]{16}$', before):
                 orig_basename = after
             path = mozpath.join(distdir, orig_basename)
-            with FileAvoidWrite(path, mode='rb') as fh:
+            with FileAvoidWrite(path, readmode='rb') as fh:
                 shutil.copyfileobj(open(filename, mode='rb'), fh)
             self.log(logging.INFO, 'artifact',
                      {'path': path},
@@ -1109,7 +1109,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
                 if info.filename.endswith('.ini'):
                     continue
                 n = mozpath.join(distdir, info.filename)
-                fh = FileAvoidWrite(n, mode='rb')
+                fh = FileAvoidWrite(n, readmode='rb')
                 shutil.copyfileobj(zf.open(info), fh)
                 file_existed, file_updated = fh.close()
                 self.log(logging.INFO, 'artifact',

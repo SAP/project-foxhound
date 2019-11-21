@@ -27,7 +27,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsImageMap.h"
-#include "nsILinkHandler.h"
 #include "nsIURL.h"
 #include "nsILoadGroup.h"
 #include "nsContainerFrame.h"
@@ -239,16 +238,17 @@ void nsImageBoxFrame::UpdateImage() {
           mContent, getter_AddRefs(triggeringPrincipal), contentPolicyType,
           &requestContextID);
 
-      nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
       nsCOMPtr<nsIURI> uri;
       nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), src, doc,
-                                                baseURI);
+                                                mContent->GetBaseURI());
       if (uri) {
+        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+        referrerInfo->InitWithNode(mContent);
+
         nsresult rv = nsContentUtils::LoadImage(
             uri, mContent, doc, triggeringPrincipal, requestContextID,
-            doc->GetDocumentURIAsReferrer(), doc->GetReferrerPolicy(),
-            mListener, mLoadFlags, EmptyString(), getter_AddRefs(mImageRequest),
-            contentPolicyType);
+            referrerInfo, mListener, mLoadFlags, EmptyString(),
+            getter_AddRefs(mImageRequest), contentPolicyType);
 
         if (NS_SUCCEEDED(rv) && mImageRequest) {
           nsLayoutUtils::RegisterImageRequestIfAnimated(
@@ -617,7 +617,7 @@ void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 
   // Fetch our subrect.
   const nsStyleList* myList = StyleList();
-  mSubRect = myList->mImageRegion;  // before |mSuppressStyleCheck| test!
+  mSubRect = myList->GetImageRegion();  // before |mSuppressStyleCheck| test!
 
   if (mUseSrcAttr || mSuppressStyleCheck)
     return;  // No more work required, since the image isn't specified by style.

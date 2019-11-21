@@ -1,7 +1,10 @@
-#!/usr/bin/python2.7
+#!/usr/bin/python3
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Only necessary for flake8 to be happy...
+from __future__ import print_function
 
 import os
 import os.path
@@ -14,10 +17,11 @@ import fnmatch
 import glob
 import errno
 import re
-from contextlib import contextmanager
 import sys
-import which
+from contextlib import contextmanager
 from distutils.dir_util import copy_tree
+
+from shutil import which
 
 
 def symlink(source, link_name):
@@ -31,37 +35,49 @@ def symlink(source, link_name):
 
 
 def check_run(args):
-    print >> sys.stderr, ' '.join(args)
-    p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # CMake `message(STATUS)` messages, as appearing in failed source code
-    # compiles, appear on stdout, so we only capture that.
-    (out, _) = p.communicate()
-    r = p.returncode
-    if r != 0:
-        cmake_output_re = re.compile("See also \"(.*/CMakeOutput.log)\"")
-        cmake_error_re = re.compile("See also \"(.*/CMakeError.log)\"")
-        output_match = cmake_output_re.search(out)
-        error_match = cmake_error_re.search(out)
+    print(' '.join(args), file=sys.stderr, flush=True)
+    if args[0] == 'cmake':
+        # CMake `message(STATUS)` messages, as appearing in failed source code
+        # compiles, appear on stdout, so we only capture that.
+        p = subprocess.Popen(args, stdout=subprocess.PIPE)
+        lines = []
+        for line in p.stdout:
+            lines.append(line)
+            sys.stdout.write(line.decode())
+            sys.stdout.flush()
+        r = p.wait()
+        if r != 0:
+            cmake_output_re = re.compile(b"See also \"(.*/CMakeOutput.log)\"")
+            cmake_error_re = re.compile(b"See also \"(.*/CMakeError.log)\"")
 
-        print >> sys.stderr, out
+            def find_first_match(re):
+                for l in lines:
+                    match = re.search(l)
+                    if match:
+                        return match
 
-        def dump_file(log):
-            with open(log, 'rb') as f:
-                print >> sys.stderr, "\nContents of", log, "follow\n"
-                print >> sys.stderr, f.read()
-        if output_match:
-            dump_file(output_match.group(1))
-        if error_match:
-            dump_file(error_match.group(1))
+            output_match = find_first_match(cmake_output_re)
+            error_match = find_first_match(cmake_error_re)
+
+            def dump_file(log):
+                with open(log, 'rb') as f:
+                    print("\nContents of", log, "follow\n", file=sys.stderr)
+                    print(f.read(), file=sys.stderr)
+            if output_match:
+                dump_file(output_match.group(1))
+            if error_match:
+                dump_file(error_match.group(1))
+    else:
+        r = subprocess.call(args)
     assert r == 0
 
 
 def run_in(path, args):
     d = os.getcwd()
-    print >> sys.stderr, 'cd "%s"' % path
+    print('cd "%s"' % path, file=sys.stderr)
     os.chdir(path)
     check_run(args)
-    print >> sys.stderr, 'cd "%s"' % d
+    print('cd "%s"' % d, file=sys.stderr)
     os.chdir(d)
 
 
@@ -75,7 +91,7 @@ def import_clang_tidy(source_dir):
     clang_plugin_path = os.path.join(os.path.dirname(sys.argv[0]),
                                      '..', 'clang-plugin')
     clang_tidy_path = os.path.join(source_dir,
-                                   'tools/clang/tools/extra/clang-tidy')
+                                   'clang-tools-extra/clang-tidy')
     sys.path.append(clang_plugin_path)
     from import_mozilla_checks import do_import
     do_import(clang_plugin_path, clang_tidy_path)
@@ -93,7 +109,7 @@ def build_package(package_build_dir, cmake_args):
         shutil.rmtree(package_build_dir + "/CMakeFiles")
 
     run_in(package_build_dir, ["cmake"] + cmake_args)
-    run_in(package_build_dir, ["ninja", "install"])
+    run_in(package_build_dir, ["ninja", "install", "-v"])
 
 
 @contextmanager
@@ -159,21 +175,21 @@ def install_libgcc(gcc_dir, clang_dir, is_final_stage):
     out = subprocess.check_output([os.path.join(gcc_bin_dir, "gcc"),
                                    '-print-libgcc-file-name'])
 
-    libgcc_dir = os.path.dirname(out.rstrip())
+    libgcc_dir = os.path.dirname(out.decode().rstrip())
     clang_lib_dir = os.path.join(clang_dir, "lib", "gcc",
                                  "x86_64-unknown-linux-gnu",
                                  os.path.basename(libgcc_dir))
     mkdir_p(clang_lib_dir)
-    copy_tree(libgcc_dir, clang_lib_dir)
+    copy_tree(libgcc_dir, clang_lib_dir, preserve_symlinks=True)
     libgcc_dir = os.path.join(gcc_dir, "lib64")
     clang_lib_dir = os.path.join(clang_dir, "lib")
-    copy_tree(libgcc_dir, clang_lib_dir)
+    copy_tree(libgcc_dir, clang_lib_dir, preserve_symlinks=True)
     libgcc_dir = os.path.join(gcc_dir, "lib32")
     clang_lib_dir = os.path.join(clang_dir, "lib32")
-    copy_tree(libgcc_dir, clang_lib_dir)
+    copy_tree(libgcc_dir, clang_lib_dir, preserve_symlinks=True)
     include_dir = os.path.join(gcc_dir, "include")
     clang_include_dir = os.path.join(clang_dir, "include")
-    copy_tree(include_dir, clang_include_dir)
+    copy_tree(include_dir, clang_include_dir, preserve_symlinks=True)
 
 
 def install_import_library(build_dir, clang_dir):
@@ -194,15 +210,6 @@ def install_asan_symbols(build_dir, clang_dir):
         raise Exception("Destination path pattern did not resolve uniquely")
 
     shutil.copy2(src_path[0], dst_path[0])
-
-
-def svn_co(source_dir, url, directory, revision):
-    run_in(source_dir, ["svn", "co", "-q", "-r", revision, url, directory])
-
-
-def svn_update(directory, revision):
-    run_in(directory, ["svn", "revert", "-q", "-R", "."])
-    run_in(directory, ["svn", "update", "-q", "-r", revision])
 
 
 def is_darwin():
@@ -264,6 +271,7 @@ def build_one_stage(cc, cxx, asm, ld, ar, ranlib, libtool,
             "-DPYTHON_EXECUTABLE=%s" % slashify_path(python_path),
             "-DLLVM_TOOL_LIBCXX_BUILD=%s" % ("ON" if build_libcxx else "OFF"),
             "-DLIBCXX_LIBCPPABI_VERSION=\"\"",
+            "-DLLVM_ENABLE_BINDINGS=OFF",
         ]
         if is_linux():
             cmake_args += ["-DLLVM_BINUTILS_INCDIR=%s/include" % gcc_dir]
@@ -335,13 +343,14 @@ def build_one_stage(cc, cxx, asm, ld, ar, ranlib, libtool,
 
         android_link_flags = "-fuse-ld=lld"
 
-        for target, cfg in android_targets.iteritems():
-            sysroot_dir = cfg["ndk_sysroot"]
-            android_gcc_dir = cfg["ndk_toolchain"]
+        for target, cfg in android_targets.items():
+            sysroot_dir = cfg["ndk_sysroot"].format(**os.environ)
+            android_gcc_dir = cfg["ndk_toolchain"].format(**os.environ)
             android_include_dirs = cfg["ndk_includes"]
             api_level = cfg["api_level"]
 
-            android_flags = ["-isystem %s" % d for d in android_include_dirs]
+            android_flags = ["-isystem %s" % d.format(**os.environ)
+                             for d in android_include_dirs]
             android_flags += ["--gcc-toolchain=%s" % android_gcc_dir]
             android_flags += ["-D__ANDROID_API__=%s" % api_level]
 
@@ -429,17 +438,17 @@ def build_one_stage(cc, cxx, asm, ld, ar, ranlib, libtool,
 def get_tool(config, key):
     f = None
     if key in config:
-        f = config[key]
+        f = config[key].format(**os.environ)
         if os.path.isabs(f):
             if not os.path.exists(f):
                 raise ValueError("%s must point to an existing path" % key)
             return f
 
     # Assume that we have the name of some program that should be on PATH.
-    try:
-        return which.which(f) if f else which.which(key)
-    except which.WhichError:
-        raise ValueError("%s not found on PATH" % f)
+    tool = which(f) if f else which(key)
+    if not tool:
+        raise ValueError("%s not found on PATH" % (f or key))
+    return tool
 
 
 # This function is intended to be called on the final build directory when
@@ -531,8 +540,6 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--config', required=True,
                         type=argparse.FileType('r'),
                         help="Clang configuration file")
-    parser.add_argument('-b', '--base-dir', required=False,
-                        help="Base directory for code and build artifacts")
     parser.add_argument('--clean', required=False,
                         action='store_true',
                         help="Clean the build directory")
@@ -545,43 +552,19 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # The directories end up in the debug info, so the easy way of getting
-    # a reproducible build is to run it in a know absolute directory.
-    # We use a directory that is registered as a volume in the Docker image.
-
-    if args.base_dir:
-        base_dir = args.base_dir
-    elif os.environ.get('MOZ_AUTOMATION') and not is_windows():
-        base_dir = "/builds/worker/workspace/moz-toolchain"
-    else:
-        # Handles both the Windows automation case and the local build case
-        # TODO: Because Windows taskcluster builds are run with distinct
-        # user IDs for each job, we can't store things in some globally
-        # accessible directory: one job will run, checkout LLVM to that
-        # directory, and then if another job runs, the new user won't be
-        # able to access the previously-checked out code--or be able to
-        # delete it.  So on Windows, we build in the task-specific home
-        # directory; we will eventually add -fdebug-prefix-map options
-        # to the LLVM build to bring back reproducibility.
-        base_dir = os.path.join(os.getcwd(), 'build-clang')
-
-    source_dir = base_dir + "/src"
-    build_dir = base_dir + "/build"
-
-    if not os.path.exists(base_dir):
-        os.makedirs(base_dir)
-    elif os.listdir(base_dir) and not os.path.exists(os.path.join(base_dir, '.build-clang')):
-        raise ValueError("Base directory %s exists and is not a build-clang directory. "
-                         "Supply a non-existent or empty directory with --base-dir" % base_dir)
-    open(os.path.join(base_dir, '.build-clang'), 'a').close()
+    if not os.path.exists('llvm/LLVMBuild.txt'):
+        raise Exception('The script must be run from the root directory of the '
+                        'llvm-project tree')
+    source_dir = os.getcwd()
+    build_dir = source_dir + "/build"
 
     if args.clean:
         shutil.rmtree(build_dir)
         os.sys.exit(0)
 
     llvm_source_dir = source_dir + "/llvm"
+    extra_source_dir = source_dir + "/clang-tools-extra"
     clang_source_dir = source_dir + "/clang"
-    extra_source_dir = source_dir + "/extra"
     lld_source_dir = source_dir + "/lld"
     compiler_rt_source_dir = source_dir + "/compiler-rt"
     libcxx_source_dir = source_dir + "/libcxx"
@@ -600,17 +583,9 @@ if __name__ == "__main__":
         cc_name = "clang-cl"
         cxx_name = "clang-cl"
 
+    config_dir = os.path.dirname(args.config.name)
     config = json.load(args.config)
 
-    llvm_revision = config["llvm_revision"]
-    llvm_repo = config["llvm_repo"]
-    clang_repo = config["clang_repo"]
-    extra_repo = config.get("extra_repo")
-    lld_repo = config.get("lld_repo")
-    # On some packages we don't use compiler_repo
-    compiler_repo = config.get("compiler_repo")
-    libcxx_repo = config["libcxx_repo"]
-    libcxxabi_repo = config.get("libcxxabi_repo")
     stages = 3
     if "stages" in config:
         stages = int(config["stages"])
@@ -650,7 +625,7 @@ if __name__ == "__main__":
     python_path = config["python_path"]
     gcc_dir = None
     if "gcc_dir" in config:
-        gcc_dir = config["gcc_dir"]
+        gcc_dir = config["gcc_dir"].format(**os.environ)
         if not os.path.exists(gcc_dir):
             raise ValueError("gcc_dir must point to an existing path")
     ndk_dir = None
@@ -658,7 +633,7 @@ if __name__ == "__main__":
     if "android_targets" in config:
         android_targets = config["android_targets"]
         for attr in ("ndk_toolchain", "ndk_sysroot", "ndk_includes", "api_level"):
-            for target, cfg in android_targets.iteritems():
+            for target, cfg in android_targets.items():
                 if attr not in cfg:
                     raise ValueError("must specify '%s' as a key for android target: %s" %
                                      (attr, target))
@@ -667,7 +642,7 @@ if __name__ == "__main__":
         extra_targets = config["extra_targets"]
         if not isinstance(extra_targets, list):
             raise ValueError("extra_targets must be a list")
-        if not all(isinstance(t, (str, unicode)) for t in extra_targets):
+        if not all(isinstance(t, str) for t in extra_targets):
             raise ValueError("members of extra_targets should be strings")
     if is_linux() and gcc_dir is None:
         raise ValueError("Config file needs to set gcc_dir")
@@ -684,26 +659,8 @@ if __name__ == "__main__":
     if not os.path.exists(source_dir):
         os.makedirs(source_dir)
 
-    def checkout_or_update(repo, checkout_dir):
-        if os.path.exists(checkout_dir):
-            svn_update(checkout_dir, llvm_revision)
-        else:
-            svn_co(source_dir, repo, checkout_dir, llvm_revision)
-
-    if not args.skip_checkout:
-        checkout_or_update(llvm_repo, llvm_source_dir)
-        checkout_or_update(clang_repo, clang_source_dir)
-        if compiler_repo is not None:
-            checkout_or_update(compiler_repo, compiler_rt_source_dir)
-        checkout_or_update(libcxx_repo, libcxx_source_dir)
-        if lld_repo:
-            checkout_or_update(lld_repo, lld_source_dir)
-        if libcxxabi_repo:
-            checkout_or_update(libcxxabi_repo, libcxxabi_source_dir)
-        if extra_repo:
-            checkout_or_update(extra_repo, extra_source_dir)
-        for p in config.get("patches", []):
-            patch(p, source_dir)
+    for p in config.get("patches", []):
+        patch(os.path.join(config_dir, p), source_dir)
 
     compiler_rt_source_link = llvm_source_dir + "/projects/compiler-rt"
 
@@ -729,7 +686,7 @@ if __name__ == "__main__":
     package_name = "clang"
     if build_clang_tidy:
         package_name = "clang-tidy"
-        import_clang_tidy(llvm_source_dir)
+        import_clang_tidy(source_dir)
 
     if not os.path.exists(build_dir):
         os.makedirs(build_dir)

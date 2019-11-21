@@ -29,7 +29,7 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
  public:
   typedef mozilla::layers::LayersId LayersId;
 
-  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild);
+  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild, final);
 
   BrowserChild* Manager() {
     MOZ_ASSERT(mIPCOpen);
@@ -84,6 +84,14 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
       const IDispatchHolder& aCOMProxy);
 
   mozilla::ipc::IPCResult RecvFireFrameLoadEvent(bool aIsTrusted);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvScrollRectIntoView(
+      const nsRect& aRect, const ScrollAxis& aVertical,
+      const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
+      const int32_t& aAppUnitsPerDevPixel);
+
+  mozilla::ipc::IPCResult RecvSubFrameCrashed(BrowsingContext* aContext);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

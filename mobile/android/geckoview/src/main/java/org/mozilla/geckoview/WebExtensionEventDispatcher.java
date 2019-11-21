@@ -1,5 +1,6 @@
 package org.mozilla.geckoview;
 
+import android.support.annotation.Nullable;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -49,6 +50,10 @@ import java.util.Map;
                 it.remove();
             }
         }
+    }
+
+    public @Nullable WebExtension getWebExtension(final String id) {
+        return mExtensions.get(id);
     }
 
     @Override
@@ -221,15 +226,9 @@ import java.util.Map;
             return;
         }
 
-        response.then(
-            value -> {
-                callback.sendSuccess(value);
-                return null;
-            },
-            exception -> {
-                callback.sendError(exception);
-                return null;
-            });
+        response.accept(
+            value -> callback.sendSuccess(value),
+            exception -> callback.sendError(exception));
     }
 
     public void handleMessage(final String event, final GeckoBundle message,

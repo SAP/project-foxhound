@@ -9,7 +9,7 @@ const { require, loader } = ChromeUtils.import(
   "resource://devtools/shared/Loader.jsm"
 );
 const { DebuggerClient } = require("devtools/shared/client/debugger-client");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 
 const {
   AddonTestUtils,
@@ -109,8 +109,8 @@ async function attachAddon(addonId) {
 
   await client.connect();
 
-  const addonFront = await client.mainRoot.getAddon({ id: addonId });
-  const addonTarget = await addonFront.connect();
+  const addonDescriptor = await client.mainRoot.getAddon({ id: addonId });
+  const addonTarget = await addonDescriptor.getTarget();
 
   if (!addonTarget) {
     client.close();

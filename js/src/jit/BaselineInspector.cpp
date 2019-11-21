@@ -68,7 +68,7 @@ static bool GetCacheIRReceiverForNativeReadSlot(ICCacheIR_Monitored* stub,
                                                 ReceiverGuard* receiver) {
   // We match:
   //
-  //   GuardIsObject 0
+  //   GuardToObject 0
   //   GuardShape 0
   //   LoadFixedSlotResult 0 or LoadDynamicSlotResult 0
 
@@ -76,7 +76,7 @@ static bool GetCacheIRReceiverForNativeReadSlot(ICCacheIR_Monitored* stub,
   CacheIRReader reader(stub->stubInfo());
 
   ObjOperandId objId = ObjOperandId(0);
-  if (!reader.matchOp(CacheOp::GuardIsObject, objId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, objId)) {
     return false;
   }
 
@@ -94,7 +94,7 @@ static bool GetCacheIRReceiverForNativeSetSlot(ICCacheIR_Updated* stub,
                                                ReceiverGuard* receiver) {
   // We match:
   //
-  //   GuardIsObject 0
+  //   GuardToObject 0
   //   GuardGroup 0
   //   GuardShape 0
   //   StoreFixedSlot 0 or StoreDynamicSlot 0
@@ -102,7 +102,7 @@ static bool GetCacheIRReceiverForNativeSetSlot(ICCacheIR_Updated* stub,
   CacheIRReader reader(stub->stubInfo());
 
   ObjOperandId objId = ObjOperandId(0);
-  if (!reader.matchOp(CacheOp::GuardIsObject, objId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, objId)) {
     return false;
   }
 
@@ -127,10 +127,7 @@ static bool GetCacheIRReceiverForNativeSetSlot(ICCacheIR_Updated* stub,
   return true;
 }
 
-JitScript* BaselineInspector::jitScript() const {
-  MOZ_ASSERT(script->hasJitScript());
-  return script->jitScript();
-}
+JitScript* BaselineInspector::jitScript() const { return script->jitScript(); }
 
 ICEntry& BaselineInspector::icEntryFromPC(jsbytecode* pc) {
   ICEntry* entry = maybeICEntryFromPC(pc);
@@ -241,10 +238,10 @@ bool BaselineInspector::dimorphicStub(jsbytecode* pc, ICStub** pfirst,
 static void SkipBinaryGuards(CacheIRReader& reader) {
   while (true) {
     // Two skip opcodes
-    if (reader.matchOp(CacheOp::GuardIsInt32) ||
+    if (reader.matchOp(CacheOp::GuardToInt32) ||
         reader.matchOp(CacheOp::GuardType) ||
         reader.matchOp(CacheOp::TruncateDoubleToUInt32) ||
-        reader.matchOp(CacheOp::GuardIsBoolean)) {
+        reader.matchOp(CacheOp::GuardToBoolean)) {
       reader.skip();  // Skip over operandId
       reader.skip();  // Skip over result/type.
       continue;
@@ -252,8 +249,8 @@ static void SkipBinaryGuards(CacheIRReader& reader) {
 
     // One skip
     if (reader.matchOp(CacheOp::GuardIsNumber) ||
-        reader.matchOp(CacheOp::GuardIsString) ||
-        reader.matchOp(CacheOp::GuardIsObject)) {
+        reader.matchOp(CacheOp::GuardToString) ||
+        reader.matchOp(CacheOp::GuardToObject)) {
       reader.skip();  // Skip over operandId
       continue;
     }
@@ -357,13 +354,13 @@ static bool GuardType(CacheIRReader& reader,
 
   switch (op) {
     // 0 Skip cases
-    case CacheOp::GuardIsString:
+    case CacheOp::GuardToString:
       guardType[guardOperand] = MIRType::String;
       break;
-    case CacheOp::GuardIsSymbol:
+    case CacheOp::GuardToSymbol:
       guardType[guardOperand] = MIRType::Symbol;
       break;
-    case CacheOp::GuardIsBigInt:
+    case CacheOp::GuardToBigInt:
       guardType[guardOperand] = MIRType::BigInt;
       break;
     case CacheOp::GuardIsNumber:
@@ -373,12 +370,12 @@ static bool GuardType(CacheIRReader& reader,
       guardType[guardOperand] = MIRType::Undefined;
       break;
     // 1 skip
-    case CacheOp::GuardIsInt32:
+    case CacheOp::GuardToInt32:
       guardType[guardOperand] = MIRType::Int32;
       // Skip over result
       reader.skip();
       break;
-    case CacheOp::GuardIsBoolean:
+    case CacheOp::GuardToBoolean:
       guardType[guardOperand] = MIRType::Boolean;
       // Skip over result
       reader.skip();
@@ -784,14 +781,14 @@ JSObject* BaselineInspector::getTemplateObjectForNative(jsbytecode* pc,
   return nullptr;
 }
 
-JSObject* BaselineInspector::getTemplateObjectForClassHook(jsbytecode* pc,
-                                                           const Class* clasp) {
+JSObject* BaselineInspector::getTemplateObjectForClassHook(
+    jsbytecode* pc, const JSClass* clasp) {
   const ICEntry& entry = icEntryFromPC(pc);
   for (ICStub* stub = entry.firstStub(); stub; stub = stub->next()) {
     if (ICStub::IsCacheIRKind(stub->kind())) {
       auto filter = [stub, clasp](CacheIRReader& args,
                                   const CacheIRStubInfo* info) {
-        return info->getStubField<Class*>(stub, args.stubOffset()) == clasp;
+        return info->getStubField<JSClass*>(stub, args.stubOffset()) == clasp;
       };
       JSObject* result = MaybeTemplateObject(
           stub, MetaTwoByteKind::ClassTemplateObject, filter);
@@ -805,11 +802,7 @@ JSObject* BaselineInspector::getTemplateObjectForClassHook(jsbytecode* pc,
 }
 
 LexicalEnvironmentObject* BaselineInspector::templateNamedLambdaObject() {
-  if (!script->hasBaselineScript()) {
-    return nullptr;
-  }
-
-  JSObject* res = script->baselineScript()->templateEnvironment();
+  JSObject* res = jitScript()->templateEnvironment();
   if (script->bodyScope()->hasEnvironment()) {
     res = res->enclosingEnvironment();
   }
@@ -819,11 +812,7 @@ LexicalEnvironmentObject* BaselineInspector::templateNamedLambdaObject() {
 }
 
 CallObject* BaselineInspector::templateCallObject() {
-  if (!script->hasBaselineScript()) {
-    return nullptr;
-  }
-
-  JSObject* res = script->baselineScript()->templateEnvironment();
+  JSObject* res = jitScript()->templateEnvironment();
   MOZ_ASSERT(res);
 
   return &res->as<CallObject>();
@@ -948,7 +937,7 @@ static bool GuardSpecificAtomOrSymbol(CacheIRReader& reader, ICStub* stub,
                                       ValOperandId keyId, jsid id) {
   // Try to match an id guard emitted by IRGenerator::emitIdGuard.
   if (JSID_IS_ATOM(id)) {
-    if (!reader.matchOp(CacheOp::GuardIsString, keyId)) {
+    if (!reader.matchOp(CacheOp::GuardToString, keyId)) {
       return false;
     }
     if (!reader.matchOp(CacheOp::GuardSpecificAtom, keyId)) {
@@ -961,7 +950,7 @@ static bool GuardSpecificAtomOrSymbol(CacheIRReader& reader, ICStub* stub,
     }
   } else {
     MOZ_ASSERT(JSID_IS_SYMBOL(id));
-    if (!reader.matchOp(CacheOp::GuardIsSymbol, keyId)) {
+    if (!reader.matchOp(CacheOp::GuardToSymbol, keyId)) {
       return false;
     }
     if (!reader.matchOp(CacheOp::GuardSpecificSymbol, keyId)) {
@@ -984,7 +973,7 @@ static bool AddCacheIRGetPropFunction(
     JSScript* script) {
   // We match either an own getter:
   //
-  //   GuardIsObject objId
+  //   GuardToObject objId
   //   [..Id Guard..]
   //   [..WindowProxy innerization..]
   //   <GuardReceiver objId>
@@ -992,7 +981,7 @@ static bool AddCacheIRGetPropFunction(
   //
   // Or a getter on the prototype:
   //
-  //   GuardIsObject objId
+  //   GuardToObject objId
   //   [..Id Guard..]
   //   [..WindowProxy innerization..]
   //   <GuardReceiver objId>
@@ -1016,7 +1005,7 @@ static bool AddCacheIRGetPropFunction(
   CacheIRReader reader(stub->stubInfo());
 
   ObjOperandId objId = ObjOperandId(0);
-  if (!reader.matchOp(CacheOp::GuardIsObject, objId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, objId)) {
     return AddCacheIRGlobalGetter(stub, innerized, holder, holderShape,
                                   commonGetter, globalShape, isOwnProperty,
                                   receivers, script);
@@ -1179,7 +1168,7 @@ static JSFunction* GetMegamorphicGetterSetterFunction(
     ICStub* stub, const CacheIRStubInfo* stubInfo, jsid id, bool isGetter) {
   // We match:
   //
-  //   GuardIsObject objId
+  //   GuardToObject objId
   //   [..Id Guard..]
   //   GuardHasGetterSetter objId propShape
   //
@@ -1192,7 +1181,7 @@ static JSFunction* GetMegamorphicGetterSetterFunction(
   CacheIRReader reader(stubInfo);
 
   ObjOperandId objId = ObjOperandId(0);
-  if (!reader.matchOp(CacheOp::GuardIsObject, objId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, objId)) {
     return nullptr;
   }
 
@@ -1276,13 +1265,13 @@ static bool AddCacheIRSetPropFunction(
     BaselineInspector::ReceiverVector& receivers) {
   // We match either an own setter:
   //
-  //   GuardIsObject objId
+  //   GuardToObject objId
   //   <GuardReceiver objId>
   //   Call(Scripted|Native)Setter objId
   //
   // Or a setter on the prototype:
   //
-  //   GuardIsObject objId
+  //   GuardToObject objId
   //   <GuardReceiver objId>
   //   LoadObject holderId
   //   GuardShape holderId
@@ -1291,7 +1280,7 @@ static bool AddCacheIRSetPropFunction(
   CacheIRReader reader(stub->stubInfo());
 
   ObjOperandId objId = ObjOperandId(0);
-  if (!reader.matchOp(CacheOp::GuardIsObject, objId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, objId)) {
     return false;
   }
 
@@ -1411,7 +1400,7 @@ static bool GetCacheIRReceiverForProtoReadSlot(ICCacheIR_Monitored* stub,
                                                JSObject** holderResult) {
   // We match:
   //
-  //   GuardIsObject 0
+  //   GuardToObject 0
   //   <ReceiverGuard>
   //   1: LoadObject holder
   //   GuardShape 1
@@ -1421,7 +1410,7 @@ static bool GetCacheIRReceiverForProtoReadSlot(ICCacheIR_Monitored* stub,
   CacheIRReader reader(stub->stubInfo());
 
   ObjOperandId objId = ObjOperandId(0);
-  if (!reader.matchOp(CacheOp::GuardIsObject, objId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, objId)) {
     return false;
   }
 
@@ -1512,10 +1501,10 @@ bool BaselineInspector::maybeInfoForProtoReadSlot(jsbytecode* pc,
 static MIRType GetCacheIRExpectedInputType(ICCacheIR_Monitored* stub) {
   CacheIRReader reader(stub->stubInfo());
 
-  if (reader.matchOp(CacheOp::GuardIsObject, ValOperandId(0))) {
+  if (reader.matchOp(CacheOp::GuardToObject, ValOperandId(0))) {
     return MIRType::Object;
   }
-  if (reader.matchOp(CacheOp::GuardIsString, ValOperandId(0))) {
+  if (reader.matchOp(CacheOp::GuardToString, ValOperandId(0))) {
     return MIRType::String;
   }
   if (reader.matchOp(CacheOp::GuardIsNumber, ValOperandId(0))) {
@@ -1583,7 +1572,7 @@ bool BaselineInspector::instanceOfData(jsbytecode* pc, Shape** shape,
   ObjOperandId rhsId = ObjOperandId(1);
   ObjOperandId resId = ObjOperandId(2);
 
-  if (!reader.matchOp(CacheOp::GuardIsObject, rhsId)) {
+  if (!reader.matchOp(CacheOp::GuardToObject, rhsId)) {
     return false;
   }
 

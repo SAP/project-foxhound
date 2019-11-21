@@ -9,13 +9,13 @@ const TRACKING_PAGE =
   "http://tracking.example.org/browser/browser/base/content/test/trackingUI/trackingPage.html";
 const DTSCBN_PREF = "dom.testing.sync-content-blocking-notifications";
 var TrackingProtection = null;
-var ContentBlocking = null;
+var gProtectionsHandler = null;
 var browser = null;
 
 registerCleanupFunction(function() {
   Services.prefs.clearUserPref(TP_PB_PREF);
   Services.prefs.clearUserPref(DTSCBN_PREF);
-  ContentBlocking = TrackingProtection = browser = null;
+  gProtectionsHandler = TrackingProtection = browser = null;
   UrlClassifierTestUtils.cleanupTestTrackers();
 });
 
@@ -26,9 +26,9 @@ function hidden(sel) {
   return display === "none";
 }
 
-function identityPopupState() {
+function protectionsPopupState() {
   let win = browser.ownerGlobal;
-  return win.document.getElementById("identity-popup").state;
+  return win.document.getElementById("protections-popup").state;
 }
 
 function clickButton(sel) {
@@ -39,86 +39,56 @@ function clickButton(sel) {
 
 function testTrackingPage(window) {
   info("Tracking content must be blocked");
-  ok(ContentBlocking.content.hasAttribute("detected"), "trackers are detected");
   ok(
-    !ContentBlocking.content.hasAttribute("hasException"),
+    gProtectionsHandler._protectionsPopup.hasAttribute("detected"),
+    "trackers are detected"
+  );
+  ok(
+    !gProtectionsHandler._protectionsPopup.hasAttribute("hasException"),
     "content shows no exception"
   );
 
   ok(
-    BrowserTestUtils.is_visible(ContentBlocking.iconBox),
+    BrowserTestUtils.is_visible(gProtectionsHandler.iconBox),
     "icon box is visible"
   );
-  ok(ContentBlocking.iconBox.hasAttribute("active"), "shield is active");
+  ok(gProtectionsHandler.iconBox.hasAttribute("active"), "shield is active");
   ok(
-    !ContentBlocking.iconBox.hasAttribute("hasException"),
+    !gProtectionsHandler.iconBox.hasAttribute("hasException"),
     "icon box shows no exception"
   );
   is(
-    ContentBlocking.iconBox.getAttribute("tooltiptext"),
-    gNavigatorBundle.getString("trackingProtection.icon.activeTooltip"),
+    gProtectionsHandler._trackingProtectionIconTooltipLabel.textContent,
+    gNavigatorBundle.getString("trackingProtection.icon.activeTooltip2"),
     "correct tooltip"
-  );
-
-  ok(hidden("#tracking-action-block"), "blockButton is hidden");
-
-  if (PrivateBrowsingUtils.isWindowPrivate(window)) {
-    ok(hidden("#tracking-action-unblock"), "unblockButton is hidden");
-    ok(
-      !hidden("#tracking-action-unblock-private"),
-      "unblockButtonPrivate is visible"
-    );
-  } else {
-    ok(!hidden("#tracking-action-unblock"), "unblockButton is visible");
-    ok(
-      hidden("#tracking-action-unblock-private"),
-      "unblockButtonPrivate is hidden"
-    );
-  }
-
-  ok(
-    hidden("#identity-popup-content-blocking-not-detected"),
-    "blocking not detected label is hidden"
-  );
-  ok(
-    !hidden("#identity-popup-content-blocking-detected"),
-    "blocking detected label is visible"
   );
 }
 
 function testTrackingPageUnblocked() {
   info("Tracking content must be white-listed and not blocked");
-  ok(ContentBlocking.content.hasAttribute("detected"), "trackers are detected");
   ok(
-    ContentBlocking.content.hasAttribute("hasException"),
+    gProtectionsHandler._protectionsPopup.hasAttribute("detected"),
+    "trackers are detected"
+  );
+  ok(
+    gProtectionsHandler._protectionsPopup.hasAttribute("hasException"),
     "content shows exception"
   );
 
-  ok(!ContentBlocking.iconBox.hasAttribute("active"), "shield is active");
+  ok(!gProtectionsHandler.iconBox.hasAttribute("active"), "shield is active");
   ok(
-    ContentBlocking.iconBox.hasAttribute("hasException"),
+    gProtectionsHandler.iconBox.hasAttribute("hasException"),
     "shield shows exception"
   );
   is(
-    ContentBlocking.iconBox.getAttribute("tooltiptext"),
-    gNavigatorBundle.getString("trackingProtection.icon.disabledTooltip"),
+    gProtectionsHandler._trackingProtectionIconTooltipLabel.textContent,
+    gNavigatorBundle.getString("trackingProtection.icon.disabledTooltip2"),
     "correct tooltip"
   );
 
   ok(
-    BrowserTestUtils.is_visible(ContentBlocking.iconBox),
+    BrowserTestUtils.is_visible(gProtectionsHandler.iconBox),
     "icon box is visible"
-  );
-  ok(!hidden("#tracking-action-block"), "blockButton is visible");
-  ok(hidden("#tracking-action-unblock"), "unblockButton is hidden");
-
-  ok(
-    hidden("#identity-popup-content-blocking-not-detected"),
-    "blocking not detected label is hidden"
-  );
-  ok(
-    !hidden("#identity-popup-content-blocking-detected"),
-    "blocking detected label is visible"
   );
 }
 
@@ -135,8 +105,8 @@ add_task(async function testExceptionAddition() {
     waitForStateStop: true,
   });
 
-  ContentBlocking = browser.ownerGlobal.ContentBlocking;
-  ok(ContentBlocking, "CB is attached to the private window");
+  gProtectionsHandler = browser.ownerGlobal.gProtectionsHandler;
+  ok(gProtectionsHandler, "CB is attached to the private window");
   TrackingProtection = browser.ownerGlobal.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the private window");
 
@@ -153,8 +123,8 @@ add_task(async function testExceptionAddition() {
 
   info("Disable TP for the page (which reloads the page)");
   let tabReloadPromise = promiseTabLoadEvent(tab);
-  clickButton("#tracking-action-unblock");
-  is(identityPopupState(), "closed", "Identity popup is closed");
+  gProtectionsHandler.disableForCurrentPage();
+  is(protectionsPopupState(), "closed", "protections popup is closed");
 
   await tabReloadPromise;
   testTrackingPageUnblocked();
@@ -168,7 +138,7 @@ add_task(async function testExceptionAddition() {
   await promiseTabLoadEvent(tab, TRACKING_PAGE);
   testTrackingPageUnblocked();
 
-  privateWin.close();
+  await BrowserTestUtils.closeWindow(privateWin);
 });
 
 add_task(async function testExceptionPersistence() {
@@ -183,8 +153,8 @@ add_task(async function testExceptionPersistence() {
     waitForStateStop: true,
   });
 
-  ContentBlocking = browser.ownerGlobal.ContentBlocking;
-  ok(ContentBlocking, "CB is attached to the private window");
+  gProtectionsHandler = browser.ownerGlobal.gProtectionsHandler;
+  ok(gProtectionsHandler, "CB is attached to the private window");
   TrackingProtection = browser.ownerGlobal.TrackingProtection;
   ok(TrackingProtection, "TP is attached to the private window");
 
@@ -200,8 +170,8 @@ add_task(async function testExceptionPersistence() {
 
   info("Disable TP for the page (which reloads the page)");
   let tabReloadPromise = promiseTabLoadEvent(tab);
-  clickButton("#tracking-action-unblock");
-  is(identityPopupState(), "closed", "Identity popup is closed");
+  gProtectionsHandler.disableForCurrentPage();
+  is(protectionsPopupState(), "closed", "protections popup is closed");
 
   await Promise.all([
     tabReloadPromise,
@@ -209,5 +179,5 @@ add_task(async function testExceptionPersistence() {
   ]);
   testTrackingPageUnblocked();
 
-  privateWin.close();
+  await BrowserTestUtils.closeWindow(privateWin);
 });

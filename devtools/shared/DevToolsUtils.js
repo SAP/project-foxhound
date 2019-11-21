@@ -469,8 +469,7 @@ Object.defineProperty(exports, "assert", {
  */
 exports.defineLazyModuleGetter = function(object, name, resource, symbol) {
   this.defineLazyGetter(object, name, function() {
-    const temp = {};
-    ChromeUtils.import(resource, temp);
+    const temp = ChromeUtils.import(resource);
     return temp[symbol || name];
   });
 };
@@ -501,7 +500,7 @@ DevToolsUtils.defineLazyGetter(this, "NetworkHelper", () => {
  *        - window: the window to get the loadGroup from
  *        - charset: the charset to use if the channel doesn't provide one
  *        - principal: the principal to use, if omitted, the request is loaded
- *                     with a codebase principal corresponding to the url being
+ *                     with a content principal corresponding to the url being
  *                     loaded, using the origin attributes of the window, if any.
  *        - cacheKey: when loading from cache, use this key to retrieve a cache
  *                    specific to a given SHEntry. (Allows loading POST
@@ -561,6 +560,7 @@ function mainThreadFetch(
       ).loadGroup;
     }
 
+    /* eslint-disable complexity */
     const onResponse = (stream, status, request) => {
       if (!components.isSuccessCode(status)) {
         reject(new Error(`Failed to fetch ${url}. Code ${status}.`));
@@ -626,9 +626,21 @@ function mainThreadFetch(
         }
         const unicodeSource = NetworkHelper.convertToUnicode(source, charset);
 
+        // Look for any source map URL in the response.
+        let sourceMapURL;
+        try {
+          sourceMapURL = request.getResponseHeader("SourceMap");
+        } catch (e) {}
+        if (!sourceMapURL) {
+          try {
+            sourceMapURL = request.getResponseHeader("X-SourceMap");
+          } catch (e) {}
+        }
+
         resolve({
           content: unicodeSource,
           contentType: request.contentType,
+          sourceMapURL,
         });
       } catch (ex) {
         const uri = request.originalURI;
@@ -718,7 +730,7 @@ function newChannelForURL(
     // and it may not be correct.
     let prin = principal;
     if (!prin) {
-      prin = Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
+      prin = Services.scriptSecurityManager.createContentPrincipal(uri, {});
     }
 
     channelOptions.loadingPrincipal = prin;

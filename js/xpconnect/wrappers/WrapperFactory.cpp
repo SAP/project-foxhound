@@ -152,7 +152,53 @@ inline bool ShouldWaiveXray(JSContext* cx, JSObject* originalObj) {
   return sameOrigin;
 }
 
+// Special handling is needed when wrapping local and remote window proxies.
+// This function returns true if it found a window proxy and dealt with it.
+static bool MaybeWrapWindowProxy(JSContext* cx, HandleObject origObj,
+                                 HandleObject obj, MutableHandleObject retObj) {
+  bool isWindowProxy = js::IsWindowProxy(obj);
+
+  if (!isWindowProxy &&
+      !dom::IsRemoteObjectProxy(obj, dom::prototypes::id::Window)) {
+    return false;
+  }
+
+  dom::BrowsingContext* bc = nullptr;
+  if (isWindowProxy) {
+    nsGlobalWindowInner* win =
+        WindowOrNull(js::UncheckedUnwrap(obj, /* stopAtWindowProxy = */ false));
+    if (win && win->GetOuterWindow()) {
+      bc = win->GetOuterWindow()->GetBrowsingContext();
+    }
+    if (!bc) {
+      retObj.set(obj);
+      return true;
+    }
+  } else {
+    bc = dom::GetBrowsingContext(obj);
+    MOZ_ASSERT(bc);
+  }
+
+  if (bc->IsInProcess()) {
+    // Any remote window proxies for bc should have been cleaned up by a call to
+    // CleanUpDanglingRemoteOuterWindowProxies() before now, so obj must be a
+    // local outer window proxy.
+    MOZ_RELEASE_ASSERT(isWindowProxy);
+
+    retObj.set(obj);
+  } else {
+    // If bc is not in process, then use a remote window proxy, whether or not
+    // obj is one already.
+    if (!dom::GetRemoteOuterWindowProxy(cx, bc, origObj, retObj)) {
+      MOZ_CRASH("GetRemoteOuterWindowProxy failed");
+    }
+  }
+
+  return true;
+}
+
 void WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
+                                        HandleObject origObj,
                                         HandleObject objArg,
                                         HandleObject objectPassedToWrap,
                                         MutableHandleObject retObj) {
@@ -164,11 +210,14 @@ void WrapperFactory::PrepareForWrapping(JSContext* cx, HandleObject scope,
   RootedObject obj(cx, objArg);
   retObj.set(nullptr);
 
-  // If we've got a WindowProxy, there's nothing special that needs to be
-  // done here, and we can move on to the next phase of wrapping. We handle
-  // this case first to allow us to assert against wrappers below.
-  if (js::IsWindowProxy(obj)) {
-    retObj.set(waive ? WaiveXray(cx, obj) : obj);
+  // There are a few cases related to window proxies that are handled first to
+  // allow us to assert against wrappers below.
+  if (MaybeWrapWindowProxy(cx, origObj, obj, retObj)) {
+    if (waive) {
+      // We don't put remote window proxies in a waiving wrapper.
+      MOZ_ASSERT(js::IsWindowProxy(obj));
+      retObj.set(WaiveXray(cx, retObj));
+    }
     return;
   }
 
@@ -782,6 +831,27 @@ JSObject* TransplantObjectRetainingXrayExpandos(JSContext* cx,
   }
 
   return newIdentity;
+}
+
+static void NukeXrayWaiver(JSContext* cx, JS::HandleObject obj) {
+  RootedObject waiver(cx, WrapperFactory::GetXrayWaiver(obj));
+  if (!waiver) {
+    return;
+  }
+
+  XPCWrappedNativeScope* scope = ObjectScope(waiver);
+  JSObject* key = Wrapper::wrappedObject(waiver);
+  MOZ_ASSERT(scope->mWaiverWrapperMap->Find(key));
+  scope->mWaiverWrapperMap->Remove(key);
+
+  js::NukeNonCCWProxy(cx, waiver);
+}
+
+JSObject* TransplantObjectNukingXrayWaiver(JSContext* cx,
+                                           JS::HandleObject origObj,
+                                           JS::HandleObject target) {
+  NukeXrayWaiver(cx, origObj);
+  return JS_TransplantObject(cx, origObj, target);
 }
 
 nsIGlobalObject* NativeGlobal(JSObject* obj) {

@@ -39,12 +39,15 @@ void nsWrapperCache::SetWrapperJSObject(JSObject* aWrapper) {
     CycleCollectedJSRuntime::Get()->NurseryWrapperAdded(this);
   }
 
-  if (mozilla::recordreplay::IsReplaying()) {
-    mozilla::recordreplay::SetWeakPointerJSRoot(this, aWrapper);
-  }
+  // Never collect the wrapper object while recording or replaying, to avoid
+  // non-deterministic behaviors if the cache is emptied and then refilled at
+  // a different point when replaying.
+  recordreplay::HoldJSObject(aWrapper);
 }
 
 void nsWrapperCache::ReleaseWrapper(void* aScriptObjectHolder) {
+  // If the behavior here changes in a substantive way, you may need
+  // to update css::Rule::UnlinkDeclarationWrapper as well.
   if (PreservingWrapper()) {
     SetPreservingWrapper(false);
     cyclecollector::DropJSObjectsImpl(aScriptObjectHolder);
@@ -96,12 +99,6 @@ static void DebugWrapperTraceCallback(JS::GCCellPtr aPtr, const char* aName,
 
 void nsWrapperCache::CheckCCWrapperTraversal(void* aScriptObjectHolder,
                                              nsScriptObjectTracer* aTracer) {
-  // Skip checking if we are recording or replaying, as calling
-  // GetWrapperPreserveColor() can cause the cache's wrapper to be cleared.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return;
-  }
-
   JSObject* wrapper = GetWrapperPreserveColor();
   if (!wrapper) {
     return;

@@ -9,6 +9,7 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Telemetry.h"
@@ -124,7 +125,7 @@ nsresult nsLayoutStylesheetCache::Observe(nsISupports* aSubject,
 #define STYLE_SHEET(identifier_, url_, shared_)                                \
   NotNull<StyleSheet*> nsLayoutStylesheetCache::identifier_##Sheet() {         \
     if (!m##identifier_##Sheet) {                                              \
-      LoadSheetURL(url_, &m##identifier_##Sheet, eAgentSheetFeatures, eCrash); \
+      m##identifier_##Sheet = LoadSheetURL(url_, eAgentSheetFeatures, eCrash); \
     }                                                                          \
     return WrapNotNull(m##identifier_##Sheet);                                 \
   }
@@ -240,8 +241,8 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache() : mUsedSharedMemory(0) {
 
   if (gUserContentSheetURL) {
     MOZ_ASSERT(XRE_IsContentProcess(), "Only used in content processes.");
-    LoadSheet(gUserContentSheetURL, &mUserContentSheet, eUserSheetFeatures,
-              eLogToConsole);
+    mUserContentSheet =
+        LoadSheet(gUserContentSheetURL, eUserSheetFeatures, eLogToConsole);
     gUserContentSheetURL = nullptr;
   }
 
@@ -261,6 +262,9 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache() : mUsedSharedMemory(0) {
       // Use the shared memory handle that was given to us by a SetSharedMemory
       // call under ContentChild::InitXPCOM.
       mSharedMemory = sSharedMemory.forget();
+      MOZ_ASSERT(!mSharedMemory || mSharedMemory->mShm.memory(),
+                 "nsLayoutStylesheetCache::SetSharedMemory should have mapped "
+                 "the shared memory");
     }
   }
 
@@ -269,12 +273,17 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache() : mUsedSharedMemory(0) {
   // (unexpected), or we failed to map the shared memory buffer at the address
   // we needed in the content process (might happen).
   //
+  // If mSharedMemory is non-null, but it is not currently mapped, then it means
+  // we are in the parent process, and we failed to re-map the memory after
+  // freezing it.  (We keep mSharedMemory around so that we can still share it
+  // to content processes.)
+  //
   // In the parent process, this means we'll just leave our eagerly loaded
   // non-shared sheets in the mFooSheet fields.  In a content process, we'll
   // lazily load our own copies of the sheets later.
   if (mSharedMemory) {
-    Header* header = static_cast<Header*>(mSharedMemory->mShm.memory());
-    MOZ_RELEASE_ASSERT(header->mMagic == Header::kMagic);
+    if (auto header = static_cast<Header*>(mSharedMemory->mShm.memory())) {
+      MOZ_RELEASE_ASSERT(header->mMagic == Header::kMagic);
 
 #define STYLE_SHEET(identifier_, url_, shared_)                           \
   if (shared_) {                                                          \
@@ -284,6 +293,7 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache() : mUsedSharedMemory(0) {
   }
 #include "mozilla/UserAgentStyleSheetList.h"
 #undef STYLE_SHEET
+    }
   }
 }
 
@@ -292,8 +302,8 @@ void nsLayoutStylesheetCache::LoadSheetFromSharedMemory(
     Shm* aSharedMemory, Header* aHeader, UserAgentStyleSheetID aSheetID) {
   auto i = size_t(aSheetID);
 
-  auto sheet = MakeRefPtr<StyleSheet>(
-      aParsingMode, CORS_NONE, mozilla::net::RP_Unset, dom::SRIMetadata());
+  auto sheet =
+      MakeRefPtr<StyleSheet>(aParsingMode, CORS_NONE, dom::SRIMetadata());
 
   nsCOMPtr<nsIURI> uri;
   MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), aURL));
@@ -303,6 +313,9 @@ void nsLayoutStylesheetCache::LoadSheetFromSharedMemory(
   sheet->SetSharedContents(aSharedMemory, aHeader->mSheets[i]);
   sheet->SetComplete();
 
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      dom::ReferrerInfo::CreateForExternalCSSResources(sheet);
+  sheet->SetReferrerInfo(referrerInfo);
   URLExtraData::sShared[i] = sheet->URLData();
 
   *aSheet = sheet.forget();
@@ -312,7 +325,10 @@ void nsLayoutStylesheetCache::InitSharedSheetsInParent() {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   mSharedMemory = new Shm();
-  mSharedMemory->mShm.Create(kSharedMemorySize);
+  if (NS_WARN_IF(!mSharedMemory->mShm.CreateFreezeable(kSharedMemorySize))) {
+    mSharedMemory = nullptr;
+    return;
+  }
 
   // We need to choose an address to map the shared memory in the parent process
   // that we'll also be able to use in content processes.  There's no way to
@@ -349,10 +365,14 @@ void nsLayoutStylesheetCache::InitSharedSheetsInParent() {
     // Failed to map at the address we computed for some reason.  Fall back
     // to just allocating at a location of the OS's choosing, and hope that
     // it works in the content process.
-    mSharedMemory->mShm.Map(kSharedMemorySize);
+    if (NS_WARN_IF(!mSharedMemory->mShm.Map(kSharedMemorySize))) {
+      mSharedMemory = nullptr;
+      return;
+    }
   }
+  address = mSharedMemory->mShm.memory();
 
-  Header* header = static_cast<Header*>(mSharedMemory->mShm.memory());
+  auto header = static_cast<Header*>(address);
   header->mMagic = Header::kMagic;
 #ifdef DEBUG
   for (auto ptr : header->mSheets) {
@@ -374,6 +394,20 @@ void nsLayoutStylesheetCache::InitSharedSheetsInParent() {
   }
 #include "mozilla/UserAgentStyleSheetList.h"
 #undef STYLE_SHEET
+
+  // Finished writing into the shared memory.  Freeze it, so that a process
+  // can't confuse other processes by changing the UA style sheet contents.
+  if (NS_WARN_IF(!mSharedMemory->mShm.Freeze())) {
+    mSharedMemory = nullptr;
+    return;
+  }
+
+  // The Freeze() call unmaps the shared memory.  Re-map it again as read only.
+  // If this fails, due to something else being mapped into the same place
+  // between the Freeze() and Map() call, we can just fall back to keeping our
+  // own copy of the UA style sheets in the parent, and still try sending the
+  // shared memory to the content processes.
+  mSharedMemory->mShm.Map(kSharedMemorySize, address);
 
   // Record how must of the shared memory we have used, for memory reporting
   // later.  We round up to the nearest page since the free space at the end
@@ -442,37 +476,29 @@ void nsLayoutStylesheetCache::InitFromProfile() {
   contentFile->Append(NS_LITERAL_STRING("userContent.css"));
   chromeFile->Append(NS_LITERAL_STRING("userChrome.css"));
 
-  LoadSheetFile(contentFile, &mUserContentSheet, eUserSheetFeatures,
-                eLogToConsole);
-  LoadSheetFile(chromeFile, &mUserChromeSheet, eUserSheetFeatures,
-                eLogToConsole);
+  mUserContentSheet = LoadSheetFile(contentFile, eUserSheetFeatures);
+  mUserChromeSheet = LoadSheetFile(chromeFile, eUserSheetFeatures);
 }
 
-void nsLayoutStylesheetCache::LoadSheetURL(const char* aURL,
-                                           RefPtr<StyleSheet>* aSheet,
-                                           SheetParsingMode aParsingMode,
-                                           FailureAction aFailureAction) {
+RefPtr<StyleSheet> nsLayoutStylesheetCache::LoadSheetURL(
+    const char* aURL, SheetParsingMode aParsingMode,
+    FailureAction aFailureAction) {
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aURL);
-  LoadSheet(uri, aSheet, aParsingMode, aFailureAction);
-  if (!aSheet) {
-    NS_ERROR(nsPrintfCString("Could not load %s", aURL).get());
-  }
+  return LoadSheet(uri, aParsingMode, aFailureAction);
 }
 
-void nsLayoutStylesheetCache::LoadSheetFile(nsIFile* aFile,
-                                            RefPtr<StyleSheet>* aSheet,
-                                            SheetParsingMode aParsingMode,
-                                            FailureAction aFailureAction) {
+RefPtr<StyleSheet> nsLayoutStylesheetCache::LoadSheetFile(
+    nsIFile* aFile, SheetParsingMode aParsingMode) {
   bool exists = false;
   aFile->Exists(&exists);
-
-  if (!exists) return;
+  if (!exists) {
+    return nullptr;
+  }
 
   nsCOMPtr<nsIURI> uri;
   NS_NewFileURI(getter_AddRefs(uri), aFile);
-
-  LoadSheet(uri, aSheet, aParsingMode, aFailureAction);
+  return LoadSheet(uri, aParsingMode, eLogToConsole);
 }
 
 static void ErrorLoadingSheet(nsIURI* aURI, const char* aMsg,
@@ -491,20 +517,18 @@ static void ErrorLoadingSheet(nsIURI* aURI, const char* aMsg,
   MOZ_CRASH_UNSAFE(errorMessage.get());
 }
 
-void nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
-                                        RefPtr<StyleSheet>* aSheet,
-                                        SheetParsingMode aParsingMode,
-                                        FailureAction aFailureAction) {
+RefPtr<StyleSheet> nsLayoutStylesheetCache::LoadSheet(
+    nsIURI* aURI, SheetParsingMode aParsingMode, FailureAction aFailureAction) {
   if (!aURI) {
     ErrorLoadingSheet(aURI, "null URI", eCrash);
-    return;
+    return nullptr;
   }
 
   if (!gCSSLoader) {
     gCSSLoader = new Loader;
     if (!gCSSLoader) {
       ErrorLoadingSheet(aURI, "no Loader", eCrash);
-      return;
+      return nullptr;
     }
   }
 
@@ -513,15 +537,17 @@ void nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
   // parallel parsing on them. If that ever changes, we'll either need to find a
   // different way to prohibit parallel parsing for UA sheets, or handle
   // -moz-bool-pref and various other things in the parallel parsing code.
-  nsresult rv = gCSSLoader->LoadSheetSync(aURI, aParsingMode, true, aSheet);
-  if (NS_FAILED(rv)) {
+  auto result = gCSSLoader->LoadSheetSync(aURI, aParsingMode,
+                                          css::Loader::UseSystemPrincipal::Yes);
+  if (MOZ_UNLIKELY(result.isErr())) {
     ErrorLoadingSheet(
         aURI,
         nsPrintfCString("LoadSheetSync failed with error %" PRIx32,
-                        static_cast<uint32_t>(rv))
+                        static_cast<uint32_t>(result.unwrapErr()))
             .get(),
         aFailureAction);
   }
+  return result.unwrapOr(nullptr);
 }
 
 /* static */
@@ -534,13 +560,12 @@ void nsLayoutStylesheetCache::InvalidatePreferenceSheets() {
 
 void nsLayoutStylesheetCache::BuildPreferenceSheet(
     RefPtr<StyleSheet>* aSheet, const PreferenceSheet::Prefs& aPrefs) {
-  *aSheet = new StyleSheet(eAgentSheetFeatures, CORS_NONE,
-                           mozilla::net::RP_Unset, dom::SRIMetadata());
+  *aSheet = new StyleSheet(eAgentSheetFeatures, CORS_NONE, dom::SRIMetadata());
 
   StyleSheet* sheet = *aSheet;
 
   nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), "about:PreferenceStyleSheet", nullptr);
+  NS_NewURI(getter_AddRefs(uri), "about:PreferenceStyleSheet");
   MOZ_ASSERT(uri, "URI creation shouldn't fail");
 
   sheet->SetURIs(uri, uri, uri);

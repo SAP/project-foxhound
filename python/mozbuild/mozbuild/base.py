@@ -13,13 +13,9 @@ import six
 import subprocess
 import sys
 import errno
-try:
-    from shutil import which
-except ImportError:
-    # shutil.which is not available in Python 2.7
-    import which
 
 from mach.mixin.process import ProcessExecutionMixin
+from mozfile import which
 from mozversioncontrol import (
     get_repository_from_build_config,
     get_repository_object,
@@ -28,7 +24,10 @@ from mozversioncontrol import (
     InvalidRepoPath,
 )
 
-from .backend.configenvironment import ConfigEnvironment
+from .backend.configenvironment import (
+    ConfigEnvironment,
+    ConfigStatusFailure,
+)
 from .configure import ConfigureSandbox
 from .controller.clobber import Clobberer
 from .mozconfig import (
@@ -65,7 +64,7 @@ class BadEnvironmentException(Exception):
     """Base class for errors raised when the build environment is not sane."""
 
 
-class BuildEnvironmentNotFoundException(BadEnvironmentException):
+class BuildEnvironmentNotFoundException(BadEnvironmentException, AttributeError):
     """Raised when we could not find a build environment."""
 
 
@@ -274,7 +273,7 @@ class MozbuildObject(ProcessExecutionMixin):
         # the environment variable, which has an impact on autodetection (when
         # path is MozconfigLoader.AUTODETECT), and memoization wouldn't account
         # for it without the explicit (unused) argument.
-        out = six.StringIO()
+        out = six.BytesIO()
         env = os.environ
         if path and path != MozconfigLoader.AUTODETECT:
             env = dict(env)
@@ -340,8 +339,12 @@ class MozbuildObject(ProcessExecutionMixin):
         if not os.path.exists(config_status) or not os.path.getsize(config_status):
             raise BuildEnvironmentNotFoundException('config.status not available. Run configure.')
 
-        self._config_environment = \
-            ConfigEnvironment.from_config_status(config_status)
+        try:
+            self._config_environment = \
+                ConfigEnvironment.from_config_status(config_status)
+        except ConfigStatusFailure as e:
+            six.raise_from(BuildEnvironmentNotFoundException(
+                'config.status is outdated or broken. Run configure.'), e)
 
         return self._config_environment
 
@@ -387,23 +390,6 @@ class MozbuildObject(ProcessExecutionMixin):
             platform_name = "macosx" + bits
 
         return platform_name, bits + 'bit'
-
-    @memoized_property
-    def extra_environment_variables(self):
-        '''Some extra environment variables are stored in .mozconfig.mk.
-        This functions extracts and returns them.'''
-        from mozbuild import shellutil
-        mozconfig_mk = os.path.join(self.topobjdir, '.mozconfig.mk')
-        env = {}
-        with open(mozconfig_mk) as fh:
-            for line in fh:
-                if line.startswith('export '):
-                    exports = shellutil.split(line)[1:]
-                    for e in exports:
-                        if '=' in e:
-                            key, value = e.split('=')
-                            env[key] = value
-        return env
 
     @memoized_property
     def repository(self):
@@ -581,9 +567,8 @@ class MozbuildObject(ProcessExecutionMixin):
 
         try:
             if sys.platform.startswith('darwin'):
-                try:
-                    notifier = which.which('terminal-notifier')
-                except which.WhichError:
+                notifier = which('terminal-notifier')
+                if not notifier:
                     raise Exception('Install terminal-notifier to get '
                                     'a notification when the build finishes.')
                 self.run_process([notifier, '-title',
@@ -616,9 +601,8 @@ class MozbuildObject(ProcessExecutionMixin):
                                      FLASHW_CAPTION | FLASHW_TRAY | FLASHW_TIMERNOFG, 3, 0)
                 FlashWindowEx(params)
             else:
-                try:
-                    notifier = which.which('notify-send')
-                except which.WhichError:
+                notifier = which('notify-send')
+                if not notifier:
                     raise Exception('Install notify-send (usually part of '
                                     'the libnotify package) to get a notification when '
                                     'the build finishes.')
@@ -626,7 +610,7 @@ class MozbuildObject(ProcessExecutionMixin):
                                   'Mozilla Build System', msg], ensure_exit_code=False)
         except Exception as e:
             self.log(logging.WARNING, 'notifier-failed',
-                     {'error': e.message}, 'Notification center failed: {error}')
+                     {'error': e}, 'Notification center failed: {error}')
 
     def _ensure_objdir_exists(self):
         if os.path.isdir(self.statedir):
@@ -785,9 +769,8 @@ class MozbuildObject(ProcessExecutionMixin):
             if os.path.isabs(test):
                 make = test
             else:
-                try:
-                    make = which.which(test)
-                except which.WhichError:
+                make = which(test)
+                if not make:
                     continue
             result, xcode_lisense_error_tmp = validate_make(make)
             if result:
@@ -897,16 +880,7 @@ class MachCommandBase(MozbuildObject):
             sys.exit(1)
 
         except MozconfigLoadException as e:
-            print('Error loading mozconfig: ' + e.path)
-            print('')
-            print(e.message)
-            if e.output:
-                print('')
-                print('mozconfig output:')
-                print('')
-                for line in e.output:
-                    print(line)
-
+            print(e)
             sys.exit(1)
 
         MozbuildObject.__init__(self, topsrcdir, context.settings,
@@ -921,20 +895,11 @@ class MachCommandBase(MozbuildObject):
             self.mozconfig
 
         except MozconfigFindException as e:
-            print(e.message)
+            print(e)
             sys.exit(1)
 
         except MozconfigLoadException as e:
-            print('Error loading mozconfig: ' + e.path)
-            print('')
-            print(e.message)
-            if e.output:
-                print('')
-                print('mozconfig output:')
-                print('')
-                for line in e.output:
-                    print(line)
-
+            print(e)
             sys.exit(1)
 
         # Always keep a log of the last command, but don't do that for mach

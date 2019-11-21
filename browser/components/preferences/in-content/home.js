@@ -314,7 +314,7 @@ var gHomePane = {
         break;
       case this.HOME_MODE_BLANK:
         if (HomePage.get() !== "about:blank") {
-          HomePage.set("about:blank");
+          HomePage.safeSet("about:blank");
         } else {
           this._renderCustomSettings({ shouldShow: false });
         }
@@ -323,7 +323,9 @@ var gHomePane = {
         if (startupPref.value === gMainPane.STARTUP_PREF_BLANK) {
           Services.prefs.clearUserPref(startupPref.id);
         }
-        HomePage.clear();
+        if (HomePage.getDefault() != HomePage.getOriginalDefault()) {
+          HomePage.clear();
+        }
         this._renderCustomSettings({ shouldShow: true });
         break;
     }
@@ -370,7 +372,7 @@ var gHomePane = {
 
     // FIXME Bug 244192: using dangerous "|" joiner!
     if (tabs.length) {
-      HomePage.set(tabs.map(getTabURI).join("|"));
+      HomePage.set(tabs.map(getTabURI).join("|")).catch(Cu.reportError);
     }
 
     Services.telemetry.scalarAdd("preferences.use_current_page", 1);
@@ -382,7 +384,7 @@ var gHomePane = {
     }
     if (rv.urls && rv.names) {
       // XXX still using dangerous "|" joiner!
-      HomePage.set(rv.urls.join("|"));
+      HomePage.set(rv.urls.join("|")).catch(Cu.reportError);
     }
   },
 
@@ -429,7 +431,7 @@ var gHomePane = {
 
   onCustomHomePageChange(event) {
     const value = event.target.value || HomePage.getDefault();
-    HomePage.set(value);
+    HomePage.set(value).catch(Cu.reportError);
   },
 
   /**
@@ -486,6 +488,19 @@ var gHomePane = {
     document
       .getElementById("restoreDefaultHomePageBtn")
       .addEventListener("command", this.restoreDefaultPrefsForHome.bind(this));
+
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("homePrefHidden"),
+      () => this.syncFromHomePref()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("newTabMode"),
+      () => this.syncFromNewTabPref()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("newTabMode"),
+      element => this.syncToNewTabPref(element.value)
+    );
 
     this._updateUseCurrentButton();
     window.addEventListener("focus", this._updateUseCurrentButton.bind(this));

@@ -111,11 +111,8 @@ AddonContentPolicy::ShouldLoad(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
 
   // Only apply this policy to requests from documents loaded from
   // moz-extension URLs, or to resources being loaded from moz-extension URLs.
-  bool equals;
-  if (!((NS_SUCCEEDED(aContentLocation->SchemeIs("moz-extension", &equals)) &&
-         equals) ||
-        (NS_SUCCEEDED(requestOrigin->SchemeIs("moz-extension", &equals)) &&
-         equals))) {
+  if (!(aContentLocation->SchemeIs("moz-extension") ||
+        requestOrigin->SchemeIs("moz-extension"))) {
     return NS_OK;
   }
 
@@ -395,7 +392,7 @@ AddonContentPolicy::ValidateAddonCSP(const nsAString& aPolicyString,
   }
 
   RefPtr<BasePrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(NS_ConvertUTF16toUTF8(url));
+      BasePrincipal::CreateContentPrincipal(NS_ConvertUTF16toUTF8(url));
 
   nsCOMPtr<nsIURI> selfURI;
   principal->GetURI(getter_AddRefs(selfURI));

@@ -790,8 +790,8 @@ nscoord nsBoxFrame::GetXULFlex() {
  */
 NS_IMETHODIMP
 nsBoxFrame::DoXULLayout(nsBoxLayoutState& aState) {
-  uint32_t oldFlags = aState.LayoutFlags();
-  aState.SetLayoutFlags(0);
+  ReflowChildFlags oldFlags = aState.LayoutFlags();
+  aState.SetLayoutFlags(ReflowChildFlags::Default);
 
   nsresult rv = NS_OK;
   if (mLayoutManager) {
@@ -884,6 +884,7 @@ void nsBoxFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 }
 
 void nsBoxFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                              const nsLineList::iterator* aPrevFrameLine,
                               nsFrameList& aFrameList) {
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
@@ -1204,7 +1205,7 @@ nsresult nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox,
 }
 
 nsresult nsBoxFrame::XULRelayoutChildAtOrdinal(nsIFrame* aChild) {
-  uint32_t ord = aChild->GetXULOrdinal();
+  int32_t ord = aChild->GetXULOrdinal();
 
   nsIFrame* child = mFrames.FirstChild();
   nsIFrame* newPrevSib = nullptr;

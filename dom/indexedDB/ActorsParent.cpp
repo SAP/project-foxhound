@@ -3895,6 +3895,9 @@ nsresult GetDatabaseFileURL(nsIFile* aDatabaseFile,
   nsAutoCString type;
   PersistenceTypeToText(aPersistenceType, type);
 
+  nsAutoCString clientType;
+  Client::TypeToText(Client::IDB, clientType);
+
   nsAutoCString telemetryFilenameClause;
   if (aTelemetryId) {
     telemetryFilenameClause.AssignLiteral("&telemetryFilename=indexedDB-");
@@ -3906,6 +3909,7 @@ nsresult GetDatabaseFileURL(nsIFile* aDatabaseFile,
            .SetQuery(NS_LITERAL_CSTRING("persistenceType=") + type +
                      NS_LITERAL_CSTRING("&group=") + aGroup +
                      NS_LITERAL_CSTRING("&origin=") + aOrigin +
+                     NS_LITERAL_CSTRING("&clientType=") + clientType +
                      NS_LITERAL_CSTRING("&cache=private") +
                      telemetryFilenameClause)
            .Finalize(fileUrl);
@@ -5839,6 +5843,8 @@ class Database final
     return mConnection;
   }
 
+  void Stringify(nsACString& aResult) const;
+
  private:
   // Reference counted.
   ~Database() override {
@@ -5886,8 +5892,7 @@ class Database final
 
   mozilla::ipc::IPCResult RecvPBackgroundIDBTransactionConstructor(
       PBackgroundIDBTransactionParent* aActor,
-      InfallibleTArray<nsString>&& aObjectStoreNames,
-      const Mode& aMode) override;
+      nsTArray<nsString>&& aObjectStoreNames, const Mode& aMode) override;
 
   bool DeallocPBackgroundIDBTransactionParent(
       PBackgroundIDBTransactionParent* aActor) override;
@@ -6618,9 +6623,9 @@ class FactoryOp
     return mDatabaseFilePath;
   }
 
-  void StringifyPersistenceType(nsCString& aResult) const;
+  void StringifyState(nsACString& aResult) const;
 
-  void StringifyState(nsCString& aResult) const;
+  void Stringify(nsACString& aResult) const;
 
  protected:
   FactoryOp(Factory* aFactory, already_AddRefed<ContentParent> aContentParent,
@@ -8093,6 +8098,8 @@ class Maintenance final : public Runnable, public OpenDirectoryListener {
     return result.forget();
   }
 
+  void Stringify(nsACString& aResult) const;
+
  private:
   ~Maintenance() override {
     MOZ_ASSERT(mState == State::Complete);
@@ -8236,6 +8243,8 @@ class DatabaseMaintenance final : public Runnable {
 
     mCompleteCallback = aCallback;
   }
+
+  void Stringify(nsACString& aResult) const;
 
  private:
   ~DatabaseMaintenance() override = default;
@@ -8455,10 +8464,9 @@ nsresult DeserializeStructuredCloneFile(FileManager* aFileManager,
   return NS_OK;
 }
 
-nsresult DeserializeStructuredCloneFiles(FileManager* aFileManager,
-                                         const nsAString& aText,
-                                         nsTArray<StructuredCloneFile>& aResult,
-                                         bool* aHasPreprocessInfo) {
+nsresult DeserializeStructuredCloneFiles(
+    FileManager* aFileManager, const nsAString& aText,
+    nsTArray<StructuredCloneFile>& aResult) {
   MOZ_ASSERT(!IsOnBackgroundThread());
 
   nsCharSeparatedTokenizerTemplate<TokenizerIgnoreNothing> tokenizer(aText,
@@ -8475,20 +8483,6 @@ nsresult DeserializeStructuredCloneFiles(FileManager* aFileManager,
     rv = DeserializeStructuredCloneFile(aFileManager, token, file);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
-    }
-
-    if (!aHasPreprocessInfo) {
-      continue;
-    }
-
-    if (file->mType == StructuredCloneFile::eWasmBytecode) {
-      *aHasPreprocessInfo = true;
-    } else if (file->mType == StructuredCloneFile::eWasmCompiled) {
-      MOZ_ASSERT(aResult.Length() > 1);
-      MOZ_ASSERT(aResult[aResult.Length() - 2].mType ==
-                 StructuredCloneFile::eWasmBytecode);
-
-      *aHasPreprocessInfo = true;
     }
   }
 
@@ -8541,7 +8535,7 @@ nsresult SerializeStructuredCloneFiles(
   for (uint32_t index = 0; index < count; index++) {
     const StructuredCloneFile& file = aFiles[index];
 
-    if (aForPreprocess && file.mType != StructuredCloneFile::eWasmBytecode) {
+    if (aForPreprocess && file.mType != StructuredCloneFile::eStructuredClone) {
       continue;
     }
 
@@ -8616,23 +8610,12 @@ nsresult SerializeStructuredCloneFiles(
       }
 
       case StructuredCloneFile::eStructuredClone: {
-        SerializedStructuredCloneFile* file = aResult.AppendElement(fallible);
-        MOZ_ASSERT(file);
-
-        file->file() = null_t();
-        file->type() = StructuredCloneFile::eStructuredClone;
-
-        break;
-      }
-
-      case StructuredCloneFile::eWasmBytecode: {
         if (!aForPreprocess) {
-          SerializedStructuredCloneFile* serializedFile =
-              aResult.AppendElement(fallible);
-          MOZ_ASSERT(serializedFile);
+          SerializedStructuredCloneFile* file = aResult.AppendElement(fallible);
+          MOZ_ASSERT(file);
 
-          serializedFile->file() = null_t();
-          serializedFile->type() = StructuredCloneFile::eWasmBytecode;
+          file->file() = null_t();
+          file->type() = StructuredCloneFile::eStructuredClone;
         } else {
           RefPtr<FileBlobImpl> impl = new FileBlobImpl(nativeFile);
           impl->SetFileId(file.mFileInfo->Id());
@@ -8651,7 +8634,7 @@ nsresult SerializeStructuredCloneFiles(
           MOZ_ASSERT(serializedFile);
 
           serializedFile->file() = ipcBlob;
-          serializedFile->type() = StructuredCloneFile::eWasmBytecode;
+          serializedFile->type() = StructuredCloneFile::eStructuredClone;
 
           aDatabase->MapBlob(ipcBlob, file.mFileInfo);
         }
@@ -8659,13 +8642,20 @@ nsresult SerializeStructuredCloneFiles(
         break;
       }
 
+      case StructuredCloneFile::eWasmBytecode:
       case StructuredCloneFile::eWasmCompiled: {
         SerializedStructuredCloneFile* serializedFile =
             aResult.AppendElement(fallible);
         MOZ_ASSERT(serializedFile);
 
+        // Set file() to null, support for storing WebAssembly.Modules has been
+        // removed in bug 1469395. Support for de-serialization of
+        // WebAssembly.Modules modules has been removed in bug 1561876. Full
+        // removal is tracked in bug 1487479.
+
         serializedFile->file() = null_t();
-        serializedFile->type() = StructuredCloneFile::eWasmCompiled;
+        serializedFile->type() = file.mType;
+
         break;
       }
 
@@ -8729,7 +8719,7 @@ nsresult DeleteFile(nsIFile* aDirectory, const nsAString& aFilename,
 
   if (aQuotaManager && fileSize > 0) {
     aQuotaManager->DecreaseUsageForOrigin(aPersistenceType, aGroup, aOrigin,
-                                          fileSize);
+                                          Client::IDB, fileSize);
   }
 
   return NS_OK;
@@ -8926,10 +8916,10 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
       return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
     }
 
-    uint64_t usage = 0;
+    uint64_t usage;
 
     if (aQuotaManager) {
-      rv = FileManager::GetUsage(fmDirectory, &usage);
+      rv = FileManager::GetUsage(fmDirectory, usage);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -8941,7 +8931,7 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
       // information before returning the error.
       if (aQuotaManager) {
         uint64_t newUsage;
-        if (NS_SUCCEEDED(FileManager::GetUsage(fmDirectory, &newUsage))) {
+        if (NS_SUCCEEDED(FileManager::GetUsage(fmDirectory, newUsage))) {
           MOZ_ASSERT(newUsage <= usage);
           usage = usage - newUsage;
         }
@@ -8950,7 +8940,7 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
 
     if (aQuotaManager && usage) {
       aQuotaManager->DecreaseUsageForOrigin(aPersistenceType, aGroup, aOrigin,
-                                            usage);
+                                            Client::IDB, usage);
     }
 
     if (NS_FAILED(rv)) {
@@ -10291,9 +10281,9 @@ void DatabaseConnection::UpdateRefcountFunction::Reset() {
         QuotaManager* quotaManager = QuotaManager::Get();
         MOZ_ASSERT(quotaManager);
 
-        quotaManager->DecreaseUsageForOrigin(aFileManager->Type(),
-                                             aFileManager->Group(),
-                                             aFileManager->Origin(), fileSize);
+        quotaManager->DecreaseUsageForOrigin(
+            aFileManager->Type(), aFileManager->Group(), aFileManager->Origin(),
+            Client::IDB, fileSize);
       }
 
       file = FileManager::GetFileForId(mJournalDirectory, aId);
@@ -10359,7 +10349,7 @@ nsresult DatabaseConnection::UpdateRefcountFunction::ProcessValue(
   }
 
   nsTArray<StructuredCloneFile> files;
-  rv = DeserializeStructuredCloneFiles(mFileManager, ids, files, nullptr);
+  rv = DeserializeStructuredCloneFiles(mFileManager, ids, files);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -12664,6 +12654,46 @@ void Database::MapBlob(const IPCBlob& aIPCBlob, FileInfo* aFileInfo) {
   actor->SetCallback(callback);
 }
 
+void Database::Stringify(nsACString& aResult) const {
+  AssertIsOnBackgroundThread();
+
+  aResult.AppendLiteral("DirectoryLock:");
+  aResult.AppendInt(!!mDirectoryLock);
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("Transactions:");
+  aResult.AppendInt(mTransactions.Count());
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("OtherProcessActor:");
+  aResult.AppendInt(
+      BackgroundParent::IsOtherProcessActor(GetBackgroundParent()));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("Origin:");
+  aResult.Append(AnonymizedOriginString(mOrigin));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("PersistenceType:");
+  aResult.Append(PersistenceTypeString(mPersistenceType));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("Closed:");
+  aResult.AppendInt(mClosed);
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("Invalidated:");
+  aResult.AppendInt(mInvalidated);
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("ActorWasAlive:");
+  aResult.AppendInt(mActorWasAlive);
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("ActorDestroyed:");
+  aResult.AppendInt(mActorDestroyed);
+}
+
 already_AddRefed<FileInfo> Database::GetBlob(const IPCBlob& aIPCBlob) {
   AssertIsOnBackgroundThread();
 
@@ -13012,7 +13042,7 @@ PBackgroundIDBTransactionParent* Database::AllocPBackgroundIDBTransactionParent(
 
 mozilla::ipc::IPCResult Database::RecvPBackgroundIDBTransactionConstructor(
     PBackgroundIDBTransactionParent* aActor,
-    InfallibleTArray<nsString>&& aObjectStoreNames, const Mode& aMode) {
+    nsTArray<nsString>&& aObjectStoreNames, const Mode& aMode) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aActor);
   MOZ_ASSERT(!aObjectStoreNames.IsEmpty());
@@ -13777,23 +13807,8 @@ bool TransactionBase::VerifyRequestParams(
       }
 
       case StructuredCloneFile::eStructuredClone:
-        ASSERT_UNLESS_FUZZING();
-        return false;
-
       case StructuredCloneFile::eWasmBytecode:
       case StructuredCloneFile::eWasmCompiled:
-        if (NS_WARN_IF(
-                file.type() !=
-                DatabaseOrMutableFile::TPBackgroundIDBDatabaseFileParent)) {
-          ASSERT_UNLESS_FUZZING();
-          return false;
-        }
-        if (NS_WARN_IF(!file.get_PBackgroundIDBDatabaseFileParent())) {
-          ASSERT_UNLESS_FUZZING();
-          return false;
-        }
-        break;
-
       case StructuredCloneFile::eEndGuard:
         ASSERT_UNLESS_FUZZING();
         return false;
@@ -15675,10 +15690,9 @@ nsresult FileManager::InitDirectory(nsIFile* aDirectory, nsIFile* aDatabaseFile,
 }
 
 // static
-nsresult FileManager::GetUsage(nsIFile* aDirectory, uint64_t* aUsage) {
+nsresult FileManager::GetUsage(nsIFile* aDirectory, Maybe<uint64_t>& aUsage) {
   AssertIsOnIOThread();
   MOZ_ASSERT(aDirectory);
-  MOZ_ASSERT(aUsage);
 
   bool exists;
   nsresult rv = aDirectory->Exists(&exists);
@@ -15687,7 +15701,7 @@ nsresult FileManager::GetUsage(nsIFile* aDirectory, uint64_t* aUsage) {
   }
 
   if (!exists) {
-    *aUsage = 0;
+    aUsage.reset();
     return NS_OK;
   }
 
@@ -15697,7 +15711,7 @@ nsresult FileManager::GetUsage(nsIFile* aDirectory, uint64_t* aUsage) {
     return rv;
   }
 
-  uint64_t usage = 0;
+  Maybe<uint64_t> usage;
 
   nsCOMPtr<nsIFile> file;
   while (NS_SUCCEEDED((rv = entries->GetNextFile(getter_AddRefs(file)))) &&
@@ -15718,14 +15732,29 @@ nsresult FileManager::GetUsage(nsIFile* aDirectory, uint64_t* aUsage) {
       return rv;
     }
 
-    UsageInfo::IncrementUsage(&usage, uint64_t(fileSize));
+    UsageInfo::IncrementUsage(usage, Some(uint64_t(fileSize)));
   }
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  *aUsage = usage;
+  aUsage = usage;
+  return NS_OK;
+}
+
+// static
+nsresult FileManager::GetUsage(nsIFile* aDirectory, uint64_t& aUsage) {
+  AssertIsOnIOThread();
+  MOZ_ASSERT(aDirectory);
+
+  Maybe<uint64_t> usage;
+  nsresult rv = GetUsage(aDirectory, usage);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  aUsage = usage.valueOr(0);
   return NS_OK;
 }
 
@@ -15998,7 +16027,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
   nsresult rv =
       GetDirectory(aPersistenceType, aOrigin, getter_AddRefs(directory));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetDirectory);
+    REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetDirectory);
     return rv;
   }
 
@@ -16013,7 +16042,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
                             /* aForUpgrade */ false, subdirsToProcess,
                             databaseFilenames, &obsoleteFilenames);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetDBFilenames);
+    REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetDBFilenames);
     return rv;
   }
 
@@ -16030,7 +16059,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
       // If there is an unexpected directory in the idb directory, trying to
       // delete at first instead of breaking the whole initialization.
       if (NS_WARN_IF(NS_FAILED(DeleteFilesNoQuota(directory, subdirName)))) {
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetBaseFilename);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetBaseFilename);
         return NS_ERROR_UNEXPECTED;
       }
 
@@ -16045,7 +16074,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
         // If we somehow running into here, it probably means we are in a
         // serious situation. e.g. Filesystem corruption.
         // Will handle this in bug 1521541.
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_RemoveDBFiles);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_RemoveDBFiles);
         return NS_ERROR_UNEXPECTED;
       }
 
@@ -16058,7 +16087,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
     // delete at first instead of breaking the whole initialization.
     if (NS_WARN_IF(!databaseFilenames.GetEntry(subdirNameBase)) &&
         NS_WARN_IF(NS_FAILED(DeleteFilesNoQuota(directory, subdirName)))) {
-      REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetEntry);
+      REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetEntry);
       return NS_ERROR_UNEXPECTED;
     }
   }
@@ -16075,26 +16104,26 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
     nsCOMPtr<nsIFile> fmDirectory;
     rv = directory->Clone(getter_AddRefs(fmDirectory));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_Clone);
+      REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_Clone);
       return rv;
     }
 
     rv = fmDirectory->Append(databaseFilename + filesSuffix);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_Append);
+      REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_Append);
       return rv;
     }
 
     nsCOMPtr<nsIFile> databaseFile;
     rv = directory->Clone(getter_AddRefs(databaseFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_Clone2);
+      REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_Clone2);
       return rv;
     }
 
     rv = databaseFile->Append(databaseFilename + sqliteSuffix);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_Append2);
+      REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_Append2);
       return rv;
     }
 
@@ -16102,13 +16131,13 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
     if (aUsageInfo) {
       rv = directory->Clone(getter_AddRefs(walFile));
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_Clone3);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_Clone3);
         return rv;
       }
 
       rv = walFile->Append(databaseFilename + walSuffix);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_Append3);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_Append3);
         return rv;
       }
     }
@@ -16117,7 +16146,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
                                     aGroup, aOrigin,
                                     TelemetryIdForFile(databaseFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_INIT_ERR(kInternalError, IDB_InitDirectory);
+      REPORT_TELEMETRY_INIT_ERR(kQuotaInternalError, IDB_InitDirectory);
       return rv;
     }
 
@@ -16125,28 +16154,28 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
       int64_t fileSize;
       rv = databaseFile->GetFileSize(&fileSize);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetFileSize);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetFileSize);
         return rv;
       }
 
       MOZ_ASSERT(fileSize >= 0);
 
-      aUsageInfo->AppendToDatabaseUsage(uint64_t(fileSize));
+      aUsageInfo->AppendToDatabaseUsage(Some(uint64_t(fileSize)));
 
       rv = walFile->GetFileSize(&fileSize);
       if (NS_SUCCEEDED(rv)) {
         MOZ_ASSERT(fileSize >= 0);
-        aUsageInfo->AppendToDatabaseUsage(uint64_t(fileSize));
+        aUsageInfo->AppendToDatabaseUsage(Some(uint64_t(fileSize)));
       } else if (NS_WARN_IF(rv != NS_ERROR_FILE_NOT_FOUND &&
                             rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST)) {
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetWalFileSize);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetWalFileSize);
         return rv;
       }
 
-      uint64_t usage;
-      rv = FileManager::GetUsage(fmDirectory, &usage);
+      Maybe<uint64_t> usage;
+      rv = FileManager::GetUsage(fmDirectory, usage);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_INIT_ERR(kExternalError, IDB_GetUsage);
+        REPORT_TELEMETRY_INIT_ERR(kQuotaExternalError, IDB_GetUsage);
         return rv;
       }
 
@@ -16337,55 +16366,56 @@ void QuotaClient::ShutdownTimedOut() {
   nsCString data;
 
   if (gFactoryOps && !gFactoryOps->IsEmpty()) {
-    data.Append("gFactoryOps: ");
+    data.Append("FactoryOperations: ");
     data.AppendInt(static_cast<uint32_t>(gFactoryOps->Length()));
+    data.Append(" (");
 
     nsTHashtable<nsCStringHashKey> ids;
-    for (uint32_t index = 0; index < gFactoryOps->Length(); index++) {
-      CheckedUnsafePtr<FactoryOp>& factoryOp = (*gFactoryOps)[index];
 
-      nsCString persistenceType;
-      factoryOp->StringifyPersistenceType(persistenceType);
+    for (auto const& factoryOp : *gFactoryOps) {
+      MOZ_ASSERT(factoryOp);
 
-      nsCString origin(factoryOp->Origin());
-      SanitizeOrigin(origin);
-
-      nsCString state;
-      factoryOp->StringifyState(state);
-
-      NS_NAMED_LITERAL_CSTRING(delimiter, "*");
-
-      nsCString id = persistenceType + delimiter + origin + delimiter + state;
+      nsCString id;
+      factoryOp->Stringify(id);
 
       ids.PutEntry(id);
     }
 
-    data.Append(" (");
-
-    bool first = true;
-    for (auto iter = ids.ConstIter(); !iter.Done(); iter.Next()) {
-      if (first) {
-        first = false;
-      } else {
-        data.Append(", ");
-      }
-
-      const nsACString& id = iter.Get()->GetKey();
-
-      data.Append(id);
-    }
+    StringifyTableKeys(ids, data);
 
     data.Append(")\n");
   }
 
   if (gLiveDatabaseHashtable && gLiveDatabaseHashtable->Count()) {
-    data.Append("gLiveDatabaseHashtable: ");
+    data.Append("LiveDatabases: ");
     data.AppendInt(gLiveDatabaseHashtable->Count());
-    data.Append("\n");
+    data.Append(" (");
+
+    nsTHashtable<nsCStringHashKey> ids;
+
+    for (auto iter = gLiveDatabaseHashtable->ConstIter(); !iter.Done();
+         iter.Next()) {
+      MOZ_ASSERT(iter.Data());
+
+      for (const auto& database : iter.Data()->mLiveDatabases) {
+        MOZ_ASSERT(database);
+
+        nsCString id;
+        database->Stringify(id);
+
+        ids.PutEntry(id);
+      }
+    }
+
+    StringifyTableKeys(ids, data);
+
+    data.Append(")\n");
   }
 
   if (mCurrentMaintenance) {
-    data.Append("mCurrentMaintenance\n");
+    data.Append("IdleMaintenance: 1 (");
+    mCurrentMaintenance->Stringify(data);
+    data.Append(")\n");
   }
 
   CrashReporter::AnnotateCrashReport(
@@ -16640,9 +16670,9 @@ nsresult QuotaClient::GetUsageForDirectoryInternal(nsIFile* aDirectory,
     MOZ_ASSERT(fileSize >= 0);
 
     if (aDatabaseFiles) {
-      aUsageInfo->AppendToDatabaseUsage(uint64_t(fileSize));
+      aUsageInfo->AppendToDatabaseUsage(Some(uint64_t(fileSize)));
     } else {
-      aUsageInfo->AppendToFileUsage(uint64_t(fileSize));
+      aUsageInfo->AppendToFileUsage(Some(uint64_t(fileSize)));
     }
   }
 
@@ -16725,9 +16755,9 @@ nsresult DeleteFilesRunnable::DeleteFile(int64_t aFileId) {
     QuotaManager* quotaManager = QuotaManager::Get();
     NS_ASSERTION(quotaManager, "Shouldn't be null!");
 
-    quotaManager->DecreaseUsageForOrigin(mFileManager->Type(),
-                                         mFileManager->Group(),
-                                         mFileManager->Origin(), fileSize);
+    quotaManager->DecreaseUsageForOrigin(
+        mFileManager->Type(), mFileManager->Group(), mFileManager->Origin(),
+        Client::IDB, fileSize);
   }
 
   file = mFileManager->GetFileForId(mJournalDirectory, aFileId);
@@ -16868,6 +16898,30 @@ void Maintenance::UnregisterDatabaseMaintenance(
 
   mState = State::Finishing;
   Finish();
+}
+
+void Maintenance::Stringify(nsACString& aResult) const {
+  AssertIsOnBackgroundThread();
+
+  aResult.Append("DatabaseMaintenances: ");
+  aResult.AppendInt(mDatabaseMaintenances.Count());
+  aResult.Append(" (");
+
+  nsTHashtable<nsCStringHashKey> ids;
+
+  for (auto iter = mDatabaseMaintenances.ConstIter(); !iter.Done();
+       iter.Next()) {
+    MOZ_ASSERT(iter.Data());
+
+    nsCString id;
+    iter.Data()->Stringify(id);
+
+    ids.PutEntry(id);
+  }
+
+  StringifyTableKeys(ids, aResult);
+
+  aResult.Append(")");
 }
 
 nsresult Maintenance::Start() {
@@ -17431,6 +17485,21 @@ void Maintenance::DirectoryLockFailed() {
 
   mState = State::Finishing;
   Finish();
+}
+
+void DatabaseMaintenance::Stringify(nsACString& aResult) const {
+  AssertIsOnBackgroundThread();
+
+  aResult.AppendLiteral("Origin:");
+  aResult.Append(AnonymizedOriginString(mOrigin));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("PersistenceType:");
+  aResult.Append(PersistenceTypeString(mPersistenceType));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("Duration:");
+  aResult.AppendInt((PR_Now() - mMaintenance->StartTime()) / PR_USEC_PER_MSEC);
 }
 
 void DatabaseMaintenance::PerformMaintenanceOnDatabase() {
@@ -18220,8 +18289,8 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromBlob(
   }
 
   if (!aFileIds.IsVoid()) {
-    nsresult rv = DeserializeStructuredCloneFiles(
-        aFileManager, aFileIds, aInfo->mFiles, &aInfo->mHasPreprocessInfo);
+    nsresult rv =
+        DeserializeStructuredCloneFiles(aFileManager, aFileIds, aInfo->mFiles);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -18244,8 +18313,7 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromExternalBlob(
   nsresult rv;
 
   if (!aFileIds.IsVoid()) {
-    rv = DeserializeStructuredCloneFiles(aFileManager, aFileIds, aInfo->mFiles,
-                                         &aInfo->mHasPreprocessInfo);
+    rv = DeserializeStructuredCloneFiles(aFileManager, aFileIds, aInfo->mFiles);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -18258,6 +18326,11 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromExternalBlob(
   if (index >= aInfo->mFiles.Length()) {
     MOZ_ASSERT(false, "Bad index value!");
     return NS_ERROR_UNEXPECTED;
+  }
+
+  if (IndexedDatabaseManager::PreprocessingEnabled()) {
+    aInfo->mHasPreprocessInfo = true;
+    return NS_OK;
   }
 
   StructuredCloneFile& file = aInfo->mFiles[index];
@@ -19055,13 +19128,13 @@ already_AddRefed<nsISupports> MutableFile::CreateStream(bool aReadOnly) {
 
   if (aReadOnly) {
     RefPtr<FileInputStream> stream =
-        CreateFileInputStream(persistenceType, group, origin, mFile, -1, -1,
-                              nsIFileInputStream::DEFER_OPEN);
+        CreateFileInputStream(persistenceType, group, origin, Client::IDB,
+                              mFile, -1, -1, nsIFileInputStream::DEFER_OPEN);
     result = NS_ISUPPORTS_CAST(nsIFileInputStream*, stream);
   } else {
     RefPtr<FileStream> stream =
-        CreateFileStream(persistenceType, group, origin, mFile, -1, -1,
-                         nsIFileStream::DEFER_OPEN);
+        CreateFileStream(persistenceType, group, origin, Client::IDB, mFile, -1,
+                         -1, nsIFileStream::DEFER_OPEN);
     result = NS_ISUPPORTS_CAST(nsIFileStream*, stream);
   }
   if (NS_WARN_IF(!result)) {
@@ -19154,77 +19227,85 @@ FactoryOp::FactoryOp(Factory* aFactory,
   MOZ_ASSERT(!QuotaClient::IsShuttingDownOnBackgroundThread());
 }
 
-void FactoryOp::StringifyPersistenceType(nsCString& aResult) const {
-  AssertIsOnOwningThread();
-
-  PersistenceType persistenceType = mCommonParams.metadata().persistenceType();
-
-  PersistenceTypeToText(persistenceType, aResult);
-}
-
-void FactoryOp::StringifyState(nsCString& aResult) const {
+void FactoryOp::StringifyState(nsACString& aResult) const {
   AssertIsOnOwningThread();
 
   switch (mState) {
     case State::Initial:
-      aResult.AssignLiteral("Initial");
+      aResult.AppendLiteral("Initial");
       return;
 
     case State::PermissionChallenge:
-      aResult.AssignLiteral("PermissionChallenge");
+      aResult.AppendLiteral("PermissionChallenge");
       return;
 
     case State::PermissionRetry:
-      aResult.AssignLiteral("PermissionRetry");
+      aResult.AppendLiteral("PermissionRetry");
       return;
 
     case State::FinishOpen:
-      aResult.AssignLiteral("FinishOpen");
+      aResult.AppendLiteral("FinishOpen");
       return;
 
     case State::QuotaManagerPending:
-      aResult.AssignLiteral("QuotaManagerPending");
+      aResult.AppendLiteral("QuotaManagerPending");
       return;
 
     case State::DirectoryOpenPending:
-      aResult.AssignLiteral("DirectoryOpenPending");
+      aResult.AppendLiteral("DirectoryOpenPending");
       return;
 
     case State::DatabaseOpenPending:
-      aResult.AssignLiteral("DatabaseOpenPending");
+      aResult.AppendLiteral("DatabaseOpenPending");
       return;
 
     case State::DatabaseWorkOpen:
-      aResult.AssignLiteral("DatabaseWorkOpen");
+      aResult.AppendLiteral("DatabaseWorkOpen");
       return;
 
     case State::BeginVersionChange:
-      aResult.AssignLiteral("BeginVersionChange");
+      aResult.AppendLiteral("BeginVersionChange");
       return;
 
     case State::WaitingForOtherDatabasesToClose:
-      aResult.AssignLiteral("WaitingForOtherDatabasesToClose");
+      aResult.AppendLiteral("WaitingForOtherDatabasesToClose");
       return;
 
     case State::WaitingForTransactionsToComplete:
-      aResult.AssignLiteral("WaitingForTransactionsToComplete");
+      aResult.AppendLiteral("WaitingForTransactionsToComplete");
       return;
 
     case State::DatabaseWorkVersionChange:
-      aResult.AssignLiteral("DatabaseWorkVersionChange");
+      aResult.AppendLiteral("DatabaseWorkVersionChange");
       return;
 
     case State::SendingResults:
-      aResult.AssignLiteral("SendingResults");
+      aResult.AppendLiteral("SendingResults");
       return;
 
     case State::Completed:
-      aResult.AssignLiteral("Completed");
+      aResult.AppendLiteral("Completed");
       return;
 
     default:
       MOZ_CRASH("Bad state!");
   }
+}
+
+void FactoryOp::Stringify(nsACString& aResult) const {
+  AssertIsOnOwningThread();
+
+  aResult.AppendLiteral("PersistenceType:");
+  aResult.Append(
+      PersistenceTypeString(mCommonParams.metadata().persistenceType()));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("Origin:");
+  aResult.Append(AnonymizedOriginString(mOrigin));
+  aResult.Append(kQuotaGenericDelimiter);
+
+  aResult.AppendLiteral("State:");
+  StringifyState(aResult);
 }
 
 nsresult FactoryOp::Open() {
@@ -19694,6 +19775,12 @@ nsresult FactoryOp::FinishOpen() {
   MOZ_ASSERT(mState == State::FinishOpen);
   MOZ_ASSERT(!mContentParent);
 
+  if (NS_WARN_IF(QuotaClient::IsShuttingDownOnBackgroundThread()) ||
+      IsActorDestroyed()) {
+    IDB_REPORT_INTERNAL_ERR();
+    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+  }
+
   if (QuotaManager::Get()) {
     nsresult rv = OpenDirectory();
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -20065,7 +20152,7 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
     return rv;
   }
 
-  markerFile->Exists(&exists);
+  rv = markerFile->Exists(&exists);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -24133,9 +24220,7 @@ bool ObjectStoreAddOrPutRequestOp::Init(TransactionBase* aTransaction) {
       const FileAddInfo& fileAddInfo = fileAddInfos[index];
 
       MOZ_ASSERT(fileAddInfo.type() == StructuredCloneFile::eBlob ||
-                 fileAddInfo.type() == StructuredCloneFile::eMutableFile ||
-                 fileAddInfo.type() == StructuredCloneFile::eWasmBytecode ||
-                 fileAddInfo.type() == StructuredCloneFile::eWasmCompiled);
+                 fileAddInfo.type() == StructuredCloneFile::eMutableFile);
 
       const DatabaseOrMutableFile& file = fileAddInfo.file();
 
@@ -24170,22 +24255,6 @@ bool ObjectStoreAddOrPutRequestOp::Init(TransactionBase* aTransaction) {
           MOZ_ASSERT(storedFileInfo->mFileInfo);
 
           storedFileInfo->mType = StructuredCloneFile::eMutableFile;
-          break;
-        }
-
-        case StructuredCloneFile::eWasmBytecode:
-        case StructuredCloneFile::eWasmCompiled: {
-          MOZ_ASSERT(file.type() ==
-                     DatabaseOrMutableFile::TPBackgroundIDBDatabaseFileParent);
-
-          storedFileInfo->mFileActor = static_cast<DatabaseFile*>(
-              file.get_PBackgroundIDBDatabaseFileParent());
-          MOZ_ASSERT(storedFileInfo->mFileActor);
-
-          storedFileInfo->mFileInfo = storedFileInfo->mFileActor->GetFileInfo();
-          MOZ_ASSERT(storedFileInfo->mFileInfo);
-
-          storedFileInfo->mType = fileAddInfo.type();
           break;
         }
 
@@ -24652,8 +24721,8 @@ void MoveData<SerializedStructuredCloneReadInfo>(
 }
 
 template <>
-void MoveData<WasmModulePreprocessInfo>(StructuredCloneReadInfo& aInfo,
-                                        WasmModulePreprocessInfo& aResult) {}
+void MoveData<PreprocessInfo>(StructuredCloneReadInfo& aInfo,
+                              PreprocessInfo& aResult) {}
 
 template <bool aForPreprocess, typename T>
 nsresult ObjectStoreGetRequestOp::ConvertResponse(
@@ -24762,7 +24831,7 @@ nsresult ObjectStoreGetRequestOp::GetPreprocessParams(
   if (mGetAll) {
     aParams = ObjectStoreGetAllPreprocessParams();
 
-    FallibleTArray<WasmModulePreprocessInfo> falliblePreprocessInfos;
+    FallibleTArray<PreprocessInfo> falliblePreprocessInfos;
     if (NS_WARN_IF(!falliblePreprocessInfos.SetLength(mPreprocessInfoCount,
                                                       fallible))) {
       return NS_ERROR_OUT_OF_MEMORY;
@@ -24782,7 +24851,7 @@ nsresult ObjectStoreGetRequestOp::GetPreprocessParams(
       }
     }
 
-    nsTArray<WasmModulePreprocessInfo>& preprocessInfos =
+    nsTArray<PreprocessInfo>& preprocessInfos =
         aParams.get_ObjectStoreGetAllPreprocessParams().preprocessInfos();
 
     falliblePreprocessInfos.SwapElements(preprocessInfos);
@@ -24792,7 +24861,7 @@ nsresult ObjectStoreGetRequestOp::GetPreprocessParams(
 
   aParams = ObjectStoreGetPreprocessParams();
 
-  WasmModulePreprocessInfo& preprocessInfo =
+  PreprocessInfo& preprocessInfo =
       aParams.get_ObjectStoreGetPreprocessParams().preprocessInfo();
 
   nsresult rv = ConvertResponse<true>(mResponse[0], preprocessInfo);
@@ -26054,48 +26123,26 @@ nsresult Cursor::OpenOp::DoObjectStoreKeyDatabaseWork(
   keyRangeClause.Truncate();
   nsAutoCString continueToKeyRangeClause;
 
+  const bool isUpperBound = mCursor->mDirection == IDBCursor::NEXT ||
+                            mCursor->mDirection == IDBCursor::NEXT_UNIQUE;
+
+  Key bound;
+  bool open;
+  GetRangeKeyInfo(!isUpperBound, &bound, &open);
+
   NS_NAMED_LITERAL_CSTRING(currentKey, "current_key");
-  NS_NAMED_LITERAL_CSTRING(rangeKey, "range_key");
+  AppendConditionClause(keyString, currentKey, !isUpperBound, false,
+                        keyRangeClause);
+  AppendConditionClause(keyString, currentKey, !isUpperBound, true,
+                        continueToKeyRangeClause);
+  if (usingKeyRange && !bound.IsUnset()) {
+    NS_NAMED_LITERAL_CSTRING(rangeKey, "range_key");
 
-  switch (mCursor->mDirection) {
-    case IDBCursor::NEXT:
-    case IDBCursor::NEXT_UNIQUE: {
-      Key upper;
-      bool open;
-      GetRangeKeyInfo(false, &upper, &open);
-      AppendConditionClause(keyString, currentKey, false, false,
-                            keyRangeClause);
-      AppendConditionClause(keyString, currentKey, false, true,
-                            continueToKeyRangeClause);
-      if (usingKeyRange && !upper.IsUnset()) {
-        AppendConditionClause(keyString, rangeKey, true, !open, keyRangeClause);
-        AppendConditionClause(keyString, rangeKey, true, !open,
-                              continueToKeyRangeClause);
-        mCursor->mRangeKey = upper;
-      }
-      break;
-    }
-
-    case IDBCursor::PREV:
-    case IDBCursor::PREV_UNIQUE: {
-      Key lower;
-      bool open;
-      GetRangeKeyInfo(true, &lower, &open);
-      AppendConditionClause(keyString, currentKey, true, false, keyRangeClause);
-      AppendConditionClause(keyString, currentKey, true, true,
-                            continueToKeyRangeClause);
-      if (usingKeyRange && !lower.IsUnset()) {
-        AppendConditionClause(keyString, rangeKey, false, !open,
-                              keyRangeClause);
-        AppendConditionClause(keyString, rangeKey, false, !open,
-                              continueToKeyRangeClause);
-        mCursor->mRangeKey = lower;
-      }
-      break;
-    }
-
-    default:
-      MOZ_CRASH("Should never get here!");
+    AppendConditionClause(keyString, rangeKey, isUpperBound, !open,
+                          keyRangeClause);
+    AppendConditionClause(keyString, rangeKey, isUpperBound, !open,
+                          continueToKeyRangeClause);
+    mCursor->mRangeKey = bound;
   }
 
   mCursor->mContinueQuery =
@@ -27093,7 +27140,7 @@ nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
   // Now try to copy the stream.
   RefPtr<FileOutputStream> fileOutputStream =
       CreateFileOutputStream(mFileManager->Type(), mFileManager->Group(),
-                             mFileManager->Origin(), aFile);
+                             mFileManager->Origin(), Client::IDB, aFile);
   if (NS_WARN_IF(!fileOutputStream)) {
     return NS_ERROR_FAILURE;
   }
@@ -27139,9 +27186,9 @@ nsresult FileHelper::RemoveFile(nsIFile* aFile, nsIFile* aJournalFile) {
     QuotaManager* quotaManager = QuotaManager::Get();
     MOZ_ASSERT(quotaManager);
 
-    quotaManager->DecreaseUsageForOrigin(mFileManager->Type(),
-                                         mFileManager->Group(),
-                                         mFileManager->Origin(), fileSize);
+    quotaManager->DecreaseUsageForOrigin(
+        mFileManager->Type(), mFileManager->Group(), mFileManager->Origin(),
+        Client::IDB, fileSize);
   }
 
   rv = aJournalFile->Remove(false);

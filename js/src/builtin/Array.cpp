@@ -3784,6 +3784,7 @@ static const JSFunctionSpec array_methods[] = {
 
 static const JSFunctionSpec array_static_methods[] = {
     JS_INLINABLE_FN("isArray", array_isArray, 1, 0, ArrayIsArray),
+#ifndef NIGHTLY_BUILD
     JS_SELF_HOSTED_FN("concat", "ArrayStaticConcat", 2, 0),
     JS_SELF_HOSTED_FN("lastIndexOf", "ArrayStaticLastIndexOf", 2, 0),
     JS_SELF_HOSTED_FN("indexOf", "ArrayStaticIndexOf", 2, 0),
@@ -3803,6 +3804,7 @@ static const JSFunctionSpec array_static_methods[] = {
     JS_SELF_HOSTED_FN("unshift", "ArrayStaticUnshift", 2, 0),
     JS_SELF_HOSTED_FN("splice", "ArrayStaticSplice", 3, 0),
     JS_SELF_HOSTED_FN("slice", "ArrayStaticSlice", 3, 0),
+#endif
     JS_SELF_HOSTED_FN("from", "ArrayFrom", 3, 0),
     JS_FN("of", array_of, 0, 0),
 
@@ -3972,7 +3974,7 @@ static bool array_proto_finish(JSContext* cx, JS::HandleObject ctor,
   return DefineDataProperty(cx, proto, id, value, JSPROP_READONLY);
 }
 
-static const ClassOps ArrayObjectClassOps = {
+static const JSClassOps ArrayObjectClassOps = {
     array_addProperty, nullptr, /* delProperty */
     nullptr,                    /* enumerate */
     nullptr,                    /* resolve */
@@ -3994,7 +3996,7 @@ static const ClassSpec ArrayObjectClassSpec = {
     nullptr,
     array_proto_finish};
 
-const Class ArrayObject::class_ = {
+const JSClass ArrayObject::class_ = {
     "Array",
     JSCLASS_HAS_CACHED_PROTO(JSProto_Array) | JSCLASS_DELAY_METADATA_BUILDER,
     &ArrayObjectClassOps, &ArrayObjectClassSpec};
@@ -4025,8 +4027,8 @@ static MOZ_ALWAYS_INLINE ArrayObject* NewArray(
     JSContext* cx, uint32_t length, HandleObject protoArg,
     NewObjectKind newKind = GenericObject) {
   gc::AllocKind allocKind = GuessArrayGCKind(length);
-  MOZ_ASSERT(CanBeFinalizedInBackground(allocKind, &ArrayObject::class_));
-  allocKind = GetBackgroundAllocKind(allocKind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(allocKind, &ArrayObject::class_));
+  allocKind = ForegroundToBackgroundAllocKind(allocKind);
 
   RootedObject proto(cx, protoArg);
   if (!proto) {
@@ -4163,8 +4165,8 @@ ArrayObject* js::NewDenseFullyAllocatedArrayWithTemplate(
     JSContext* cx, uint32_t length, JSObject* templateObject) {
   AutoSetNewObjectMetadata metadata(cx);
   gc::AllocKind allocKind = GuessArrayGCKind(length);
-  MOZ_ASSERT(CanBeFinalizedInBackground(allocKind, &ArrayObject::class_));
-  allocKind = GetBackgroundAllocKind(allocKind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(allocKind, &ArrayObject::class_));
+  allocKind = ForegroundToBackgroundAllocKind(allocKind);
 
   RootedObjectGroup group(cx, templateObject->group());
   RootedShape shape(cx, templateObject->as<ArrayObject>().lastProperty());

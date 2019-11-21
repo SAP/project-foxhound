@@ -427,13 +427,6 @@ const startupPhases = {
       close: 1,
     },
     {
-      // bug 1545167
-      path: "/etc/mime.types",
-      condition: LINUX,
-      read: 1,
-      close: 1,
-    },
-    {
       // We only hit this for new profiles.
       path: "XREAppDist:distribution.ini",
       condition: WIN,
@@ -477,18 +470,6 @@ const startupPhases = {
       path: "ProfD:xulstore/data.mdb",
       condition: MAC,
       write: 3,
-    },
-    {
-      // bug 1543090
-      path: "GreD:omni.ja",
-      condition: WIN,
-      stat: 1,
-    },
-    {
-      // bug 1543090
-      path: "XCurProcD:omni.ja",
-      condition: WIN,
-      stat: 2,
     },
   ],
 
@@ -574,28 +555,9 @@ const startupPhases = {
       close: 1,
     },
     {
-      // bug 1003968
-      path: "XREAppDist:searchplugins",
-      condition: WIN,
-      ignoreIfUnused: true, // with WebRender enabled this may happen during "before becoming idle"
-      stat: 1,
-    },
-    {
       path: "XCurProcD:extensions",
       condition: WIN,
       stat: 1,
-    },
-    {
-      // bug 1543090
-      path: "GreD:omni.ja",
-      condition: WIN,
-      stat: 1,
-    },
-    {
-      // bug 1543090
-      path: "XCurProcD:omni.ja",
-      condition: WIN,
-      stat: 2,
     },
   ],
 
@@ -695,19 +657,6 @@ const startupPhases = {
       condition: WIN,
       ignoreIfUnused: true,
       stat: 3,
-    },
-    {
-      // bug 1543090
-      path: "XCurProcD:omni.ja",
-      condition: WIN,
-      stat: 7,
-    },
-    {
-      // bug 1003968
-      path: "XREAppDist:searchplugins",
-      condition: WIN,
-      ignoreIfUnused: true, // with WebRender enabled this may happen during "before handling user events"
-      stat: 1,
     },
   ],
 };
@@ -909,7 +858,7 @@ add_task(async function() {
     });
   }
 
-  let tmpPath = expandWhitelistPath(MAC ? "TmpD:" : "/dev/shm").toLowerCase();
+  let tmpPath = expandWhitelistPath("TmpD:").toLowerCase();
   let shouldPass = true;
   for (let phase in phases) {
     let whitelist = startupPhases[phase];
@@ -944,15 +893,22 @@ add_task(async function() {
         continue;
       }
 
-      if (!WIN) {
-        if (filename == "/dev/urandom") {
-          continue;
-        }
+      if (!WIN && filename == "/dev/urandom") {
+        continue;
+      }
 
-        // Ignore I/O due to IPC. This doesn't really touch the disk.
-        if (filename.startsWith(tmpPath + "/org.chromium.")) {
-          continue;
-        }
+      // /dev/shm is always tmpfs (a memory filesystem); this isn't
+      // really I/O any more than mmap/munmap are.
+      if (LINUX && filename.startsWith("/dev/shm/")) {
+        continue;
+      }
+
+      // Shared memory uses temporary files on MacOS <= 10.11 to avoid
+      // a kernel security bug that will never be patched (see
+      // https://crbug.com/project-zero/1671 for details).  This can
+      // be removed when we no longer support those OS versions.
+      if (MAC && filename.startsWith(tmpPath + "/org.mozilla.ipc.")) {
+        continue;
       }
 
       let expected = false;

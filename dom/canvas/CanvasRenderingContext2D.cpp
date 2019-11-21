@@ -75,6 +75,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/dom/DOMMatrix.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/PBrowserParent.h"
@@ -92,7 +93,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -358,6 +359,14 @@ class AdjustedTargetForFilter {
       mSourceGraphicRect.SizeTo(1, 1);
     }
 
+    if (!mFinalTarget->CanCreateSimilarDrawTarget(mSourceGraphicRect.Size(),
+                                                  SurfaceFormat::B8G8R8A8)) {
+      mTarget = mFinalTarget;
+      mCtx = nullptr;
+      mFinalTarget = nullptr;
+      return;
+    }
+
     mTarget = mFinalTarget->CreateSimilarDrawTarget(mSourceGraphicRect.Size(),
                                                     SurfaceFormat::B8G8R8A8);
 
@@ -479,6 +488,14 @@ class AdjustedTargetForShadow {
     bounds.Inflate(blurRadius);
     bounds.RoundOut();
     bounds.ToIntRect(&mTempRect);
+
+    if (!mFinalTarget->CanCreateSimilarDrawTarget(mTempRect.Size(),
+                                                  SurfaceFormat::B8G8R8A8)) {
+      mTarget = mFinalTarget;
+      mCtx = nullptr;
+      mFinalTarget = nullptr;
+      return;
+    }
 
     mTarget = mFinalTarget->CreateShadowDrawTarget(
         mTempRect.Size(), SurfaceFormat::B8G8R8A8, mSigma);
@@ -1794,6 +1811,18 @@ void CanvasRenderingContext2D::Transform(double aM11, double aM12, double aM21,
   SetTransformInternal(newMatrix);
 }
 
+already_AddRefed<DOMMatrix> CanvasRenderingContext2D::GetTransform(
+    ErrorResult& aError) {
+  EnsureTarget();
+  if (!IsTargetValid()) {
+    aError.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+  RefPtr<DOMMatrix> matrix =
+      new DOMMatrix(GetParentObject(), mTarget->GetTransform());
+  return matrix.forget();
+}
+
 void CanvasRenderingContext2D::SetTransform(double aM11, double aM12,
                                             double aM21, double aM22,
                                             double aDx, double aDy,
@@ -1805,6 +1834,21 @@ void CanvasRenderingContext2D::SetTransform(double aM11, double aM12,
   }
 
   SetTransformInternal(Matrix(aM11, aM12, aM21, aM22, aDx, aDy));
+}
+
+void CanvasRenderingContext2D::SetTransform(const DOMMatrix2DInit& aInit,
+                                            ErrorResult& aError) {
+  TransformWillUpdate();
+  if (!IsTargetValid()) {
+    aError.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  RefPtr<DOMMatrixReadOnly> matrix =
+      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aInit, aError);
+  if (!aError.Failed()) {
+    SetTransformInternal(Matrix(*(matrix->GetInternal2D())));
+  }
 }
 
 void CanvasRenderingContext2D::SetTransformInternal(const Matrix& aTransform) {
@@ -2155,9 +2199,11 @@ void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
 static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
     nsCSSPropertyID aProperty, const nsAString& aPropertyValue,
     Document* aDocument) {
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      ReferrerInfo::CreateForInternalCSSResources(aDocument);
+
   RefPtr<URLExtraData> data = new URLExtraData(
-      aDocument->GetDocBaseURI(), aDocument->GetDocumentURI(),
-      aDocument->NodePrincipal(), aDocument->GetReferrerPolicy());
+      aDocument->GetDocBaseURI(), referrerInfo, aDocument->NodePrincipal());
 
   ServoCSSParser::ParsingEnvironment env(
       data, aDocument->GetCompatibilityMode(), aDocument->CSSLoader());
@@ -2847,7 +2893,7 @@ bool CanvasRenderingContext2D::DrawCustomFocusRing(
 
   HTMLCanvasElement* canvas = GetCanvas();
 
-  if (!canvas || !nsContentUtils::ContentIsDescendantOf(&aElement, canvas)) {
+  if (!canvas || !aElement.IsInclusiveDescendantOf(canvas)) {
     return false;
   }
 
@@ -4261,7 +4307,7 @@ CanvasRenderingContext2D::CachedSurfaceFromElement(Element* aElement) {
     res.mCORSUsed = corsmode != imgIRequest::CORS_NONE;
   }
 
-  res.mSize = res.mSourceSurface->GetSize();
+  res.mSize = res.mIntrinsicSize = res.mSourceSurface->GetSize();
   res.mPrincipal = principal.forget();
   res.mImageRequest = imgRequest.forget();
   res.mIsWriteOnly = CheckWriteOnlySecurity(res.mCORSUsed, res.mPrincipal,
@@ -4304,6 +4350,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
   RefPtr<SourceSurface> srcSurf;
   gfx::IntSize imgSize;
+  gfx::IntSize intrinsicImgSize;
 
   Element* element = nullptr;
 
@@ -4336,7 +4383,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       SetWriteOnly();
     }
 
-    imgSize = gfx::IntSize(imageBitmap.Width(), imageBitmap.Height());
+    imgSize = intrinsicImgSize =
+        gfx::IntSize(imageBitmap.Width(), imageBitmap.Height());
   } else {
     if (aImage.IsHTMLImageElement()) {
       HTMLImageElement* img = &aImage.GetAsHTMLImageElement();
@@ -4351,7 +4399,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       element = video;
     }
 
-    srcSurf = CanvasImageCache::LookupCanvas(element, mCanvasElement, &imgSize);
+    srcSurf = CanvasImageCache::LookupCanvas(element, mCanvasElement, &imgSize,
+                                             &intrinsicImgSize);
   }
 
   nsLayoutUtils::DirectDrawInfo drawInfo;
@@ -4381,18 +4430,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     }
 
     imgSize = res.mSize;
-
-    // Scale sw/sh based on aspect ratio
-    if (aImage.IsHTMLVideoElement()) {
-      HTMLVideoElement* video = &aImage.GetAsHTMLVideoElement();
-      int32_t displayWidth = video->VideoWidth();
-      int32_t displayHeight = video->VideoHeight();
-      if (displayWidth == 0 || displayHeight == 0) {
-        return;
-      }
-      aSw *= (double)imgSize.width / (double)displayWidth;
-      aSh *= (double)imgSize.height / (double)displayHeight;
-    }
+    intrinsicImgSize = res.mIntrinsicSize;
 
     if (mCanvasElement) {
       CanvasUtils::DoDrawImageSecurityCheck(mCanvasElement, res.mPrincipal,
@@ -4402,7 +4440,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     if (res.mSourceSurface) {
       if (res.mImageRequest) {
         CanvasImageCache::NotifyDrawImage(element, mCanvasElement,
-                                          res.mSourceSurface, imgSize);
+                                          res.mSourceSurface, imgSize,
+                                          intrinsicImgSize);
       }
       srcSurf = res.mSourceSurface;
     } else {
@@ -4412,8 +4451,10 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
   if (aOptional_argc == 0) {
     aSx = aSy = 0.0;
-    aDw = aSw = (double)imgSize.width;
-    aDh = aSh = (double)imgSize.height;
+    aSw = (double)imgSize.width;
+    aSh = (double)imgSize.height;
+    aDw = (double)intrinsicImgSize.width;
+    aDh = (double)intrinsicImgSize.height;
   } else if (aOptional_argc == 2) {
     aSx = aSy = 0.0;
     aSw = (double)imgSize.width;
@@ -5592,21 +5633,28 @@ void CanvasPath::BezierTo(const gfx::Point& aCP1, const gfx::Point& aCP2,
   mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
 }
 
-void CanvasPath::AddPath(CanvasPath& aCanvasPath,
-                         const Optional<NonNull<SVGMatrix>>& aMatrix) {
+void CanvasPath::AddPath(CanvasPath& aCanvasPath, const DOMMatrix2DInit& aInit,
+                         ErrorResult& aError) {
   RefPtr<gfx::Path> tempPath = aCanvasPath.GetPath(
       CanvasWindingRule::Nonzero,
       gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget().get());
 
-  if (aMatrix.WasPassed()) {
-    const SVGMatrix& m = aMatrix.Value();
-    Matrix transform(m.A(), m.B(), m.C(), m.D(), m.E(), m.F());
+  RefPtr<DOMMatrixReadOnly> matrix =
+      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aInit, aError);
+  if (aError.Failed()) {
+    return;
+  }
 
-    if (!transform.IsIdentity()) {
-      RefPtr<PathBuilder> tempBuilder =
-          tempPath->TransformedCopyToBuilder(transform, FillRule::FILL_WINDING);
-      tempPath = tempBuilder->Finish();
-    }
+  Matrix transform(*(matrix->GetInternal2D()));
+
+  if (!transform.IsFinite()) {
+    return;
+  }
+
+  if (!transform.IsIdentity()) {
+    RefPtr<PathBuilder> tempBuilder =
+        tempPath->TransformedCopyToBuilder(transform, FillRule::FILL_WINDING);
+    tempPath = tempBuilder->Finish();
   }
 
   EnsurePathBuilder();  // in case a path is added to itself

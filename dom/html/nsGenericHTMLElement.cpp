@@ -16,7 +16,8 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #include "nscore.h"
 #include "nsGenericHTMLElement.h"
@@ -48,6 +49,7 @@
 #include "nsIPrincipal.h"
 #include "nsContainerFrame.h"
 #include "nsStyleUtil.h"
+#include "ReferrerInfo.h"
 
 #include "mozilla/PresState.h"
 #include "nsILayoutHistoryState.h"
@@ -99,7 +101,6 @@
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "imgIContainer.h"
 #include "nsComputedDOMStyle.h"
-#include "ReferrerPolicy.h"
 #include "mozilla/dom/HTMLLabelElement.h"
 #include "mozilla/dom/HTMLInputElement.h"
 
@@ -184,15 +185,11 @@ void nsGenericHTMLElement::GetAccessKeyLabel(nsString& aLabel) {
   }
 }
 
-static bool IsTableCell(LayoutFrameType frameType) {
-  return LayoutFrameType::TableCell == frameType ||
-         LayoutFrameType::BCTableCell == frameType;
-}
-
 static bool IsOffsetParent(nsIFrame* aFrame) {
   LayoutFrameType frameType = aFrame->Type();
 
-  if (IsTableCell(frameType) || frameType == LayoutFrameType::Table) {
+  if (frameType == LayoutFrameType::TableCell ||
+      frameType == LayoutFrameType::Table) {
     // Per the IDL for Element, only td, th, and table are acceptable
     // offsetParents apart from body or positioned elements; we need to check
     // the content type as well as the frame type so we ignore anonymous tables
@@ -510,7 +507,7 @@ HTMLFormElement* nsGenericHTMLElement::FindAncestorForm(
       // we're one of those inputs-in-a-table that have a hacked mForm pointer
       // and a subtree containing both us and the form got removed from the
       // DOM.
-      if (nsContentUtils::ContentIsDescendantOf(aCurrentForm, prevContent)) {
+      if (aCurrentForm->IsInclusiveDescendantOf(prevContent)) {
         return aCurrentForm;
       }
     }
@@ -523,23 +520,9 @@ bool nsGenericHTMLElement::CheckHandleEventForAnchorsPreconditions(
     EventChainVisitor& aVisitor) {
   MOZ_ASSERT(nsCOMPtr<Link>(do_QueryObject(this)),
              "should be called only when |this| implements |Link|");
-
-  if (!aVisitor.mPresContext) {
-    // We need a pres context to do link stuff. Some events (e.g. mutation
-    // events) don't have one.
-    // XXX: ideally, shouldn't we be able to do what we need without one?
-    return false;
-  }
-
-  // Need to check if we hit an imagemap area and if so see if we're handling
-  // the event on that map or on a link farther up the tree.  If we're on a
-  // link farther up, do nothing.
-  nsCOMPtr<nsIContent> target =
-      aVisitor.mPresContext->EventStateManager()->GetEventTargetContent(
-          aVisitor.mEvent);
-
-  return !target || !target->IsHTMLElement(nsGkAtoms::area) ||
-         IsHTMLElement(nsGkAtoms::area);
+  // When disconnected, only <a> should navigate away per
+  // https://html.spec.whatwg.org/#cannot-navigate
+  return IsInComposedDoc() || IsHTMLElement(nsGkAtoms::a);
 }
 
 void nsGenericHTMLElement::GetEventTargetParentForAnchors(
@@ -877,10 +860,9 @@ bool nsGenericHTMLElement::ParseBackgroundAttribute(int32_t aNamespaceID,
       aAttribute == nsGkAtoms::background && !aValue.IsEmpty()) {
     // Resolve url to an absolute url
     Document* doc = OwnerDoc();
-    nsCOMPtr<nsIURI> baseURI = GetBaseURI();
     nsCOMPtr<nsIURI> uri;
     nsresult rv = nsContentUtils::NewURIWithDocumentCharset(
-        getter_AddRefs(uri), aValue, doc, baseURI);
+        getter_AddRefs(uri), aValue, doc, GetBaseURI());
     if (NS_FAILED(rv)) {
       return false;
     }
@@ -976,7 +958,9 @@ bool nsGenericHTMLElement::ParseAlignValue(const nsAString& aString,
 
       {"top", StyleVerticalAlignKeyword::Top},
       {"middle", StyleVerticalAlignKeyword::MozMiddleWithBaseline},
-      {"bottom", StyleVerticalAlignKeyword::Bottom},
+
+      // Intentionally not bottom.
+      {"bottom", StyleVerticalAlignKeyword::Baseline},
 
       {"center", StyleVerticalAlignKeyword::MozMiddleWithBaseline},
       {"baseline", StyleVerticalAlignKeyword::Baseline},
@@ -1050,25 +1034,29 @@ bool nsGenericHTMLElement::ParseImageAttribute(nsAtom* aAttribute,
 
 bool nsGenericHTMLElement::ParseReferrerAttribute(const nsAString& aString,
                                                   nsAttrValue& aResult) {
-  static const nsAttrValue::EnumTable kReferrerTable[] = {
-      {ReferrerPolicyToString(net::RP_No_Referrer),
-       static_cast<int16_t>(net::RP_No_Referrer)},
-      {ReferrerPolicyToString(net::RP_Origin),
-       static_cast<int16_t>(net::RP_Origin)},
-      {ReferrerPolicyToString(net::RP_Origin_When_Crossorigin),
-       static_cast<int16_t>(net::RP_Origin_When_Crossorigin)},
-      {ReferrerPolicyToString(net::RP_No_Referrer_When_Downgrade),
-       static_cast<int16_t>(net::RP_No_Referrer_When_Downgrade)},
-      {ReferrerPolicyToString(net::RP_Unsafe_URL),
-       static_cast<int16_t>(net::RP_Unsafe_URL)},
-      {ReferrerPolicyToString(net::RP_Strict_Origin),
-       static_cast<int16_t>(net::RP_Strict_Origin)},
-      {ReferrerPolicyToString(net::RP_Same_Origin),
-       static_cast<int16_t>(net::RP_Same_Origin)},
-      {ReferrerPolicyToString(net::RP_Strict_Origin_When_Cross_Origin),
-       static_cast<int16_t>(net::RP_Strict_Origin_When_Cross_Origin)},
-      {nullptr, 0}};
-  return aResult.ParseEnumValue(aString, kReferrerTable, false);
+  using mozilla::dom::ReferrerInfo;
+  static const nsAttrValue::EnumTable kReferrerPolicyTable[] = {
+      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::No_referrer),
+       static_cast<int16_t>(ReferrerPolicy::No_referrer)},
+      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Origin),
+       static_cast<int16_t>(ReferrerPolicy::Origin)},
+      {ReferrerInfo::ReferrerPolicyToString(
+           ReferrerPolicy::Origin_when_cross_origin),
+       static_cast<int16_t>(ReferrerPolicy::Origin_when_cross_origin)},
+      {ReferrerInfo::ReferrerPolicyToString(
+           ReferrerPolicy::No_referrer_when_downgrade),
+       static_cast<int16_t>(ReferrerPolicy::No_referrer_when_downgrade)},
+      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Unsafe_url),
+       static_cast<int16_t>(ReferrerPolicy::Unsafe_url)},
+      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Strict_origin),
+       static_cast<int16_t>(ReferrerPolicy::Strict_origin)},
+      {ReferrerInfo::ReferrerPolicyToString(ReferrerPolicy::Same_origin),
+       static_cast<int16_t>(ReferrerPolicy::Same_origin)},
+      {ReferrerInfo::ReferrerPolicyToString(
+           ReferrerPolicy::Strict_origin_when_cross_origin),
+       static_cast<int16_t>(ReferrerPolicy::Strict_origin_when_cross_origin)},
+      {nullptr, ReferrerPolicy::_empty}};
+  return aResult.ParseEnumValue(aString, kReferrerPolicyTable, false);
 }
 
 bool nsGenericHTMLElement::ParseFrameborderValue(const nsAString& aString,
@@ -1427,8 +1415,7 @@ uint32_t nsGenericHTMLElement::GetDimensionAttrAsUnsignedInt(
   attrVal->ToString(val);
   nsContentUtils::ParseHTMLIntegerResultFlags result;
   int32_t parsedInt = nsContentUtils::ParseHTMLInteger(val, &result);
-  if ((result & nsContentUtils::eParseHTMLInteger_Error) ||
-      parsedInt < 0) {
+  if ((result & nsContentUtils::eParseHTMLInteger_Error) || parsedInt < 0) {
     return aDefault;
   }
 
@@ -2701,9 +2688,8 @@ nsresult nsGenericHTMLElement::NewURIFromString(const nsAString& aURISpec,
 
   nsCOMPtr<Document> doc = OwnerDoc();
 
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-  nsresult rv =
-      nsContentUtils::NewURIWithDocumentCharset(aURI, aURISpec, doc, baseURI);
+  nsresult rv = nsContentUtils::NewURIWithDocumentCharset(aURI, aURISpec, doc,
+                                                          GetBaseURI());
   NS_ENSURE_SUCCESS(rv, rv);
 
   bool equal;

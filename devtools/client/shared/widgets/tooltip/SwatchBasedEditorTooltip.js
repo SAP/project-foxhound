@@ -48,7 +48,7 @@ class SwatchBasedEditorTooltip {
     // By default, swatch-based editor tooltips revert value change on <esc> and
     // commit value change on <enter>
     this.shortcuts = new KeyShortcuts({
-      window: this.tooltip.topWindow,
+      window: this.tooltip.doc.defaultView,
     });
     this.shortcuts.on("Escape", event => {
       if (!this.tooltip.isVisible()) {
@@ -105,14 +105,10 @@ class SwatchBasedEditorTooltip {
    *         immediately if there is no currently active swatch.
    */
   show() {
-    const tooltipAnchor = this.useInline
-      ? this.activeSwatch.closest(`.${INLINE_TOOLTIP_CLASS}`)
-      : this.activeSwatch;
-
-    if (tooltipAnchor) {
+    if (this.tooltipAnchor) {
       const onShown = this.tooltip.once("shown");
 
-      this.tooltip.show(tooltipAnchor);
+      this.tooltip.show(this.tooltipAnchor);
       this.tooltip.once("hidden", () => this.onTooltipHidden());
 
       return onShown;
@@ -138,6 +134,11 @@ class SwatchBasedEditorTooltip {
   }
 
   hide() {
+    if (this.swatchActivatedWithKeyboard) {
+      this.activeSwatch.focus();
+      this.swatchActivatedWithKeyboard = null;
+    }
+
     this.tooltip.hide();
   }
 
@@ -190,14 +191,22 @@ class SwatchBasedEditorTooltip {
   }
 
   _onSwatchClick(event) {
-    const swatch = this.swatches.get(event.target);
+    const { shiftKey, clientX, clientY, target } = event;
 
-    if (event.shiftKey) {
+    // If mouse coordinates are 0, the event listener could have been triggered
+    // by a keybaord
+    this.swatchActivatedWithKeyboard =
+      event.key && clientX === 0 && clientY === 0;
+
+    if (shiftKey) {
       event.stopPropagation();
       return;
     }
+
+    const swatch = this.swatches.get(target);
+
     if (swatch) {
-      this.activeSwatch = event.target;
+      this.activeSwatch = target;
       this.show();
       swatch.callbacks.onShow();
       event.stopPropagation();
@@ -235,6 +244,12 @@ class SwatchBasedEditorTooltip {
       const swatch = this.swatches.get(this.activeSwatch);
       swatch.callbacks.onCommit();
     }
+  }
+
+  get tooltipAnchor() {
+    return this.useInline
+      ? this.activeSwatch.closest(`.${INLINE_TOOLTIP_CLASS}`)
+      : this.activeSwatch;
   }
 
   destroy() {

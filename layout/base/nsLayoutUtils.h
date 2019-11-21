@@ -12,6 +12,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/TypedEnumBits.h"
 #include "nsBoundingMetrics.h"
 #include "nsChangeHint.h"
@@ -119,6 +120,8 @@ struct DisplayPortMarginsPropertyData {
 struct MotionPathData {
   gfx::Point mTranslate;
   float mRotate;
+  // The delta value between transform-origin and offset-anchor.
+  gfx::Point mShift;
 };
 
 }  // namespace mozilla
@@ -2155,6 +2158,8 @@ class nsLayoutUtils {
 
     /* The size of the surface */
     mozilla::gfx::IntSize mSize;
+    /* The size the surface is intended to be rendered at */
+    mozilla::gfx::IntSize mIntrinsicSize;
     /* The principal associated with the element whose surface was returned.
        If there is a surface, this will never be null. */
     nsCOMPtr<nsIPrincipal> mPrincipal;
@@ -2367,11 +2372,6 @@ class nsLayoutUtils {
   static bool AreAsyncAnimationsEnabled();
 
   /**
-   * Checks if we should warn about animations that can't be async
-   */
-  static bool IsAnimationLoggingEnabled();
-
-  /**
    * Checks if retained display lists are enabled.
    */
   static bool AreRetainedDisplayListsEnabled();
@@ -2397,20 +2397,6 @@ class nsLayoutUtils {
    * possible.
    */
   static bool GPUImageScalingEnabled();
-
-  /**
-   * Checks whether we want to layerize animated images whenever possible.
-   */
-  static bool AnimatedImageLayersEnabled();
-
-  /**
-   * Checks whether support for inter-character ruby is enabled.
-   */
-  static bool IsInterCharacterRubyEnabled();
-
-  static bool InterruptibleReflowEnabled() {
-    return sInterruptibleReflowEnabled;
-  }
 
   /**
    * Unions the overflow areas of the children of aFrame with aOverflowAreas.
@@ -2457,78 +2443,10 @@ class nsLayoutUtils {
   static bool FontSizeInflationEnabled(nsPresContext* aPresContext);
 
   /**
-   * See comment above "font.size.inflation.maxRatio" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationMaxRatio() {
-    return sFontSizeInflationMaxRatio;
-  }
-
-  /**
-   * See comment above "font.size.inflation.emPerLine" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationEmPerLine() {
-    return sFontSizeInflationEmPerLine;
-  }
-
-  /**
-   * See comment above "font.size.inflation.minTwips" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationMinTwips() {
-    return sFontSizeInflationMinTwips;
-  }
-
-  /**
-   * See comment above "font.size.inflation.lineThreshold" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationLineThreshold() {
-    return sFontSizeInflationLineThreshold;
-  }
-
-  static bool FontSizeInflationForceEnabled() {
-    return sFontSizeInflationForceEnabled;
-  }
-
-  static bool FontSizeInflationDisabledInMasterProcess() {
-    return sFontSizeInflationDisabledInMasterProcess;
-  }
-
-  /**
-   * See comment above "font.size.systemFontScale" in
-   * modules/libpref/init/all.js.
-   */
-  static float SystemFontScale() { return sSystemFontScale / 100.0f; }
-
-  static float MaxZoom() { return sZoomMaxPercent / 100.0f; }
-
-  static float MinZoom() { return sZoomMinPercent / 100.0f; }
-
-  static bool SVGTransformBoxEnabled() { return sSVGTransformBoxEnabled; }
-
-  static uint32_t IdlePeriodDeadlineLimit() { return sIdlePeriodDeadlineLimit; }
-
-  static uint32_t QuiescentFramesBeforeIdlePeriod() {
-    return sQuiescentFramesBeforeIdlePeriod;
-  }
-
-  /**
-   * See comment above "font.size.inflation.mappingIntercept" in
-   * modules/libpref/src/init/all.js .
-   */
-  static int32_t FontSizeInflationMappingIntercept() {
-    return sFontSizeInflationMappingIntercept;
-  }
-
-  /**
    * Returns true if the nglayout.debug.invalidation pref is set to true.
-   * Note that sInvalidationDebuggingIsEnabled is declared outside this function
-   * to allow it to be accessed an manipulated from breakpoint conditions.
    */
   static bool InvalidationDebuggingIsEnabled() {
-    return sInvalidationDebuggingIsEnabled ||
+    return mozilla::StaticPrefs::nglayout_debug_invalidation() ||
            getenv("MOZ_DUMP_INVALIDATION") != 0;
   }
 
@@ -2840,8 +2758,6 @@ class nsLayoutUtils {
    */
   static void ExpireDisplayPortOnAsyncScrollableAncestor(nsIFrame* aFrame);
 
-  static bool IsOutlineStyleAutoEnabled();
-
   static void SetBSizeFromFontMetrics(
       const nsIFrame* aFrame, mozilla::ReflowOutput& aMetrics,
       const mozilla::LogicalMargin& aFramePadding, mozilla::WritingMode aLineWM,
@@ -3068,22 +2984,6 @@ class nsLayoutUtils {
       const nsIFrame* aFrame);
 
  private:
-  static uint32_t sFontSizeInflationEmPerLine;
-  static uint32_t sFontSizeInflationMinTwips;
-  static uint32_t sFontSizeInflationLineThreshold;
-  static int32_t sFontSizeInflationMappingIntercept;
-  static uint32_t sFontSizeInflationMaxRatio;
-  static bool sFontSizeInflationForceEnabled;
-  static bool sFontSizeInflationDisabledInMasterProcess;
-  static uint32_t sSystemFontScale;
-  static uint32_t sZoomMaxPercent;
-  static uint32_t sZoomMinPercent;
-  static bool sInvalidationDebuggingIsEnabled;
-  static bool sInterruptibleReflowEnabled;
-  static bool sSVGTransformBoxEnabled;
-  static uint32_t sIdlePeriodDeadlineLimit;
-  static uint32_t sQuiescentFramesBeforeIdlePeriod;
-
   /**
    * Helper function for LogTestDataForPaint().
    */

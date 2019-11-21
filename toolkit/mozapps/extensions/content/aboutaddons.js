@@ -16,6 +16,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   ClientID: "resource://gre/modules/ClientID.jsm",
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
+  ExtensionCommon: "resource://gre/modules/ExtensionCommon.jsm",
   ExtensionParent: "resource://gre/modules/ExtensionParent.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
@@ -127,8 +128,10 @@ const AddonCardListenerHandler = {
     if (this.MANAGER_EVENTS.has(name)) {
       cards = document.querySelectorAll("addon-card");
     } else {
-      let card = document.querySelector(`addon-card[addon-id="${addon.id}"]`);
-      cards = card ? [card] : [];
+      let cardSelector = `addon-card[addon-id="${addon.id}"]`;
+      cards = document.querySelectorAll(
+        `${cardSelector}, ${cardSelector} addon-details`
+      );
     }
     for (let card of cards) {
       try {
@@ -518,6 +521,28 @@ var DiscoveryAPI = {
   },
 };
 
+class SupportLink extends HTMLAnchorElement {
+  static get observedAttributes() {
+    return ["support-page"];
+  }
+
+  connectedCallback() {
+    this.setHref();
+    this.setAttribute("target", "_blank");
+  }
+
+  attributeChangedCallback(name, oldVal, newVal) {
+    if (name === "support-page") {
+      this.setHref();
+    }
+  }
+
+  setHref() {
+    this.href = SUPPORT_URL + this.getAttribute("support-page");
+  }
+}
+customElements.define("support-link", SupportLink, { extends: "a" });
+
 class PanelList extends HTMLElement {
   static get observedAttributes() {
     return ["open"];
@@ -527,6 +552,7 @@ class PanelList extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this.shadowRoot.appendChild(importTemplate("panel-list"));
+    this.setAttribute("role", "menu");
   }
 
   attributeChangedCallback(name, oldVal, newVal) {
@@ -622,14 +648,12 @@ class PanelList extends HTMLElement {
     this.setAttribute("valign", valign);
     this.parentNode.style.overflow = "";
     this.removeAttribute("showing");
-
-    // Send the shown event after the next paint.
-    requestAnimationFrame(() => this.sendEvent("shown"));
   }
 
   addHideListeners() {
     // Hide when a panel-item is clicked in the list.
     this.addEventListener("click", this);
+    document.addEventListener("keydown", this);
     // Hide when a click is initiated outside the panel.
     document.addEventListener("mousedown", this);
     // Hide if focus changes and the panel isn't in focus.
@@ -644,6 +668,7 @@ class PanelList extends HTMLElement {
 
   removeHideListeners() {
     this.removeEventListener("click", this);
+    document.removeEventListener("keydown", this);
     document.removeEventListener("mousedown", this);
     document.removeEventListener("focusin", this);
     window.removeEventListener("resize", this);
@@ -672,6 +697,53 @@ class PanelList extends HTMLElement {
           e.stopPropagation();
         }
         break;
+      case "keydown":
+        if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Tab") {
+          // Ignore tabbing with a modifer other than shift.
+          if (e.key === "Tab" && (e.altKey || e.ctrlKey || e.metaKey)) {
+            return;
+          }
+
+          // Don't scroll the page or let the regular tab order take effect.
+          e.preventDefault();
+
+          // Keep moving to the next/previous element sibling until we find a
+          // panel-item that isn't hidden.
+          let moveForward =
+            e.key === "ArrowDown" || (e.key === "Tab" && !e.shiftKey);
+
+          // If the menu is opened with the mouse, the active element might be
+          // somewhere else in the document. In that case we should ignore it
+          // to avoid walking unrelated DOM nodes.
+          this.walker.currentNode = this.contains(document.activeElement)
+            ? document.activeElement
+            : this;
+          let nextItem = moveForward
+            ? this.walker.nextNode()
+            : this.walker.previousNode();
+
+          // If the next item wasn't found, try looping to the top/bottom.
+          if (!nextItem) {
+            this.walker.currentNode = this;
+            if (moveForward) {
+              nextItem = this.walker.firstChild();
+            } else {
+              nextItem = this.walker.lastChild();
+            }
+          }
+
+          if (nextItem) {
+            nextItem.focus();
+          }
+          break;
+        } else if (e.key === "Escape") {
+          let { triggeringEvent } = this;
+          this.hide();
+          if (triggeringEvent && triggeringEvent.target) {
+            triggeringEvent.target.focus();
+          }
+        }
+        break;
       case "mousedown":
       case "focusin":
         // There will be a focusin after the mousedown that opens the panel
@@ -696,12 +768,48 @@ class PanelList extends HTMLElement {
     }
   }
 
-  onShow() {
-    this.setAlign();
+  get walker() {
+    if (!this._walker) {
+      this._walker = document.createTreeWalker(this, NodeFilter.SHOW_ELEMENT, {
+        acceptNode: node => {
+          if (node.disabled || node.hidden || node.localName !== "panel-item") {
+            return NodeFilter.FILTER_REJECT;
+          }
+
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+    }
+    return this._walker;
+  }
+
+  async onShow() {
+    let { triggeringEvent } = this;
+
     this.addHideListeners();
+    await this.setAlign();
+
+    // Wait until the next paint for the alignment to be set and panel to be
+    // visible.
+    requestAnimationFrame(() => {
+      // Focus the first visible panel-item if we were opened with the keyboard.
+      if (
+        triggeringEvent &&
+        triggeringEvent.mozInputSource === MouseEvent.MOZ_SOURCE_KEYBOARD
+      ) {
+        this.walker.currentNode = this;
+        let firstItem = this.walker.nextNode();
+        if (firstItem) {
+          firstItem.focus();
+        }
+      }
+
+      this.sendEvent("shown");
+    });
   }
 
   onHide() {
+    requestAnimationFrame(() => this.sendEvent("hidden"));
     this.removeHideListeners();
   }
 
@@ -717,6 +825,7 @@ class PanelItem extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.appendChild(importTemplate("panel-item"));
     this.button = this.shadowRoot.querySelector("button");
+    this.button.setAttribute("role", "menuitem");
   }
 
   get disabled() {
@@ -733,6 +842,10 @@ class PanelItem extends HTMLElement {
 
   set checked(val) {
     this.toggleAttribute("checked", val);
+  }
+
+  focus() {
+    this.button.focus();
   }
 }
 customElements.define("panel-item", PanelItem);
@@ -1237,9 +1350,8 @@ class AddonPermissionsList extends HTMLElement {
     // Add a learn more link.
     let learnMoreRow = document.createElement("div");
     learnMoreRow.classList.add("addon-detail-row");
-    let learnMoreLink = document.createElement("a");
-    learnMoreLink.setAttribute("target", "_blank");
-    learnMoreLink.href = SUPPORT_URL + "extension-permissions";
+    let learnMoreLink = document.createElement("a", { is: "support-link" });
+    learnMoreLink.setAttribute("support-page", "extension-permissions");
     learnMoreLink.textContent = browserBundle.GetStringFromName(
       "webextPerms.learnMore"
     );
@@ -1255,13 +1367,11 @@ class AddonDetails extends HTMLElement {
       this.render();
     }
     this.deck.addEventListener("view-changed", this);
-    this.addEventListener("keypress", this);
   }
 
   disconnectedCallback() {
     this.inlineOptions.destroyBrowser();
     this.deck.removeEventListener("view-changed", this);
-    this.removeEventListener("keypress", this);
   }
 
   handleEvent(e) {
@@ -1286,13 +1396,39 @@ class AddonDetails extends HTMLElement {
           }
           break;
       }
-    } else if (e.type == "keypress") {
-      if (
-        e.keyCode == KeyEvent.DOM_VK_RETURN &&
-        e.target.getAttribute("action") === "pb-learn-more"
-      ) {
-        e.target.click();
-      }
+
+      // When a details view is rendered again, the default details view is
+      // unconditionally shown. So if any other tab is selected, do not save
+      // the current scroll offset, but start at the top of the page instead.
+      ScrollOffsets.canRestore = this.deck.selectedViewName === "details";
+    }
+  }
+
+  onInstalled() {
+    let policy = WebExtensionPolicy.getByID(this.addon.id);
+    let extension = policy && policy.extension;
+    if (extension && extension.startupReason === "ADDON_UPGRADE") {
+      // Ensure the options browser is recreated when a new version starts.
+      this.extensionShutdown();
+      this.extensionStartup();
+    }
+  }
+
+  onDisabled(addon) {
+    this.extensionShutdown();
+  }
+
+  onEnabled(addon) {
+    this.extensionStartup();
+  }
+
+  extensionShutdown() {
+    this.inlineOptions.destroyBrowser();
+  }
+
+  extensionStartup() {
+    if (this.deck.selectedViewName === "preferences") {
+      this.inlineOptions.ensureBrowserCreated();
     }
   }
 
@@ -1318,14 +1454,19 @@ class AddonDetails extends HTMLElement {
     notesBtn.hidden = !this.releaseNotesUri;
     let prefsBtn = getButtonByName("preferences");
     prefsBtn.hidden = getOptionsType(addon) !== "inline";
-    if (!prefsBtn.hidden) {
+    if (prefsBtn.hidden) {
+      if (this.deck.selectedViewName === "preferences") {
+        this.deck.selectedViewName = "details";
+      }
+    } else {
       isAddonOptionsUIAllowed(addon).then(allowed => {
         prefsBtn.hidden = !allowed;
       });
     }
 
     // Hide the tab group if "details" is the only visible button.
-    this.tabGroup.hidden = Array.from(this.tabGroup.children).every(button => {
+    let tabGroupButtons = this.tabGroup.querySelectorAll("named-deck-button");
+    this.tabGroup.hidden = Array.from(tabGroupButtons).every(button => {
       return button.name == "details" || button.hidden;
     });
 
@@ -1402,10 +1543,6 @@ class AddonDetails extends HTMLElement {
       pbRow.nextElementSibling.hidden = false;
       let isAllowed = await isAllowedInPrivateBrowsing(addon);
       pbRow.querySelector(`[value="${isAllowed ? 1 : 0}"]`).checked = true;
-      let learnMore = pbRow.nextElementSibling.querySelector(
-        'a[data-l10n-name="learn-more"]'
-      );
-      learnMore.href = SUPPORT_URL + "extensions-pb";
     }
 
     // Author.
@@ -1531,11 +1668,7 @@ class AddonCard extends HTMLElement {
   }
 
   set reloading(val) {
-    if (val) {
-      this.setAttribute("reloading", "true");
-    } else {
-      this.removeAttribute("reloading");
-    }
+    this.toggleAttribute("reloading", val);
   }
 
   /**
@@ -1635,7 +1768,7 @@ class AddonCard extends HTMLElement {
             openOptionsInTab(addon.optionsURL);
           } else if (getOptionsType(addon) == "inline") {
             this.recordActionEvent("preferences", "inline");
-            loadViewFn("detail", this.addon.id, "preferences");
+            loadViewFn(`detail/${this.addon.id}/preferences`, e);
           }
           break;
         case "remove":
@@ -1662,7 +1795,7 @@ class AddonCard extends HTMLElement {
           }
           break;
         case "expand":
-          loadViewFn("detail", this.addon.id);
+          loadViewFn(`detail/${this.addon.id}`, e);
           break;
         case "more-options":
           // Open panel on click from the keyboard.
@@ -1682,16 +1815,13 @@ class AddonCard extends HTMLElement {
             );
           }
           break;
-        case "pb-learn-more":
-          windowRoot.ownerGlobal.openTrustedLinkIn(
-            SUPPORT_URL + "extensions-pb",
-            "tab"
-          );
-          break;
         default:
           // Handle a click on the card itself.
-          if (!this.expanded) {
-            loadViewFn("detail", this.addon.id);
+          if (
+            !this.expanded &&
+            (e.target === this.addonNameEl || !e.target.closest("a"))
+          ) {
+            loadViewFn(`detail/${this.addon.id}`, e);
           } else if (
             e.target.localName == "a" &&
             e.target.getAttribute("data-telemetry-name")
@@ -1748,6 +1878,12 @@ class AddonCard extends HTMLElement {
       if (action == "more-options") {
         this.panel.toggle(e);
       }
+    } else if (e.type === "shown" || e.type === "hidden") {
+      let panelOpen = e.type === "shown";
+      // The card will be dimmed if it's disabled, but when the panel is open
+      // that should be reverted so the menu items can be easily read.
+      this.toggleAttribute("panelopen", panelOpen);
+      this.optionsButton.setAttribute("aria-expanded", panelOpen);
     }
   }
 
@@ -1759,12 +1895,16 @@ class AddonCard extends HTMLElement {
     this.addEventListener("change", this);
     this.addEventListener("click", this);
     this.addEventListener("mousedown", this);
+    this.panel.addEventListener("shown", this);
+    this.panel.addEventListener("hidden", this);
   }
 
   removeListeners() {
     this.removeEventListener("change", this);
     this.removeEventListener("click", this);
     this.removeEventListener("mousedown", this);
+    this.panel.removeEventListener("shown", this);
+    this.panel.removeEventListener("hidden", this);
   }
 
   onNewInstall(install) {
@@ -1819,6 +1959,8 @@ class AddonCard extends HTMLElement {
   update() {
     let { addon, card } = this;
 
+    card.setAttribute("active", addon.isActive);
+
     // Update the icon.
     let icon;
     if (addon.type == "plugin") {
@@ -1842,7 +1984,7 @@ class AddonCard extends HTMLElement {
     }
 
     // Update the name.
-    let name = card.querySelector(".addon-name");
+    let name = this.addonNameEl;
     if (addon.isActive) {
       name.textContent = addon.name;
       name.removeAttribute("data-l10n-id");
@@ -1940,13 +2082,32 @@ class AddonCard extends HTMLElement {
       throw new Error("addon-card must be initialized with setAddon()");
     }
 
-    this.card = importTemplate("card").firstElementChild;
+    let headingId = ExtensionCommon.makeWidgetId(`${addon.name}-heading`);
+    this.setAttribute("aria-labelledby", headingId);
     this.setAttribute("addon-id", addon.id);
+
+    this.card = importTemplate("card").firstElementChild;
+
+    let nameContainer = this.card.querySelector(".addon-name-container");
+    let headingLevel = this.expanded ? "h1" : "h3";
+    let nameHeading = document.createElement(headingLevel);
+    nameHeading.classList.add("addon-name");
+    if (!this.expanded) {
+      let name = document.createElement("a");
+      name.classList.add("addon-name-link");
+      name.href = `addons://detail/${addon.id}`;
+      nameHeading.appendChild(name);
+      this.addonNameEl = name;
+    } else {
+      this.addonNameEl = nameHeading;
+    }
+    nameContainer.prepend(nameHeading);
 
     let panelType = addon.type == "plugin" ? "plugin-options" : "addon-options";
     this.options = document.createElement(panelType);
     this.options.render();
     this.card.querySelector(".more-options-menu").appendChild(this.options);
+    this.optionsButton = this.card.querySelector(".more-options-button");
 
     // Set the contents.
     this.update();
@@ -1965,6 +2126,10 @@ class AddonCard extends HTMLElement {
     }
 
     this.appendChild(this.card);
+
+    if (this.expanded && this.keyboardNavigation) {
+      requestAnimationFrame(() => this.optionsButton.focus());
+    }
 
     // Return the promise of details rendering to wait on in DetailView.
     return doneRenderPromise;
@@ -2140,7 +2305,7 @@ class RecommendedAddonCard extends HTMLElement {
           action: "manage",
           addon: this.discoAddon,
         });
-        loadViewFn("detail", this.addonId);
+        loadViewFn(`detail/${this.addonId}`, event);
         break;
       default:
         if (event.target.matches(".disco-addon-author a[href]")) {
@@ -2849,12 +3014,6 @@ class DiscoveryPane extends RecommendedSection {
   get template() {
     return "discopane";
   }
-
-  render() {
-    super.render();
-    this.querySelector(".discopane-intro-learn-more-link").href =
-      SUPPORT_URL + "recommended-extensions-program";
-  }
 }
 customElements.define("discovery-pane", DiscoveryPane);
 
@@ -2871,12 +3030,12 @@ class ListView {
     list.type = this.type;
     list.setSections([
       {
-        headingId: "addons-enabled-heading",
+        headingId: this.type + "-enabled-heading",
         filterFn: addon =>
           !addon.hidden && addon.isActive && !isPending(addon, "uninstall"),
       },
       {
-        headingId: "addons-disabled-heading",
+        headingId: this.type + "-disabled-heading",
         filterFn: addon =>
           !addon.hidden && !addon.isActive && !isPending(addon, "uninstall"),
       },
@@ -2907,11 +3066,12 @@ class ListView {
 }
 
 class DetailView {
-  constructor({ param, root }) {
+  constructor({ isKeyboardNavigation, param, root }) {
     let [id, selectedTab] = param.split("/");
     this.id = id;
     this.selectedTab = selectedTab;
     this.root = root;
+    this.isKeyboardNavigation = isKeyboardNavigation;
   }
 
   async render() {
@@ -2928,10 +3088,11 @@ class DetailView {
     setCategoryFn(addon.type);
 
     // Go back to the list view when the add-on is removed.
-    card.addEventListener("remove", () => loadViewFn("list", addon.type));
+    card.addEventListener("remove", () => loadViewFn(`list/${addon.type}`));
 
     card.setAddon(addon);
     card.expand();
+    card.keyboardNavigation = this.isKeyboardNavigation;
     await card.render();
     if (
       this.selectedTab === "preferences" &&
@@ -3012,6 +3173,40 @@ function getTelemetryViewName(el) {
 }
 
 /**
+ * Helper for saving and restoring the scroll offsets when a previously loaded
+ * view is accessed again.
+ */
+var ScrollOffsets = {
+  _key: null,
+  _offsets: new Map(),
+  canRestore: true,
+
+  setView(historyEntryId) {
+    this._key = historyEntryId;
+    this.canRestore = true;
+  },
+
+  getPosition() {
+    if (!this.canRestore) {
+      return { top: 0, left: 0 };
+    }
+    let { scrollTop: top, scrollLeft: left } = document.documentElement;
+    return { top, left };
+  },
+
+  save() {
+    if (this._key) {
+      this._offsets.set(this._key, this.getPosition());
+    }
+  },
+
+  restore() {
+    let { top = 0, left = 0 } = this._offsets.get(this._key) || {};
+    window.scrollTo({ top, left, behavior: "auto" });
+  },
+};
+
+/**
  * Called from extensions.js once, when about:addons is loading.
  */
 function initialize(opts) {
@@ -3037,13 +3232,17 @@ function initialize(opts) {
  * resolve once the view has been updated to conform with other about:addons
  * views.
  */
-async function show(type, param) {
+async function show(type, param, { isKeyboardNavigation, historyEntryId }) {
   let container = document.createElement("div");
   container.setAttribute("current-view", type);
   if (type == "list") {
     await new ListView({ param, root: container }).render();
   } else if (type == "detail") {
-    await new DetailView({ param, root: container }).render();
+    await new DetailView({
+      isKeyboardNavigation,
+      param,
+      root: container,
+    }).render();
   } else if (type == "discover") {
     let discoverView = new DiscoveryView();
     let elem = discoverView.render();
@@ -3054,10 +3253,26 @@ async function show(type, param) {
   } else {
     throw new Error(`Unknown view type: ${type}`);
   }
+
+  ScrollOffsets.save();
+  ScrollOffsets.setView(historyEntryId);
   mainEl.textContent = "";
   mainEl.appendChild(container);
+
+  // Most content has been rendered at this point. The only exception are
+  // recommendations in the discovery pane and extension/theme list, because
+  // they rely on remote data. If loaded before, then these may be rendered
+  // within one tick, so wait a frame before restoring scroll offsets.
+  return new Promise(resolve => {
+    window.requestAnimationFrame(() => {
+      ScrollOffsets.restore();
+      resolve();
+    });
+  });
 }
 
 function hide() {
+  ScrollOffsets.save();
+  ScrollOffsets.setView(null);
   mainEl.textContent = "";
 }

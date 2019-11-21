@@ -134,6 +134,19 @@ fn unwrap_inst(
                     .get(var_pool.get(def.defined_vars[0]).dst_def.unwrap())
                     .to_comment_string(var_pool)
             ));
+
+            fmt.line("let r = pos.func.dfg.inst_results(inst);");
+            for (i, &var_index) in def.defined_vars.iter().enumerate() {
+                let var = var_pool.get(var_index);
+                fmtln!(fmt, "let {} = &r[{}];", var.name, i);
+                fmtln!(
+                    fmt,
+                    "let typeof_{} = pos.func.dfg.value_type(*{});",
+                    var.name,
+                    var.name
+                );
+            }
+
             replace_inst = true;
         } else {
             // Boring case: Detach the result values, capture them in locals.
@@ -453,7 +466,9 @@ fn gen_transform_group<'a>(
 
                 // Emit the custom transforms. The Rust compiler will complain about any overlap with
                 // the normal transforms.
-                for (inst_camel_name, func_name) in &group.custom_legalizes {
+                let mut sorted_custom_legalizes = Vec::from_iter(&group.custom_legalizes);
+                sorted_custom_legalizes.sort();
+                for (inst_camel_name, func_name) in sorted_custom_legalizes {
                     fmtln!(fmt, "ir::Opcode::{} => {{", inst_camel_name);
                     fmt.indent(|fmt| {
                         fmtln!(fmt, "{}(inst, pos.func, cfg, isa);", func_name);
@@ -527,7 +542,7 @@ fn gen_isa(
         direct_groups.len()
     );
     fmt.indent(|fmt| {
-        for group_index in direct_groups {
+        for &group_index in direct_groups {
             fmtln!(fmt, "{},", transform_groups.get(group_index).rust_name());
         }
     });

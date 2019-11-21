@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,7 +6,7 @@
 
 var { Ci } = require("chrome");
 var Services = require("Services");
-var { DebuggerServer } = require("devtools/server/main");
+var { DebuggerServer } = require("devtools/server/debugger-server");
 var { ActorRegistry } = require("devtools/server/actors/utils/actor-registry");
 var DevToolsUtils = require("devtools/shared/DevToolsUtils");
 
@@ -26,8 +24,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "WebExtensionActor",
-  "devtools/server/actors/addon/webextension",
+  "WebExtensionDescriptorActor",
+  "devtools/server/actors/descriptors/webextension",
   true
 );
 loader.lazyRequireGetter(
@@ -826,7 +824,7 @@ BrowserAddonList.prototype.getList = async function() {
   for (const addon of addons) {
     let actor = this._actorByAddonId.get(addon.id);
     if (!actor) {
-      actor = new WebExtensionActor(this._connection, addon);
+      actor = new WebExtensionDescriptorActor(this._connection, addon);
       this._actorByAddonId.set(addon.id, actor);
     }
   }

@@ -7,7 +7,6 @@
 #include "nsSocketTransport2.h"
 
 #include "mozilla/Attributes.h"
-#include "mozilla/StaticPrefs.h"
 #include "mozilla/Telemetry.h"
 #include "nsIOService.h"
 #include "nsStreamUtils.h"
@@ -46,6 +45,8 @@
 
 #if defined(FUZZING)
 #  include "FuzzyLayer.h"
+#  include "FuzzySecurityInfo.h"
+#  include "mozilla/StaticPrefs_fuzzing.h"
 #endif
 
 #if defined(XP_WIN)
@@ -977,11 +978,12 @@ void nsSocketTransport::SendStatus(nsresult status) {
 }
 
 nsresult nsSocketTransport::ResolveHost() {
-  SOCKET_LOG(("nsSocketTransport::ResolveHost [this=%p %s:%d%s]\n", this,
-              SocketHost().get(), SocketPort(),
-              mConnectionFlags & nsSocketTransport::BYPASS_CACHE
-                  ? " bypass cache"
-                  : ""));
+  SOCKET_LOG((
+      "nsSocketTransport::ResolveHost [this=%p %s:%d%s] "
+      "mProxyTransparentResolvesHost=%d\n",
+      this, SocketHost().get(), SocketPort(),
+      mConnectionFlags & nsSocketTransport::BYPASS_CACHE ? " bypass cache" : "",
+      mProxyTransparentResolvesHost));
 
   nsresult rv;
 
@@ -1061,7 +1063,7 @@ nsresult nsSocketTransport::ResolveHost() {
       esniHost.Append("_esni.");
       // This might end up being the SocketHost
       // see https://github.com/ekr/draft-rescorla-tls-esni/issues/61
-      esniHost.Append(mOriginHost);
+      esniHost.Append(SocketHost());
       rv = dns->AsyncResolveByTypeNative(
           esniHost, nsIDNSService::RESOLVE_TYPE_TXT, dnsFlags, this,
           mSocketTransportService, mOriginAttributes,
@@ -1267,7 +1269,8 @@ nsresult nsSocketTransport::InitiateSocket() {
 #endif
 
     if (NS_SUCCEEDED(mCondition) && xpc::AreNonLocalConnectionsDisabled() &&
-        !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr))) {
+        !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr) ||
+          IsIPAddrShared(&mNetAddr))) {
       nsAutoCString ipaddr;
       RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
       netaddr->GetAddress(ipaddr);
@@ -1362,6 +1365,11 @@ nsresult nsSocketTransport::InitiateSocket() {
       return rv;
     }
     SOCKET_LOG(("Successfully attached fuzzing IOLayer.\n"));
+
+    if (usingSSL) {
+      mSecInfo = static_cast<nsISupports*>(
+          static_cast<nsISSLSocketControl*>(new FuzzySecurityInfo()));
+    }
   }
 #endif
 

@@ -5,9 +5,11 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import argparse
+import copy
 import os
 
 from mozbuild.base import (
+    BuildEnvironmentNotFoundException,
     MachCommandBase,
 )
 
@@ -22,6 +24,7 @@ from mach.decorators import (
 here = os.path.abspath(os.path.dirname(__file__))
 THIRD_PARTY_PATHS = os.path.join('tools', 'rewriting', 'ThirdPartyPaths.txt')
 GLOBAL_EXCLUDES = [
+    'node_modules',
     'tools/lint/test/files',
 ]
 
@@ -57,6 +60,15 @@ class MachCommands(MachCommandBase):
         """Run linters."""
         self._activate_virtualenv()
         from mozlint import cli, parser
+
+        try:
+            buildargs = {}
+            buildargs['substs'] = copy.deepcopy(dict(self.substs))
+            buildargs['defines'] = copy.deepcopy(dict(self.defines))
+            buildargs['topobjdir'] = self.topobjdir
+            lintargs.update(buildargs)
+        except BuildEnvironmentNotFoundException:
+            pass
 
         lintargs.setdefault('root', self.topsrcdir)
         lintargs['exclude'] = get_global_excludes(lintargs['root'])

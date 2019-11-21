@@ -9,11 +9,14 @@
 #include "jsmath.h"
 
 #include "builtin/AtomicsObject.h"
-#include "builtin/intl/Collator.h"
-#include "builtin/intl/DateTimeFormat.h"
-#include "builtin/intl/NumberFormat.h"
-#include "builtin/intl/PluralRules.h"
-#include "builtin/intl/RelativeTimeFormat.h"
+#ifdef ENABLE_INTL_API
+#  include "builtin/intl/Collator.h"
+#  include "builtin/intl/DateTimeFormat.h"
+#  include "builtin/intl/Locale.h"
+#  include "builtin/intl/NumberFormat.h"
+#  include "builtin/intl/PluralRules.h"
+#  include "builtin/intl/RelativeTimeFormat.h"
+#endif
 #include "builtin/MapObject.h"
 #include "builtin/String.h"
 #include "builtin/TestingFunctions.h"
@@ -108,6 +111,7 @@ static bool CanInlineCrossRealm(InlinableNative native) {
 
     case InlinableNative::IntlGuardToCollator:
     case InlinableNative::IntlGuardToDateTimeFormat:
+    case InlinableNative::IntlGuardToLocale:
     case InlinableNative::IntlGuardToNumberFormat:
     case InlinableNative::IntlGuardToPluralRules:
     case InlinableNative::IntlGuardToRelativeTimeFormat:
@@ -161,7 +165,6 @@ static bool CanInlineCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicTypedArrayLength:
     case InlinableNative::IntrinsicTypedArrayByteOffset:
     case InlinableNative::IntrinsicTypedArrayElementShift:
-    case InlinableNative::IntrinsicSetDisjointTypedElements:
     case InlinableNative::IntrinsicObjectIsTypedObject:
     case InlinableNative::IntrinsicObjectIsTransparentTypedObject:
     case InlinableNative::IntrinsicObjectIsOpaqueTypedObject:
@@ -310,17 +313,29 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
     case InlinableNative::Boolean:
       return inlineBoolean(callInfo);
 
+#ifdef ENABLE_INTL_API
     // Intl natives.
     case InlinableNative::IntlGuardToCollator:
       return inlineGuardToClass(callInfo, &CollatorObject::class_);
     case InlinableNative::IntlGuardToDateTimeFormat:
       return inlineGuardToClass(callInfo, &DateTimeFormatObject::class_);
+    case InlinableNative::IntlGuardToLocale:
+      return inlineGuardToClass(callInfo, &LocaleObject::class_);
     case InlinableNative::IntlGuardToNumberFormat:
       return inlineGuardToClass(callInfo, &NumberFormatObject::class_);
     case InlinableNative::IntlGuardToPluralRules:
       return inlineGuardToClass(callInfo, &PluralRulesObject::class_);
     case InlinableNative::IntlGuardToRelativeTimeFormat:
       return inlineGuardToClass(callInfo, &RelativeTimeFormatObject::class_);
+#else
+    case InlinableNative::IntlGuardToCollator:
+    case InlinableNative::IntlGuardToDateTimeFormat:
+    case InlinableNative::IntlGuardToLocale:
+    case InlinableNative::IntlGuardToNumberFormat:
+    case InlinableNative::IntlGuardToPluralRules:
+    case InlinableNative::IntlGuardToRelativeTimeFormat:
+      MOZ_CRASH("Intl API disabled");
+#endif
 
     // Math natives.
     case InlinableNative::MathAbs:
@@ -551,8 +566,6 @@ IonBuilder::InliningResult IonBuilder::inlineNativeCall(CallInfo& callInfo,
       return inlineTypedArrayByteOffset(callInfo);
     case InlinableNative::IntrinsicTypedArrayElementShift:
       return inlineTypedArrayElementShift(callInfo);
-    case InlinableNative::IntrinsicSetDisjointTypedElements:
-      return inlineSetDisjointTypedElements(callInfo);
 
     // TypedObject intrinsics.
     case InlinableNative::IntrinsicObjectIsTypedObject:
@@ -628,7 +641,7 @@ IonBuilder::InliningResult IonBuilder::inlineNativeGetter(CallInfo& callInfo,
   // Try to optimize RegExp getters.
   RegExpFlags mask = RegExpFlag::NoFlags;
   if (RegExpObject::isOriginalFlagGetter(native, &mask)) {
-    const Class* clasp = thisTypes->getKnownClass(constraints());
+    const JSClass* clasp = thisTypes->getKnownClass(constraints());
     if (clasp != &RegExpObject::class_) {
       return InliningStatus_NotInlined;
     }
@@ -819,7 +832,7 @@ IonBuilder::InliningResult IonBuilder::inlineArray(CallInfo& callInfo,
   return InliningStatus_Inlined;
 }
 
-static bool IsArrayClass(const Class* clasp) {
+static bool IsArrayClass(const JSClass* clasp) {
   return clasp == &ArrayObject::class_;
 }
 
@@ -917,7 +930,7 @@ IonBuilder::InliningResult IonBuilder::inlineArrayPopShift(
   if (!thisTypes) {
     return InliningStatus_NotInlined;
   }
-  const Class* clasp = thisTypes->getKnownClass(constraints());
+  const JSClass* clasp = thisTypes->getKnownClass(constraints());
   if (clasp != &ArrayObject::class_) {
     return InliningStatus_NotInlined;
   }
@@ -986,7 +999,7 @@ IonBuilder::InliningResult IonBuilder::inlineArrayJoin(CallInfo& callInfo) {
       return false;
     }
 
-    const Class* clasp = thisTypes->getKnownClass(constraints());
+    const JSClass* clasp = thisTypes->getKnownClass(constraints());
     if (clasp != &ArrayObject::class_) {
       return false;
     }
@@ -1042,7 +1055,7 @@ IonBuilder::InliningResult IonBuilder::inlineArrayPush(CallInfo& callInfo) {
   if (!thisTypes) {
     return InliningStatus_NotInlined;
   }
-  const Class* clasp = thisTypes->getKnownClass(constraints());
+  const JSClass* clasp = thisTypes->getKnownClass(constraints());
   if (clasp != &ArrayObject::class_) {
     return InliningStatus_NotInlined;
   }
@@ -1173,7 +1186,7 @@ IonBuilder::InliningResult IonBuilder::inlineArraySlice(CallInfo& callInfo) {
     return InliningStatus_NotInlined;
   }
 
-  const Class* clasp = thisTypes->getKnownClass(constraints());
+  const JSClass* clasp = thisTypes->getKnownClass(constraints());
   if (clasp != &ArrayObject::class_) {
     return InliningStatus_NotInlined;
   }
@@ -2065,7 +2078,7 @@ IonBuilder::InliningResult IonBuilder::inlineIsPackedArray(CallInfo& callInfo) {
     return InliningStatus_NotInlined;
   }
 
-  const Class* clasp = arrayTypes->getKnownClass(constraints());
+  const JSClass* clasp = arrayTypes->getKnownClass(constraints());
   if (clasp != &ArrayObject::class_) {
     return InliningStatus_NotInlined;
   }
@@ -2234,13 +2247,17 @@ IonBuilder::InliningResult IonBuilder::inlineStrFromCodePoint(
   if (getInlineReturnType() != MIRType::String) {
     return InliningStatus_NotInlined;
   }
-  if (callInfo.getArg(0)->type() != MIRType::Int32) {
+  MIRType argType = callInfo.getArg(0)->type();
+  if (argType != MIRType::Int32 && argType != MIRType::Double) {
     return InliningStatus_NotInlined;
   }
 
   callInfo.setImplicitlyUsedUnchecked();
 
-  MFromCodePoint* string = MFromCodePoint::New(alloc(), callInfo.getArg(0));
+  auto* codePoint = MToNumberInt32::New(alloc(), callInfo.getArg(0));
+  current->add(codePoint);
+
+  MFromCodePoint* string = MFromCodePoint::New(alloc(), codePoint);
   current->add(string);
   current->push(string);
   return InliningStatus_Inlined;
@@ -2325,7 +2342,7 @@ IonBuilder::InliningResult IonBuilder::inlineRegExpMatcher(CallInfo& callInfo) {
   }
 
   TemporaryTypeSet* rxTypes = rxArg->resultTypeSet();
-  const Class* clasp =
+  const JSClass* clasp =
       rxTypes ? rxTypes->getKnownClass(constraints()) : nullptr;
   if (clasp != &RegExpObject::class_) {
     return InliningStatus_NotInlined;
@@ -2375,7 +2392,7 @@ IonBuilder::InliningResult IonBuilder::inlineRegExpSearcher(
   }
 
   TemporaryTypeSet* regexpTypes = rxArg->resultTypeSet();
-  const Class* clasp =
+  const JSClass* clasp =
       regexpTypes ? regexpTypes->getKnownClass(constraints()) : nullptr;
   if (clasp != &RegExpObject::class_) {
     return InliningStatus_NotInlined;
@@ -2424,7 +2441,7 @@ IonBuilder::InliningResult IonBuilder::inlineRegExpTester(CallInfo& callInfo) {
   }
 
   TemporaryTypeSet* rxTypes = rxArg->resultTypeSet();
-  const Class* clasp =
+  const JSClass* clasp =
       rxTypes ? rxTypes->getKnownClass(constraints()) : nullptr;
   if (clasp != &RegExpObject::class_) {
     return InliningStatus_NotInlined;
@@ -2470,7 +2487,8 @@ IonBuilder::InliningResult IonBuilder::inlineIsRegExpObject(
   bool isRegExpObjectConstant;
   if (arg->type() == MIRType::Object) {
     TemporaryTypeSet* types = arg->resultTypeSet();
-    const Class* clasp = types ? types->getKnownClass(constraints()) : nullptr;
+    const JSClass* clasp =
+        types ? types->getKnownClass(constraints()) : nullptr;
     if (clasp) {
       isRegExpObjectKnown = true;
       isRegExpObjectConstant = (clasp == &RegExpObject::class_);
@@ -2813,7 +2831,7 @@ IonBuilder::InliningResult IonBuilder::inlineObjectToString(
   callInfo.setImplicitlyUsedUnchecked();
 
   // Try to constant fold some common cases.
-  if (const Class* knownClass = types->getKnownClass(constraints())) {
+  if (const JSClass* knownClass = types->getKnownClass(constraints())) {
     if (knownClass == &PlainObject::class_) {
       pushConstant(StringValue(names().objectObject));
       return InliningStatus_Inlined;
@@ -2836,10 +2854,10 @@ IonBuilder::InliningResult IonBuilder::inlineObjectToString(
 }
 
 IonBuilder::InliningResult IonBuilder::inlineHasClass(CallInfo& callInfo,
-                                                      const Class* clasp1,
-                                                      const Class* clasp2,
-                                                      const Class* clasp3,
-                                                      const Class* clasp4) {
+                                                      const JSClass* clasp1,
+                                                      const JSClass* clasp2,
+                                                      const JSClass* clasp3,
+                                                      const JSClass* clasp4) {
   MOZ_ASSERT(!callInfo.constructing());
   MOZ_ASSERT(callInfo.argc() == 1);
 
@@ -2851,7 +2869,7 @@ IonBuilder::InliningResult IonBuilder::inlineHasClass(CallInfo& callInfo,
   }
 
   TemporaryTypeSet* types = callInfo.getArg(0)->resultTypeSet();
-  const Class* knownClass =
+  const JSClass* knownClass =
       types ? types->getKnownClass(constraints()) : nullptr;
   if (knownClass) {
     pushConstant(BooleanValue(knownClass == clasp1 || knownClass == clasp2 ||
@@ -2863,7 +2881,7 @@ IonBuilder::InliningResult IonBuilder::inlineHasClass(CallInfo& callInfo,
     if (!clasp2 && !clasp3 && !clasp4) {
       current->push(hasClass1);
     } else {
-      const Class* remaining[] = {clasp2, clasp3, clasp4};
+      const JSClass* remaining[] = {clasp2, clasp3, clasp4};
       MDefinition* last = hasClass1;
       for (size_t i = 0; i < ArrayLength(remaining); i++) {
         MHasClass* hasClass =
@@ -2884,8 +2902,8 @@ IonBuilder::InliningResult IonBuilder::inlineHasClass(CallInfo& callInfo,
   return InliningStatus_Inlined;
 }
 
-IonBuilder::InliningResult IonBuilder::inlineGuardToClass(CallInfo& callInfo,
-                                                          const Class* clasp) {
+IonBuilder::InliningResult IonBuilder::inlineGuardToClass(
+    CallInfo& callInfo, const JSClass* clasp) {
   MOZ_ASSERT(!callInfo.constructing());
   MOZ_ASSERT(callInfo.argc() == 1);
 
@@ -2898,7 +2916,7 @@ IonBuilder::InliningResult IonBuilder::inlineGuardToClass(CallInfo& callInfo,
   }
 
   TemporaryTypeSet* types = callInfo.getArg(0)->resultTypeSet();
-  const Class* knownClass =
+  const JSClass* knownClass =
       types ? types->getKnownClass(constraints()) : nullptr;
 
   if (knownClass && knownClass == clasp) {
@@ -2933,7 +2951,7 @@ IonBuilder::InliningResult IonBuilder::inlineGetNextEntryForIterator(
   }
 
   TemporaryTypeSet* resultTypes = resultArg->resultTypeSet();
-  const Class* resultClasp =
+  const JSClass* resultClasp =
       resultTypes ? resultTypes->getKnownClass(constraints()) : nullptr;
   if (resultClasp != &ArrayObject::class_) {
     return InliningStatus_NotInlined;
@@ -3075,7 +3093,7 @@ IonBuilder::InliningResult IonBuilder::inlineTypedArray(CallInfo& callInfo,
 
     // Don't inline if we saw mixed use of (Shared)ArrayBuffers and other
     // objects.
-    auto IsArrayBufferMaybeSharedClass = [](const Class* clasp) {
+    auto IsArrayBufferMaybeSharedClass = [](const JSClass* clasp) {
       return clasp == &ArrayBufferObject::class_ ||
              clasp == &SharedArrayBufferObject::class_;
     };
@@ -3328,49 +3346,6 @@ IonBuilder::InliningResult IonBuilder::inlineTypedArrayElementShift(
   return InliningStatus_Inlined;
 }
 
-IonBuilder::InliningResult IonBuilder::inlineSetDisjointTypedElements(
-    CallInfo& callInfo) {
-  MOZ_ASSERT(!callInfo.constructing());
-  MOZ_ASSERT(callInfo.argc() == 3);
-
-  // Initial argument requirements.
-
-  MDefinition* target = callInfo.getArg(0);
-  if (target->type() != MIRType::Object) {
-    return InliningStatus_NotInlined;
-  }
-
-  if (getInlineReturnType() != MIRType::Undefined) {
-    return InliningStatus_NotInlined;
-  }
-
-  MDefinition* targetOffset = callInfo.getArg(1);
-  MOZ_ASSERT(targetOffset->type() == MIRType::Int32);
-
-  MDefinition* sourceTypedArray = callInfo.getArg(2);
-  if (sourceTypedArray->type() != MIRType::Object) {
-    return InliningStatus_NotInlined;
-  }
-
-  // Only attempt to optimize if |target| and |sourceTypedArray| are both
-  // definitely typed arrays.  (The former always is.  The latter is not,
-  // necessarily, because of wrappers.)
-  if (!IsTypedArrayObject(constraints(), target) ||
-      !IsTypedArrayObject(constraints(), sourceTypedArray)) {
-    return InliningStatus_NotInlined;
-  }
-
-  auto sets = MSetDisjointTypedElements::New(alloc(), target, targetOffset,
-                                             sourceTypedArray);
-  current->add(sets);
-
-  pushConstant(UndefinedValue());
-
-  MOZ_TRY(resumeAfter(sets));
-  callInfo.setImplicitlyUsedUnchecked();
-  return InliningStatus_Inlined;
-}
-
 IonBuilder::InliningResult IonBuilder::inlineObjectIsTypeDescr(
     CallInfo& callInfo) {
   MOZ_ASSERT(!callInfo.constructing());
@@ -3563,7 +3538,8 @@ IonBuilder::InliningResult IonBuilder::inlineIsCallable(CallInfo& callInfo) {
   bool isCallableConstant;
   if (arg->type() == MIRType::Object) {
     TemporaryTypeSet* types = arg->resultTypeSet();
-    const Class* clasp = types ? types->getKnownClass(constraints()) : nullptr;
+    const JSClass* clasp =
+        types ? types->getKnownClass(constraints()) : nullptr;
     if (clasp && !clasp->isProxy()) {
       isCallableKnown = true;
       isCallableConstant = clasp->nonProxyCallable();

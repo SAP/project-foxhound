@@ -416,6 +416,21 @@ interface nsIXPCComponents_Utils : nsISupports
     bool isDeadWrapper(in jsval obj);
 
     /**
+     * Determines whether this value is a remote object proxy, such as
+     * RemoteWindowProxy or RemoteLocationProxy, for an out-of-process frame.
+     *
+     * Remote object proxies do not grant chrome callers the same exemptions
+     * to the same-origin-policy that in-process wrappers typically do, so
+     * this can be used to determine whether access to cross-origin proxies is
+     * safe:
+     *
+     *   if (!Cu.isRemoteProxy(frame.contentWindow)) {
+     *     frame.contentWindow.doCrossOriginThing();
+     *   }
+     */
+    bool isRemoteProxy(in jsval val);
+
+    /**
      * Determines whether this object is a cross-process wrapper.
      */
     bool isCrossProcessWrapper(in jsval obj);
@@ -496,9 +511,6 @@ interface nsIXPCComponents_Utils : nsISupports
 
     [implicit_jscontext]
     attribute boolean strict_mode;
-
-    [implicit_jscontext]
-    attribute boolean ion;
 
     // Returns true if we're running in automation and certain security
     // restrictions can be eased.
@@ -666,6 +678,7 @@ interface nsIXPCComponents_Utils : nsISupports
     /*
      * Reads the given local file URL and returns its contents. This has the
      * same semantics of readUTF8File.
+     * Only supports file URLs or URLs that point into one of the omnijars.
      */
     AUTF8String readUTF8URI(in nsIURI url);
 

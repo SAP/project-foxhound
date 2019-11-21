@@ -69,12 +69,15 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
         (subpath "/Library/Filesystems/NetFSPlugins")
         (subpath "/usr/share"))))
 
+  ; Timezone
+  (allow file-read*
+    (subpath "/private/var/db/timezone")
+    (subpath "/usr/share/zoneinfo")
+    (subpath "/usr/share/zoneinfo.default")
+    (literal "/private/etc/localtime"))
+
   ; Top-level directory metadata access (bug 1404298)
   (allow file-read-metadata (regex #"^/[^/]+$"))
-
-  (allow file-read-metadata
-    (literal "/private/etc/localtime")
-    (regex #"^/private/tmp/KSInstallAction\."))
 
   ; Allow read access to standard special files.
   (allow file-read*
@@ -360,6 +363,11 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
       (subpath "/Library/Extensis/UTC")      ; bug 1469657
       (regex #"\.fontvault/")
       (home-subpath "/FontExplorer X/Font Library")))
+
+  (if (>= macosMinorVersion 13)
+   (allow mach-lookup
+    ; bug 1565575
+    (global-name "com.apple.audio.AudioComponentRegistrar")))
 )SANDBOX_LITERAL";
 
 // These are additional rules that are added to the content process rules for
@@ -383,11 +391,6 @@ static const char SandboxPolicyContentAudioAddend[] = R"SANDBOX_LITERAL(
   (allow mach-lookup
     (global-name "com.apple.audio.coreaudiod")
     (global-name "com.apple.audio.audiohald"))
-
-  (if (>= macosMinorVersion 13)
-    (allow mach-lookup
-    ; bug 1376163
-    (global-name "com.apple.audio.AudioComponentRegistrar")))
 
   (allow iokit-open (iokit-user-client-class "IOAudioEngineUserClient"))
 

@@ -4,7 +4,8 @@
 
 #![deny(missing_docs)]
 
-use euclid::{size2, TypedRect, num::Zero};
+use euclid::{size2, Rect, num::Zero};
+use peek_poke::PeekPoke;
 use std::ops::{Add, Sub};
 use std::sync::Arc;
 // local imports
@@ -16,8 +17,14 @@ use crate::units::*;
 /// This is used as a handle to reference images, and is used as the
 /// hash map key for the actual image storage in the `ResourceCache`.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub struct ImageKey(pub IdNamespace, pub u32);
+
+impl Default for ImageKey {
+    fn default() -> Self {
+        ImageKey::DUMMY
+    }
+}
 
 impl ImageKey {
     /// Placeholder Image key, used to represent None.
@@ -142,7 +149,7 @@ impl ImageFormat {
 
 /// Specifies the color depth of an image. Currently only used for YUV images.
 #[repr(u8)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub enum ColorDepth {
     /// 8 bits image (most common)
     Color8,
@@ -152,6 +159,12 @@ pub enum ColorDepth {
     Color12,
     /// 16 bits image
     Color16,
+}
+
+impl Default for ColorDepth {
+    fn default() -> Self {
+        ColorDepth::Color8
+    }
 }
 
 impl ColorDepth {
@@ -309,10 +322,12 @@ pub trait BlobImageHandler: Send {
     );
 
     /// Register a blob image.
-    fn add(&mut self, key: BlobImageKey, data: Arc<BlobImageData>, tiling: Option<TileSize>);
+    fn add(&mut self, key: BlobImageKey, data: Arc<BlobImageData>, visible_rect: &DeviceIntRect,
+           tiling: Option<TileSize>);
 
     /// Update an already registered blob image.
-    fn update(&mut self, key: BlobImageKey, data: Arc<BlobImageData>, dirty_rect: &BlobDirtyRect);
+    fn update(&mut self, key: BlobImageKey, data: Arc<BlobImageData>, visible_rect: &DeviceIntRect,
+              dirty_rect: &BlobDirtyRect);
 
     /// Delete an already registered blob image.
     fn delete(&mut self, key: BlobImageKey);
@@ -366,7 +381,7 @@ pub enum DirtyRect<T: Copy, U> {
     /// Everything is Dirty, equivalent to Partial(image_bounds)
     All,
     /// Some specific amount is dirty
-    Partial(TypedRect<T, U>)
+    Partial(Rect<T, U>)
 }
 
 impl<T, U> DirtyRect<T, U>
@@ -379,7 +394,7 @@ where
 {
     /// Creates an empty DirtyRect (indicating nothing is invalid)
     pub fn empty() -> Self {
-        DirtyRect::Partial(TypedRect::zero())
+        DirtyRect::Partial(Rect::zero())
     }
 
     /// Returns whether the dirty rect is empty
@@ -397,7 +412,7 @@ where
 
     /// Maps over the contents of Partial.
     pub fn map<F>(self, func: F) -> Self
-        where F: FnOnce(TypedRect<T, U>) -> TypedRect<T, U>,
+        where F: FnOnce(Rect<T, U>) -> Rect<T, U>,
     {
         use crate::DirtyRect::*;
 
@@ -424,18 +439,18 @@ where
         match (*self, *other) {
             (All, rect) | (rect, All)  => rect,
             (Partial(rect1), Partial(rect2)) => Partial(rect1.intersection(&rect2)
-                                                                   .unwrap_or_else(TypedRect::zero))
+                                                                   .unwrap_or_else(Rect::zero))
         }
     }
 
     /// Converts the dirty rect into a subrect of the given one via intersection.
-    pub fn to_subrect_of(&self, rect: &TypedRect<T, U>) -> TypedRect<T, U> {
+    pub fn to_subrect_of(&self, rect: &Rect<T, U>) -> Rect<T, U> {
         use crate::DirtyRect::*;
 
         match *self {
             All              => *rect,
             Partial(dirty_rect) => dirty_rect.intersection(rect)
-                                               .unwrap_or_else(TypedRect::zero),
+                                               .unwrap_or_else(Rect::zero),
         }
     }
 }
@@ -445,8 +460,8 @@ impl<T: Copy, U> Clone for DirtyRect<T, U> {
     fn clone(&self) -> Self { *self }
 }
 
-impl<T: Copy, U> From<TypedRect<T, U>> for DirtyRect<T, U> {
-    fn from(rect: TypedRect<T, U>) -> Self {
+impl<T: Copy, U> From<Rect<T, U>> for DirtyRect<T, U> {
+    fn from(rect: Rect<T, U>) -> Self {
         DirtyRect::Partial(rect)
     }
 }

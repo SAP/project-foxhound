@@ -82,7 +82,6 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
                       const nsCString& aTxtURL);
   void EndEmptyTransaction(const FocusTarget& aFocusTarget,
                            nsTArray<RenderRootUpdates>& aRenderRootUpdates,
-                           uint32_t aPaintSequenceNumber,
                            TransactionId aTransactionId,
                            const mozilla::VsyncId& aVsyncId,
                            const mozilla::TimeStamp& aVsyncStartTime,
@@ -164,7 +163,7 @@ class WebRenderBridgeChild final : public PWebRenderBridgeChild,
 
   void SetWebRenderLayerManager(WebRenderLayerManager* aManager);
 
-  ipc::IShmemAllocator* GetShmemAllocator();
+  mozilla::ipc::IShmemAllocator* GetShmemAllocator();
 
   bool IsThreadSafe() const override { return false; }
 

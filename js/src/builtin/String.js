@@ -2,8 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*global intl_Collator: false, */
-
 function StringProtoHasNoMatch() {
     var ObjectProto = GetBuiltinPrototype("Object");
     var StringProto = GetBuiltinPrototype("String");
@@ -620,6 +618,7 @@ function StringIteratorNext() {
     return result;
 }
 
+#if ENABLE_INTL_API
 var collatorCache = new Record();
 
 /**
@@ -737,6 +736,7 @@ function String_toLocaleUpperCase() {
     // Steps 7-16.
     return intl_toLocaleUpperCase(string, requestedLocale);
 }
+#endif  // ENABLE_INTL_API
 
 // ES2018 draft rev 8fadde42cf6a9879b4ab0cb6142b31c4ee501667
 // 21.1.2.4 String.raw ( template, ...substitutions )

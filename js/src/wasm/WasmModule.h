@@ -133,7 +133,6 @@ class Module : public JS::WasmModule {
   bool instantiateGlobals(JSContext* cx, const ValVector& globalImportValues,
                           WasmGlobalObjectVector& globalObjs) const;
   bool initSegments(JSContext* cx, HandleWasmInstanceObject instance,
-                    const JSFunctionVector& funcImports,
                     HandleWasmMemoryObject memory,
                     const ValVector& globalImportValues) const;
   SharedCode getDebugEnabledCode() const;
@@ -215,14 +214,14 @@ class Module : public JS::WasmModule {
   // about:memory reporting:
 
   void addSizeOfMisc(MallocSizeOf mallocSizeOf, Metadata::SeenSet* seenMetadata,
-                     ShareableBytes::SeenSet* seenBytes,
                      Code::SeenSet* seenCode, size_t* code, size_t* data) const;
 
   // GC malloc memory tracking:
 
   void initGCMallocBytesExcludingCode();
   size_t gcMallocBytesExcludingCode() const {
-    return gcMallocBytesExcludingCode_; }
+    return gcMallocBytesExcludingCode_;
+  }
 
   // Generated code analysis support:
 
@@ -235,9 +234,6 @@ typedef RefPtr<const Module> SharedModule;
 // JS API implementations:
 
 MOZ_MUST_USE bool GetOptimizedEncodingBuildId(JS::BuildIdCharVector* buildId);
-
-RefPtr<JS::WasmModule> DeserializeModule(const uint8_t* bytecode,
-                                         size_t bytecodeLength);
 
 }  // namespace wasm
 }  // namespace js

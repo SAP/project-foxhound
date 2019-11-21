@@ -32,6 +32,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/TextEvents.h"
 #include <algorithm>
 
@@ -120,7 +121,7 @@ nsListControlFrame::~nsListControlFrame() { mComboboxFrame = nullptr; }
 
 static bool ShouldFireDropDownEvent() {
   return (XRE_IsContentProcess() &&
-          Preferences::GetBool("browser.tabs.remote.desktopbehavior", false)) ||
+          StaticPrefs::browser_tabs_remote_desktopbehavior()) ||
          Preferences::GetBool("dom.select_popup_in_parent.enabled", false);
 }
 
@@ -555,7 +556,11 @@ void nsListControlFrame::ReflowAsDropdown(nsPresContext* aPresContext,
     // Looks like we have no options.  Just size us to a single row
     // block size.
     state.SetComputedBSize(blockSizeOfARow);
-    mNumDisplayRows = 1;
+    // mNumDisplayRows is used as the number of options to move for the page
+    // up/down keys. If we're in a content process, we can't calculate
+    // mNumDisplayRows properly, but the maximum number of rows is a lot more
+    // uesful for page up/down than 1.
+    mNumDisplayRows = XRE_IsContentProcess() ? kMaxDropDownRows : 1;
   } else {
     nsComboboxControlFrame* combobox =
         static_cast<nsComboboxControlFrame*>(mComboboxFrame);

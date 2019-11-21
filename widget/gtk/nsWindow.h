@@ -221,7 +221,7 @@ class nsWindow final : public nsBaseWidget {
       mozilla::layers::BufferMode* aBufferMode) override;
   virtual void EndRemoteDrawingInRegion(
       mozilla::gfx::DrawTarget* aDrawTarget,
-      LayoutDeviceIntRegion& aInvalidRegion) override;
+      const LayoutDeviceIntRegion& aInvalidRegion) override;
 
   void SetProgress(unsigned long progressPercent);
 
@@ -402,14 +402,14 @@ class nsWindow final : public nsBaseWidget {
   void DispatchResized();
   void MaybeDispatchResized();
 
-  // Helper for SetParent and ReparentNativeWidget.
-  void ReparentNativeWidgetInternal(nsIWidget* aNewParent,
-                                    GtkWidget* aNewContainer,
-                                    GdkWindow* aNewParentWindow,
-                                    GtkWidget* aOldContainer);
-
   virtual void RegisterTouchWindow() override;
-
+  virtual bool CompositorInitiallyPaused() override {
+#ifdef MOZ_WAYLAND
+    return mCompositorInitiallyPaused;
+#else
+    return false;
+#endif
+  }
   nsCOMPtr<nsIWidget> mParent;
   // Is this a toplevel window?
   bool mIsTopLevel;
@@ -437,6 +437,7 @@ class nsWindow final : public nsBaseWidget {
   bool mIsX11Display;
 #ifdef MOZ_WAYLAND
   bool mNeedsUpdatingEGLSurface;
+  bool mCompositorInitiallyPaused;
 #endif
 
  private:
@@ -613,10 +614,12 @@ class nsWindow final : public nsBaseWidget {
 
   void ForceTitlebarRedraw();
 
+  bool IsMainMenuWindow();
   GtkWidget* ConfigureWaylandPopupWindows();
   void HideWaylandWindow();
   void HideWaylandTooltips();
   void HideWaylandPopupAndAllChildren();
+  void CleanupWaylandPopups();
 
   /**
    * |mIMContext| takes all IME related stuff.

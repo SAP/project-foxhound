@@ -8,11 +8,13 @@ import base64
 import hashlib
 import imghdr
 import struct
+import sys
 import tempfile
+import unittest
 import urllib
 
 from marionette_driver import By
-from marionette_driver.errors import NoSuchElementException, NoSuchWindowException
+from marionette_driver.errors import NoSuchWindowException
 from marionette_harness import (
     MarionetteTestCase,
     skip,
@@ -40,6 +42,8 @@ class ScreenCaptureTestCase(MarionetteTestCase):
 
     def setUp(self):
         super(ScreenCaptureTestCase, self).setUp()
+
+        self.maxDiff = None
 
         self._device_pixel_ratio = None
 
@@ -119,10 +123,8 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
     def setUp(self):
         super(TestScreenCaptureChrome, self).setUp()
         self.marionette.set_context("chrome")
-        self.marionette.set_pref("marionette.log.truncate", False)
 
     def tearDown(self):
-        self.marionette.clear_pref("marionette.log.truncate")
         self.close_all_windows()
         super(TestScreenCaptureChrome, self).tearDown()
 
@@ -163,33 +165,25 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
         self.marionette.switch_to_window(self.start_window)
 
     @skip_if_mobile("Fennec doesn't support other chrome windows")
-    def test_capture_flags(self):
+    def test_capture_full_area(self):
         dialog = self.open_dialog()
         self.marionette.switch_to_window(dialog)
 
-        textbox = self.marionette.find_element(By.ID, "text-box")
-        textbox.send_keys("")
-        screenshot_focus = self.marionette.screenshot()
+        root_dimensions = self.scale(self.get_element_dimensions(self.document_element))
 
-        self.marionette.execute_script("arguments[0].blur();", script_args=[textbox])
-        screenshot_no_focus = self.marionette.screenshot()
-
-        self.marionette.close_chrome_window()
-        self.marionette.switch_to_window(self.start_window)
-
-        self.assertNotEqual(screenshot_focus, screenshot_no_focus)
-
-    def test_capture_full_area(self):
+        # self.marionette.set_window_rect(width=100, height=100)
         # A full capture is not the outer dimensions of the window,
         # but instead the bounding box of the window's root node (documentElement).
         screenshot_full = self.marionette.screenshot()
         screenshot_root = self.marionette.screenshot(element=self.document_element)
 
+        self.marionette.close_chrome_window()
+        self.marionette.switch_to_window(self.start_window)
+
         self.assert_png(screenshot_full)
         self.assert_png(screenshot_root)
+        self.assertEqual(root_dimensions, self.get_image_dimensions(screenshot_full))
         self.assertEqual(screenshot_root, screenshot_full)
-        self.assertEqual(self.scale(self.get_element_dimensions(self.document_element)),
-                         self.get_image_dimensions(screenshot_full))
 
     @skip_if_mobile("Fennec doesn't support other chrome windows")
     def test_capture_window_already_closed(self):
@@ -213,46 +207,6 @@ class TestScreenCaptureChrome(WindowManagerMixin, ScreenCaptureTestCase):
     def test_format_unknown(self):
         with self.assertRaises(ValueError):
             self.marionette.screenshot(format="cheese")
-
-    @skip_if_mobile("Fennec doesn't support other chrome windows")
-    def test_highlight_elements(self):
-        dialog = self.open_dialog()
-        self.marionette.switch_to_window(dialog)
-
-        # Highlighting the element itself shouldn't make the image larger
-        element = self.marionette.find_element(By.ID, "test-list")
-        screenshot_element = self.marionette.screenshot(element=element)
-        screenshot_highlight = self.marionette.screenshot(element=element,
-                                                          highlights=[element])
-        self.assertEqual(self.scale(self.get_element_dimensions(element)),
-                         self.get_image_dimensions(screenshot_element))
-        self.assertNotEqual(screenshot_element, screenshot_highlight)
-
-        # Highlighting a sub element
-        button = self.marionette.find_element(By.ID, "choose-button")
-        screenshot_highlight_button = self.marionette.screenshot(element=element,
-                                                                 highlights=[button])
-        self.assertNotEqual(screenshot_element, screenshot_highlight_button)
-        self.assertNotEqual(screenshot_highlight, screenshot_highlight_button)
-
-        self.marionette.close_chrome_window()
-        self.marionette.switch_to_window(self.start_window)
-
-    def test_highlight_element_not_seen(self):
-        """Check that for not found elements an exception is raised."""
-        with self.marionette.using_context('content'):
-            self.marionette.navigate(box)
-            content_element = self.marionette.find_element(By.ID, "green")
-
-        self.assertRaisesRegexp(NoSuchElementException, "Web element reference not seen before",
-                                self.marionette.screenshot, highlights=[content_element])
-
-        chrome_document_element = self.document_element
-        with self.marionette.using_context('content'):
-            self.assertRaisesRegexp(NoSuchElementException,
-                                    "Web element reference not seen before",
-                                    self.marionette.screenshot,
-                                    highlights=[chrome_document_element])
 
 
 class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
@@ -303,18 +257,6 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
                          self.get_image_dimensions(screenshot))
         self.assertGreater(self.page_y_offset, 0)
 
-    def test_capture_flags(self):
-        self.marionette.navigate(input)
-
-        textbox = self.marionette.find_element(By.ID, "text-input")
-        textbox.send_keys("")
-        screenshot_focus = self.marionette.screenshot()
-
-        self.marionette.execute_script("arguments[0].blur();", script_args=[textbox])
-        screenshot_no_focus = self.marionette.screenshot()
-
-        self.assertNotEqual(screenshot_focus, screenshot_no_focus)
-
     def test_capture_html_document_element(self):
         self.marionette.navigate(long)
         screenshot = self.marionette.screenshot()
@@ -358,25 +300,6 @@ class TestScreenCaptureContent(WindowManagerMixin, ScreenCaptureTestCase):
     def test_format_unknown(self):
         with self.assertRaises(ValueError):
             self.marionette.screenshot(format="cheese")
-
-    def test_highlight_elements(self):
-        self.marionette.navigate(box)
-        element = self.marionette.find_element(By.TAG_NAME, "div")
-
-        # Highlighting the element itself shouldn't make the image larger
-        screenshot_element = self.marionette.screenshot(element=element)
-        screenshot_highlight = self.marionette.screenshot(element=element,
-                                                          highlights=[element])
-        self.assertEqual(self.scale(self.get_element_dimensions(element)),
-                         self.get_image_dimensions(screenshot_highlight))
-        self.assertNotEqual(screenshot_element, screenshot_highlight)
-
-        # Highlighting a sub element
-        paragraph = self.marionette.find_element(By.ID, "green")
-        screenshot_highlight_paragraph = self.marionette.screenshot(element=element,
-                                                                    highlights=[paragraph])
-        self.assertNotEqual(screenshot_element, screenshot_highlight_paragraph)
-        self.assertNotEqual(screenshot_highlight, screenshot_highlight_paragraph)
 
     def test_save_screenshot(self):
         expected = self.marionette.screenshot(format="binary")

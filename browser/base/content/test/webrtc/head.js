@@ -4,6 +4,9 @@ var { XPCOMUtils } = ChromeUtils.import(
 var { SitePermissions } = ChromeUtils.import(
   "resource:///modules/SitePermissions.jsm"
 );
+var { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
 
 const PREF_PERMISSION_FAKE = "media.navigator.permission.fake";
 const PREF_AUDIO_LOOPBACK = "media.audio_loopback_dev";
@@ -567,8 +570,9 @@ async function checkSharingUI(
   let doc = aWin.document;
   // First check the icon above the control center (i) icon.
   let identityBox = doc.getElementById("identity-box");
-  ok(identityBox.hasAttribute("sharing"), "sharing attribute is set");
-  let sharing = identityBox.getAttribute("sharing");
+  let webrtcSharingIcon = doc.getElementById("webrtc-sharing-icon");
+  ok(webrtcSharingIcon.hasAttribute("sharing"), "sharing attribute is set");
+  let sharing = webrtcSharingIcon.getAttribute("sharing");
   if (aExpected.screen) {
     is(sharing, "screen", "showing screen icon in the identity block");
   } else if (aExpected.video == STATE_CAPTURE_ENABLED) {
@@ -583,7 +587,7 @@ async function checkSharingUI(
 
   let allStreamsPaused = Object.values(aExpected).every(isPaused);
   is(
-    identityBox.hasAttribute("paused"),
+    webrtcSharingIcon.hasAttribute("paused"),
     allStreamsPaused,
     "sharing icon(s) should be in paused state when paused"
   );
@@ -603,7 +607,7 @@ async function checkSharingUI(
     };
     let expected = aExpected[convertId(id)];
     is(
-      !!aWin.gIdentityHandler._sharingState[id],
+      !!aWin.gIdentityHandler._sharingState.webRTC[id],
       !!expected,
       "sharing state for " + id + " as expected"
     );
@@ -642,7 +646,7 @@ async function checkNotSharing() {
   );
 
   ok(
-    !document.getElementById("identity-box").hasAttribute("sharing"),
+    !document.getElementById("webrtc-sharing-icon").hasAttribute("sharing"),
     "no sharing indicator on the control center icon"
   );
 
@@ -659,21 +663,24 @@ function promiseReloadFrame(aFrameId) {
   });
 }
 
-async function runTests(tests, options = {}) {
-  let leaf = options.relativeURI || "get_user_media.html";
-
+async function openNewTestTab(leaf = "get_user_media.html") {
   let rootDir = getRootDirectory(gTestPath);
   rootDir = rootDir.replace(
     "chrome://mochitests/content/",
     "https://example.com/"
   );
   let absoluteURI = rootDir + leaf;
-  let cleanup = options.cleanup || (() => expectNoObserverCalled());
 
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, absoluteURI);
   let browser = tab.linkedBrowser;
 
   browser.messageManager.loadFrameScript(CONTENT_SCRIPT_HELPER, true);
+  return browser;
+}
+
+async function runTests(tests, options = {}) {
+  let cleanup = options.cleanup || (() => expectNoObserverCalled());
+  let browser = await openNewTestTab(options.relativeURI);
 
   is(
     PopupNotifications._currentNotifications.length,

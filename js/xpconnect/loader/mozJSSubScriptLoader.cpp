@@ -397,7 +397,7 @@ nsresult mozJSSubScriptLoader::DoLoadSubScriptWithOptions(
 
   // Make sure to explicitly create the URI, since we'll need the
   // canonicalized spec.
-  rv = NS_NewURI(getter_AddRefs(uri), asciiUrl.get(), nullptr, serv);
+  rv = NS_NewURI(getter_AddRefs(uri), asciiUrl);
   if (NS_FAILED(rv)) {
     ReportError(cx, NS_LITERAL_CSTRING(LOAD_ERROR_NOURI));
     return NS_OK;
@@ -424,13 +424,13 @@ nsresult mozJSSubScriptLoader::DoLoadSubScriptWithOptions(
     auto* content = principal->As<ContentPrincipal>();
 
     nsAutoCString scheme;
-    content->mCodebase->GetScheme(scheme);
+    content->mURI->GetScheme(scheme);
 
     // We want to enable caching for scripts with Activity Stream's
     // codebase URLs.
     if (scheme.EqualsLiteral("about")) {
       nsAutoCString filePath;
-      content->mCodebase->GetFilePath(filePath);
+      content->mURI->GetFilePath(filePath);
 
       useCompilationScope = filePath.EqualsLiteral("home") ||
                             filePath.EqualsLiteral("newtab") ||

@@ -20,7 +20,9 @@ class ChromiumCDMChild : public PChromiumCDMChild,
                          public cdm::Host_9,
                          public cdm::Host_10 {
  public:
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ChromiumCDMChild);
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PChromiumCDMChild.
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ChromiumCDMChild, final);
 
   explicit ChromiumCDMChild(GMPContentChild* aPlugin);
 
@@ -97,7 +99,8 @@ class ChromiumCDMChild : public PChromiumCDMChild,
   ipc::IPCResult RecvRemoveSession(const uint32_t& aPromiseId,
                                    const nsCString& aSessionId) override;
   ipc::IPCResult RecvGetStatusForPolicy(
-      const uint32_t& aPromiseId, const nsCString& aMinHdcpVersion) override;
+      const uint32_t& aPromiseId,
+      const cdm::HdcpVersion& aMinHdcpVersion) override;
   ipc::IPCResult RecvDecrypt(const uint32_t& aId,
                              const CDMInputBuffer& aBuffer) override;
   ipc::IPCResult RecvInitializeVideoDecoder(

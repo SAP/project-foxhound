@@ -57,7 +57,7 @@ class Instance {
   const UniqueDebugState maybeDebug_;
   StructTypeDescrVector structTypeDescrs_;
 
-  friend void Zone::sweepBreakpoints(js::FreeOp*);
+  friend void Zone::sweepBreakpoints(JSFreeOp*);
 
   // Internal helpers:
   const void** addressOfFuncTypeId(const FuncTypeIdDesc& funcTypeId) const;
@@ -156,7 +156,7 @@ class Instance {
 
   // Called by Wasm(Memory|Table)Object when a moving resize occurs:
 
-  void onMovingGrowMemory(uint8_t* prevMemoryBase);
+  void onMovingGrowMemory();
   void onMovingGrowTable(const Table* theTable);
 
   // Called to apply a single ElemSegment at a given offset, assuming
@@ -168,13 +168,19 @@ class Instance {
   // Debugger support:
 
   JSString* createDisplayURL(JSContext* cx);
+  WasmBreakpointSite* getOrCreateBreakpointSite(JSContext* cx, uint32_t offset);
+  void destroyBreakpointSite(JSFreeOp* fop, uint32_t offset);
 
   // about:memory reporting:
 
   void addSizeOfMisc(MallocSizeOf mallocSizeOf, Metadata::SeenSet* seenMetadata,
-                     ShareableBytes::SeenSet* seenBytes,
                      Code::SeenSet* seenCode, Table::SeenSet* seenTables,
                      size_t* code, size_t* data) const;
+
+  // Wasm disassembly support
+
+  void disassembleExport(JSContext* cx, uint32_t funcIndex, Tier tier,
+                         PrintCallback callback) const;
 
  public:
   // Functions to be called directly from wasm code.
@@ -214,6 +220,7 @@ class Instance {
   static int32_t tableInit(Instance* instance, uint32_t dstOffset,
                            uint32_t srcOffset, uint32_t len, uint32_t segIndex,
                            uint32_t tableIndex);
+  static void* funcRef(Instance* instance, uint32_t funcIndex);
   static void postBarrier(Instance* instance, gc::Cell** location);
   static void postBarrierFiltering(Instance* instance, gc::Cell** location);
   static void* structNew(Instance* instance, uint32_t typeIndex);

@@ -4,7 +4,7 @@
 
 "use strict";
 
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const { DebuggerClient } = require("devtools/shared/client/debugger-client");
 const {
   remoteClientManager,
@@ -91,13 +91,13 @@ async function _targetFromURL(client, id, type, chrome) {
       throw ex;
     }
   } else if (type === "extension") {
-    const addonFront = await client.mainRoot.getAddon({ id });
+    const addonDescriptor = await client.mainRoot.getAddon({ id });
 
-    if (!addonFront) {
+    if (!addonDescriptor) {
       throw new Error(`targetFromURL, extension with id '${id}' doesn't exist`);
     }
 
-    front = await addonFront.connect();
+    front = await addonDescriptor.getTarget();
   } else if (type === "worker") {
     front = await client.mainRoot.getWorker(id);
 

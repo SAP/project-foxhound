@@ -2166,10 +2166,6 @@ HttpChannelChild::ConnectParent(uint32_t registrarId) {
 
   HttpBaseChannel::SetDocshellUserAgentOverride();
 
-  // The socket transport in the chrome process now holds a logical ref to us
-  // until OnStopRequest, or we do a redirect, or we hit an IPDL error.
-  AddRef();
-
   // This must happen before the constructor message is sent. Otherwise messages
   // from the parent could arrive quickly and be delivered to the wrong event
   // target.
@@ -2840,11 +2836,24 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   Maybe<CorsPreflightArgs> optionalCorsPreflightArgs;
   GetClientSetCorsPreflightParameters(optionalCorsPreflightArgs);
 
-  // NB: This call forces us to cache mTopWindowURI if we haven't already.
+  // NB: This call forces us to cache mTopWindowURI and
+  // mContentBlockingAllowListPrincipal if we haven't already.
   nsCOMPtr<nsIURI> uri;
   GetTopWindowURI(mURI, getter_AddRefs(uri));
 
   SerializeURI(mTopWindowURI, openArgs.topWindowURI());
+
+  if (mContentBlockingAllowListPrincipal) {
+    PrincipalInfo principalInfo;
+    rv = PrincipalToPrincipalInfo(mContentBlockingAllowListPrincipal,
+                                  &principalInfo);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    openArgs.contentBlockingAllowListPrincipal() = principalInfo;
+  } else {
+    openArgs.contentBlockingAllowListPrincipal() = void_t();
+  }
 
   openArgs.preflightArgs() = optionalCorsPreflightArgs;
 
@@ -2919,10 +2928,6 @@ nsresult HttpChannelChild::ContinueAsyncOpen() {
   // from the parent could arrive quickly and be delivered to the wrong event
   // target.
   SetEventTarget();
-
-  // The socket transport in the chrome process now holds a logical ref to us
-  // until OnStopRequest, or we do a redirect, or we hit an IPDL error.
-  AddRef();
 
   PBrowserOrId browser = cc->GetBrowserOrId(browserChild);
   if (!gNeckoChild->SendPHttpChannelConstructor(
@@ -3927,20 +3932,17 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvIssueDeprecationWarning(
 }
 
 bool HttpChannelChild::ShouldInterceptURI(nsIURI* aURI, bool& aShouldUpgrade) {
-  bool isHttps = false;
-  nsresult rv = aURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, false);
   nsCOMPtr<nsIPrincipal> resultPrincipal;
-  if (!isHttps && mLoadInfo) {
+  if (!aURI->SchemeIs("https") && mLoadInfo) {
     nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
         this, getter_AddRefs(resultPrincipal));
   }
   OriginAttributes originAttributes;
   NS_ENSURE_TRUE(NS_GetOriginAttributes(this, originAttributes), false);
   bool notused = false;
-  rv = NS_ShouldSecureUpgrade(aURI, mLoadInfo, resultPrincipal,
-                              mPrivateBrowsing, mAllowSTS, originAttributes,
-                              aShouldUpgrade, nullptr, notused);
+  nsresult rv = NS_ShouldSecureUpgrade(
+      aURI, mLoadInfo, resultPrincipal, mPrivateBrowsing, mAllowSTS,
+      originAttributes, aShouldUpgrade, nullptr, notused);
   NS_ENSURE_SUCCESS(rv, false);
 
   nsCOMPtr<nsIURI> upgradedURI;
@@ -4061,6 +4063,10 @@ nsresult HttpChannelChild::CrossProcessRedirectFinished(nsresult aStatus) {
     return NS_BINDING_FAILED;
   }
 
+  if (!mCanceled && NS_SUCCEEDED(mStatus)) {
+    mStatus = aStatus;
+  }
+
   // The loadInfo is updated in nsDocShell::OpenInitializedChannel to have the
   // correct attributes (such as browsingContextID).
   // We need to send it to the parent channel so the two match, which is done
@@ -4069,7 +4075,7 @@ nsresult HttpChannelChild::CrossProcessRedirectFinished(nsresult aStatus) {
   Maybe<LoadInfoArgs> loadInfoArgs;
   MOZ_ALWAYS_SUCCEEDS(
       mozilla::ipc::LoadInfoToLoadInfoArgs(loadInfo, &loadInfoArgs));
-  Unused << SendCrossProcessRedirectDone(aStatus, loadInfoArgs);
+  Unused << SendCrossProcessRedirectDone(mStatus, loadInfoArgs);
   return NS_OK;
 }
 

@@ -28,7 +28,6 @@ using mozilla::DefaultXDisplay;
 #include "nsIStringStream.h"
 #include "nsNetUtil.h"
 #include "mozilla/Preferences.h"
-#include "nsILinkHandler.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsLayoutUtils.h"
@@ -389,10 +388,8 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
   }
 
   // the container of the pres context will give us the link handler
-  nsCOMPtr<nsISupports> container = presContext->GetContainerWeak();
+  nsCOMPtr<nsIDocShell> container = presContext->GetDocShell();
   NS_ENSURE_TRUE(container, NS_ERROR_FAILURE);
-  nsCOMPtr<nsILinkHandler> lh = do_QueryInterface(container);
-  NS_ENSURE_TRUE(lh, NS_ERROR_FAILURE);
 
   nsAutoString unitarget;
   if ((0 == PL_strcmp(aTarget, "newwindow")) ||
@@ -404,11 +401,9 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
     unitarget.AssignASCII(aTarget);  // XXX could this be nonascii?
   }
 
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-
   // Create an absolute URL
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, baseURI);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, GetBaseURI());
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsIInputStream> headersDataStream;
@@ -430,7 +425,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
       (PopupBlocker::PopupControlState)blockPopups);
 
   // if security checks (in particular CheckLoadURIWithPrincipal) needs
-  // to be skipped we are creating a codebasePrincipal to make sure
+  // to be skipped we are creating a contentPrincipal to make sure
   // that security check succeeds. Please note that we do not want to
   // fall back to using the systemPrincipal, because that would also
   // bypass ContentPolicy checks which should still be enforced.
@@ -438,7 +433,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
   if (!aDoCheckLoadURIChecks) {
     mozilla::OriginAttributes attrs =
         BasePrincipal::Cast(content->NodePrincipal())->OriginAttributesRef();
-    triggeringPrincipal = BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+    triggeringPrincipal = BasePrincipal::CreateContentPrincipal(uri, attrs);
   } else {
     triggeringPrincipal =
         NullPrincipal::CreateWithInheritedAttributes(content->NodePrincipal());
@@ -446,10 +441,10 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
 
   nsCOMPtr<nsIContentSecurityPolicy> csp = content->GetCsp();
 
-  rv = lh->OnLinkClick(content, uri, unitarget, VoidString(), aPostStream,
-                       headersDataStream,
-                       /* isUserTriggered */ false,
-                       /* isTrusted */ true, triggeringPrincipal, csp);
+  rv = nsDocShell::Cast(container)->OnLinkClick(
+      content, uri, unitarget, VoidString(), aPostStream, headersDataStream,
+      /* isUserTriggered */ false, /* isTrusted */ true, triggeringPrincipal,
+      csp);
 
   return rv;
 }
@@ -2818,7 +2813,8 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void) {
       // created in chrome.
       if (XRE_IsContentProcess()) {
         if (nsCOMPtr<nsPIDOMWindowOuter> window = doc->GetWindow()) {
-          if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetTop()) {
+          if (nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+                  window->GetInProcessTop()) {
             dom::BrowserChild* tc = dom::BrowserChild::GetFrom(topWindow);
             if (tc) {
               // This returns a PluginWidgetProxy which remotes a number of
@@ -3228,7 +3224,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::PrivateModeChanged(bool aEnabled) {
   return mInstance ? mInstance->PrivateModeStateChanged(aEnabled) : NS_OK;
 }
 
-already_AddRefed<nsIURI> nsPluginInstanceOwner::GetBaseURI() const {
+nsIURI* nsPluginInstanceOwner::GetBaseURI() const {
   nsCOMPtr<nsIContent> content = do_QueryReferent(mContent);
   if (!content) {
     return nullptr;

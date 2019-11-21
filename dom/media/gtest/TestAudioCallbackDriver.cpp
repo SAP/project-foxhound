@@ -26,7 +26,7 @@ RefPtr<MediaStreamGraphImpl> MakeMSGImpl() {
                                           44100, 2, nullptr);
 }
 
-TEST(TestAudioCallbackDriver, Revive)
+TEST(TestAudioCallbackDriver, StartStop)
 {
   MockCubeb* mock = new MockCubeb();
   mozilla::CubebUtils::ForceSetCubebContext(mock->AsCubebContext());
@@ -44,23 +44,14 @@ TEST(TestAudioCallbackDriver, Revive)
   EXPECT_TRUE(driver->ThreadRunning()) << "Verify thread is running";
   EXPECT_TRUE(driver->IsStarted()) << "Verify thread is started";
 
-  driver->Shutdown();
-  EXPECT_FALSE(driver->ThreadRunning()) << "Verify thread is not running";
-  EXPECT_FALSE(driver->IsStarted()) << "Verify thread is not started";
-
-  driver->Revive();
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  EXPECT_TRUE(driver->ThreadRunning()) << "Verify thread is running";
-  EXPECT_TRUE(driver->IsStarted()) << "Verify thread is started";
-
-  // This will block untill all events has been executed.
+  // This will block untill all events have been executed.
   driver->AsAudioCallbackDriver()->Shutdown();
   EXPECT_FALSE(driver->ThreadRunning()) << "Verify thread is not running";
   EXPECT_FALSE(driver->IsStarted()) << "Verify thread is not started";
 
   // This is required because the MSG and the driver hold references between
-  // each other. The driver has a reference to SharedThreadPool which would
-  // block for ever if it was not cleared. The same logic exists in
+  // each other. The driver has a reference to SharedThreadPool which will
+  // block for ever if it is not cleared. The same logic exists in
   // MediaStreamGraphShutDownRunnable
   graph->mDriver = nullptr;
 }

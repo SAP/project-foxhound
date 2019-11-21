@@ -23,6 +23,7 @@ namespace {
 
 using mozilla::Atomic;
 using mozilla::MutexAutoLock;
+using mozilla::Some;
 using mozilla::Unused;
 using mozilla::dom::ContentParentId;
 using mozilla::dom::cache::DirPaddingFile;
@@ -48,6 +49,10 @@ static nsresult GetBodyUsage(nsIFile* aDir, const Atomic<bool>& aCanceled,
   nsCOMPtr<nsIFile> file;
   while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
          file && !aCanceled) {
+    if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
+      return NS_ERROR_ABORT;
+    }
+
     bool isDir;
     rv = file->IsDirectory(&isDir);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -69,7 +74,7 @@ static nsresult GetBodyUsage(nsIFile* aDir, const Atomic<bool>& aCanceled,
     }
     MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
 
-    aUsageInfo->AppendToFileUsage(fileSize);
+    aUsageInfo->AppendToFileUsage(Some(fileSize));
   }
 
   return NS_OK;
@@ -383,14 +388,15 @@ class CacheQuotaClient final : public Client {
     nsresult rv = qm->GetDirectoryForOrigin(aPersistenceType, aOrigin,
                                             getter_AddRefs(dir));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                    Cache_GetDirForOri);
       return rv;
     }
 
     rv = dir->Append(NS_LITERAL_STRING(DOMCACHE_DIRECTORY_NAME));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError, Cache_Append);
+      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
+                                   Cache_Append);
       return rv;
     }
 
@@ -406,19 +412,19 @@ class CacheQuotaClient final : public Client {
               dir, &paddingSize)))) {
         rv = LockedGetPaddingSizeFromDB(dir, aGroup, aOrigin, &paddingSize);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kInternalError,
+          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaInternalError,
                                        Cache_GetPaddingSize);
           return rv;
         }
       }
     }
 
-    aUsageInfo->AppendToFileUsage(paddingSize);
+    aUsageInfo->AppendToFileUsage(Some(paddingSize));
 
     nsCOMPtr<nsIDirectoryEnumerator> entries;
     rv = dir->GetDirectoryEntries(getter_AddRefs(entries));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                    Cache_GetDirEntries);
       return rv;
     }
@@ -426,10 +432,14 @@ class CacheQuotaClient final : public Client {
     nsCOMPtr<nsIFile> file;
     while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
            file && !aCanceled) {
+      if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
+        return NS_ERROR_ABORT;
+      }
+
       nsAutoString leafName;
       rv = file->GetLeafName(leafName);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                      Cache_GetLeafName);
         return rv;
       }
@@ -437,7 +447,7 @@ class CacheQuotaClient final : public Client {
       bool isDir;
       rv = file->IsDirectory(&isDir);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                      Cache_IsDirectory);
         return rv;
       }
@@ -446,8 +456,10 @@ class CacheQuotaClient final : public Client {
         if (leafName.EqualsLiteral("morgue")) {
           rv = GetBodyUsage(file, aCanceled, aUsageInfo);
           if (NS_WARN_IF(NS_FAILED(rv))) {
-            REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
-                                         Cache_GetBodyUsage);
+            if (rv != NS_ERROR_ABORT) {
+              REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
+                                           Cache_GetBodyUsage);
+            }
             return rv;
           }
         } else {
@@ -471,13 +483,13 @@ class CacheQuotaClient final : public Client {
         int64_t fileSize;
         rv = file->GetFileSize(&fileSize);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                        Cache_GetFileSize);
           return rv;
         }
         MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
 
-        aUsageInfo->AppendToDatabaseUsage(fileSize);
+        aUsageInfo->AppendToDatabaseUsage(Some(fileSize));
         continue;
       }
 

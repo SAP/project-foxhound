@@ -8,7 +8,6 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -90,11 +89,6 @@ UrlClassifierFeatureFingerprintingAnnotation::MaybeCreate(
        "%p",
        aChannel));
 
-  if (!StaticPrefs::
-          privacy_trackingprotection_fingerprinting_annotate_enabled()) {
-    return nullptr;
-  }
-
   if (!UrlClassifierCommon::ShouldEnableClassifier(aChannel)) {
     return nullptr;
   }
@@ -152,7 +146,7 @@ UrlClassifierFeatureFingerprintingAnnotation::ProcessChannel(
   UrlClassifierCommon::SetTrackingInfo(aChannel, aList, aHashes);
 
   UrlClassifierCommon::AnnotateChannel(
-      aChannel, AntiTrackingCommon::eFingerprinting, flags,
+      aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_FINGERPRINTING_CONTENT);
 
   return NS_OK;

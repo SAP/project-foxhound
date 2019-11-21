@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -27,11 +25,8 @@ const ChangesApp = createFactory(require("./components/ChangesApp"));
 const { getChangesStylesheet } = require("./selectors/changes");
 
 const {
-  TELEMETRY_SCALAR_CONTEXTMENU,
-  TELEMETRY_SCALAR_CONTEXTMENU_COPY,
   TELEMETRY_SCALAR_CONTEXTMENU_COPY_DECLARATION,
   TELEMETRY_SCALAR_CONTEXTMENU_COPY_RULE,
-  TELEMETRY_SCALAR_COPY,
   TELEMETRY_SCALAR_COPY_ALL_CHANGES,
   TELEMETRY_SCALAR_COPY_RULE,
 } = require("./constants");
@@ -50,7 +45,6 @@ class ChangesView {
     this.onClearChanges = this.onClearChanges.bind(this);
     this.onChangesFront = this.onChangesFront.bind(this);
     this.onContextMenu = this.onContextMenu.bind(this);
-    this.onCopy = this.onCopy.bind(this);
     this.onCopyAllChanges = this.copyAllChanges.bind(this);
     this.onCopyRule = this.copyRule.bind(this);
     this.destroy = this.destroy.bind(this);
@@ -69,7 +63,6 @@ class ChangesView {
   init() {
     const changesApp = ChangesApp({
       onContextMenu: this.onContextMenu,
-      onCopy: this.onCopy,
       onCopyAllChanges: this.onCopyAllChanges,
       onCopyRule: this.onCopyRule,
     });
@@ -211,7 +204,6 @@ class ChangesView {
    */
   copySelection() {
     clipboardHelper.copyString(this.window.getSelection().toString());
-    this.telemetry.scalarAdd(TELEMETRY_SCALAR_CONTEXTMENU_COPY, 1);
   }
 
   onAddChange(change) {
@@ -229,27 +221,13 @@ class ChangesView {
    */
   onContextMenu(e) {
     this.contextMenu.show(e);
-    this.telemetry.scalarAdd(TELEMETRY_SCALAR_CONTEXTMENU, 1);
-  }
-
-  /**
-   * Event handler for the "copy" event fired when content is copied to the clipboard.
-   * We don't change the default behavior. We only log the increment count of this action.
-   */
-  onCopy() {
-    this.telemetry.scalarAdd(TELEMETRY_SCALAR_COPY, 1);
   }
 
   /**
    * Destruction function called when the inspector is destroyed.
    */
-  async destroy() {
+  destroy() {
     this.store.dispatch(resetChanges());
-
-    // ensure we finish waiting for the front before destroying.
-    const changesFront = await this.changesFrontPromise;
-    changesFront.off("add-change", this.onAddChange);
-    changesFront.off("clear-changes", this.onClearChanges);
 
     this.document = null;
     this.inspector = null;

@@ -9,10 +9,10 @@
 
 #include <stdint.h>  // for int32_t
 #include "Layers.h"
-#include "gfxContext.h"           // for gfxContext
-#include "mozilla/Attributes.h"   // for override
-#include "mozilla/LinkedList.h"   // for LinkedList
-#include "mozilla/StaticPrefs.h"  // for StaticPrefs
+#include "gfxContext.h"          // for gfxContext
+#include "mozilla/Attributes.h"  // for override
+#include "mozilla/LinkedList.h"  // for LinkedList
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/WidgetUtils.h"  // for ScreenRotation
 #include "mozilla/gfx/Rect.h"     // for Rect
 #include "mozilla/layers/CompositorTypes.h"
@@ -53,7 +53,8 @@ class ClientLayerManager final : public LayerManager,
 
  public:
   explicit ClientLayerManager(nsIWidget* aWidget);
-
+  bool Initialize(PCompositorBridgeChild* aCBChild, bool aShouldAccelerate,
+                  TextureFactoryIdentifier* aTextureFactoryIdentifier);
   void Destroy() override;
 
  protected:

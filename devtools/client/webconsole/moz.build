@@ -15,16 +15,14 @@ DIRS += [
     'utils',
 ]
 DevToolsModules(
+    'browser-console-manager.js',
     'browser-console.js',
     'constants.js',
-    'hudservice.js',
-    'main.js',
     'panel.js',
     'store.js',
     'types.js',
     'utils.js',
     'webconsole-connection-proxy.js',
-    'webconsole-l10n.js',
     'webconsole-ui.js',
     'webconsole-wrapper.js',
     'webconsole.js',

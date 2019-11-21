@@ -205,6 +205,8 @@ class ScrollFrameHelper : public nsIReflowCallback {
     return mRestorePos != nsPoint(-1, -1);
   }
 
+  bool IsProcessingScrollEvent() const { return mProcessingScrollEvent; }
+
  protected:
   nsRect GetVisualScrollRange() const;
 
@@ -430,6 +432,8 @@ class ScrollFrameHelper : public nsIReflowCallback {
 
   bool UsesContainerScrolling() const;
 
+  bool UsesOverlayScrollbars() const;
+
   // In the case where |aDestination| is given, elements which are entirely out
   // of view when the scroll position is moved to |aDestination| are not going
   // to be used for snap positions.
@@ -516,7 +520,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // if there is overflow-x:hidden region.
   void UpdateMinimumScaleSize(const nsRect& aScrollableOverflow,
                               const nsSize& aICBSize);
-
 
   // Return the scroll frame's "true outer size".
   // This is mOuter->GetSize(), except when mOuter has been sized to reflect
@@ -699,6 +702,9 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // True if the minimum scale size has been changed since the last reflow.
   bool mMinimumScaleSizeChanged : 1;
 
+  // True if we're processing an scroll event.
+  bool mProcessingScrollEvent : 1;
+
   mozilla::layout::ScrollVelocityQueue mVelocityQueue;
 
  protected:
@@ -754,10 +760,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // visibility.
   static uint32_t sHorzExpandScrollPort;
   static uint32_t sVertExpandScrollPort;
-  // The fraction of the scrollport we allow to scroll by before we schedule
-  // an update of frame visibility.
-  static int32_t sHorzScrollFraction;
-  static int32_t sVertScrollFraction;
 };
 
 }  // namespace mozilla
@@ -846,6 +848,7 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
@@ -1301,6 +1304,7 @@ class nsXULScrollFrame final : public nsBoxFrame,
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 

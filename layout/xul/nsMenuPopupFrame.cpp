@@ -51,6 +51,7 @@
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_xul.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/KeyboardEvent.h"
@@ -959,8 +960,9 @@ void nsMenuPopupFrame::HidePopup(bool aDeselectMenu, nsPopupState aNewState) {
   }
 }
 
-uint32_t nsMenuPopupFrame::GetXULLayoutFlags() {
-  return NS_FRAME_NO_SIZE_VIEW | NS_FRAME_NO_MOVE_VIEW | NS_FRAME_NO_VISIBILITY;
+nsIFrame::ReflowChildFlags nsMenuPopupFrame::GetXULLayoutFlags() {
+  return ReflowChildFlags::NoSizeView | ReflowChildFlags::NoMoveView |
+         ReflowChildFlags::NoVisibility;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

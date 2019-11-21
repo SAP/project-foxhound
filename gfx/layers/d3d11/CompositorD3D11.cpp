@@ -10,6 +10,7 @@
 
 #include "gfxWindowsPlatform.h"
 #include "nsIWidget.h"
+#include "Layers.h"
 #include "mozilla/gfx/D3D11Checks.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/GPUParent.h"
@@ -28,7 +29,8 @@
 #include "mozilla/widget/WinCompositorWidget.h"
 
 #include "mozilla/EnumeratedArray.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/Telemetry.h"
 #include "BlendShaderConstants.h"
 
@@ -109,7 +111,7 @@ CompositorD3D11::CompositorD3D11(CompositorBridgeParent* aParent,
       mIsDoubleBuffered(false),
       mVerifyBuffersFailed(false),
       mUseMutexOnPresent(false) {
-  mUseMutexOnPresent = StaticPrefs::gfx_use_mutex_on_present();
+  mUseMutexOnPresent = StaticPrefs::gfx_use_mutex_on_present_AtStartup();
 }
 
 CompositorD3D11::~CompositorD3D11() {}
@@ -326,6 +328,9 @@ TextureFactoryIdentifier CompositorD3D11::GetTextureFactoryIdentifier() {
   ident.mMaxTextureSize = GetMaxTextureSize();
   ident.mParentProcessType = XRE_GetProcessType();
   ident.mParentBackend = LayersBackend::LAYERS_D3D11;
+  if (mWidget) {
+    ident.mUseCompositorWnd = !!mWidget->AsWindows()->GetCompositorHwnd();
+  }
   if (mAttachments->mSyncObject) {
     ident.mSyncHandle = mAttachments->mSyncObject->GetSyncHandle();
   }
@@ -1050,7 +1055,7 @@ void CompositorD3D11::DrawGeometry(const Geometry& aGeometry,
       mContext->PSSetShaderResources(TexSlot::Y, 3, srViews);
     } break;
     case EffectTypes::COMPONENT_ALPHA: {
-      MOZ_ASSERT(StaticPrefs::layers_componentalpha_enabled());
+      MOZ_ASSERT(LayerManager::LayersComponentAlphaEnabled());
       MOZ_ASSERT(mAttachments->mComponentBlendState);
       EffectComponentAlpha* effectComponentAlpha =
           static_cast<EffectComponentAlpha*>(aEffectChain.mPrimaryEffect.get());
@@ -1092,12 +1097,47 @@ void CompositorD3D11::DrawGeometry(const Geometry& aGeometry,
   }
 }
 
-void CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
-                                 const IntRect* aClipRectIn,
-                                 const IntRect& aRenderBounds,
-                                 const nsIntRegion& aOpaqueRegion,
-                                 IntRect* aClipRectOut,
-                                 IntRect* aRenderBoundsOut) {
+Maybe<IntRect> CompositorD3D11::BeginFrameForWindow(
+    const nsIntRegion& aInvalidRegion, const Maybe<IntRect>& aClipRect,
+    const IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion) {
+  MOZ_RELEASE_ASSERT(!mTarget, "mTarget not cleared properly");
+  return BeginFrame(aInvalidRegion, aClipRect, aRenderBounds, aOpaqueRegion);
+}
+
+Maybe<IntRect> CompositorD3D11::BeginFrameForTarget(
+    const nsIntRegion& aInvalidRegion, const Maybe<IntRect>& aClipRect,
+    const IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+    DrawTarget* aTarget, const IntRect& aTargetBounds) {
+  MOZ_RELEASE_ASSERT(!mTarget, "mTarget not cleared properly");
+  mTarget = aTarget;  // Will be cleared in EndFrame().
+  mTargetBounds = aTargetBounds;
+  Maybe<IntRect> result =
+      BeginFrame(aInvalidRegion, aClipRect, aRenderBounds, aOpaqueRegion);
+  if (!result) {
+    // Composition has been aborted. Reset mTarget.
+    mTarget = nullptr;
+  }
+  return result;
+}
+
+void CompositorD3D11::BeginFrameForNativeLayers() {
+  MOZ_CRASH("Native layers are not implemented on Windows.");
+}
+
+Maybe<gfx::IntRect> CompositorD3D11::BeginRenderingToNativeLayer(
+    const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+    const nsIntRegion& aOpaqueRegion, NativeLayer* aNativeLayer) {
+  MOZ_CRASH("Native layers are not implemented on Windows.");
+}
+
+void CompositorD3D11::EndRenderingToNativeLayer() {
+  MOZ_CRASH("Native layers are not implemented on Windows.");
+}
+
+Maybe<IntRect> CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
+                                           const Maybe<IntRect>& aClipRect,
+                                           const IntRect& aRenderBounds,
+                                           const nsIntRegion& aOpaqueRegion) {
   // Don't composite if we are minimised. Other than for the sake of efficency,
   // this is important because resizing our buffers when mimised will fail and
   // cause a crash when we're restored.
@@ -1106,13 +1146,11 @@ void CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
     // We are not going to render, and not going to call EndFrame so we have to
     // read-unlock our textures to prevent them from accumulating.
     ReadUnlockTextures();
-    *aRenderBoundsOut = IntRect();
-    return;
+    return Nothing();
   }
 
   if (mDevice->GetDeviceRemovedReason() != S_OK) {
     ReadUnlockTextures();
-    *aRenderBoundsOut = IntRect();
 
     if (!mAttachments->IsDeviceReset()) {
       gfxCriticalNote << "GFX: D3D11 skip BeginFrame with device-removed.";
@@ -1124,36 +1162,33 @@ void CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
       }
       mAttachments->SetDeviceReset();
     }
-    return;
+    return Nothing();
   }
 
   LayoutDeviceIntSize oldSize = mSize;
 
   EnsureSize();
 
-  IntRect intRect = IntRect(IntPoint(0, 0), mSize.ToUnknownSize());
+  IntRect rect = IntRect(IntPoint(0, 0), mSize.ToUnknownSize());
   // Sometimes the invalid region is larger than we want to draw.
   nsIntRegion invalidRegionSafe;
 
   if (mSize != oldSize) {
-    invalidRegionSafe = intRect;
+    invalidRegionSafe = rect;
   } else {
-    invalidRegionSafe.And(aInvalidRegion, intRect);
+    invalidRegionSafe.And(aInvalidRegion, rect);
   }
 
   IntRect invalidRect = invalidRegionSafe.GetBounds();
 
   IntRect clipRect = invalidRect;
-  if (aClipRectIn) {
-    clipRect.IntersectRect(
-        clipRect, IntRect(aClipRectIn->X(), aClipRectIn->Y(),
-                          aClipRectIn->Width(), aClipRectIn->Height()));
+  if (aClipRect) {
+    clipRect.IntersectRect(clipRect, *aClipRect);
   }
 
   if (clipRect.IsEmpty()) {
     CancelFrame();
-    *aRenderBoundsOut = IntRect();
-    return;
+    return Nothing();
   }
 
   PrepareStaticVertexBuffer();
@@ -1168,15 +1203,7 @@ void CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
   if (!UpdateRenderTarget() || !mDefaultRT || !mDefaultRT->mRTView ||
       mSize.width <= 0 || mSize.height <= 0) {
     ReadUnlockTextures();
-    *aRenderBoundsOut = IntRect();
-    return;
-  }
-
-  if (aClipRectOut) {
-    *aClipRectOut = IntRect(0, 0, mSize.width, mSize.height);
-  }
-  if (aRenderBoundsOut) {
-    *aRenderBoundsOut = IntRect(0, 0, mSize.width, mSize.height);
+    return Nothing();
   }
 
   mCurrentClip = mBackBufferInvalid.GetBounds();
@@ -1196,9 +1223,8 @@ void CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
   if (mAttachments->mSyncObject) {
     if (!mAttachments->mSyncObject->Synchronize()) {
       // It's timeout here. Since the timeout is related to the driver-removed,
-      // clear the render-bounding size to skip this frame.
-      *aRenderBoundsOut = IntRect();
-      return;
+      // skip this frame.
+      return Nothing();
     }
   }
 
@@ -1210,6 +1236,8 @@ void CompositorD3D11::BeginFrame(const nsIntRegion& aInvalidRegion,
 
     mDiagnostics->Start(pixelsPerFrame);
   }
+
+  return Some(rect);
 }
 
 void CompositorD3D11::NormalDrawingDone() { mDiagnostics->End(); }
@@ -1221,12 +1249,14 @@ void CompositorD3D11::EndFrame() {
 
   if (!mDefaultRT) {
     Compositor::EndFrame();
+    mTarget = nullptr;
     return;
   }
 
   if (XRE_IsParentProcess() && mDevice->GetDeviceRemovedReason() != S_OK) {
     gfxCriticalNote << "GFX: D3D11 skip EndFrame with device-removed.";
     Compositor::EndFrame();
+    mTarget = nullptr;
     mCurrentRT = nullptr;
     return;
   }
@@ -1235,6 +1265,7 @@ void CompositorD3D11::EndFrame() {
   EnsureSize();
   if (mSize.width <= 0 || mSize.height <= 0) {
     Compositor::EndFrame();
+    mTarget = nullptr;
     return;
   }
 
@@ -1263,7 +1294,7 @@ void CompositorD3D11::EndFrame() {
   mQuery = query;
 
   Compositor::EndFrame();
-
+  mTarget = nullptr;
   mCurrentRT = nullptr;
 }
 

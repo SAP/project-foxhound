@@ -63,7 +63,7 @@ typedef OfflineResourceList ApplicationCache;
   [Replaceable, Throws, CrossOriginReadable] readonly attribute WindowProxy? parent;
   [Throws, NeedsSubjectPrincipal] readonly attribute Element? frameElement;
   //[Throws] WindowProxy? open(optional USVString url = "about:blank", optional DOMString target = "_blank", [TreatNullAs=EmptyString] optional DOMString features = "");
-  [Throws] WindowProxy? open(optional DOMString url = "", optional DOMString target = "", optional [TreatNullAs=EmptyString] DOMString features = "");
+  [Throws] WindowProxy? open(optional USVString url = "", optional DOMString target = "", optional [TreatNullAs=EmptyString] DOMString features = "");
   getter object (DOMString name);
 
   // the user agent
@@ -78,12 +78,14 @@ typedef OfflineResourceList ApplicationCache;
   [Throws, NeedsSubjectPrincipal] void alert(DOMString message);
   [Throws, NeedsSubjectPrincipal] boolean confirm(optional DOMString message = "");
   [Throws, NeedsSubjectPrincipal] DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
-  [Throws, Func="nsGlobalWindowInner::IsWindowPrintEnabled"]
+  [Throws, Pref="dom.enable_window_print"]
   void print();
 
-  [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
+  [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
+   BinaryName="postMessageMoz"]
   void postMessage(any message, DOMString targetOrigin, optional sequence<object> transfer = []);
-  [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
+  [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
+   BinaryName="postMessageMoz"]
   void postMessage(any message, optional WindowPostMessageOptions options = {});
 
   // also has obsolete members

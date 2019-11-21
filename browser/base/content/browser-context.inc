@@ -320,7 +320,7 @@
                 accesskey="&keywordfield.accesskey;"
                 oncommand="AddKeywordForSearchField();"/>
       <menuitem id="context-searchselect"
-                oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms, this.principal, this.csp);"/>
+                oncommand="BrowserSearch.loadSearchFromContext(this.searchTerms, this.usePrivate, this.principal, this.csp);"/>
       <menuseparator id="context-sep-sendlinktodevice" class="sync-ui-item"
                      hidden="true"/>
       <menu id="context-sendlinktodevice"
@@ -442,7 +442,8 @@
                     hidden="true"/>
           <menuseparator id="generated-password-separator"/>
           <menuitem id="fill-login-generated-password"
-                    label="&fillSuggestedPassword.label;"
+                    label="&fillGeneratedPassword.label;"
+                    accesskey="&fillGeneratedPassword.accesskey;"
                     hidden="true"
                     oncommand="gContextMenu.fillGeneratedPassword();"/>
           <menuseparator id="saved-logins-separator"/>

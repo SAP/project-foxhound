@@ -251,7 +251,10 @@ class VideoInfo : public TrackInfo {
 
   // True indicates no restriction on Y, U, V values (otherwise 16-235 for 8
   // bits etc)
-  bool mFullRange = false;
+  gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
+
+  Maybe<int32_t> GetFrameRate() const { return mFrameRate; }
+  void SetFrameRate(int32_t aRate) { mFrameRate = Some(aRate); }
 
  private:
   // mImage may be cropped; currently only used with the WebM container.
@@ -260,6 +263,8 @@ class VideoInfo : public TrackInfo {
 
   // Indicates whether or not frames may contain alpha information.
   bool mAlphaPresent = false;
+
+  Maybe<int32_t> mFrameRate;
 };
 
 class AudioInfo : public TrackInfo {

@@ -1,6 +1,7 @@
 import { _ToolbarBadgeHub } from "lib/ToolbarBadgeHub.jsm";
 import { GlobalOverrider } from "test/unit/utils";
-import { PanelTestProvider } from "lib/PanelTestProvider.jsm";
+import { OnboardingMessageProvider } from "lib/OnboardingMessageProvider.jsm";
+import { _ToolbarPanelHub } from "lib/ToolbarPanelHub.jsm";
 
 describe("ToolbarBadgeHub", () => {
   let sandbox;
@@ -21,6 +22,7 @@ describe("ToolbarBadgeHub", () => {
   let getStringPrefStub;
   let clearUserPrefStub;
   let setStringPrefStub;
+  let requestIdleCallbackStub;
   beforeEach(async () => {
     globals = new GlobalOverrider();
     sandbox = sinon.createSandbox();
@@ -28,9 +30,11 @@ describe("ToolbarBadgeHub", () => {
     fakeAddImpression = sandbox.stub();
     fakeDispatch = sandbox.stub();
     isBrowserPrivateStub = sandbox.stub();
-    const msgs = await PanelTestProvider.getMessages();
-    fxaMessage = msgs.find(({ id }) => id === "FXA_ACCOUNTS_BADGE");
-    whatsnewMessage = msgs.find(({ id }) => id.includes("WHATS_NEW_BADGE_"));
+    const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+    fxaMessage = onboardingMsgs.find(({ id }) => id === "FXA_ACCOUNTS_BADGE");
+    whatsnewMessage = onboardingMsgs.find(({ id }) =>
+      id.includes("WHATS_NEW_BADGE_")
+    );
     fakeElement = {
       classList: {
         add: sandbox.stub(),
@@ -62,7 +66,9 @@ describe("ToolbarBadgeHub", () => {
     getStringPrefStub = sandbox.stub();
     clearUserPrefStub = sandbox.stub();
     setStringPrefStub = sandbox.stub();
+    requestIdleCallbackStub = sandbox.stub().callsFake(fn => fn());
     globals.set({
+      requestIdleCallback: requestIdleCallbackStub,
       EveryWindow: everyWindowStub,
       PrivateBrowsingUtils: { isBrowserPrivate: isBrowserPrivateStub },
       setTimeout: setTimeoutStub,
@@ -248,6 +254,7 @@ describe("ToolbarBadgeHub", () => {
     });
   });
   describe("registerBadgeNotificationListener", () => {
+    let msg_no_delay;
     beforeEach(async () => {
       await instance.init(sandbox.stub().resolves(), {
         addImpression: fakeAddImpression,
@@ -255,18 +262,25 @@ describe("ToolbarBadgeHub", () => {
       });
       sandbox.stub(instance, "addToolbarNotification").returns(fakeElement);
       sandbox.stub(instance, "removeToolbarNotification");
+      msg_no_delay = {
+        ...fxaMessage,
+        content: {
+          ...fxaMessage.content,
+          delay: 0,
+        },
+      };
     });
     afterEach(() => {
       instance.uninit();
     });
     it("should add an impression for the message", () => {
-      instance.registerBadgeNotificationListener(fxaMessage);
+      instance.registerBadgeNotificationListener(msg_no_delay);
 
       assert.calledOnce(instance._addImpression);
-      assert.calledWithExactly(instance._addImpression, fxaMessage);
+      assert.calledWithExactly(instance._addImpression, msg_no_delay);
     });
     it("should register a callback that adds/removes the notification", () => {
-      instance.registerBadgeNotificationListener(fxaMessage);
+      instance.registerBadgeNotificationListener(msg_no_delay);
 
       assert.calledOnce(everyWindowStub.registerCallback);
       assert.calledWithExactly(
@@ -290,7 +304,7 @@ describe("ToolbarBadgeHub", () => {
       assert.calledWithExactly(
         instance.addToolbarNotification,
         window,
-        fxaMessage
+        msg_no_delay
       );
 
       uninitFn(window);
@@ -301,24 +315,24 @@ describe("ToolbarBadgeHub", () => {
     it("should send an impression", async () => {
       sandbox.stub(instance, "sendUserEventTelemetry");
 
-      instance.registerBadgeNotificationListener(fxaMessage);
+      instance.registerBadgeNotificationListener(msg_no_delay);
 
       assert.calledOnce(instance.sendUserEventTelemetry);
       assert.calledWithExactly(
         instance.sendUserEventTelemetry,
         "IMPRESSION",
-        fxaMessage
+        msg_no_delay
       );
     });
     it("should unregister notifications when forcing a badge via devtools", () => {
-      instance.registerBadgeNotificationListener(fxaMessage, { force: true });
+      instance.registerBadgeNotificationListener(msg_no_delay, { force: true });
 
       assert.calledOnce(everyWindowStub.unregisterCallback);
       assert.calledWithExactly(everyWindowStub.unregisterCallback, instance.id);
     });
     it("should only call executeAction for 'update_action' messages", () => {
       const stub = sandbox.stub(instance, "executeAction");
-      const updateActionMsg = { ...fxaMessage, template: "update_action" };
+      const updateActionMsg = { ...msg_no_delay, template: "update_action" };
 
       instance.registerBadgeNotificationListener(updateActionMsg);
 
@@ -333,6 +347,26 @@ describe("ToolbarBadgeHub", () => {
       await instance.init(sandbox.stub().resolves(), {
         blockMessageById: blockMessageByIdStub,
       });
+    });
+    it("should call ToolbarPanelHub.enableToolbarButton", () => {
+      const stub = sandbox.stub(
+        _ToolbarPanelHub.prototype,
+        "enableToolbarButton"
+      );
+
+      instance.executeAction({ id: "show-whatsnew-button" });
+
+      assert.calledOnce(stub);
+    });
+    it("should call ToolbarPanelHub.enableAppmenuButton", () => {
+      const stub = sandbox.stub(
+        _ToolbarPanelHub.prototype,
+        "enableAppmenuButton"
+      );
+
+      instance.executeAction({ id: "show-whatsnew-button" });
+
+      assert.calledOnce(stub);
     });
     it("should set HOMEPAGE_OVERRIDE_PREF on `moments-wnp` action", () => {
       instance.executeAction({
@@ -529,6 +563,8 @@ describe("ToolbarBadgeHub", () => {
         instance.registerBadgeToAllWindows,
         msg_with_delay
       );
+      // Delayed actions should be executed inside requestIdleCallback
+      assert.calledOnce(requestIdleCallbackStub);
     });
   });
   describe("#sendUserEventTelemetry", () => {

@@ -5,8 +5,10 @@
 
 interface nsIContentSecurityPolicy;
 interface nsIPrincipal;
+interface nsITransportSecurityInfo;
 interface nsIURI;
 interface nsIWebProgress;
+interface nsIReferrerInfo;
 
 webidl FrameLoader;
 
@@ -80,7 +82,10 @@ interface nsIBrowser : nsISupports
                                        in Array<ACString> disabledCommands);
 
   readonly attribute nsIPrincipal contentPrincipal;
+  readonly attribute nsIPrincipal contentStoragePrincipal;
+  readonly attribute nsIPrincipal contentBlockingAllowListPrincipal;
   readonly attribute nsIContentSecurityPolicy csp;
+  readonly attribute nsIReferrerInfo referrerInfo;
 
   /**
    * Whether or not the browser is in the process of an nsIWebNavigation
@@ -136,6 +141,7 @@ interface nsIBrowser : nsISupports
    * @param aContentStoragePrincipal the security principal for the new
    *                                 document's storage
    * @param aCSP the content security policy of the new document
+   * @param aReferrerInfo the referrer info of the new document
    * @param aIsSynthetic whether or not the document is synthetic
    * @param aInnerWindowID the inner window ID of the document
    * @param aHasRequestContextID whether or not the the request context has a
@@ -151,10 +157,26 @@ interface nsIBrowser : nsISupports
                                in AString aTitle,
                                in nsIPrincipal aContentPrincipal,
                                in nsIPrincipal aContentStoragePrincipal,
+                               in nsIPrincipal aContentBlockingAllowListPrincipal,
                                in nsIContentSecurityPolicy aCSP,
+                               in nsIReferrerInfo aReferrerInfo,
                                in boolean aIsSynthetic,
                                in uint64_t aInnerWindowID,
                                in boolean aHasRequestContextID,
                                in uint64_t aRequestContextID,
                                in AString aContentType);
+
+  /**
+   * Called by Gecko when a security chang event needs to update the event
+   * state stored in the security UI object stored in the parent process.
+   *
+   * @param aSecurityInfo the transport security information from the content
+   *                      process
+   * @param aState the flags from the OnSecurityChange event that triggered
+   *               this method, as outlined in nsIWebProgressListener
+   * @param aIsSecureContext whether or not the context is secure
+   */
+  void updateSecurityUIForSecurityChange(in nsITransportSecurityInfo aSecurityInfo,
+                                         in uint32_t aState,
+                                         in boolean aIsSecureContext);
 };

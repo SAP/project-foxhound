@@ -13,6 +13,7 @@
 #include "nsIChannel.h"
 #include "nsDocShell.h"
 #include "nsIDocShellTreeItem.h"
+#include "nsGlobalWindow.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsITransportSecurityInfo.h"
 #include "nsIWebProgress.h"
@@ -21,7 +22,8 @@ using namespace mozilla;
 
 LazyLogModule gSecureBrowserUILog("nsSecureBrowserUI");
 
-nsSecureBrowserUIImpl::nsSecureBrowserUIImpl() : mState(0), mEvent(0) {
+nsSecureBrowserUIImpl::nsSecureBrowserUIImpl()
+    : mState(0), mEvent(0), mIsSecureContext(false) {
   MOZ_ASSERT(NS_IsMainThread());
 }
 
@@ -74,6 +76,15 @@ nsSecureBrowserUIImpl::GetState(uint32_t* aState) {
 }
 
 NS_IMETHODIMP
+nsSecureBrowserUIImpl::GetIsSecureContext(bool* aIsSecureContext) {
+  MOZ_ASSERT(NS_IsMainThread());
+  NS_ENSURE_ARG(aIsSecureContext);
+
+  *aIsSecureContext = mIsSecureContext;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsSecureBrowserUIImpl::GetContentBlockingEvent(uint32_t* aEvent) {
   MOZ_ASSERT(NS_IsMainThread());
   NS_ENSURE_ARG(aEvent);
@@ -113,7 +124,7 @@ nsSecureBrowserUIImpl::PrepareForContentChecks() {
   if (docShell->ItemType() == nsIDocShellTreeItem::typeContent) {
     nsCOMPtr<nsIDocShellTreeItem> docShellTreeItem(docShell);
     nsCOMPtr<nsIDocShellTreeItem> sameTypeRoot;
-    Unused << docShellTreeItem->GetSameTypeRootTreeItem(
+    Unused << docShellTreeItem->GetInProcessSameTypeRootTreeItem(
         getter_AddRefs(sameTypeRoot));
     MOZ_ASSERT(
         sameTypeRoot,
@@ -247,15 +258,7 @@ static nsresult URICanBeConsideredSecure(
   MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
           ("  innermost URI is '%s'", innermostURI->GetSpecOrDefault().get()));
 
-  bool isHttps;
-  nsresult rv = innermostURI->SchemeIs("https", &isHttps);
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gSecureBrowserUILog, LogLevel::Debug,
-            ("  nsIURI->SchemeIs failed"));
-    return rv;
-  }
-
-  canBeConsideredSecure = isHttps;
+  canBeConsideredSecure = innermostURI->SchemeIs("https");
 
   return NS_OK;
 }
@@ -389,6 +392,7 @@ nsSecureBrowserUIImpl::OnLocationChange(nsIWebProgress* aWebProgress,
 
   mState = 0;
   mEvent = 0;
+  mIsSecureContext = false;
   mTopLevelSecurityInfo = nullptr;
 
   if (aFlags & LOCATION_CHANGE_ERROR_PAGE) {
@@ -410,6 +414,19 @@ nsSecureBrowserUIImpl::OnLocationChange(nsIWebProgress* aWebProgress,
                  "Setting everything to 'not secure' to be safe."));
         mState = STATE_IS_INSECURE;
         mTopLevelSecurityInfo = nullptr;
+      }
+    }
+
+    nsCOMPtr<mozIDOMWindowProxy> domWindow;
+    aWebProgress->GetDOMWindow(getter_AddRefs(domWindow));
+    if (domWindow) {
+      nsPIDOMWindowOuter* outerWindow = nsPIDOMWindowOuter::From(domWindow);
+      if (outerWindow) {
+        nsGlobalWindowInner* innerWindow =
+            nsGlobalWindowInner::Cast(outerWindow->GetCurrentInnerWindow());
+        if (innerWindow) {
+          mIsSecureContext = innerWindow->IsSecureContext();
+        }
       }
     }
   }

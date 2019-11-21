@@ -11,6 +11,8 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const PLAYER_URI = "chrome://global/content/pictureinpicture/player.xhtml";
 const PLAYER_FEATURES = `chrome,titlebar=no,alwaysontop,lockaspectratio,resizable`;
 const WINDOW_TYPE = "Toolkit:PictureInPicture";
+const TOGGLE_ENABLED_PREF =
+  "media.videocontrols.picture-in-picture.video-toggle.enabled";
 
 /**
  * If closing the Picture-in-Picture player window occurred for a reason that
@@ -51,17 +53,22 @@ var PictureInPicture = {
         break;
       }
       case "PictureInPicture:Playing": {
-        let controls = this.weakPipControls && this.weakPipControls.get();
-        if (controls) {
-          controls.classList.add("playing");
+        let player = this.weakPipPlayer && this.weakPipPlayer.get();
+        if (player) {
+          player.setIsPlayingState(true);
         }
         break;
       }
       case "PictureInPicture:Paused": {
-        let controls = this.weakPipControls && this.weakPipControls.get();
-        if (controls) {
-          controls.classList.remove("playing");
+        let player = this.weakPipPlayer && this.weakPipPlayer.get();
+        if (player) {
+          player.setIsPlayingState(false);
         }
+        break;
+      }
+      case "PictureInPicture:OpenToggleContextMenu": {
+        let win = browser.ownerGlobal;
+        this.openToggleContextMenu(win, aMessage.data);
         break;
       }
     }
@@ -131,16 +138,14 @@ var PictureInPicture = {
     let parentWin = browser.ownerGlobal;
     this.browser = browser;
     let win = await this.openPipWindow(parentWin, videoData);
-    let controls = win.document.getElementById("controls");
-    this.weakPipControls = Cu.getWeakReference(controls);
-    if (videoData.playing) {
-      controls.classList.add("playing");
-    }
+    this.weakPipPlayer = Cu.getWeakReference(win);
+    win.setIsPlayingState(videoData.playing);
+
     // set attribute which shows pip icon in tab
     let tab = parentWin.gBrowser.getTabForBrowser(browser);
     tab.setAttribute("pictureinpicture", true);
 
-    win.setupPlayer(gNextWindowID.toString(), browser, videoData);
+    win.setupPlayer(gNextWindowID.toString(), browser);
     gNextWindowID++;
   },
 
@@ -162,7 +167,7 @@ var PictureInPicture = {
     );
 
     this.clearPipTabIcon();
-    delete this.weakPipControls;
+    delete this.weakPipPlayer;
     delete this.browser;
   },
 
@@ -254,9 +259,21 @@ var PictureInPicture = {
     // to position it in the bottom right corner. Since we know the width of the
     // available rect, we need to subtract the dimensions of the window we're
     // opening to get the top left coordinates that openWindow expects.
+    //
+    // In event that the user has multiple displays connected, we have to
+    // calculate the top-left coordinate of the new window in absolute
+    // coordinates that span the entire display space, since this is what the
+    // openWindow expects for its top and left feature values.
+    //
+    // The screenWidth and screenHeight values only tell us the available
+    // dimensions on the screen that the parent window is on. We add these to
+    // the screenLeft and screenTop values, which tell us where this screen is
+    // located relative to the "origin" in absolute coordinates.
     let isRTL = Services.locale.isAppLocaleRTL;
-    let pipLeft = isRTL ? 0 : screenWidth.value - resultWidth;
-    let pipTop = screenHeight.value - resultHeight;
+    let pipLeft = isRTL
+      ? screenLeft.value
+      : screenLeft.value + screenWidth.value - resultWidth;
+    let pipTop = screenTop.value + screenHeight.value - resultHeight;
     let features =
       `${PLAYER_FEATURES},top=${pipTop},left=${pipLeft},` +
       `outerWidth=${resultWidth},outerHeight=${resultHeight}`;
@@ -286,5 +303,38 @@ var PictureInPicture = {
         { once: true }
       );
     });
+  },
+
+  openToggleContextMenu(window, data) {
+    let document = window.document;
+    let popup = document.getElementById("pictureInPictureToggleContextMenu");
+
+    // We synthesize a new MouseEvent to propagate the inputSource to the
+    // subsequently triggered popupshowing event.
+    let newEvent = document.createEvent("MouseEvent");
+    newEvent.initNSMouseEvent(
+      "contextmenu",
+      true,
+      true,
+      null,
+      0,
+      data.screenX,
+      data.screenY,
+      0,
+      0,
+      false,
+      false,
+      false,
+      false,
+      0,
+      null,
+      0,
+      data.mozInputSource
+    );
+    popup.openPopupAtScreen(newEvent.screenX, newEvent.screenY, true, newEvent);
+  },
+
+  hideToggle() {
+    Services.prefs.setBoolPref(TOGGLE_ENABLED_PREF, false);
   },
 };

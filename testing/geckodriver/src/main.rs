@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 extern crate base64;
 extern crate chrono;
 #[macro_use]
@@ -5,6 +7,7 @@ extern crate clap;
 #[macro_use]
 extern crate lazy_static;
 extern crate hyper;
+extern crate marionette as marionette_rs;
 extern crate mozprofile;
 extern crate mozrunner;
 extern crate mozversion;

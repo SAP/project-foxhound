@@ -43,6 +43,7 @@ class ViewportFrame : public nsContainerFrame {
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 #endif
@@ -79,6 +80,10 @@ class ViewportFrame : public nsContainerFrame {
    * Return our single anonymous box child.
    */
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
+
+  // Returns adjusted viewport size to reflect the positions that position:fixed
+  // elements are attached.
+  nsSize AdjustViewportSizeForFixedPosition(const nsRect& aViewportRect) const;
 
 #ifdef DEBUG_FRAME_DUMP
   virtual nsresult GetFrameName(nsAString& aResult) const override;

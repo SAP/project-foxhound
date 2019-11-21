@@ -15,7 +15,6 @@
 #include "jslibmath.h"
 
 #include "builtin/RegExp.h"
-#include "builtin/String.h"
 #include "jit/AtomicOperations.h"
 #include "jit/BaselineInspector.h"
 #include "jit/IonBuilder.h"
@@ -2661,14 +2660,13 @@ static inline bool NeedNegativeZeroCheck(MDefinition* def) {
         MOZ_FALLTHROUGH;
       }
       case MDefinition::Opcode::StoreElement:
-      case MDefinition::Opcode::StoreElementHole:
-      case MDefinition::Opcode::FallibleStoreElement:
       case MDefinition::Opcode::LoadElement:
       case MDefinition::Opcode::LoadElementHole:
       case MDefinition::Opcode::LoadUnboxedScalar:
       case MDefinition::Opcode::LoadTypedArrayElementHole:
       case MDefinition::Opcode::CharCodeAt:
       case MDefinition::Opcode::Mod:
+      case MDefinition::Opcode::InArray:
         // Only allowed to remove check when definition is the second operand
         if (use_def->getOperand(0) == def) {
           return true;
@@ -2687,6 +2685,7 @@ static inline bool NeedNegativeZeroCheck(MDefinition* def) {
         break;
       case MDefinition::Opcode::ToString:
       case MDefinition::Opcode::FromCharCode:
+      case MDefinition::Opcode::FromCodePoint:
       case MDefinition::Opcode::TableSwitch:
       case MDefinition::Opcode::Compare:
       case MDefinition::Opcode::BitAnd:
@@ -2695,6 +2694,20 @@ static inline bool NeedNegativeZeroCheck(MDefinition* def) {
       case MDefinition::Opcode::Abs:
       case MDefinition::Opcode::TruncateToInt32:
         // Always allowed to remove check. No matter which operand.
+        break;
+      case MDefinition::Opcode::StoreElementHole:
+      case MDefinition::Opcode::FallibleStoreElement:
+      case MDefinition::Opcode::StoreTypedArrayElementHole:
+      case MDefinition::Opcode::PostWriteElementBarrier:
+        // Only allowed to remove check when definition is the third operand.
+        for (size_t i = 0, e = use_def->numOperands(); i < e; i++) {
+          if (i == 2) {
+            continue;
+          }
+          if (use_def->getOperand(i) == def) {
+            return true;
+          }
+        }
         break;
       default:
         return true;
@@ -5636,7 +5649,7 @@ bool jit::ElementAccessIsDenseNative(CompilerConstraintList* constraints,
   }
 
   // Typed arrays are native classes but do not have dense elements.
-  const Class* clasp = types->getKnownClass(constraints);
+  const JSClass* clasp = types->getKnownClass(constraints);
   return clasp && clasp->isNative() && !IsTypedArrayClass(clasp);
 }
 
@@ -5976,7 +5989,7 @@ AbortReasonOr<bool> PrototypeHasIndexedProperty(IonBuilder* builder,
 // Whether obj or any of its prototypes have an indexed property.
 AbortReasonOr<bool> jit::TypeCanHaveExtraIndexedProperties(
     IonBuilder* builder, TemporaryTypeSet* types) {
-  const Class* clasp = types->getKnownClass(builder->constraints());
+  const JSClass* clasp = types->getKnownClass(builder->constraints());
 
   // Note: typed arrays have indexed properties not accounted for by type
   // information, though these are all in bounds and will be accounted for

@@ -15,6 +15,7 @@ ID
 *.plist
 *.pdb
 *.egg-info
+.eslintcache
 # Filesystem temporaries
 .fuse_hidden*
 

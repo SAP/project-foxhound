@@ -16,8 +16,7 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/WorkletImpl.h"
-#include "mozilla/StaticPrefs.h"
-#include "js/CompilationAndEvaluation.h"
+#include "js/Modules.h"
 #include "js/SourceText.h"
 #include "nsIInputStreamPump.h"
 #include "nsIThreadRetargetableRequest.h"
@@ -50,6 +49,8 @@ class ExecutionRunnable final : public Runnable {
   void RunOnWorkletThread();
 
   void RunOnMainThread();
+
+  bool ParseAndLinkModule(JSContext* aCx, JS::MutableHandle<JSObject*> aModule);
 
   RefPtr<WorkletFetchHandler> mHandler;
   RefPtr<WorkletImpl> mWorkletImpl;
@@ -94,10 +95,9 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
       return promise.forget();
     }
 
-    nsCOMPtr<nsIURI> baseURI = doc->GetBaseURI();
     nsCOMPtr<nsIURI> resolvedURI;
-    nsresult rv =
-        NS_NewURI(getter_AddRefs(resolvedURI), aModuleURL, nullptr, baseURI);
+    nsresult rv = NS_NewURI(getter_AddRefs(resolvedURI), aModuleURL, nullptr,
+                            doc->GetBaseURI());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       promise->MaybeReject(rv);
       return promise.forget();
@@ -133,7 +133,7 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
     }
 
     RefPtr<WorkletFetchHandler> handler =
-        new WorkletFetchHandler(aWorklet, aModuleURL, promise);
+        new WorkletFetchHandler(aWorklet, spec, promise);
     fetchPromise->AppendNativeHandler(handler);
 
     aWorklet->AddImportFetchHandler(spec, handler);
@@ -238,7 +238,7 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
     RejectPromises(NS_ERROR_DOM_NETWORK_ERR);
   }
 
-  const nsString& URL() const { return mURL; }
+  const nsCString& URL() const { return mURL; }
 
   void ExecutionFailed(nsresult aRv) {
     MOZ_ASSERT(NS_IsMainThread());
@@ -251,7 +251,7 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
   }
 
  private:
-  WorkletFetchHandler(Worklet* aWorklet, const nsAString& aURL,
+  WorkletFetchHandler(Worklet* aWorklet, const nsACString& aURL,
                       Promise* aPromise)
       : mWorklet(aWorklet), mStatus(ePending), mErrorStatus(NS_OK), mURL(aURL) {
     MOZ_ASSERT(aWorklet);
@@ -318,7 +318,7 @@ class WorkletFetchHandler final : public PromiseNativeHandler,
 
   nsresult mErrorStatus;
 
-  nsString mURL;
+  nsCString mURL;
 };
 
 NS_IMPL_ISUPPORTS(WorkletFetchHandler, nsIStreamLoaderObserver)
@@ -338,6 +338,33 @@ ExecutionRunnable::Run() {
   return NS_OK;
 }
 
+bool ExecutionRunnable::ParseAndLinkModule(
+    JSContext* aCx, JS::MutableHandle<JSObject*> aModule) {
+  JS::CompileOptions compileOptions(aCx);
+  compileOptions.setIntroductionType("Worklet");
+  compileOptions.setFileAndLine(mHandler->URL().get(), 0);
+  compileOptions.setIsRunOnce(true);
+  compileOptions.setNoScriptRval(true);
+
+  JS::SourceText<char16_t> buffer;
+  if (!buffer.init(aCx, std::move(mScriptBuffer), mScriptLength)) {
+    return false;
+  }
+  JS::Rooted<JSObject*> module(aCx,
+                               JS::CompileModule(aCx, compileOptions, buffer));
+  if (!module) {
+    return false;
+  }
+  // Link() was previously named Instantiate().
+  // https://github.com/tc39/ecma262/pull/1312
+  // Any imports will fail here - bug 1572644.
+  if (!JS::ModuleInstantiate(aCx, module)) {
+    return false;
+  }
+  aModule.set(module);
+  return true;
+}
+
 void ExecutionRunnable::RunOnWorkletThread() {
   WorkletThread::EnsureCycleCollectedJSContext(mParentRuntime);
 
@@ -347,28 +374,22 @@ void ExecutionRunnable::RunOnWorkletThread() {
   AutoEntryScript aes(globalScope, "Worklet");
   JSContext* cx = aes.cx();
 
-  JS::Rooted<JSObject*> globalObj(cx, globalScope->GetGlobalJSObject());
-
-  NS_ConvertUTF16toUTF8 url(mHandler->URL());
-
-  JS::CompileOptions compileOptions(cx);
-  compileOptions.setIntroductionType("Worklet");
-  compileOptions.setFileAndLine(url.get(), 0);
-  compileOptions.setIsRunOnce(true);
-  compileOptions.setNoScriptRval(true);
-
-  JSAutoRealm ar(cx, globalObj);
-
-  JS::Rooted<JS::Value> unused(cx);
-  JS::SourceText<char16_t> buffer;
-  if (!buffer.init(cx, std::move(mScriptBuffer), mScriptLength) ||
-      !JS::Evaluate(cx, compileOptions, buffer, &unused)) {
+  JS::Rooted<JSObject*> module(cx);
+  if (!ParseAndLinkModule(cx, &module)) {
     ErrorResult error;
     error.MightThrowJSException();
     error.StealExceptionFromJSContext(cx);
     mResult = error.StealNSResult();
     return;
   }
+
+  // https://drafts.css-houdini.org/worklets/#fetch-and-invoke-a-worklet-script
+  // invokes
+  // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+  // without /rethrow errors/ and so unhandled exceptions do not cause the
+  // promise to be rejected.
+  JS::ModuleEvaluate(cx, module);
+  JS::Rooted<JS::Value> unused(cx);
 
   // All done.
   mResult = NS_OK;

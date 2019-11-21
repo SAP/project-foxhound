@@ -23,6 +23,7 @@ interface URI;
 interface nsIDocShell;
 interface nsILoadGroup;
 interface nsIReferrerInfo;
+interface XULCommandDispatcher;
 
 enum VisibilityState { "hidden", "visible" };
 
@@ -146,9 +147,9 @@ partial interface Document {
 
   // dynamic markup insertion
   [CEReactions, Throws]
-  Document open(optional DOMString type, optional DOMString replace = ""); // type is ignored
+  Document open(optional DOMString unused1, optional DOMString unused2); // both arguments are ignored
   [CEReactions, Throws]
-  WindowProxy? open(DOMString url, DOMString name, DOMString features, optional boolean replace = false);
+  WindowProxy? open(USVString url, DOMString name, DOMString features);
   [CEReactions, Throws]
   void close();
   [CEReactions, Throws]
@@ -243,11 +244,11 @@ partial interface Document {
   readonly attribute URI? documentURIObject;
 
   /**
-   * Current referrer policy - one of the REFERRER_POLICY_* constants
-   * from nsIHttpChannel.
+   * Current referrer policy - one of the referrer policy value from
+   * ReferrerPolicy.webidl.
    */
   [ChromeOnly]
-  readonly attribute unsigned long referrerPolicy;
+  readonly attribute ReferrerPolicy referrerPolicy;
 
     /**
    * Current referrer info, which holds all referrer related information
@@ -269,11 +270,14 @@ partial interface Document {
   [SameObject] readonly attribute HTMLCollection anchors;
   [SameObject] readonly attribute HTMLCollection applets;
 
-  //(HTML only)void clear();
-  //(HTML only)void captureEvents();
-  //(HTML only)void releaseEvents();
+  void clear();
+  // @deprecated These are old Netscape 4 methods. Do not use,
+  //             the implementation is no-op.
+  // XXXbz do we actually need these anymore?
+  void captureEvents();
+  void releaseEvents();
 
-  //(HTML only)[SameObject] readonly attribute HTMLAllCollection all;
+  [SameObject] readonly attribute HTMLAllCollection all;
 };
 
 // https://fullscreen.spec.whatwg.org/#api
@@ -389,6 +393,10 @@ partial interface Document {
   [ChromeOnly]
   readonly attribute Principal effectiveStoragePrincipal;
 
+  // The principal to use for the content blocking allow list
+  [ChromeOnly]
+  readonly attribute Principal? contentBlockingAllowListPrincipal;
+
   // Touch bits
   // XXXbz I can't find the sane spec for this stuff, so just cribbing
   // from our xpidl for now.
@@ -449,6 +457,12 @@ partial interface Document {
 
   [ChromeOnly]
   attribute Node? popupNode;
+
+  // The JS debugger uses DOM mutation events to implement DOM mutation
+  // breakpoints. This is used to avoid logging a warning that the user
+  // cannot address and have no control over.
+  [ChromeOnly]
+  attribute boolean dontWarnAboutMutationEventsAndAllowSlowDOMMutations;
 
   /**
    * These attributes correspond to rangeParent and rangeOffset. They will help
@@ -601,10 +615,10 @@ Document implements GeometryUtils;
 Document implements FontFaceSource;
 Document implements DocumentOrShadowRoot;
 
-// https://wicg.github.io/feature-policy/#policy
+// https://w3c.github.io/webappsec-feature-policy/#idl-index
 partial interface Document {
     [SameObject, Pref="dom.security.featurePolicy.webidl.enabled"]
-    readonly attribute Policy policy;
+    readonly attribute FeaturePolicy featurePolicy;
 };
 
 /**
@@ -648,4 +662,30 @@ partial interface Document {
   const unsigned short KEYPRESS_EVENT_MODEL_CONFLATED = 2;
   [ChromeOnly]
   void setKeyPressEventModel(unsigned short aKeyPressEventModel);
+};
+
+// Extensions to return information about about the nodes blocked by the
+// Safebrowsing API inside a document.
+partial interface Document {
+  /*
+   * Number of nodes that have been blocked by the Safebrowsing API to prevent
+   * tracking, cryptomining and so on. This method is for testing only.
+   */
+  [ChromeOnly, Pure]
+  readonly attribute long blockedNodeByClassifierCount;
+
+  /*
+   * List of nodes that have been blocked by the Safebrowsing API to prevent
+   * tracking, fingerprinting, cryptomining and so on. This method is for
+   * testing only.
+   */
+  [ChromeOnly, Pure]
+  readonly attribute NodeList blockedNodesByClassifier;
+};
+
+// Extension to programmatically simulate a user interaction on a document,
+// used for testing.
+partial interface Document {
+  [ChromeOnly, BinaryName="setUserHasInteracted"]
+  void userInteractionForTesting();
 };

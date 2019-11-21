@@ -97,6 +97,7 @@
 #include "nsIWidget.h"
 #include "nsIDocShell.h"
 #include "nsAppShellCID.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/scache/StartupCache.h"
 #include "gfxPlatform.h"
 
@@ -112,6 +113,7 @@
 #  include "mozilla/WinHeaderOnlyUtils.h"
 #  include "mozilla/mscom/ProcessRuntime.h"
 #  include "mozilla/widget/AudioSession.h"
+#  include "WinTokenUtils.h"
 
 #  if defined(MOZ_LAUNCHER_PROCESS)
 #    include "mozilla/LauncherRegistryInfo.h"
@@ -320,6 +322,7 @@ using namespace mozilla::startup;
 using mozilla::Unused;
 using mozilla::dom::ContentChild;
 using mozilla::dom::ContentParent;
+using mozilla::dom::quota::QuotaManager;
 using mozilla::intl::LocaleService;
 using mozilla::scache::StartupCache;
 
@@ -1001,18 +1004,13 @@ nsXULAppInfo::GetServerURL(nsIURL** aServerURL) {
 
 NS_IMETHODIMP
 nsXULAppInfo::SetServerURL(nsIURL* aServerURL) {
-  bool schemeOk;
-  // only allow https or http URLs
-  nsresult rv = aServerURL->SchemeIs("https", &schemeOk);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!schemeOk) {
-    rv = aServerURL->SchemeIs("http", &schemeOk);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!schemeOk) return NS_ERROR_INVALID_ARG;
+  // Only allow https or http URLs
+  if (!aServerURL->SchemeIs("http") && !aServerURL->SchemeIs("https")) {
+    return NS_ERROR_INVALID_ARG;
   }
+
   nsAutoCString spec;
-  rv = aServerURL->GetSpec(spec);
+  nsresult rv = aServerURL->GetSpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
   return CrashReporter::SetServerURL(spec);
@@ -2718,11 +2716,6 @@ static void MOZ_gdk_display_close(GdkDisplay* display) {
   if (gtk_check_version(3, 9, 8) != NULL) skip_display_close = true;
 #    endif
 
-  // Get a (new) Pango context that holds a reference to the fontmap that
-  // GTK has been using.  gdk_pango_context_get() must be called while GTK
-  // has a default display.
-  PangoContext* pangoContext = gdk_pango_context_get();
-
   bool buggyCairoShutdown = cairo_version() < CAIRO_VERSION_ENCODE(1, 4, 0);
 
   if (!buggyCairoShutdown) {
@@ -2732,26 +2725,6 @@ static void MOZ_gdk_display_close(GdkDisplay* display) {
     // references to Display objects (see bug 469831).
     if (!skip_display_close) gdk_display_close(display);
   }
-
-  // Clean up PangoCairo's default fontmap.
-  // This pango_fc_font_map_shutdown call (and the associated code to
-  // get the font map) really shouldn't be needed anymore, except that
-  // it's needed to avoid having cairo_debug_reset_static_data fatally
-  // assert if we've leaked other things that hold on to the fontmap,
-  // which is something that currently happens in mochitest-plugins.
-  // Even if it didn't happen in mochitest-plugins, we probably want to
-  // avoid the crash-on-leak problem since it makes it harder to use
-  // many of our leak tools to debug leaks.
-
-  // This doesn't take a reference.
-  PangoFontMap* fontmap = pango_context_get_font_map(pangoContext);
-  // Do some shutdown of the fontmap, which releases the fonts, clearing a
-  // bunch of circular references from the fontmap through the fonts back to
-  // itself.  The shutdown that this does is much less than what's done by
-  // the fontmap's finalize, though.
-  if (PANGO_IS_FC_FONT_MAP(fontmap))
-    pango_fc_font_map_shutdown(PANGO_FC_FONT_MAP(fontmap));
-  g_object_unref(pangoContext);
 
   // Tell PangoCairo to release its default fontmap.
   pango_cairo_font_map_set_default(nullptr);
@@ -4200,6 +4173,8 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   bool startupCacheValid = true;
 
   if (!cachesOK || !versionOK) {
+    QuotaManager::InvalidateQuotaCache();
+
     startupCacheValid = RemoveComponentRegistries(mProfD, mProfLD, false);
 
     // Rewrite compatibility.ini to match the current build. The next run
@@ -4589,6 +4564,15 @@ nsresult XREMain::XRE_mainRun() {
       CrashReporter::Annotation::ContentSandboxCapabilities, flagsString);
 #endif /* MOZ_SANDBOX && XP_LINUX */
 
+#if defined(XP_WIN)
+  LauncherResult<bool> isAdminWithoutUac = IsAdminWithoutUac();
+  if (isAdminWithoutUac.isOk()) {
+    Telemetry::ScalarSet(
+        Telemetry::ScalarID::OS_ENVIRONMENT_IS_ADMIN_WITHOUT_UAC,
+        isAdminWithoutUac.unwrap());
+  }
+#endif /* XP_WIN */
+
 #if defined(MOZ_SANDBOX)
   AddSandboxAnnotations();
 #endif /* MOZ_SANDBOX */
@@ -4614,9 +4598,6 @@ nsresult XREMain::XRE_mainRun() {
 int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   gArgc = argc;
   gArgv = argv;
-
-  EnsureCommandlineSafe(gArgc, gArgv);
-  // DO NOT TOUCH THE COMMANDLINE ARGS BEFORE THIS!
 
   ScopedLogging log;
 
@@ -4924,15 +4905,7 @@ bool XRE_UseNativeEventProcessing() {
   }
 #endif
   if (XRE_IsContentProcess()) {
-    static bool sInited = false;
-    static bool sUseNativeEventProcessing = false;
-    if (!sInited) {
-      Preferences::AddBoolVarCache(&sUseNativeEventProcessing,
-                                   "dom.ipc.useNativeEventProcessing.content");
-      sInited = true;
-    }
-
-    return sUseNativeEventProcessing;
+    return StaticPrefs::dom_ipc_useNativeEventProcessing_content();
   }
 
   return true;

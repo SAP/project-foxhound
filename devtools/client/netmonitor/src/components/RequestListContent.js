@@ -74,7 +74,7 @@ class RequestListContent extends Component {
       openDetailsPanelTab: PropTypes.func.isRequired,
       sendCustomRequest: PropTypes.func.isRequired,
       displayedRequests: PropTypes.array.isRequired,
-      firstRequestStartedMillis: PropTypes.number.isRequired,
+      firstRequestStartedMs: PropTypes.number.isRequired,
       fromCache: PropTypes.bool,
       onCauseBadgeMouseDown: PropTypes.func.isRequired,
       onItemRightMouseButtonDown: PropTypes.func.isRequired,
@@ -232,9 +232,9 @@ class RequestListContent extends Component {
     this.tooltip.hide();
   }
 
-  onMouseDown(evt, id) {
+  onMouseDown(evt, id, channelId) {
     if (evt.button === LEFT_MOUSE_BUTTON) {
-      this.props.selectRequest(id);
+      this.props.selectRequest(id, channelId);
     } else if (evt.button === RIGHT_MOUSE_BUTTON) {
       this.props.onItemRightMouseButtonDown(id);
     }
@@ -339,7 +339,7 @@ class RequestListContent extends Component {
       connector,
       columns,
       displayedRequests,
-      firstRequestStartedMillis,
+      firstRequestStartedMs,
       onCauseBadgeMouseDown,
       onSecurityIconMouseDown,
       onWaterfallMouseDown,
@@ -372,7 +372,7 @@ class RequestListContent extends Component {
           displayedRequests.map((item, index) =>
             RequestListItem({
               blocked: !!item.blockedReason,
-              firstRequestStartedMillis,
+              firstRequestStartedMs,
               fromCache: item.status === "304" || item.fromCache,
               connector,
               columns,
@@ -383,7 +383,8 @@ class RequestListContent extends Component {
               onContextMenu: this.onContextMenu,
               onFocusedNodeChange: this.onFocusedNodeChange,
               onDoubleClick: () => this.onDoubleClick(item),
-              onMouseDown: evt => this.onMouseDown(evt, item.id),
+              onMouseDown: evt =>
+                this.onMouseDown(evt, item.id, item.channelId),
               onCauseBadgeMouseDown: () => onCauseBadgeMouseDown(item.cause),
               onSecurityIconMouseDown: () =>
                 onSecurityIconMouseDown(item.securityState),
@@ -405,7 +406,7 @@ module.exports = connect(
     networkDetailsHeight: state.ui.networkDetailsHeight,
     clickedRequest: state.requests.clickedRequest,
     displayedRequests: getDisplayedRequests(state),
-    firstRequestStartedMillis: state.requests.firstStartedMillis,
+    firstRequestStartedMs: state.requests.firstStartedMs,
     selectedRequest: getSelectedRequest(state),
     scale: getWaterfallScale(state),
     requestFilterTypes: state.filters.requestFilterTypes,
@@ -435,7 +436,8 @@ module.exports = connect(
         dispatch(Actions.selectDetailsPanelTab("stack-trace"));
       }
     },
-    selectRequest: id => dispatch(Actions.selectRequest(id)),
+    selectRequest: (id, channelId) =>
+      dispatch(Actions.selectRequest(id, channelId)),
     onItemRightMouseButtonDown: id => dispatch(Actions.rightClickRequest(id)),
     onItemMouseDown: id => dispatch(Actions.selectRequest(id)),
     /**

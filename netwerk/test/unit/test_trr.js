@@ -3,10 +3,26 @@
 const dns = Cc["@mozilla.org/network/dns-service;1"].getService(
   Ci.nsIDNSService
 );
+const { MockRegistrar } = ChromeUtils.import(
+  "resource://testing-common/MockRegistrar.jsm"
+);
 const mainThread = Services.tm.currentThread;
 
 const defaultOriginAttributes = {};
 let h2Port = null;
+
+async function SetParentalControlEnabled(aEnabled) {
+  let parentalControlsService = {
+    parentalControlsEnabled: aEnabled,
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIParentalControlsService]),
+  };
+  let cid = MockRegistrar.register(
+    "@mozilla.org/parental-controls-service;1",
+    parentalControlsService
+  );
+  dns.reloadParentalControlEnabled();
+  MockRegistrar.unregister(cid);
+}
 
 add_task(function setup() {
   dump("start!\n");
@@ -48,6 +64,8 @@ add_task(function setup() {
     Ci.nsIX509CertDB
   );
   addCertFromFile(certdb, "http2-ca.pem", "CTu,u,u");
+
+  SetParentalControlEnabled(false);
 });
 
 registerCleanupFunction(() => {
@@ -66,6 +84,7 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("network.trr.skip-AAAA-when-not-supported");
   Services.prefs.clearUserPref("network.trr.wait-for-A-and-AAAA");
   Services.prefs.clearUserPref("network.trr.excluded-domains");
+  Services.prefs.clearUserPref("captivedetect.canonicalURL");
 
   Services.prefs.clearUserPref("network.http.spdy.enabled");
   Services.prefs.clearUserPref("network.http.spdy.enabled.http2");
@@ -678,6 +697,45 @@ add_task(async function test24c() {
   await new DNSListener("bar.example.com", "127.0.0.1");
 });
 
+// TRR-first check that DNS result is used if domain is part of the excluded-domains pref that contains things before it.
+add_task(async function test24d() {
+  dns.clearCache(true);
+  Services.prefs.setCharPref(
+    "network.trr.excluded-domains",
+    "foo.test.com, bar.example.com"
+  );
+  await new DNSListener("bar.example.com", "127.0.0.1");
+});
+
+// TRR-first check that DNS result is used if domain is part of the excluded-domains pref that contains things after it.
+add_task(async function test24e() {
+  dns.clearCache(true);
+  Services.prefs.setCharPref(
+    "network.trr.excluded-domains",
+    "bar.example.com, foo.test.com"
+  );
+  await new DNSListener("bar.example.com", "127.0.0.1");
+});
+
+// TRR-first check that captivedetect.canonicalURL is resolved via native DNS
+add_task(async function test24f() {
+  dns.clearCache(true);
+  Services.prefs.setCharPref(
+    "captivedetect.canonicalURL",
+    "http://test.detectportal.com/success.txt"
+  );
+
+  await new DNSListener("test.detectportal.com", "127.0.0.1");
+});
+
+// TRR-first check that a domain is resolved via native DNS when parental control is enabled.
+add_task(async function test24g() {
+  dns.clearCache(true);
+  await SetParentalControlEnabled(true);
+  await new DNSListener("www.example.com", "127.0.0.1");
+  await SetParentalControlEnabled(false);
+});
+
 // TRR-only that resolving localhost with TRR-only mode will use the remote
 // resolver if it's not in the excluded domains
 add_task(async function test25() {
@@ -732,6 +790,31 @@ add_task(async function test25d() {
   );
 
   await new DNSListener("domain.other", "127.0.0.1");
+});
+
+// TRR-only check that captivedetect.canonicalURL is resolved via native DNS
+add_task(async function test25e() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3); // TRR-only
+  Services.prefs.setCharPref(
+    "captivedetect.canonicalURL",
+    "http://test.detectportal.com/success.txt"
+  );
+  Services.prefs.setCharPref(
+    "network.trr.uri",
+    `https://foo.example.com:${h2Port}/doh?responseIP=192.192.192.192`
+  );
+
+  await new DNSListener("test.detectportal.com", "127.0.0.1");
+});
+
+// TRR-only check that a domain is resolved via native DNS when parental control is enabled.
+add_task(async function test25f() {
+  dns.clearCache(true);
+  Services.prefs.setIntPref("network.trr.mode", 3); // TRR-only
+  await SetParentalControlEnabled(true);
+  await new DNSListener("www.example.com", "127.0.0.1");
+  await SetParentalControlEnabled(false);
 });
 
 // Check that none of the requests have set any cookies.

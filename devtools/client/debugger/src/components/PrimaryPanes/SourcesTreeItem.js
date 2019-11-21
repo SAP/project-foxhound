@@ -11,7 +11,7 @@ import { showMenu } from "devtools-contextmenu";
 
 import SourceIcon from "../shared/SourceIcon";
 import AccessibleImage from "../shared/AccessibleImage";
-import { getDisplayName, isWorker } from "../../utils/workers";
+import { isWorker } from "../../utils/threads";
 
 import {
   getGeneratedSourceByURL,
@@ -36,13 +36,7 @@ import { features } from "../../utils/prefs";
 import { downloadFile } from "../../utils/utils";
 
 import type { TreeNode } from "../../utils/sources-tree/types";
-import type {
-  Source,
-  Context,
-  MainThread,
-  Thread,
-  SourceContent,
-} from "../../types";
+import type { Source, Context, Thread, SourceContent } from "../../types";
 
 type Props = {
   autoExpand: ?boolean,
@@ -57,7 +51,7 @@ type Props = {
   focused: boolean,
   expanded: boolean,
   threads: Thread[],
-  mainThread: MainThread,
+  mainThread: Thread,
   hasMatchingGeneratedSource: boolean,
   hasSiblingOfSameName: boolean,
   hasPrettySource: boolean,
@@ -128,9 +122,11 @@ class SourceTreeItem extends Component<Props, State> {
           const blackBoxMenuItem = {
             id: "node-menu-blackbox",
             label: source.isBlackBoxed
-              ? L10N.getStr("sourceFooter.unblackbox")
-              : L10N.getStr("sourceFooter.blackbox"),
-            accesskey: L10N.getStr("sourceFooter.blackbox.accesskey"),
+              ? L10N.getStr("blackboxContextItem.unblackbox")
+              : L10N.getStr("blackboxContextItem.blackbox"),
+            accesskey: source.isBlackBoxed
+              ? L10N.getStr("blackboxContextItem.unblackbox.accesskey")
+              : L10N.getStr("blackboxContextItem.blackbox.accesskey"),
             disabled: !shouldBlackbox(source),
             click: () => this.props.toggleBlackBox(cx, source),
           };
@@ -233,7 +229,7 @@ class SourceTreeItem extends Component<Props, State> {
       const thread = threads.find(thrd => thrd.actor == item.name);
 
       if (thread) {
-        const icon = thread === this.props.mainThread ? "window" : "worker";
+        const icon = isWorker(thread) ? "worker" : "window";
         return (
           <AccessibleImage
             className={classnames(icon, {
@@ -252,12 +248,18 @@ class SourceTreeItem extends Component<Props, State> {
       return <AccessibleImage className="folder" />;
     }
 
+    if (source && source.isBlackBoxed) {
+      return <AccessibleImage className="blackBox" />;
+    }
+
     if (hasPrettySource) {
       return <AccessibleImage className="prettyPrint" />;
     }
 
     if (source) {
-      return <SourceIcon source={source} />;
+      return (
+        <SourceIcon source={source} shouldHide={icon => icon === "extension"} />
+      );
     }
 
     return null;
@@ -269,9 +271,7 @@ class SourceTreeItem extends Component<Props, State> {
     if (depth === 0) {
       const thread = threads.find(({ actor }) => actor == item.name);
       if (thread) {
-        return isWorker(thread)
-          ? getDisplayName((thread: any))
-          : L10N.getStr("mainThread");
+        return thread.name;
       }
     }
 

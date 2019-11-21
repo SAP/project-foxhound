@@ -473,10 +473,23 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   // Emit a nop that can be patched to and from a nop and a call with int32
   // relative displacement.
-  CodeOffset nopPatchableToCall(const wasm::CallSiteDesc& desc) PER_SHARED_ARCH;
+  CodeOffset nopPatchableToCall() PER_SHARED_ARCH;
+  void nopPatchableToCall(const wasm::CallSiteDesc& desc);
   static void patchNopToCall(uint8_t* callsite,
                              uint8_t* target) PER_SHARED_ARCH;
   static void patchCallToNop(uint8_t* callsite) PER_SHARED_ARCH;
+
+  // These methods are like movWithPatch/PatchDataWithValueCheck but allow
+  // using pc-relative addressing on certain platforms (RIP-relative LEA on x64,
+  // ADR instruction on arm64).
+  //
+  // Note: "Near" applies to ARM64 where the target must be within 1 MB (this is
+  // release-asserted).
+  CodeOffset moveNearAddressWithPatch(Register dest)
+      DEFINED_ON(x86, x64, arm, arm64, mips_shared);
+  static void patchNearAddressMove(CodeLocationLabel loc,
+                                   CodeLocationLabel target)
+      DEFINED_ON(x86, x64, arm, arm64, mips_shared);
 
  public:
   // ===============================================================
@@ -1103,6 +1116,9 @@ class MacroAssembler : public MacroAssemblerSpecific {
   inline void branch32(Condition cond, Register lhs, Imm32 rhs,
                        L label) PER_SHARED_ARCH;
 
+  inline void branch32(Condition cond, Register lhs, const Address& rhs,
+                       Label* label) DEFINED_ON(arm64);
+
   inline void branch32(Condition cond, const Address& lhs, Register rhs,
                        Label* label) PER_SHARED_ARCH;
   inline void branch32(Condition cond, const Address& lhs, Imm32 rhs,
@@ -1303,11 +1319,13 @@ class MacroAssembler : public MacroAssemblerSpecific {
 
   inline void branchIfFunctionHasNoJitEntry(Register fun, bool isConstructing,
                                             Label* label);
+  inline void branchIfFunctionHasNoScript(Register fun, Label* label);
   inline void branchIfInterpreted(Register fun, bool isConstructing,
                                   Label* label);
 
-  inline void branchFunctionKind(Condition cond, JSFunction::FunctionKind kind,
-                                 Register fun, Register scratch, Label* label);
+  inline void branchFunctionKind(Condition cond,
+                                 FunctionFlags::FunctionKind kind, Register fun,
+                                 Register scratch, Label* label);
 
   void branchIfNotInterpretedConstructor(Register fun, Register scratch,
                                          Label* label);
@@ -1321,11 +1339,11 @@ class MacroAssembler : public MacroAssemblerSpecific {
   // register but the caller may pass a different register.
 
   inline void branchTestObjClass(Condition cond, Register obj,
-                                 const js::Class* clasp, Register scratch,
+                                 const JSClass* clasp, Register scratch,
                                  Register spectreRegToZero, Label* label);
   inline void branchTestObjClassNoSpectreMitigations(Condition cond,
                                                      Register obj,
-                                                     const js::Class* clasp,
+                                                     const JSClass* clasp,
                                                      Register scratch,
                                                      Label* label);
 

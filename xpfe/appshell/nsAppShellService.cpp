@@ -40,6 +40,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StartupTimeline.h"
+#include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/intl/LocaleService.h"
 
 #include "nsEmbedCID.h"
@@ -494,9 +495,9 @@ nsAppShellService::CreateWindowlessBrowser(bool aIsChrome,
   /* Next, we create an instance of nsWebBrowser. Instances of this class have
    * an associated doc shell, which is what we're interested in.
    */
-  nsCOMPtr<nsIWebBrowser> browser =
-      nsWebBrowser::Create(stub, widget, OriginAttributes(), browsingContext,
-                           true /* disable history */);
+  nsCOMPtr<nsIWebBrowser> browser = nsWebBrowser::Create(
+      stub, widget, OriginAttributes(), browsingContext,
+      nullptr /* initialWindowChild */, true /* disable history */);
 
   if (NS_WARN_IF(!browser)) {
     NS_ERROR("Couldn't create instance of nsWebBrowser!");
@@ -704,7 +705,7 @@ nsresult nsAppShellService::JustCreateTopWindow(
   bool isPrivateBrowsingWindow =
       Preferences::GetBool("browser.privatebrowsing.autostart");
   bool isUsingRemoteTabs = mozilla::BrowserTabsRemoteAutostart();
-  bool isUsingRemoteSubframes = Preferences::GetBool("fission.autostart");
+  bool isUsingRemoteSubframes = StaticPrefs::fission_autostart();
 
   if (aChromeMask & nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW) {
     // Caller requested a private window

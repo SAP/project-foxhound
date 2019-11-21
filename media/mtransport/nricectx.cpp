@@ -44,7 +44,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <vector>
 
 #include "nr_socket_proxy_config.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 
@@ -58,6 +57,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "nsComponentManagerUtils.h"
 #include "nsError.h"
 #include "nsIEventTarget.h"
+#include "nsIUUIDGenerator.h"
 #include "nsNetCID.h"
 #include "nsComponentManagerUtils.h"
 #include "nsServiceManagerUtils.h"
@@ -96,6 +96,10 @@ extern "C" {
 #include "nrinterfaceprioritizer.h"
 #include "rlogconnector.h"
 #include "test_nr_socket.h"
+
+extern "C" {
+#include "mdns_service/mdns_service.h"
+}
 
 namespace mozilla {
 
@@ -266,7 +270,6 @@ NrIceCtx::NrIceCtx(const std::string& name, Policy policy)
     : connection_state_(ICE_CTX_INIT),
       gathering_state_(ICE_CTX_GATHER_INIT),
       name_(name),
-      offerer_(false),
       ice_controlling_set_(false),
       streams_(),
       ctx_(nullptr),
@@ -276,7 +279,9 @@ NrIceCtx::NrIceCtx(const std::string& name, Policy policy)
       trickle_(true),
       policy_(policy),
       nat_(nullptr),
-      proxy_config_(nullptr) {}
+      proxy_config_(nullptr),
+      proxy_only_(false),
+      obfuscate_host_addresses_(false) {}
 
 /* static */
 RefPtr<NrIceCtx> NrIceCtx::Create(const std::string& name, bool allow_loopback,
@@ -428,9 +433,13 @@ void NrIceCtx::trickle_cb(void* arg, nr_ice_ctx* ice_ctx,
   }
 
   if (!candidate) {
-    s->SignalCandidate(s, "", stream->ufrag);
+    s->SignalCandidate(s, "", stream->ufrag, "", "");
     return;
   }
+
+  std::string actual_addr;
+  std::string mdns_addr;
+  ctx->GenerateObfuscatedAddress(candidate, &mdns_addr, &actual_addr);
 
   // Format the candidate.
   char candidate_str[NR_ICE_MAX_ATTRIBUTE_SIZE];
@@ -442,7 +451,7 @@ void NrIceCtx::trickle_cb(void* arg, nr_ice_ctx* ice_ctx,
   MOZ_MTLOG(ML_INFO, "NrIceCtx(" << ctx->name_ << "): trickling candidate "
                                  << candidate_str);
 
-  s->SignalCandidate(s, candidate_str, stream->ufrag);
+  s->SignalCandidate(s, candidate_str, stream->ufrag, mdns_addr, actual_addr);
 }
 
 void NrIceCtx::InitializeGlobals(bool allow_loopback, bool tcp_enabled,
@@ -517,6 +526,12 @@ void NrIceCtx::InitializeGlobals(bool allow_loopback, bool tcp_enabled,
                         const_cast<char*>(flat.get()));
     }
   }
+}
+
+void NrIceCtx::SetTargetForDefaultLocalAddressLookup(
+    const std::string& target_ip, uint16_t target_port) {
+  nr_ice_set_target_for_default_local_address_lookup(ctx_, target_ip.c_str(),
+                                                     target_port);
 }
 
 #define MAXADDRS 100  // mirrors setting in ice_ctx.c
@@ -729,40 +744,6 @@ NrIceStats NrIceCtx::Destroy() {
     stats.turn_438s = ctx_->stats.turn_438s;
   }
 
-  if (!ice_start_time_.IsNull()) {
-    TimeDuration time_delta = TimeStamp::Now() - ice_start_time_;
-    ice_start_time_ = TimeStamp();  // null out
-
-    if (offerer_) {
-      Telemetry::Accumulate(Telemetry::WEBRTC_ICE_OFFERER_ABORT_TIME,
-                            time_delta.ToMilliseconds());
-    } else {
-      Telemetry::Accumulate(Telemetry::WEBRTC_ICE_ANSWERER_ABORT_TIME,
-                            time_delta.ToMilliseconds());
-    }
-
-    unsigned char rate_limit_bit_pattern = 0;
-    if (!mozilla::nr_socket_short_term_violation_time().IsNull() &&
-        mozilla::nr_socket_short_term_violation_time() >= ice_start_time_) {
-      rate_limit_bit_pattern |= 1;
-    }
-    if (!mozilla::nr_socket_long_term_violation_time().IsNull() &&
-        mozilla::nr_socket_long_term_violation_time() >= ice_start_time_) {
-      rate_limit_bit_pattern |= 2;
-    }
-
-    if (connection_state_ == ICE_CTX_FAILED) {
-      Telemetry::Accumulate(
-          Telemetry::WEBRTC_STUN_RATE_LIMIT_EXCEEDED_BY_TYPE_GIVEN_FAILURE,
-          rate_limit_bit_pattern);
-    } else if (connection_state_ == ICE_CTX_CONNECTED ||
-               connection_state_ == ICE_CTX_COMPLETED) {
-      Telemetry::Accumulate(
-          Telemetry::WEBRTC_STUN_RATE_LIMIT_EXCEEDED_BY_TYPE_GIVEN_SUCCESS,
-          rate_limit_bit_pattern);
-    }
-  }
-
   if (peer_) {
     nr_ice_peer_ctx_destroy(&peer_);
   }
@@ -887,13 +868,18 @@ void NrIceCtx::SetCtxFlags(bool default_route_only, bool proxy_only) {
   }
 }
 
-nsresult NrIceCtx::StartGathering(bool default_route_only, bool proxy_only) {
+nsresult NrIceCtx::StartGathering(bool default_route_only, bool proxy_only,
+                                  bool obfuscate_host_addresses) {
   ASSERT_ON_THREAD(sts_target_);
+
+  obfuscate_host_addresses_ = obfuscate_host_addresses;
+
   SetGatheringState(ICE_CTX_GATHER_STARTED);
 
   SetCtxFlags(default_route_only, proxy_only);
 
-  TimeStamp start = TimeStamp::Now();
+  proxy_only_ = proxy_only;
+
   // This might start gathering for the first time, or again after
   // renegotiation, or might do nothing at all if gathering has already
   // finished.
@@ -901,18 +887,11 @@ nsresult NrIceCtx::StartGathering(bool default_route_only, bool proxy_only) {
 
   if (!r) {
     SetGatheringState(ICE_CTX_GATHER_COMPLETE);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::WEBRTC_ICE_NR_ICE_GATHER_TIME_IMMEDIATE_SUCCESS, start);
   } else if (r != R_WOULDBLOCK) {
     MOZ_MTLOG(ML_ERROR, "ICE FAILED: Couldn't gather ICE candidates for '"
                             << name_ << "', error=" << r);
     SetConnectionState(ICE_CTX_FAILED);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::WEBRTC_ICE_NR_ICE_GATHER_TIME_IMMEDIATE_FAILURE, start);
     return NS_ERROR_FAILURE;
-  } else {
-    Telemetry::AccumulateTimeDelta(Telemetry::WEBRTC_ICE_NR_ICE_GATHER_TIME,
-                                   start);
   }
 
   return NS_OK;
@@ -977,15 +956,12 @@ bool NrIceCtx::HasStreamsToConnect() const {
   return false;
 }
 
-nsresult NrIceCtx::StartChecks(bool offerer) {
+nsresult NrIceCtx::StartChecks() {
   int r;
   if (!HasStreamsToConnect()) {
     // Nothing to do
     return NS_OK;
   }
-
-  offerer_ = offerer;
-  ice_start_time_ = TimeStamp::Now();
 
   r = nr_ice_peer_ctx_pair_candidates(peer_);
   if (r) {
@@ -1044,44 +1020,6 @@ void NrIceCtx::UpdateNetworkState(bool online) {
 void NrIceCtx::SetConnectionState(ConnectionState state) {
   if (state == connection_state_) return;
 
-  if (!ice_start_time_.IsNull() && (state > ICE_CTX_CHECKING)) {
-    TimeDuration time_delta = TimeStamp::Now() - ice_start_time_;
-    ice_start_time_ = TimeStamp();
-
-    switch (state) {
-      case ICE_CTX_INIT:
-      case ICE_CTX_CHECKING:
-        MOZ_CRASH();
-        break;
-      case ICE_CTX_CONNECTED:
-      case ICE_CTX_COMPLETED:
-        if (offerer_) {
-          Telemetry::Accumulate(Telemetry::WEBRTC_ICE_OFFERER_SUCCESS_TIME,
-                                time_delta.ToMilliseconds());
-        } else {
-          Telemetry::Accumulate(Telemetry::WEBRTC_ICE_ANSWERER_SUCCESS_TIME,
-                                time_delta.ToMilliseconds());
-        }
-        break;
-      case ICE_CTX_FAILED:
-        if (offerer_) {
-          Telemetry::Accumulate(Telemetry::WEBRTC_ICE_OFFERER_FAILURE_TIME,
-                                time_delta.ToMilliseconds());
-        } else {
-          Telemetry::Accumulate(Telemetry::WEBRTC_ICE_ANSWERER_FAILURE_TIME,
-                                time_delta.ToMilliseconds());
-        }
-        break;
-      case ICE_CTX_DISCONNECTED:
-        // We get this every time an ICE disconnect gets reported.
-        // Do we want a Telemetry probe counting how often this happens?
-        break;
-      case ICE_CTX_CLOSED:
-        // This doesn't seem to be used...
-        break;
-    }
-  }
-
   MOZ_MTLOG(ML_INFO, "NrIceCtx(" << name_ << "): state " << connection_state_
                                  << "->" << state);
   connection_state_ = state;
@@ -1109,6 +1047,35 @@ void NrIceCtx::SetGatheringState(GatheringState state) {
   SignalGatheringStateChange(this, state);
 }
 
+void NrIceCtx::GenerateObfuscatedAddress(nr_ice_candidate* candidate,
+                                         std::string* mdns_address,
+                                         std::string* actual_address) {
+  if (candidate->type == HOST && obfuscate_host_addresses_) {
+    int r;
+    char addr[64];
+    if ((r = nr_transport_addr_get_addrstring(&candidate->addr, addr,
+                                              sizeof(addr)))) {
+      return;
+    }
+
+    *actual_address = addr;
+
+    const auto& iter = obfuscated_host_addresses_.find(*actual_address);
+    if (iter != obfuscated_host_addresses_.end()) {
+      *mdns_address = iter->second;
+    } else {
+      const char* uuid = mdns_service_generate_uuid();
+      std::ostringstream o;
+      o << uuid << ".local";
+      *mdns_address = o.str();
+      mdns_service_free_uuid(uuid);
+
+      obfuscated_host_addresses_[*actual_address] = *mdns_address;
+    }
+    candidate->mdns_addr = r_strdup(mdns_address->c_str());
+  }
+}
+
 }  // namespace mozilla
 
 // Reimplement nr_ice_compute_codeword to avoid copyright issues
@@ -1131,12 +1098,21 @@ int nr_socket_local_create(void* obj, nr_transport_addr* addr,
 
   if (obj) {
     config = static_cast<NrIceCtx*>(obj)->GetProxyConfig();
+    bool ctx_proxy_only = static_cast<NrIceCtx*>(obj)->proxy_only();
+
+    if (ctx_proxy_only && !config) {
+      ABORT(R_FAILED);
+    }
   }
 
   r = NrSocketBase::CreateSocket(addr, &sock, config);
   if (r) {
     ABORT(r);
   }
+  // TODO(bug 1569183): This will start out false, and may become true once the
+  // socket class figures out whether a proxy needs to be used (this may be as
+  // late as when it establishes a connection).
+  addr->is_proxied = sock->IsProxied();
 
   r = nr_socket_create_int(static_cast<void*>(sock), sock->vtbl(), sockp);
   if (r) ABORT(r);

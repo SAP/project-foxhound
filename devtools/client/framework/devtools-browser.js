@@ -30,7 +30,12 @@ loader.lazyRequireGetter(
   "devtools/client/framework/toolbox",
   true
 );
-loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerServer",
+  "devtools/server/debugger-server",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "DebuggerClient",
@@ -51,7 +56,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive.html/manager",
+  "devtools/client/responsive/manager",
   true
 );
 loader.lazyRequireGetter(
@@ -152,7 +157,11 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
     );
 
     // Enable DevTools connection screen, if the preference allows this.
-    toggleMenuItem("menu_devtools_connect", devtoolsRemoteEnabled);
+    const connectPageEnabled = Services.prefs.getBoolPref(
+      "devtools.connectpage.enabled"
+    );
+    const connectEnabled = devtoolsRemoteEnabled && connectPageEnabled;
+    toggleMenuItem("menu_devtools_connect", connectEnabled);
 
     // Enable record/replay menu items?
     try {
@@ -289,7 +298,9 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         toolDefinition.preventClosingOnKey ||
         toolbox.hostType == Toolbox.HostType.WINDOW
       ) {
-        toolbox.raise();
+        if (!toolDefinition.preventRaisingOnKey) {
+          toolbox.raise();
+        }
       } else {
         toolbox.destroy();
       }
@@ -348,8 +359,10 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         BrowserToolboxProcess.init();
         break;
       case "browserConsole":
-        const { HUDService } = require("devtools/client/webconsole/hudservice");
-        HUDService.openBrowserConsoleOrFocus();
+        const {
+          BrowserConsoleManager,
+        } = require("devtools/client/webconsole/browser-console-manager");
+        BrowserConsoleManager.openBrowserConsoleOrFocus();
         break;
       case "responsiveDesignMode":
         ResponsiveUIManager.toggle(window, window.gBrowser.selectedTab, {
@@ -358,13 +371,6 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
         break;
       case "scratchpad":
         ScratchpadManager.openScratchpad();
-        break;
-      case "inspectorMac":
-        await gDevToolsBrowser.selectToolCommand(
-          window,
-          "inspector",
-          startTime
-        );
         break;
     }
   },
@@ -509,7 +515,7 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
   /**
    * Add this DevTools's presence to a browser window's document
    *
-   * @param {XULDocument} doc
+   * @param {HTMLDocument} doc
    *        The document to which devtools should be hooked to.
    */
   _registerBrowserWindow(win) {
@@ -542,36 +548,36 @@ var gDevToolsBrowser = (exports.gDevToolsBrowser = {
       const target = await TargetFactory.forTab(tab);
 
       gDevTools.showToolbox(target, "jsdebugger").then(toolbox => {
-        const threadClient = toolbox.threadClient;
+        const threadFront = toolbox.threadFront;
 
         // Break in place, which means resuming the debuggee thread and pausing
         // right before the next step happens.
-        switch (threadClient.state) {
+        switch (threadFront.state) {
           case "paused":
             // When the debugger is already paused.
-            threadClient.resumeThenPause();
+            threadFront.resumeThenPause();
             callback();
             break;
           case "attached":
             // When the debugger is already open.
-            threadClient.interrupt().then(() => {
-              threadClient.resumeThenPause();
+            threadFront.interrupt().then(() => {
+              threadFront.resumeThenPause();
               callback();
             });
             break;
           case "resuming":
             // The debugger is newly opened.
-            threadClient.once("resumed", () => {
-              threadClient.interrupt().then(() => {
-                threadClient.resumeThenPause();
+            threadFront.once("resumed", () => {
+              threadFront.interrupt().then(() => {
+                threadFront.resumeThenPause();
                 callback();
               });
             });
             break;
           default:
             throw Error(
-              "invalid thread client state in slow script debug handler: " +
-                threadClient.state
+              "invalid thread front state in slow script debug handler: " +
+                threadFront.state
             );
         }
       });

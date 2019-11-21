@@ -327,7 +327,8 @@ bool CutCommand::IsCommandEnabled(Command aCommand,
   if (!aTextEditor) {
     return false;
   }
-  return aTextEditor->IsSelectionEditable() && aTextEditor->CanCut();
+  return aTextEditor->IsSelectionEditable() &&
+         aTextEditor->IsCutCommandEnabled();
 }
 
 nsresult CutCommand::DoCommand(Command aCommand, TextEditor& aTextEditor,
@@ -391,7 +392,7 @@ bool CopyCommand::IsCommandEnabled(Command aCommand,
   if (!aTextEditor) {
     return false;
   }
-  return aTextEditor->CanCopy();
+  return aTextEditor->IsCopyCommandEnabled();
 }
 
 nsresult CopyCommand::DoCommand(Command aCommand, TextEditor& aTextEditor,
@@ -574,11 +575,11 @@ bool DeleteCommand::IsCommandEnabled(Command aCommand,
   }
   // We can generally delete whenever the selection is editable.  However,
   // cmd_delete doesn't make sense if the selection is collapsed because it's
-  // directionless, which is the same condition under which we can't cut.
+  // directionless.
   bool isEnabled = aTextEditor->IsSelectionEditable();
 
   if (aCommand == Command::Delete && isEnabled) {
-    return aTextEditor->CanDelete();
+    return aTextEditor->CanDeleteSelection();
   }
   return isEnabled;
 }

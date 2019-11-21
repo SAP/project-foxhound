@@ -75,11 +75,6 @@ void InProcessParent::Startup() {
 
   parent->SetOtherProcessId(base::GetCurrentProcId());
 
-  // Create references held by the IPC layer which will be freed in
-  // DeallocPInProcess{Parent,Child}.
-  parent.get()->AddRef();
-  child.get()->AddRef();
-
   // Stash global references to fetch the other side of the reference.
   InProcessParent::sSingleton = parent.forget();
   InProcessChild::sSingleton = child.forget();
@@ -118,16 +113,6 @@ void InProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
 
 void InProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
   InProcessParent::Shutdown();
-}
-
-void InProcessParent::ActorDealloc() {
-  MOZ_ASSERT(!InProcessParent::sSingleton);
-  Release();  // Release the reference taken in InProcessParent::Startup.
-}
-
-void InProcessChild::ActorDealloc() {
-  MOZ_ASSERT(!InProcessChild::sSingleton);
-  Release();  // Release the reference taken in InProcessParent::Startup.
 }
 
 ////////////////////////////////
@@ -191,6 +176,8 @@ IProtocol* InProcessChild::ParentActorFor(IProtocol* aActor) {
   MOZ_ASSERT(aActor && aActor->GetSide() == ChildSide);
   return GetOtherInProcessActor(aActor);
 }
+
+NS_IMPL_ISUPPORTS(InProcessParent, nsIObserver)
 
 }  // namespace ipc
 }  // namespace mozilla

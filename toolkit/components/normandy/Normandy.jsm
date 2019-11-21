@@ -11,9 +11,11 @@ const { XPCOMUtils } = ChromeUtils.import(
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AboutPages: "resource://normandy-content/AboutPages.jsm",
+  AddonRollouts: "resource://normandy/lib/AddonRollouts.jsm",
   AddonStudies: "resource://normandy/lib/AddonStudies.jsm",
   CleanupManager: "resource://normandy/lib/CleanupManager.jsm",
   LogManager: "resource://normandy/lib/LogManager.jsm",
+  NormandyMigrations: "resource://normandy/NormandyMigrations.jsm",
   PreferenceExperiments: "resource://normandy/lib/PreferenceExperiments.jsm",
   PreferenceRollouts: "resource://normandy/lib/PreferenceRollouts.jsm",
   RecipeRunner: "resource://normandy/lib/RecipeRunner.jsm",
@@ -28,7 +30,6 @@ const BOOTSTRAP_LOGGER_NAME = "app.normandy.bootstrap";
 const SHIELD_INIT_NOTIFICATION = "shield-init-complete";
 
 const PREF_PREFIX = "app.normandy";
-const LEGACY_PREF_PREFIX = "extensions.shield-recipe-client";
 const STARTUP_EXPERIMENT_PREFS_BRANCH = `${PREF_PREFIX}.startupExperimentPrefs.`;
 const STARTUP_ROLLOUT_PREFS_BRANCH = `${PREF_PREFIX}.startupRolloutPrefs.`;
 const PREF_LOGGING_LEVEL = `${PREF_PREFIX}.logging.level`;
@@ -42,9 +43,9 @@ var Normandy = {
   studyPrefsChanged: {},
   rolloutPrefsChanged: {},
 
-  init() {
+  async init({ runAsync = true } = {}) {
     // Initialization that needs to happen before the first paint on startup.
-    this.migrateShieldPrefs();
+    await NormandyMigrations.applyAll();
     this.rolloutPrefsChanged = this.applyStartupPrefs(
       STARTUP_ROLLOUT_PREFS_BRANCH
     );
@@ -52,8 +53,16 @@ var Normandy = {
       STARTUP_EXPERIMENT_PREFS_BRANCH
     );
 
-    // Wait until the UI is available before finishing initialization.
-    Services.obs.addObserver(this, UI_AVAILABLE_NOTIFICATION);
+    if (runAsync) {
+      Services.obs.addObserver(this, UI_AVAILABLE_NOTIFICATION);
+    } else {
+      // Remove any observers, if present.
+      try {
+        Services.obs.removeObserver(this, UI_AVAILABLE_NOTIFICATION);
+      } catch (e) {}
+
+      await this.finishInit();
+    }
   },
 
   observe(subject, topic, data) {
@@ -101,6 +110,12 @@ var Normandy = {
     }
 
     try {
+      await AddonRollouts.init();
+    } catch (err) {
+      log.error("Failed to initialize addon rollouts:", err);
+    }
+
+    try {
       await PreferenceExperiments.init();
     } catch (err) {
       log.error("Failed to initialize preference experiments:", err);
@@ -126,57 +141,6 @@ var Normandy = {
       Services.obs.removeObserver(this, UI_AVAILABLE_NOTIFICATION);
     } catch (err) {
       // It must already be removed!
-    }
-  },
-
-  migrateShieldPrefs() {
-    const legacyBranch = Services.prefs.getBranch(LEGACY_PREF_PREFIX + ".");
-    const newBranch = Services.prefs.getBranch(PREF_PREFIX + ".");
-
-    for (const prefName of legacyBranch.getChildList("")) {
-      const legacyPrefType = legacyBranch.getPrefType(prefName);
-      const newPrefType = newBranch.getPrefType(prefName);
-
-      // If new preference exists and is not the same as the legacy pref, skip it
-      if (
-        newPrefType !== Services.prefs.PREF_INVALID &&
-        newPrefType !== legacyPrefType
-      ) {
-        log.error(
-          `Error migrating normandy pref ${prefName}; pref type does not match.`
-        );
-        continue;
-      }
-
-      // Now move the value over. If it matches the default, this will be a no-op
-      switch (legacyPrefType) {
-        case Services.prefs.PREF_STRING:
-          newBranch.setCharPref(prefName, legacyBranch.getCharPref(prefName));
-          break;
-
-        case Services.prefs.PREF_INT:
-          newBranch.setIntPref(prefName, legacyBranch.getIntPref(prefName));
-          break;
-
-        case Services.prefs.PREF_BOOL:
-          newBranch.setBoolPref(prefName, legacyBranch.getBoolPref(prefName));
-          break;
-
-        case Services.prefs.PREF_INVALID:
-          // This should never happen.
-          log.error(
-            `Error migrating pref ${prefName}; pref type is invalid (${legacyPrefType}).`
-          );
-          break;
-
-        default:
-          // This should never happen either.
-          log.error(
-            `Error getting startup pref ${prefName}; unknown value type ${legacyPrefType}.`
-          );
-      }
-
-      legacyBranch.clearUserPref(prefName);
     }
   },
 

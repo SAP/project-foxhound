@@ -100,6 +100,7 @@ class GlobalHelperThreadState {
   typedef Vector<GCParallelTask*, 0, SystemAllocPolicy> GCParallelTaskVector;
   typedef Vector<PromiseHelperTask*, 0, SystemAllocPolicy>
       PromiseHelperTaskVector;
+  typedef Vector<JSContext*, 0, SystemAllocPolicy> ContextVector;
 
   // List of available threads, or null if the thread state has not been
   // initialized.
@@ -146,6 +147,9 @@ class GlobalHelperThreadState {
   // GC tasks needing to be done in parallel.
   GCParallelTaskVector gcParallelWorklist_;
 
+  // Global list of JSContext for GlobalHelperThreadState to use.
+  ContextVector helperContexts_;
+
   ParseTask* removeFinishedParseTask(ParseTaskKind kind,
                                      JS::OffThreadToken* token);
 
@@ -167,8 +171,10 @@ class GlobalHelperThreadState {
   void finish();
   void finishThreads();
 
-  void lock();
-  void unlock();
+  MOZ_MUST_USE bool ensureContextListForThreadCount();
+  JSContext* getFirstUnusedContext(AutoLockHelperThreadState& locked);
+  void destroyHelperContexts(AutoLockHelperThreadState& lock);
+
 #ifdef DEBUG
   bool isLockedByCurrentThread() const;
 #endif
@@ -377,12 +383,6 @@ struct HelperThread {
    */
   bool terminate;
 
-  /*
-   * Indicates that this thread should free its unused memory when it is next
-   * idle.
-   */
-  bool shouldFreeUnusedMemory;
-
   /* The current task being executed by this thread, if any. */
   mozilla::Maybe<HelperTaskUnion> currentTask;
 
@@ -465,8 +465,6 @@ struct HelperThread {
     return nullptr;
   }
 
-  void maybeFreeUnusedMemory(JSContext* cx);
-
   void handleWasmWorkload(AutoLockHelperThreadState& locked,
                           wasm::CompileMode mode);
 
@@ -494,7 +492,7 @@ bool EnsureHelperThreadsInitialized();
 
 // This allows the JS shell to override GetCPUCount() when passed the
 // --thread-count=N option.
-void SetFakeCPUCount(size_t count);
+bool SetFakeCPUCount(size_t count);
 
 // Get the current helper thread, or null.
 HelperThread* CurrentHelperThread();
@@ -550,7 +548,6 @@ bool StartOffThreadIonCompile(jit::IonBuilder* builder,
 bool StartOffThreadIonFree(jit::IonBuilder* builder,
                            const AutoLockHelperThreadState& lock);
 
-struct AllCompilations {};
 struct ZonesInState {
   JSRuntime* runtime;
   JS::shadow::Zone::GCState state;
@@ -561,39 +558,37 @@ struct CompilationsUsingNursery {
 
 using CompilationSelector =
     mozilla::Variant<JSScript*, JS::Realm*, Zone*, ZonesInState, JSRuntime*,
-                     CompilationsUsingNursery, AllCompilations>;
+                     CompilationsUsingNursery>;
 
 /*
  * Cancel scheduled or in progress Ion compilations.
  */
-void CancelOffThreadIonCompile(const CompilationSelector& selector,
-                               bool discardLazyLinkList);
+void CancelOffThreadIonCompile(const CompilationSelector& selector);
 
 inline void CancelOffThreadIonCompile(JSScript* script) {
-  CancelOffThreadIonCompile(CompilationSelector(script), true);
+  CancelOffThreadIonCompile(CompilationSelector(script));
 }
 
 inline void CancelOffThreadIonCompile(JS::Realm* realm) {
-  CancelOffThreadIonCompile(CompilationSelector(realm), true);
+  CancelOffThreadIonCompile(CompilationSelector(realm));
 }
 
 inline void CancelOffThreadIonCompile(Zone* zone) {
-  CancelOffThreadIonCompile(CompilationSelector(zone), true);
+  CancelOffThreadIonCompile(CompilationSelector(zone));
 }
 
 inline void CancelOffThreadIonCompile(JSRuntime* runtime,
                                       JS::shadow::Zone::GCState state) {
-  CancelOffThreadIonCompile(CompilationSelector(ZonesInState{runtime, state}),
-                            true);
+  CancelOffThreadIonCompile(CompilationSelector(ZonesInState{runtime, state}));
 }
 
 inline void CancelOffThreadIonCompile(JSRuntime* runtime) {
-  CancelOffThreadIonCompile(CompilationSelector(runtime), true);
+  CancelOffThreadIonCompile(CompilationSelector(runtime));
 }
 
 inline void CancelOffThreadIonCompilesUsingNurseryPointers(JSRuntime* runtime) {
   CancelOffThreadIonCompile(
-      CompilationSelector(CompilationsUsingNursery{runtime}), true);
+      CompilationSelector(CompilationsUsingNursery{runtime}));
 }
 
 #ifdef DEBUG
@@ -700,6 +695,21 @@ class MOZ_RAII AutoUnlockHelperThreadState : public UnlockGuard<Mutex> {
       AutoLockHelperThreadState& locked MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : Base(locked) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  }
+};
+
+struct MOZ_RAII AutoSetHelperThreadContext {
+  JSContext* cx;
+  explicit AutoSetHelperThreadContext();
+  ~AutoSetHelperThreadContext() {
+    AutoLockHelperThreadState lock;
+    cx->tempLifoAlloc().releaseAll();
+    if (cx->shouldFreeUnusedMemory()) {
+      cx->tempLifoAlloc().freeAll();
+      cx->setFreeUnusedMemory(false);
+    }
+    cx->clearHelperThread(lock);
+    cx = nullptr;
   }
 };
 

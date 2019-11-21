@@ -37,7 +37,9 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/mozalloc.h"     // for operator new
 #include "mozilla/Preferences.h"  // for Preferences
-#include "mozilla/StaticPrefs.h"  // for StaticPrefs
+#include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/EventStateManager.h"  // for WheelPrefs
 #include "mozilla/webrender/WebRenderAPI.h"
@@ -405,12 +407,15 @@ APZCTreeManager::UpdateHitTestingTreeImpl(const ScrollNode& aRoot,
   bool haveRootContentOutsideAsyncZoomContainer = false;
 
   if (aRoot) {
+    std::unordered_set<LayersId, LayersId::HashFn> seenLayersIds;
     std::stack<gfx::TreeAutoIndent<LOG_DEFAULT>> indents;
     std::stack<AncestorTransform> ancestorTransforms;
     HitTestingTreeNode* parent = nullptr;
     HitTestingTreeNode* next = nullptr;
     LayersId layersId = mRootLayersId;
-    wr::RenderRoot renderRoot = wr::RenderRoot::Default;
+    seenLayersIds.insert(mRootLayersId);
+    std::stack<wr::RenderRoot> renderRoots;
+    renderRoots.push(wr::RenderRoot::Default);
     ancestorTransforms.push(AncestorTransform());
     state.mParentHasPerspective.push(false);
 
@@ -440,7 +445,7 @@ APZCTreeManager::UpdateHitTestingTreeImpl(const ScrollNode& aRoot,
 
           HitTestingTreeNode* node = PrepareNodeForLayer(
               lock, aLayerMetrics, aLayerMetrics.Metrics(), layersId,
-              ancestorTransforms.top(), parent, next, state, renderRoot);
+              ancestorTransforms.top(), parent, next, state, renderRoots.top());
           MOZ_ASSERT(node);
           AsyncPanZoomController* apzc = node->GetApzc();
           aLayerMetrics.SetApzc(apzc);
@@ -486,10 +491,11 @@ APZCTreeManager::UpdateHitTestingTreeImpl(const ScrollNode& aRoot,
           // Update the layersId or renderroot if we have a new one
           if (Maybe<LayersId> newLayersId = aLayerMetrics.GetReferentId()) {
             layersId = *newLayersId;
+            seenLayersIds.insert(layersId);
           }
           if (Maybe<wr::RenderRoot> newRenderRoot =
                   aLayerMetrics.GetReferentRenderRoot()) {
-            renderRoot = *newRenderRoot;
+            renderRoots.push(*newRenderRoot);
           }
 
           indents.push(gfx::TreeAutoIndent<LOG_DEFAULT>(mApzcTreeLog));
@@ -507,6 +513,9 @@ APZCTreeManager::UpdateHitTestingTreeImpl(const ScrollNode& aRoot,
           ancestorTransforms.pop();
           indents.pop();
           state.mParentHasPerspective.pop();
+          if (aLayerMetrics.GetReferentRenderRoot()) {
+            renderRoots.pop();
+          }
         });
 
     mApzcTreeLog << "[end]\n";
@@ -551,6 +560,19 @@ APZCTreeManager::UpdateHitTestingTreeImpl(const ScrollNode& aRoot,
                   it->second * apzc->GetAncestorTransform(), false});
             }
           });
+    }
+
+    // Remove any layers ids for which we no longer have content from
+    // mDetachedLayersIds.
+    for (auto iter = mDetachedLayersIds.begin();
+         iter != mDetachedLayersIds.end();) {
+      // unordered_set::erase() invalidates the iterator pointing to the
+      // element being erased, but returns an iterator to the next element.
+      if (seenLayersIds.find(*iter) == seenLayersIds.end()) {
+        iter = mDetachedLayersIds.erase(iter);
+      } else {
+        ++iter;
+      }
     }
   }
 
@@ -606,7 +628,7 @@ void APZCTreeManager::UpdateFocusState(LayersId aRootLayerTreeId,
                                        const FocusTarget& aFocusTarget) {
   AssertOnUpdaterThread();
 
-  if (!StaticPrefs::apz_keyboard_enabled()) {
+  if (!StaticPrefs::apz_keyboard_enabled_AtStartup()) {
     return;
   }
 
@@ -1224,6 +1246,11 @@ void APZCTreeManager::FlushApzRepaints(LayersId aLayersId) {
   }
 }
 
+void APZCTreeManager::MarkAsDetached(LayersId aLayersId) {
+  RecursiveMutexAutoLock lock(mTreeLock);
+  mDetachedLayersIds.insert(aLayersId);
+}
+
 nsEventStatus APZCTreeManager::ReceiveInputEvent(
     InputData& aEvent, ScrollableLayerGuid* aOutTargetGuid,
     uint64_t* aOutInputBlockId) {
@@ -1543,7 +1570,7 @@ nsEventStatus APZCTreeManager::ReceiveInputEvent(
     case KEYBOARD_INPUT: {
       // Disable async keyboard scrolling when accessibility.browsewithcaret is
       // enabled
-      if (!StaticPrefs::apz_keyboard_enabled() ||
+      if (!StaticPrefs::apz_keyboard_enabled_AtStartup() ||
           StaticPrefs::accessibility_browsewithcaret()) {
         APZ_KEY_LOG("Skipping key input from invalid prefs\n");
         return result;
@@ -1741,7 +1768,7 @@ nsEventStatus APZCTreeManager::ProcessTouchInput(
     // a scrollbar mouse-drag.
     mInScrollbarTouchDrag =
         StaticPrefs::apz_drag_enabled() &&
-        StaticPrefs::apz_touch_drag_enabled() && hitScrollbarNode &&
+        StaticPrefs::apz_drag_touch_enabled() && hitScrollbarNode &&
         hitScrollbarNode->IsScrollThumbNode() &&
         hitScrollbarNode->GetScrollbarData().mThumbIsAsyncDraggable;
 
@@ -2592,7 +2619,18 @@ already_AddRefed<AsyncPanZoomController> APZCTreeManager::GetAPZCAtPointWR(
   if (aOutLayersId) {
     *aOutLayersId = layersId;
   }
-  result = GetTargetAPZC(layersId, scrollId);
+  ScrollableLayerGuid guid{layersId, 0, scrollId};
+  if (RefPtr<HitTestingTreeNode> node =
+          GetTargetNode(guid, &GuidComparatorIgnoringPresShell)) {
+    MOZ_ASSERT(node->GetApzc());  // any node returned must have an APZC
+    result = node->GetApzc();
+    EventRegionsOverride flags = node->GetEventRegionsOverride();
+    if (flags & EventRegionsOverride::ForceDispatchToContent) {
+      hitInfo += CompositorHitTestFlags::eApzAwareListeners;
+    }
+  }
+  APZCTM_LOG("Successfully matched APZC %p (hit result 0x%x)\n", result.get(),
+             hitInfo.serialize());
   if (!result) {
     // It falls back to the root
     MOZ_ASSERT(scrollId == ScrollableLayerGuid::NULL_SCROLL_ID);
@@ -3284,10 +3322,14 @@ void APZCTreeManager::SendSubtreeTransformsToChromeMainThread(
           HitTestingTreeNode* parent = aNode->GetParent();
           if (!parent) {
             messages.AppendElement(
-                MatrixMessage(LayerToScreenMatrix4x4(), layersId));
+                MatrixMessage(Some(LayerToScreenMatrix4x4()), layersId));
           } else if (layersId != parent->GetLayersId()) {
-            messages.AppendElement(
-                MatrixMessage(parent->GetTransformToGecko(), layersId));
+            if (mDetachedLayersIds.find(layersId) != mDetachedLayersIds.end()) {
+              messages.AppendElement(MatrixMessage(Nothing(), layersId));
+            } else {
+              messages.AppendElement(
+                  MatrixMessage(Some(parent->GetTransformToGecko()), layersId));
+            }
           }
         },
         [&](HitTestingTreeNode* aNode) {

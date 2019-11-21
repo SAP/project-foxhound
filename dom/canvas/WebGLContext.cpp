@@ -36,7 +36,7 @@
 #include "mozilla/ProcessPriorityManager.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
@@ -455,7 +455,7 @@ bool WebGLContext::CreateAndInitGL(
   }
 
   // WebGL2 is separately blocked:
-  if (IsWebGL2()) {
+  if (IsWebGL2() && !forceEnabled) {
     const nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
     const auto feature = nsIGfxInfo::FEATURE_WEBGL2;
 

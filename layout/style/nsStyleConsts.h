@@ -20,6 +20,104 @@
 
 namespace mozilla {
 
+static constexpr uint16_t STYLE_DISPLAY_LIST_ITEM_BIT = 0x8000;
+static constexpr uint8_t STYLE_DISPLAY_OUTSIDE_BITS = 7;
+static constexpr uint8_t STYLE_DISPLAY_INSIDE_BITS = 8;
+
+// The `display` longhand.
+uint16_t constexpr StyleDisplayFrom(StyleDisplayOutside aOuter,
+                                    StyleDisplayInside aInner) {
+  return uint16_t(uint16_t(aOuter) << STYLE_DISPLAY_INSIDE_BITS) |
+         uint16_t(aInner);
+}
+
+enum class StyleDisplay : uint16_t {
+  // These MUST be in sync with the Rust enum values in
+  // servo/components/style/values/specified/box.rs
+  /// https://drafts.csswg.org/css-display/#the-display-properties
+  None = StyleDisplayFrom(StyleDisplayOutside::None, StyleDisplayInside::None),
+  Contents =
+      StyleDisplayFrom(StyleDisplayOutside::None, StyleDisplayInside::Contents),
+  Inline =
+      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Inline),
+  InlineBlock = StyleDisplayFrom(StyleDisplayOutside::Inline,
+                                 StyleDisplayInside::FlowRoot),
+  Block =
+      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Block),
+  FlowRoot = StyleDisplayFrom(StyleDisplayOutside::Block,
+                              StyleDisplayInside::FlowRoot),
+  Flex = StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Flex),
+  InlineFlex =
+      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Flex),
+  Grid = StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Grid),
+  InlineGrid =
+      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Grid),
+  Table =
+      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Table),
+  InlineTable =
+      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Table),
+  TableCaption = StyleDisplayFrom(StyleDisplayOutside::TableCaption,
+                                  StyleDisplayInside::Block),
+  Ruby =
+      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Ruby),
+  WebkitBox = StyleDisplayFrom(StyleDisplayOutside::Block,
+                               StyleDisplayInside::WebkitBox),
+  WebkitInlineBox = StyleDisplayFrom(StyleDisplayOutside::Inline,
+                                     StyleDisplayInside::WebkitBox),
+  ListItem = Block | STYLE_DISPLAY_LIST_ITEM_BIT,
+
+  /// Internal table boxes.
+  TableRowGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                                   StyleDisplayInside::TableRowGroup),
+  TableHeaderGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                                      StyleDisplayInside::TableHeaderGroup),
+  TableFooterGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                                      StyleDisplayInside::TableFooterGroup),
+  TableColumn = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                                 StyleDisplayInside::TableColumn),
+  TableColumnGroup = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                                      StyleDisplayInside::TableColumnGroup),
+  TableRow = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                              StyleDisplayInside::TableRow),
+  TableCell = StyleDisplayFrom(StyleDisplayOutside::InternalTable,
+                               StyleDisplayInside::TableCell),
+
+  /// Internal ruby boxes.
+  RubyBase = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
+                              StyleDisplayInside::RubyBase),
+  RubyBaseContainer = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
+                                       StyleDisplayInside::RubyBaseContainer),
+  RubyText = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
+                              StyleDisplayInside::RubyText),
+  RubyTextContainer = StyleDisplayFrom(StyleDisplayOutside::InternalRuby,
+                                       StyleDisplayInside::RubyTextContainer),
+
+  /// XUL boxes.
+  MozBox =
+      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozBox),
+  MozInlineBox = StyleDisplayFrom(StyleDisplayOutside::XUL,
+                                  StyleDisplayInside::MozInlineBox),
+  MozGrid =
+      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozGrid),
+  MozGridGroup = StyleDisplayFrom(StyleDisplayOutside::XUL,
+                                  StyleDisplayInside::MozGridGroup),
+  MozGridLine = StyleDisplayFrom(StyleDisplayOutside::XUL,
+                                 StyleDisplayInside::MozGridLine),
+  MozStack =
+      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozStack),
+  MozDeck =
+      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozDeck),
+  MozGroupbox = StyleDisplayFrom(StyleDisplayOutside::XUL,
+                                 StyleDisplayInside::MozGroupbox),
+  MozPopup =
+      StyleDisplayFrom(StyleDisplayOutside::XUL, StyleDisplayInside::MozPopup),
+};
+// The order of the StyleDisplay values isn't meaningful.
+bool operator<(const StyleDisplay&, const StyleDisplay&) = delete;
+bool operator<=(const StyleDisplay&, const StyleDisplay&) = delete;
+bool operator>(const StyleDisplay&, const StyleDisplay&) = delete;
+bool operator>=(const StyleDisplay&, const StyleDisplay&) = delete;
+
 // Basic shapes
 enum class StyleBasicShapeType : uint8_t {
   Polygon,
@@ -394,10 +492,6 @@ enum class StyleGridTrackBreadth : uint8_t {
   MinContent = 2,
 };
 
-// CSS Grid keywords for <auto-repeat>
-#define NS_STYLE_GRID_REPEAT_AUTO_FILL 0
-#define NS_STYLE_GRID_REPEAT_AUTO_FIT 1
-
 // defaults per MathML spec
 #define NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER 0.71f
 #define NS_MATHML_DEFAULT_SCRIPT_MIN_SIZE_PT 8
@@ -666,17 +760,14 @@ enum class StyleWhiteSpace : uint8_t {
 
 // dominant-baseline
 #define NS_STYLE_DOMINANT_BASELINE_AUTO 0
-#define NS_STYLE_DOMINANT_BASELINE_USE_SCRIPT 1
-#define NS_STYLE_DOMINANT_BASELINE_NO_CHANGE 2
-#define NS_STYLE_DOMINANT_BASELINE_RESET_SIZE 3
-#define NS_STYLE_DOMINANT_BASELINE_IDEOGRAPHIC 4
-#define NS_STYLE_DOMINANT_BASELINE_ALPHABETIC 5
-#define NS_STYLE_DOMINANT_BASELINE_HANGING 6
-#define NS_STYLE_DOMINANT_BASELINE_MATHEMATICAL 7
-#define NS_STYLE_DOMINANT_BASELINE_CENTRAL 8
-#define NS_STYLE_DOMINANT_BASELINE_MIDDLE 9
-#define NS_STYLE_DOMINANT_BASELINE_TEXT_AFTER_EDGE 10
-#define NS_STYLE_DOMINANT_BASELINE_TEXT_BEFORE_EDGE 11
+#define NS_STYLE_DOMINANT_BASELINE_IDEOGRAPHIC 1
+#define NS_STYLE_DOMINANT_BASELINE_ALPHABETIC 2
+#define NS_STYLE_DOMINANT_BASELINE_HANGING 3
+#define NS_STYLE_DOMINANT_BASELINE_MATHEMATICAL 4
+#define NS_STYLE_DOMINANT_BASELINE_CENTRAL 5
+#define NS_STYLE_DOMINANT_BASELINE_MIDDLE 6
+#define NS_STYLE_DOMINANT_BASELINE_TEXT_AFTER_EDGE 7
+#define NS_STYLE_DOMINANT_BASELINE_TEXT_BEFORE_EDGE 8
 
 // image-rendering
 #define NS_STYLE_IMAGE_RENDERING_AUTO 0
@@ -687,16 +778,6 @@ enum class StyleWhiteSpace : uint8_t {
 // mask-type
 #define NS_STYLE_MASK_TYPE_LUMINANCE 0
 #define NS_STYLE_MASK_TYPE_ALPHA 1
-
-// paint-order
-#define NS_STYLE_PAINT_ORDER_NORMAL 0
-#define NS_STYLE_PAINT_ORDER_FILL 1
-#define NS_STYLE_PAINT_ORDER_STROKE 2
-#define NS_STYLE_PAINT_ORDER_MARKERS 3
-#define NS_STYLE_PAINT_ORDER_LAST_VALUE NS_STYLE_PAINT_ORDER_MARKERS
-// NS_STYLE_PAINT_ORDER_BITWIDTH is the number of bits required to store
-// a single paint-order component value.
-#define NS_STYLE_PAINT_ORDER_BITWIDTH 2
 
 // shape-rendering
 #define NS_STYLE_SHAPE_RENDERING_AUTO 0
@@ -732,24 +813,6 @@ enum class StyleWhiteSpace : uint8_t {
 #define NS_STYLE_TEXT_EMPHASIS_POSITION_DEFAULT_ZH \
   (NS_STYLE_TEXT_EMPHASIS_POSITION_UNDER |         \
    NS_STYLE_TEXT_EMPHASIS_POSITION_RIGHT)
-
-// text-emphasis-style
-// Note that filled and none here both have zero as their value. This is
-// not an problem because:
-// * In specified style, none is represented as eCSSUnit_None.
-// * In computed style, 'filled' always has its shape computed, and thus
-//   the combined value is never zero.
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_NONE 0
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_FILL_MASK (1 << 3)
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_FILLED (0 << 3)
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_OPEN (1 << 3)
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_SHAPE_MASK 7
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_DOT 1
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_CIRCLE 2
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_DOUBLE_CIRCLE 3
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_TRIANGLE 4
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_SESAME 5
-#define NS_STYLE_TEXT_EMPHASIS_STYLE_STRING 255
 
 // text-rendering
 enum class StyleTextRendering : uint8_t {

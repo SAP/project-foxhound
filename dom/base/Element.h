@@ -20,7 +20,6 @@
 #include "nsChangeHint.h"
 #include "nsContentUtils.h"
 #include "nsDOMAttributeMap.h"
-#include "nsILinkHandler.h"
 #include "nsINodeList.h"
 #include "nsIScrollableFrame.h"
 #include "nsNodeUtils.h"
@@ -1597,8 +1596,8 @@ class Element : public FragmentOrElement {
    */
   float FontSizeInflation();
 
-  net::ReferrerPolicy GetReferrerPolicyAsEnum();
-  net::ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue);
+  ReferrerPolicy GetReferrerPolicyAsEnum();
+  ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue);
 
   /*
    * Helpers for .dataset.  This is implemented on Element, though only some

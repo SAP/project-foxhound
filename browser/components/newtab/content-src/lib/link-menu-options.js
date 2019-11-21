@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 
 const _OpenInPrivateWindow = site => ({
@@ -156,6 +160,18 @@ export const LinkMenuOptions = {
       type: at.REMOVE_DOWNLOAD_FILE,
       data: { url: site.url },
     }),
+  }),
+  PinSpocTopSite: (site, index) => ({
+    id: "newtab-menu-pin",
+    icon: "pin",
+    action: ac.AlsoToMain({
+      type: at.TOP_SITES_PIN,
+      data: {
+        site,
+        index,
+      },
+    }),
+    userEvent: "PIN",
   }),
   PinTopSite: ({ url, searchTopSite, label }, index) => ({
     id: "newtab-menu-pin",

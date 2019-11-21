@@ -72,9 +72,6 @@ class ProfileBuffer final {
   void StreamCountersToJSON(SpliceableJSONWriter& aWriter,
                             const TimeStamp& aProcessStartTime,
                             double aSinceTime) const;
-  void StreamMemoryToJSON(SpliceableJSONWriter& aWriter,
-                          const TimeStamp& aProcessStartTime,
-                          double aSinceTime) const;
 
   // Find (via |aLastSample|) the most recent sample for the thread denoted by
   // |aThreadId| and clone it, patching in the current time as appropriate.
@@ -96,6 +93,12 @@ class ProfileBuffer final {
   }
 
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
+
+  void CollectOverheadStats(TimeDuration aSamplingTime, TimeDuration aLocking,
+                            TimeDuration aCleaning, TimeDuration aCounters,
+                            TimeDuration aThreads);
+
+  ProfilerBufferInfo GetProfilerBufferInfo() const;
 
  private:
   // The storage that backs our buffer. Holds capacity entries.
@@ -128,6 +131,24 @@ class ProfileBuffer final {
 
   // Markers that marker entries in the buffer might refer to.
   ProfilerMarkerLinkedList mStoredMarkers;
+
+ private:
+  // Time from launch (ns) when first sampling was recorded.
+  double mFirstSamplingTimeNs = 0.0;
+  // Time from launch (ns) when last sampling was recorded.
+  double mLastSamplingTimeNs = 0.0;
+  // Sampling stats: Interval (ns) between successive samplings.
+  ProfilerStats mIntervalsNs;
+  // Sampling stats: Total duration (ns) of each sampling. (Split detail below.)
+  ProfilerStats mOverheadsNs;
+  // Sampling stats: Time (ns) to acquire the lock before sampling.
+  ProfilerStats mLockingsNs;
+  // Sampling stats: Time (ns) to discard expired data.
+  ProfilerStats mCleaningsNs;
+  // Sampling stats: Time (ns) to collect counter data.
+  ProfilerStats mCountersNs;
+  // Sampling stats: Time (ns) to sample thread stacks.
+  ProfilerStats mThreadsNs;
 };
 
 /**

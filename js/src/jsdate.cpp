@@ -33,7 +33,6 @@
 #include "jstypes.h"
 #include "jsutil.h"
 
-#include "builtin/String.h"
 #include "js/Conversions.h"
 #include "js/Date.h"
 #include "js/LocaleSensitive.h"
@@ -1471,16 +1470,16 @@ void DateObject::setUTCTime(ClippedTime t, MutableHandleValue vp) {
 }
 
 void DateObject::fillLocalTimeSlots() {
-  const int32_t localTZA = DateTimeInfo::localTZA();
+  const int32_t utcTZOffset = DateTimeInfo::utcToLocalStandardOffsetSeconds();
 
   /* Check if the cache is already populated. */
   if (!getReservedSlot(LOCAL_TIME_SLOT).isUndefined() &&
-      getReservedSlot(TZA_SLOT).toInt32() == localTZA) {
+      getReservedSlot(UTC_TIME_ZONE_OFFSET_SLOT).toInt32() == utcTZOffset) {
     return;
   }
 
   /* Remember time zone used to generate the local cache. */
-  setReservedSlot(TZA_SLOT, Int32Value(localTZA));
+  setReservedSlot(UTC_TIME_ZONE_OFFSET_SLOT, Int32Value(utcTZOffset));
 
   double utcTime = UTCTime().toNumber();
 
@@ -2888,7 +2887,7 @@ static bool FormatDate(JSContext* cx, double utcTime, FormatSpec format,
   return true;
 }
 
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
 static bool ToLocaleFormatHelper(JSContext* cx, HandleObject obj,
                                  const char* format, MutableHandleValue rval) {
   double utcTime = obj->as<DateObject>().UTCTime().toNumber();
@@ -2996,7 +2995,7 @@ static bool date_toLocaleTimeString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<IsDate, date_toLocaleTimeString_impl>(cx, args);
 }
-#endif /* !EXPOSE_INTL_API */
+#endif /* !ENABLE_INTL_API */
 
 /* ES5 15.9.5.4. */
 MOZ_ALWAYS_INLINE bool date_toTimeString_impl(JSContext* cx,
@@ -3135,7 +3134,7 @@ static const JSFunctionSpec date_methods[] = {
     JS_FN("setMilliseconds", date_setMilliseconds, 1, 0),
     JS_FN("setUTCMilliseconds", date_setUTCMilliseconds, 1, 0),
     JS_FN("toUTCString", date_toGMTString, 0, 0),
-#if EXPOSE_INTL_API
+#if ENABLE_INTL_API
     JS_SELF_HOSTED_FN(js_toLocaleString_str, "Date_toLocaleString", 0, 0),
     JS_SELF_HOSTED_FN("toLocaleDateString", "Date_toLocaleDateString", 0, 0),
     JS_SELF_HOSTED_FN("toLocaleTimeString", "Date_toLocaleTimeString", 0, 0),
@@ -3361,14 +3360,14 @@ static const ClassSpec DateObjectClassSpec = {
     nullptr,
     FinishDateClassInit};
 
-const Class DateObject::class_ = {js_Date_str,
-                                  JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS) |
-                                      JSCLASS_HAS_CACHED_PROTO(JSProto_Date),
-                                  JS_NULL_CLASS_OPS, &DateObjectClassSpec};
+const JSClass DateObject::class_ = {js_Date_str,
+                                    JSCLASS_HAS_RESERVED_SLOTS(RESERVED_SLOTS) |
+                                        JSCLASS_HAS_CACHED_PROTO(JSProto_Date),
+                                    JS_NULL_CLASS_OPS, &DateObjectClassSpec};
 
-const Class DateObject::protoClass_ = {js_Object_str,
-                                       JSCLASS_HAS_CACHED_PROTO(JSProto_Date),
-                                       JS_NULL_CLASS_OPS, &DateObjectClassSpec};
+const JSClass DateObject::protoClass_ = {
+    js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_Date), JS_NULL_CLASS_OPS,
+    &DateObjectClassSpec};
 
 JSObject* js::NewDateObjectMsec(JSContext* cx, ClippedTime t,
                                 HandleObject proto /* = nullptr */) {

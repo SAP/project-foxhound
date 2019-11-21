@@ -57,32 +57,77 @@ let RPMAccessManager = {
       getFormatURLPref: ["app.support.baseURL"],
       isWindowPrivate: ["yes"],
     },
+    "about:protections": {
+      getBoolPref: [
+        "browser.contentblocking.report.lockwise.enabled",
+        "browser.contentblocking.report.monitor.enabled",
+        "privacy.socialtracking.block_cookies.enabled",
+        "browser.contentblocking.report.proxy.enabled",
+      ],
+      getStringPref: [
+        "browser.contentblocking.category",
+        "browser.contentblocking.report.lockwise.url",
+        "browser.contentblocking.report.monitor.url",
+        "browser.contentblocking.report.monitor.sign_in_url",
+        "browser.contentblocking.report.manage_devices.url",
+        "browser.contentblocking.report.proxy_extension.url",
+      ],
+      getFormatURLPref: [
+        "browser.contentblocking.report.monitor.how_it_works.url",
+        "browser.contentblocking.report.lockwise.how_it_works.url",
+        "browser.contentblocking.report.social.url",
+        "browser.contentblocking.report.cookie.url",
+        "browser.contentblocking.report.tracker.url",
+        "browser.contentblocking.report.fingerprinter.url",
+        "browser.contentblocking.report.cryptominer.url",
+      ],
+      recordTelemetryEvent: ["yes"],
+    },
     "about:newinstall": {
       getUpdateChannel: ["yes"],
       getFxAccountsEndpoint: ["yes"],
     },
   },
 
-  checkAllowAccess(aPrincipal, aFeature, aValue) {
+  checkAllowAccess(aDocument, aFeature, aValue) {
+    let principal = aDocument.nodePrincipal;
     // if there is no content principal; deny access
-    if (!aPrincipal || !aPrincipal.URI) {
+    if (!principal) {
       return false;
     }
 
-    let uri = aPrincipal.URI.asciiSpec;
-    if (uri.startsWith("about:certerror")) {
-      uri = "about:certerror";
+    let uri;
+    if (principal.isNullPrincipal || !principal.URI) {
+      // null principals have a null-principal URI, but for the sake of RPM we
+      // want to access the "real" document URI directly, e.g. if the about:
+      // page is sandboxed.
+      uri = aDocument.documentURIObject;
+    } else {
+      uri = principal.URI;
+    }
+
+    // Cut query params
+    let spec = uri.prePath + uri.filePath;
+
+    if (!uri.schemeIs("about")) {
+      Cu.reportError(
+        "RPMAccessManager does not allow access to Feature: " +
+          aFeature +
+          " for: " +
+          spec
+      );
+      return false;
     }
 
     // check if there is an entry for that requestying URI in the accessMap;
     // if not, deny access.
-    let accessMapForURI = this.accessMap[uri];
+    let accessMapForURI = this.accessMap[spec];
     if (!accessMapForURI) {
       Cu.reportError(
         "RPMAccessManager does not allow access to Feature: " +
           aFeature +
           " for: " +
-          uri
+          spec
       );
       return false;
     }
@@ -95,7 +140,7 @@ let RPMAccessManager = {
         "RPMAccessManager does not allow access to Feature: " +
           aFeature +
           " for: " +
-          uri
+          spec
       );
       return false;
     }
@@ -111,7 +156,7 @@ let RPMAccessManager = {
       "RPMAccessManager does not allow access to Feature: " +
         aFeature +
         " for: " +
-        uri
+        spec
     );
     return false;
   },
@@ -367,8 +412,8 @@ class MessagePort {
   }
 
   getAppBuildID() {
-    let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "getAppBuildID", "yes")) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "getAppBuildID", "yes")) {
       throw new Error(
         "RPMAccessManager does not allow access to getAppBuildID"
       );
@@ -377,8 +422,8 @@ class MessagePort {
   }
 
   getIntPref(aPref, defaultValue) {
-    let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "getIntPref", aPref)) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "getIntPref", aPref)) {
       throw new Error("RPMAccessManager does not allow access to getIntPref");
     }
     // Only call with a default value if it's defined, to be able to throw
@@ -389,9 +434,19 @@ class MessagePort {
     return Services.prefs.getIntPref(aPref);
   }
 
+  getStringPref(aPref) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "getStringPref", aPref)) {
+      throw new Error(
+        "RPMAccessManager does not allow access to getStringPref"
+      );
+    }
+    return Services.prefs.getStringPref(aPref);
+  }
+
   getBoolPref(aPref, defaultValue) {
-    let principal = this.window.document.nodePrincipal;
-    if (!RPMAccessManager.checkAllowAccess(principal, "getBoolPref", aPref)) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "getBoolPref", aPref)) {
       throw new Error("RPMAccessManager does not allow access to getBoolPref");
     }
     // Only call with a default value if it's defined, to be able to throw
@@ -407,13 +462,9 @@ class MessagePort {
   }
 
   getFormatURLPref(aFormatURL) {
-    let principal = this.window.document.nodePrincipal;
+    let doc = this.window.document;
     if (
-      !RPMAccessManager.checkAllowAccess(
-        principal,
-        "getFormatURLPref",
-        aFormatURL
-      )
+      !RPMAccessManager.checkAllowAccess(doc, "getFormatURLPref", aFormatURL)
     ) {
       throw new Error(
         "RPMAccessManager does not allow access to getFormatURLPref"
@@ -423,10 +474,8 @@ class MessagePort {
   }
 
   isWindowPrivate() {
-    let principal = this.window.document.nodePrincipal;
-    if (
-      !RPMAccessManager.checkAllowAccess(principal, "isWindowPrivate", "yes")
-    ) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "isWindowPrivate", "yes")) {
       throw new Error(
         "RPMAccessManager does not allow access to isWindowPrivate"
       );
@@ -435,10 +484,8 @@ class MessagePort {
   }
 
   getUpdateChannel() {
-    let principal = this.window.document.nodePrincipal;
-    if (
-      !RPMAccessManager.checkAllowAccess(principal, "getUpdateChannel", "yes")
-    ) {
+    let doc = this.window.document;
+    if (!RPMAccessManager.checkAllowAccess(doc, "getUpdateChannel", "yes")) {
       throw new Error(
         "RPMAccessManager does not allow access to getUpdateChannel"
       );
@@ -447,13 +494,9 @@ class MessagePort {
   }
 
   getFxAccountsEndpoint(aEntrypoint) {
-    let principal = this.window.document.nodePrincipal;
+    let doc = this.window.document;
     if (
-      !RPMAccessManager.checkAllowAccess(
-        principal,
-        "getFxAccountsEndpoint",
-        "yes"
-      )
+      !RPMAccessManager.checkAllowAccess(doc, "getFxAccountsEndpoint", "yes")
     ) {
       throw new Error(
         "RPMAccessManager does not allow access to getFxAccountsEndpoint"
@@ -461,5 +504,23 @@ class MessagePort {
     }
 
     return this.sendRequest("FxAccountsEndpoint", aEntrypoint);
+  }
+
+  recordTelemetryEvent(category, event, object, value, extra) {
+    let doc = this.window.document;
+    if (
+      !RPMAccessManager.checkAllowAccess(doc, "recordTelemetryEvent", "yes")
+    ) {
+      throw new Error(
+        "RPMAccessManager does not allow access to recordTelemetryEvent"
+      );
+    }
+    return Services.telemetry.recordEvent(
+      category,
+      event,
+      object,
+      value,
+      extra
+    );
   }
 }

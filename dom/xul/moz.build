@@ -17,6 +17,7 @@ if CONFIG['MOZ_XUL']:
     EXPORTS += [
         'nsXULCommandDispatcher.h',
         'nsXULElement.h',
+        'nsXULPrototypeDocument.h',
         'nsXULSortService.h',
     ]
 
@@ -41,7 +42,6 @@ if CONFIG['MOZ_XUL']:
         'nsXULPrototypeDocument.cpp',
         'nsXULSortService.cpp',
         'XULBroadcastManager.cpp',
-        'XULDocument.cpp',
         'XULFrameElement.cpp',
         'XULMenuElement.cpp',
         'XULPersist.cpp',

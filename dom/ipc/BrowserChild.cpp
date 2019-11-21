@@ -34,6 +34,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/ipc/IPCStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
@@ -55,10 +56,12 @@
 #include "mozilla/Move.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ProcessHangMonitor.h"
+#include "mozilla/ResultExtensions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/Unused.h"
@@ -129,6 +132,7 @@
 #include "nsIHttpChannel.h"
 #include "mozilla/dom/DocGroup.h"
 #include "nsString.h"
+#include "nsStringStream.h"
 #include "nsISupportsPrimitives.h"
 #include "mozilla/Telemetry.h"
 #include "nsDocShellLoadState.h"
@@ -355,7 +359,6 @@ BrowserChild::BrowserChild(ContentChild* aManager, const TabId& aTabId,
       mChromeFlags(aChromeFlags),
       mMaxTouchPoints(0),
       mLayersId{0},
-      mBeforeUnloadListeners(0),
       mEffectsInfo{EffectsInfo::FullyHidden()},
       mDidFakeShow(false),
       mNotified(false),
@@ -491,8 +494,11 @@ bool BrowserChild::DoUpdateZoomConstraints(
   return true;
 }
 
-nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
+nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent,
+                            WindowGlobalChild* aInitialWindowChild) {
   MOZ_DIAGNOSTIC_ASSERT(mTabGroup);
+  MOZ_ASSERT_IF(aInitialWindowChild,
+                aInitialWindowChild->BrowsingContext() == mBrowsingContext);
 
   nsCOMPtr<nsIWidget> widget = nsIWidget::CreatePuppetWidget(this);
   mPuppetWidget = static_cast<PuppetWidget*>(widget.get());
@@ -503,11 +509,10 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
   mPuppetWidget->InfallibleCreate(nullptr,
                                   nullptr,  // no parents
                                   LayoutDeviceIntRect(0, 0, 0, 0),
-                                  nullptr  // HandleWidgetEvent
-  );
+                                  nullptr);  // HandleWidgetEvent
 
   mWebBrowser = nsWebBrowser::Create(this, mPuppetWidget, OriginAttributesRef(),
-                                     mBrowsingContext);
+                                     mBrowsingContext, aInitialWindowChild);
   nsIWebBrowser* webBrowser = mWebBrowser;
 
   mWebNav = do_QueryInterface(webBrowser);
@@ -523,23 +528,20 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
   nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
   MOZ_ASSERT(docShell);
 
-  const uint32_t notifyMask =
-      nsIWebProgress::NOTIFY_STATE_ALL | nsIWebProgress::NOTIFY_PROGRESS |
-      nsIWebProgress::NOTIFY_STATUS | nsIWebProgress::NOTIFY_LOCATION |
-      nsIWebProgress::NOTIFY_REFRESH | nsIWebProgress::NOTIFY_CONTENT_BLOCKING;
-
   mStatusFilter = new nsBrowserStatusFilter();
 
   RefPtr<nsIEventTarget> eventTarget =
       TabGroup()->EventTargetFor(TaskCategory::Network);
 
   mStatusFilter->SetTarget(eventTarget);
-  nsresult rv = mStatusFilter->AddProgressListener(this, notifyMask);
+  nsresult rv =
+      mStatusFilter->AddProgressListener(this, nsIWebProgress::NOTIFY_ALL);
   NS_ENSURE_SUCCESS(rv, rv);
 
   {
     nsCOMPtr<nsIWebProgress> webProgress = do_QueryInterface(docShell);
-    rv = webProgress->AddProgressListener(mStatusFilter, notifyMask);
+    rv = webProgress->AddProgressListener(mStatusFilter,
+                                          nsIWebProgress::NOTIFY_ALL);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -596,10 +598,11 @@ nsresult BrowserChild::Init(mozIDOMWindowProxy* aParent) {
     mPuppetWidget->CreateCompositor();
   }
 
+#if !defined(MOZ_WIDGET_ANDROID)
   mSessionStoreListener = new TabListener(docShell, nullptr);
   rv = mSessionStoreListener->Init();
   NS_ENSURE_SUCCESS(rv, rv);
-
+#endif
   return NS_OK;
 }
 
@@ -668,6 +671,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BrowserChild)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
   NS_INTERFACE_MAP_ENTRY(nsITooltipListener)
   NS_INTERFACE_MAP_ENTRY(nsIWebProgressListener)
+  NS_INTERFACE_MAP_ENTRY(nsIWebProgressListener2)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIBrowserChild)
 NS_INTERFACE_MAP_END
 
@@ -902,7 +906,7 @@ BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
                             const nsAString& aName, const nsACString& aFeatures,
                             bool aForceNoOpener, bool aForceNoReferrer,
                             nsDocShellLoadState* aLoadState, bool* aWindowIsNew,
-                            mozIDOMWindowProxy** aReturn) {
+                            BrowsingContext** aReturn) {
   *aReturn = nullptr;
 
   // If aParent is inside an <iframe mozbrowser> and this isn't a request to
@@ -925,7 +929,14 @@ BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
     if (openLocation == nsIBrowserDOMWindow::OPEN_CURRENTWINDOW) {
       nsCOMPtr<nsIWebBrowser> browser = do_GetInterface(WebNavigation());
       *aWindowIsNew = false;
-      return browser->GetContentDOMWindow(aReturn);
+
+      nsCOMPtr<mozIDOMWindowProxy> win;
+      MOZ_TRY(browser->GetContentDOMWindow(getter_AddRefs(win)));
+
+      RefPtr<BrowsingContext> bc(
+          nsPIDOMWindowOuter::From(win)->GetBrowsingContext());
+      bc.forget(aReturn);
+      return NS_OK;
     }
   }
 
@@ -940,9 +951,14 @@ BrowserChild::ProvideWindow(mozIDOMWindowProxy* aParent, uint32_t aChromeFlags,
 }
 
 void BrowserChild::DestroyWindow() {
-  if (mBrowsingContext) {
-    mBrowsingContext = nullptr;
-  }
+  mBrowsingContext = nullptr;
+
+  // TabGroups contain circular references to their event queues that they break
+  // when the last window leaves. If we never attached a window to our TabGroup,
+  // though, it will never see a window leave, and will therefore never break
+  // its circular references. If it hasn't had a window attached by now, it
+  // never will, so have it destroy itself now if it's empty.
+  mTabGroup->MaybeDestroy();
 
   if (mStatusFilter) {
     if (nsCOMPtr<nsIWebProgress> webProgress =
@@ -1261,9 +1277,9 @@ mozilla::ipc::IPCResult BrowserChild::RecvSizeModeChanged(
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvChildToParentMatrix(
-    const mozilla::gfx::Matrix4x4& aMatrix) {
+    const mozilla::Maybe<mozilla::gfx::Matrix4x4>& aMatrix) {
   mChildToParentConversionMatrix =
-      Some(LayoutDeviceToLayoutDeviceMatrix4x4::FromUnknownMatrix(aMatrix));
+      LayoutDeviceToLayoutDeviceMatrix4x4::FromUnknownMatrix(aMatrix);
   return IPC_OK();
 }
 
@@ -1846,7 +1862,8 @@ mozilla::ipc::IPCResult BrowserChild::RecvNormalPriorityRealTouchMoveEvent(
 
 mozilla::ipc::IPCResult BrowserChild::RecvRealDragEvent(
     const WidgetDragEvent& aEvent, const uint32_t& aDragAction,
-    const uint32_t& aDropEffect, nsIPrincipal* aPrincipal) {
+    const uint32_t& aDropEffect, nsIPrincipal* aPrincipal,
+    nsIContentSecurityPolicy* aCsp) {
   WidgetDragEvent localEvent(aEvent);
   localEvent.mWidget = mPuppetWidget;
 
@@ -1854,6 +1871,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvRealDragEvent(
   if (dragSession) {
     dragSession->SetDragAction(aDragAction);
     dragSession->SetTriggeringPrincipal(aPrincipal);
+    dragSession->SetCsp(aCsp);
     RefPtr<DataTransfer> initialDataTransfer = dragSession->GetDataTransfer();
     if (initialDataTransfer) {
       initialDataTransfer->SetDropEffectInt(aDropEffect);
@@ -1927,6 +1945,11 @@ mozilla::ipc::IPCResult BrowserChild::RecvNativeSynthesisResponse(
 mozilla::ipc::IPCResult BrowserChild::RecvFlushTabState(
     const uint32_t& aFlushId, const bool& aIsFinal) {
   UpdateSessionStore(aFlushId, aIsFinal);
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserChild::RecvUpdateEpoch(const uint32_t& aEpoch) {
+  mSessionStoreListener->SetEpoch(aEpoch);
   return IPC_OK();
 }
 
@@ -2172,7 +2195,7 @@ mozilla::ipc::IPCResult BrowserChild::RecvLoadRemoteScript(
 }
 
 mozilla::ipc::IPCResult BrowserChild::RecvAsyncMessage(
-    const nsString& aMessage, InfallibleTArray<CpowEntry>&& aCpows,
+    const nsString& aMessage, nsTArray<CpowEntry>&& aCpows,
     nsIPrincipal* aPrincipal, const ClonedMessageData& aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("BrowserChild::RecvAsyncMessage",
                                              OTHER, aMessage);
@@ -2484,34 +2507,6 @@ mozilla::ipc::IPCResult BrowserChild::RecvRenderLayers(
 
   UpdateVisibility(true);
 
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult BrowserChild::RecvRequestRootPaint(
-    const IntRect& aRect, const float& aScale, const nscolor& aBackgroundColor,
-    RequestRootPaintResolver&& aResolve) {
-  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
-  if (!docShell) {
-    return IPC_OK();
-  }
-
-  aResolve(
-      gfx::PaintFragment::Record(docShell, aRect, aScale, aBackgroundColor));
-  return IPC_OK();
-}
-
-mozilla::ipc::IPCResult BrowserChild::RecvRequestSubPaint(
-    const float& aScale, const nscolor& aBackgroundColor,
-    RequestSubPaintResolver&& aResolve) {
-  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
-  if (!docShell) {
-    return IPC_OK();
-  }
-
-  gfx::IntRect rect = gfx::RoundedIn(gfx::Rect(
-      0.0f, 0.0f, mUnscaledInnerSize.width, mUnscaledInnerSize.height));
-  aResolve(
-      gfx::PaintFragment::Record(docShell, rect, aScale, aBackgroundColor));
   return IPC_OK();
 }
 
@@ -2912,7 +2907,7 @@ bool BrowserChild::DoSendBlockingMessage(
   if (!BuildClonedMessageDataForChild(Manager(), aData, data)) {
     return false;
   }
-  InfallibleTArray<CpowEntry> cpows;
+  nsTArray<CpowEntry> cpows;
   if (aCpows) {
     jsipc::CPOWManager* mgr = Manager()->GetCPOWManager();
     if (!mgr || !mgr->Wrap(aCx, aCpows, &cpows)) {
@@ -2937,7 +2932,7 @@ nsresult BrowserChild::DoSendAsyncMessage(JSContext* aCx,
   if (!BuildClonedMessageDataForChild(Manager(), aData, data)) {
     return NS_ERROR_DOM_DATA_CLONE_ERR;
   }
-  InfallibleTArray<CpowEntry> cpows;
+  nsTArray<CpowEntry> cpows;
   if (aCpows) {
     jsipc::CPOWManager* mgr = Manager()->GetCPOWManager();
     if (!mgr || !mgr->Wrap(aCx, aCpows, &cpows)) {
@@ -3226,6 +3221,11 @@ mozilla::ipc::IPCResult BrowserChild::RecvSetWidgetNativeData(
 
 mozilla::ipc::IPCResult BrowserChild::RecvGetContentBlockingLog(
     GetContentBlockingLogResolver&& aResolve) {
+  dom::ContentChild* contentChild = dom::ContentChild::GetSingleton();
+  if (NS_WARN_IF(!contentChild)) {
+    return IPC_OK();
+  }
+
   bool success = false;
   nsAutoCString result;
 
@@ -3234,7 +3234,17 @@ mozilla::ipc::IPCResult BrowserChild::RecvGetContentBlockingLog(
     success = true;
   }
 
-  aResolve(Tuple<const nsCString&, const bool&>(result, success));
+  nsCOMPtr<nsIInputStream> stream;
+  nsresult rv = NS_NewCStringInputStream(getter_AddRefs(stream), result);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    success = false;
+  }
+
+  AutoIPCStream ipcStream;
+  ipcStream.Serialize(stream, contentChild);
+
+  aResolve(
+      Tuple<const IPCStream&, const bool&>(ipcStream.TakeValue(), success));
   return IPC_OK();
 }
 
@@ -3297,34 +3307,6 @@ bool BrowserChild::DeallocPPaymentRequestChild(PPaymentRequestChild* actor) {
   return true;
 }
 
-PWindowGlobalChild* BrowserChild::AllocPWindowGlobalChild(
-    const WindowGlobalInit&) {
-  MOZ_CRASH("We should never be manually allocating PWindowGlobalChild actors");
-  return nullptr;
-}
-
-bool BrowserChild::DeallocPWindowGlobalChild(PWindowGlobalChild* aActor) {
-  // This reference was added in WindowGlobalChild::Create.
-  static_cast<WindowGlobalChild*>(aActor)->Release();
-  return true;
-}
-
-PBrowserBridgeChild* BrowserChild::AllocPBrowserBridgeChild(const nsString&,
-                                                            const nsString&,
-                                                            BrowsingContext*,
-                                                            const uint32_t&,
-                                                            const TabId&) {
-  MOZ_CRASH(
-      "We should never be manually allocating PBrowserBridgeChild actors");
-  return nullptr;
-}
-
-bool BrowserChild::DeallocPBrowserBridgeChild(PBrowserBridgeChild* aActor) {
-  // This reference was added in BrowserBridgeChild::Create.
-  static_cast<BrowserBridgeChild*>(aActor)->Release();
-  return true;
-}
-
 ScreenIntSize BrowserChild::GetInnerSize() {
   LayoutDeviceIntSize innerSize =
       RoundedToInt(mUnscaledInnerSize * mPuppetWidget->GetDefaultScale());
@@ -3359,6 +3341,7 @@ void BrowserChild::PaintWhileInterruptingJS(
     return;
   }
 
+  MOZ_DIAGNOSTIC_ASSERT(nsContentUtils::IsSafeToRunScript());
   nsAutoScriptBlocker scriptBlocker;
   RecvRenderLayers(true /* aEnabled */, aForceRepaint, aEpoch);
 }
@@ -3458,26 +3441,6 @@ nsresult BrowserChild::CanCancelContentJS(
   return NS_OK;
 }
 
-void BrowserChild::BeforeUnloadAdded() {
-  // Don't bother notifying the parent if we don't have an IPC link open.
-  if (mBeforeUnloadListeners == 0 && IPCOpen()) {
-    SendSetHasBeforeUnload(true);
-  }
-
-  mBeforeUnloadListeners++;
-  MOZ_ASSERT(mBeforeUnloadListeners >= 0);
-}
-
-void BrowserChild::BeforeUnloadRemoved() {
-  mBeforeUnloadListeners--;
-  MOZ_ASSERT(mBeforeUnloadListeners >= 0);
-
-  // Don't bother notifying the parent if we don't have an IPC link open.
-  if (mBeforeUnloadListeners == 0 && IPCOpen()) {
-    SendSetHasBeforeUnload(false);
-  }
-}
-
 NS_IMETHODIMP BrowserChild::BeginSendingWebProgressEventsToParent() {
   mShouldSendWebProgressEventsToParent = true;
   return NS_OK;
@@ -3521,6 +3484,29 @@ NS_IMETHODIMP BrowserChild::OnStateChange(nsIWebProgress* aWebProgress,
 
   MOZ_TRY(PrepareProgressListenerData(aWebProgress, aRequest, webProgressData,
                                       requestData));
+
+  /*
+   * If
+   * 1) this is a document,
+   * 2) the document is top-level,
+   * 3) the document is completely loaded (STATE_STOP), and
+   * 4) this is the end of activity for the document
+   *    (STATE_IS_WINDOW, STATE_IS_NETWORK),
+   * then record the elapsed time that it took to load.
+   */
+  if (document && webProgressData->isTopLevel() &&
+      (aStateFlags & nsIWebProgressListener::STATE_STOP) &&
+      (aStateFlags & nsIWebProgressListener::STATE_IS_WINDOW) &&
+      (aStateFlags & nsIWebProgressListener::STATE_IS_NETWORK)) {
+    RefPtr<nsDOMNavigationTiming> navigationTiming =
+        document->GetNavigationTiming();
+    if (navigationTiming) {
+      TimeDuration elapsedLoadTimeMS =
+          TimeStamp::Now() - navigationTiming->GetNavigationStartTimeStamp();
+      requestData.elapsedLoadTimeMS() =
+          Some(elapsedLoadTimeMS.ToMilliseconds());
+    }
+  }
 
   if (webProgressData->isTopLevel()) {
     stateChangeData.emplace();
@@ -3623,19 +3609,13 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
     locationChangeData->charsetAutodetected() =
         docShell->GetCharsetAutodetected();
 
-    MOZ_TRY(PrincipalToPrincipalInfo(
-        document->EffectiveStoragePrincipal(),
-        &locationChangeData->contentStoragePrincipal(), false));
-
-    MOZ_TRY(PrincipalToPrincipalInfo(document->NodePrincipal(),
-                                     &locationChangeData->contentPrincipal(),
-                                     false));
-
-    if (const nsCOMPtr<nsIContentSecurityPolicy> csp = document->GetCsp()) {
-      locationChangeData->csp().emplace();
-      MOZ_TRY(CSPToCSPInfo(csp, &locationChangeData->csp().ref()));
-    }
-
+    locationChangeData->contentPrincipal() = document->NodePrincipal();
+    locationChangeData->contentStoragePrincipal() =
+        document->EffectiveStoragePrincipal();
+    locationChangeData->csp() = document->GetCsp();
+    locationChangeData->contentBlockingAllowListPrincipal() =
+        document->GetContentBlockingAllowListPrincipal();
+    locationChangeData->referrerInfo() = document->ReferrerInfo();
     locationChangeData->isSyntheticDocument() = document->IsSyntheticDocument();
 
     if (nsCOMPtr<nsILoadGroup> loadGroup = document->GetDocumentLoadGroup()) {
@@ -3696,8 +3676,59 @@ NS_IMETHODIMP BrowserChild::OnStatusChange(nsIWebProgress* aWebProgress,
 NS_IMETHODIMP BrowserChild::OnSecurityChange(nsIWebProgress* aWebProgress,
                                              nsIRequest* aRequest,
                                              uint32_t aState) {
-  return NS_ERROR_NOT_IMPLEMENTED;
+  if (!IPCOpen() || !mShouldSendWebProgressEventsToParent) {
+    return NS_OK;
+  }
+
+  Maybe<WebProgressData> webProgressData;
+  RequestData requestData;
+
+  MOZ_TRY(PrepareProgressListenerData(aWebProgress, aRequest, webProgressData,
+                                      requestData));
+
+  Maybe<WebProgressSecurityChangeData> securityChangeData;
+
+  if (aWebProgress && webProgressData->isTopLevel()) {
+    nsCOMPtr<nsIDocShell> docShell = do_GetInterface(WebNavigation());
+    if (!docShell) {
+      return NS_OK;
+    }
+
+    nsCOMPtr<nsITransportSecurityInfo> securityInfo;
+    {
+      nsCOMPtr<nsISecureBrowserUI> securityUI;
+      MOZ_TRY(docShell->GetSecurityUI(getter_AddRefs(securityUI)));
+
+      if (securityUI) {
+        MOZ_TRY(securityUI->GetSecInfo(getter_AddRefs(securityInfo)));
+      }
+    }
+
+    bool isSecureContext = false;
+    {
+      nsCOMPtr<nsPIDOMWindowOuter> outerWindow = do_GetInterface(docShell);
+      if (!outerWindow) {
+        return NS_OK;
+      }
+
+      if (nsPIDOMWindowInner* window = outerWindow->GetCurrentInnerWindow()) {
+        isSecureContext = window->IsSecureContext();
+      } else {
+        return NS_OK;
+      }
+    }
+
+    securityChangeData.emplace();
+    securityChangeData->securityInfo() = securityInfo.forget();
+    securityChangeData->isSecureContext() = isSecureContext;
+  }
+
+  Unused << SendOnSecurityChange(webProgressData, requestData, aState,
+                                 securityChangeData);
+
+  return NS_OK;
 }
+
 NS_IMETHODIMP BrowserChild::OnContentBlockingEvent(nsIWebProgress* aWebProgress,
                                                    nsIRequest* aRequest,
                                                    uint32_t aEvent) {
@@ -3820,8 +3851,15 @@ bool BrowserChild::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
     store->GetScrollPositions(positions, positionDescendants);
   }
 
-  Unused << SendSessionStoreUpdate(docShellCaps, privatedMode, positions,
-                                   positionDescendants, aFlushId, aIsFinal);
+  nsTArray<InputFormData> inputs;
+  nsTArray<CollectedInputDataValue> idVals, xPathVals;
+  if (store->IsFormDataChanged()) {
+    inputs = store->GetInputs(idVals, xPathVals);
+  }
+
+  Unused << SendSessionStoreUpdate(
+      docShellCaps, privatedMode, positions, positionDescendants, inputs,
+      idVals, xPathVals, aFlushId, aIsFinal, mSessionStoreListener->GetEpoch());
   return true;
 }
 
@@ -3877,7 +3915,7 @@ Nullable<WindowProxyHolder> BrowserChildMessageManager::GetContent(
   if (!docShell) {
     return nullptr;
   }
-  return WindowProxyHolder(nsDocShell::Cast(docShell)->GetBrowsingContext());
+  return WindowProxyHolder(docShell->GetBrowsingContext());
 }
 
 already_AddRefed<nsIDocShell> BrowserChildMessageManager::GetDocShell(

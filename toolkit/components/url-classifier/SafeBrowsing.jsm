@@ -174,10 +174,8 @@ const FEATURES = [
       "urlclassifier.features.fingerprinting.annotate.whitelistTables",
     ],
     enabled() {
-      return Services.prefs.getBoolPref(
-        "privacy.trackingprotection.fingerprinting.annotate.enabled",
-        false
-      );
+      // Annotation features are enabled by default.
+      return true;
     },
     update() {
       return Services.prefs.getBoolPref(
@@ -212,10 +210,8 @@ const FEATURES = [
       "urlclassifier.features.cryptomining.annotate.whitelistTables",
     ],
     enabled() {
-      return Services.prefs.getBoolPref(
-        "privacy.trackingprotection.annotate.cryptomining.enabled",
-        false
-      );
+      // Annotation features are enabled by default.
+      return true;
     },
     update() {
       return Services.prefs.getBoolPref(
@@ -239,6 +235,42 @@ const FEATURES = [
     update() {
       return Services.prefs.getBoolPref(
         "browser.safebrowsing.features.cryptomining.update",
+        this.enabled()
+      );
+    },
+  },
+  {
+    name: "socialtracking-annotation",
+    list: [
+      "urlclassifier.features.socialtracking.annotate.blacklistTables",
+      "urlclassifier.features.socialtracking.annotate.whitelistTables",
+    ],
+    enabled() {
+      // Annotation features are enabled by default.
+      return true;
+    },
+    update() {
+      return Services.prefs.getBoolPref(
+        "browser.safebrowsing.features.socialtracking.annotate.update",
+        this.enabled()
+      );
+    },
+  },
+  {
+    name: "socialtracking-protection",
+    list: [
+      "urlclassifier.features.socialtracking.blacklistTables",
+      "urlclassifier.features.socialtracking.whitelistTables",
+    ],
+    enabled() {
+      return Services.prefs.getBoolPref(
+        "privacy.trackingprotection.socialtracking.enabled",
+        false
+      );
+    },
+    update() {
+      return Services.prefs.getBoolPref(
+        "browser.safebrowsing.features.socialtracking.update",
         this.enabled()
       );
     },

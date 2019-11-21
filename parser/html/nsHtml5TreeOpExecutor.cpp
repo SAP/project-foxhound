@@ -14,7 +14,9 @@
 #include "mozAutoDocUpdate.h"
 #include "mozilla/IdleTaskRunner.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_content.h"
+#include "mozilla/StaticPrefs_security.h"
+#include "mozilla/StaticPrefs_view_source.h"
 #include "mozilla/css/Loader.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
@@ -314,9 +316,10 @@ void nsHtml5TreeOpExecutor::ContinueInterruptedParsingAsync() {
         &BackgroundFlushCallback,
         "nsHtml5TreeOpExecutor::BackgroundFlushCallback",
         250,  // The hard deadline: 250ms.
-        nsContentSink::sInteractiveParseTime / 1000,  // Required budget.
-        true,                                         // repeating
-        [] { return false; });                        // MayStopProcessing
+        StaticPrefs::content_sink_interactive_parse_time() /
+            1000,               // Required budget.
+        true,                   // repeating
+        [] { return false; });  // MayStopProcessing
   }
 }
 
@@ -799,7 +802,7 @@ void nsHtml5TreeOpExecutor::MaybeComplainAboutCharset(const char* aMsgId,
   // if alerted about them.
   if (!strcmp(aMsgId, "EncNoDeclaration") && mDocShell) {
     nsCOMPtr<nsIDocShellTreeItem> parent;
-    mDocShell->GetSameTypeParent(getter_AddRefs(parent));
+    mDocShell->GetInProcessSameTypeParent(getter_AddRefs(parent));
     if (parent) {
       return;
     }
@@ -877,9 +880,7 @@ nsIURI* nsHtml5TreeOpExecutor::GetViewSourceBaseURI() {
     }
 
     nsCOMPtr<nsIURI> orig = mDocument->GetOriginalURI();
-    bool isViewSource;
-    orig->SchemeIs("view-source", &isViewSource);
-    if (isViewSource) {
+    if (orig->SchemeIs("view-source")) {
       nsCOMPtr<nsINestedURI> nested = do_QueryInterface(orig);
       NS_ASSERTION(nested, "URI with scheme view-source didn't QI to nested!");
       nested->GetInnerURI(getter_AddRefs(mViewSourceBaseURI));
@@ -896,11 +897,10 @@ bool nsHtml5TreeOpExecutor::IsExternalViewSource() {
   if (!StaticPrefs::view_source_editor_external()) {
     return false;
   }
-  bool isViewSource = false;
   if (mDocumentURI) {
-    mDocumentURI->SchemeIs("view-source", &isViewSource);
+    return mDocumentURI->SchemeIs("view-source");
   }
-  return isViewSource;
+  return false;
 }
 
 // Speculative loading
@@ -948,27 +948,26 @@ bool nsHtml5TreeOpExecutor::ShouldPreloadURI(nsIURI* aURI) {
   return mPreloadedURLs.EnsureInserted(spec);
 }
 
-net::ReferrerPolicy nsHtml5TreeOpExecutor::GetPreloadReferrerPolicy(
+dom::ReferrerPolicy nsHtml5TreeOpExecutor::GetPreloadReferrerPolicy(
     const nsAString& aReferrerPolicy) {
-  net::ReferrerPolicy referrerPolicy =
-      net::AttributeReferrerPolicyFromString(aReferrerPolicy);
+  dom::ReferrerPolicy referrerPolicy =
+      dom::ReferrerInfo::ReferrerPolicyAttributeFromString(aReferrerPolicy);
   return GetPreloadReferrerPolicy(referrerPolicy);
 }
 
-net::ReferrerPolicy nsHtml5TreeOpExecutor::GetPreloadReferrerPolicy(
+dom::ReferrerPolicy nsHtml5TreeOpExecutor::GetPreloadReferrerPolicy(
     ReferrerPolicy aReferrerPolicy) {
-  if (aReferrerPolicy != net::RP_Unset) {
+  if (aReferrerPolicy != dom::ReferrerPolicy::_empty) {
     return aReferrerPolicy;
   }
 
-  return static_cast<net::ReferrerPolicy>(
-      mDocument->GetPreloadReferrerInfo()->GetReferrerPolicy());
+  return mDocument->GetPreloadReferrerInfo()->ReferrerPolicy();
 }
 
 void nsHtml5TreeOpExecutor::PreloadScript(
     const nsAString& aURL, const nsAString& aCharset, const nsAString& aType,
     const nsAString& aCrossOrigin, const nsAString& aIntegrity,
-    net::ReferrerPolicy aReferrerPolicy, bool aScriptFromHead, bool aAsync,
+    dom::ReferrerPolicy aReferrerPolicy, bool aScriptFromHead, bool aAsync,
     bool aDefer, bool aNoModule) {
   nsCOMPtr<nsIURI> uri = ConvertIfNotPreloadedYet(aURL);
   if (!uri) {

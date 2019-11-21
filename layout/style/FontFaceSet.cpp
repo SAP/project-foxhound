@@ -18,7 +18,6 @@
 #include "mozilla/dom/FontFaceSetLoadEventBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Preferences.h"
@@ -29,7 +28,7 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoUtils.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/LoadInfo.h"
 #include "nsAutoPtr.h"
@@ -206,7 +205,7 @@ void FontFaceSet::ParseFontShorthandForMatching(
     const nsAString& aFont, RefPtr<SharedFontList>& aFamilyList,
     FontWeight& aWeight, FontStretch& aStretch, FontSlantStyle& aStyle,
     ErrorResult& aRv) {
-  StyleComputedFontStyleDescriptor style;
+  auto style = StyleComputedFontStyleDescriptor::Normal();
   float stretch;
   float weight;
 
@@ -587,9 +586,7 @@ nsresult FontFaceSet::StartLoad(gfxUserFontEntry* aUserFontEntry,
   gfxFontSrcPrincipal* principal = aUserFontEntry->GetPrincipal();
 
   uint32_t securityFlags = 0;
-  bool isFile = false;
-  if (NS_SUCCEEDED(aFontFaceSrc->mURI->get()->SchemeIs("file", &isFile)) &&
-      isFile) {
+  if (aFontFaceSrc->mURI->get()->SchemeIs("file")) {
     securityFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_INHERITS;
   } else {
     securityFlags = nsILoadInfo::SEC_REQUIRE_CORS_DATA_INHERITS;
@@ -613,20 +610,20 @@ nsresult FontFaceSet::StartLoad(gfxUserFontEntry* aUserFontEntry,
   mLoaders.PutEntry(fontLoader);
 
   if (LOG_ENABLED()) {
+    nsCOMPtr<nsIURI> referrer =
+        aFontFaceSrc->mReferrerInfo
+            ? aFontFaceSrc->mReferrerInfo->GetOriginalReferrer()
+            : nullptr;
     LOG(
         ("userfonts (%p) download start - font uri: (%s) "
          "referrer uri: (%s)\n",
          fontLoader.get(), aFontFaceSrc->mURI->GetSpecOrDefault().get(),
-         aFontFaceSrc->mReferrer
-             ? aFontFaceSrc->mReferrer->GetSpecOrDefault().get()
-             : ""));
+         referrer ? referrer->GetSpecOrDefault().get() : ""));
   }
 
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(channel));
   if (httpChannel) {
-    nsCOMPtr<nsIReferrerInfo> referrerInfo = new mozilla::dom::ReferrerInfo(
-        aFontFaceSrc->mReferrer, aFontFaceSrc->mReferrerPolicy);
-    rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
+    rv = httpChannel->SetReferrerInfo(aFontFaceSrc->mReferrerInfo);
     Unused << NS_WARN_IF(NS_FAILED(rv));
 
     rv = httpChannel->SetRequestHeader(
@@ -1067,7 +1064,6 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
 
     face->mSourceType = gfxFontFaceSrc::eSourceType_Buffer;
     face->mBuffer = aFontFace->CreateBufferSource();
-    face->mReferrerPolicy = mozilla::net::RP_Unset;
   } else {
     AutoTArray<StyleFontFaceSourceListComponent, 8> sourceListComponents;
     aFontFace->GetSources(sourceListComponents);
@@ -1082,7 +1078,6 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
           face->mSourceType = gfxFontFaceSrc::eSourceType_Local;
           face->mURI = nullptr;
           face->mFormatFlags = 0;
-          face->mReferrerPolicy = mozilla::net::RP_Unset;
           break;
         }
         case StyleFontFaceSourceListComponent::Tag::Url: {
@@ -1091,8 +1086,7 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
           nsIURI* uri = url->GetURI();
           face->mURI = uri ? new gfxFontSrcURI(uri) : nullptr;
           const URLExtraData& extraData = url->ExtraData();
-          face->mReferrer = extraData.GetReferrer();
-          face->mReferrerPolicy = extraData.GetReferrerPolicy();
+          face->mReferrerInfo = extraData.ReferrerInfo();
           face->mOriginPrincipal =
               new gfxFontSrcPrincipal(extraData.Principal());
 

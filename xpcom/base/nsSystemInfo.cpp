@@ -102,23 +102,18 @@ static void SimpleParseKeyValuePairs(
 
 #if defined(XP_WIN)
 namespace {
-static nsresult GetFolderDiskInfo(const char* aSpecialDirName,
-                                  FolderDiskInfo& info) {
+static nsresult GetFolderDiskInfo(nsIFile* file, FolderDiskInfo& info) {
   info.model.Truncate();
   info.revision.Truncate();
   info.isSSD = false;
 
-  nsCOMPtr<nsIFile> profDir;
-  nsresult rv =
-      NS_GetSpecialDirectory(aSpecialDirName, getter_AddRefs(profDir));
-  NS_ENSURE_SUCCESS(rv, rv);
-  nsAutoString profDirPath;
-  rv = profDir->GetPath(profDirPath);
+  nsAutoString filePath;
+  nsresult rv = file->GetPath(filePath);
   NS_ENSURE_SUCCESS(rv, rv);
   wchar_t volumeMountPoint[MAX_PATH] = {L'\\', L'\\', L'.', L'\\'};
   const size_t PREFIX_LEN = 4;
   if (!::GetVolumePathNameW(
-          profDirPath.get(), volumeMountPoint + PREFIX_LEN,
+          filePath.get(), volumeMountPoint + PREFIX_LEN,
           mozilla::ArrayLength(volumeMountPoint) - PREFIX_LEN)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -205,16 +200,17 @@ static nsresult GetFolderDiskInfo(const char* aSpecialDirName,
   return NS_OK;
 }
 
-static nsresult CollectDiskInfo(DiskInfo& info) {
-  nsresult rv = GetFolderDiskInfo(NS_GRE_DIR, info.binary);
+static nsresult CollectDiskInfo(nsIFile* greDir, nsIFile* winDir,
+                                nsIFile* profDir, DiskInfo& info) {
+  nsresult rv = GetFolderDiskInfo(greDir, info.binary);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  rv = GetFolderDiskInfo(NS_WIN_WINDOWS_DIR, info.system);
+  rv = GetFolderDiskInfo(winDir, info.system);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  return GetFolderDiskInfo(NS_APP_USER_PROFILE_50_DIR, info.profile);
+  return GetFolderDiskInfo(profDir, info.profile);
 }
 
 nsresult GetInstallYear(uint32_t& aYear) {
@@ -253,7 +249,7 @@ nsresult GetInstallYear(uint32_t& aYear) {
   return NS_OK;
 }
 
-nsresult GetCountryCode(nsAString& aCountryCode) {
+nsresult CollectCountryCode(nsAString& aCountryCode) {
   GEOID geoid = GetUserGeoID(GEOCLASS_NATION);
   if (geoid == GEOID_NOT_AVAILABLE) {
     return NS_ERROR_NOT_AVAILABLE;
@@ -777,6 +773,17 @@ nsresult nsSystemInfo::Init() {
   }
 
 #ifdef XP_WIN
+  bool isMinGW =
+#  ifdef __MINGW32__
+      true;
+#  else
+      false;
+#  endif
+  rv = SetPropertyAsBool(NS_LITERAL_STRING("isMinGW"), !!isMinGW);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
   // IsWow64Process2 is only available on Windows 10+, so we have to dynamically
   // check for its existence.
   typedef BOOL(WINAPI * LPFN_IWP2)(HANDLE, USHORT*, USHORT*);
@@ -814,12 +821,6 @@ nsresult nsSystemInfo::Init() {
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
-  }
-
-  nsAutoString countryCode;
-  if (NS_SUCCEEDED(GetCountryCode(countryCode))) {
-    rv = SetPropertyAsAString(NS_LITERAL_STRING("countryCode"), countryCode);
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   uint32_t installYear = 0;
@@ -862,12 +863,6 @@ nsresult nsSystemInfo::Init() {
 #endif
 
 #if defined(XP_MACOSX)
-  nsAutoString countryCode;
-  if (NS_SUCCEEDED(GetSelectedCityInfo(countryCode))) {
-    rv = SetPropertyAsAString(NS_LITERAL_STRING("countryCode"), countryCode);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
   nsAutoCString modelId;
   if (NS_SUCCEEDED(GetAppleModelId(modelId))) {
     rv = SetPropertyAsACString(NS_LITERAL_STRING("appleModelId"), modelId);
@@ -1103,6 +1098,14 @@ static bool GetJSObjForDiskInfo(JSContext* aCx, JS::Handle<JSObject*> aParent,
 }
 #endif
 
+RefPtr<mozilla::LazyIdleThread> nsSystemInfo::GetHelperThread() {
+  if (!mLazyHelperThread) {
+    mLazyHelperThread =
+        new LazyIdleThread(3000, NS_LITERAL_CSTRING("SystemInfoIdleThread"));
+  }
+  return mLazyHelperThread;
+}
+
 NS_IMETHODIMP
 nsSystemInfo::GetDiskInfo(JSContext* aCx, Promise** aResult) {
   NS_ENSURE_ARG_POINTER(aResult);
@@ -1122,16 +1125,33 @@ nsSystemInfo::GetDiskInfo(JSContext* aCx, Promise** aResult) {
   }
 
   if (!mDiskInfoPromise) {
-    RefPtr<LazyIdleThread> lazyIOThread =
-        new LazyIdleThread(3000, NS_LITERAL_CSTRING("SystemInfoIdleThread"));
-    mDiskInfoPromise = InvokeAsync(lazyIOThread, __func__, []() {
-      DiskInfo info;
-      nsresult rv = CollectDiskInfo(info);
-      if (NS_SUCCEEDED(rv)) {
-        return DiskInfoPromise::CreateAndResolve(info, __func__);
-      }
-      return DiskInfoPromise::CreateAndReject(rv, __func__);
-    });
+    RefPtr<mozilla::LazyIdleThread> lazyIOThread = GetHelperThread();
+    nsCOMPtr<nsIFile> greDir;
+    nsCOMPtr<nsIFile> winDir;
+    nsCOMPtr<nsIFile> profDir;
+    nsresult rv = NS_GetSpecialDirectory(NS_GRE_DIR, getter_AddRefs(greDir));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+    rv = NS_GetSpecialDirectory(NS_WIN_WINDOWS_DIR, getter_AddRefs(winDir));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+    rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
+                                getter_AddRefs(profDir));
+    if (NS_FAILED(rv)) {
+      return rv;
+    }
+
+    mDiskInfoPromise =
+        InvokeAsync(lazyIOThread, __func__, [greDir, winDir, profDir]() {
+          DiskInfo info;
+          nsresult rv = CollectDiskInfo(greDir, winDir, profDir, info);
+          if (NS_SUCCEEDED(rv)) {
+            return DiskInfoPromise::CreateAndResolve(info, __func__);
+          }
+          return DiskInfoPromise::CreateAndReject(rv, __func__);
+        });
   }
 
   // Chain the new promise to the extant mozpromise.
@@ -1172,3 +1192,69 @@ nsSystemInfo::GetDiskInfo(JSContext* aCx, Promise** aResult) {
 }
 
 NS_IMPL_ISUPPORTS_INHERITED(nsSystemInfo, nsHashPropertyBag, nsISystemInfo)
+
+NS_IMETHODIMP
+nsSystemInfo::GetCountryCode(JSContext* aCx, Promise** aResult) {
+  NS_ENSURE_ARG_POINTER(aResult);
+  *aResult = nullptr;
+
+  if (!XRE_IsParentProcess()) {
+    return NS_ERROR_FAILURE;
+  }
+#if defined(XP_MACOSX) || defined(XP_WIN)
+  nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
+  if (NS_WARN_IF(!global)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  ErrorResult erv;
+  RefPtr<Promise> promise = Promise::Create(global, erv);
+  if (NS_WARN_IF(erv.Failed())) {
+    return erv.StealNSResult();
+  }
+
+  if (!mCountryCodePromise) {
+    RefPtr<mozilla::LazyIdleThread> lazyIOThread = GetHelperThread();
+
+    mCountryCodePromise = InvokeAsync(lazyIOThread, __func__, []() {
+      nsAutoString countryCode;
+#  ifdef XP_MACOSX
+      nsresult rv = GetSelectedCityInfo(countryCode);
+#  endif
+#  ifdef XP_WIN
+      nsresult rv = CollectCountryCode(countryCode);
+#  endif
+
+      if (NS_SUCCEEDED(rv)) {
+        return CountryCodePromise::CreateAndResolve(countryCode, __func__);
+      }
+      return CountryCodePromise::CreateAndReject(rv, __func__);
+    });
+  }
+
+  RefPtr<Promise> capturedPromise = promise;
+  mCountryCodePromise->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [capturedPromise](const nsString& countryCode) {
+        RefPtr<nsIGlobalObject> global = capturedPromise->GetGlobalObject();
+        AutoJSAPI jsapi;
+        if (!global || !jsapi.Init(global)) {
+          capturedPromise->MaybeReject(NS_ERROR_UNEXPECTED);
+          return;
+        }
+        JSContext* cx = jsapi.cx();
+        JS::Rooted<JSString*> jsCountryCode(
+            cx, JS_NewUCStringCopyZ(cx, countryCode.get()));
+
+        JS::Rooted<JS::Value> val(cx, JS::StringValue(jsCountryCode));
+        capturedPromise->MaybeResolve(val);
+      },
+      [capturedPromise](const nsresult rv) {
+        // Resolve with null when countryCode is not available from the system
+        capturedPromise->MaybeResolve(JS::NullHandleValue);
+      });
+
+  promise.forget(aResult);
+#endif
+  return NS_OK;
+}

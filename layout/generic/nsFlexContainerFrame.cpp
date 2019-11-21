@@ -1802,7 +1802,7 @@ nsFlexContainerFrame::MeasureAscentAndBSizeForFlexItem(
   ReflowOutput childDesiredSize(aChildReflowInput);
   nsReflowStatus childReflowStatus;
 
-  const uint32_t flags = NS_FRAME_NO_MOVE_FRAME;
+  const ReflowChildFlags flags = ReflowChildFlags::NoMoveFrame;
   ReflowChild(aItem.Frame(), aPresContext, childDesiredSize, aChildReflowInput,
               0, 0, flags, childReflowStatus);
   aItem.SetHadMeasuringReflow();
@@ -2414,11 +2414,13 @@ static uint32_t GetDisplayFlagsForFlexItem(nsIFrame* aFrame) {
 
 void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                             const nsDisplayListSet& aLists) {
-  DisplayBorderBackgroundOutline(aBuilder, aLists);
+  nsDisplayListCollection tempLists(aBuilder);
+
+  DisplayBorderBackgroundOutline(aBuilder, tempLists);
 
   // Our children are all block-level, so their borders/backgrounds all go on
   // the BlockBorderBackgrounds list.
-  nsDisplayListSet childLists(aLists, aLists.BlockBorderBackgrounds());
+  nsDisplayListSet childLists(tempLists, tempLists.BlockBorderBackgrounds());
 
   typedef CSSOrderAwareFrameIterator::OrderState OrderState;
   OrderState orderState =
@@ -2434,6 +2436,34 @@ void nsFlexContainerFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     BuildDisplayListForChild(aBuilder, childFrame, childLists,
                              GetDisplayFlagsForFlexItem(childFrame));
   }
+
+  wr::RenderRoot renderRoot =
+      gfxUtils::GetRenderRootForFrame(this).valueOr(wr::RenderRoot::Default);
+  if (renderRoot == wr::RenderRoot::Default) {
+    tempLists.MoveTo(aLists);
+    return;
+  }
+
+  // This element switches to a new renderroot, so we need to wrap all the
+  // descendant display items into an nsDisplayRenderRoot.
+  // This is a bit of a hack. Collect up all descendant display items
+  // and merge them into a single Content() list. This can cause us
+  // to violate CSS stacking order, but renderRoots are kind of magic
+  // anyway.
+
+  MOZ_ASSERT(!XRE_IsContentProcess());
+  nsDisplayListBuilder::AutoContainerASRTracker contASRTracker(aBuilder);
+  nsDisplayList masterList;
+  masterList.AppendToTop(tempLists.BorderBackground());
+  masterList.AppendToTop(tempLists.BlockBorderBackgrounds());
+  masterList.AppendToTop(tempLists.Floats());
+  masterList.AppendToTop(tempLists.Content());
+  masterList.AppendToTop(tempLists.PositionedDescendants());
+  masterList.AppendToTop(tempLists.Outlines());
+  const ActiveScrolledRoot* ownLayerASR = contASRTracker.GetContainerASR();
+
+  aLists.Content()->AppendNewToTop<nsDisplayRenderRoot>(
+      aBuilder, this, &masterList, ownLayerASR, renderRoot);
 }
 
 void FlexLine::FreezeItemsEarly(bool aIsUsingFlexGrow,
@@ -4473,9 +4503,10 @@ nsFlexContainerFrame* nsFlexContainerFrame::GetFlexFrameWithComputedInfo(
 
       flexFrame = GetFlexContainerFrame(weakFrameRef.GetFrame());
 
-      MOZ_ASSERT(!flexFrame || flexFrame->HasProperty(FlexContainerInfo()),
-                 "The state bit should've made our forced-reflow "
-                 "generate a FlexContainerInfo object");
+      NS_WARNING_ASSERTION(
+          !flexFrame || flexFrame->HasProperty(FlexContainerInfo()),
+          "The state bit should've made our forced-reflow "
+          "generate a FlexContainerInfo object");
     }
   }
   return flexFrame;
@@ -5169,7 +5200,8 @@ void nsFlexContainerFrame::ReflowFlexItem(
   ReflowOutput childDesiredSize(childReflowInput);
   nsReflowStatus childReflowStatus;
   ReflowChild(aItem.Frame(), aPresContext, childDesiredSize, childReflowInput,
-              outerWM, aFramePos, aContainerSize, 0, childReflowStatus);
+              outerWM, aFramePos, aContainerSize, ReflowChildFlags::Default,
+              childReflowStatus);
 
   // XXXdholbert Once we do pagination / splitting, we'll need to actually
   // handle incomplete childReflowStatuses. But for now, we give our kids
@@ -5179,13 +5211,29 @@ void nsFlexContainerFrame::ReflowFlexItem(
              "We gave flex item unconstrained available height, so it "
              "should be complete");
 
+  // ApplyRelativePositioning in right-to-left writing modes needs to know the
+  // updated frame width to set the normal position correctly.
+  //
+  // It may look like we could handle this instead by passing the
+  // ApplyRelativePositioning flag to FinishReflowChild.  However, we're
+  // unlike other callers of FinishReflowChild in that we're keeping its aPos
+  // (our aFramePos) in the parent's writing mode rather than the child's, and
+  // thus passing its aWM (our outerWM) as the parent's writing mode as well.
+  //
+  // Thus this could be converted, but requires a little bit of care to do so
+  // (and would probably require a point conversion like the one in
+  // nsBlockReflowContext::PlaceBlock).  Alternatively, maybe things should be
+  // restructured a bit so that sort of conversion isn't needed.
+  aItem.Frame()->SetSize(outerWM,
+                         childDesiredSize.Size(wm).ConvertTo(outerWM, wm));
   LogicalMargin offsets =
       childReflowInput.ComputedLogicalOffsets().ConvertTo(outerWM, wm);
   ReflowInput::ApplyRelativePositioning(aItem.Frame(), outerWM, offsets,
                                         &aFramePos, aContainerSize);
 
   FinishReflowChild(aItem.Frame(), aPresContext, childDesiredSize,
-                    &childReflowInput, outerWM, aFramePos, aContainerSize, 0);
+                    &childReflowInput, outerWM, aFramePos, aContainerSize,
+                    ReflowChildFlags::Default);
 
   aItem.SetAscent(childDesiredSize.BlockStartAscent());
 }
@@ -5210,12 +5258,12 @@ void nsFlexContainerFrame::ReflowPlaceholders(
     ReflowOutput childDesiredSize(childReflowInput);
     nsReflowStatus childReflowStatus;
     ReflowChild(placeholder, aPresContext, childDesiredSize, childReflowInput,
-                outerWM, aContentBoxOrigin, aContainerSize, 0,
-                childReflowStatus);
+                outerWM, aContentBoxOrigin, aContainerSize,
+                ReflowChildFlags::Default, childReflowStatus);
 
     FinishReflowChild(placeholder, aPresContext, childDesiredSize,
                       &childReflowInput, outerWM, aContentBoxOrigin,
-                      aContainerSize, 0);
+                      aContainerSize, ReflowChildFlags::Default);
 
     // Mark the placeholder frame to indicate that it's not actually at the
     // element's static position, because we need to apply CSS Alignment after

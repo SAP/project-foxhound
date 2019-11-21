@@ -101,7 +101,7 @@ class JitCode : public gc::TenuredCell {
   size_t headerSize() const { return headerSize_; }
 
   void traceChildren(JSTracer* trc);
-  void finalize(FreeOp* fop);
+  void finalize(JSFreeOp* fop);
   void setInvalidated() { invalidated_ = true; }
 
   void setHasBytecodeMap() { hasBytecodeMap_ = true; }
@@ -132,7 +132,7 @@ class JitCode : public gc::TenuredCell {
   // object can be allocated, nullptr is returned. On failure, |pool| is
   // automatically released, so the code may be freed.
   template <AllowGC allowGC>
-  static JitCode* New(JSContext* cx, uint8_t* code, uint32_t bufferSize,
+  static JitCode* New(JSContext* cx, uint8_t* code, uint32_t totalSize,
                       uint32_t headerSize, ExecutablePool* pool, CodeKind kind);
 
  public:
@@ -277,9 +277,6 @@ struct IonScript {
   uint32_t* icIndex() { return (uint32_t*)&bottomBuffer()[icIndex_]; }
   uint8_t* runtimeData() { return &bottomBuffer()[runtimeData_]; }
 
- private:
-  void trace(JSTracer* trc);
-
  public:
   // Do not call directly, use IonScript::New. This is public for cx->new_.
   explicit IonScript(IonCompilationId compilationId);
@@ -293,8 +290,10 @@ struct IonScript {
                         size_t icEntries, size_t runtimeSize,
                         size_t safepointsSize,
                         OptimizationLevel optimizationLevel);
-  static void Trace(JSTracer* trc, IonScript* script);
-  static void Destroy(FreeOp* fop, IonScript* script);
+
+  static void Destroy(JSFreeOp* fop, IonScript* script);
+
+  void trace(JSTracer* trc);
 
   static inline size_t offsetOfMethod() { return offsetof(IonScript, method_); }
   static inline size_t offsetOfOsrEntryOffset() {
@@ -437,7 +436,7 @@ struct IonScript {
 
   size_t invalidationCount() const { return invalidationCount_; }
   void incrementInvalidationCount() { invalidationCount_++; }
-  void decrementInvalidationCount(FreeOp* fop) {
+  void decrementInvalidationCount(JSFreeOp* fop) {
     MOZ_ASSERT(invalidationCount_);
     invalidationCount_--;
     if (!invalidationCount_) {

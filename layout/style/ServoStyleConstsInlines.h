@@ -114,7 +114,14 @@ inline bool StyleArcInner<T>::DecrementRef() {
   if (count.fetch_sub(1, std::memory_order_release) != 1) {
     return false;
   }
+#ifdef MOZ_TSAN
+  // TSan doesn't understand std::atomic_thread_fence, so in order
+  // to avoid a false positive for every time a refcounted object
+  // is deleted, we replace the fence with an atomic operation.
   count.load(std::memory_order_acquire);
+#else
+  std::atomic_thread_fence(std::memory_order_acquire);
+#endif
   MOZ_LOG_DTOR(this, "ServoArc", 8);
   return true;
 }
@@ -435,6 +442,10 @@ nscoord StyleCSSPixelLength::ToAppUnits() const {
   // would regress bug 1323735, for example.
   //
   // FIXME(emilio, bug 1528114): Probably we should do something smarter.
+  if (IsZero()) {
+    // Avoid the expensive FP math below.
+    return 0;
+  }
   float length = _0 * float(mozilla::AppUnitsPerCSSPixel());
   if (length >= nscoord_MAX) {
     return nscoord_MAX;
@@ -582,6 +593,11 @@ inline const Length& LengthOrAuto::AsLength() const {
 }
 
 template <>
+inline nscoord LengthOrAuto::ToLength() const {
+  return AsLength().ToAppUnits();
+}
+
+template <>
 inline bool StyleFlexBasis::IsAuto() const {
   return IsSize() && AsSize().IsAuto();
 }
@@ -632,6 +648,64 @@ inline const LengthPercentage& BorderRadius::Get(HalfCorner aCorner) const {
 template <>
 inline bool StyleTrackBreadth::HasPercent() const {
   return IsBreadth() && AsBreadth().HasPercent();
+}
+
+// Implemented in nsStyleStructs.cpp
+template <>
+bool StyleTransform::HasPercent() const;
+
+template <>
+inline bool StyleTransformOrigin::HasPercent() const {
+  // NOTE(emilio): `depth` is just a `<length>` so doesn't have a percentage at
+  // all.
+  return horizontal.HasPercent() || vertical.HasPercent();
+}
+
+template <>
+inline Maybe<size_t> StyleGridTemplateComponent::RepeatAutoIndex() const {
+  if (!IsTrackList()) {
+    return Nothing();
+  }
+  auto& list = *AsTrackList();
+  return list.auto_repeat_index < list.values.Length()
+             ? Some(list.auto_repeat_index)
+             : Nothing();
+}
+
+template <>
+inline bool StyleGridTemplateComponent::HasRepeatAuto() const {
+  return RepeatAutoIndex().isSome();
+}
+
+template <>
+inline Span<const StyleGenericTrackListValue<LengthPercentage, StyleInteger>>
+StyleGridTemplateComponent::TrackListValues() const {
+  if (IsTrackList()) {
+    return AsTrackList()->values.AsSpan();
+  }
+  return {};
+}
+
+template <>
+inline const StyleGenericTrackRepeat<LengthPercentage, StyleInteger>*
+StyleGridTemplateComponent::GetRepeatAutoValue() const {
+  auto index = RepeatAutoIndex();
+  if (!index) {
+    return nullptr;
+  }
+  return &TrackListValues()[*index].AsTrackRepeat();
+}
+
+constexpr const auto kPaintOrderShift = StylePAINT_ORDER_SHIFT;
+constexpr const auto kPaintOrderMask = StylePAINT_ORDER_MASK;
+
+template <>
+inline nsRect StyleGenericClipRect<LengthOrAuto>::ToLayoutRect(nscoord aAutoSize) const {
+  nscoord x = left.IsLength() ? left.ToLength() : 0;
+  nscoord y = top.IsLength() ? top.ToLength() : 0;
+  nscoord width = right.IsLength() ? right.ToLength() - x : aAutoSize;
+  nscoord height = bottom.IsLength() ? bottom.ToLength() - y : aAutoSize;
+  return nsRect(x, y, width, height);
 }
 
 }  // namespace mozilla

@@ -18,277 +18,30 @@
 
 #include "gc/Barrier.h"
 #include "gc/NurseryAwareHashMap.h"
+#include "gc/ZoneAllocator.h"
 #include "js/UniquePtr.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 
 namespace js {
 
-// A key in a WrapperMap, a compartment's map from entities in other
-// compartments to the local values the compartment's own code must use to refer
-// to them.
-//
-// WrapperMaps have a complex key type because, in addition to mapping JSObjects
-// to their cross-compartment wrappers, they must also map non-atomized
-// JSStrings to their copies in the local compartment, and debuggee entities
-// (objects, scripts, etc.) to their representative objects in the Debugger API.
-class CrossCompartmentKey {
- public:
-  // [SMDOC] Cross-compartment wrapper map entries for Debugger API objects
-  //
-  // The Debugger API creates objects like Debugger.Object, Debugger.Script,
-  // Debugger.Environment, etc. to refer to things in the debuggee. Each
-  // Debugger gets at most one Debugger.Mumble for each referent:
-  // Debugger.Mumbles are unique per referent per Debugger.
-  //
-  // Since a Debugger and its debuggee must be in different compartments, a
-  // Debugger.Mumble's pointer to its referent is a cross-compartment edge, from
-  // the debugger's compartment into the debuggee compartment. Like any other
-  // sort of cross-compartment edge, the GC needs to be able to find all of
-  // these edges readily.
-  //
-  // Our solution is to treat Debugger.Mumble objects as wrappers stored in
-  // JSCompartment::crossCompartmentWrappers, where the GC already looks when it
-  // needs to find any other sort of cross-compartment edges. This also meshes
-  // nicely with existing sanity checks that trace the heap looking for
-  // cross-compartment edges and check that each one has an entry in the right
-  // wrapper map.
-  //
-  // That approach means that a given referent may have multiple entries in the
-  // wrapper map: its ordinary cross-compartment wrapper, and then any
-  // Debugger.Mumbles referring to it. If there are multiple Debuggers in a
-  // compartment, each needs its own Debugger.Mumble for the referent, and each
-  // of those needs its own entry in the WrapperMap. And some referents may have
-  // more than one type of Debugger.Mumble that can refer to them: for example,
-  // a WasmInstanceObject can be the referent of both a Debugger.Script and a
-  // Debugger.Source.
-  //
-  // Hence, to look up a Debugger.Mumble in the WrapperMap, we need a key that
-  // includes 1) the referent, 2) the Debugger to which the Mumble belongs, and
-  // 3) the specific type of Mumble we're looking for. Since mozilla::Variant
-  // distinguishes alternatives by type only, we include a distinct type in
-  // WrappedType for each sort of Debugger.Mumble.
-  //
-  // But Debugger wrapper table entries are more than just wrapper entries with
-  // fancy keys. Whereas an ordinary cross-compartment wrapper ensures that the
-  // wrapper's zone is swept no later than the referent's (but possibly
-  // earlier), a debugger cross-compartment entry forces the debuggee's and
-  // debugger's zones to be swept together: they are placed in the same sweep
-  // group. This is necessary to make some of Debugger's nice GC properties work
-  // out.
-
-  // Common structure for all Debugger.Mumble keys.
-  template <typename Referent>
-  struct Debuggee {
-    Debuggee(NativeObject* debugger, Referent* referent)
-        : debugger(debugger), referent(referent) {}
-
-    bool operator==(const Debuggee& other) const {
-      return debugger == other.debugger && referent == other.referent;
-    }
-
-    bool operator!=(const Debuggee& other) const { return !(*this == other); }
-
-    NativeObject* debugger;
-    Referent* referent;
-  };
-
-  // Key under which we find debugger's Debugger.Object referring to referent.
-  struct DebuggeeObject : Debuggee<JSObject> {
-    DebuggeeObject(NativeObject* debugger, JSObject* referent)
-        : Debuggee(debugger, referent) {}
-  };
-
-  // Keys under which we find Debugger.Scripts.
-  using DebuggeeJSScript = Debuggee<JSScript>;
-  using DebuggeeWasmScript = Debuggee<NativeObject>;  // WasmInstanceObject
-  using DebuggeeLazyScript = Debuggee<LazyScript>;
-
-  // Key under which we find debugger's Debugger.Environment referring to
-  // referent.
-  struct DebuggeeEnvironment : Debuggee<JSObject> {
-    DebuggeeEnvironment(NativeObject* debugger, JSObject* referent)
-        : Debuggee(debugger, referent) {}
-  };
-
-  // Key under which we find debugger's Debugger.Source referring to referent.
-  struct DebuggeeSource : Debuggee<NativeObject> {
-    DebuggeeSource(NativeObject* debugger, NativeObject* referent)
-        : Debuggee(debugger, referent) {}
-  };
-
-  // Key under which we find debugger's Debugger.Frame for the generator call
-  // whose AbstractGeneratorObject is referent.
-  struct DebuggeeFrameGenerator : Debuggee<NativeObject> {
-    DebuggeeFrameGenerator(NativeObject* debugger, NativeObject* referent)
-        : Debuggee(debugger, referent) {}
-  };
-
-  using WrappedType = mozilla::Variant<JSObject*, JSString*, DebuggeeObject,
-                                       DebuggeeJSScript, DebuggeeWasmScript,
-                                       DebuggeeLazyScript, DebuggeeEnvironment,
-                                       DebuggeeSource, DebuggeeFrameGenerator>;
-
-  explicit CrossCompartmentKey(JSObject* obj) : wrapped(obj) {
-    MOZ_RELEASE_ASSERT(obj);
-  }
-  explicit CrossCompartmentKey(JSString* str) : wrapped(str) {
-    MOZ_RELEASE_ASSERT(str);
-  }
-  explicit CrossCompartmentKey(const JS::Value& v)
-      : wrapped(v.isString() ? WrappedType(v.toString())
-                             : WrappedType(&v.toObject())) {}
-
-  // For most debuggee keys, we must let the caller choose the key type
-  // themselves. But for JSScript and LazyScript, there is only one key type
-  // that makes sense, so we provide an overloaded constructor.
-  explicit CrossCompartmentKey(DebuggeeObject&& key)
-      : wrapped(std::move(key)) {}
-  explicit CrossCompartmentKey(DebuggeeSource&& key)
-      : wrapped(std::move(key)) {}
-  explicit CrossCompartmentKey(DebuggeeEnvironment&& key)
-      : wrapped(std::move(key)) {}
-  explicit CrossCompartmentKey(DebuggeeWasmScript&& key)
-      : wrapped(std::move(key)) {}
-  explicit CrossCompartmentKey(DebuggeeFrameGenerator&& key)
-      : wrapped(std::move(key)) {}
-  explicit CrossCompartmentKey(NativeObject* debugger, JSScript* referent)
-      : wrapped(DebuggeeJSScript(debugger, referent)) {}
-  explicit CrossCompartmentKey(NativeObject* debugger, LazyScript* referent)
-      : wrapped(DebuggeeLazyScript(debugger, referent)) {}
-
-  bool operator==(const CrossCompartmentKey& other) const {
-    return wrapped == other.wrapped;
-  }
-  bool operator!=(const CrossCompartmentKey& other) const {
-    return wrapped != other.wrapped;
-  }
-
-  template <typename T>
-  bool is() const {
-    return wrapped.is<T>();
-  }
-  template <typename T>
-  const T& as() const {
-    return wrapped.as<T>();
-  }
-
- private:
-  template <typename F>
-  struct ApplyToWrappedMatcher {
-    F f_;
-    explicit ApplyToWrappedMatcher(F f) : f_(f) {}
-    auto operator()(JSObject*& obj) { return f_(&obj); }
-    auto operator()(JSString*& str) { return f_(&str); }
-    template <typename Referent>
-    auto operator()(Debuggee<Referent>& dbg) {
-      return f_(&dbg.referent);
-    }
-  };
-
-  template <typename F>
-  struct ApplyToDebuggerMatcher {
-    F f_;
-    explicit ApplyToDebuggerMatcher(F f) : f_(f) {}
-
-    using ReturnType = decltype(f_(static_cast<NativeObject**>(nullptr)));
-    ReturnType operator()(JSObject*& obj) { return ReturnType(); }
-    ReturnType operator()(JSString*& str) { return ReturnType(); }
-    template <typename Referent>
-    ReturnType operator()(Debuggee<Referent>& dbg) {
-      return f_(&dbg.debugger);
-    }
-  };
-
- public:
-  template <typename F>
-  auto applyToWrapped(F f) {
-    return wrapped.match(ApplyToWrappedMatcher<F>(f));
-  }
-
-  template <typename F>
-  auto applyToDebugger(F f) {
-    return wrapped.match(ApplyToDebuggerMatcher<F>(f));
-  }
-
-  struct IsDebuggerKeyMatcher {
-    bool operator()(JSObject* const& obj) { return false; }
-    bool operator()(JSString* const& str) { return false; }
-    template <typename Referent>
-    bool operator()(Debuggee<Referent> const& dbg) {
-      return true;
-    }
-  };
-
-  bool isDebuggerKey() const { return wrapped.match(IsDebuggerKeyMatcher()); }
-
-  JS::Compartment* compartment() {
-    return applyToWrapped([](auto tp) { return (*tp)->maybeCompartment(); });
-  }
-
-  JS::Zone* zone() {
-    return applyToWrapped([](auto tp) { return (*tp)->zone(); });
-  }
-
-  struct Hasher : public DefaultHasher<CrossCompartmentKey> {
-    struct HashFunctor {
-      HashNumber operator()(JSObject* obj) {
-        return DefaultHasher<JSObject*>::hash(obj);
-      }
-      HashNumber operator()(JSString* str) {
-        return DefaultHasher<JSString*>::hash(str);
-      }
-      template <typename Referent>
-      HashNumber operator()(const Debuggee<Referent>& dbg) {
-        return mozilla::HashGeneric(dbg.debugger, dbg.referent);
-      }
-    };
-    static HashNumber hash(const CrossCompartmentKey& key) {
-      return key.wrapped.addTagToHash(key.wrapped.match(HashFunctor()));
-    }
-
-    static bool match(const CrossCompartmentKey& l,
-                      const CrossCompartmentKey& k) {
-      return l.wrapped == k.wrapped;
-    }
-  };
-
-  bool isTenured() const {
-    auto self = const_cast<CrossCompartmentKey*>(this);
-    return self->applyToWrapped([](auto tp) { return (*tp)->isTenured(); });
-  }
-
-  void trace(JSTracer* trc);
-  bool needsSweep();
-
- private:
-  CrossCompartmentKey() = delete;
-  explicit CrossCompartmentKey(WrappedType&& wrapped)
-      : wrapped(std::move(wrapped)) {}
-  WrappedType wrapped;
-};
-
-// The data structure for storing CCWs, which has a map per target compartment
-// so we can access them easily. Note string CCWs are stored separately from the
-// others because they have target compartment nullptr.
-class WrapperMap {
+// The data structure for storing JSObject CCWs, which has a map per target
+// compartment so we can access them easily. String CCWs are stored in a
+// separate map.
+class ObjectWrapperMap {
   static const size_t InitialInnerMapSize = 4;
 
   using InnerMap =
-      NurseryAwareHashMap<CrossCompartmentKey, JS::Value,
-                          CrossCompartmentKey::Hasher, SystemAllocPolicy>;
-  using OuterMap =
-      GCHashMap<JS::Compartment*, InnerMap, DefaultHasher<JS::Compartment*>,
-                SystemAllocPolicy>;
+      NurseryAwareHashMap<JSObject*, JSObject*, DefaultHasher<JSObject*>,
+                          ZoneAllocPolicy>;
+  using OuterMap = GCHashMap<JS::Compartment*, InnerMap,
+                             DefaultHasher<JS::Compartment*>, ZoneAllocPolicy>;
 
   OuterMap map;
+  Zone* zone;
 
  public:
   class Enum {
-   public:
-    enum SkipStrings : bool { WithStrings = false, WithoutStrings = true };
-
-   private:
     Enum(const Enum&) = delete;
     void operator=(const Enum&) = delete;
 
@@ -298,11 +51,7 @@ class WrapperMap {
       }
       for (; !outer->empty(); outer->popFront()) {
         JS::Compartment* c = outer->front().key();
-        // Need to skip string at first, because the filter may not be
-        // happy with a nullptr.
-        if (!c && skipStrings) {
-          continue;
-        }
+        MOZ_ASSERT(c);
         if (filter && !filter->match(c)) {
           continue;
         }
@@ -321,22 +70,19 @@ class WrapperMap {
     mozilla::Maybe<OuterMap::Enum> outer;
     mozilla::Maybe<InnerMap::Enum> inner;
     const CompartmentFilter* filter;
-    SkipStrings skipStrings;
 
    public:
-    explicit Enum(WrapperMap& m, SkipStrings s = WithStrings)
-        : filter(nullptr), skipStrings(s) {
+    explicit Enum(ObjectWrapperMap& m) : filter(nullptr) {
       outer.emplace(m.map);
       goToNext();
     }
 
-    Enum(WrapperMap& m, const CompartmentFilter& f, SkipStrings s = WithStrings)
-        : filter(&f), skipStrings(s) {
+    Enum(ObjectWrapperMap& m, const CompartmentFilter& f) : filter(&f) {
       outer.emplace(m.map);
       goToNext();
     }
 
-    Enum(WrapperMap& m, JS::Compartment* target) {
+    Enum(ObjectWrapperMap& m, JS::Compartment* target) {
       // Leave the outer map as nothing and only iterate the inner map we
       // find here.
       auto p = m.map.lookup(target);
@@ -373,7 +119,7 @@ class WrapperMap {
   };
 
   class Ptr : public InnerMap::Ptr {
-    friend class WrapperMap;
+    friend class ObjectWrapperMap;
 
     InnerMap* map;
 
@@ -381,8 +127,8 @@ class WrapperMap {
     Ptr(const InnerMap::Ptr& p, InnerMap& m) : InnerMap::Ptr(p), map(&m) {}
   };
 
-  WrapperMap() {}
-  explicit WrapperMap(size_t aLen) : map(aLen) {}
+  explicit ObjectWrapperMap(Zone* zone) : map(zone), zone(zone) {}
+  ObjectWrapperMap(Zone* zone, size_t aLen) : map(zone, aLen), zone(zone) {}
 
   bool empty() {
     if (map.empty()) {
@@ -396,10 +142,10 @@ class WrapperMap {
     return true;
   }
 
-  Ptr lookup(const CrossCompartmentKey& k) const {
-    auto op = map.lookup(const_cast<CrossCompartmentKey&>(k).compartment());
+  Ptr lookup(JSObject* obj) const {
+    auto op = map.lookup(obj->compartment());
     if (op) {
-      auto ip = op->value().lookup(k);
+      auto ip = op->value().lookup(obj);
       if (ip) {
         return Ptr(ip, op->value());
       }
@@ -413,17 +159,16 @@ class WrapperMap {
     }
   }
 
-  MOZ_MUST_USE bool put(const CrossCompartmentKey& k, const JS::Value& v) {
-    JS::Compartment* c = const_cast<CrossCompartmentKey&>(k).compartment();
-    MOZ_ASSERT(k.is<JSString*>() == !c);
-    auto p = map.lookupForAdd(c);
-    if (!p) {
-      InnerMap m(InitialInnerMapSize);
-      if (!map.add(p, c, std::move(m))) {
+  MOZ_MUST_USE bool put(JSObject* key, JSObject* value) {
+    JS::Compartment* comp = key->compartment();
+    auto ptr = map.lookupForAdd(comp);
+    if (!ptr) {
+      InnerMap m(zone, InitialInnerMapSize);
+      if (!map.add(ptr, comp, std::move(m))) {
         return false;
       }
     }
-    return p->value().put(k, v);
+    return ptr->value().put(key, value);
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) {
@@ -476,6 +221,10 @@ class WrapperMap {
   }
 };
 
+using StringWrapperMap =
+    NurseryAwareHashMap<JSString*, JSString*, DefaultHasher<JSString*>,
+                        ZoneAllocPolicy>;
+
 }  // namespace js
 
 class JS::Compartment {
@@ -483,9 +232,9 @@ class JS::Compartment {
   JSRuntime* runtime_;
   bool invisibleToDebugger_;
 
-  js::WrapperMap crossCompartmentWrappers;
+  js::ObjectWrapperMap crossCompartmentObjectWrappers;
 
-  using RealmVector = js::Vector<JS::Realm*, 1, js::SystemAllocPolicy>;
+  using RealmVector = js::Vector<JS::Realm*, 1, js::ZoneAllocPolicy>;
   RealmVector realms_;
 
  public:
@@ -553,7 +302,7 @@ class JS::Compartment {
   js::GlobalObject& globalForNewCCW() const { return firstGlobal(); }
 
   void assertNoCrossCompartmentWrappers() {
-    MOZ_ASSERT(crossCompartmentWrappers.empty());
+    MOZ_ASSERT(crossCompartmentObjectWrappers.empty());
   }
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
@@ -562,11 +311,12 @@ class JS::Compartment {
                               size_t* compartmentsPrivateData);
 
 #ifdef JSGC_HASH_TABLE_CHECKS
-  void checkWrapperMapAfterMovingGC();
+  void checkObjectWrappersAfterMovingGC();
 #endif
 
  private:
   bool getNonWrapperObjectForCurrentCompartment(JSContext* cx,
+                                                js::HandleObject origObj,
                                                 js::MutableHandleObject obj);
   bool getOrCreateWrapper(JSContext* cx, js::HandleObject existing,
                           js::MutableHandleObject obj);
@@ -574,7 +324,7 @@ class JS::Compartment {
  public:
   explicit Compartment(JS::Zone* zone, bool invisibleToDebugger);
 
-  void destroy(js::FreeOp* fop);
+  void destroy(JSFreeOp* fop);
 
   MOZ_MUST_USE inline bool wrap(JSContext* cx, JS::MutableHandleValue vp);
 
@@ -588,51 +338,37 @@ class JS::Compartment {
   MOZ_MUST_USE bool rewrap(JSContext* cx, JS::MutableHandleObject obj,
                            JS::HandleObject existing);
 
-  MOZ_MUST_USE bool putWrapper(JSContext* cx,
-                               const js::CrossCompartmentKey& wrapped,
-                               const js::Value& wrapper);
+  MOZ_MUST_USE bool putWrapper(JSContext* cx, JSObject* wrapped,
+                               JSObject* wrapper);
 
-  js::WrapperMap::Ptr lookupWrapper(const js::CrossCompartmentKey& key) const {
-    return crossCompartmentWrappers.lookup(key);
+  MOZ_MUST_USE bool putWrapper(JSContext* cx, JSString* wrapped,
+                               JSString* wrapper);
+
+  js::ObjectWrapperMap::Ptr lookupWrapper(JSObject* obj) const {
+    return crossCompartmentObjectWrappers.lookup(obj);
   }
 
-  js::WrapperMap::Ptr lookupWrapper(const js::Value& wrapped) const {
-    return lookupWrapper(js::CrossCompartmentKey(wrapped));
+  inline js::StringWrapperMap::Ptr lookupWrapper(JSString* str) const;
+
+  void removeWrapper(js::ObjectWrapperMap::Ptr p) {
+    crossCompartmentObjectWrappers.remove(p);
   }
 
-  js::WrapperMap::Ptr lookupWrapper(JSObject* obj) const {
-    return lookupWrapper(js::CrossCompartmentKey(obj));
+  bool hasNurseryAllocatedObjectWrapperEntries(const js::CompartmentFilter& f) {
+    return crossCompartmentObjectWrappers.hasNurseryAllocatedWrapperEntries(f);
   }
 
-  void removeWrapper(js::WrapperMap::Ptr p) {
-    crossCompartmentWrappers.remove(p);
-  }
-
-  bool hasNurseryAllocatedWrapperEntries(const js::CompartmentFilter& f) {
-    return crossCompartmentWrappers.hasNurseryAllocatedWrapperEntries(f);
-  }
-
-  struct WrapperEnum : public js::WrapperMap::Enum {
-    explicit WrapperEnum(JS::Compartment* c)
-        : js::WrapperMap::Enum(c->crossCompartmentWrappers) {}
-  };
-
-  struct NonStringWrapperEnum : public js::WrapperMap::Enum {
-    explicit NonStringWrapperEnum(JS::Compartment* c)
-        : js::WrapperMap::Enum(c->crossCompartmentWrappers, WithoutStrings) {}
-    explicit NonStringWrapperEnum(JS::Compartment* c,
-                                  const js::CompartmentFilter& f)
-        : js::WrapperMap::Enum(c->crossCompartmentWrappers, f, WithoutStrings) {
-    }
-    explicit NonStringWrapperEnum(JS::Compartment* c, JS::Compartment* target)
-        : js::WrapperMap::Enum(c->crossCompartmentWrappers, target) {
+  struct ObjectWrapperEnum : public js::ObjectWrapperMap::Enum {
+    explicit ObjectWrapperEnum(JS::Compartment* c)
+        : js::ObjectWrapperMap::Enum(c->crossCompartmentObjectWrappers) {}
+    explicit ObjectWrapperEnum(JS::Compartment* c,
+                               const js::CompartmentFilter& f)
+        : js::ObjectWrapperMap::Enum(c->crossCompartmentObjectWrappers, f) {}
+    explicit ObjectWrapperEnum(JS::Compartment* c, JS::Compartment* target)
+        : js::ObjectWrapperMap::Enum(c->crossCompartmentObjectWrappers,
+                                     target) {
       MOZ_ASSERT(target);
     }
-  };
-
-  struct StringWrapperEnum : public js::WrapperMap::Enum {
-    explicit StringWrapperEnum(JS::Compartment* c)
-        : js::WrapperMap::Enum(c->crossCompartmentWrappers, nullptr) {}
   };
 
   /*
@@ -644,13 +380,12 @@ class JS::Compartment {
   void traceOutgoingCrossCompartmentWrappers(JSTracer* trc);
   static void traceIncomingCrossCompartmentEdgesForZoneGC(JSTracer* trc);
 
-  void sweepRealms(js::FreeOp* fop, bool keepAtleastOne,
-                   bool destroyingRuntime);
+  void sweepRealms(JSFreeOp* fop, bool keepAtleastOne, bool destroyingRuntime);
   void sweepAfterMinorGC(JSTracer* trc);
-  void sweepCrossCompartmentWrappers();
+  void sweepCrossCompartmentObjectWrappers();
 
-  static void fixupCrossCompartmentWrappersAfterMovingGC(JSTracer* trc);
-  void fixupAfterMovingGC();
+  void fixupCrossCompartmentObjectWrappersAfterMovingGC(JSTracer* trc);
+  void fixupAfterMovingGC(JSTracer* trc);
 
   MOZ_MUST_USE bool findSweepGroupEdges();
 };
@@ -703,19 +438,18 @@ struct WrapperValue {
    * wrapper is in use, the AutoWrapper rooter will ensure the wrapper gets
    * marked.
    */
-  explicit WrapperValue(const WrapperMap::Ptr& ptr)
+  explicit WrapperValue(const ObjectWrapperMap::Ptr& ptr)
       : value(*ptr->value().unsafeGet()) {}
 
-  explicit WrapperValue(const WrapperMap::Enum& e)
+  explicit WrapperValue(const ObjectWrapperMap::Enum& e)
       : value(*e.front().value().unsafeGet()) {}
 
-  Value& get() { return value; }
-  Value get() const { return value; }
-  operator const Value&() const { return value; }
-  JSObject& toObject() const { return value.toObject(); }
+  JSObject*& get() { return value; }
+  JSObject* get() const { return value; }
+  operator JSObject*() const { return value; }
 
  private:
-  Value value;
+  JSObject* value;
 };
 
 class MOZ_RAII AutoWrapperVector : public JS::GCVector<WrapperValue, 8>,
@@ -740,7 +474,7 @@ class MOZ_RAII AutoWrapperRooter : private JS::AutoGCRooter {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
-  operator JSObject*() const { return value.get().toObjectOrNull(); }
+  operator JSObject*() const { return value; }
 
   friend void JS::AutoGCRooter::trace(JSTracer* trc);
 
@@ -750,15 +484,5 @@ class MOZ_RAII AutoWrapperRooter : private JS::AutoGCRooter {
 };
 
 } /* namespace js */
-
-namespace JS {
-template <>
-struct GCPolicy<js::CrossCompartmentKey>
-    : public StructGCPolicy<js::CrossCompartmentKey> {
-  static bool isTenured(const js::CrossCompartmentKey& key) {
-    return key.isTenured();
-  }
-};
-}  // namespace JS
 
 #endif /* vm_Compartment_h */

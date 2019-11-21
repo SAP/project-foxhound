@@ -16,10 +16,14 @@
 #include "mozilla/layers/SyncObject.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/SyncRunnable.h"
+#ifdef XP_MACOSX
+#include "nsCocoaFeatures.h"
+#endif
 #include "nsIPropertyBag2.h"
+#include "nsIThreadManager.h"
 #include "nsServiceManagerUtils.h"
 #include "prsystem.h"
 
@@ -48,7 +52,7 @@ void PaintThread::AddRef() {}
 /* static */
 int32_t PaintThread::CalculatePaintWorkerCount() {
   int32_t cpuCores = PR_GetNumberOfProcessors();
-  int32_t workerCount = StaticPrefs::layers_omtp_paint_workers();
+  int32_t workerCount = StaticPrefs::layers_omtp_paint_workers_AtStartup();
 
   // If not manually specified, default to (cpuCores * 3) / 4, and clamp
   // between 1 and 4. If a user wants more, they can manually specify it
@@ -69,11 +73,28 @@ void PaintThread::Start() {
   }
 }
 
+static uint32_t GetPaintThreadStackSize() {
+#ifndef XP_MACOSX
+  return nsIThreadManager::DEFAULT_STACK_SIZE;
+#else
+  // Workaround bug 1578075 by increasing the stack size of paint threads
+  if (nsCocoaFeatures::OnCatalinaOrLater()) {
+    static const uint32_t kCatalinaPaintThreadStackSize = 512 * 1024;
+    static_assert(kCatalinaPaintThreadStackSize >= nsIThreadManager::DEFAULT_STACK_SIZE,
+                  "update default stack size of paint "
+                  "workers");
+    return kCatalinaPaintThreadStackSize;
+  }
+  return nsIThreadManager::DEFAULT_STACK_SIZE;
+#endif
+}
+
 bool PaintThread::Init() {
   MOZ_ASSERT(NS_IsMainThread());
 
   RefPtr<nsIThread> thread;
-  nsresult rv = NS_NewNamedThread("PaintThread", getter_AddRefs(thread));
+  nsresult rv = NS_NewNamedThread("PaintThread", getter_AddRefs(thread),
+                                  nullptr, GetPaintThreadStackSize());
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -102,6 +123,7 @@ void PaintThread::InitPaintWorkers() {
   if (count != 1) {
     mPaintWorkers =
         SharedThreadPool::Get(NS_LITERAL_CSTRING("PaintWorker"), count);
+    mPaintWorkers->SetThreadStackSize(GetPaintThreadStackSize());
   }
 }
 

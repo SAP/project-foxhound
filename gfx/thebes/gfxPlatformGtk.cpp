@@ -22,7 +22,7 @@
 #include "VsyncSource.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "base/task.h"
 #include "base/thread.h"
 #include "base/message_loop.h"
@@ -243,7 +243,7 @@ void gfxPlatformGtk::GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
 }
 
 void gfxPlatformGtk::ReadSystemFontList(
-    InfallibleTArray<SystemFontListEntry>* retValue) {
+    nsTArray<SystemFontListEntry>* retValue) {
   gfxFcPlatformFontList::PlatformFontList()->ReadSystemFontList(retValue);
 }
 
@@ -302,7 +302,7 @@ double gfxPlatformGtk::GetFontScaleFactor() {
 
 bool gfxPlatformGtk::UseImageOffscreenSurfaces() {
   return GetDefaultContentBackend() != mozilla::gfx::BackendType::CAIRO ||
-         StaticPrefs::layers_use_image_offscreen_surfaces();
+         StaticPrefs::layers_use_image_offscreen_surfaces_AtStartup();
 }
 
 gfxImageFormat gfxPlatformGtk::GetOffscreenFormat() {

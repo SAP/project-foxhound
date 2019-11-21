@@ -5,6 +5,7 @@
 // @flow
 
 import React, { Component } from "react";
+import classnames from "classnames";
 import { isGeneratedId } from "devtools-source-map";
 import { connect } from "../../utils/connect";
 import { List } from "immutable";
@@ -21,9 +22,11 @@ import {
   getSelectedFrame,
   getShouldPauseOnExceptions,
   getShouldPauseOnCaughtExceptions,
-  getWorkers,
+  getThreads,
   getCurrentThread,
   getThreadContext,
+  getSourceFromId,
+  getSkipPausing,
 } from "../../selectors";
 
 import AccessibleImage from "../shared/AccessibleImage";
@@ -33,19 +36,26 @@ import Breakpoints from "./Breakpoints";
 import Expressions from "./Expressions";
 import SplitBox from "devtools-splitter";
 import Frames from "./Frames";
-import Workers from "./Workers";
+import Threads from "./Threads";
 import Accordion from "../shared/Accordion";
 import CommandBar from "./CommandBar";
 import UtilsBar from "./UtilsBar";
 import XHRBreakpoints from "./XHRBreakpoints";
 import EventListeners from "./EventListeners";
+import DOMMutationBreakpoints from "./DOMMutationBreakpoints";
 import WhyPaused from "./WhyPaused";
 
 import Scopes from "./Scopes";
 
 import "./SecondaryPanes.css";
 
-import type { Expression, Frame, WorkerList, ThreadContext } from "../../types";
+import type {
+  Expression,
+  Frame,
+  ThreadList,
+  ThreadContext,
+  Source,
+} from "../../types";
 
 type AccordionPaneItem = {
   header: string,
@@ -87,7 +97,9 @@ type Props = {
   mapScopesEnabled: boolean,
   shouldPauseOnExceptions: boolean,
   shouldPauseOnCaughtExceptions: boolean,
-  workers: WorkerList,
+  workers: ThreadList,
+  skipPausing: boolean,
+  source: ?Source,
   toggleShortcutsModal: () => void,
   toggleAllBreakpoints: typeof actions.toggleAllBreakpoints,
   toggleMapScopes: typeof actions.toggleMapScopes,
@@ -228,9 +240,13 @@ class SecondaryPanes extends Component<Props, State> {
   }
 
   getScopesButtons() {
-    const { selectedFrame, mapScopesEnabled } = this.props;
+    const { selectedFrame, mapScopesEnabled, source } = this.props;
 
-    if (!selectedFrame || isGeneratedId(selectedFrame.location.sourceId)) {
+    if (
+      !selectedFrame ||
+      isGeneratedId(selectedFrame.location.sourceId) ||
+      (source && source.isPrettyPrinted)
+    ) {
       return null;
     }
 
@@ -309,13 +325,11 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
-  getWorkersItem(): AccordionPaneItem {
+  getThreadsItem(): AccordionPaneItem {
     return {
-      header: features.windowlessWorkers
-        ? L10N.getStr("threadsHeader")
-        : L10N.getStr("workersHeader"),
-      className: "workers-pane",
-      component: <Workers />,
+      header: L10N.getStr("threadsHeader"),
+      className: "threads-pane",
+      component: <Threads />,
       opened: prefs.workersVisible,
       onToggle: opened => {
         prefs.workersVisible = opened;
@@ -361,13 +375,26 @@ class SecondaryPanes extends Component<Props, State> {
     };
   }
 
+  getDOMMutationsItem(): AccordionPaneItem {
+    return {
+      header: L10N.getStr("domMutationHeader"),
+      className: "dom-mutations-pane",
+      buttons: [],
+      component: <DOMMutationBreakpoints />,
+      opened: prefs.domMutationBreakpointsVisible,
+      onToggle: opened => {
+        prefs.domMutationBreakpointsVisible = opened;
+      },
+    };
+  }
+
   getStartItems(): AccordionPaneItem[] {
     const items: AccordionPaneItem[] = [];
     const { horizontal, hasFrames } = this.props;
 
     if (horizontal) {
       if (features.workers && this.props.workers.length > 0) {
-        items.push(this.getWorkersItem());
+        items.push(this.getThreadsItem());
       }
 
       items.push(this.getWatchItem());
@@ -390,6 +417,10 @@ class SecondaryPanes extends Component<Props, State> {
       items.push(this.getEventListenersItem());
     }
 
+    if (features.domMutationBreakpoints) {
+      items.push(this.getDOMMutationsItem());
+    }
+
     return items;
   }
 
@@ -400,7 +431,7 @@ class SecondaryPanes extends Component<Props, State> {
 
     const items: AccordionPaneItem[] = [];
     if (features.workers && this.props.workers.length > 0) {
-      items.push(this.getWorkersItem());
+      items.push(this.getThreadsItem());
     }
 
     items.push(this.getWatchItem());
@@ -459,10 +490,16 @@ class SecondaryPanes extends Component<Props, State> {
   }
 
   render() {
+    const { skipPausing } = this.props;
     return (
       <div className="secondary-panes-wrapper">
         <CommandBar horizontal={this.props.horizontal} />
-        <div className="secondary-panes">
+        <div
+          className={classnames(
+            "secondary-panes",
+            skipPausing && "skip-pausing"
+          )}
+        >
           {this.props.horizontal
             ? this.renderHorizontalLayout()
             : this.renderVerticalLayout()}
@@ -487,6 +524,7 @@ function getRenderWhyPauseDelay(state, thread) {
 
 const mapStateToProps = state => {
   const thread = getCurrentThread(state);
+  const selectedFrame = getSelectedFrame(state, thread);
 
   return {
     cx: getThreadContext(state),
@@ -496,11 +534,14 @@ const mapStateToProps = state => {
     breakpointsDisabled: getBreakpointsDisabled(state),
     isWaitingOnBreak: getIsWaitingOnBreak(state, thread),
     renderWhyPauseDelay: getRenderWhyPauseDelay(state, thread),
-    selectedFrame: getSelectedFrame(state, thread),
+    selectedFrame,
     mapScopesEnabled: isMapScopesEnabled(state),
     shouldPauseOnExceptions: getShouldPauseOnExceptions(state),
     shouldPauseOnCaughtExceptions: getShouldPauseOnCaughtExceptions(state),
-    workers: getWorkers(state),
+    workers: getThreads(state),
+    skipPausing: getSkipPausing(state),
+    source:
+      selectedFrame && getSourceFromId(state, selectedFrame.location.sourceId),
   };
 };
 

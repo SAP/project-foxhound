@@ -197,6 +197,14 @@ CLANG_4_0 = CLANG('4.0.2') + DEFAULT_C11 + {
 CLANGXX_4_0 = CLANGXX('4.0.2') + {
     '__has_attribute(diagnose_if)': '1',
 }
+CLANG_5_0 = CLANG('5.0.1') + DEFAULT_C11 + {
+    '__has_attribute(diagnose_if)': '1',
+    '__has_warning("-Wunguarded-availability")': '1',
+}
+CLANGXX_5_0 = CLANGXX('5.0.1') + {
+    '__has_attribute(diagnose_if)': '1',
+    '__has_warning("-Wunguarded-availability")': '1',
+}
 DEFAULT_CLANG = CLANG_4_0
 DEFAULT_CLANGXX = CLANGXX_4_0
 
@@ -232,6 +240,7 @@ def VS(version):
             '_MSC_VER': '%02d%02d' % (version.major, version.minor),
             '_MSC_FULL_VER': '%02d%02d%05d' % (version.major, version.minor,
                                                version.patch),
+            '_MT': '1',
         },
         '*.cpp': DEFAULT_CXX_97,
     })
@@ -637,7 +646,6 @@ class LinuxToolchainTest(BaseToolchainTest):
         })
 
     def test_unsupported_clang(self):
-        # clang 3.3 C compiler is perfectly fine, but we need more for C++.
         self.do_toolchain_test(self.PATHS, {
             'c_compiler': self.CLANG_3_3_RESULT,
             'cxx_compiler': self.CLANGXX_3_3_RESULT,
@@ -811,18 +819,32 @@ class OSXToolchainTest(BaseToolchainTest):
         '/usr/bin/g++-5': GXX_5 + GCC_PLATFORM_X86_64_OSX,
         '/usr/bin/gcc-7': GCC_7 + GCC_PLATFORM_X86_64_OSX,
         '/usr/bin/g++-7': GXX_7 + GCC_PLATFORM_X86_64_OSX,
-        '/usr/bin/clang': DEFAULT_CLANG + CLANG_PLATFORM_X86_64_OSX,
-        '/usr/bin/clang++': DEFAULT_CLANGXX + CLANG_PLATFORM_X86_64_OSX,
+        '/usr/bin/clang': CLANG_5_0 + CLANG_PLATFORM_X86_64_OSX,
+        '/usr/bin/clang++': CLANGXX_5_0 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang-4.0': CLANG_4_0 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang++-4.0': CLANGXX_4_0 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang-3.3': CLANG_3_3 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/clang++-3.3': CLANGXX_3_3 + CLANG_PLATFORM_X86_64_OSX,
         '/usr/bin/xcrun': xcrun,
     }
-    CLANG_3_3_RESULT = LinuxToolchainTest.CLANG_3_3_RESULT
-    CLANGXX_3_3_RESULT = LinuxToolchainTest.CLANGXX_3_3_RESULT
-    DEFAULT_CLANG_RESULT = LinuxToolchainTest.DEFAULT_CLANG_RESULT
-    DEFAULT_CLANGXX_RESULT = LinuxToolchainTest.DEFAULT_CLANGXX_RESULT
+    CLANG_3_3_RESULT = 'Only clang/llvm 5.0 or newer is supported.'
+    CLANGXX_3_3_RESULT = 'Only clang/llvm 5.0 or newer is supported.'
+    CLANG_4_0_RESULT = 'Only clang/llvm 5.0 or newer is supported.'
+    CLANGXX_4_0_RESULT = 'Only clang/llvm 5.0 or newer is supported.'
+    DEFAULT_CLANG_RESULT = CompilerResult(
+        flags=['-std=gnu99'],
+        version='5.0.1',
+        type='clang',
+        compiler='/usr/bin/clang',
+        language='C',
+    )
+    DEFAULT_CLANGXX_RESULT = CompilerResult(
+        flags=['-std=gnu++14'],
+        version='5.0.1',
+        type='clang',
+        compiler='/usr/bin/clang++',
+        language='C++',
+    )
     GCC_5_RESULT = LinuxToolchainTest.GCC_5_RESULT
     GXX_5_RESULT = LinuxToolchainTest.GXX_5_RESULT
     GCC_7_RESULT = LinuxToolchainTest.GCC_7_RESULT
@@ -849,13 +871,20 @@ class OSXToolchainTest(BaseToolchainTest):
         })
 
     def test_unsupported_clang(self):
-        # clang 3.3 C compiler is perfectly fine, but we need more for C++.
         self.do_toolchain_test(self.PATHS, {
             'c_compiler': self.CLANG_3_3_RESULT,
             'cxx_compiler': self.CLANGXX_3_3_RESULT,
         }, environ={
             'CC': 'clang-3.3',
             'CXX': 'clang++-3.3',
+        })
+        # When targeting mac, we require at least version 5.
+        self.do_toolchain_test(self.PATHS, {
+            'c_compiler': self.CLANG_4_0_RESULT,
+            'cxx_compiler': self.CLANGXX_4_0_RESULT,
+        }, environ={
+            'CC': 'clang-4.0',
+            'CXX': 'clang++-4.0',
         })
 
     def test_forced_gcc(self):
@@ -1328,9 +1357,13 @@ class LinuxCrossCompileToolchainTest(BaseToolchainTest):
 
 class OSXCrossToolchainTest(BaseToolchainTest):
     TARGET = 'i686-apple-darwin11.2.0'
-    PATHS = LinuxToolchainTest.PATHS
-    DEFAULT_CLANG_RESULT = LinuxToolchainTest.DEFAULT_CLANG_RESULT
-    DEFAULT_CLANGXX_RESULT = LinuxToolchainTest.DEFAULT_CLANGXX_RESULT
+    PATHS = dict(LinuxToolchainTest.PATHS)
+    PATHS.update({
+        '/usr/bin/clang': CLANG_5_0 + CLANG_PLATFORM_X86_64_LINUX,
+        '/usr/bin/clang++': CLANGXX_5_0 + CLANG_PLATFORM_X86_64_LINUX,
+    })
+    DEFAULT_CLANG_RESULT = OSXToolchainTest.DEFAULT_CLANG_RESULT
+    DEFAULT_CLANGXX_RESULT = OSXToolchainTest.DEFAULT_CLANGXX_RESULT
 
     def test_osx_cross(self):
         self.do_toolchain_test(self.PATHS, {
@@ -1531,6 +1564,32 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
                     'thumbv8m.main-none-eabi',
                     'thumbv8m.main-none-eabihf',
                 ]
+            # Additional targets from 1.34
+            if Version(version) >= '1.34.0':
+                rust_targets += [
+                    'nvptx64-nvidia-cuda',
+                    'powerpc64-unknown-freebsd',
+                    'riscv64gc-unknown-none-elf',
+                    'riscv64imac-unknown-none-elf',
+                ]
+            # Additional targets from 1.35
+            if Version(version) >= '1.35.0':
+                rust_targets += [
+                    'armv6-unknown-freebsd',
+                    'armv7-unknown-freebsd',
+                    'mipsisa32r6-unknown-linux-gnu',
+                    'mipsisa32r6el-unknown-linux-gnu',
+                    'mipsisa64r6-unknown-linux-gnuabi64',
+                    'mipsisa64r6el-unknown-linux-gnuabi64',
+                    'wasm32-unknown-wasi',
+                ]
+            # Additional targets from 1.36
+            if Version(version) >= '1.36.0':
+                rust_targets += [
+                    'wasm32-wasi',
+                ]
+                rust_targets.remove('wasm32-unknown-wasi')
+                rust_targets.remove('x86_64-unknown-bitrig')
             return 0, '\n'.join(sorted(rust_targets)), ''
         if (len(args) == 6 and args[:2] == ('--crate-type', 'staticlib') and
             args[2].startswith('--target=') and args[3] == '-o'):
@@ -1542,7 +1601,7 @@ def gen_invoke_rustc(version, rustup_wrapper=False):
 
 
 class RustTest(BaseConfigureTest):
-    def get_rust_target(self, target, compiler_type='gcc', version='1.33.0',
+    def get_rust_target(self, target, compiler_type='gcc', version='1.36.0',
                         arm_target=None):
         environ = {
             'PATH': os.pathsep.join(
@@ -1567,7 +1626,8 @@ class RustTest(BaseConfigureTest):
         # Same for the arm_target checks.
         dep = sandbox._depends[sandbox['arm_target']]
         getattr(sandbox, '__value_for_depends')[(dep,)] = \
-            arm_target or ReadOnlyNamespace(arm_arch=7, thumb2=False, fpu='vfpv2')
+            arm_target or ReadOnlyNamespace(arm_arch=7, thumb2=False,
+                                            fpu='vfpv2', float_abi='softfp')
         return sandbox._value_for(sandbox['rust_target_triple'])
 
     def test_rust_target(self):
@@ -1630,52 +1690,70 @@ class RustTest(BaseConfigureTest):
         self.assertEqual(
             self.get_rust_target('arm-unknown-linux-androideabi',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=True)),
+                                     arm_arch=7, fpu='neon', thumb2=True, float_abi='softfp')),
             'thumbv7neon-linux-androideabi')
 
         self.assertEqual(
             self.get_rust_target('arm-unknown-linux-androideabi',
                                  version='1.32.0',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=True)),
+                                     arm_arch=7, fpu='neon', thumb2=True, float_abi='softfp')),
             'armv7-linux-androideabi')
 
         self.assertEqual(
             self.get_rust_target('arm-unknown-linux-androideabi',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=False)),
+                                     arm_arch=7, fpu='neon', thumb2=False, float_abi='softfp')),
             'armv7-linux-androideabi')
 
         self.assertEqual(
             self.get_rust_target('arm-unknown-linux-androideabi',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='vfpv2', thumb2=True)),
+                                     arm_arch=7, fpu='vfpv2', thumb2=True, float_abi='softfp')),
             'armv7-linux-androideabi')
 
         self.assertEqual(
             self.get_rust_target('armv7-unknown-linux-gnueabihf',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=True)),
+                                     arm_arch=7, fpu='neon', thumb2=True, float_abi='hard')),
             'thumbv7neon-unknown-linux-gnueabihf')
 
         self.assertEqual(
             self.get_rust_target('armv7-unknown-linux-gnueabihf',
                                  version='1.32.0',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=True)),
+                                     arm_arch=7, fpu='neon', thumb2=True, float_abi='hard')),
             'armv7-unknown-linux-gnueabihf')
 
         self.assertEqual(
             self.get_rust_target('armv7-unknown-linux-gnueabihf',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='neon', thumb2=False)),
+                                     arm_arch=7, fpu='neon', thumb2=False, float_abi='hard')),
             'armv7-unknown-linux-gnueabihf')
 
         self.assertEqual(
             self.get_rust_target('armv7-unknown-linux-gnueabihf',
                                  arm_target=ReadOnlyNamespace(
-                                     arm_arch=7, fpu='vfpv2', thumb2=True)),
+                                     arm_arch=7, fpu='vfpv2', thumb2=True, float_abi='hard')),
             'armv7-unknown-linux-gnueabihf')
+
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-freebsd13.0-gnueabihf',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=7, fpu='vfpv2', thumb2=True, float_abi='hard')),
+            'armv7-unknown-freebsd')
+
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-freebsd13.0-gnueabihf',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=6, fpu=None, thumb2=False, float_abi='hard')),
+            'armv6-unknown-freebsd')
+
+        self.assertEqual(
+            self.get_rust_target('arm-unknown-linux-gnueabi',
+                                 arm_target=ReadOnlyNamespace(
+                                     arm_arch=4, fpu=None, thumb2=False, float_abi='softfp')),
+            'armv4t-unknown-linux-gnueabi')
 
 
 if __name__ == '__main__':

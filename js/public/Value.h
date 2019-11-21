@@ -184,6 +184,12 @@ static_assert(
     (JSVAL_SHIFTED_TAG_NULL ^ JSVAL_SHIFTED_TAG_OBJECT) == ValueObjectOrNullBit,
     "ValueObjectOrNullBit must be consistent with object and null tags");
 
+constexpr uint64_t IsValidUserModePointer(uint64_t bits) {
+  // All 64-bit platforms that we support actually have a 48-bit address space
+  // for user-mode pointers, with the top 16 bits all set to zero.
+  return (bits & 0xFFFF'0000'0000'0000) == 0;
+}
+
 #endif /* JS_PUNBOX64 */
 
 }  // namespace detail
@@ -633,6 +639,8 @@ union alignas(8) Value {
 
   bool isObjectOrNull() const { return isObject() || isNull(); }
 
+  bool isNumeric() const { return isNumber() || isBigInt(); }
+
   bool isGCThing() const {
 #if defined(JS_NUNBOX32)
     /* gcc sometimes generates signed < without explicit casts. */
@@ -821,19 +829,20 @@ union alignas(8) Value {
   /*
    * Private API
    *
-   * Private setters/getters allow the caller to read/write arbitrary types
-   * that fit in the 64-bit payload. It is the caller's responsibility, after
-   * storing to a value with setPrivateX to read only using getPrivateX.
-   * Private values are given a type which ensures they aren't marked by the GC.
+   * Private setters/getters allow the caller to read/write arbitrary
+   * word-size pointers or uint32s.  After storing to a value with
+   * setPrivateX, it is the caller's responsibility to only read using
+   * toPrivateX. Private values are given a type which ensures they
+   * aren't marked by the GC.
    */
 
   void setPrivate(void* ptr) {
-    MOZ_ASSERT((uintptr_t(ptr) & 1) == 0);
 #if defined(JS_NUNBOX32)
     s_.tag_ = JSValueTag(0);
     s_.payload_.ptr_ = ptr;
 #elif defined(JS_PUNBOX64)
-    asBits_ = uintptr_t(ptr) >> 1;
+    MOZ_ASSERT(detail::IsValidUserModePointer(uintptr_t(ptr)));
+    asBits_ = uintptr_t(ptr);
 #endif
     MOZ_ASSERT(isDouble());
   }
@@ -843,8 +852,8 @@ union alignas(8) Value {
 #if defined(JS_NUNBOX32)
     return s_.payload_.ptr_;
 #elif defined(JS_PUNBOX64)
-    MOZ_ASSERT((asBits_ & 0x8000000000000000ULL) == 0);
-    return reinterpret_cast<void*>(asBits_ << 1);
+    MOZ_ASSERT(detail::IsValidUserModePointer(asBits_));
+    return reinterpret_cast<void*>(asBits_);
 #endif
   }
 
@@ -1180,6 +1189,7 @@ class WrappedPtrOperations<JS::Value, Wrapper> {
 
   bool isNullOrUndefined() const { return value().isNullOrUndefined(); }
   bool isObjectOrNull() const { return value().isObjectOrNull(); }
+  bool isNumeric() const { return value().isNumeric(); }
 
   bool toBoolean() const { return value().toBoolean(); }
   double toNumber() const { return value().toNumber(); }

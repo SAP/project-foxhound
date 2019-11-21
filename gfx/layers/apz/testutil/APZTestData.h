@@ -14,7 +14,7 @@
 #include "mozilla/Assertions.h"       // for MOZ_ASSERT
 #include "mozilla/DebugOnly.h"        // for DebugOnly
 #include "mozilla/GfxMessageUtils.h"  // for ParamTraits specializations
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/ToString.h"  // for ToString
 #include "mozilla/gfx/CompositorHitTestInfo.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
@@ -75,8 +75,7 @@ class APZTestData {
   }
   void RecordHitResult(const ScreenPoint& aPoint,
                        const mozilla::gfx::CompositorHitTestInfo& aResult,
-                       const LayersId& aLayersId,
-                       const ViewID& aScrollId) {
+                       const LayersId& aLayersId, const ViewID& aScrollId) {
     mHitResults.AppendElement(HitResult{aPoint, aResult, aLayersId, aScrollId});
   }
   void RecordAdditionalData(const std::string& aKey,

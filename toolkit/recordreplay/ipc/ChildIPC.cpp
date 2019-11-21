@@ -15,6 +15,7 @@
 #include "chrome/common/mach_ipc_mac.h"
 #include "ipc/Channel.h"
 #include "mac/handler/exception_handler.h"
+#include "mozilla/Base64.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/VsyncDispatcher.h"
@@ -28,6 +29,8 @@
 #include "ProcessRewind.h"
 #include "Thread.h"
 #include "Units.h"
+
+#include "imgIEncoder.h"
 
 #include <algorithm>
 #include <mach/mach_vm.h>
@@ -345,6 +348,8 @@ void ReportFatalError(const Maybe<MinidumpInfo>& aMinidump, const char* aFormat,
   Thread::WaitForeverNoIdle();
 }
 
+size_t GetId() { return gChannel->GetId(); }
+
 ///////////////////////////////////////////////////////////////////////////////
 // Vsyncs
 ///////////////////////////////////////////////////////////////////////////////
@@ -516,15 +521,13 @@ static bool gDidRepaint;
 // Whether we are currently repainting.
 static bool gRepainting;
 
-void Repaint(size_t* aWidth, size_t* aHeight) {
+bool Repaint(nsAString& aData) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   MOZ_RELEASE_ASSERT(HasDivergedFromRecording());
 
   // Don't try to repaint if the first normal paint hasn't occurred yet.
   if (!gCompositorThreadId) {
-    *aWidth = 0;
-    *aHeight = 0;
-    return;
+    return false;
   }
 
   // Ignore the request to repaint if we already triggered a repaint, in which
@@ -558,14 +561,34 @@ void Repaint(size_t* aWidth, size_t* aHeight) {
     gRepainting = false;
   }
 
-  if (gDrawTargetBuffer) {
-    memcpy(gGraphicsShmem, gDrawTargetBuffer, gDrawTargetBufferSize);
-    *aWidth = gPaintWidth;
-    *aHeight = gPaintHeight;
-  } else {
-    *aWidth = 0;
-    *aHeight = 0;
+  if (!gDrawTargetBuffer) {
+    return false;
   }
+
+  // Get an image encoder for the media type.
+  nsCString encoderCID("@mozilla.org/image/encoder;2?type=image/png");
+  nsCOMPtr<imgIEncoder> encoder = do_CreateInstance(encoderCID.get());
+
+  size_t stride = layers::ImageDataSerializer::ComputeRGBStride(gSurfaceFormat,
+                                                                gPaintWidth);
+
+  nsString options;
+  nsresult rv = encoder->InitFromData(
+      (const uint8_t*)gDrawTargetBuffer, stride * gPaintHeight,
+      gPaintWidth, gPaintHeight, stride,
+      imgIEncoder::INPUT_FORMAT_HOSTARGB, options);
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  uint64_t count;
+  rv = encoder->Available(&count);
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  rv = Base64EncodeInputStream(encoder, aData, count);
+  return NS_SUCCEEDED(rv);
 }
 
 bool CurrentRepaintCannotFail() {

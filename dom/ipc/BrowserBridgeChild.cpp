@@ -10,11 +10,14 @@
 #endif
 #include "mozilla/dom/BrowserBridgeChild.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
-#include "nsQueryObject.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsQueryObject.h"
+#include "nsSubDocumentFrame.h"
+#include "nsView.h"
 
 using namespace mozilla::ipc;
 
@@ -155,6 +158,56 @@ mozilla::ipc::IPCResult BrowserBridgeChild::RecvFireFrameLoadEvent(
   event.mFlags.mBubbles = false;
   event.mFlags.mCancelable = false;
   EventDispatcher::Dispatch(owner, nullptr, &event, nullptr, &status);
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvScrollRectIntoView(
+    const nsRect& aRect, const ScrollAxis& aVertical,
+    const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
+    const int32_t& aAppUnitsPerDevPixel) {
+  RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
+  if (!owner) {
+    return IPC_OK();
+  }
+
+  nsIFrame* frame = owner->GetPrimaryFrame();
+  if (!frame) {
+    return IPC_OK();
+  }
+
+  nsSubDocumentFrame* subdocumentFrame = do_QueryFrame(frame);
+  if (!subdocumentFrame) {
+    return IPC_OK();
+  }
+
+  nsPoint extraOffset = subdocumentFrame->GetExtraOffset();
+
+  int32_t parentAPD = frame->PresContext()->AppUnitsPerDevPixel();
+  nsRect rect =
+      aRect.ScaleToOtherAppUnitsRoundOut(aAppUnitsPerDevPixel, parentAPD);
+  rect += extraOffset;
+  RefPtr<PresShell> presShell = frame->PresShell();
+  presShell->ScrollFrameRectIntoView(frame, rect, aVertical, aHorizontal,
+                                     aScrollFlags);
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvSubFrameCrashed(
+    BrowsingContext* aContext) {
+  if (aContext) {
+    RefPtr<nsFrameLoaderOwner> frameLoaderOwner =
+        do_QueryObject(aContext->GetEmbedderElement());
+    IgnoredErrorResult rv;
+    RemotenessOptions options;
+    options.mError.Construct(static_cast<uint32_t>(NS_ERROR_FRAME_CRASHED));
+    frameLoaderOwner->ChangeRemoteness(options, rv);
+
+    if (NS_WARN_IF(rv.Failed())) {
+      return IPC_FAIL(this, "Remoteness change failed");
+    }
+  }
 
   return IPC_OK();
 }

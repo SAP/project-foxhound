@@ -15,9 +15,7 @@
 #include "mozilla/Maybe.h"
 
 #include "gc/GC.h"
-#include "gc/RelocationOverlay.h"
-#include "vm/HelperThreads.h"
-#include "vm/Runtime.h"
+#include "vm/JSContext.h"
 
 namespace js {
 namespace gc {
@@ -153,17 +151,18 @@ struct MovingTracer final : public JS::CallbackTracer {
   explicit MovingTracer(JSRuntime* rt)
       : CallbackTracer(rt, TraceWeakMapKeysValues) {}
 
-  void onObjectEdge(JSObject** objp) override;
-  void onShapeEdge(Shape** shapep) override;
-  void onStringEdge(JSString** stringp) override;
-  void onScriptEdge(JSScript** scriptp) override;
-  void onLazyScriptEdge(LazyScript** lazyp) override;
-  void onBaseShapeEdge(BaseShape** basep) override;
-  void onScopeEdge(Scope** basep) override;
-  void onRegExpSharedEdge(RegExpShared** sharedp) override;
-  void onBigIntEdge(BigInt** bip) override;
-  void onChild(const JS::GCCellPtr& thing) override {
+  bool onObjectEdge(JSObject** objp) override;
+  bool onShapeEdge(Shape** shapep) override;
+  bool onStringEdge(JSString** stringp) override;
+  bool onScriptEdge(JSScript** scriptp) override;
+  bool onLazyScriptEdge(LazyScript** lazyp) override;
+  bool onBaseShapeEdge(BaseShape** basep) override;
+  bool onScopeEdge(Scope** scopep) override;
+  bool onRegExpSharedEdge(RegExpShared** sharedp) override;
+  bool onBigIntEdge(BigInt** bip) override;
+  bool onChild(const JS::GCCellPtr& thing) override {
     MOZ_ASSERT(!thing.asCell()->isForwarded());
+    return true;
   }
 
 #ifdef DEBUG
@@ -172,7 +171,34 @@ struct MovingTracer final : public JS::CallbackTracer {
 
  private:
   template <typename T>
-  void updateEdge(T** thingp);
+  bool updateEdge(T** thingp);
+};
+
+struct SweepingTracer final : public JS::CallbackTracer {
+  explicit SweepingTracer(JSRuntime* rt)
+      : CallbackTracer(rt, TraceWeakMapKeysValues) {}
+
+  bool onObjectEdge(JSObject** objp) override;
+  bool onShapeEdge(Shape** shapep) override;
+  bool onStringEdge(JSString** stringp) override;
+  bool onScriptEdge(JSScript** scriptp) override;
+  bool onLazyScriptEdge(LazyScript** lazyp) override;
+  bool onBaseShapeEdge(BaseShape** basep) override;
+  bool onScopeEdge(Scope** scopep) override;
+  bool onRegExpSharedEdge(RegExpShared** sharedp) override;
+  bool onBigIntEdge(BigInt** bip) override;
+  bool onChild(const JS::GCCellPtr& thing) override {
+    MOZ_CRASH("unexpected edge.");
+    return true;
+  }
+
+#ifdef DEBUG
+  TracerKind getTracerKind() const override { return TracerKind::Sweeping; }
+#endif
+
+ private:
+  template <typename T>
+  bool sweepEdge(T** thingp);
 };
 
 // Structure for counting how many times objects in a particular group have

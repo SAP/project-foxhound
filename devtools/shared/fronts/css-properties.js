@@ -1,14 +1,14 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
-loader.lazyRequireGetter(
-  this,
-  "CSS_PROPERTIES_DB",
-  "devtools/shared/css/properties-db",
-  true
-);
+const {
+  FrontClassWithSpec,
+  registerFront,
+} = require("devtools/shared/protocol");
+const { cssPropertiesSpec } = require("devtools/shared/specs/css-properties");
 
 loader.lazyRequireGetter(
   this,
@@ -16,12 +16,18 @@ loader.lazyRequireGetter(
   "devtools/shared/css/color-db",
   true
 );
-
-const {
-  FrontClassWithSpec,
-  registerFront,
-} = require("devtools/shared/protocol");
-const { cssPropertiesSpec } = require("devtools/shared/specs/css-properties");
+loader.lazyRequireGetter(
+  this,
+  "CSS_PROPERTIES_DB",
+  "devtools/shared/css/properties-db",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "CSS_TYPES",
+  "devtools/shared/css/constants",
+  true
+);
 
 /**
  * Build up a regular expression that matches a CSS variable token. This is an
@@ -38,34 +44,6 @@ var IS_VARIABLE_TOKEN = new RegExp(
   "i"
 );
 
-loader.lazyRequireGetter(
-  this,
-  "CSS_TYPES",
-  "devtools/shared/css/constants",
-  true
-);
-
-/**
- * Check that this is a CSS variable.
- *
- * @param {String} input
- * @return {Boolean}
- */
-function isCssVariable(input) {
-  return !!input.match(IS_VARIABLE_TOKEN);
-}
-
-/**
- * Check that this is a valid identifier.
- *
- * @param {String} input
- * @return {Boolean}
- * @see https://www.w3.org/TR/CSS21/syndata.html#value-def-identifier
- */
-function isIdentifier(input) {
-  return input === CSS.escape(input);
-}
-
 var cachedCssProperties = new WeakMap();
 
 /**
@@ -75,26 +53,12 @@ var cachedCssProperties = new WeakMap();
  * properties the current server supports.
  */
 class CssPropertiesFront extends FrontClassWithSpec(cssPropertiesSpec) {
-  constructor(client) {
-    super(client);
+  constructor(client, targetFront) {
+    super(client, targetFront);
 
     // Attribute name from which to retrieve the actorID out of the target actor's form
     this.formAttributeName = "cssPropertiesActor";
   }
-}
-
-/**
- * Query the feature supporting status in the featureSet.
- *
- * @param {Hashmap} featureSet the feature set hashmap
- * @param {String} feature the feature name string
- * @return {Boolean} has the feature or not
- */
-function hasFeature(featureSet, feature) {
-  if (feature in featureSet) {
-    return featureSet[feature];
-  }
-  return false;
 }
 
 /**
@@ -122,13 +86,9 @@ function CssProperties(db) {
   this.isKnown = this.isKnown.bind(this);
   this.isInherited = this.isInherited.bind(this);
   this.supportsType = this.supportsType.bind(this);
-  this.isValidOnClient = this.isValidOnClient.bind(this);
   this.supportsCssColor4ColorFunction = this.supportsCssColor4ColorFunction.bind(
     this
   );
-
-  // A weakly held dummy HTMLDivElement to test CSS properties on the client.
-  this._dummyElements = new WeakMap();
 }
 
 CssProperties.prototype = {
@@ -143,50 +103,6 @@ CssProperties.prototype = {
     // Custom Property Names (aka CSS Variables) are case-sensitive; do not lowercase.
     property = property.startsWith("--") ? property : property.toLowerCase();
     return !!this.properties[property] || isCssVariable(property);
-  },
-
-  /**
-   * Quickly check if a CSS name/value combo is valid on the client.
-   *
-   * @param {String} Property name.
-   * @param {String} Property value.
-   * @param {Document} The client's document object.
-   * @return {Boolean}
-   */
-  isValidOnClient(name, value, doc) {
-    // The property name should be an identifier.
-    if (!isIdentifier(name)) {
-      return false;
-    }
-
-    let dummyElement = this._dummyElements.get(doc);
-    if (!dummyElement) {
-      dummyElement = doc.createElementNS("http://www.w3.org/1999/xhtml", "div");
-      this._dummyElements.set(doc, dummyElement);
-    }
-
-    // `!important` is not a valid value when setting a style declaration in the
-    // CSS Object Model.
-    const sanitizedValue = ("" + value).replace(/!\s*important\s*$/, "");
-
-    // Test the style on the element.
-    dummyElement.style[name] = sanitizedValue;
-    const isValid = !!dummyElement.style[name];
-
-    // Reset the state of the dummy element;
-    dummyElement.style[name] = "";
-    return isValid;
-  },
-
-  /**
-   * Get a function that will check the validity of css name/values for a given document.
-   * Useful for injecting isValidOnClient into components when needed.
-   *
-   * @param {Document} The client's document object.
-   * @return {Function} this.isValidOnClient with the document pre-set.
-   */
-  getValidityChecker(doc) {
-    return (name, value) => this.isValidOnClient(name, value, doc);
   },
 
   /**
@@ -267,6 +183,30 @@ CssProperties.prototype = {
     return this.cssColor4ColorFunction;
   },
 };
+
+/**
+ * Check that this is a CSS variable.
+ *
+ * @param {String} input
+ * @return {Boolean}
+ */
+function isCssVariable(input) {
+  return !!input.match(IS_VARIABLE_TOKEN);
+}
+
+/**
+ * Query the feature supporting status in the featureSet.
+ *
+ * @param {Hashmap} featureSet the feature set hashmap
+ * @param {String} feature the feature name string
+ * @return {Boolean} has the feature or not
+ */
+function hasFeature(featureSet, feature) {
+  if (feature in featureSet) {
+    return featureSet[feature];
+  }
+  return false;
+}
 
 /**
  * Create a CssProperties object with a fully loaded CSS database. The

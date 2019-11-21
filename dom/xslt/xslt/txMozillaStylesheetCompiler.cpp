@@ -41,7 +41,7 @@
 #include "ReferrerInfo.h"
 
 using namespace mozilla;
-using mozilla::net::ReferrerPolicy;
+using mozilla::dom::ReferrerPolicy;
 
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
@@ -249,8 +249,7 @@ txStylesheetSink::OnStartRequest(nsIRequest* aRequest) {
   // sniffing themselves.
   nsCOMPtr<nsIURI> uri;
   channel->GetURI(getter_AddRefs(uri));
-  bool sniff;
-  if (NS_SUCCEEDED(uri->SchemeIs("file", &sniff)) && sniff &&
+  if (uri->SchemeIs("file") &&
       contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
     nsresult rv;
     nsCOMPtr<nsIStreamConverterService> serv =
@@ -372,7 +371,7 @@ nsresult txCompileObserver::loadURI(const nsAString& aUri,
 
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> referrerPrincipal =
-      BasePrincipal::CreateCodebasePrincipal(referrerUri, attrs);
+      BasePrincipal::CreateContentPrincipal(referrerUri, attrs);
   NS_ENSURE_TRUE(referrerPrincipal, NS_ERROR_FAILURE);
 
   return startLoad(uri, aCompiler, referrerPrincipal, aReferrerPolicy);
@@ -550,7 +549,7 @@ nsresult txSyncCompileObserver::loadURI(const nsAString& aUri,
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIPrincipal> referrerPrincipal =
-      BasePrincipal::CreateCodebasePrincipal(referrerUri, OriginAttributes());
+      BasePrincipal::CreateContentPrincipal(referrerUri, OriginAttributes());
   NS_ENSURE_TRUE(referrerPrincipal, NS_ERROR_FAILURE);
 
   // This is probably called by js, a loadGroup for the channel doesn't
@@ -592,17 +591,11 @@ nsresult TX_CompileStylesheet(nsINode* aNode,
   // If we move GetBaseURI to nsINode this can be simplified.
   nsCOMPtr<Document> doc = aNode->OwnerDoc();
 
-  nsCOMPtr<nsIURI> uri;
-  if (aNode->IsContent()) {
-    uri = aNode->AsContent()->GetBaseURI();
-  } else {
-    NS_ASSERTION(aNode->IsDocument(), "not a doc");
-    uri = aNode->AsDocument()->GetBaseURI();
-  }
-  NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE);
+  nsIURI* nodeBaseURI = aNode->GetBaseURI();
+  NS_ENSURE_TRUE(nodeBaseURI, NS_ERROR_FAILURE);
 
   nsAutoCString spec;
-  uri->GetSpec(spec);
+  nodeBaseURI->GetSpec(spec);
   NS_ConvertUTF8toUTF16 baseURI(spec);
 
   nsIURI* docUri = doc->GetDocumentURI();
@@ -610,6 +603,7 @@ nsresult TX_CompileStylesheet(nsINode* aNode,
 
   // We need to remove the ref, a URI with a ref would mean that we have an
   // embedded stylesheet.
+  nsCOMPtr<nsIURI> uri;
   NS_GetURIWithoutRef(docUri, getter_AddRefs(uri));
   NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE);
 

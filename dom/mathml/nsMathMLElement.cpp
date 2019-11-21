@@ -9,6 +9,7 @@
 #include "mozilla/dom/BindContext.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/FontPropertyTypes.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "mozilla/TextUtils.h"
 #include "nsGkAtoms.h"
 #include "nsITableCellLayout.h"  // for MAX_COLSPAN / MAX_ROWSPAN
@@ -110,14 +111,6 @@ bool nsMathMLElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
   MOZ_ASSERT(IsMathMLElement());
 
   if (aNamespaceID == kNameSpaceID_None) {
-    if (mNodeInfo->Equals(nsGkAtoms::math) && aAttribute == nsGkAtoms::mode) {
-      WarnDeprecated(nsGkAtoms::mode->GetUTF16String(),
-                     nsGkAtoms::display->GetUTF16String(), OwnerDoc());
-    }
-    if (aAttribute == nsGkAtoms::color) {
-      WarnDeprecated(nsGkAtoms::color->GetUTF16String(),
-                     nsGkAtoms::mathcolor_->GetUTF16String(), OwnerDoc());
-    }
     if (aAttribute == nsGkAtoms::color || aAttribute == nsGkAtoms::mathcolor_ ||
         aAttribute == nsGkAtoms::background ||
         aAttribute == nsGkAtoms::mathbackground_) {
@@ -139,68 +132,43 @@ bool nsMathMLElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                              aMaybeScriptedPrincipal, aResult);
 }
 
-static Element::MappedAttributeEntry sMtableStyles[] = {{nsGkAtoms::width},
-                                                        {nullptr}};
-
-static Element::MappedAttributeEntry sTokenStyles[] = {
-    {nsGkAtoms::mathsize_},    {nsGkAtoms::fontsize_},
-    {nsGkAtoms::color},        {nsGkAtoms::fontfamily_},
-    {nsGkAtoms::fontstyle_},   {nsGkAtoms::fontweight_},
-    {nsGkAtoms::mathvariant_}, {nullptr}};
-
-static Element::MappedAttributeEntry sEnvironmentStyles[] = {
+// https://mathml-refresh.github.io/mathml-core/#global-attributes
+static Element::MappedAttributeEntry sGlobalAttributes[] = {
+    {nsGkAtoms::dir},
+    {nsGkAtoms::mathbackground_},
+    {nsGkAtoms::mathcolor_},
+    {nsGkAtoms::mathsize_},
+    {nsGkAtoms::mathvariant_},
     {nsGkAtoms::scriptlevel_},
-    {nsGkAtoms::scriptminsize_},
-    {nsGkAtoms::scriptsizemultiplier_},
-    {nsGkAtoms::background},
+    // XXXfredw: Also map displaystyle to CSS math-style?
     {nullptr}};
 
-static Element::MappedAttributeEntry sCommonPresStyles[] = {
-    {nsGkAtoms::mathcolor_}, {nsGkAtoms::mathbackground_}, {nullptr}};
+// XXXfredw(bug 1548471): Add a runtime flag to disable these attributes.
+static Element::MappedAttributeEntry sDeprecatedScriptAttributes[] = {
+    {nsGkAtoms::scriptminsize_}, {nsGkAtoms::scriptsizemultiplier_}, {nullptr}};
 
-static Element::MappedAttributeEntry sDirStyles[] = {{nsGkAtoms::dir},
-                                                     {nullptr}};
+static Element::MappedAttributeEntry sDeprecatedStyleAttributes[] = {
+    {nsGkAtoms::background},
+    {nsGkAtoms::color},
+    {nsGkAtoms::fontfamily_},
+    {nsGkAtoms::fontsize_},
+    {nsGkAtoms::fontstyle_},
+    {nsGkAtoms::fontweight_},
+    {nullptr}};
 
 bool nsMathMLElement::IsAttributeMapped(const nsAtom* aAttribute) const {
   MOZ_ASSERT(IsMathMLElement());
 
-  static const MappedAttributeEntry* const mtableMap[] = {sMtableStyles,
-                                                          sCommonPresStyles};
-  static const MappedAttributeEntry* const tokenMap[] = {
-      sTokenStyles, sCommonPresStyles, sDirStyles};
-  static const MappedAttributeEntry* const mstyleMap[] = {
-      sTokenStyles, sEnvironmentStyles, sCommonPresStyles, sDirStyles};
-  static const MappedAttributeEntry* const commonPresMap[] = {
-      sCommonPresStyles};
-  static const MappedAttributeEntry* const mrowMap[] = {sCommonPresStyles,
-                                                        sDirStyles};
+  static const MappedAttributeEntry* const globalMap[] = {
+      sGlobalAttributes, sDeprecatedScriptAttributes};
+  static const MappedAttributeEntry* const styleMap[] = {
+      sDeprecatedStyleAttributes};
 
-  // We don't support mglyph (yet).
-  if (IsAnyOfMathMLElements(nsGkAtoms::ms_, nsGkAtoms::mi_, nsGkAtoms::mn_,
-                            nsGkAtoms::mo_, nsGkAtoms::mtext_,
-                            nsGkAtoms::mspace_))
-    return FindAttributeDependence(aAttribute, tokenMap);
-  if (IsAnyOfMathMLElements(nsGkAtoms::mstyle_, nsGkAtoms::math))
-    return FindAttributeDependence(aAttribute, mstyleMap);
-
-  if (mNodeInfo->Equals(nsGkAtoms::mtable_))
-    return FindAttributeDependence(aAttribute, mtableMap);
-
-  if (mNodeInfo->Equals(nsGkAtoms::mrow_))
-    return FindAttributeDependence(aAttribute, mrowMap);
-
-  if (IsAnyOfMathMLElements(
-          nsGkAtoms::maction_, nsGkAtoms::maligngroup_, nsGkAtoms::malignmark_,
-          nsGkAtoms::menclose_, nsGkAtoms::merror_, nsGkAtoms::mfenced_,
-          nsGkAtoms::mfrac_, nsGkAtoms::mover_, nsGkAtoms::mpadded_,
-          nsGkAtoms::mphantom_, nsGkAtoms::mprescripts_, nsGkAtoms::mroot_,
-          nsGkAtoms::msqrt_, nsGkAtoms::msub_, nsGkAtoms::msubsup_,
-          nsGkAtoms::msup_, nsGkAtoms::mtd_, nsGkAtoms::mtr_,
-          nsGkAtoms::munder_, nsGkAtoms::munderover_, nsGkAtoms::none)) {
-    return FindAttributeDependence(aAttribute, commonPresMap);
-  }
-
-  return false;
+  return FindAttributeDependence(aAttribute, globalMap) ||
+         (!StaticPrefs::mathml_deprecated_style_attributes_disabled() &&
+          FindAttributeDependence(aAttribute, styleMap)) ||
+         (mNodeInfo->Equals(nsGkAtoms::mtable_) &&
+          aAttribute == nsGkAtoms::width);
 }
 
 nsMapRuleToAttributesFunc nsMathMLElement::GetAttributeMappingFunction() const {
@@ -213,7 +181,11 @@ nsMapRuleToAttributesFunc nsMathMLElement::GetAttributeMappingFunction() const {
 /* static */
 bool nsMathMLElement::ParseNamedSpaceValue(const nsString& aString,
                                            nsCSSValue& aCSSValue,
-                                           uint32_t aFlags) {
+                                           uint32_t aFlags,
+                                           const Document& aDocument) {
+  if (StaticPrefs::mathml_mathspace_names_disabled()) {
+    return false;
+  }
   int32_t i = 0;
   // See if it is one of the 'namedspace' (ranging -7/18em, -6/18, ... 7/18em)
   if (aString.EqualsLiteral("veryverythinmathspace")) {
@@ -248,6 +220,7 @@ bool nsMathMLElement::ParseNamedSpaceValue(const nsString& aString,
     }
   }
   if (0 != i) {
+    aDocument.WarnOnceAbout(dom::Document::eMathML_DeprecatedMathSpaceValue);
     aCSSValue.SetFloatValue(float(i) / float(18), eCSSUnit_EM);
     return true;
   }
@@ -292,6 +265,8 @@ bool nsMathMLElement::ParseNamedSpaceValue(const nsString& aString,
 //   number)"
 //
 /* static */
+// XXXfredw: Deprecate legacy MathML syntax and use the CSS parser instead.
+// See https://github.com/mathml-refresh/mathml/issues/63
 bool nsMathMLElement::ParseNumericValue(const nsString& aString,
                                         nsCSSValue& aCSSValue, uint32_t aFlags,
                                         Document* aDocument) {
@@ -306,7 +281,7 @@ bool nsMathMLElement::ParseNumericValue(const nsString& aString,
     return false;
   }
 
-  if (ParseNamedSpaceValue(str, aCSSValue, aFlags)) {
+  if (aDocument && ParseNamedSpaceValue(str, aCSSValue, aFlags, *aDocument)) {
     return true;
   }
 
@@ -339,6 +314,13 @@ bool nsMathMLElement::ParseNumericValue(const nsString& aString,
     }
     number.Append(c);
   }
+  if (StaticPrefs::mathml_legacy_number_syntax_disabled() &&
+      gotDot && str[i - 1] == '.') {
+    if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
+      ReportLengthParseError(aString, aDocument);
+    }
+    return false; // Number ending with a dot.
+  }
 
   // Convert number to floating point
   nsresult errorCode;
@@ -358,7 +340,8 @@ bool nsMathMLElement::ParseNumericValue(const nsString& aString,
 
   nsCSSUnit cssUnit;
   if (unit.IsEmpty()) {
-    if (aFlags & PARSE_ALLOW_UNITLESS) {
+    if (!StaticPrefs::mathml_nonzero_unitless_lengths_disabled() &&
+        (aFlags & PARSE_ALLOW_UNITLESS)) {
       // no explicit unit, this is a number that will act as a multiplier
       if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
         nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
@@ -386,23 +369,23 @@ bool nsMathMLElement::ParseNumericValue(const nsString& aString,
   } else if (unit.EqualsLiteral("%")) {
     aCSSValue.SetPercentValue(floatValue / 100.0f);
     return true;
-  } else if (unit.EqualsLiteral("em"))
+  } else if (unit.LowerCaseEqualsLiteral("em"))
     cssUnit = eCSSUnit_EM;
-  else if (unit.EqualsLiteral("ex"))
+  else if (unit.LowerCaseEqualsLiteral("ex"))
     cssUnit = eCSSUnit_XHeight;
-  else if (unit.EqualsLiteral("px"))
+  else if (unit.LowerCaseEqualsLiteral("px"))
     cssUnit = eCSSUnit_Pixel;
-  else if (unit.EqualsLiteral("in"))
+  else if (unit.LowerCaseEqualsLiteral("in"))
     cssUnit = eCSSUnit_Inch;
-  else if (unit.EqualsLiteral("cm"))
+  else if (unit.LowerCaseEqualsLiteral("cm"))
     cssUnit = eCSSUnit_Centimeter;
-  else if (unit.EqualsLiteral("mm"))
+  else if (unit.LowerCaseEqualsLiteral("mm"))
     cssUnit = eCSSUnit_Millimeter;
-  else if (unit.EqualsLiteral("pt"))
+  else if (unit.LowerCaseEqualsLiteral("pt"))
     cssUnit = eCSSUnit_Point;
-  else if (unit.EqualsLiteral("pc"))
+  else if (unit.LowerCaseEqualsLiteral("pc"))
     cssUnit = eCSSUnit_Pica;
-  else if (unit.EqualsLiteral("q"))
+  else if (unit.LowerCaseEqualsLiteral("q"))
     cssUnit = eCSSUnit_Quarter;
   else {  // unexpected unit
     if (!(aFlags & PARSE_SUPPRESS_WARNINGS)) {
@@ -531,24 +514,26 @@ void nsMathMLElement::MapMathMLAttributesInto(
   // In both cases, we don't allow negative values.
   // Unitless values give a multiple of the default value.
   //
-  bool parseSizeKeywords = true;
+  bool parseSizeKeywords = !StaticPrefs::mathml_mathsize_names_disabled();
   value = aAttributes->GetAttr(nsGkAtoms::mathsize_);
   if (!value) {
     parseSizeKeywords = false;
     value = aAttributes->GetAttr(nsGkAtoms::fontsize_);
     if (value) {
-      WarnDeprecated(nsGkAtoms::fontsize_->GetUTF16String(),
-                     nsGkAtoms::mathsize_->GetUTF16String(), aDecls.Document());
+      aDecls.Document()->WarnOnceAbout(
+          dom::Document::eMathML_DeprecatedStyleAttribute);
     }
   }
   if (value && value->Type() == nsAttrValue::eString &&
       !aDecls.PropertyIsSet(eCSSProperty_font_size)) {
     nsAutoString str(value->GetStringValue());
     nsCSSValue fontSize;
-    if (!ParseNumericValue(str, fontSize,
-                           PARSE_SUPPRESS_WARNINGS | PARSE_ALLOW_UNITLESS |
-                               CONVERT_UNITLESS_TO_PERCENT,
-                           nullptr) &&
+    uint32_t flags = PARSE_ALLOW_UNITLESS | CONVERT_UNITLESS_TO_PERCENT;
+    if (parseSizeKeywords) {
+      // Do not warn for invalid value if mathsize keywords are accepted.
+      flags |= PARSE_SUPPRESS_WARNINGS;
+    }
+    if (!ParseNumericValue(str, fontSize, flags, nullptr) &&
         parseSizeKeywords) {
       static const char sizes[3][7] = {"small", "normal", "big"};
       static const int32_t values[MOZ_ARRAY_LENGTH(sizes)] = {
@@ -557,6 +542,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
       str.CompressWhitespace();
       for (uint32_t i = 0; i < ArrayLength(sizes); ++i) {
         if (str.EqualsASCII(sizes[i])) {
+          aDecls.Document()->WarnOnceAbout(
+              dom::Document::eMathML_DeprecatedMathSizeValue);
           aDecls.SetKeywordValue(eCSSProperty_font_size, values[i]);
           break;
         }
@@ -579,9 +566,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
   //
   value = aAttributes->GetAttr(nsGkAtoms::fontfamily_);
   if (value) {
-    WarnDeprecated(nsGkAtoms::fontfamily_->GetUTF16String(),
-                   nsGkAtoms::mathvariant_->GetUTF16String(),
-                   aDecls.Document());
+    aDecls.Document()->WarnOnceAbout(
+        dom::Document::eMathML_DeprecatedStyleAttribute);
   }
   if (value && value->Type() == nsAttrValue::eString &&
       !aDecls.PropertyIsSet(eCSSProperty_font_family)) {
@@ -600,9 +586,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
   // -moz-math-variant is specified.
   value = aAttributes->GetAttr(nsGkAtoms::fontstyle_);
   if (value) {
-    WarnDeprecated(nsGkAtoms::fontstyle_->GetUTF16String(),
-                   nsGkAtoms::mathvariant_->GetUTF16String(),
-                   aDecls.Document());
+    aDecls.Document()->WarnOnceAbout(
+        dom::Document::eMathML_DeprecatedStyleAttribute);
     if (value->Type() == nsAttrValue::eString &&
         !aDecls.PropertyIsSet(eCSSProperty_font_style)) {
       nsAutoString str(value->GetStringValue());
@@ -629,9 +614,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
   // -moz-math-variant is specified.
   value = aAttributes->GetAttr(nsGkAtoms::fontweight_);
   if (value) {
-    WarnDeprecated(nsGkAtoms::fontweight_->GetUTF16String(),
-                   nsGkAtoms::mathvariant_->GetUTF16String(),
-                   aDecls.Document());
+    aDecls.Document()->WarnOnceAbout(
+        dom::Document::eMathML_DeprecatedStyleAttribute);
     if (value->Type() == nsAttrValue::eString &&
         !aDecls.PropertyIsSet(eCSSProperty_font_weight)) {
       nsAutoString str(value->GetStringValue());
@@ -700,7 +684,7 @@ void nsMathMLElement::MapMathMLAttributesInto(
         NS_MATHML_MATHVARIANT_LOOPED,
         NS_MATHML_MATHVARIANT_STRETCHED};
     for (uint32_t i = 0; i < ArrayLength(sizes); ++i) {
-      if (str.EqualsASCII(sizes[i])) {
+      if (str.LowerCaseEqualsASCII(sizes[i])) {
         aDecls.SetKeywordValue(eCSSProperty__moz_math_variant, values[i]);
         break;
       }
@@ -729,9 +713,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
   if (!value) {
     value = aAttributes->GetAttr(nsGkAtoms::background);
     if (value) {
-      WarnDeprecated(nsGkAtoms::background->GetUTF16String(),
-                     nsGkAtoms::mathbackground_->GetUTF16String(),
-                     aDecls.Document());
+      aDecls.Document()->WarnOnceAbout(
+          dom::Document::eMathML_DeprecatedStyleAttribute);
     }
   }
   if (value) {
@@ -762,9 +745,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
   if (!value) {
     value = aAttributes->GetAttr(nsGkAtoms::color);
     if (value) {
-      WarnDeprecated(nsGkAtoms::color->GetUTF16String(),
-                     nsGkAtoms::mathcolor_->GetUTF16String(),
-                     aDecls.Document());
+      aDecls.Document()->WarnOnceAbout(
+          dom::Document::eMathML_DeprecatedStyleAttribute);
     }
   }
   nscolor color;
@@ -826,7 +808,7 @@ void nsMathMLElement::MapMathMLAttributesInto(
     static const int32_t dirValues[MOZ_ARRAY_LENGTH(dirs)] = {
         NS_STYLE_DIRECTION_LTR, NS_STYLE_DIRECTION_RTL};
     for (uint32_t i = 0; i < ArrayLength(dirs); ++i) {
-      if (str.EqualsASCII(dirs[i])) {
+      if (str.LowerCaseEqualsASCII(dirs[i])) {
         aDecls.SetKeywordValue(eCSSProperty_direction, dirValues[i]);
         break;
       }
@@ -881,14 +863,6 @@ bool nsMathMLElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
 }
 
 bool nsMathMLElement::IsLink(nsIURI** aURI) const {
-  // http://www.w3.org/TR/2010/REC-MathML3-20101021/chapter6.html#interf.link
-  // The REC says that the following elements should not be linking elements:
-  if (IsAnyOfMathMLElements(nsGkAtoms::mprescripts_, nsGkAtoms::none,
-                            nsGkAtoms::malignmark_, nsGkAtoms::maligngroup_)) {
-    *aURI = nullptr;
-    return false;
-  }
-
   bool hasHref = false;
   const nsAttrValue* href = mAttrs.GetAttr(nsGkAtoms::href, kNameSpaceID_None);
   if (href) {
@@ -930,12 +904,11 @@ bool nsMathMLElement::IsLink(nsIURI** aURI) const {
   }
 
   if (hasHref) {
-    nsCOMPtr<nsIURI> baseURI = GetBaseURI();
     // Get absolute URI
     nsAutoString hrefStr;
     href->ToString(hrefStr);
     nsContentUtils::NewURIWithDocumentCharset(aURI, hrefStr, OwnerDoc(),
-                                              baseURI);
+                                              GetBaseURI());
     // must promise out param is non-null if we return true
     return !!*aURI;
   }

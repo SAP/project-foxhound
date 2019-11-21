@@ -29,10 +29,4 @@ like mach, mozreview and taskcluster.
   linters/eslint
   linters/flake8
   linters/l10n
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+  linters/rstlinter

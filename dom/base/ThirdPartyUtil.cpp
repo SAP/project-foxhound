@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ThirdPartyUtil.h"
+#include "nsDocShell.h"
 #include "nsGlobalWindowOuter.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -24,6 +25,9 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
 #include "nsGlobalWindowOuter.h"
+
+using namespace mozilla;
+using namespace mozilla::dom;
 
 NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 
@@ -139,6 +143,43 @@ ThirdPartyUtil::GetURIFromWindow(mozIDOMWindowProxy* aWin, nsIURI** result) {
   return rv;
 }
 
+NS_IMETHODIMP
+ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow(
+    mozIDOMWindowProxy* aWin, nsIURI* aURIBeingLoaded, nsIPrincipal** result) {
+  nsPIDOMWindowOuter* outerWindow = nsPIDOMWindowOuter::From(aWin);
+  nsPIDOMWindowInner* innerWindow = outerWindow->GetCurrentInnerWindow();
+  Document* doc = innerWindow ? innerWindow->GetExtantDoc() : nullptr;
+  if (!doc) {
+    return GetPrincipalFromWindow(aWin, result);
+  }
+
+  nsCOMPtr<nsIPrincipal> principal =
+      doc->GetContentBlockingAllowListPrincipal();
+  if (aURIBeingLoaded && principal && principal->GetIsNullPrincipal()) {
+    // If we have an initial principal during navigation, recompute it to get
+    // the real content blocking allow list principal.
+    nsIDocShell* docShell = doc->GetDocShell();
+    OriginAttributes attrs =
+        docShell ? nsDocShell::Cast(docShell)->GetOriginAttributes()
+                 : OriginAttributes();
+    principal =
+        doc->RecomputeContentBlockingAllowListPrincipal(aURIBeingLoaded, attrs);
+  }
+
+  if (!principal || !principal->GetIsContentPrincipal()) {
+    // This is for compatibility with GetURIFromWindow.  Null principals are
+    // explicitly special cased there.  GetURI returns nullptr for
+    // SystemPrincipal and ExpandedPrincipal.
+    LOG(
+        ("ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow can't "
+         "use null principal\n"));
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  principal.forget(result);
+  return NS_OK;
+}
+
 // Determine if aFirstURI is third party with respect to aSecondURI. See docs
 // for mozIThirdPartyUtil.
 NS_IMETHODIMP
@@ -197,9 +238,9 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
 
   nsPIDOMWindowOuter* current = nsPIDOMWindowOuter::From(aWindow);
   do {
-    // We use GetScriptableParent rather than GetParent because we consider
-    // <iframe mozbrowser> to be a top-level frame.
-    nsPIDOMWindowOuter* parent = current->GetScriptableParent();
+    // We use GetInProcessScriptableParent rather than GetParent because we
+    // consider <iframe mozbrowser> to be a top-level frame.
+    nsPIDOMWindowOuter* parent = current->GetInProcessScriptableParent();
     // We don't use SameCOMIdentity here since we know that nsPIDOMWindowOuter
     // is only implemented by nsGlobalWindowOuter, so different objects of that
     // type will not have different nsISupports COM identities, and checking the
@@ -381,12 +422,8 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
   // only way we can get a base domain consisting of the empty string, which
   // means we can safely perform foreign tests on such URIs where "not foreign"
   // means "the involved URIs are all file://".
-  if (aBaseDomain.IsEmpty()) {
-    bool isFileURI = false;
-    aHostURI->SchemeIs("file", &isFileURI);
-    if (!isFileURI) {
-      return NS_ERROR_INVALID_ARG;
-    }
+  if (aBaseDomain.IsEmpty() && !aHostURI->SchemeIs("file")) {
+    return NS_ERROR_INVALID_ARG;
   }
 
   return NS_OK;

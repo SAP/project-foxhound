@@ -8,19 +8,22 @@
 #define mozilla_dom_workers_workerprivate_h__
 
 #include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerStatus.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CondVar.h"
 #include "mozilla/DOMEventTargetHelper.h"
+#include "mozilla/MozPromise.h"
 #include "mozilla/RelativeTimeline.h"
 #include "mozilla/StorageAccess.h"
+#include "mozilla/ThreadSafeWeakPtr.h"
 #include "nsContentUtils.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIEventTarget.h"
 #include "nsTObserverArray.h"
 
 #include "js/ContextOptions.h"
+#include "mozilla/dom/RemoteWorkerChild.h"
 #include "mozilla/dom/Worker.h"
-#include "mozilla/dom/WorkerHolder.h"
 #include "mozilla/dom/WorkerLoadInfo.h"
 #include "mozilla/dom/workerinternals/JSSettings.h"
 #include "mozilla/dom/workerinternals/Queue.h"
@@ -43,7 +46,6 @@ class Function;
 class MessagePort;
 class MessagePortIdentifier;
 class PerformanceStorage;
-class RemoteWorkerChild;
 class TimeoutHandler;
 class WorkerControlRunnable;
 class WorkerCSPEventListener;
@@ -52,6 +54,7 @@ class WorkerDebuggerGlobalScope;
 class WorkerErrorReport;
 class WorkerEventTarget;
 class WorkerGlobalScope;
+class WorkerRef;
 class WorkerRunnable;
 class WorkerDebuggeeRunnable;
 class WorkerThread;
@@ -87,6 +90,8 @@ class SharedMutex {
   void AssertCurrentThreadOwns() const { mMutex->AssertCurrentThreadOwns(); }
 };
 
+nsString ComputeWorkerPrivateId();
+
 class WorkerPrivate : public RelativeTimeline {
  public:
   struct LocationInfo {
@@ -107,7 +112,7 @@ class WorkerPrivate : public RelativeTimeline {
       JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
       WorkerType aWorkerType, const nsAString& aWorkerName,
       const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
-      ErrorResult& aRv);
+      ErrorResult& aRv, nsString aId = EmptyString());
 
   enum LoadGroupBehavior { InheritLoadGroup, OverrideLoadGroup };
 
@@ -314,6 +319,14 @@ class WorkerPrivate : public RelativeTimeline {
   WorkerDebuggerGlobalScope* DebuggerGlobalScope() const {
     MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
     return data->mDebuggerScope;
+  }
+
+  // Get the global associated with the current nested event loop.  Will return
+  // null if we're not in a nested event loop or that nested event loop does not
+  // have an associated global.
+  nsIGlobalObject* GetCurrentEventLoopGlobal() const {
+    MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
+    return data->mCurrentEventLoopGlobal;
   }
 
   nsICSPEventListener* CSPEventListener() const;
@@ -722,8 +735,8 @@ class WorkerPrivate : public RelativeTimeline {
 
   nsIReferrerInfo* GetReferrerInfo() const { return mLoadInfo.mReferrerInfo; }
 
-  uint32_t GetReferrerPolicy() const {
-    return mLoadInfo.mReferrerInfo->GetReferrerPolicy();
+  ReferrerPolicy GetReferrerPolicy() const {
+    return mLoadInfo.mReferrerInfo->ReferrerPolicy();
   }
 
   void SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
@@ -787,6 +800,13 @@ class WorkerPrivate : public RelativeTimeline {
   RemoteWorkerChild* GetRemoteWorkerController();
 
   void SetRemoteWorkerController(RemoteWorkerChild* aController);
+
+  void SetRemoteWorkerControllerWeakRef(
+      ThreadSafeWeakPtr<RemoteWorkerChild> aWeakRef);
+
+  ThreadSafeWeakPtr<RemoteWorkerChild> GetRemoteWorkerControllerWeakRef();
+
+  RefPtr<GenericPromise> SetServiceWorkerSkipWaitingFlag();
 
   // We can assume that an nsPIDOMWindow will be available for Freeze, Thaw
   // as these are only used for globals going in and out of the bfcache.
@@ -869,14 +889,14 @@ class WorkerPrivate : public RelativeTimeline {
 
   void StartCancelingTimer();
 
-  nsAString& Id();
+  const nsAString& Id();
 
  private:
   WorkerPrivate(WorkerPrivate* aParent, const nsAString& aScriptURL,
                 bool aIsChromeWorker, WorkerType aWorkerType,
                 const nsAString& aWorkerName,
                 const nsACString& aServiceWorkerScope,
-                WorkerLoadInfo& aLoadInfo);
+                WorkerLoadInfo& aLoadInfo, nsString&& aId);
 
   ~WorkerPrivate();
 
@@ -922,7 +942,7 @@ class WorkerPrivate : public RelativeTimeline {
   void WaitForWorkerEvents();
 
   // If the worker shutdown status is equal or greater then aFailStatus, this
-  // operation will fail and nullptr will be returned. See WorkerHolder.h for
+  // operation will fail and nullptr will be returned. See WorkerStatus.h for
   // more information about the correct value to use.
   already_AddRefed<nsIEventTarget> CreateNewSyncLoop(WorkerStatus aFailStatus);
 
@@ -938,16 +958,18 @@ class WorkerPrivate : public RelativeTimeline {
 
   void ShutdownGCTimers();
 
-  bool AddHolder(WorkerHolder* aHolder, WorkerStatus aFailStatus);
+  friend class WorkerRef;
 
-  void RemoveHolder(WorkerHolder* aHolder);
+  bool AddWorkerRef(WorkerRef* aWorkerRefer, WorkerStatus aFailStatus);
 
-  void NotifyHolders(WorkerStatus aStatus);
+  void RemoveWorkerRef(WorkerRef* aWorkerRef);
 
-  bool HasActiveHolders() {
+  void NotifyWorkerRefs(WorkerStatus aStatus);
+
+  bool HasActiveWorkerRefs() {
     MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
     return !(data->mChildWorkers.IsEmpty() && data->mTimeouts.IsEmpty() &&
-             data->mHolders.IsEmpty());
+             data->mWorkerRefs.IsEmpty());
   }
 
   // Internal logic to dispatch a runnable. This is separate from Dispatch()
@@ -965,7 +987,6 @@ class WorkerPrivate : public RelativeTimeline {
 
   class EventTarget;
   friend class EventTarget;
-  friend class mozilla::dom::WorkerHolder;
   friend class AutoSyncLoopHolder;
 
   struct TimeoutInfo;
@@ -1063,6 +1084,9 @@ class WorkerPrivate : public RelativeTimeline {
   // Only touched on the parent thread. This is set only if IsSharedWorker().
   RefPtr<RemoteWorkerChild> mRemoteWorkerController;
 
+  // This is set only if IsServiceWorker().
+  ThreadSafeWeakPtr<RemoteWorkerChild> mRemoteWorkerControllerWeakRef;
+
   JS::UniqueChars mDefaultLocale;  // nulled during worker JSContext init
   TimeStamp mKillTime;
   WorkerStatus mParentStatus;
@@ -1084,7 +1108,7 @@ class WorkerPrivate : public RelativeTimeline {
     RefPtr<WorkerGlobalScope> mScope;
     RefPtr<WorkerDebuggerGlobalScope> mDebuggerScope;
     nsTArray<WorkerPrivate*> mChildWorkers;
-    nsTObserverArray<WorkerHolder*> mHolders;
+    nsTObserverArray<WorkerRef*> mWorkerRefs;
     nsTArray<nsAutoPtr<TimeoutInfo>> mTimeouts;
 
     nsCOMPtr<nsITimer> mTimer;
@@ -1096,7 +1120,20 @@ class WorkerPrivate : public RelativeTimeline {
 
     UniquePtr<ClientSource> mClientSource;
 
-    uint32_t mNumHoldersPreventingShutdownStart;
+    // While running a nested event loop, whether a sync loop or a debugger
+    // event loop we want to keep track of which global is running it, if any,
+    // so runnables that run off that event loop can get at that information. In
+    // practice this only matters for various worker debugger runnables running
+    // against sandboxes, because all other runnables know which globals they
+    // belong to already.  We could also address this by threading the relevant
+    // global through the chains of runnables involved, but we'd need to thread
+    // it through some runnables that run on the main thread, and that would
+    // require some care to make sure things get released on the correct thread,
+    // which we'd rather avoid.  This member is only accessed on the worker
+    // thread.
+    nsCOMPtr<nsIGlobalObject> mCurrentEventLoopGlobal;
+
+    uint32_t mNumWorkerRefsPreventingShutdownStart;
     uint32_t mDebuggerEventLoopLevel;
 
     uint32_t mErrorHandlerRecursionCount;
@@ -1110,6 +1147,17 @@ class WorkerPrivate : public RelativeTimeline {
     bool mOnLine;
   };
   ThreadBound<WorkerThreadAccessible> mWorkerThreadAccessible;
+
+  class MOZ_RAII AutoPushEventLoopGlobal {
+   public:
+    AutoPushEventLoopGlobal(WorkerPrivate* aWorkerPrivate, JSContext* aCx);
+    ~AutoPushEventLoopGlobal();
+
+   private:
+    WorkerPrivate* mWorkerPrivate;
+    nsCOMPtr<nsIGlobalObject> mOldEventLoopGlobal;
+  };
+  friend class AutoPushEventLoopGlobal;
 
   uint32_t mPostSyncLoopOperations;
 
@@ -1151,7 +1199,7 @@ class WorkerPrivate : public RelativeTimeline {
 
   RefPtr<mozilla::PerformanceCounter> mPerformanceCounter;
 
-  nsString mID;
+  nsString mId;
 };
 
 class AutoSyncLoopHolder {

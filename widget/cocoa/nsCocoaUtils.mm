@@ -469,7 +469,8 @@ nsresult nsCocoaUtils::CreateNSImageFromCGImage(CGImageRef aInputImage, NSImage*
 }
 
 nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer* aImage, uint32_t aWhichFrame,
-                                                       NSImage** aResult, CGFloat scaleFactor) {
+                                                       NSImage** aResult, CGFloat scaleFactor,
+                                                       bool* aIsEntirelyBlack) {
   RefPtr<SourceSurface> surface;
   int32_t width = 0, height = 0;
   aImage->GetWidth(&width);
@@ -505,7 +506,7 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer* aImage, ui
   NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
 
   CGImageRef imageRef = NULL;
-  nsresult rv = nsCocoaUtils::CreateCGImageFromSurface(surface, &imageRef);
+  nsresult rv = nsCocoaUtils::CreateCGImageFromSurface(surface, &imageRef, aIsEntirelyBlack);
   if (NS_FAILED(rv) || !imageRef) {
     return NS_ERROR_FAILURE;
   }
@@ -520,6 +521,41 @@ nsresult nsCocoaUtils::CreateNSImageFromImageContainer(imgIContainer* aImage, ui
   NSSize size = NSMakeSize(width, height);
   [*aResult setSize:size];
   [[[*aResult representations] objectAtIndex:0] setSize:size];
+  return NS_OK;
+}
+
+nsresult nsCocoaUtils::CreateDualRepresentationNSImageFromImageContainer(imgIContainer* aImage,
+                                                                         uint32_t aWhichFrame,
+                                                                         NSImage** aResult,
+                                                                         bool* aIsEntirelyBlack) {
+  int32_t width = 0, height = 0;
+  aImage->GetWidth(&width);
+  aImage->GetHeight(&height);
+  NSSize size = NSMakeSize(width, height);
+  *aResult = [[NSImage alloc] init];
+  [*aResult setSize:size];
+
+  NSImage* newRepresentation = nil;
+  nsresult rv = nsCocoaUtils::CreateNSImageFromImageContainer(
+      aImage, aWhichFrame, &newRepresentation, 1.0f, aIsEntirelyBlack);
+  if (NS_FAILED(rv) || !newRepresentation) {
+    return NS_ERROR_FAILURE;
+  }
+
+  [[[newRepresentation representations] objectAtIndex:0] setSize:size];
+  [*aResult addRepresentation:[[newRepresentation representations] objectAtIndex:0]];
+  [newRepresentation release];
+  newRepresentation = nil;
+
+  rv = nsCocoaUtils::CreateNSImageFromImageContainer(aImage, aWhichFrame, &newRepresentation, 2.0f,
+                                                     aIsEntirelyBlack);
+  if (NS_FAILED(rv) || !newRepresentation) {
+    return NS_ERROR_FAILURE;
+  }
+
+  [[[newRepresentation representations] objectAtIndex:0] setSize:size];
+  [*aResult addRepresentation:[[newRepresentation representations] objectAtIndex:0]];
+  [newRepresentation release];
   return NS_OK;
 }
 
@@ -545,6 +581,16 @@ NSString* nsCocoaUtils::ToNSString(const nsAString& aString) {
   }
   return [NSString stringWithCharacters:reinterpret_cast<const unichar*>(aString.BeginReading())
                                  length:aString.Length()];
+}
+
+// static
+NSString* nsCocoaUtils::ToNSString(const nsACString& aCString) {
+  if (aCString.IsEmpty()) {
+    return [NSString string];
+  }
+  return [[[NSString alloc] initWithBytes:aCString.BeginReading()
+                                   length:aCString.Length()
+                                 encoding:NSUTF8StringEncoding] autorelease];
 }
 
 // static
@@ -1040,6 +1086,45 @@ TimeStamp nsCocoaUtils::GetEventTimeStamp(NSTimeInterval aEventTime) {
   return TimeStamp::FromSystemTime(tick);
 }
 
+static NSString* ActionOnDoubleClickSystemPref() {
+  NSUserDefaults* userDefaults = [NSUserDefaults standardUserDefaults];
+  NSString* kAppleActionOnDoubleClickKey = @"AppleActionOnDoubleClick";
+  id value = [userDefaults objectForKey:kAppleActionOnDoubleClickKey];
+  if ([value isKindOfClass:[NSString class]]) {
+    return value;
+  }
+  return nil;
+}
+
+@interface NSWindow (NSWindowShouldZoomOnDoubleClick)
++ (BOOL)_shouldZoomOnDoubleClick;  // present on 10.7 and above
+@end
+
+bool nsCocoaUtils::ShouldZoomOnTitlebarDoubleClick() {
+  if ([NSWindow respondsToSelector:@selector(_shouldZoomOnDoubleClick)]) {
+    return [NSWindow _shouldZoomOnDoubleClick];
+  }
+  if (nsCocoaFeatures::OnElCapitanOrLater()) {
+    return [ActionOnDoubleClickSystemPref() isEqualToString:@"Maximize"];
+  }
+  return false;
+}
+
+bool nsCocoaUtils::ShouldMinimizeOnTitlebarDoubleClick() {
+  // Check the system preferences.
+  // We could also check -[NSWindow _shouldMiniaturizeOnDoubleClick]. It's not clear to me which
+  // approach would be preferable; neither is public API.
+  if (nsCocoaFeatures::OnElCapitanOrLater()) {
+    return [ActionOnDoubleClickSystemPref() isEqualToString:@"Minimize"];
+  }
+
+  // Pre-10.11:
+  NSUserDefaults* userDefaults = [NSUserDefaults standardUserDefaults];
+  NSString* kAppleMiniaturizeOnDoubleClickKey = @"AppleMiniaturizeOnDoubleClick";
+  id value1 = [userDefaults objectForKey:kAppleMiniaturizeOnDoubleClickKey];
+  return [value1 isKindOfClass:[NSValue class]] && [value1 boolValue];
+}
+
 // AVAuthorizationStatus is not needed unless we are running on 10.14.
 // However, on pre-10.14 SDK's, AVAuthorizationStatus and its enum values
 // are both defined and prohibited from use by compile-time checks. We
@@ -1106,32 +1191,31 @@ static nsresult GetPermissionState(AVMediaType aMediaType, uint16_t& aState) {
   MOZ_ASSERT(aMediaType == AVMediaTypeVideo || aMediaType == AVMediaTypeAudio);
 
   // Only attempt to check authorization status on 10.14+.
-  if (!nsCocoaFeatures::OnMojaveOrLater()) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
+  if (@available(macOS 10.14, *)) {
+    GeckoAVAuthorizationStatus authStatus = static_cast<GeckoAVAuthorizationStatus>(
+        [AVCaptureDevice authorizationStatusForMediaType:aMediaType]);
+    LogAuthorizationStatus(aMediaType, authStatus);
 
-  GeckoAVAuthorizationStatus authStatus = static_cast<GeckoAVAuthorizationStatus>(
-      [AVCaptureDevice authorizationStatusForMediaType:aMediaType]);
-  LogAuthorizationStatus(aMediaType, authStatus);
-
-  // Convert GeckoAVAuthorizationStatus to nsIOSPermissionRequest const
-  switch (authStatus) {
-    case GeckoAVAuthorizationStatusAuthorized:
-      aState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
-      return NS_OK;
-    case GeckoAVAuthorizationStatusDenied:
-      aState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
-      return NS_OK;
-    case GeckoAVAuthorizationStatusNotDetermined:
-      aState = nsIOSPermissionRequest::PERMISSION_STATE_NOTDETERMINED;
-      return NS_OK;
-    case GeckoAVAuthorizationStatusRestricted:
-      aState = nsIOSPermissionRequest::PERMISSION_STATE_RESTRICTED;
-      return NS_OK;
-    default:
-      MOZ_ASSERT(false, "Invalid authorization status");
-      return NS_ERROR_UNEXPECTED;
+    // Convert GeckoAVAuthorizationStatus to nsIOSPermissionRequest const
+    switch (authStatus) {
+      case GeckoAVAuthorizationStatusAuthorized:
+        aState = nsIOSPermissionRequest::PERMISSION_STATE_AUTHORIZED;
+        return NS_OK;
+      case GeckoAVAuthorizationStatusDenied:
+        aState = nsIOSPermissionRequest::PERMISSION_STATE_DENIED;
+        return NS_OK;
+      case GeckoAVAuthorizationStatusNotDetermined:
+        aState = nsIOSPermissionRequest::PERMISSION_STATE_NOTDETERMINED;
+        return NS_OK;
+      case GeckoAVAuthorizationStatusRestricted:
+        aState = nsIOSPermissionRequest::PERMISSION_STATE_RESTRICTED;
+        return NS_OK;
+      default:
+        MOZ_ASSERT(false, "Invalid authorization status");
+        return NS_ERROR_UNEXPECTED;
+    }
   }
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 nsresult nsCocoaUtils::GetVideoCapturePermissionState(uint16_t& aPermissionState) {
@@ -1170,44 +1254,49 @@ nsresult nsCocoaUtils::RequestCapturePermission(AVMediaType aType, RefPtr<Promis
   // Ensure our enum constants match. We can only do this when
   // compiling on 10.14+ because AVAuthorizationStatus is
   // prohibited by preprocessor checks on earlier OS versions.
-  MOZ_ASSERT((int)GeckoAVAuthorizationStatusNotDetermined ==
-             (int)AVAuthorizationStatusNotDetermined);
-  MOZ_ASSERT((int)GeckoAVAuthorizationStatusRestricted == (int)AVAuthorizationStatusRestricted);
-  MOZ_ASSERT((int)GeckoAVAuthorizationStatusDenied == (int)AVAuthorizationStatusDenied);
-  MOZ_ASSERT((int)GeckoAVAuthorizationStatusAuthorized == (int)AVAuthorizationStatusAuthorized);
+  if (@available(macOS 10.14, *)) {
+    static_assert(
+        (int)GeckoAVAuthorizationStatusNotDetermined == (int)AVAuthorizationStatusNotDetermined,
+        "GeckoAVAuthorizationStatusNotDetermined  does not match");
+    static_assert((int)GeckoAVAuthorizationStatusRestricted == (int)AVAuthorizationStatusRestricted,
+                  "GeckoAVAuthorizationStatusRestricted does not match");
+    static_assert((int)GeckoAVAuthorizationStatusDenied == (int)AVAuthorizationStatusDenied,
+                  "GeckoAVAuthorizationStatusDenied does not match");
+    static_assert((int)GeckoAVAuthorizationStatusAuthorized == (int)AVAuthorizationStatusAuthorized,
+                  "GeckoAVAuthorizationStatusAuthorized does not match");
+  }
 #endif
   LOG("RequestCapturePermission(%s)", AVMediaTypeToString(aType));
 
   // Only attempt to request authorization on 10.14+.
-  if (!nsCocoaFeatures::OnMojaveOrLater()) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
+  if (@available(macOS 10.14, *)) {
+    sMediaCaptureMutex.Lock();
 
-  sMediaCaptureMutex.Lock();
+    // Initialize our list of promises on first invocation
+    if (aPromiseList == nullptr) {
+      aPromiseList = new nsTArray<RefPtr<Promise>>;
+      ClearOnShutdown(&aPromiseList);
+    }
 
-  // Initialize our list of promises on first invocation
-  if (aPromiseList == nullptr) {
-    aPromiseList = new nsTArray<RefPtr<Promise>>;
-    ClearOnShutdown(&aPromiseList);
-  }
+    aPromiseList->AppendElement(aPromise);
+    size_t nPromises = aPromiseList->Length();
 
-  aPromiseList->AppendElement(aPromise);
-  size_t nPromises = aPromiseList->Length();
+    sMediaCaptureMutex.Unlock();
 
-  sMediaCaptureMutex.Unlock();
+    LOG("RequestCapturePermission(%s): %ld promise(s) unresolved", AVMediaTypeToString(aType),
+        nPromises);
 
-  LOG("RequestCapturePermission(%s): %ld promise(s) unresolved", AVMediaTypeToString(aType),
-      nPromises);
+    // If we had one or more more existing promises waiting to be resolved
+    // by the completion handler, we don't need to start another request.
+    if (nPromises > 1) {
+      return NS_OK;
+    }
 
-  // If we had one or more more existing promises waiting to be resolved
-  // by the completion handler, we don't need to start another request.
-  if (nPromises > 1) {
+    // Start the request
+    [AVCaptureDevice requestAccessForMediaType:aType completionHandler:aHandler];
     return NS_OK;
   }
-
-  // Start the request
-  [AVCaptureDevice requestAccessForMediaType:aType completionHandler:aHandler];
-  return NS_OK;
+  return NS_ERROR_NOT_IMPLEMENTED;
 }
 
 //

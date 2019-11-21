@@ -4,6 +4,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import copy
 import os
 import signal
 import sys
@@ -29,7 +30,7 @@ orig_sigint = signal.getsignal(signal.SIGINT)
 
 
 def _run_worker(config, paths, **lintargs):
-    result = ResultSummary()
+    result = ResultSummary(lintargs['root'])
 
     if SHUTDOWN:
         return result
@@ -106,7 +107,7 @@ class LintRoller(object):
         self.lintargs['root'] = root
 
         # result state
-        self.result = ResultSummary()
+        self.result = ResultSummary(root)
 
         self.root = root
         self.exclude = exclude or []
@@ -134,7 +135,9 @@ class LintRoller(object):
                 continue
 
             try:
-                res = findobject(linter['setup'])(**self.lintargs)
+                setupargs = copy.deepcopy(self.lintargs)
+                setupargs['name'] = linter['name']
+                res = findobject(linter['setup'])(**setupargs)
             except Exception:
                 traceback.print_exc()
                 res = 1
@@ -162,6 +165,9 @@ class LintRoller(object):
 
             lpaths = list(lpaths) or [os.getcwd()]
             chunk_size = min(self.MAX_PATHS_PER_JOB, int(ceil(len(lpaths) / num_procs))) or 1
+            if linter['type'] == 'global':
+                # Global linters lint the entire tree in one job.
+                chunk_size = len(lpaths) or 1
             assert chunk_size > 0
 
             while lpaths:

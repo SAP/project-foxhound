@@ -213,7 +213,9 @@ namespace mozilla {
 
 Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
                         const StaticXREAppData& aAppData) {
-  EnsureCommandlineSafe(argc, argv);
+  // Note: keep in sync with nsBrowserApp.
+  const wchar_t* acceptableParams[] = {L"url", nullptr};
+  EnsureCommandlineSafe(argc, argv, acceptableParams);
 
   SetLauncherErrorAppData(aAppData);
 
@@ -230,7 +232,8 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
 
   // Make sure that the launcher process itself has image load policies set
   if (IsWin10AnniversaryUpdateOrLater()) {
-    const DynamicallyLinkedFunctionPtr<decltype(&SetProcessMitigationPolicy)>
+    static const StaticDynamicallyLinkedFunctionPtr<decltype(
+        &SetProcessMitigationPolicy)>
         pSetProcessMitigationPolicy(L"kernel32.dll",
                                     "SetProcessMitigationPolicy");
     if (pSetProcessMitigationPolicy) {

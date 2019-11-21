@@ -444,7 +444,6 @@ MOZ_ALWAYS_INLINE JSExternalString* JSExternalString::new_(
   }
   str->init(chars, length, fin);
   size_t nbytes = (length + 1) * sizeof(char16_t);
-  cx->updateMallocCounter(nbytes);
 
   MOZ_ASSERT(str->isTenured());
   js::AddCellMemory(str, nbytes, js::MemoryUse::StringContents);
@@ -466,7 +465,7 @@ inline JSLinearString* js::StaticStrings::getUnitStringForElement(
   return js::NewInlineString<CanGC>(cx, mozilla::Range<const char16_t>(&c, 1));
 }
 
-MOZ_ALWAYS_INLINE void JSString::finalize(js::FreeOp* fop) {
+MOZ_ALWAYS_INLINE void JSString::finalize(JSFreeOp* fop) {
   /* FatInline strings are in a different arena. */
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_ATOM);
@@ -481,7 +480,7 @@ MOZ_ALWAYS_INLINE void JSString::finalize(js::FreeOp* fop) {
   finalizeTaint();
 }
 
-inline void JSFlatString::finalize(js::FreeOp* fop) {
+inline void JSFlatString::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_ATOM);
 
@@ -500,7 +499,7 @@ inline size_t JSFlatString::allocSize() const {
   return (count + 1) * charSize;
 }
 
-inline void JSFatInlineString::finalize(js::FreeOp* fop) {
+inline void JSFatInlineString::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(isInline());
 
@@ -509,7 +508,7 @@ inline void JSFatInlineString::finalize(js::FreeOp* fop) {
   finalizeTaint();
 }
 
-inline void js::FatInlineAtom::finalize(js::FreeOp* fop) {
+inline void js::FatInlineAtom::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(JSString::isAtom());
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_ATOM);
 
@@ -518,7 +517,7 @@ inline void js::FatInlineAtom::finalize(js::FreeOp* fop) {
   finalizeTaint();
 }
 
-inline void JSExternalString::finalize(js::FreeOp* fop) {
+inline void JSExternalString::finalize(JSFreeOp* fop) {
   if (!JSString::isExternal()) {
     // This started out as an external string, but was turned into a
     // non-external string by JSExternalString::ensureFlat.
@@ -527,7 +526,7 @@ inline void JSExternalString::finalize(js::FreeOp* fop) {
   }
 
   size_t nbytes = (length() + 1) * sizeof(char16_t);
-  js::RemoveCellMemory(this, nbytes, js::MemoryUse::StringContents);
+  fop->removeCellMemory(this, nbytes, js::MemoryUse::StringContents);
 
   const JSStringFinalizer* fin = externalFinalizer();
   fin->finalize(fin, const_cast<char16_t*>(rawTwoByteChars()));

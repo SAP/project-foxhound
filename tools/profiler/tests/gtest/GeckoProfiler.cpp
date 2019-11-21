@@ -16,7 +16,9 @@
 #include "ProfilerMarkerPayload.h"
 
 #include "js/Initialization.h"
+#include "js/Printf.h"
 #include "jsapi.h"
+#include "mozilla/BlocksRingBufferGeckoExtensions.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsIThread.h"
 #include "nsThreadUtils.h"
@@ -30,6 +32,52 @@
 // (which is just an RAII wrapper for profiler_init() and profiler_shutdown()).
 
 using namespace mozilla;
+
+TEST(BaseProfiler, BlocksRingBuffer)
+{
+  constexpr uint32_t MBSize = 256;
+  uint8_t buffer[MBSize * 3];
+  for (size_t i = 0; i < MBSize * 3; ++i) {
+    buffer[i] = uint8_t('A' + i);
+  }
+  BlocksRingBuffer rb(&buffer[MBSize], MakePowerOfTwo32<MBSize>());
+
+  {
+    nsCString cs(NS_LITERAL_CSTRING("nsCString"));
+    nsString s(NS_LITERAL_STRING("nsString"));
+    nsAutoCString acs(NS_LITERAL_CSTRING("nsAutoCString"));
+    nsAutoString as(NS_LITERAL_STRING("nsAutoString"));
+    nsAutoCStringN<8> acs8(NS_LITERAL_CSTRING("nsAutoCStringN"));
+    nsAutoStringN<8> as8(NS_LITERAL_STRING("nsAutoStringN"));
+    JS::UniqueChars jsuc = JS_smprintf("%s", "JS::UniqueChars");
+
+    rb.PutObjects(cs, s, acs, as, acs8, as8, jsuc);
+  }
+
+  rb.ReadEach([](BlocksRingBuffer::EntryReader& aER) {
+    ASSERT_EQ(aER.ReadObject<nsCString>(), NS_LITERAL_CSTRING("nsCString"));
+    ASSERT_EQ(aER.ReadObject<nsString>(), NS_LITERAL_STRING("nsString"));
+    ASSERT_EQ(aER.ReadObject<nsAutoCString>(),
+              NS_LITERAL_CSTRING("nsAutoCString"));
+    ASSERT_EQ(aER.ReadObject<nsAutoString>(),
+              NS_LITERAL_STRING("nsAutoString"));
+    ASSERT_EQ(aER.ReadObject<nsAutoCStringN<8>>(),
+              NS_LITERAL_CSTRING("nsAutoCStringN"));
+    ASSERT_EQ(aER.ReadObject<nsAutoStringN<8>>(),
+              NS_LITERAL_STRING("nsAutoStringN"));
+    auto jsuc2 = aER.ReadObject<JS::UniqueChars>();
+    ASSERT_TRUE(!!jsuc2);
+    ASSERT_TRUE(strcmp(jsuc2.get(), "JS::UniqueChars") == 0);
+  });
+
+  // Everything around the sub-buffer should be unchanged.
+  for (size_t i = 0; i < MBSize; ++i) {
+    ASSERT_EQ(buffer[i], uint8_t('A' + i));
+  }
+  for (size_t i = MBSize * 2; i < MBSize * 3; ++i) {
+    ASSERT_EQ(buffer[i], uint8_t('A' + i));
+  }
+}
 
 typedef Vector<const char*> StrVec;
 
@@ -544,6 +592,35 @@ TEST(GeckoProfiler, Markers)
   // longstr should be replaced with "(too long)".
   ASSERT_TRUE(!strstr(profile.get(), longstr.get()));
   ASSERT_TRUE(strstr(profile.get(), "(too long)"));
+
+  Maybe<ProfilerBufferInfo> info = profiler_get_buffer_info();
+  MOZ_RELEASE_ASSERT(info.isSome());
+  printf("Profiler buffer range: %llu .. %llu (%llu bytes)\n",
+         static_cast<unsigned long long>(info->mRangeStart),
+         static_cast<unsigned long long>(info->mRangeEnd),
+         // sizeof(ProfileBufferEntry) == 9
+         (static_cast<unsigned long long>(info->mRangeEnd) -
+          static_cast<unsigned long long>(info->mRangeStart)) *
+             9);
+  printf("Stats:         min(ns) .. mean(ns) .. max(ns)  [count]\n");
+  printf("- Intervals:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mIntervalsNs.min, info->mIntervalsNs.sum / info->mIntervalsNs.n,
+         info->mIntervalsNs.max, info->mIntervalsNs.n);
+  printf("- Overheads:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mOverheadsNs.min, info->mOverheadsNs.sum / info->mOverheadsNs.n,
+         info->mOverheadsNs.max, info->mOverheadsNs.n);
+  printf("  - Locking:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mLockingsNs.min, info->mLockingsNs.sum / info->mLockingsNs.n,
+         info->mLockingsNs.max, info->mLockingsNs.n);
+  printf("  - Clearning: %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mCleaningsNs.min, info->mCleaningsNs.sum / info->mCleaningsNs.n,
+         info->mCleaningsNs.max, info->mCleaningsNs.n);
+  printf("  - Counters:  %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mCountersNs.min, info->mCountersNs.sum / info->mCountersNs.n,
+         info->mCountersNs.max, info->mCountersNs.n);
+  printf("  - Threads:   %7.1f .. %7.1f  .. %7.1f  [%u]\n",
+         info->mThreadsNs.min, info->mThreadsNs.sum / info->mThreadsNs.n,
+         info->mThreadsNs.max, info->mThreadsNs.n);
 
   profiler_stop();
 

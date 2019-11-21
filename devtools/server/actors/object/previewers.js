@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -7,7 +5,7 @@
 "use strict";
 
 const { Cu, Ci } = require("chrome");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 loader.lazyRequireGetter(
   this,
@@ -139,10 +137,7 @@ const previewers = {
 
   RegExp: [
     function({ obj, hooks }, grip) {
-      const str = DevToolsUtils.callPropertyOnObject(obj, "toString");
-      if (typeof str != "string") {
-        return false;
-      }
+      const str = ObjectUtils.getRegExpString(obj);
 
       grip.displayString = hooks.createValueGrip(str);
       return true;
@@ -151,7 +146,7 @@ const previewers = {
 
   Date: [
     function({ obj, hooks }, grip) {
-      const time = DevToolsUtils.callPropertyOnObject(obj, "getTime");
+      const time = ObjectUtils.getDateTime(obj);
       if (typeof time != "number") {
         return false;
       }
@@ -214,10 +209,7 @@ const previewers = {
 
   Set: [
     function(objectActor, grip) {
-      const size = DevToolsUtils.getProperty(objectActor.obj, "size");
-      if (typeof size != "number") {
-        return false;
-      }
+      const size = ObjectUtils.getContainerSize(objectActor.obj);
 
       grip.preview = {
         kind: "ArrayLike",
@@ -230,7 +222,7 @@ const previewers = {
       }
 
       const items = (grip.preview.items = []);
-      for (const item of PropertyIterators.enumSetEntries(objectActor)) {
+      for (const item of PropertyIterators.enumSetEntries(objectActor, /* forPreview */ true)) {
         items.push(item);
         if (items.length == OBJECT_PREVIEW_MAX_ITEMS) {
           break;
@@ -243,7 +235,7 @@ const previewers = {
 
   WeakSet: [
     function(objectActor, grip) {
-      const enumEntries = PropertyIterators.enumWeakSetEntries(objectActor);
+      const enumEntries = PropertyIterators.enumWeakSetEntries(objectActor, /* forPreview */ true);
 
       grip.preview = {
         kind: "ArrayLike",
@@ -269,10 +261,7 @@ const previewers = {
 
   Map: [
     function(objectActor, grip) {
-      const size = DevToolsUtils.getProperty(objectActor.obj, "size");
-      if (typeof size != "number") {
-        return false;
-      }
+      const size = ObjectUtils.getContainerSize(objectActor.obj);
 
       grip.preview = {
         kind: "MapLike",
@@ -284,7 +273,7 @@ const previewers = {
       }
 
       const entries = (grip.preview.entries = []);
-      for (const entry of PropertyIterators.enumMapEntries(objectActor)) {
+      for (const entry of PropertyIterators.enumMapEntries(objectActor, /* forPreview */ true)) {
         entries.push(entry);
         if (entries.length == OBJECT_PREVIEW_MAX_ITEMS) {
           break;
@@ -297,7 +286,7 @@ const previewers = {
 
   WeakMap: [
     function(objectActor, grip) {
-      const enumEntries = PropertyIterators.enumWeakMapEntries(objectActor);
+      const enumEntries = PropertyIterators.enumWeakMapEntries(objectActor, /* forPreview */ true);
 
       grip.preview = {
         kind: "MapLike",
@@ -523,7 +512,10 @@ function GenericObject(
     }
   }
 
-  if (i < OBJECT_PREVIEW_MAX_ITEMS) {
+  // Do not search for safe getters when generating previews while replaying.
+  // This involves a lot of back-and-forth communication which we don't want to
+  // incur while previewing objects.
+  if (i < OBJECT_PREVIEW_MAX_ITEMS && !isReplaying) {
     preview.safeGetterValues = objectActor._findSafeGetterValues(
       Object.keys(preview.ownProperties),
       OBJECT_PREVIEW_MAX_ITEMS - i
@@ -550,24 +542,14 @@ previewers.Object = [
       return true;
     }
 
-    const raw = obj.unsafeDereference();
-
-    // The raw object will be null/unavailable when interacting with a
-    // replaying execution, and Cu is unavailable in workers. In either case we
-    // do not need to worry about xrays.
-    if (raw && !isWorker) {
-      const global = Cu.getGlobalForObject(DebuggerServer);
-      const classProto = global[obj.class].prototype;
-      // The Xray machinery for TypedArrays denies indexed access on the grounds
-      // that it's slow, and advises callers to do a structured clone instead.
-      const safeView = Cu.cloneInto(
-        classProto.subarray.call(raw, 0, OBJECT_PREVIEW_MAX_ITEMS),
-        global
-      );
-      const items = (grip.preview.items = []);
-      for (let i = 0; i < safeView.length; i++) {
-        items.push(safeView[i]);
+    const previewLength = Math.min(OBJECT_PREVIEW_MAX_ITEMS, grip.preview.length);
+    grip.preview.items = [];
+    for (let i = 0; i < previewLength; i++) {
+      const desc = obj.getOwnPropertyDescriptor(i);
+      if (!desc) {
+        break;
       }
+      grip.preview.items.push(desc.value);
     }
 
     return true;
@@ -582,21 +564,11 @@ previewers.Object = [
       case "SyntaxError":
       case "TypeError":
       case "URIError":
-        const name = DevToolsUtils.getProperty(obj, "name");
-        const msg = DevToolsUtils.getProperty(obj, "message");
-        const stack = DevToolsUtils.getProperty(obj, "stack");
-        const fileName = DevToolsUtils.getProperty(obj, "fileName");
-        const lineNumber = DevToolsUtils.getProperty(obj, "lineNumber");
-        const columnNumber = DevToolsUtils.getProperty(obj, "columnNumber");
-        grip.preview = {
-          kind: "Error",
-          name: hooks.createValueGrip(name),
-          message: hooks.createValueGrip(msg),
-          stack: hooks.createValueGrip(stack),
-          fileName: hooks.createValueGrip(fileName),
-          lineNumber: hooks.createValueGrip(lineNumber),
-          columnNumber: hooks.createValueGrip(columnNumber),
-        };
+        grip.preview = { kind: "Error" };
+        const properties = ObjectUtils.getErrorProperties(obj);
+        Object.keys(properties).forEach(p => {
+          grip.preview[p] = hooks.createValueGrip(properties[p]);
+        });
         return true;
       default:
         return false;

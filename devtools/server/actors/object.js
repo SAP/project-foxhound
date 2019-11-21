@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -73,6 +71,7 @@ const proto = {
   initialize(
     obj,
     {
+      thread,
       createValueGrip: createValueGripHook,
       sources,
       createEnvironmentActor,
@@ -91,6 +90,7 @@ const proto = {
 
     this.conn = conn;
     this.obj = obj;
+    this.thread = thread;
     this.hooks = {
       createValueGrip: createValueGripHook,
       sources,
@@ -100,10 +100,80 @@ const proto = {
       decrementGripDepth,
       getGlobalDebugObject,
     };
+    this._originalDescriptors = new Map();
   },
 
   rawValue: function() {
     return this.obj.unsafeDereference();
+  },
+
+  addWatchpoint(property, label, watchpointType) {
+    // We promote the object actor to the thread pool
+    // so that it lives for the lifetime of the watchpoint.
+    this.thread.threadObjectGrip(this);
+
+    if (this._originalDescriptors.has(property)) {
+      return;
+    }
+    const desc = this.obj.getOwnPropertyDescriptor(property);
+
+    if (desc.set || desc.get) {
+      return;
+    }
+
+    this._originalDescriptors.set(property, { desc, watchpointType });
+
+    const pauseAndRespond = () => {
+      const frame = this.thread.dbg.getNewestFrame();
+      this.thread._pauseAndRespond(frame, {
+        type: "watchpoint",
+        message: label,
+      });
+    };
+
+    if (watchpointType === "get") {
+      this.obj.defineProperty(property, {
+        configurable: desc.configurable,
+        enumerable: desc.enumerable,
+        set: this.obj.makeDebuggeeValue(v => {
+          desc.value = v;
+        }),
+        get: this.obj.makeDebuggeeValue(() => {
+          pauseAndRespond();
+          return desc.value;
+        }),
+      });
+    }
+
+    if (watchpointType === "set") {
+      this.obj.defineProperty(property, {
+        configurable: desc.configurable,
+        enumerable: desc.enumerable,
+        set: this.obj.makeDebuggeeValue(v => {
+          pauseAndRespond();
+          desc.value = v;
+        }),
+        get: this.obj.makeDebuggeeValue(v => {
+          return desc.value;
+        }),
+      });
+    }
+  },
+
+  removeWatchpoint(property) {
+    if (!this._originalDescriptors.has(property)) {
+      return;
+    }
+
+    const desc = this._originalDescriptors.get(property).desc;
+    this._originalDescriptors.delete(property);
+    this.obj.defineProperty(property, desc);
+  },
+
+  removeWatchpoints() {
+    this._originalDescriptors.forEach(property =>
+      this.removeWatchpoint(property)
+    );
   },
 
   /**
@@ -370,13 +440,6 @@ const proto = {
 
     // Do not search safe getters in unsafe objects.
     if (!DevToolsUtils.isSafeDebuggerObject(obj)) {
-      return safeGetterValues;
-    }
-
-    // Do not search for safe getters while replaying. While this would be nice
-    // to support, it involves a lot of back-and-forth between processes and
-    // would be better to do entirely in the replaying process.
-    if (isReplaying) {
       return safeGetterValues;
     }
 
@@ -730,10 +793,16 @@ const proto = {
     if ("value" in desc) {
       retval.writable = desc.writable;
       retval.value = this.hooks.createValueGrip(desc.value);
+    } else if (this._originalDescriptors.has(name)) {
+      const watchpointType = this._originalDescriptors.get(name).watchpointType;
+      desc = this._originalDescriptors.get(name).desc;
+      retval.value = this.hooks.createValueGrip(desc.value);
+      retval.watchpoint = watchpointType;
     } else {
       if ("get" in desc) {
         retval.get = this.hooks.createValueGrip(desc.get);
       }
+
       if ("set" in desc) {
         retval.set = this.hooks.createValueGrip(desc.set);
       }
@@ -962,7 +1031,9 @@ const proto = {
    * Release the actor, when it isn't needed anymore.
    * Protocol.js uses this release method to call the destroy method.
    */
-  release: function() {},
+  release: function() {
+    this.removeWatchpoints();
+  },
 };
 
 exports.ObjectActor = protocol.ActorClassWithSpec(objectSpec, proto);

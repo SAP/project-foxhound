@@ -832,9 +832,9 @@ class FullParseHandler {
     return new_<ModuleNode>(pos);
   }
 
-  LexicalScopeNodeType newLexicalScope(LexicalScope::Data* bindings,
-                                       Node body) {
-    return new_<LexicalScopeNode>(bindings, body);
+  LexicalScopeNodeType newLexicalScope(LexicalScope::Data* bindings, Node body,
+                                       ScopeKind kind = ScopeKind::Lexical) {
+    return new_<LexicalScopeNode>(bindings, body, kind);
   }
 
   CallNodeType newNewExpression(uint32_t begin, Node ctor, Node args,

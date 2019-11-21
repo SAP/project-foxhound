@@ -16,7 +16,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 XPCOMUtils.defineLazyModuleGetters(this, {
   Log: "resource://gre/modules/Log.jsm",
-  PlacesUtils: "resource://modules/PlacesUtils.jsm",
+  PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   SkippableTimer: "resource:///modules/UrlbarUtils.jsm",
   UrlbarMuxer: "resource:///modules/UrlbarUtils.jsm",
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.jsm",
@@ -267,6 +267,7 @@ class Query {
 
     // Check which providers should be queried.
     let providers = this.providers.filter(p => p.isActive(this.context));
+
     // Check if any of the remaining providers wants to restrict the search.
     let restrictProviders = providers.filter(p =>
       p.isRestricting(this.context)

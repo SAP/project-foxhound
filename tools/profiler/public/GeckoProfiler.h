@@ -91,6 +91,7 @@
 #  include <stdint.h>
 
 class ProfilerBacktrace;
+class ProfilerCodeAddressService;
 class ProfilerMarkerPayload;
 class SpliceableJSONWriter;
 namespace mozilla {
@@ -133,35 +134,36 @@ class Vector;
     MACRO(3, "mainthreadio", MainThreadIO,                                     \
           "Add main thread I/O to the profile")                                \
                                                                                \
-    MACRO(4, "memory", Memory, "Add memory measurements")                      \
-                                                                               \
-    MACRO(5, "privacy", Privacy,                                               \
+    MACRO(4, "privacy", Privacy,                                               \
           "Do not include user-identifiable information")                      \
                                                                                \
-    MACRO(6, "responsiveness", Responsiveness,                                 \
+    MACRO(5, "responsiveness", Responsiveness,                                 \
           "Collect thread responsiveness information")                         \
                                                                                \
-    MACRO(7, "screenshots", Screenshots,                                       \
+    MACRO(6, "screenshots", Screenshots,                                       \
           "Take a snapshot of the window on every composition")                \
                                                                                \
-    MACRO(8, "seqstyle", SequentialStyle,                                      \
+    MACRO(7, "seqstyle", SequentialStyle,                                      \
           "Disable parallel traversal in styling")                             \
                                                                                \
-    MACRO(9, "stackwalk", StackWalk,                                           \
+    MACRO(8, "stackwalk", StackWalk,                                           \
           "Walk the C++ stack, not available on all platforms")                \
                                                                                \
-    MACRO(10, "tasktracer", TaskTracer,                                        \
+    MACRO(9, "tasktracer", TaskTracer,                                         \
           "Start profiling with feature TaskTracer")                           \
                                                                                \
-    MACRO(11, "threads", Threads, "Profile the registered secondary threads")  \
+    MACRO(10, "threads", Threads, "Profile the registered secondary threads")  \
                                                                                \
-    MACRO(12, "trackopts", TrackOptimizations,                                 \
+    MACRO(11, "trackopts", TrackOptimizations,                                 \
           "Have the JavaScript engine track JIT optimizations")                \
                                                                                \
-    MACRO(13, "jstracer", JSTracer, "Enable tracing of the JavaScript engine") \
+    MACRO(12, "jstracer", JSTracer, "Enable tracing of the JavaScript engine") \
                                                                                \
-    MACRO(14, "jsallocations", JSAllocations,                                  \
-          "Have the JavaScript engine track allocations")
+    MACRO(13, "jsallocations", JSAllocations,                                  \
+          "Have the JavaScript engine track allocations")                      \
+                                                                               \
+    MACRO(15, "preferencereads", PreferenceReads,                              \
+          "Track when preferences are read")
 
 struct ProfilerFeature {
 #  define DECLARE(n_, str_, Name_, desc_)                     \
@@ -514,10 +516,42 @@ using UniqueProfilerBacktrace =
 // if the profiler is inactive or in privacy mode.
 UniqueProfilerBacktrace profiler_get_backtrace();
 
+struct ProfilerStats {
+  unsigned n = 0;
+  double sum = 0;
+  double min = std::numeric_limits<double>::max();
+  double max = 0;
+  void Count(double v) {
+    ++n;
+    sum += v;
+    if (v < min) {
+      min = v;
+    }
+    if (v > max) {
+      max = v;
+    }
+  }
+};
+
 struct ProfilerBufferInfo {
+  // Index of the oldest entry.
   uint64_t mRangeStart;
+  // Index of the newest entry.
   uint64_t mRangeEnd;
+  // Buffer capacity in number of entries.
   uint32_t mEntryCount;
+  // Sampling stats: Interval between successive samplings.
+  ProfilerStats mIntervalsNs;
+  // Sampling stats: Total sampling duration. (Split detail below.)
+  ProfilerStats mOverheadsNs;
+  // Sampling stats: Time to acquire the lock before sampling.
+  ProfilerStats mLockingsNs;
+  // Sampling stats: Time to discard expired data.
+  ProfilerStats mCleaningsNs;
+  // Sampling stats: Time to collect counter data.
+  ProfilerStats mCountersNs;
+  // Sampling stats: Time to sample thread stacks.
+  ProfilerStats mThreadsNs;
 };
 
 // Get information about the current buffer status.
@@ -817,9 +851,10 @@ mozilla::UniquePtr<char[]> profiler_get_profile(double aSinceTime = 0,
 
 // Write the profile for this process (excluding subprocesses) into aWriter.
 // Returns false if the profiler is inactive.
-bool profiler_stream_json_for_this_process(SpliceableJSONWriter& aWriter,
-                                           double aSinceTime = 0,
-                                           bool aIsShuttingDown = false);
+bool profiler_stream_json_for_this_process(
+    SpliceableJSONWriter& aWriter, double aSinceTime = 0,
+    bool aIsShuttingDown = false,
+    ProfilerCodeAddressService* aService = nullptr);
 
 // Get the profile and write it into a file. A no-op if the profile is
 // inactive.

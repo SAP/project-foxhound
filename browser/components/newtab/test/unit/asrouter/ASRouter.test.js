@@ -64,6 +64,7 @@ describe("ASRouter", () => {
   let fakeAttributionCode;
   let FakeBookmarkPanelHub;
   let FakeToolbarBadgeHub;
+  let FakeToolbarPanelHub;
 
   function createFakeStorage() {
     const getStub = sandbox.stub();
@@ -137,6 +138,10 @@ describe("ASRouter", () => {
       uninit: sandbox.stub(),
       _forceShowMessage: sandbox.stub(),
     };
+    FakeToolbarPanelHub = {
+      init: sandbox.stub(),
+      uninit: sandbox.stub(),
+    };
     FakeToolbarBadgeHub = {
       init: sandbox.stub(),
       uninit: sandbox.stub(),
@@ -150,6 +155,7 @@ describe("ASRouter", () => {
       PanelTestProvider,
       BookmarkPanelHub: FakeBookmarkPanelHub,
       ToolbarBadgeHub: FakeToolbarBadgeHub,
+      ToolbarPanelHub: FakeToolbarPanelHub,
     });
     await createRouterAndInit();
   });
@@ -187,6 +193,7 @@ describe("ASRouter", () => {
       // ASRouter init called in `beforeEach` block above
 
       assert.calledOnce(FakeToolbarBadgeHub.init);
+      assert.calledOnce(FakeToolbarPanelHub.init);
       assert.calledOnce(FakeBookmarkPanelHub.init);
 
       assert.calledWithExactly(
@@ -198,6 +205,16 @@ describe("ASRouter", () => {
           blockMessageById: Router.blockMessageById,
           dispatch: Router.dispatch,
           unblockMessageById: Router.unblockMessageById,
+        }
+      );
+
+      assert.calledWithExactly(
+        FakeToolbarPanelHub.init,
+        Router.waitForInitialized,
+        {
+          getMessages: Router.handleMessageRequest,
+          dispatch: Router.dispatch,
+          handleUserAction: Router.handleUserAction,
         }
       );
 
@@ -885,6 +902,33 @@ describe("ASRouter", () => {
         "messageImpressions",
         Router.state.messageImpressions
       );
+    });
+    it("should return all unblocked messages that match the template, trigger if returnAll=true", async () => {
+      const message1 = {
+        id: "1",
+        template: "whatsnew_panel_message",
+        trigger: { id: "whatsNewPanelOpened" },
+      };
+      const message2 = {
+        id: "2",
+        template: "whatsnew_panel_message",
+        trigger: { id: "whatsNewPanelOpened" },
+      };
+      const message3 = {
+        id: "3",
+        template: "badge",
+      };
+      sandbox
+        .stub(Router, "_findAllMessages")
+        .callsFake(messages => [message2, message1]);
+      await Router.setState({ messages: [message3, message2, message1] });
+      const result = await Router.handleMessageRequest({
+        template: "whatsnew-panel",
+        triggerId: "whatsNewPanelOpened",
+        returnAll: true,
+      });
+
+      assert.deepEqual(result, [message2, message1]);
     });
     it("should forward trigger param info", async () => {
       const trigger = {
@@ -1606,6 +1650,12 @@ describe("ASRouter", () => {
         });
         const message = await Router._findMessage(messages, data.data.trigger);
         assert.equal(message, messages[0]);
+
+        const matches = await Router._findAllMessages(
+          messages,
+          data.data.trigger
+        );
+        assert.deepEqual(matches, messages);
       });
       it("should pick a message with the right targeting and trigger", async () => {
         let messages = [
@@ -2941,7 +2991,7 @@ describe("ASRouter", () => {
         );
         assert.calledWith(
           setExperimentActiveStub,
-          "activity-stream-extended-triplets",
+          "activity-stream-extended-triplets-v2-1581912",
           "control"
         );
       });
@@ -2959,7 +3009,7 @@ describe("ASRouter", () => {
         );
         assert.calledWith(
           setExperimentActiveStub,
-          "activity-stream-extended-triplets",
+          "activity-stream-extended-triplets-v2-1581912",
           "holdback"
         );
       });

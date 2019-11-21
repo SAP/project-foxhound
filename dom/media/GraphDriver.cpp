@@ -11,6 +11,7 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Unused.h"
+#include "mozilla/MathAlgorithms.h"
 #include "CubebDeviceEnumerator.h"
 #include "Tracing.h"
 
@@ -229,22 +230,6 @@ void ThreadedDriver::Start() {
   }
 }
 
-void ThreadedDriver::Revive() {
-  MOZ_ASSERT(NS_IsMainThread() && !ThreadRunning());
-  // Note: only called on MainThread, without monitor
-  // We know were weren't in a running state
-  LOG(LogLevel::Debug, ("AudioCallbackDriver reviving."));
-  // If we were switching, switch now. Otherwise, tell thread to run the main
-  // loop again.
-  MonitorAutoLock mon(mGraphImpl->GetMonitor());
-  if (NextDriver()) {
-    SwitchToNextDriver();
-  } else {
-    nsCOMPtr<nsIRunnable> event = new MediaStreamGraphInitThreadRunnable(this);
-    mThread->EventTarget()->Dispatch(event.forget(), NS_DISPATCH_NORMAL);
-  }
-}
-
 void ThreadedDriver::Shutdown() {
   NS_ASSERTION(NS_IsMainThread(), "Must be called on main thread");
   // mGraph's thread is not running so it's OK to do whatever here
@@ -442,19 +427,6 @@ AsyncCubebTask::Run() {
       mDriver->CompleteAudioContextOperations(mOperation);
       break;
     }
-    case AsyncCubebOperation::REVIVE: {
-      LOG(LogLevel::Debug, ("%p: AsyncCubebOperation::REVIVE driver=%p",
-                            mDriver->GraphImpl(), mDriver.get()));
-      if (mDriver->IsStarted()) {
-        mDriver->Stop();
-      }
-      if (!mDriver->StartStream()) {
-        LOG(LogLevel::Warning,
-            ("%p: AsyncCubebOperation couldn't start the driver=%p.",
-             mDriver->GraphImpl(), mDriver.get()));
-      }
-      break;
-    }
     case AsyncCubebOperation::SHUTDOWN: {
       LOG(LogLevel::Debug, ("%p: AsyncCubebOperation::SHUTDOWN driver=%p",
                             mDriver->GraphImpl(), mDriver.get()));
@@ -550,9 +522,6 @@ bool IsMacbookOrMacbookAir() {
         return true;
       }
     }
-    // Bug 1477200, we're temporarily capping the latency to 512 here to help
-    // with audio quality.
-    return true;
   }
 #endif
   return false;
@@ -620,13 +589,26 @@ bool AudioCallbackDriver::Init() {
   }
 #endif
 
-  uint32_t latency_frames = CubebUtils::GetCubebMSGLatencyInFrames(&output);
+  uint32_t latencyFrames = CubebUtils::GetCubebMSGLatencyInFrames(&output);
 
   // Macbook and MacBook air don't have enough CPU to run very low latency
   // MediaStreamGraphs, cap the minimal latency to 512 frames int this case.
   if (IsMacbookOrMacbookAir()) {
-    latency_frames = std::max((uint32_t)512, latency_frames);
+    latencyFrames = std::max((uint32_t)512, latencyFrames);
   }
+
+  // On OSX, having a latency that is lower than 10ms is very common. It's
+  // not very useful when doing voice, because all the WebRTC code deal in 10ms
+  // chunks of audio.  Take the first power of two above 10ms at the current
+  // rate in this case. It's probably 512, for common rates.
+#if defined(XP_MACOSX)
+  if (mInputDevicePreference == CUBEB_DEVICE_PREF_VOICE) {
+    if (latencyFrames < mSampleRate / 100) {
+      latencyFrames = mozilla::RoundUpPow2(mSampleRate / 100);
+    }
+  }
+#endif
+  LOG(LogLevel::Debug, ("Effective latency in frames: %d", latencyFrames));
 
   input = output;
   input.channels = mInputChannelCount;
@@ -634,16 +616,16 @@ bool AudioCallbackDriver::Init() {
 
   cubeb_stream* stream = nullptr;
   bool inputWanted = mInputChannelCount > 0;
-  CubebUtils::AudioDeviceID output_id = GraphImpl()->mOutputDeviceID;
-  CubebUtils::AudioDeviceID input_id = GraphImpl()->mInputDeviceID;
+  CubebUtils::AudioDeviceID outputId = GraphImpl()->mOutputDeviceID;
+  CubebUtils::AudioDeviceID inputId = GraphImpl()->mInputDeviceID;
 
   // XXX Only pass input input if we have an input listener.  Always
   // set up output because it's easier, and it will just get silence.
-  if (cubeb_stream_init(cubebContext, &stream, "AudioCallbackDriver", input_id,
+  if (cubeb_stream_init(cubebContext, &stream, "AudioCallbackDriver", inputId,
                         inputWanted ? &input : nullptr,
-                        forcedOutputDeviceId ? forcedOutputDeviceId : output_id,
-                        &output, latency_frames, DataCallback_s,
-                        StateCallback_s, this) == CUBEB_OK) {
+                        forcedOutputDeviceId ? forcedOutputDeviceId : outputId,
+                        &output, latencyFrames, DataCallback_s, StateCallback_s,
+                        this) == CUBEB_OK) {
     mAudioStream.own(stream);
     DebugOnly<int> rv =
         cubeb_stream_set_volume(mAudioStream, CubebUtils::GetVolumeScale());
@@ -730,22 +712,6 @@ void AudioCallbackDriver::Stop() {
     NS_WARNING("Could not stop cubeb stream for MSG.");
   }
   mStarted = false;
-}
-
-void AudioCallbackDriver::Revive() {
-  MOZ_ASSERT(NS_IsMainThread() && !ThreadRunning());
-  // Note: only called on MainThread, without monitor
-  // We know were weren't in a running state
-  LOG(LogLevel::Debug, ("%p: AudioCallbackDriver reviving.", GraphImpl()));
-  // If we were switching, switch now. Otherwise, start the audio thread again.
-  MonitorAutoLock mon(GraphImpl()->GetMonitor());
-  if (NextDriver()) {
-    SwitchToNextDriver();
-  } else {
-    RefPtr<AsyncCubebTask> reviveEvent =
-        new AsyncCubebTask(this, AsyncCubebOperation::REVIVE);
-    reviveEvent->Dispatch();
-  }
 }
 
 void AudioCallbackDriver::RemoveMixerCallback() {
@@ -1130,6 +1096,17 @@ void AudioCallbackDriver::CompleteAudioContextOperations(
     MonitorAutoLock mon(GraphImpl()->GetMonitor());
     mPromisesForOperation.AppendElements(array);
   }
+}
+
+TimeDuration AudioCallbackDriver::AudioOutputLatency() {
+  uint32_t latencyFrames;
+  int rv = cubeb_stream_get_latency(mAudioStream, &latencyFrames);
+  if (rv || mSampleRate == 0) {
+    return TimeDuration::FromSeconds(0.0);
+  }
+
+  return TimeDuration::FromSeconds(static_cast<double>(latencyFrames) /
+                                   mSampleRate);
 }
 
 void AudioCallbackDriver::FallbackToSystemClockDriver() {

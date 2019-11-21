@@ -706,9 +706,9 @@ void nsMathMLContainerFrame::AppendFrames(ChildListID aListID,
   ChildListChanged(dom::MutationEvent_Binding::ADDITION);
 }
 
-void nsMathMLContainerFrame::InsertFrames(ChildListID aListID,
-                                          nsIFrame* aPrevFrame,
-                                          nsFrameList& aFrameList) {
+void nsMathMLContainerFrame::InsertFrames(
+    ChildListID aListID, nsIFrame* aPrevFrame,
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
   MOZ_ASSERT(aListID == kPrincipalList);
   mFrames.InsertFrames(this, aPrevFrame, aFrameList);
   ChildListChanged(dom::MutationEvent_Binding::ADDITION);
@@ -788,8 +788,8 @@ void nsMathMLContainerFrame::ReflowChild(nsIFrame* aChildFrame,
 #endif
 
   nsContainerFrame::ReflowChild(aChildFrame, aPresContext, aDesiredSize,
-                                aReflowInput, 0, 0, NS_FRAME_NO_MOVE_FRAME,
-                                aStatus);
+                                aReflowInput, 0, 0,
+                                ReflowChildFlags::NoMoveFrame, aStatus);
 
   if (aDesiredSize.BlockStartAscent() == ReflowOutput::ASK_FOR_BASELINE) {
     // This will be suitable for inline frames, which are wrapped in a block.
@@ -1246,7 +1246,7 @@ void nsMathMLContainerFrame::PositionRowChildFrames(nscoord aOffsetX,
     nscoord dx = aOffsetX + child.X();
     nscoord dy = aBaseline - child.Ascent();
     FinishReflowChild(child.Frame(), PresContext(), child.GetReflowOutput(),
-                      nullptr, dx, dy, 0);
+                      nullptr, dx, dy, ReflowChildFlags::Default);
     ++child;
   }
 }

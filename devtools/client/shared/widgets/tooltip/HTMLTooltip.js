@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -282,7 +280,7 @@ const calculateHorizontalPosition = (
 const getRelativeRect = function(node, relativeTo) {
   // getBoxQuads is a non-standard WebAPI which will not work on non-firefox
   // browser when running launchpad on Chrome.
-  if (!node.getBoxQuads) {
+  if (!node.getBoxQuads || !node.getBoxQuads({ relativeTo })[0]) {
     const { top, left, width, height } = node.getBoundingClientRect();
     const right = left + width;
     const bottom = top + height;
@@ -591,9 +589,10 @@ HTMLTooltip.prototype = {
     let preferredHeight;
     if (this.preferredHeight === "auto") {
       if (measuredHeight) {
-        this.container.style.height = "auto";
+        // We already have a valid height measured in a previous step.
         preferredHeight = measuredHeight;
       } else {
+        this.container.style.height = "auto";
         ({ height: preferredHeight } = this._measureContainerSize());
       }
       preferredHeight += verticalMargin;
@@ -753,16 +752,16 @@ HTMLTooltip.prototype = {
    */
   async hide({ fromMouseup = false } = {}) {
     // Exit if the disable autohide setting is in effect.
-    if (Services.prefs.getBoolPref("ui.popup.disable_autohide", false)) {
+    if (Services.prefs.getBoolPref("devtools.popup.disable_autohide", false)) {
       return;
     }
 
-    this.doc.defaultView.clearTimeout(this.attachEventsTimer);
     if (!this.isVisible()) {
       this.emit("hidden");
       return;
     }
 
+    this.doc.defaultView.clearTimeout(this.attachEventsTimer);
     // If the tooltip is hidden from a mouseup event, wait for a potential click event
     // to be consumed before removing event listeners.
     if (fromMouseup) {
@@ -828,14 +827,19 @@ HTMLTooltip.prototype = {
       container.classList.add(...this.className.split(" "));
     }
 
-    let html = '<div class="tooltip-filler"></div>';
-    html += '<div class="tooltip-panel"></div>';
+    const filler = this.doc.createElementNS(XHTML_NS, "div");
+    filler.classList.add("tooltip-filler");
+    container.appendChild(filler);
+
+    const panel = this.doc.createElementNS(XHTML_NS, "div");
+    panel.classList.add("tooltip-panel");
+    container.appendChild(panel);
 
     if (this.type === TYPE.ARROW || this.type === TYPE.DOORHANGER) {
-      html += '<div class="tooltip-arrow"></div>';
+      const arrow = this.doc.createElementNS(XHTML_NS, "div");
+      arrow.classList.add("tooltip-arrow");
+      container.appendChild(arrow);
     }
-    // eslint-disable-next-line no-unsanitized/property
-    container.innerHTML = html;
     return container;
   },
 

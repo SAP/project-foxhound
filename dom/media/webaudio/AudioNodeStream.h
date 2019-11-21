@@ -13,6 +13,10 @@
 #include "AudioBlock.h"
 #include "AudioSegment.h"
 
+namespace WebCore {
+class Reverb;
+}  // namespace WebCore
+
 namespace mozilla {
 
 namespace dom {
@@ -92,6 +96,7 @@ class AudioNodeStream : public ProcessedMediaStream {
   void SetInt32Parameter(uint32_t aIndex, int32_t aValue);
   void SetThreeDPointParameter(uint32_t aIndex, const dom::ThreeDPoint& aValue);
   void SetBuffer(AudioChunk&& aBuffer);
+  void SetReverb(WebCore::Reverb* aReverb, uint32_t aImpulseChannelCount);
   // This sends a single event to the timeline on the MSG thread side.
   void SendTimelineEvent(uint32_t aIndex,
                          const dom::AudioTimelineEvent& aEvent);
@@ -175,6 +180,7 @@ class AudioNodeStream : public ProcessedMediaStream {
   class AdvanceAndResumeMessage;
   class CheckForInactiveMessage;
 
+  void NotifyForcedShutdown() override;
   void DestroyImpl() override;
 
   /*
@@ -201,7 +207,7 @@ class AudioNodeStream : public ProcessedMediaStream {
   void DecrementActiveInputCount();
 
   // The engine that will generate output for this node.
-  nsAutoPtr<AudioNodeEngine> mEngine;
+  const nsAutoPtr<AudioNodeEngine> mEngine;
   // The mixed input blocks are kept from iteration to iteration to avoid
   // reallocating channel data arrays and any buffers for mixing.
   OutputChunks mInputChunks;

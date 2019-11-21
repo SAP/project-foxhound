@@ -39,18 +39,19 @@ enum class State {
 };
 
 // Reasons we reset an ongoing incremental GC or perform a non-incremental GC.
-#define GC_ABORT_REASONS(D)     \
-  D(None, 0)                    \
-  D(NonIncrementalRequested, 1) \
-  D(AbortRequested, 2)          \
-  D(Unused1, 3)                 \
-  D(IncrementalDisabled, 4)     \
-  D(ModeChange, 5)              \
-  D(MallocBytesTrigger, 6)      \
-  D(GCBytesTrigger, 7)          \
-  D(ZoneChange, 8)              \
-  D(CompartmentRevived, 9)      \
-  D(GrayRootBufferingFailed, 10)
+#define GC_ABORT_REASONS(D)      \
+  D(None, 0)                     \
+  D(NonIncrementalRequested, 1)  \
+  D(AbortRequested, 2)           \
+  D(Unused1, 3)                  \
+  D(IncrementalDisabled, 4)      \
+  D(ModeChange, 5)               \
+  D(MallocBytesTrigger, 6)       \
+  D(GCBytesTrigger, 7)           \
+  D(ZoneChange, 8)               \
+  D(CompartmentRevived, 9)       \
+  D(GrayRootBufferingFailed, 10) \
+  D(JitCodeBytesTrigger, 11)
 enum class AbortReason {
 #define MAKE_REASON(name, num) name = num,
   GC_ABORT_REASONS(MAKE_REASON)
@@ -118,6 +119,7 @@ enum class ZealMode {
   _(ObjectGroupAddendum)                   \
   _(ScriptDebugScript)                     \
   _(BreakpointSite)                        \
+  _(Breakpoint)                            \
   _(ForOfPIC)                              \
   _(ForOfPICStub)                          \
   _(WasmInstanceExports)                   \
@@ -129,7 +131,14 @@ enum class ZealMode {
   _(WasmResolveResponseClosure)            \
   _(WasmModule)                            \
   _(WasmTableTable)                        \
-  _(FileObjectFile)
+  _(FileObjectFile)                        \
+  _(Debugger)                              \
+  _(DebuggerFrameGeneratorInfo)            \
+  _(DebuggerFrameIterData)                 \
+  _(DebuggerOnStepHandler)                 \
+  _(DebuggerOnPopHandler)                  \
+  _(GlobalDebuggerVector)                  \
+  _(RealmInstrumentation)
 
 #define JS_FOR_EACH_MEMORY_USE(_)  \
   JS_FOR_EACH_PUBLIC_MEMORY_USE(_) \

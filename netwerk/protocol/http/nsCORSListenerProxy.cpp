@@ -6,6 +6,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/LinkedList.h"
+#include "mozilla/StaticPrefs_content.h"
 
 #include "nsCORSListenerProxy.h"
 #include "nsIChannel.h"
@@ -51,9 +52,6 @@ using namespace mozilla;
 using namespace mozilla::net;
 
 #define PREFLIGHT_CACHE_SIZE 100
-
-static bool gDisableCORS = false;
-static bool gDisableCORSPrivateData = false;
 
 static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
                               const char16_t* aParam, uint32_t aBlockingReason,
@@ -379,13 +377,6 @@ NS_IMPL_ISUPPORTS(nsCORSListenerProxy, nsIStreamListener, nsIRequestObserver,
                   nsIThreadRetargetableStreamListener)
 
 /* static */
-void nsCORSListenerProxy::Startup() {
-  Preferences::AddBoolVarCache(&gDisableCORS, "content.cors.disable");
-  Preferences::AddBoolVarCache(&gDisableCORSPrivateData,
-                               "content.cors.no_private_data");
-}
-
-/* static */
 void nsCORSListenerProxy::Shutdown() {
   delete sPreflightCache;
   sPreflightCache = nullptr;
@@ -397,7 +388,7 @@ nsCORSListenerProxy::nsCORSListenerProxy(nsIStreamListener* aOuter,
     : mOuterListener(aOuter),
       mRequestingPrincipal(aRequestingPrincipal),
       mOriginHeaderPrincipal(aRequestingPrincipal),
-      mWithCredentials(aWithCredentials && !gDisableCORSPrivateData),
+      mWithCredentials(aWithCredentials),
       mRequestApproved(false),
       mHasBeenCrossSite(false),
 #ifdef DEBUG
@@ -516,7 +507,7 @@ nsresult nsCORSListenerProxy::CheckRequestApproved(nsIRequest* aRequest) {
   nsCOMPtr<nsIHttpChannel> topChannel;
   topChannel.swap(mHttpChannel);
 
-  if (gDisableCORS) {
+  if (StaticPrefs::content_cors_disable()) {
     LogBlockedRequest(aRequest, "CORSDisabled", nullptr,
                       nsILoadInfo::BLOCKING_REASON_CORSDISABLED, topChannel);
     return NS_ERROR_DOM_BAD_URI;
@@ -832,12 +823,9 @@ bool CheckUpgradeInsecureRequestsPreventsCORS(
   nsCOMPtr<nsIURI> channelURI;
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(channelURI));
   NS_ENSURE_SUCCESS(rv, false);
-  bool isHttpScheme = false;
-  rv = channelURI->SchemeIs("http", &isHttpScheme);
-  NS_ENSURE_SUCCESS(rv, false);
 
   // upgrade insecure requests is only applicable to http requests
-  if (!isHttpScheme) {
+  if (!channelURI->SchemeIs("http")) {
     return false;
   }
 
@@ -893,10 +881,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
 
   // exempt data URIs from the same origin check.
   if (aAllowDataURI == DataURIHandling::Allow && originalURI == uri) {
-    bool dataScheme = false;
-    rv = uri->SchemeIs("data", &dataScheme);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (dataScheme) {
+    if (uri->SchemeIs("data")) {
       return NS_OK;
     }
     if (loadInfo->GetAboutBlankInherits() && NS_IsAboutBlank(uri)) {
@@ -920,13 +905,14 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
   // consider calling SetBlockedRequest in nsCORSListenerProxy::UpdateChannel
   //
   // Check that the uri is ok to load
+  uint32_t flags = loadInfo->CheckLoadURIFlags();
   rv = nsContentUtils::GetSecurityManager()->CheckLoadURIWithPrincipal(
-      mRequestingPrincipal, uri, nsIScriptSecurityManager::STANDARD);
+      mRequestingPrincipal, uri, flags);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (originalURI != uri) {
     rv = nsContentUtils::GetSecurityManager()->CheckLoadURIWithPrincipal(
-        mRequestingPrincipal, originalURI, nsIScriptSecurityManager::STANDARD);
+        mRequestingPrincipal, originalURI, flags);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -1430,7 +1416,7 @@ nsresult nsCORSListenerProxy::StartCORSPreflight(
     nsTArray<nsCString>& aUnsafeHeaders, nsIChannel** aPreflightChannel) {
   *aPreflightChannel = nullptr;
 
-  if (gDisableCORS) {
+  if (StaticPrefs::content_cors_disable()) {
     nsCOMPtr<nsIHttpChannel> http = do_QueryInterface(aRequestChannel);
     LogBlockedRequest(aRequestChannel, "CORSDisabled", nullptr,
                       nsILoadInfo::BLOCKING_REASON_CORSDISABLED, http);

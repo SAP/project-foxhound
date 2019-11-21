@@ -53,22 +53,20 @@ use crate::device::{DepthFunction, Device, GpuFrameId, Program, UploadMethod, Te
 use crate::device::{DrawTarget, ExternalTexture, FBOId, ReadTarget, TextureSlot};
 use crate::device::{ShaderError, TextureFilter, TextureFlags,
              VertexUsageHint, VAO, VBO, CustomVAO};
-use crate::device::{ProgramCache};
+use crate::device::ProgramCache;
 use crate::device::query::GpuTimer;
-use euclid::{rect, Transform3D, TypedScale};
+use euclid::{rect, Transform3D, Scale, default};
 use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
 use gleam::gl;
 use crate::glyph_cache::GlyphCache;
 use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterizer};
 use crate::gpu_cache::{GpuBlockData, GpuCacheUpdate, GpuCacheUpdateList};
 use crate::gpu_cache::{GpuCacheDebugChunk, GpuCacheDebugCmd};
-#[cfg(feature = "pathfinder")]
-use crate::gpu_glyph_renderer::GpuGlyphRenderer;
-use crate::gpu_types::{PrimitiveHeaderI, PrimitiveHeaderF, ScalingInstance, TransformData, ResolveInstanceData};
+use crate::gpu_types::{PrimitiveHeaderI, PrimitiveHeaderF, ScalingInstance, SvgFilterInstance, TransformData, ResolveInstanceData};
 use crate::internal_types::{TextureSource, ORTHO_FAR_PLANE, ORTHO_NEAR_PLANE, ResourceCacheError};
 use crate::internal_types::{CacheTextureId, DebugOutput, FastHashMap, FastHashSet, LayerIndex, RenderedDocument, ResultMsg};
 use crate::internal_types::{TextureCacheAllocationKind, TextureCacheUpdate, TextureUpdateList, TextureUpdateSource};
-use crate::internal_types::{RenderTargetInfo, SavedTargetIndex};
+use crate::internal_types::{RenderTargetInfo, SavedTargetIndex, Swizzle};
 use malloc_size_of::MallocSizeOfOps;
 use crate::picture::{RecordedDirtyRegion, TILE_SIZE_WIDTH, TILE_SIZE_HEIGHT};
 use crate::prim_store::DeferredResolve;
@@ -79,12 +77,16 @@ use crate::device::query::{GpuProfiler, GpuDebugMethod};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::record::ApiRecordingReceiver;
 use crate::render_backend::{FrameId, RenderBackend};
+use crate::render_task::{RenderTargetKind, RenderTask, RenderTaskData, RenderTaskKind, RenderTaskGraph};
+use crate::resource_cache::ResourceCache;
 use crate::scene_builder::{SceneBuilder, LowPrioritySceneBuilder};
 use crate::screen_capture::AsyncScreenshotGrabber;
 use crate::shade::{Shaders, WrShaders};
 use smallvec::SmallVec;
-use crate::render_task::{RenderTask, RenderTaskData, RenderTaskKind, RenderTaskGraph};
-use crate::resource_cache::ResourceCache;
+use crate::texture_cache::TextureCache;
+use crate::tiling::{AlphaRenderTarget, ColorRenderTarget, PictureCacheTarget};
+use crate::tiling::{BlitJob, BlitJobSource, RenderPassKind, RenderTargetList};
+use crate::tiling::{Frame, RenderTarget, TextureCacheRenderTarget};
 use crate::util::drain_filter;
 
 use std;
@@ -102,13 +104,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 use std::cell::RefCell;
-use crate::texture_cache::TextureCache;
 use thread_profiler::{register_thread_with_profiler, write_profile};
-use crate::tiling::{AlphaRenderTarget, ColorRenderTarget, PictureCacheTarget};
-use crate::tiling::{BlitJob, BlitJobSource, RenderPassKind, RenderTargetList};
-use crate::tiling::{Frame, RenderTarget, RenderTargetKind, TextureCacheRenderTarget};
-#[cfg(not(feature = "pathfinder"))]
-use crate::tiling::GlyphJob;
 use time::precise_time_ns;
 
 cfg_if! {
@@ -119,6 +115,7 @@ cfg_if! {
 }
 
 const DEFAULT_BATCH_LOOKBACK_COUNT: usize = 10;
+const VERTEX_TEXTURE_EXTRA_ROWS: i32 = 10;
 
 /// Is only false if no WR instances have ever been created.
 static HAS_BEEN_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -220,6 +217,10 @@ const GPU_SAMPLER_TAG_OPAQUE: GpuProfileTag = GpuProfileTag {
 const GPU_SAMPLER_TAG_TRANSPARENT: GpuProfileTag = GpuProfileTag {
     label: "Transparent Pass",
     color: debug_colors::BLACK,
+};
+const GPU_TAG_SVG_FILTER: GpuProfileTag = GpuProfileTag {
+    label: "SvgFilter",
+    color: debug_colors::LEMONCHIFFON,
 };
 
 /// The clear color used for the texture cache when the debug display is enabled.
@@ -566,14 +567,19 @@ pub(crate) mod desc {
         ],
         instance_attributes: &[
             VertexAttribute {
-                name: "aScaleRenderTaskAddress",
-                count: 1,
-                kind: VertexAttributeKind::U16,
+                name: "aScaleTargetRect",
+                count: 4,
+                kind: VertexAttributeKind::F32,
             },
             VertexAttribute {
-                name: "aScaleSourceTaskAddress",
+                name: "aScaleSourceRect",
+                count: 4,
+                kind: VertexAttributeKind::I32,
+            },
+            VertexAttribute {
+                name: "aScaleSourceLayer",
                 count: 1,
-                kind: VertexAttributeKind::U16,
+                kind: VertexAttributeKind::I32,
             },
         ],
     };
@@ -659,6 +665,53 @@ pub(crate) mod desc {
                 name: "aRect",
                 count: 4,
                 kind: VertexAttributeKind::F32,
+            },
+        ],
+    };
+
+    pub const SVG_FILTER: VertexDescriptor = VertexDescriptor {
+        vertex_attributes: &[
+            VertexAttribute {
+                name: "aPosition",
+                count: 2,
+                kind: VertexAttributeKind::F32,
+            },
+        ],
+        instance_attributes: &[
+            VertexAttribute {
+                name: "aFilterRenderTaskAddress",
+                count: 1,
+                kind: VertexAttributeKind::U16,
+            },
+            VertexAttribute {
+                name: "aFilterInput1TaskAddress",
+                count: 1,
+                kind: VertexAttributeKind::U16,
+            },
+            VertexAttribute {
+                name: "aFilterInput2TaskAddress",
+                count: 1,
+                kind: VertexAttributeKind::U16,
+            },
+            VertexAttribute {
+                name: "aFilterKind",
+                count: 1,
+                kind: VertexAttributeKind::U16,
+            },
+            VertexAttribute {
+                name: "aFilterInputCount",
+                count: 1,
+                kind: VertexAttributeKind::U16,
+            },
+            VertexAttribute {
+                name: "aFilterGenericInt",
+                count: 1,
+                kind: VertexAttributeKind::U16,
+            },
+            VertexAttribute {
+                name: "aFilterExtraDataAddress",
+                count: 2,
+                kind: VertexAttributeKind::U16,
             },
         ],
     };
@@ -760,6 +813,7 @@ pub(crate) enum VertexArrayKind {
     LineDecoration,
     Gradient,
     Resolve,
+    SvgFilter,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -845,19 +899,6 @@ impl CpuProfile {
     }
 }
 
-#[cfg(not(feature = "pathfinder"))]
-pub struct GpuGlyphRenderer;
-
-#[cfg(not(feature = "pathfinder"))]
-impl GpuGlyphRenderer {
-    fn new(_: &mut Device, _: &VAO, _: ShaderPrecacheFlags) -> Result<GpuGlyphRenderer, RendererError> {
-        Ok(GpuGlyphRenderer)
-    }
-}
-
-#[cfg(not(feature = "pathfinder"))]
-struct StenciledGlyphPage;
-
 /// A Texture that has been initialized by the `device` module and is ready to
 /// be used.
 struct ActiveTexture {
@@ -914,7 +955,7 @@ impl TextureResolver {
         let dummy_cache_texture = device
             .create_texture(
                 TextureTarget::Array,
-                ImageFormat::BGRA8,
+                ImageFormat::RGBA8,
                 1,
                 1,
                 TextureFilter::Linear,
@@ -1025,36 +1066,62 @@ impl TextureResolver {
     }
 
     // Bind a source texture to the device.
-    fn bind(&self, texture_id: &TextureSource, sampler: TextureSampler, device: &mut Device) {
+    fn bind(&self, texture_id: &TextureSource, sampler: TextureSampler, device: &mut Device) -> Swizzle {
         match *texture_id {
-            TextureSource::Invalid => {}
+            TextureSource::Invalid => {
+                Swizzle::default()
+            }
             TextureSource::PrevPassAlpha => {
                 let texture = match self.prev_pass_alpha {
                     Some(ref at) => &at.texture,
                     None => &self.dummy_cache_texture,
                 };
-                device.bind_texture(sampler, texture);
+                let swizzle = Swizzle::default();
+                device.bind_texture(sampler, texture, swizzle);
+                swizzle
             }
             TextureSource::PrevPassColor => {
                 let texture = match self.prev_pass_color {
                     Some(ref at) => &at.texture,
                     None => &self.dummy_cache_texture,
                 };
-                device.bind_texture(sampler, texture);
+                let swizzle = Swizzle::default();
+                device.bind_texture(sampler, texture, swizzle);
+                swizzle
             }
             TextureSource::External(external_image) => {
                 let texture = self.external_images
                     .get(&(external_image.id, external_image.channel_index))
                     .expect(&format!("BUG: External image should be resolved by now"));
                 device.bind_external_texture(sampler, texture);
+                Swizzle::default()
             }
-            TextureSource::TextureCache(index) => {
+            TextureSource::TextureCache(index, swizzle) => {
                 let texture = &self.texture_cache_map[&index];
-                device.bind_texture(sampler, texture);
+                device.bind_texture(sampler, texture, swizzle);
+                swizzle
             }
-            TextureSource::RenderTaskCache(saved_index) => {
-                let texture = &self.saved_targets[saved_index.0];
-                device.bind_texture(sampler, texture)
+            TextureSource::RenderTaskCache(saved_index, swizzle) => {
+                if saved_index.0 < self.saved_targets.len() {
+                    let texture = &self.saved_targets[saved_index.0];
+                    device.bind_texture(sampler, texture, swizzle)
+                } else {
+                    // Check if this saved index is referring to a the prev pass
+                    if Some(saved_index) == self.prev_pass_color.as_ref().and_then(|at| at.saved_index) {
+                        let texture = match self.prev_pass_color {
+                            Some(ref at) => &at.texture,
+                            None => &self.dummy_cache_texture,
+                        };
+                        device.bind_texture(sampler, texture, swizzle);
+                    } else if Some(saved_index) == self.prev_pass_alpha.as_ref().and_then(|at| at.saved_index) {
+                        let texture = match self.prev_pass_alpha {
+                            Some(ref at) => &at.texture,
+                            None => &self.dummy_cache_texture,
+                        };
+                        device.bind_texture(sampler, texture, swizzle);
+                    }
+                }
+                swizzle
             }
         }
     }
@@ -1062,29 +1129,31 @@ impl TextureResolver {
     // Get the real (OpenGL) texture ID for a given source texture.
     // For a texture cache texture, the IDs are stored in a vector
     // map for fast access.
-    fn resolve(&self, texture_id: &TextureSource) -> Option<&Texture> {
+    fn resolve(&self, texture_id: &TextureSource) -> Option<(&Texture, Swizzle)> {
         match *texture_id {
             TextureSource::Invalid => None,
-            TextureSource::PrevPassAlpha => Some(
+            TextureSource::PrevPassAlpha => Some((
                 match self.prev_pass_alpha {
                     Some(ref at) => &at.texture,
                     None => &self.dummy_cache_texture,
-                }
-            ),
-            TextureSource::PrevPassColor => Some(
+                },
+                Swizzle::default(),
+            )),
+            TextureSource::PrevPassColor => Some((
                 match self.prev_pass_color {
                     Some(ref at) => &at.texture,
                     None => &self.dummy_cache_texture,
-                }
-            ),
+                },
+                Swizzle::default(),
+            )),
             TextureSource::External(..) => {
                 panic!("BUG: External textures cannot be resolved, they can only be bound.");
             }
-            TextureSource::TextureCache(index) => {
-                Some(&self.texture_cache_map[&index])
+            TextureSource::TextureCache(index, swizzle) => {
+                Some((&self.texture_cache_map[&index], swizzle))
             }
-            TextureSource::RenderTaskCache(saved_index) => {
-                Some(&self.saved_targets[saved_index.0])
+            TextureSource::RenderTaskCache(saved_index, swizzle) => {
+                Some((&self.saved_targets[saved_index.0], swizzle))
             }
         }
     }
@@ -1399,7 +1468,7 @@ impl GpuCacheTexture {
                         DeviceIntSize::new(MAX_VERTEX_TEXTURE_WIDTH as i32, 1),
                     );
 
-                    uploader.upload(rect, 0, None, &*row.cpu_blocks);
+                    uploader.upload(rect, 0, None, None, &*row.cpu_blocks);
 
                     row.is_dirty = false;
                 }
@@ -1477,8 +1546,6 @@ impl<T> VertexDataTexture<T> {
             }
         }
 
-        let width =
-            (MAX_VERTEX_TEXTURE_WIDTH - (MAX_VERTEX_TEXTURE_WIDTH % texels_per_item)) as i32;
         let needed_height = (data.len() / items_per_row) as i32;
         let existing_height = self.texture.as_ref().map_or(0, |t| t.get_dimensions().height);
 
@@ -1488,10 +1555,10 @@ impl<T> VertexDataTexture<T> {
         // with incremental updates and just re-upload every frame. For most pages
         // they're one row each, and on stress tests like css-francine they end up
         // in the 6-14 range. So we size the texture tightly to what we need (usually
-        // 1), and shrink it if the waste would be more than 10 rows. This helps
-        // with memory overhead, especially because there are several instances of
-        // these textures per Renderer.
-        if needed_height > existing_height || needed_height + 10 < existing_height {
+        // 1), and shrink it if the waste would be more than `VERTEX_TEXTURE_EXTRA_ROWS`
+        // rows. This helps with memory overhead, especially because there are several
+        // instances of these textures per Renderer.
+        if needed_height > existing_height || needed_height + VERTEX_TEXTURE_EXTRA_ROWS < existing_height {
             // Drop the existing texture, if any.
             if let Some(t) = self.texture.take() {
                 device.delete_texture(t);
@@ -1500,7 +1567,7 @@ impl<T> VertexDataTexture<T> {
             let texture = device.create_texture(
                 TextureTarget::Default,
                 self.format,
-                width,
+                MAX_VERTEX_TEXTURE_WIDTH as i32,
                 // Ensure height is at least two to work around
                 // https://bugs.chromium.org/p/angleproject/issues/detail?id=3039
                 needed_height.max(2),
@@ -1511,13 +1578,21 @@ impl<T> VertexDataTexture<T> {
             self.texture = Some(texture);
         }
 
+        // Note: the actual width can be larger than the logical one, with a few texels
+        // of each row unused at the tail. This is needed because there is still hardware
+        // (like Intel iGPUs) that prefers power-of-two sizes of textures ([1]).
+        //
+        // [1] https://software.intel.com/en-us/articles/opengl-performance-tips-power-of-two-textures-have-better-performance
+        let logical_width =
+            (MAX_VERTEX_TEXTURE_WIDTH - (MAX_VERTEX_TEXTURE_WIDTH % texels_per_item)) as i32;
+
         let rect = DeviceIntRect::new(
             DeviceIntPoint::zero(),
-            DeviceIntSize::new(width, needed_height),
+            DeviceIntSize::new(logical_width, needed_height),
         );
         device
             .upload_texture(self.texture(), &self.pbo, 0)
-            .upload(rect, 0, None, data);
+            .upload(rect, 0, None, None, data);
     }
 
     fn deinit(mut self, device: &mut Device) {
@@ -1593,6 +1668,7 @@ pub struct RendererVAOs {
     scale_vao: VAO,
     gradient_vao: VAO,
     resolve_vao: VAO,
+    svg_filter_vao: VAO,
 }
 
 
@@ -1612,8 +1688,6 @@ pub struct Renderer {
     active_documents: Vec<(DocumentId, RenderedDocument)>,
 
     shaders: Rc<RefCell<Shaders>>,
-
-    pub gpu_glyph_renderer: GpuGlyphRenderer,
 
     max_recorded_profiles: usize,
 
@@ -1778,9 +1852,13 @@ impl Renderer {
             options.upload_method.clone(),
             options.cached_programs.take(),
             options.allow_pixel_local_storage_support,
+            options.allow_texture_storage_support,
+            options.allow_texture_swizzling,
             options.dump_shader_source.take(),
         );
 
+        let color_cache_formats = device.preferred_color_formats();
+        let swizzle_settings = device.swizzle_settings();
         let supports_dual_source_blending = match gl_type {
             gl::GlType::Gl => device.supports_extension("GL_ARB_blend_func_extended") &&
                 device.supports_extension("GL_ARB_explicit_attrib_location"),
@@ -1929,10 +2007,6 @@ impl Renderer {
         device.update_vao_indices(&prim_vao, &quad_indices, VertexUsageHint::Static);
         device.update_vao_main_vertices(&prim_vao, &quad_vertices, VertexUsageHint::Static);
 
-        let gpu_glyph_renderer = r#try!(GpuGlyphRenderer::new(&mut device,
-                                                            &prim_vao,
-                                                            options.precache_flags));
-
         let blur_vao = device.create_vao_with_new_instances(&desc::BLUR, &prim_vao);
         let clip_vao = device.create_vao_with_new_instances(&desc::CLIP, &prim_vao);
         let border_vao = device.create_vao_with_new_instances(&desc::BORDER, &prim_vao);
@@ -1940,6 +2014,7 @@ impl Renderer {
         let line_vao = device.create_vao_with_new_instances(&desc::LINE, &prim_vao);
         let gradient_vao = device.create_vao_with_new_instances(&desc::GRADIENT, &prim_vao);
         let resolve_vao = device.create_vao_with_new_instances(&desc::RESOLVE, &prim_vao);
+        let svg_filter_vao = device.create_vao_with_new_instances(&desc::SVG_FILTER, &prim_vao);
         let texture_cache_upload_pbo = device.create_pbo();
 
         let texture_resolver = TextureResolver::new(&mut device);
@@ -2090,6 +2165,8 @@ impl Renderer {
                     &[]
                 },
                 start_size,
+                color_cache_formats,
+                swizzle_settings,
             );
 
             let glyph_cache = GlyphCache::new(max_glyph_cache_size);
@@ -2164,7 +2241,6 @@ impl Renderer {
             enable_advanced_blend_barriers: !ext_blend_equation_advanced_coherent,
             last_time: 0,
             gpu_profile,
-            gpu_glyph_renderer,
             vaos: RendererVAOs {
                 prim_vao,
                 blur_vao,
@@ -2174,6 +2250,7 @@ impl Renderer {
                 gradient_vao,
                 resolve_vao,
                 line_vao,
+                svg_filter_vao,
             },
             transforms_texture,
             prim_header_i_texture,
@@ -2238,6 +2315,10 @@ impl Renderer {
             version: self.device.gl().get_string(gl::VERSION),
             renderer: self.device.gl().get_string(gl::RENDERER),
         }
+    }
+
+    pub fn preferred_color_format(&self) -> ImageFormat {
+        self.device.preferred_color_formats().external
     }
 
     pub fn flush_pipeline_info(&mut self) -> PipelineInfo {
@@ -2515,6 +2596,11 @@ impl Renderer {
             debug_server::BatchKind::Cache,
             "Horizontal Blur",
             target.horizontal_blurs.len(),
+        );
+        debug_target.add(
+            debug_server::BatchKind::Cache,
+            "SVG Filters",
+            target.svg_filters.iter().map(|(_, batch)| batch.len()).sum(),
         );
 
         for alpha_batch_container in &target.alpha_batch_containers {
@@ -3009,6 +3095,7 @@ impl Renderer {
         self.device.bind_texture(
             TextureSampler::GpuCache,
             self.gpu_cache_texture.texture.as_ref().unwrap(),
+            Swizzle::default(),
         );
     }
 
@@ -3081,7 +3168,7 @@ impl Renderer {
                 }
 
                 for update in update_list.updates {
-                    let TextureCacheUpdate { id, rect, stride, offset, layer_index, source } = update;
+                    let TextureCacheUpdate { id, rect, stride, offset, layer_index, format_override, source } = update;
                     let texture = &self.texture_resolver.texture_cache_map[&id];
 
                     let bytes_uploaded = match source {
@@ -3092,7 +3179,10 @@ impl Renderer {
                                 0,
                             );
                             uploader.upload(
-                                rect, layer_index, stride,
+                                rect,
+                                layer_index,
+                                stride,
+                                format_override,
                                 &data[offset as usize ..],
                             )
                         }
@@ -3106,12 +3196,10 @@ impl Renderer {
                                 .as_mut()
                                 .expect("Found external image, but no handler set!");
                             // The filter is only relevant for NativeTexture external images.
-                            let size = match handler.lock(id, channel_index, ImageRendering::Auto).source {
+                            let dummy_data;
+                            let data = match handler.lock(id, channel_index, ImageRendering::Auto).source {
                                 ExternalImageSource::RawData(data) => {
-                                    uploader.upload(
-                                        rect, layer_index, stride,
-                                        &data[offset as usize ..],
-                                    )
+                                    &data[offset as usize ..]
                                 }
                                 ExternalImageSource::Invalid => {
                                     // Create a local buffer to fill the pbo.
@@ -3120,13 +3208,20 @@ impl Renderer {
                                     let total_size = width * rect.size.height;
                                     // WR haven't support RGBAF32 format in texture_cache, so
                                     // we use u8 type here.
-                                    let dummy_data: Vec<u8> = vec![255; total_size as usize];
-                                    uploader.upload(rect, layer_index, stride, &dummy_data)
+                                    dummy_data = vec![0xFFu8; total_size as usize];
+                                    &dummy_data
                                 }
                                 ExternalImageSource::NativeTexture(eid) => {
                                     panic!("Unexpected external texture {:?} for the texture cache update of {:?}", eid, id);
                                 }
                             };
+                            let size = uploader.upload(
+                                rect,
+                                layer_index,
+                                stride,
+                                format_override,
+                                data,
+                            );
                             handler.unlock(id, channel_index);
                             size
                         }
@@ -3169,17 +3264,26 @@ impl Renderer {
         textures: &BatchTextures,
         stats: &mut RendererStats,
     ) {
+        let mut swizzles = [Swizzle::default(); 3];
         for i in 0 .. textures.colors.len() {
-            self.texture_resolver.bind(
+            let swizzle = self.texture_resolver.bind(
                 &textures.colors[i],
                 TextureSampler::color(i),
                 &mut self.device,
             );
+            if cfg!(debug_assertions) {
+                swizzles[i] = swizzle;
+                for j in 0 .. i {
+                    if textures.colors[j] == textures.colors[i] && swizzles[j] != swizzle {
+                        error!("Swizzling conflict in {:?}", textures);
+                    }
+                }
+            }
         }
 
         // TODO: this probably isn't the best place for this.
         if let Some(ref texture) = self.dither_matrix_texture {
-            self.device.bind_texture(TextureSampler::Dither, texture);
+            self.device.bind_texture(TextureSampler::Dither, texture, Swizzle::default());
         }
 
         self.draw_instanced_batch_with_previously_bound_textures(data, vertex_array_kind, stats)
@@ -3197,7 +3301,7 @@ impl Renderer {
         // the batch.
         debug_assert!(!data.is_empty());
 
-        let vao = get_vao(vertex_array_kind, &self.vaos, &self.gpu_glyph_renderer);
+        let vao = get_vao(vertex_array_kind, &self.vaos);
 
         self.device.bind_vao(vao);
 
@@ -3235,7 +3339,7 @@ impl Renderer {
             self.device.disable_scissor();
         }
 
-        let cache_texture = self.texture_resolver
+        let (cache_texture, _) = self.texture_resolver
             .resolve(&TextureSource::PrevPassColor)
             .unwrap();
 
@@ -3268,7 +3372,7 @@ impl Renderer {
             readback_rect.size,
         );
         let mut dest = readback_rect.to_i32();
-        let device_to_framebuffer = TypedScale::new(1i32);
+        let device_to_framebuffer = Scale::new(1i32);
 
         // Need to invert the y coordinates and flip the image vertically when
         // reading back from the framebuffer.
@@ -3296,12 +3400,8 @@ impl Renderer {
         }
     }
 
-    //TODO: make this nicer. Currently we can't accept `&mut self` because the `DrawTarget` parameter
-    // needs to borrow self.texture_resolver
     fn handle_blits(
-        gpu_profile: &mut GpuProfiler<GpuProfileTag>,
-        device: &mut Device,
-        texture_resolver: &TextureResolver,
+        &mut self,
         blits: &[BlitJob],
         render_tasks: &RenderTaskGraph,
         draw_target: DrawTarget,
@@ -3311,7 +3411,7 @@ impl Renderer {
             return;
         }
 
-        let _timer = gpu_profile.start_timer(GPU_TAG_BLIT);
+        let _timer = self.gpu_profile.start_timer(GPU_TAG_BLIT);
 
         // TODO(gw): For now, we don't bother batching these by source texture.
         //           If if ever shows up as an issue, we can easily batch them.
@@ -3330,21 +3430,27 @@ impl Renderer {
                     (TextureSource::PrevPassColor, layer.0, source_rect)
                 }
             };
+
             debug_assert_eq!(source_rect.size, blit.target_rect.size);
-            let texture = texture_resolver
+            let (texture, swizzle) = self.texture_resolver
                 .resolve(&source)
                 .expect("BUG: invalid source texture");
+
+            if swizzle != Swizzle::default() {
+                error!("Swizzle {:?} can't be handled by a blit", swizzle);
+            }
+
             let read_target = DrawTarget::from_texture(
                 texture,
                 layer,
                 false,
             );
 
-            device.blit_render_target(
+            self.device.blit_render_target(
                 read_target.into(),
                 read_target.to_framebuffer_rect(source_rect),
                 draw_target,
-                draw_target.to_framebuffer_rect(blit.target_rect.translate(&-content_origin.to_vector())),
+                draw_target.to_framebuffer_rect(blit.target_rect.translate(-content_origin.to_vector())),
                 TextureFilter::Linear,
             );
         }
@@ -3352,9 +3458,8 @@ impl Renderer {
 
     fn handle_scaling(
         &mut self,
-        scalings: &[ScalingInstance],
-        source: TextureSource,
-        projection: &Transform3D<f32>,
+        scalings: &FastHashMap<TextureSource, Vec<ScalingInstance>>,
+        projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
         if scalings.is_empty() {
@@ -3372,10 +3477,39 @@ impl Renderer {
                 &mut self.renderer_errors,
             );
 
+        for (source, instances) in scalings {
+            self.draw_instanced_batch(
+                instances,
+                VertexArrayKind::Scale,
+                &BatchTextures::color(*source),
+                stats,
+            );
+        }
+    }
+
+    fn handle_svg_filters(
+        &mut self,
+        textures: &BatchTextures,
+        svg_filters: &[SvgFilterInstance],
+        projection: &default::Transform3D<f32>,
+        stats: &mut RendererStats,
+    ) {
+        if svg_filters.is_empty() {
+            return;
+        }
+
+        let _timer = self.gpu_profile.start_timer(GPU_TAG_SVG_FILTER);
+
+        self.shaders.borrow_mut().cs_svg_filter.bind(
+            &mut self.device,
+            &projection,
+            &mut self.renderer_errors
+        );
+
         self.draw_instanced_batch(
-            &scalings,
-            VertexArrayKind::Scale,
-            &BatchTextures::color(source),
+            &svg_filters,
+            VertexArrayKind::SvgFilter,
+            textures,
             stats,
         );
     }
@@ -3385,7 +3519,7 @@ impl Renderer {
         target: &PictureCacheTarget,
         draw_target: DrawTarget,
         content_origin: DeviceIntPoint,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         render_tasks: &RenderTaskGraph,
         stats: &mut RendererStats,
     ) {
@@ -3428,7 +3562,7 @@ impl Renderer {
         draw_target: DrawTarget,
         content_origin: DeviceIntPoint,
         framebuffer_kind: FramebufferKind,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         render_tasks: &RenderTaskGraph,
         stats: &mut RendererStats,
     ) {
@@ -3638,7 +3772,7 @@ impl Renderer {
         clear_color: Option<[f32; 4]>,
         clear_depth: Option<f32>,
         render_tasks: &RenderTaskGraph,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         frame_id: GpuFrameId,
         stats: &mut RendererStats,
     ) {
@@ -3704,8 +3838,7 @@ impl Renderer {
         }
 
         // Handle any blits from the texture cache to this target.
-        Self::handle_blits(
-            &mut self.gpu_profile, &mut self.device, &self.texture_resolver,
+        self.handle_blits(
             &target.blits, render_tasks, draw_target, &content_origin,
         );
 
@@ -3743,10 +3876,18 @@ impl Renderer {
 
         self.handle_scaling(
             &target.scalings,
-            TextureSource::PrevPassColor,
             projection,
             stats,
         );
+
+        for (ref textures, ref filters) in &target.svg_filters {
+            self.handle_svg_filters(
+                textures,
+                filters,
+                projection,
+                stats,
+            );
+        }
 
         for alpha_batch_container in &target.alpha_batch_containers {
             self.draw_alpha_batch_container(
@@ -3785,7 +3926,7 @@ impl Renderer {
                 let (src_rect, _) = render_tasks[output.task_id].get_target_rect();
                 self.device.blit_render_target_invert_y(
                     draw_target.into(),
-                    draw_target.to_framebuffer_rect(src_rect.translate(&-content_origin.to_vector())),
+                    draw_target.to_framebuffer_rect(src_rect.translate(-content_origin.to_vector())),
                     DrawTarget::External { fbo: fbo_id, size: output_size },
                     output_size.into(),
                 );
@@ -3798,7 +3939,7 @@ impl Renderer {
     fn draw_clip_batch_list(
         &mut self,
         list: &ClipBatchList,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
         if self.debug_flags.contains(DebugFlags::DISABLE_CLIP_MASKS) {
@@ -3879,7 +4020,7 @@ impl Renderer {
         &mut self,
         draw_target: DrawTarget,
         target: &AlphaRenderTarget,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         render_tasks: &RenderTaskGraph,
         stats: &mut RendererStats,
     ) {
@@ -3954,7 +4095,6 @@ impl Renderer {
 
         self.handle_scaling(
             &target.scalings,
-            TextureSource::PrevPassAlpha,
             projection,
             stats,
         );
@@ -3998,21 +4138,21 @@ impl Renderer {
         render_tasks: &RenderTaskGraph,
         stats: &mut RendererStats,
     ) {
-        let texture_source = TextureSource::TextureCache(*texture);
-        let (target_size, projection) = {
-            let texture = self.texture_resolver
+        let texture_source = TextureSource::TextureCache(*texture, Swizzle::default());
+        let projection = {
+            let (texture, _) = self.texture_resolver
                 .resolve(&texture_source)
                 .expect("BUG: invalid target texture");
             let target_size = texture.get_dimensions();
-            let projection = Transform3D::ortho(
+
+            Transform3D::ortho(
                 0.0,
                 target_size.width as f32,
                 0.0,
                 target_size.height as f32,
                 ORTHO_NEAR_PLANE,
                 ORTHO_FAR_PLANE,
-            );
-            (target_size, projection)
+            )
         };
 
         self.device.disable_depth();
@@ -4020,11 +4160,8 @@ impl Renderer {
 
         self.set_blend(false, FramebufferKind::Other);
 
-        // Handle any Pathfinder glyphs.
-        let stencil_page = self.stencil_glyphs(&target.glyphs, &projection, &target_size, stats);
-
         {
-            let texture = self.texture_resolver
+            let (texture, _) = self.texture_resolver
                 .resolve(&texture_source)
                 .expect("BUG: invalid target texture");
             let draw_target = DrawTarget::from_texture(
@@ -4047,8 +4184,7 @@ impl Renderer {
             }
 
             // Handle any blits to this texture from child tasks.
-            Self::handle_blits(
-                &mut self.gpu_profile, &mut self.device, &self.texture_resolver,
+            self.handle_blits(
                 &target.blits, render_tasks, draw_target, &DeviceIntPoint::zero(),
             );
         }
@@ -4157,28 +4293,7 @@ impl Renderer {
                 stats,
             );
         }
-
-        // Blit any Pathfinder glyphs to the cache texture.
-        if let Some(stencil_page) = stencil_page {
-            self.cover_glyphs(stencil_page, &projection, stats);
-        }
     }
-
-    #[cfg(not(feature = "pathfinder"))]
-    fn stencil_glyphs(&mut self,
-                      _: &[GlyphJob],
-                      _: &Transform3D<f32>,
-                      _: &DeviceIntSize,
-                      _: &mut RendererStats)
-                      -> Option<StenciledGlyphPage> {
-        None
-    }
-
-    #[cfg(not(feature = "pathfinder"))]
-    fn cover_glyphs(&mut self,
-                    _: StenciledGlyphPage,
-                    _: &Transform3D<f32>,
-                    _: &mut RendererStats) {}
 
     fn update_deferred_resolves(&mut self, deferred_resolves: &[DeferredResolve]) -> Option<GpuCacheUpdateList> {
         // The first thing we do is run through any pending deferred
@@ -4223,7 +4338,7 @@ impl Renderer {
 
             let texture = match image.source {
                 ExternalImageSource::NativeTexture(texture_id) => {
-                    ExternalTexture::new(texture_id, texture_target)
+                    ExternalTexture::new(texture_id, texture_target, Swizzle::default())
                 }
                 ExternalImageSource::Invalid => {
                     warn!("Invalid ext-image");
@@ -4233,7 +4348,7 @@ impl Renderer {
                         ext_image.channel_index
                     );
                     // Just use 0 as the gl handle for this failed case.
-                    ExternalTexture::new(0, texture_target)
+                    ExternalTexture::new(0, texture_target, Swizzle::default())
                 }
                 ExternalImageSource::RawData(_) => {
                     panic!("Raw external data is not expected for deferred resolves!");
@@ -4358,6 +4473,7 @@ impl Renderer {
         self.device.bind_texture(
             TextureSampler::PrimitiveHeadersF,
             &self.prim_header_f_texture.texture(),
+            Swizzle::default(),
         );
 
         self.prim_header_i_texture.update(
@@ -4367,6 +4483,7 @@ impl Renderer {
         self.device.bind_texture(
             TextureSampler::PrimitiveHeadersI,
             &self.prim_header_i_texture.texture(),
+            Swizzle::default(),
         );
 
         self.transforms_texture.update(
@@ -4376,6 +4493,7 @@ impl Renderer {
         self.device.bind_texture(
             TextureSampler::TransformPalette,
             &self.transforms_texture.texture(),
+            Swizzle::default(),
         );
 
         self.render_task_texture
@@ -4383,6 +4501,7 @@ impl Renderer {
         self.device.bind_texture(
             TextureSampler::RenderTasks,
             &self.render_task_texture.texture(),
+            Swizzle::default(),
         );
 
         debug_assert!(self.texture_resolver.prev_pass_alpha.is_none());
@@ -4443,7 +4562,7 @@ impl Renderer {
                             ORTHO_FAR_PLANE,
                         );
 
-                        let fb_scale = TypedScale::<_, _, FramebufferPixel>::new(1i32);
+                        let fb_scale = Scale::<_, _, FramebufferPixel>::new(1i32);
                         let mut fb_rect = frame.device_rect * fb_scale;
                         fb_rect.origin.y = device_size.height - fb_rect.origin.y - fb_rect.size.height;
 
@@ -4499,7 +4618,7 @@ impl Renderer {
                         for picture_target in picture_cache {
                             stats.color_target_count += 1;
 
-                            let texture = self.texture_resolver
+                            let (texture, _) = self.texture_resolver
                                 .resolve(&picture_target.texture)
                                 .expect("bug");
                             let draw_target = DrawTarget::from_texture(
@@ -4630,7 +4749,7 @@ impl Renderer {
     pub fn init_pixel_local_storage(
         &mut self,
         task_rect: DeviceIntRect,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
         self.device.enable_pixel_local_storage(true);
@@ -4660,7 +4779,7 @@ impl Renderer {
     pub fn resolve_pixel_local_storage(
         &mut self,
         task_rect: DeviceIntRect,
-        projection: &Transform3D<f32>,
+        projection: &default::Transform3D<f32>,
         stats: &mut RendererStats,
     ) {
         self.shaders
@@ -4823,7 +4942,7 @@ impl Renderer {
 
         let texture_rect = FramebufferIntRect::new(
             FramebufferIntPoint::zero(),
-            FramebufferIntSize::from_untyped(&source_rect.size.to_untyped()),
+            FramebufferIntSize::from_untyped(source_rect.size.to_untyped()),
         );
 
         debug_renderer.add_rect(
@@ -5080,7 +5199,7 @@ impl Renderer {
 
     pub fn read_gpu_cache(&mut self) -> (DeviceIntSize, Vec<u8>) {
         let texture = self.gpu_cache_texture.texture.as_ref().unwrap();
-        let size = FramebufferIntSize::from_untyped(&texture.get_dimensions().to_untyped());
+        let size = FramebufferIntSize::from_untyped(texture.get_dimensions().to_untyped());
         let mut texels = vec![0; (size.width * size.height * 16) as usize];
         self.device.begin_frame();
         self.device.bind_read_target(ReadTarget::from_texture(texture, 0));
@@ -5119,6 +5238,7 @@ impl Renderer {
         self.device.delete_vao(self.vaos.line_vao);
         self.device.delete_vao(self.vaos.border_vao);
         self.device.delete_vao(self.vaos.scale_vao);
+        self.device.delete_vao(self.vaos.svg_filter_vao);
 
         self.debug.deinit(&mut self.device);
 
@@ -5131,6 +5251,10 @@ impl Renderer {
 
         if let Some(async_screenshots) = self.async_screenshots.take() {
             async_screenshots.deinit(&mut self.device);
+        }
+
+        if let Some(async_frame_recorder) = self.async_frame_recorder.take() {
+            async_frame_recorder.deinit(&mut self.device);
         }
 
         #[cfg(feature = "capture")]
@@ -5400,6 +5524,13 @@ pub struct RendererOptions {
     /// and not complete. This option will probably be removed once support is
     /// complete, and WR can implicitly choose whether to make use of PLS.
     pub allow_pixel_local_storage_support: bool,
+    /// If true, allow textures to be initialized with glTexStorage.
+    /// This affects VRAM consumption and data upload paths.
+    pub allow_texture_storage_support: bool,
+    /// If true, we allow the data uploaded in a different format from the
+    /// one expected by the driver, pretending the format is matching, and
+    /// swizzling the components on all the shader sampling.
+    pub allow_texture_swizzling: bool,
     /// Number of batches to look back in history for adding the current
     /// transparent instance into.
     pub batch_lookback_count: usize,
@@ -5449,6 +5580,8 @@ impl Default for RendererOptions {
             allow_dual_source_blending: true,
             allow_advanced_blend_equation: false,
             allow_pixel_local_storage_support: false,
+            allow_texture_storage_support: true,
+            allow_texture_swizzling: true,
             batch_lookback_count: DEFAULT_BATCH_LOOKBACK_COUNT,
             // For backwards compatibility we set this to true by default, so
             // that if the debugger feature is enabled, the debug server will
@@ -5600,7 +5733,7 @@ impl Renderer {
         // read from textures directly with `get_tex_image*`.
 
         for layer_id in 0 .. texture.get_layer_count() {
-            let rect = FramebufferIntSize::from_untyped(&rect_size.to_untyped()).into();
+            let rect = FramebufferIntSize::from_untyped(rect_size.to_untyped()).into();
 
             device.attach_read_texture(texture, layer_id);
             #[cfg(feature = "png")]
@@ -5928,29 +6061,8 @@ impl Renderer {
     }
 }
 
-#[cfg(feature = "pathfinder")]
 fn get_vao<'a>(vertex_array_kind: VertexArrayKind,
-               vaos: &'a RendererVAOs,
-               gpu_glyph_renderer: &'a GpuGlyphRenderer)
-               -> &'a VAO {
-    match vertex_array_kind {
-        VertexArrayKind::Primitive => &vaos.prim_vao,
-        VertexArrayKind::Clip => &vaos.clip_vao,
-        VertexArrayKind::Blur => &vaos.blur_vao,
-        VertexArrayKind::VectorStencil => &gpu_glyph_renderer.vector_stencil_vao,
-        VertexArrayKind::VectorCover => &gpu_glyph_renderer.vector_cover_vao,
-        VertexArrayKind::Border => &vaos.border_vao,
-        VertexArrayKind::Scale => &vaos.scale_vao,
-        VertexArrayKind::LineDecoration => &vaos.line_vao,
-        VertexArrayKind::Gradient => &vaos.gradient_vao,
-        VertexArrayKind::Resolve => &vaos.resolve_vao,
-    }
-}
-
-#[cfg(not(feature = "pathfinder"))]
-fn get_vao<'a>(vertex_array_kind: VertexArrayKind,
-               vaos: &'a RendererVAOs,
-               _: &'a GpuGlyphRenderer)
+               vaos: &'a RendererVAOs)
                -> &'a VAO {
     match vertex_array_kind {
         VertexArrayKind::Primitive => &vaos.prim_vao,
@@ -5962,6 +6074,7 @@ fn get_vao<'a>(vertex_array_kind: VertexArrayKind,
         VertexArrayKind::LineDecoration => &vaos.line_vao,
         VertexArrayKind::Gradient => &vaos.gradient_vao,
         VertexArrayKind::Resolve => &vaos.resolve_vao,
+        VertexArrayKind::SvgFilter => &vaos.svg_filter_vao,
     }
 }
 #[derive(Clone, Copy, PartialEq)]

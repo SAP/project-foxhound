@@ -42,6 +42,7 @@ DIRS += [
     'imagecapture',
     'ipc',
     'mediacapabilities',
+    'mediacontrol',
     'mediasink',
     'mediasource',
     'mp3',
@@ -69,10 +70,20 @@ TEST_DIRS += [
     'gtest',
 ]
 
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')
+
+if CONFIG['FUZZING_INTERFACES']:
+    TEST_DIRS += [
+        'fuzz'
+    ]
+
 MOCHITEST_MANIFESTS += [
     'test/mochitest.ini',
     'tests/mochitest/identity/mochitest.ini',
 ]
+
+BROWSER_CHROME_MANIFESTS += ['mediacontrol/tests/browser.ini']
 
 if CONFIG['MOZ_WEBRTC']:
     MOCHITEST_MANIFESTS += ['tests/mochitest/mochitest.ini']
@@ -146,6 +157,7 @@ EXPORTS += [
     'MediaStreamGraph.h',
     'MediaStreamListener.h',
     'MediaStreamTypes.h',
+    'MediaStreamWindowCapturer.h',
     'MediaTimer.h',
     'MediaTrack.h',
     'MediaTrackList.h',
@@ -263,6 +275,7 @@ UNIFIED_SOURCES += [
     'MediaStreamGraph.cpp',
     'MediaStreamListener.cpp',
     'MediaStreamTrack.cpp',
+    'MediaStreamWindowCapturer.cpp',
     'MediaTimer.cpp',
     'MediaTrack.cpp',
     'MediaTrackList.cpp',

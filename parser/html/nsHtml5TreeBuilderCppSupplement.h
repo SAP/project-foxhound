@@ -141,8 +141,26 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return nullptr;
   }
-  treeOp->Init(aNamespace, aName, aAttributes, content, aIntendedParent,
-               !!mSpeculativeLoadStage, aCreator);
+
+  if (aNamespace == kNameSpaceID_XHTML) {
+    opCreateHTMLElement opeation(
+        content, aName, aAttributes, aCreator.html, aIntendedParent,
+        (!!mSpeculativeLoadStage) ? mozilla::dom::FROM_PARSER_NETWORK
+                                  : dom::FROM_PARSER_DOCUMENT_WRITE);
+    treeOp->Init(mozilla::AsVariant(opeation));
+  } else if (aNamespace == kNameSpaceID_SVG) {
+    opCreateSVGElement operation(
+        content, aName, aAttributes, aCreator.svg, aIntendedParent,
+        (!!mSpeculativeLoadStage) ? mozilla::dom::FROM_PARSER_NETWORK
+                                  : dom::FROM_PARSER_DOCUMENT_WRITE);
+    treeOp->Init(mozilla::AsVariant(operation));
+  } else {
+    // kNameSpaceID_MathML
+    opCreateMathMLElement operation(content, aName, aAttributes,
+                                    aIntendedParent);
+    treeOp->Init(mozilla::AsVariant(operation));
+  }
+
   // mSpeculativeLoadStage is non-null only in the off-the-main-thread
   // tree builder, which handles the network stream
 
@@ -188,8 +206,9 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 NS_ERROR_OUT_OF_MEMORY);
             return nullptr;
           }
-          treeOp->Init(eTreeOpSetScriptLineNumberAndFreeze, content,
-                       tokenizer->getLineNumber());
+          opSetScriptLineNumberAndFreeze operation(content,
+                                                   tokenizer->getLineNumber());
+          treeOp->Init(mozilla::AsVariant(operation));
 
           nsHtml5String url =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_SRC);
@@ -262,8 +281,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 NS_ERROR_OUT_OF_MEMORY);
             return nullptr;
           }
-          treeOp->Init(eTreeOpSetStyleLineNumber, content,
-                       tokenizer->getLineNumber());
+          opSetStyleLineNumber operation(content, tokenizer->getLineNumber());
+          treeOp->Init(mozilla::AsVariant(operation));
         } else if (nsGkAtoms::html == aName) {
           nsHtml5String url =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_MANIFEST);
@@ -314,8 +333,9 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 NS_ERROR_OUT_OF_MEMORY);
             return nullptr;
           }
-          treeOp->Init(eTreeOpSetScriptLineNumberAndFreeze, content,
-                       tokenizer->getLineNumber());
+          opSetScriptLineNumberAndFreeze operation(content,
+                                                   tokenizer->getLineNumber());
+          treeOp->Init(mozilla::AsVariant(operation));
 
           nsHtml5String url =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
@@ -340,8 +360,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 NS_ERROR_OUT_OF_MEMORY);
             return nullptr;
           }
-          treeOp->Init(eTreeOpSetStyleLineNumber, content,
-                       tokenizer->getLineNumber());
+          opSetStyleLineNumber operation(content, tokenizer->getLineNumber());
+          treeOp->Init(mozilla::AsVariant(operation));
 
           nsHtml5String url =
               aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
@@ -366,16 +386,17 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
         MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
         return nullptr;
       }
-      treeOp->Init(eTreeOpSetStyleLineNumber, content,
-                   tokenizer->getLineNumber());
+      opSetStyleLineNumber operation(content, tokenizer->getLineNumber());
+      treeOp->Init(mozilla::AsVariant(operation));
     } else if (nsGkAtoms::script == aName) {
       nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement(mozilla::fallible);
       if (MOZ_UNLIKELY(!treeOp)) {
         MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
         return nullptr;
       }
-      treeOp->Init(eTreeOpSetScriptLineNumberAndFreeze, content,
-                   tokenizer->getLineNumber());
+      opSetScriptLineNumberAndFreeze operation(content,
+                                               tokenizer->getLineNumber());
+      treeOp->Init(mozilla::AsVariant(operation));
       if (aNamespace == kNameSpaceID_XHTML) {
         mCurrentHtmlScriptIsAsyncOrDefer =
             aAttributes->contains(nsHtml5AttributeName::ATTR_SRC) &&
@@ -397,9 +418,11 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
           nsString
               urlString;  // Not Auto, because using it to hold nsStringBuffer*
           url.ToString(urlString);
-          treeOp->Init(eTreeOpProcessOfflineManifest, urlString);
+          opProcessOfflineManifest operation(ToNewUnicode(urlString));
+          treeOp->Init(mozilla::AsVariant(operation));
         } else {
-          treeOp->Init(eTreeOpProcessOfflineManifest, EmptyString());
+          opProcessOfflineManifest operation(ToNewUnicode(EmptyString()));
+          treeOp->Init(mozilla::AsVariant(operation));
         }
       } else if (nsGkAtoms::base == aName && mViewSource) {
         nsHtml5String url =
@@ -433,7 +456,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
         MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
         return nullptr;
       }
-      treeOp->Init(eTreeOpSetFormElement, content, aFormElement);
+      opSetFormElement operation(content, aFormElement);
+      treeOp->Init(mozilla::AsVariant(operation));
     }
   }
   return content;
@@ -458,7 +482,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createHtmlElementSetAsRoot(
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
       return nullptr;
     }
-    treeOp->Init(eTreeOpAppendToDocument, content);
+    opAppendToDocument operation(content);
+    treeOp->Init(mozilla::AsVariant(operation));
   }
   return content;
 }
@@ -490,8 +515,8 @@ nsIContentHandle* nsHtml5TreeBuilder::createAndInsertFosterParentedElement(
   nsHtml5TreeOperation* fosterParentTreeOp = mOpQueue.AppendElement();
   NS_ASSERTION(fosterParentTreeOp, "Tree op allocation failed.");
   nsIContentHandle* fosterParentHandle = AllocateContentHandle();
-  fosterParentTreeOp->Init(eTreeOpGetFosterParent, aTable, aStackParent,
-                           fosterParentHandle);
+  opGetFosterParent operation(aTable, aStackParent, fosterParentHandle);
+  fosterParentTreeOp->Init(mozilla::AsVariant(operation));
 
   // Create the element with the correct intended parent.
   nsIContentHandle* child =
@@ -517,7 +542,8 @@ void nsHtml5TreeBuilder::detachFromParent(nsIContentHandle* aElement) {
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpDetach, aElement);
+  opDetach operation(aElement);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::appendElement(nsIContentHandle* aChild,
@@ -540,7 +566,8 @@ void nsHtml5TreeBuilder::appendElement(nsIContentHandle* aChild,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpAppend, aChild, aParent);
+  opAppend operation(aChild, aParent);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::appendChildrenToNewParent(
@@ -563,7 +590,8 @@ void nsHtml5TreeBuilder::appendChildrenToNewParent(
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpAppendChildrenToNewParent, aOldParent, aNewParent);
+  opAppendChildrenToNewParent operation(aOldParent, aNewParent);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::insertFosterParentedCharacters(
@@ -601,8 +629,9 @@ void nsHtml5TreeBuilder::insertFosterParentedCharacters(
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpFosterParentText, bufferCopy.release(), aLength,
-               aStackParent, aTable);
+  opFosterParentText operation(aStackParent, bufferCopy.release(), aTable,
+                               aLength);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::insertFosterParentedChild(
@@ -628,7 +657,8 @@ void nsHtml5TreeBuilder::insertFosterParentedChild(
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpFosterParent, aChild, aStackParent, aTable);
+  opFosterParent operation(aChild, aStackParent, aTable);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void
@@ -667,7 +697,8 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpAppendText, bufferCopy.release(), aLength, aParent);
+  opAppendText operation(aParent, bufferCopy.release(), aLength);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent,
@@ -704,7 +735,8 @@ void nsHtml5TreeBuilder::appendComment(nsIContentHandle* aParent,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpAppendComment, bufferCopy.release(), aLength, aParent);
+  opAppendComment operation(aParent, bufferCopy.release(), aLength);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::appendCommentToDocument(char16_t* aBuffer,
@@ -739,7 +771,8 @@ void nsHtml5TreeBuilder::appendCommentToDocument(char16_t* aBuffer,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpAppendCommentToDocument, bufferCopy.release(), aLength);
+  opAppendCommentToDocument data(bufferCopy.release(), aLength);
+  treeOp->Init(mozilla::AsVariant(data));
 }
 
 void nsHtml5TreeBuilder::addAttributesToElement(
@@ -768,7 +801,8 @@ void nsHtml5TreeBuilder::addAttributesToElement(
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(aElement, aAttributes);
+  opAddAttributes opeation(aElement, aAttributes);
+  treeOp->Init(mozilla::AsVariant(opeation));
 }
 
 void nsHtml5TreeBuilder::markMalformedIfScript(nsIContentHandle* aElement) {
@@ -785,7 +819,8 @@ void nsHtml5TreeBuilder::markMalformedIfScript(nsIContentHandle* aElement) {
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpMarkMalformedIfScript, aElement);
+  opMarkMalformedIfScript operation(aElement);
+  treeOp->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::start(bool fragment) {
@@ -824,7 +859,8 @@ void nsHtml5TreeBuilder::appendDoctypeToDocument(nsAtom* aName,
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(aName, publicId, systemId);
+  opAppendDoctypeToDocument operation(aName, publicId, systemId);
+  treeOp->Init(mozilla::AsVariant(operation));
   // nsXMLContentSink can flush here, but what's the point?
   // It can also interrupt here, but we can't.
 }
@@ -869,25 +905,16 @@ void nsHtml5TreeBuilder::elementPushed(int32_t aNamespace, nsAtom* aName,
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
-    treeOp->Init(eTreeOpStartLayout);
+    treeOp->Init(mozilla::AsVariant(opStartLayout()));
     return;
   }
-  if (aName == nsGkAtoms::input || aName == nsGkAtoms::button) {
+  if (nsIContent::RequiresDoneCreatingElement(kNameSpaceID_XHTML, aName)) {
     if (mBuilder) {
       nsHtml5TreeOperation::DoneCreatingElement(
           static_cast<nsIContent*>(aElement));
     } else {
-      mOpQueue.AppendElement()->Init(eTreeOpDoneCreatingElement, aElement);
-    }
-    return;
-  }
-  if (aName == nsGkAtoms::audio || aName == nsGkAtoms::video ||
-      aName == nsGkAtoms::menuitem) {
-    if (mBuilder) {
-      nsHtml5TreeOperation::DoneCreatingElement(
-          static_cast<nsIContent*>(aElement));
-    } else {
-      mOpQueue.AppendElement()->Init(eTreeOpDoneCreatingElement, aElement);
+      opDoneCreatingElement operation(aElement);
+      mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
     }
     return;
   }
@@ -919,7 +946,8 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
             static_cast<nsIContent*>(aElement));
         return;
       }
-      mOpQueue.AppendElement()->Init(eTreeOpPreventScriptExecution, aElement);
+      opPreventScriptExecution operation(aElement);
+      mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
       return;
     }
     if (mBuilder) {
@@ -933,7 +961,8 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
         MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
         return;
       }
-      treeOp->Init(eTreeOpRunScriptAsyncDefer, aElement);
+      opRunScriptAsyncDefer operation(aElement);
+      treeOp->Init(mozilla::AsVariant(operation));
       mCurrentHtmlScriptIsAsyncOrDefer = false;
       return;
     }
@@ -943,10 +972,13 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
-    treeOp->InitScript(aElement);
+    opRunScript operation(aElement, nullptr);
+    treeOp->Init(mozilla::AsVariant(operation));
     return;
   }
-  if (aName == nsGkAtoms::title) {
+  // Some nodes need DoneAddingChildren() called to initialize
+  // properly (e.g. form state restoration).
+  if (nsIContent::RequiresDoneAddingChildren(aNamespace, aName)) {
     if (mBuilder) {
       nsHtml5TreeOperation::DoneAddingChildren(
           static_cast<nsIContent*>(aElement));
@@ -957,7 +989,8 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
-    treeOp->Init(eTreeOpDoneAddingChildren, aElement);
+    opDoneAddingChildren operation(aElement);
+    treeOp->Init(mozilla::AsVariant(operation));
     return;
   }
   if (aName == nsGkAtoms::style ||
@@ -973,7 +1006,8 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
-    treeOp->Init(eTreeOpUpdateStyleSheet, aElement);
+    opUpdateStyleSheet operation(aElement);
+    treeOp->Init(mozilla::AsVariant(operation));
     return;
   }
   if (aNamespace == kNameSpaceID_SVG) {
@@ -987,37 +1021,20 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
         MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
         return;
       }
-      treeOp->Init(eTreeOpSvgLoad, aElement);
+      opSvgLoad operation(aElement);
+      treeOp->Init(mozilla::AsVariant(operation));
     }
     return;
   }
   // we now have only HTML
-  // Some HTML nodes need DoneAddingChildren() called to initialize
-  // properly (e.g. form state restoration).
-  // XXX expose ElementName group here and do switch
-  if (aName == nsGkAtoms::object || aName == nsGkAtoms::select ||
-      aName == nsGkAtoms::textarea || aName == nsGkAtoms::output ||
-      aName == nsGkAtoms::head) {
-    if (mBuilder) {
-      nsHtml5TreeOperation::DoneAddingChildren(
-          static_cast<nsIContent*>(aElement));
-      return;
-    }
-    nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement(mozilla::fallible);
-    if (MOZ_UNLIKELY(!treeOp)) {
-      MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
-    treeOp->Init(eTreeOpDoneAddingChildren, aElement);
-    return;
-  }
   if (aName == nsGkAtoms::meta && !fragment && !mBuilder) {
     nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement(mozilla::fallible);
     if (MOZ_UNLIKELY(!treeOp)) {
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
       return;
     }
-    treeOp->Init(eTreeOpProcessMeta, aElement);
+    opProcessMeta operation(aElement);
+    treeOp->Init(mozilla::AsVariant(operation));
     return;
   }
   if (mSpeculativeLoadStage && aName == nsGkAtoms::picture) {
@@ -1162,8 +1179,8 @@ void nsHtml5TreeBuilder::SetDocumentCharset(NotNull<const Encoding*> aEncoding,
     mSpeculativeLoadQueue.AppendElement()->InitSetDocumentCharset(
         aEncoding, aCharsetSource);
   } else {
-    mOpQueue.AppendElement()->Init(eTreeOpSetDocumentCharset, aEncoding,
-                                   aCharsetSource);
+    opSetDocumentCharset opearation(aEncoding, aCharsetSource);
+    mOpQueue.AppendElement()->Init(mozilla::AsVariant(opearation));
   }
 }
 
@@ -1175,7 +1192,7 @@ void nsHtml5TreeBuilder::StreamEnded() {
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpStreamEnded);
+  treeOp->Init(mozilla::AsVariant(opStreamEnded()));
 }
 
 void nsHtml5TreeBuilder::NeedsCharsetSwitchTo(
@@ -1190,8 +1207,8 @@ void nsHtml5TreeBuilder::NeedsCharsetSwitchTo(
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(eTreeOpNeedsCharsetSwitchTo, aEncoding, aCharsetSource,
-               aLineNumber);
+  opCharsetSwitchTo opeation(aEncoding, aCharsetSource, aLineNumber);
+  treeOp->Init(mozilla::AsVariant(opeation));
 }
 
 void nsHtml5TreeBuilder::MaybeComplainAboutCharset(const char* aMsgId,
@@ -1201,7 +1218,9 @@ void nsHtml5TreeBuilder::MaybeComplainAboutCharset(const char* aMsgId,
     MOZ_ASSERT_UNREACHABLE("Must never complain about charset with builder.");
     return;
   }
-  mOpQueue.AppendElement()->Init(aMsgId, aError, aLineNumber);
+  opMaybeComplainAboutCharset opeartion(const_cast<char*>(aMsgId), aError,
+                                        aLineNumber);
+  mOpQueue.AppendElement()->Init(mozilla::AsVariant(opeartion));
 }
 
 void nsHtml5TreeBuilder::TryToEnableEncodingMenu() {
@@ -1211,7 +1230,7 @@ void nsHtml5TreeBuilder::TryToEnableEncodingMenu() {
   }
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
   NS_ASSERTION(treeOp, "Tree op allocation failed.");
-  treeOp->Init(eTreeOpEnableEncodingMenu);
+  treeOp->Init(mozilla::AsVariant(opEnableEncodingMenu()));
 }
 
 void nsHtml5TreeBuilder::AddSnapshotToScript(
@@ -1238,7 +1257,8 @@ void nsHtml5TreeBuilder::MarkAsBroken(nsresult aRv) {
   }
   mBroken = aRv;
   mOpQueue.Clear();  // Previous ops don't matter anymore
-  mOpQueue.AppendElement()->Init(aRv);
+  opMarkAsBroken operation(aRv);
+  mOpQueue.AppendElement()->Init(mozilla::AsVariant(operation));
 }
 
 void nsHtml5TreeBuilder::MarkAsBrokenFromPortability(nsresult aRv) {
@@ -1309,7 +1329,7 @@ void nsHtml5TreeBuilder::documentMode(nsHtml5DocumentMode m) {
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
-  treeOp->Init(m);
+  treeOp->Init(mozilla::AsVariant(m));
 }
 
 nsIContentHandle* nsHtml5TreeBuilder::getDocumentFragmentForTemplate(
@@ -1324,7 +1344,8 @@ nsIContentHandle* nsHtml5TreeBuilder::getDocumentFragmentForTemplate(
     return nullptr;
   }
   nsIContentHandle* fragHandle = AllocateContentHandle();
-  treeOp->Init(eTreeOpGetDocumentFragmentForTemplate, aTemplate, fragHandle);
+  opGetDocumentFragmentForTemplate operation(aTemplate, fragHandle);
+  treeOp->Init(mozilla::AsVariant(operation));
   return fragHandle;
 }
 
@@ -1373,7 +1394,8 @@ void nsHtml5TreeBuilder::errDeepTree() {
   } else if (!mBuilder) {
     nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement();
     MOZ_ASSERT(treeOp, "Tree op allocation failed.");
-    treeOp->InitDeepTree(tokenizer->getLineNumber());
+    opMaybeComplainAboutDeepTree operation(tokenizer->getLineNumber());
+    treeOp->Init(mozilla::AsVariant(operation));
   }
 }
 

@@ -65,17 +65,14 @@ var gViewSourceUtils = {
     }
     // No browser window created yet, try to create one.
     let utils = this;
-    Services.ww.registerNotification(function onOpen(subj, topic) {
+    Services.ww.registerNotification(function onOpen(win, topic) {
       if (
-        subj.document.documentURI !== "about:blank" ||
+        win.document.documentURI !== "about:blank" ||
         topic !== "domwindowopened"
       ) {
         return;
       }
       Services.ww.unregisterNotification(onOpen);
-      let win = subj
-        .QueryInterface(Ci.nsIInterfaceRequestor)
-        .getInterface(Ci.nsIDOMWindow);
       win.addEventListener(
         "load",
         () => {
@@ -244,9 +241,8 @@ var gViewSourceUtils = {
           // the default setting is to not decode. we need to decode.
           webBrowserPersist.persistFlags = this.mnsIWebBrowserPersist.PERSIST_FLAGS_REPLACE_EXISTING_FILES;
           webBrowserPersist.progressListener = this.viewSourceProgressListener;
-          let referrerPolicy = Ci.nsIHttpChannel.REFERRER_POLICY_NO_REFERRER;
           let ssm = Services.scriptSecurityManager;
-          let principal = ssm.createCodebasePrincipal(
+          let principal = ssm.createContentPrincipal(
             data.uri,
             browser.contentPrincipal.originAttributes
           );
@@ -255,7 +251,6 @@ var gViewSourceUtils = {
             principal,
             null,
             null,
-            referrerPolicy,
             null,
             null,
             file,

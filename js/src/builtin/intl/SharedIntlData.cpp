@@ -16,12 +16,16 @@
 #include <utility>
 
 #include "builtin/intl/CommonFunctions.h"
-#include "builtin/intl/ICUStubs.h"
 #include "builtin/intl/ScopedICUObject.h"
 #include "builtin/intl/TimeZoneDataGenerated.h"
-#include "builtin/String.h"
 #include "js/Utility.h"
+#include "unicode/ucal.h"
+#include "unicode/ucol.h"
+#include "unicode/udatpg.h"
+#include "unicode/uenum.h"
+#include "unicode/utypes.h"
 #include "vm/JSAtom.h"
+#include "vm/StringType.h"
 
 using mozilla::IsAsciiLowercaseAlpha;
 
@@ -275,6 +279,7 @@ bool js::intl::SharedIntlData::tryCanonicalizeTimeZoneConsistentWithIANA(
   return true;
 }
 
+#if DEBUG || MOZ_SYSTEM_ICU
 js::intl::SharedIntlData::LocaleHasher::Lookup::Lookup(JSLinearString* locale)
     : js::intl::SharedIntlData::LinearStringLookup(locale) {
   if (isLatin1) {
@@ -377,21 +382,43 @@ bool js::intl::SharedIntlData::ensureUpperCaseFirstLocales(JSContext* cx) {
 
   return true;
 }
+#endif  // DEBUG || MOZ_SYSTEM_ICU
 
 bool js::intl::SharedIntlData::isUpperCaseFirst(JSContext* cx,
                                                 HandleString locale,
                                                 bool* isUpperFirst) {
+#if DEBUG || MOZ_SYSTEM_ICU
   if (!ensureUpperCaseFirstLocales(cx)) {
     return false;
   }
+#endif
 
   RootedLinearString localeLinear(cx, locale->ensureLinear(cx));
   if (!localeLinear) {
     return false;
   }
 
+#if !MOZ_SYSTEM_ICU
+  // "da" (Danish) and "mt" (Maltese) are the only two supported locales using
+  // upper-case first. CLDR also lists "cu" (Church Slavic) as an upper-case
+  // first locale, but since it's not supported in ICU, we don't care about it
+  // here.
+  bool isDefaultUpperCaseFirstLocale =
+      js::StringEqualsAscii(localeLinear, "da") ||
+      js::StringEqualsAscii(localeLinear, "mt");
+#endif
+
+#if DEBUG || MOZ_SYSTEM_ICU
   LocaleHasher::Lookup lookup(localeLinear);
   *isUpperFirst = upperCaseFirstLocales.has(lookup);
+#else
+  *isUpperFirst = isDefaultUpperCaseFirstLocale;
+#endif
+
+#if !MOZ_SYSTEM_ICU
+  MOZ_ASSERT(*isUpperFirst == isDefaultUpperCaseFirstLocale,
+             "upper-case first locales don't match hard-coded list");
+#endif
 
   return true;
 }
@@ -433,7 +460,9 @@ void js::intl::SharedIntlData::destroyInstance() {
   availableTimeZones.clearAndCompact();
   ianaZonesTreatedAsLinksByICU.clearAndCompact();
   ianaLinksCanonicalizedDifferentlyByICU.clearAndCompact();
+#if DEBUG || MOZ_SYSTEM_ICU
   upperCaseFirstLocales.clearAndCompact();
+#endif
 }
 
 void js::intl::SharedIntlData::trace(JSTracer* trc) {
@@ -442,7 +471,9 @@ void js::intl::SharedIntlData::trace(JSTracer* trc) {
     availableTimeZones.trace(trc);
     ianaZonesTreatedAsLinksByICU.trace(trc);
     ianaLinksCanonicalizedDifferentlyByICU.trace(trc);
+#if DEBUG || MOZ_SYSTEM_ICU
     upperCaseFirstLocales.trace(trc);
+#endif
   }
 }
 
@@ -452,6 +483,8 @@ size_t js::intl::SharedIntlData::sizeOfExcludingThis(
          ianaZonesTreatedAsLinksByICU.shallowSizeOfExcludingThis(mallocSizeOf) +
          ianaLinksCanonicalizedDifferentlyByICU.shallowSizeOfExcludingThis(
              mallocSizeOf) +
+#if DEBUG || MOZ_SYSTEM_ICU
          upperCaseFirstLocales.shallowSizeOfExcludingThis(mallocSizeOf) +
+#endif
          mallocSizeOf(dateTimePatternGeneratorLocale.get());
 }

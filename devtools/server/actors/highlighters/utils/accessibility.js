@@ -29,6 +29,14 @@ const {
   accessibility: {
     AUDIT_TYPE,
     ISSUE_TYPE: {
+      [AUDIT_TYPE.KEYBOARD]: {
+        FOCUSABLE_NO_SEMANTICS,
+        FOCUSABLE_POSITIVE_TABINDEX,
+        INTERACTIVE_NO_ACTION,
+        INTERACTIVE_NOT_FOCUSABLE,
+        MOUSE_INTERACTIVE_ONLY,
+        NO_FOCUS_VISIBLE,
+      },
       [AUDIT_TYPE.TEXT_LABEL]: {
         AREA_NO_NAME_FROM_ALT,
         DIALOG_NO_NAME,
@@ -420,7 +428,11 @@ class Audit {
 
     // A list of audit reports to be shown on the fly when highlighting an accessible
     // object.
-    this.reports = [new ContrastRatio(this), new TextLabel(this)];
+    this.reports = {
+      [AUDIT_TYPE.CONTRAST]: new ContrastRatio(this),
+      [AUDIT_TYPE.KEYBOARD]: new Keyboard(this),
+      [AUDIT_TYPE.TEXT_LABEL]: new TextLabel(this),
+    };
   }
 
   get prefix() {
@@ -442,7 +454,7 @@ class Audit {
       prefix: this.prefix,
     });
 
-    this.reports.forEach(report => report.buildMarkup(audit));
+    Object.values(this.reports).forEach(report => report.buildMarkup(audit));
   }
 
   update(audit = {}) {
@@ -450,7 +462,7 @@ class Audit {
     el.setAttribute("hidden", true);
 
     let updated = false;
-    this.reports.forEach(report => {
+    Object.values(this.reports).forEach(report => {
       if (report.update(audit)) {
         updated = true;
       }
@@ -471,7 +483,7 @@ class Audit {
 
   destroy() {
     this.infobar = null;
-    this.reports.forEach(report => report.destroy());
+    Object.values(this.reports).forEach(report => report.destroy());
     this.reports = null;
   }
 }
@@ -660,6 +672,71 @@ class ContrastRatio extends AuditReport {
 }
 
 /**
+ * Keyboard audit report that is used to display a problem with keyboard
+ * accessibility as part of the inforbar.
+ */
+class Keyboard extends AuditReport {
+  /**
+   * A map from keyboard issues to annotation component properties.
+   */
+  static get ISSUE_TO_INFOBAR_LABEL_MAP() {
+    return {
+      [FOCUSABLE_NO_SEMANTICS]: "accessibility.keyboard.issue.semantics",
+      [FOCUSABLE_POSITIVE_TABINDEX]: "accessibility.keyboard.issue.tabindex",
+      [INTERACTIVE_NO_ACTION]: "accessibility.keyboard.issue.action",
+      [INTERACTIVE_NOT_FOCUSABLE]: "accessibility.keyboard.issue.focusable",
+      [MOUSE_INTERACTIVE_ONLY]: "accessibility.keyboard.issue.mouse.only",
+      [NO_FOCUS_VISIBLE]: "accessibility.keyboard.issue.focus.visible",
+    };
+  }
+
+  buildMarkup(root) {
+    createNode(this.win, {
+      nodeType: "span",
+      parent: root,
+      attributes: {
+        class: "audit",
+        id: "keyboard",
+      },
+      prefix: this.prefix,
+    });
+  }
+
+  /**
+   * Update keyboard audit infobar markup.
+   * @param  {Object}
+   *         Audit report for a given highlighted accessible.
+   * @return {Boolean}
+   *         True if the keyboard markup was updated correctly and infobar audit
+   *         block should be visible.
+   */
+  update(audit) {
+    const el = this.getElement("keyboard");
+    el.setAttribute("hidden", true);
+    Object.values(SCORES).forEach(className => el.classList.remove(className));
+
+    if (!audit) {
+      return false;
+    }
+
+    const keyboardAudit = audit[AUDIT_TYPE.KEYBOARD];
+    if (!keyboardAudit) {
+      return false;
+    }
+
+    const { issue, score } = keyboardAudit;
+    this.setTextContent(
+      el,
+      L10N.getStr(Keyboard.ISSUE_TO_INFOBAR_LABEL_MAP[issue])
+    );
+    el.classList.add(score);
+    el.removeAttribute("hidden");
+
+    return true;
+  }
+}
+
+/**
  * Text label audit report that is used to display a problem with text alternatives
  * as part of the inforbar.
  */
@@ -676,11 +753,11 @@ class TextLabel extends AuditReport {
       [FIGURE_NO_NAME]: "accessibility.text.label.issue.figure",
       [FORM_FIELDSET_NO_NAME]: "accessibility.text.label.issue.fieldset",
       [FORM_FIELDSET_NO_NAME_FROM_LEGEND]:
-        "accessibility.text.label.issue.fieldset.legend",
+        "accessibility.text.label.issue.fieldset.legend2",
       [FORM_NO_NAME]: "accessibility.text.label.issue.form",
       [FORM_NO_VISIBLE_NAME]: "accessibility.text.label.issue.form.visible",
       [FORM_OPTGROUP_NO_NAME_FROM_LABEL]:
-        "accessibility.text.label.issue.optgroup.label",
+        "accessibility.text.label.issue.optgroup.label2",
       [FRAME_NO_NAME]: "accessibility.text.label.issue.frame",
       [HEADING_NO_CONTENT]: "accessibility.text.label.issue.heading.content",
       [HEADING_NO_NAME]: "accessibility.text.label.issue.heading",
@@ -697,7 +774,7 @@ class TextLabel extends AuditReport {
       nodeType: "span",
       parent: root,
       attributes: {
-        class: "text-label",
+        class: "audit",
         id: "text-label",
       },
       prefix: this.prefix,

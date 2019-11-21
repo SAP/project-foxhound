@@ -20,11 +20,12 @@ class ChannelSplitterNodeEngine final : public AudioNodeEngine {
   }
 
   void ProcessBlocksOnPorts(AudioNodeStream* aStream,
-                            const OutputChunks& aInput, OutputChunks& aOutput,
+                            Span<const AudioBlock> aInput,
+                            Span<AudioBlock> aOutput,
                             bool* aFinished) override {
     MOZ_ASSERT(aInput.Length() == 1, "Should only have one input port");
+    MOZ_ASSERT(aOutput.Length() == OutputCount());
 
-    aOutput.SetLength(OutputCount());
     for (uint16_t i = 0; i < OutputCount(); ++i) {
       if (i < aInput[0].ChannelCount()) {
         // Split out existing channels

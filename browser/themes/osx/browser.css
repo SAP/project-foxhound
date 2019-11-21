@@ -255,74 +255,38 @@
 
 /* Ensure diacritics and other edge-of-font-box glyphs do not get clipped,
  * even in non-Latin scripts. */
-html|input.urlbar-input {
+#urlbar-input {
   line-height: 1.745em;
 }
 
-#urlbar:not(.hidden-focus)[focused="true"],
+/* Focus ring. */
+#urlbar:not(.megabar):not(.hidden-focus)[focused="true"],
 #searchbar:focus-within {
   box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
               0 0 0 1px var(--toolbar-field-focus-border-color);
 }
 
+#urlbar[breakout]:not(.hidden-focus)[focused="true"] {
+  box-shadow: 0 0 0 1px var(--toolbar-field-focus-border-color) inset,
+              0 0 0 1px var(--toolbar-field-focus-border-color),
+              0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
 %include ../shared/identity-block/identity-block.inc.css
-
-#identity-box:not(:active):-moz-focusring {
-  border-inline-end-style: none;
-}
-
-/* ::::: URL Bar Zoom Reset Button ::::: */
-@keyframes urlbar-zoom-reset-pulse {
-  0% {
-    transform: scale(0);
-  }
-  75% {
-    transform: scale(1.5);
-  }
-  100% {
-    transform: scale(1.0);
-  }
-}
-
-#urlbar-search-footer {
-  border-top: 1px solid var(--panel-separator-color);
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings {
-  -moz-appearance: none;
-  -moz-user-focus: ignore;
-  color: GrayText;
-  margin: 0;
-  padding: 8px 20px;
-}
-
-#urlbar-search-settings:hover {
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings:hover:active {
-  background-color: var(--arrowpanel-dimmed-further);
-}
-
-#search-container {
-  min-width: calc(54px + 11ch);
-}
-
-#wrapper-urlbar-container[place="palette"] {
-  max-width: 20em;
-}
 
 #pageAction-urlbar-shareURL,
 #pageAction-panel-shareURL {
   list-style-image: url("chrome://browser/skin/share.svg");
 }
 
-%include ../shared/urlbarSearchSuggestionsNotification.inc.css
-
 /* ----- AUTOCOMPLETE ----- */
 
 %include ../shared/autocomplete.inc.css
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
+  border-top: 1px solid #C7C7C7;
+}
+
 %include ../shared/urlbar-autocomplete.inc.css
 
 :root {
@@ -330,34 +294,14 @@ html|input.urlbar-input {
   --urlbar-popup-action-color: hsl(178, 100%, 28%);
 }
 
-/* Remove our custom border since we already get a native one that we can't
- * seem to override. */
-#urlbar-results {
-  border-style: none;
+.urlbarView:not(:-moz-lwtheme),
+#PopupSearchAutoComplete:not(:-moz-lwtheme) {
+  /* Set custom disabled text color since native graytext is too faint on macOS 10.14+. */
+  --panel-disabled-color: #737373;
 }
 
-/* Give an extra margin top to align the top of the awesomebar with the
- * bottom of the nav bar, OSX calculates the panel position with an missing
- * 1px - https://bugzilla.mozilla.org/show_bug.cgi?id=1406353
- */
-#PopupAutoCompleteRichResult {
-  margin-top: 1px;
-}
-
-#PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
-  border-top: 1px solid #C7C7C7;
-}
-
-.ac-title,
-#urlbarView-results {
+.urlbarView {
   font-size: 14px;
-}
-
-.ac-separator,
-.ac-url,
-.ac-action,
-.ac-tags {
-  font-size: 12px;
 }
 
 #BMB_bookmarksPopup[side="top"],
@@ -689,21 +633,6 @@ html|input.urlbar-input {
   color: HighlightText !important;
 }
 
-/* rules for menupopup drop indicators */
-.menupopup-drop-indicator-bar {
-  position: relative;
-  /* these two margins must together compensate the indicator's height */
-  margin-top: -1px;
-  margin-bottom: -1px;
-}
-
-.menupopup-drop-indicator {
-  list-style-image: none;
-  height: 2px;
-  margin-inline-end: -4em;
-  background-color: Highlight;
-}
-
 %include ../shared/notification-icons.inc.css
 
 /* Translation */
@@ -883,11 +812,6 @@ menulist.translate-infobar-element > .menulist-dropmarker {
 #context-navigation > .menuitem-iconic {
   padding-left: 0;
   padding-right: 0;
-}
-
-.browser-extension-panel > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 0;
-  overflow: hidden;
 }
 
 .cui-widget-panelview[id^=PanelUI-webext-] {

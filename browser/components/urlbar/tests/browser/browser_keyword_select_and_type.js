@@ -72,7 +72,7 @@ add_task(async function() {
   await promiseSearchComplete();
 
   Assert.equal(
-    gURLBar.textValue,
+    gURLBar.value,
     "keyword ab",
     "urlbar should have expected input"
   );
@@ -84,23 +84,11 @@ add_task(async function() {
     UrlbarUtils.RESULT_TYPE.KEYWORD,
     "Should have a result of type keyword"
   );
-  if (UrlbarPrefs.get("quantumbar")) {
-    Assert.equal(
-      result.url,
-      "http://example.com/?q=ab",
-      "Should have the correct url"
-    );
-  } else {
-    Assert.equal(
-      result.url,
-      PlacesUtils.mozActionURI("keyword", {
-        url: "http://example.com/?q=ab",
-        keyword: "keyword",
-        input: "keyword ab",
-      }),
-      "Should have the correct url"
-    );
-  }
+  Assert.equal(
+    result.url,
+    "http://example.com/?q=ab",
+    "Should have the correct url"
+  );
 
   gBrowser.removeTab(tab);
 });

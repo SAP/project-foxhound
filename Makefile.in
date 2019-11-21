@@ -51,7 +51,7 @@ ifndef TEST_MOZBUILD
 ifndef MOZ_PROFILE_USE
 # We need to explicitly put BUILD_BACKEND_FILES here otherwise the rule in
 # rules.mk doesn't run early enough.
-$(TIERS) binaries:: CLOBBER $(BUILD_BACKEND_FILES)
+$(RUNNABLE_TIERS) binaries:: CLOBBER $(BUILD_BACKEND_FILES)
 endif
 endif
 
@@ -159,8 +159,21 @@ endif
 
 ifdef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
 recurse_android-fat-aar-artifact:
-	$(call py_action,fat_aar,$(MOZ_ANDROID_FAT_AAR_ARCHITECTURES) --distdir $(abspath $(DIST)/fat-aar))
-endif # MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+	$(call py_action,fat_aar,\
+    $(addprefix --armeabi-v7a $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_ARMEABI_V7A)) \
+    $(addprefix --arm64-v8a $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_ARM64_V8A)) \
+    $(addprefix --x86 $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_X86)) \
+    $(addprefix --x86-64 $(MOZ_FETCHES_DIR)/,$(MOZ_ANDROID_FAT_AAR_X86_64)) \
+    --distdir $(abspath $(DIST)/fat-aar))
+endif
+
+ifeq ($(MOZ_BUILD_APP),mobile/android)
+
+recurse_android-stage-package: stage-package
+
+recurse_android-archive-geckoview:
+	GRADLE_INVOKED_WITHIN_MACH_BUILD=1 $(topsrcdir)/mach --log-no-times android archive-geckoview
+endif
 
 ifdef MOZ_WIDGET_TOOLKIT
 ifdef ENABLE_TESTS
@@ -179,7 +192,7 @@ profiledbuild::
 	$(MAKE) default MOZ_PROFILE_GENERATE=1 MOZ_LTO=
 	$(call BUILDSTATUS,TIER_FINISH pgo_profile_generate)
 	$(call BUILDSTATUS,TIER_START pgo_package)
-	$(MAKE) package MOZ_INTERNAL_SIGNING_FORMAT= MOZ_EXTERNAL_SIGNING_FORMAT=
+	$(MAKE) package
 	rm -f jarlog/en-US.log
 	$(call BUILDSTATUS,TIER_FINISH pgo_package)
 	$(call BUILDSTATUS,TIER_START pgo_profile)

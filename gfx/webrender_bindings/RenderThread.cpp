@@ -116,6 +116,9 @@ void RenderThread::ShutDownTask(layers::SynchronousTask* aTask) {
   layers::AutoCompleteTask complete(aTask);
   MOZ_ASSERT(IsInRenderThread());
 
+  // Let go of our handle to the (internally ref-counted) thread pool.
+  mThreadPool.Release();
+
   // Releasing on the render thread will allow us to avoid dispatching to remove
   // remaining textures from the texture map.
   layers::SharedSurfacesParent::Shutdown();
@@ -235,45 +238,74 @@ size_t RenderThread::RendererCount() {
 
 void RenderThread::SetCompositionRecorderForWindow(
     wr::WindowId aWindowId,
-    RefPtr<layers::WebRenderCompositionRecorder>&& aCompositionRecorder) {
+    UniquePtr<layers::WebRenderCompositionRecorder> aCompositionRecorder) {
   MOZ_ASSERT(IsInRenderThread());
   MOZ_ASSERT(GetRenderer(aWindowId));
-
-  auto it = mCompositionRecorders.find(aWindowId);
-  if (it != mCompositionRecorders.end() && it->second->ForceFinishRecording()) {
-    // This case should never occur since the |CompositorBridgeParent| will
-    // receive its "EndRecording" IPC message before another "BeginRecording"
-    // IPC message.
-    //
-    // However, if we do hit this case, then we should handle it gracefully.
-    // We free the structures here because any captured frames are not going
-    // to be read back.
-    if (RendererOGL* renderer = GetRenderer(aWindowId)) {
-      wr_renderer_release_composition_recorder_structures(
-          renderer->GetRenderer());
-    }
-  }
-
-  // If we have finished recording, then we have received
-  // |SetCompositionRecorderEvent| after the compositor brige parent finished
-  // writing but before we handled another frame to delete the data structure.
-  //
-  // In this case we do not need to free the |wr::Renderer|'s composition
-  // recorder structures since we can re-use them.
+  MOZ_ASSERT(mCompositionRecorders.find(aWindowId) ==
+             mCompositionRecorders.end());
 
   mCompositionRecorders[aWindowId] = std::move(aCompositionRecorder);
 }
 
-void RenderThread::HandleFrame(wr::WindowId aWindowId, bool aRender) {
+void RenderThread::WriteCollectedFramesForWindow(wr::WindowId aWindowId) {
+  MOZ_ASSERT(IsInRenderThread());
+
+  RendererOGL* renderer = GetRenderer(aWindowId);
+  MOZ_ASSERT(renderer);
+
+  auto it = mCompositionRecorders.find(aWindowId);
+  MOZ_DIAGNOSTIC_ASSERT(
+      it != mCompositionRecorders.end(),
+      "Attempted to write frames from a window that was not recording.");
+  if (it != mCompositionRecorders.end()) {
+    it->second->WriteCollectedFrames();
+
+    if (renderer) {
+      wr_renderer_release_composition_recorder_structures(
+          renderer->GetRenderer());
+    }
+
+    mCompositionRecorders.erase(it);
+  }
+}
+
+void RenderThread::HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender) {
   if (mHasShutdown) {
     return;
   }
 
   if (!IsInRenderThread()) {
     Loop()->PostTask(NewRunnableMethod<wr::WindowId, bool>(
-        "wr::RenderThread::NewFrameReady", this, &RenderThread::HandleFrame,
-        aWindowId, aRender));
+        "wr::RenderThread::HandleFrameOneDoc", this,
+        &RenderThread::HandleFrameOneDoc, aWindowId, aRender));
     return;
+  }
+
+  bool render = false;
+  PendingFrameInfo frame;
+  bool hadSlowFrame;
+  {  // scope lock
+    auto windows = mWindowInfos.Lock();
+    auto it = windows->find(AsUint64(aWindowId));
+    if (it == windows->end()) {
+      MOZ_ASSERT(false);
+      return;
+    }
+
+    WindowInfo* info = it->second;
+    PendingFrameInfo& frameInfo = info->mPendingFrames.front();
+    frameInfo.mDocFramesSeen++;
+    frameInfo.mFrameNeedsRender |= aRender;
+    if (frameInfo.mDocFramesSeen < frameInfo.mDocFramesTotal) {
+      return;
+    }
+
+    MOZ_ASSERT(frameInfo.mDocFramesSeen == frameInfo.mDocFramesTotal);
+    render = frameInfo.mFrameNeedsRender;
+    info->mIsRendering = true;
+
+    frame = frameInfo;
+    hadSlowFrame = info->mHadSlowFrame;
   }
 
   if (IsDestroyed(aWindowId)) {
@@ -284,27 +316,28 @@ void RenderThread::HandleFrame(wr::WindowId aWindowId, bool aRender) {
     return;
   }
 
-  TimeStamp startTime;
-  VsyncId startId;
-
-  bool hadSlowFrame;
-  {  // scope lock
-    auto windows = mWindowInfos.Lock();
-    auto it = windows->find(AsUint64(aWindowId));
-    MOZ_ASSERT(it != windows->end());
-    WindowInfo* info = it->second;
-    MOZ_ASSERT(info->mPendingCount > 0);
-    startTime = info->mStartTimes.front();
-    startId = info->mStartIds.front();
-    hadSlowFrame = info->mHadSlowFrame;
-    info->mHadSlowFrame = false;
-  }
-
-  UpdateAndRender(aWindowId, startId, startTime, aRender,
+  UpdateAndRender(aWindowId, frame.mStartId, frame.mStartTime, render,
                   /* aReadbackSize */ Nothing(),
                   /* aReadbackFormat */ Nothing(),
                   /* aReadbackBuffer */ Nothing(), hadSlowFrame);
-  FrameRenderingComplete(aWindowId);
+
+  {  // scope lock
+    auto windows = mWindowInfos.Lock();
+    auto it = windows->find(AsUint64(aWindowId));
+    if (it == windows->end()) {
+      MOZ_ASSERT(false);
+      return;
+    }
+    WindowInfo* info = it->second;
+    info->mPendingFrames.pop();
+    info->mIsRendering = false;
+  }
+
+  // The start time is from WebRenderBridgeParent::CompositeToTarget. From that
+  // point until now (when the frame is finally pushed to the screen) is
+  // equivalent to the COMPOSITE_TIME metric in the non-WR codepath.
+  mozilla::Telemetry::AccumulateTimeDelta(mozilla::Telemetry::COMPOSITE_TIME,
+                                          frame.mStartTime);
 }
 
 void RenderThread::WakeUp(wr::WindowId aWindowId) {
@@ -374,7 +407,7 @@ static void NotifyDidRender(layers::CompositorBridgeParent* aBridge,
 }
 
 static void NotifyDidStartRender(layers::CompositorBridgeParent* aBridge) {
-  // Starting a render will change increment mRenderingCount, and potentially
+  // Starting a render will change mIsRendering, and potentially
   // change whether we can allow the bridge to intiate another frame.
   if (aBridge->GetWrBridge()) {
     aBridge->GetWrBridge()->CompositeIfNeeded();
@@ -427,15 +460,7 @@ void RenderThread::UpdateAndRender(
   if (rendered) {
     auto recorderIt = mCompositionRecorders.find(aWindowId);
     if (recorderIt != mCompositionRecorders.end()) {
-      bool shouldRelease = recorderIt->second->MaybeRecordFrame(
-          renderer->GetRenderer(), info.get());
-
-      if (shouldRelease) {
-        mCompositionRecorders.erase(recorderIt);
-
-        wr_renderer_release_composition_recorder_structures(
-            renderer->GetRenderer());
-      }
+      recorderIt->second->MaybeRecordFrame(renderer->GetRenderer(), info.get());
     }
   }
 
@@ -497,11 +522,11 @@ bool RenderThread::TooManyPendingFrames(wr::WindowId aWindowId) {
   }
   WindowInfo* info = it->second;
 
-  if (info->mPendingCount > maxFrameCount) {
+  if (info->PendingCount() > maxFrameCount) {
     return true;
   }
-  MOZ_ASSERT(info->mPendingCount >= info->mRenderingCount);
-  return info->mPendingCount > info->mRenderingCount;
+  MOZ_ASSERT(info->PendingCount() >= info->RenderingCount());
+  return info->PendingCount() > info->RenderingCount();
 }
 
 bool RenderThread::IsDestroyed(wr::WindowId aWindowId) {
@@ -534,60 +559,8 @@ void RenderThread::IncPendingFrameCount(wr::WindowId aWindowId,
     MOZ_ASSERT(false);
     return;
   }
-  it->second->mPendingCount++;
-  it->second->mStartTimes.push(aStartTime);
-  it->second->mStartIds.push(aStartId);
-  it->second->mDocFrameCounts.push(aDocFrameCount);
-}
-
-mozilla::Pair<bool, bool> RenderThread::IncRenderingFrameCount(
-    wr::WindowId aWindowId, bool aRender) {
-  auto windows = mWindowInfos.Lock();
-  auto it = windows->find(AsUint64(aWindowId));
-  if (it == windows->end()) {
-    MOZ_ASSERT(false);
-    return MakePair(false, false);
-  }
-
-  it->second->mDocFramesSeen++;
-  if (it->second->mDocFramesSeen < it->second->mDocFrameCounts.front()) {
-    it->second->mRender |= aRender;
-    return MakePair(false, it->second->mRender);
-  } else {
-    MOZ_ASSERT(it->second->mDocFramesSeen ==
-               it->second->mDocFrameCounts.front());
-    bool render = it->second->mRender || aRender;
-    it->second->mRender = false;
-    it->second->mRenderingCount++;
-    it->second->mDocFrameCounts.pop();
-    it->second->mDocFramesSeen = 0;
-    return MakePair(true, render);
-  }
-}
-
-void RenderThread::FrameRenderingComplete(wr::WindowId aWindowId) {
-  auto windows = mWindowInfos.Lock();
-  auto it = windows->find(AsUint64(aWindowId));
-  if (it == windows->end()) {
-    MOZ_ASSERT(false);
-    return;
-  }
-  WindowInfo* info = it->second;
-  MOZ_ASSERT(info->mPendingCount > 0);
-  MOZ_ASSERT(info->mRenderingCount > 0);
-  if (info->mPendingCount <= 0) {
-    return;
-  }
-  info->mPendingCount--;
-  info->mRenderingCount--;
-
-  // The start time is from WebRenderBridgeParent::CompositeToTarget. From that
-  // point until now (when the frame is finally pushed to the screen) is
-  // equivalent to the COMPOSITE_TIME metric in the non-WR codepath.
-  mozilla::Telemetry::AccumulateTimeDelta(mozilla::Telemetry::COMPOSITE_TIME,
-                                          info->mStartTimes.front());
-  info->mStartTimes.pop();
-  info->mStartIds.pop();
+  it->second->mPendingFrames.push(
+      PendingFrameInfo{aStartTime, aStartId, 0, aDocFrameCount, false});
 }
 
 void RenderThread::NotifySlowFrame(wr::WindowId aWindowId) {
@@ -688,30 +661,6 @@ void RenderThread::NotifyNotUsed(uint64_t aExternalImageId) {
 
   RefPtr<RenderTextureHost> texture = it->second;
   texture->NotifyNotUsed();
-}
-
-void RenderThread::UpdateRenderTextureHost(uint64_t aSrcExternalImageId,
-                                           uint64_t aWrappedExternalImageId) {
-  MOZ_ASSERT(aSrcExternalImageId != aWrappedExternalImageId);
-  MOZ_ASSERT(RenderThread::IsInRenderThread());
-
-  MutexAutoLock lock(mRenderTextureMapLock);
-  if (mHasShutdown) {
-    return;
-  }
-  auto src = mRenderTextures.find(aSrcExternalImageId);
-  auto wrapped = mRenderTextures.find(aWrappedExternalImageId);
-  if (src == mRenderTextures.end() || wrapped == mRenderTextures.end()) {
-    return;
-  }
-  MOZ_ASSERT(src->second->AsRenderTextureHostWrapper());
-  MOZ_ASSERT(!wrapped->second->AsRenderTextureHostWrapper());
-  RenderTextureHostWrapper* wrapper = src->second->AsRenderTextureHostWrapper();
-  if (!wrapper) {
-    MOZ_ASSERT_UNREACHABLE("unexpected to happen");
-    return;
-  }
-  wrapper->UpdateRenderTextureHost(wrapped->second);
 }
 
 void RenderThread::NofityForUse(uint64_t aExternalImageId) {
@@ -882,8 +831,13 @@ WebRenderThreadPool::WebRenderThreadPool() {
   mThreadPool = wr_thread_pool_new();
 }
 
-WebRenderThreadPool::~WebRenderThreadPool() {
-  wr_thread_pool_delete(mThreadPool);
+WebRenderThreadPool::~WebRenderThreadPool() { Release(); }
+
+void WebRenderThreadPool::Release() {
+  if (mThreadPool) {
+    wr_thread_pool_delete(mThreadPool);
+    mThreadPool = nullptr;
+  }
 }
 
 WebRenderProgramCache::WebRenderProgramCache(wr::WrThreadPool* aThreadPool) {
@@ -895,7 +849,7 @@ WebRenderProgramCache::WebRenderProgramCache(wr::WrThreadPool* aThreadPool) {
   }
   mProgramCache = wr_program_cache_new(&path, aThreadPool);
   if (gfxVars::UseWebRenderProgramBinaryDisk()) {
-    wr_try_load_shader_from_disk(mProgramCache);
+    wr_try_load_startup_shaders_from_disk(mProgramCache);
   }
 }
 
@@ -985,25 +939,18 @@ static already_AddRefed<gl::GLContext> CreateGLContext() {
 
 extern "C" {
 
-static void HandleFrame(mozilla::wr::WrWindowId aWindowId, bool aRender) {
-  auto incResult = mozilla::wr::RenderThread::Get()->IncRenderingFrameCount(
-      aWindowId, aRender);
-  if (incResult.first()) {
-    mozilla::wr::RenderThread::Get()->HandleFrame(aWindowId,
-                                                  incResult.second());
-  }
-}
-
 void wr_notifier_wake_up(mozilla::wr::WrWindowId aWindowId) {
   mozilla::wr::RenderThread::Get()->WakeUp(aWindowId);
 }
 
 void wr_notifier_new_frame_ready(mozilla::wr::WrWindowId aWindowId) {
-  HandleFrame(aWindowId, /* aRender */ true);
+  mozilla::wr::RenderThread::Get()->HandleFrameOneDoc(aWindowId,
+                                                      /* aRender */ true);
 }
 
 void wr_notifier_nop_frame_done(mozilla::wr::WrWindowId aWindowId) {
-  HandleFrame(aWindowId, /* aRender */ false);
+  mozilla::wr::RenderThread::Get()->HandleFrameOneDoc(aWindowId,
+                                                      /* aRender */ false);
 }
 
 void wr_notifier_external_event(mozilla::wr::WrWindowId aWindowId,
@@ -1042,7 +989,7 @@ void wr_finished_scene_build(mozilla::wr::WrWindowId aWindowId,
       CompositorBridgeParent::GetCompositorBridgeParentFromWindowId(aWindowId);
   RefPtr<wr::WebRenderPipelineInfo> info = new wr::WebRenderPipelineInfo(aInfo);
   if (cbp) {
-    InfallibleTArray<wr::RenderRoot> renderRoots;
+    nsTArray<wr::RenderRoot> renderRoots;
     renderRoots.SetLength(aDocumentIdsCount);
     for (size_t i = 0; i < aDocumentIdsCount; ++i) {
       renderRoots[i] = wr::RenderRootFromId(aDocumentIds[i]);

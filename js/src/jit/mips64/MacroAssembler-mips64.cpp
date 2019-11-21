@@ -967,7 +967,6 @@ void MacroAssemblerMIPS64Compat::loadPtr(wasm::SymbolicAddress address,
 void MacroAssemblerMIPS64Compat::loadPrivate(const Address& address,
                                              Register dest) {
   loadPtr(address, dest);
-  ma_dsll(dest, dest, Imm32(1));
 }
 
 void MacroAssemblerMIPS64Compat::loadUnalignedDouble(
@@ -1314,11 +1313,6 @@ void MacroAssemblerMIPS64Compat::unboxValue(const ValueOperand& src,
   } else {
     unboxNonDouble(src, dest.gpr(), type);
   }
-}
-
-void MacroAssemblerMIPS64Compat::unboxPrivate(const ValueOperand& src,
-                                              Register dest) {
-  ma_dsll(dest, src.valueReg(), Imm32(1));
 }
 
 void MacroAssemblerMIPS64Compat::boxDouble(FloatRegister src,
@@ -2257,7 +2251,7 @@ void MacroAssemblerMIPS64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2316,7 +2310,7 @@ void MacroAssemblerMIPS64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.

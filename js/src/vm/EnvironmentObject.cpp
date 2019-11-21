@@ -19,12 +19,22 @@
 #include "vm/Xdr.h"
 #include "wasm/WasmInstance.h"
 
+#ifdef DEBUG
+#  include "vm/BytecodeIterator.h"
+#  include "vm/BytecodeLocation.h"
+#endif
+
 #include "gc/Marking-inl.h"
 #include "vm/JSAtom-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/Stack-inl.h"
 #include "vm/TypeInference-inl.h"
+
+#ifdef DEBUG
+#  include "vm/BytecodeIterator-inl.h"
+#  include "vm/BytecodeLocation-inl.h"
+#endif
 
 using namespace js;
 
@@ -76,8 +86,8 @@ CallObject* CallObject::create(JSContext* cx, HandleShape shape,
   MOZ_ASSERT(!group->singleton());
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(CanBeFinalizedInBackground(kind, &CallObject::class_));
-  kind = gc::GetBackgroundAllocKind(kind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(kind, &CallObject::class_));
+  kind = gc::ForegroundToBackgroundAllocKind(kind);
 
   gc::InitialHeap heap = GetInitialHeap(GenericObject, group);
 
@@ -107,8 +117,8 @@ CallObject* CallObject::createTemplateObject(JSContext* cx, HandleScript script,
   }
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(CanBeFinalizedInBackground(kind, &class_));
-  kind = gc::GetBackgroundAllocKind(kind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(kind, &class_));
+  kind = gc::ForegroundToBackgroundAllocKind(kind);
 
   // The JITs assume the result is nursery allocated unless we collected the
   // nursery, so don't change |heap| here.
@@ -226,7 +236,7 @@ CallObject* CallObject::createHollowForDebug(JSContext* cx,
   return callobj;
 }
 
-const Class CallObject::class_ = {
+const JSClass CallObject::class_ = {
     "Call", JSCLASS_HAS_RESERVED_SLOTS(CallObject::RESERVED_SLOTS)};
 
 /*****************************************************************************/
@@ -245,8 +255,8 @@ VarEnvironmentObject* VarEnvironmentObject::create(JSContext* cx,
   }
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(CanBeFinalizedInBackground(kind, &class_));
-  kind = gc::GetBackgroundAllocKind(kind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(kind, &class_));
+  kind = gc::ForegroundToBackgroundAllocKind(kind);
 
   {
     AutoSweepObjectGroup sweep(group);
@@ -332,7 +342,7 @@ VarEnvironmentObject* VarEnvironmentObject::createHollowForDebug(
   return env;
 }
 
-const Class VarEnvironmentObject::class_ = {
+const JSClass VarEnvironmentObject::class_ = {
     "Var", JSCLASS_HAS_RESERVED_SLOTS(VarEnvironmentObject::RESERVED_SLOTS)};
 
 /*****************************************************************************/
@@ -348,13 +358,13 @@ const ObjectOps ModuleEnvironmentObject::objectOps_ = {
     nullptr, /* getElements */
     nullptr};
 
-const ClassOps ModuleEnvironmentObject::classOps_ = {
+const JSClassOps ModuleEnvironmentObject::classOps_ = {
     nullptr, /* addProperty */
     nullptr, /* delProperty */
     nullptr, /* enumerate */
     ModuleEnvironmentObject::newEnumerate};
 
-const Class ModuleEnvironmentObject::class_ = {
+const JSClass ModuleEnvironmentObject::class_ = {
     "ModuleEnvironmentObject",
     JSCLASS_HAS_RESERVED_SLOTS(ModuleEnvironmentObject::RESERVED_SLOTS),
     &ModuleEnvironmentObject::classOps_,
@@ -377,8 +387,8 @@ ModuleEnvironmentObject* ModuleEnvironmentObject::create(
   }
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(CanBeFinalizedInBackground(kind, &class_));
-  kind = gc::GetBackgroundAllocKind(kind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(kind, &class_));
+  kind = gc::ForegroundToBackgroundAllocKind(kind);
 
   JSObject* obj;
   JS_TRY_VAR_OR_RETURN_NULL(
@@ -571,7 +581,7 @@ bool ModuleEnvironmentObject::newEnumerate(JSContext* cx, HandleObject obj,
 
 /*****************************************************************************/
 
-const Class WasmInstanceEnvironmentObject::class_ = {
+const JSClass WasmInstanceEnvironmentObject::class_ = {
     "WasmInstance",
     JSCLASS_HAS_RESERVED_SLOTS(WasmInstanceEnvironmentObject::RESERVED_SLOTS)};
 
@@ -591,8 +601,8 @@ WasmInstanceEnvironmentObject::createHollowForDebug(
   }
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(CanBeFinalizedInBackground(kind, &class_));
-  kind = gc::GetBackgroundAllocKind(kind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(kind, &class_));
+  kind = gc::ForegroundToBackgroundAllocKind(kind);
 
   JSObject* obj;
   JS_TRY_VAR_OR_RETURN_NULL(
@@ -608,7 +618,7 @@ WasmInstanceEnvironmentObject::createHollowForDebug(
 
 /*****************************************************************************/
 
-const Class WasmFunctionCallObject::class_ = {
+const JSClass WasmFunctionCallObject::class_ = {
     "WasmCall",
     JSCLASS_HAS_RESERVED_SLOTS(WasmFunctionCallObject::RESERVED_SLOTS)};
 
@@ -627,8 +637,8 @@ WasmFunctionCallObject* WasmFunctionCallObject::createHollowForDebug(
   }
 
   gc::AllocKind kind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(CanBeFinalizedInBackground(kind, &class_));
-  kind = gc::GetBackgroundAllocKind(kind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(kind, &class_));
+  kind = gc::ForegroundToBackgroundAllocKind(kind);
 
   JSObject* obj;
   JS_TRY_VAR_OR_RETURN_NULL(
@@ -806,7 +816,7 @@ static const ObjectOps WithEnvironmentObjectOps = {
     nullptr,
 };
 
-const Class WithEnvironmentObject::class_ = {
+const JSClass WithEnvironmentObject::class_ = {
     "With",
     JSCLASS_HAS_RESERVED_SLOTS(WithEnvironmentObject::RESERVED_SLOTS),
     JS_NULL_CLASS_OPS,
@@ -833,7 +843,7 @@ NonSyntacticVariablesObject* NonSyntacticVariablesObject::create(
   return obj;
 }
 
-const Class NonSyntacticVariablesObject::class_ = {
+const JSClass NonSyntacticVariablesObject::class_ = {
     "NonSyntacticVariablesObject",
     JSCLASS_HAS_RESERVED_SLOTS(NonSyntacticVariablesObject::RESERVED_SLOTS)};
 
@@ -902,9 +912,9 @@ LexicalEnvironmentObject* LexicalEnvironmentObject::createTemplateObject(
   // nursery, so don't change |heap| here.
 
   gc::AllocKind allocKind = gc::GetGCObjectKind(shape->numFixedSlots());
-  MOZ_ASSERT(
-      CanBeFinalizedInBackground(allocKind, &LexicalEnvironmentObject::class_));
-  allocKind = GetBackgroundAllocKind(allocKind);
+  MOZ_ASSERT(CanChangeToBackgroundAllocKind(allocKind,
+                                            &LexicalEnvironmentObject::class_));
+  allocKind = ForegroundToBackgroundAllocKind(allocKind);
 
   JSObject* obj;
   JS_TRY_VAR_OR_RETURN_NULL(
@@ -1090,7 +1100,7 @@ void LexicalEnvironmentObject::setWindowProxyThisValue(JSObject* obj) {
   setReservedSlot(THIS_VALUE_OR_SCOPE_SLOT, ObjectValue(*obj));
 }
 
-const Class LexicalEnvironmentObject::class_ = {
+const JSClass LexicalEnvironmentObject::class_ = {
     "LexicalEnvironment",
     JSCLASS_HAS_RESERVED_SLOTS(LexicalEnvironmentObject::RESERVED_SLOTS),
     JS_NULL_CLASS_OPS,
@@ -1231,7 +1241,7 @@ static const ObjectOps RuntimeLexicalErrorObjectObjectOps = {
     nullptr, /* this */
 };
 
-const Class RuntimeLexicalErrorObject::class_ = {
+const JSClass RuntimeLexicalErrorObject::class_ = {
     "RuntimeLexicalError",
     JSCLASS_HAS_RESERVED_SLOTS(RuntimeLexicalErrorObject::RESERVED_SLOTS),
     JS_NULL_CLASS_OPS,
@@ -1806,6 +1816,8 @@ class DebugEnvironmentProxyHandler : public BaseProxyHandler {
     return nullptr;
   }
 
+  friend Scope* js::GetEnvironmentScope(const JSObject& env);
+
   /*
    * In theory, every non-arrow function scope contains an 'arguments'
    * bindings.  However, the engine only adds a binding if 'arguments' is
@@ -2379,6 +2391,10 @@ class DebugEnvironmentProxyHandler : public BaseProxyHandler {
 };
 
 } /* anonymous namespace */
+
+Scope* js::GetEnvironmentScope(const JSObject& env) {
+  return DebugEnvironmentProxyHandler::getEnvironmentScope(env);
+}
 
 template <>
 bool JSObject::is<js::DebugEnvironmentProxy>() const {
@@ -3765,22 +3781,22 @@ static bool RemoveReferencedNames(JSContext* cx, HandleScript script,
   //   these names and putting eval in an inner script is bad news if you
   //   care about entraining variables unnecessarily.
 
-  for (jsbytecode* pc = script->code(); pc != script->codeEnd();
-       pc += GetBytecodeLength(pc)) {
+  AllBytecodesIterable iter(script);
+  for (BytecodeLocation loc : iter) {
     PropertyName* name;
 
-    switch (JSOp(*pc)) {
+    switch (loc.getOp()) {
       case JSOP_GETNAME:
       case JSOP_SETNAME:
       case JSOP_STRICTSETNAME:
-        name = script->getName(pc);
+        name = script->getName(loc.toRawBytecode());
         break;
 
       case JSOP_GETGNAME:
       case JSOP_SETGNAME:
       case JSOP_STRICTSETGNAME:
         if (script->hasNonSyntacticScope()) {
-          name = script->getName(pc);
+          name = script->getName(loc.toRawBytecode());
         } else {
           name = nullptr;
         }
@@ -3788,7 +3804,7 @@ static bool RemoveReferencedNames(JSContext* cx, HandleScript script,
 
       case JSOP_GETALIASEDVAR:
       case JSOP_SETALIASEDVAR:
-        name = EnvironmentCoordinateNameSlow(script, pc);
+        name = EnvironmentCoordinateNameSlow(script, loc.toRawBytecode());
         break;
 
       default:

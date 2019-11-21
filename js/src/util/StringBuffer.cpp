@@ -98,7 +98,8 @@ JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
    * The allocation was made on a TempAllocPolicy, so account for the string
    * data on the string's zone.
    */
-  cx->updateMallocCounter(sizeof(CharT) * len);
+  // TaintFox: don't think this is needed, but might cause memory issues?
+  // cx->updateMallocCounter(sizeof(CharT) * len);
 
   // TaintFox: Propagate taint to newly created string.
   str->setTaint(cx, taint());

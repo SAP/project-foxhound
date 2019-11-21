@@ -14,7 +14,7 @@
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/MozLocale.h"
 #include "mozilla/EventStateManager.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 #include "nsIURLParser.h"
@@ -1128,12 +1128,12 @@ bool PaymentRequest::InFullyActiveDocument() {
 
   // According to the definition of the fully active document, recursive
   // checking the parent document are all IsCurrentActiveDocument
-  Document* parentDoc = doc->GetParentDocument();
+  Document* parentDoc = doc->GetInProcessParentDocument();
   while (parentDoc) {
     if (parentDoc && !parentDoc->IsCurrentActiveDocument()) {
       return false;
     }
-    parentDoc = parentDoc->GetParentDocument();
+    parentDoc = parentDoc->GetInProcessParentDocument();
   }
   return true;
 }

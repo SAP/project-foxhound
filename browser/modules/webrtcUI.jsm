@@ -336,7 +336,9 @@ var webrtcUI = {
         }
         let tabbrowser = aMessage.target.ownerGlobal.gBrowser;
         if (tabbrowser) {
-          tabbrowser.setBrowserSharing(aMessage.target, aMessage.data);
+          tabbrowser.updateBrowserSharing(aMessage.target, {
+            webRTC: aMessage.data,
+          });
         }
         break;
       case "child-process-shutdown":
@@ -475,7 +477,7 @@ function prompt(aBrowser, aRequest) {
     requestTypes,
   } = aRequest;
 
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     aRequest.origin
   );
 
@@ -572,7 +574,7 @@ function prompt(aBrowser, aRequest) {
     name: getHostOrExtensionName(principal.URI),
     persistent: true,
     hideClose: true,
-    eventCallback(aTopic, aNewBrowser) {
+    eventCallback(aTopic, aNewBrowser, isCancel) {
       if (aTopic == "swapping") {
         return true;
       }
@@ -600,6 +602,11 @@ function prompt(aBrowser, aRequest) {
           );
           menupopup._commandEventListener = null;
         }
+      }
+
+      // If the notification has been cancelled (e.g. due to entering full-screen), also cancel the webRTC request
+      if (aTopic == "removed" && notification && isCancel) {
+        denyRequest(notification.browser, aRequest);
       }
 
       if (aTopic != "showing") {
@@ -1145,9 +1152,6 @@ function prompt(aBrowser, aRequest) {
   let schemeHistogram = Services.telemetry.getKeyedHistogramById(
     "PERMISSION_REQUEST_ORIGIN_SCHEME"
   );
-  let thirdPartyHistogram = Services.telemetry.getKeyedHistogramById(
-    "PERMISSION_REQUEST_THIRD_PARTY_ORIGIN"
-  );
   let userInputHistogram = Services.telemetry.getKeyedHistogramById(
     "PERMISSION_REQUEST_HANDLING_USER_INPUT"
   );
@@ -1167,7 +1171,6 @@ function prompt(aBrowser, aRequest) {
     requestType = requestType.toLowerCase();
 
     schemeHistogram.add(requestType, scheme);
-    thirdPartyHistogram.add(requestType, aRequest.isThirdPartyOrigin);
     userInputHistogram.add(requestType, aRequest.isHandlingUserInput);
   }
 }

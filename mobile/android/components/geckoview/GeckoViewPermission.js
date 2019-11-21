@@ -53,7 +53,7 @@ GeckoViewPermission.prototype = {
   receiveMessage(aMsg) {
     switch (aMsg.name) {
       case "GeckoView:AddCameraPermission": {
-        let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+        let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
           aMsg.data.origin
         );
 
@@ -263,6 +263,12 @@ GeckoViewPermission.prototype = {
       })
       .then(granted => {
         (granted ? aRequest.allow : aRequest.cancel)();
+        Services.perms.addFromPrincipal(
+          aRequest.principal,
+          perm.type,
+          granted ? Services.perms.ALLOW_ACTION : Services.perms.DENY_ACTION,
+          Services.perms.EXPIRE_SESSION
+        );
         // Manually release the target request here to facilitate garbage collection.
         aRequest = undefined;
       });

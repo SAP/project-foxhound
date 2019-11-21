@@ -1,8 +1,8 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
+
+/* import-globals-from ../../inspector/test/shared-head.js */
 
 "use strict";
 
@@ -25,8 +25,9 @@ if (DEBUG_ALLOCATIONS) {
   const { DevToolsLoader } = ChromeUtils.import(
     "resource://devtools/shared/Loader.jsm"
   );
-  const loader = new DevToolsLoader();
-  loader.invisibleToDebugger = true;
+  const loader = new DevToolsLoader({
+    invisibleToDebugger: true,
+  });
 
   const { allocationTracker } = loader.require(
     "devtools/shared/test-helpers/allocation-tracker"
@@ -230,6 +231,24 @@ var refreshTab = async function(tab = gBrowser.selectedTab) {
   await finished;
   info("Tab finished refreshing.");
 };
+
+/**
+ * Open the inspector in a tab with given URL.
+ * @param {string} url  The URL to open.
+ * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
+ * @return A promise that is resolved once the tab and inspector have loaded
+ *         with an object: { tab, toolbox, inspector }.
+ */
+var openInspectorForURL = async function(url, hostType) {
+  const tab = await addTab(url);
+  const { inspector, toolbox, testActor } = await openInspector(hostType);
+  return { tab, inspector, toolbox, testActor };
+};
+
+async function getActiveInspector() {
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  return gDevTools.getToolbox(target).getPanel("inspector");
+}
 
 /**
  * Simulate a key event from a <key> element.
@@ -675,9 +694,9 @@ function isWindows() {
  */
 function waitForTitleChange(toolbox) {
   return new Promise(resolve => {
-    toolbox.win.parent.addEventListener("message", function onmessage(event) {
+    toolbox.topWindow.addEventListener("message", function onmessage(event) {
       if (event.data.name == "set-host-title") {
-        toolbox.win.parent.removeEventListener("message", onmessage);
+        toolbox.topWindow.removeEventListener("message", onmessage);
         resolve();
       }
     });

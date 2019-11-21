@@ -17,7 +17,6 @@
 
 #include "builtin/Array.h"
 #include "builtin/BigInt.h"
-#include "builtin/String.h"
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
 #include "util/StringBuffer.h"
@@ -41,8 +40,8 @@ using mozilla::RangedPtr;
 
 using JS::AutoStableStringChars;
 
-const Class js::JSONClass = {js_JSON_str,
-                             JSCLASS_HAS_CACHED_PROTO(JSProto_JSON)};
+const JSClass js::JSONClass = {js_JSON_str,
+                               JSCLASS_HAS_CACHED_PROTO(JSProto_JSON)};
 
 // TaintFox: expanding taint information
 template <typename SrcCharT, typename DstCharT>

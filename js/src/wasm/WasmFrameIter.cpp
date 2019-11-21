@@ -757,8 +757,7 @@ ProfilingFrameIterator::ProfilingFrameIterator(const JitActivation& activation)
   initFromExitFP(activation.wasmExitFP());
 }
 
-ProfilingFrameIterator::ProfilingFrameIterator(const JitActivation& activation,
-                                               const Frame* fp)
+ProfilingFrameIterator::ProfilingFrameIterator(const Frame* fp)
     : code_(nullptr),
       codeRange_(nullptr),
       callerFP_(nullptr),
@@ -1376,6 +1375,8 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native table.set function";
     case SymbolicAddress::TableSize:
       return "call to native table.size function";
+    case SymbolicAddress::FuncRef:
+      return "call to native func.ref function";
     case SymbolicAddress::PostBarrier:
       return "call to native GC postbarrier (in wasm)";
     case SymbolicAddress::PostBarrierFiltering:

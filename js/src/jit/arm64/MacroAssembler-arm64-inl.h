@@ -800,6 +800,16 @@ void MacroAssembler::branch32(Condition cond, Register lhs, Imm32 imm,
   B(label, cond);
 }
 
+void MacroAssembler::branch32(Condition cond, Register lhs, const Address& rhs,
+                              Label* label) {
+  vixl::UseScratchRegisterScope temps(this);
+  const Register scratch = temps.AcquireX().asUnsized();
+  MOZ_ASSERT(scratch != lhs);
+  MOZ_ASSERT(scratch != rhs.base);
+  load32(rhs, scratch);
+  branch32(cond, lhs, scratch, label);
+}
+
 void MacroAssembler::branch32(Condition cond, const Address& lhs, Register rhs,
                               Label* label) {
   vixl::UseScratchRegisterScope temps(this);
@@ -1005,14 +1015,7 @@ void MacroAssembler::branchPtr(Condition cond, const BaseIndex& lhs,
 
 void MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs,
                                       Register rhs, Label* label) {
-  vixl::UseScratchRegisterScope temps(this);
-  const Register scratch = temps.AcquireX().asUnsized();
-  if (rhs != scratch) {
-    movePtr(rhs, scratch);
-  }
-  // Instead of unboxing lhs, box rhs and do direct comparison with lhs.
-  rshiftPtr(Imm32(1), scratch);
-  branchPtr(cond, lhs, scratch, label);
+  branchPtr(cond, lhs, rhs, label);
 }
 
 void MacroAssembler::branchFloat(DoubleCondition cond, FloatRegister lhs,

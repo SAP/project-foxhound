@@ -7,8 +7,6 @@
 
 var EXPORTED_SYMBOLS = ["ExtensionContent"];
 
-/* globals ExtensionContent */
-
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -36,7 +34,7 @@ const Timer = Components.Constructor(
   "initWithCallback"
 );
 
-const { ExtensionChild } = ChromeUtils.import(
+const { ExtensionChild, ExtensionActivityLogChild } = ChromeUtils.import(
   "resource://gre/modules/ExtensionChild.jsm"
 );
 const { ExtensionCommon } = ChromeUtils.import(
@@ -331,6 +329,7 @@ class Script {
    *        wantReturnValue, removeCSS, cssOrigin, jsCode
    */
   constructor(extension, matcher) {
+    this.scriptType = "content_script";
     this.extension = extension;
     this.matcher = matcher;
 
@@ -434,6 +433,12 @@ class Script {
     }
 
     let context = this.extension.getContext(window);
+    for (let script of this.matcher.jsPaths) {
+      context.logActivity(this.scriptType, script, {
+        url: window.location.href,
+      });
+    }
+
     try {
       if (this.runAt === "document_end") {
         await promiseDocumentReady(window.document);
@@ -620,6 +625,7 @@ class UserScript extends Script {
    */
   constructor(extension, matcher) {
     super(extension, matcher);
+    this.scriptType = "user_script";
 
     // This is an opaque object that the extension provides, it is associated to
     // the particular userScript and it is passed as a parameter to the custom
@@ -755,6 +761,8 @@ class ContentScriptContextChild extends BaseContext {
     let frameId = WebNavigationFrames.getFrameId(contentWindow);
     this.frameId = frameId;
 
+    this.browsingContextId = contentWindow.docShell.browsingContext.id;
+
     this.scripts = [];
 
     let contentPrincipal = contentWindow.document.nodePrincipal;
@@ -763,7 +771,7 @@ class ContentScriptContextChild extends BaseContext {
     // Copy origin attributes from the content window origin attributes to
     // preserve the user context id.
     let attrs = contentPrincipal.originAttributes;
-    let extensionPrincipal = ssm.createCodebasePrincipal(
+    let extensionPrincipal = ssm.createContentPrincipal(
       this.extension.baseURI,
       attrs
     );
@@ -884,6 +892,10 @@ class ContentScriptContextChild extends BaseContext {
       "chrome",
       () => this.chromeObj
     );
+  }
+
+  async logActivity(type, name, data) {
+    ExtensionActivityLogChild.log(this, type, name, data);
   }
 
   get cloneScope() {

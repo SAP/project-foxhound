@@ -9,7 +9,7 @@
 #include "GeckoProfiler.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/ToString.h"
 #include "nsBlockFrame.h"
 #include "nsGfxScrollFrame.h"
@@ -21,7 +21,18 @@
 using namespace mozilla::dom;
 
 #define ANCHOR_LOG(...)
-// #define ANCHOR_LOG(...) printf_stderr("ANCHOR: " __VA_ARGS__)
+
+/*
+#define ANCHOR_LOG(fmt, ...)                  \
+  printf_stderr("ANCHOR(%p, %s): " fmt, this, \
+                Frame()                       \
+                    ->PresContext()           \
+                    ->Document()              \
+                    ->GetDocumentURI()        \
+                    ->GetSpecOrDefault()      \
+                    .get(),                   \
+                ##__VA_ARGS__)
+*/
 
 namespace mozilla {
 namespace layout {
@@ -194,7 +205,7 @@ void ScrollAnchorContainer::SelectAnchor() {
 
   AUTO_PROFILER_LABEL("ScrollAnchorContainer::SelectAnchor", LAYOUT);
   ANCHOR_LOG(
-      "Selecting anchor for %p with scroll-port=%s.\n", this,
+      "Selecting anchor for with scroll-port=%s.\n",
       mozilla::ToString(mScrollFrame->GetVisualOptimalViewingRect()).c_str());
 
   const nsStyleDisplay* disp = Frame()->StyleDisplay();
@@ -309,14 +320,20 @@ void ScrollAnchorContainer::Destroy() {
 void ScrollAnchorContainer::ApplyAdjustments() {
   if (!mAnchorNode || mAnchorNodeIsDirty ||
       mScrollFrame->HasPendingScrollRestoration() ||
+      mScrollFrame->IsProcessingScrollEvent() ||
       mScrollFrame->IsProcessingAsyncScroll()) {
-    mSuppressAnchorAdjustment = false;
     ANCHOR_LOG(
         "Ignoring post-reflow (anchor=%p, dirty=%d, pendingRestoration=%d, "
-        "asyncScroll=%d container=%p).\n",
+        "scrollevent=%d asyncScroll=%d pendingSuppression=%d container=%p).\n",
         mAnchorNode, mAnchorNodeIsDirty,
         mScrollFrame->HasPendingScrollRestoration(),
-        mScrollFrame->IsProcessingAsyncScroll(), this);
+        mScrollFrame->IsProcessingScrollEvent(),
+        mScrollFrame->IsProcessingAsyncScroll(), mSuppressAnchorAdjustment,
+        this);
+    if (mSuppressAnchorAdjustment) {
+      mSuppressAnchorAdjustment = false;
+      InvalidateAnchor();
+    }
     return;
   }
 
@@ -340,8 +357,8 @@ void ScrollAnchorContainer::ApplyAdjustments() {
     return;
   }
 
-  ANCHOR_LOG("Applying anchor adjustment of %d in %s for %p and anchor %p.\n",
-             logicalAdjustment, writingMode.DebugString(), this, mAnchorNode);
+  ANCHOR_LOG("Applying anchor adjustment of %d in %s with anchor %p.\n",
+             logicalAdjustment, writingMode.DebugString(), mAnchorNode);
 
   nsPoint physicalAdjustment;
   switch (writingMode.GetBlockDir()) {

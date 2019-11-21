@@ -462,14 +462,29 @@ static void BuildNestedPrintObjects(BrowsingContext* aBrowsingContext,
   MOZ_ASSERT(aPO, "Pointer is null!");
 
   for (auto& childBC : aBrowsingContext->GetChildren()) {
+    // if we no longer have a nsFrameLoader for this BrowsingContext, it's
+    // probably being torn down.
+    nsCOMPtr<nsFrameLoaderOwner> flo =
+        do_QueryInterface(childBC->GetEmbedderElement());
+    RefPtr<nsFrameLoader> frameLoader = flo ? flo->GetFrameLoader() : nullptr;
+    if (!frameLoader) {
+      continue;
+    }
+
+    // Finish performing the static clone for this BrowsingContext.
+    nsresult rv = frameLoader->FinishStaticClone();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      continue;
+    }
+
     auto window = childBC->GetDOMWindow();
     if (!window) {
       // XXXfission - handle OOP-iframes
       continue;
     }
     auto childPO = MakeUnique<nsPrintObject>();
-    nsresult rv = childPO->InitAsNestedObject(
-        childBC->GetDocShell(), window->GetExtantDoc(), aPO.get());
+    rv = childPO->InitAsNestedObject(childBC->GetDocShell(),
+                                     window->GetExtantDoc(), aPO.get());
     if (NS_FAILED(rv)) {
       MOZ_ASSERT_UNREACHABLE("Init failed?");
     }
@@ -829,9 +844,9 @@ nsresult nsPrintJob::DoCommonPrint(bool aIsPrintPreview,
     printData->mPrintObject->mFrameType =
         printData->mIsParentAFrameSet ? eFrameSet : eDoc;
 
-    BuildNestedPrintObjects(nsDocShell::Cast(printData->mPrintObject->mDocShell)
-                                ->GetBrowsingContext(),
-                            printData->mPrintObject, &printData->mPrintDocList);
+    BuildNestedPrintObjects(
+        printData->mPrintObject->mDocShell->GetBrowsingContext(),
+        printData->mPrintObject, &printData->mPrintDocList);
   }
 
   // The nsAutoScriptBlocker above will now have been destroyed, which may
@@ -2656,8 +2671,7 @@ bool nsPrintJob::IsWindowsInOurSubTree(nsPIDOMWindowOuter* window) const {
   if (window) {
     nsCOMPtr<nsIDocShell> ourDocShell(do_QueryReferent(mDocShell));
     if (ourDocShell) {
-      BrowsingContext* ourBC =
-          nsDocShell::Cast(ourDocShell)->GetBrowsingContext();
+      BrowsingContext* ourBC = ourDocShell->GetBrowsingContext();
       BrowsingContext* bc = window->GetBrowsingContext();
       while (bc) {
         if (bc == ourBC) {

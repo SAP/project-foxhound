@@ -14,9 +14,11 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEventDispatcherListener.h"
 #include "mozilla/TextEvents.h"
+#include "mozilla/ToString.h"
 #include "mozilla/dom/BrowserChild.h"
 
 #include <android/api-level.h>
@@ -631,21 +633,8 @@ static jni::ObjectArray::LocalRef ConvertRectArrayToJavaRectFArray(
 namespace mozilla {
 namespace widget {
 
-bool GeckoEditableSupport::sDispatchKeyEventsInCompositionForAnyApps = false;
-
 NS_IMPL_ISUPPORTS(GeckoEditableSupport, TextEventDispatcherListener,
                   nsISupportsWeakReference)
-
-void GeckoEditableSupport::ObservePrefs() {
-  static bool sIsObservingPref = false;
-  if (sIsObservingPref) {
-    return;
-  }
-  sIsObservingPref = true;
-  Preferences::AddBoolVarCache(
-      &sDispatchKeyEventsInCompositionForAnyApps,
-      "intl.ime.hack.on_any_apps.fire_key_events_for_composition", false);
-}
 
 RefPtr<TextComposition> GeckoEditableSupport::GetComposition() const {
   nsCOMPtr<nsIWidget> widget = GetWidget();
@@ -1145,7 +1134,8 @@ bool GeckoEditableSupport::DoReplaceText(int32_t aStart, int32_t aEnd,
     textChanged = true;
   }
 
-  if (sDispatchKeyEventsInCompositionForAnyApps ||
+  if (StaticPrefs::
+          intl_ime_hack_on_any_apps_fire_key_events_for_composition() ||
       mInputContext.mMayBeIMEUnaware) {
     SendIMEDummyKeyEvent(widget, eKeyDown);
     if (!mDispatcher || widget->Destroyed()) {
@@ -1168,7 +1158,8 @@ bool GeckoEditableSupport::DoReplaceText(int32_t aStart, int32_t aEnd,
     return false;
   }
 
-  if (sDispatchKeyEventsInCompositionForAnyApps ||
+  if (StaticPrefs::
+          intl_ime_hack_on_any_apps_fire_key_events_for_composition() ||
       mInputContext.mMayBeIMEUnaware) {
     SendIMEDummyKeyEvent(widget, eKeyUp);
     // Widget may be destroyed after dispatching the above event.
@@ -1503,9 +1494,12 @@ void GeckoEditableSupport::SetInputContext(const InputContext& aContext,
                                            const InputContextAction& aAction) {
   MOZ_ASSERT(mEditable);
 
-  ALOGIME("IME: SetInputContext: s=0x%X, 0x%X, action=0x%X, 0x%X",
-          aContext.mIMEState.mEnabled, aContext.mIMEState.mOpen, aAction.mCause,
-          aAction.mFocusChange);
+  ALOGIME(
+      "IME: SetInputContext: aContext.mIMEState={mEnabled=%s, mOpen=%s}, "
+      "aAction={mCause=%s, mFocusChange=%s}",
+      ToString(aContext.mIMEState.mEnabled).c_str(),
+      ToString(aContext.mIMEState.mOpen).c_str(),
+      ToString(aAction.mCause).c_str(), ToString(aAction.mFocusChange).c_str());
 
   mInputContext = aContext;
 

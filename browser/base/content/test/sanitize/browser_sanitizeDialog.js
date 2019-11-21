@@ -493,7 +493,7 @@ add_task(async function test_offline_cache() {
   // Prepare stuff, we will work with www.example.com
   var URL = "http://www.example.com";
   var URI = makeURI(URL);
-  var principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  var principal = Services.scriptSecurityManager.createContentPrincipal(
     URI,
     {}
   );
@@ -575,7 +575,7 @@ add_task(async function test_offline_apps_permissions() {
   // Prepare stuff, we will work with www.example.com
   var URL = "http://www.example.com";
   var URI = makeURI(URL);
-  var principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  var principal = Services.scriptSecurityManager.createContentPrincipal(
     URI,
     {}
   );
@@ -717,7 +717,7 @@ WindowHelper.prototype = {
   open() {
     let wh = this;
 
-    function windowObserver(aSubject, aTopic, aData) {
+    function windowObserver(win, aTopic, aData) {
       if (aTopic != "domwindowopened") {
         return;
       }
@@ -725,7 +725,6 @@ WindowHelper.prototype = {
       Services.ww.unregisterNotification(windowObserver);
 
       var loaded = false;
-      let win = aSubject.QueryInterface(Ci.nsIDOMWindow);
 
       win.addEventListener(
         "load",

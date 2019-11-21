@@ -406,6 +406,11 @@ class MochitestArguments(ArgumentContainer):
           "dest": "e10s",
           "help": "Run tests with electrolysis preferences and test filtering disabled.",
           }],
+        [["--enable-fission"],
+         {"action": "store_true",
+          "default": False,
+          "help": "Run tests with fission (site isolation) enabled.",
+          }],
         [["--store-chrome-manifest"],
          {"action": "store",
           "help": "Destination path to write a copy of any chrome manifest "
@@ -824,6 +829,9 @@ class MochitestArguments(ArgumentContainer):
             parser.error("mochitest-{} does not support e10s, try again with "
                          "--disable-e10s.".format(options.flavor))
 
+        if options.enable_fission:
+            options.extraPrefs.append("fission.autostart=true")
+
         options.leakThresholds = {
             "default": options.defaultLeakThreshold,
             "tab": options.defaultLeakThreshold,
@@ -852,6 +860,11 @@ class AndroidArguments(ArgumentContainer):
     """Android specific arguments."""
 
     args = [
+        [["--no-install"],
+         {"action": "store_true",
+          "default": False,
+          "help": "Skip the installation of the APK.",
+          }],
         [["--deviceSerial"],
          {"dest": "deviceSerial",
           "help": "adb serial number of remote device. This is required "

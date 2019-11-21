@@ -26,6 +26,7 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI)
       mPrincipalIsExplicit(false),
       mForceAllowDataURI(false),
       mOriginalFrameSrc(false),
+      mIsFormSubmission(false),
       mLoadType(LOAD_NORMAL),
       mTarget(),
       mSrcdocData(VoidString()),
@@ -46,7 +47,9 @@ nsDocShellLoadState::nsDocShellLoadState(DocShellLoadStateInit& aLoadState) {
   mPrincipalIsExplicit = aLoadState.PrincipalIsExplicit();
   mForceAllowDataURI = aLoadState.ForceAllowDataURI();
   mOriginalFrameSrc = aLoadState.OriginalFrameSrc();
+  mIsFormSubmission = aLoadState.IsFormSubmission();
   mLoadType = aLoadState.LoadType();
+  mSrcdocData.SetIsVoid(true);
   mTarget = aLoadState.Target();
   mLoadFlags = aLoadState.LoadFlags();
   mFirstParty = aLoadState.FirstParty();
@@ -198,6 +201,12 @@ bool nsDocShellLoadState::OriginalFrameSrc() const { return mOriginalFrameSrc; }
 
 void nsDocShellLoadState::SetOriginalFrameSrc(bool aOriginalFrameSrc) {
   mOriginalFrameSrc = aOriginalFrameSrc;
+}
+
+bool nsDocShellLoadState::IsFormSubmission() const { return mIsFormSubmission; }
+
+void nsDocShellLoadState::SetIsFormSubmission(bool aIsFormSubmission) {
+  mIsFormSubmission = aIsFormSubmission;
 }
 
 uint32_t nsDocShellLoadState::LoadType() const { return mLoadType; }
@@ -388,7 +397,7 @@ nsresult nsDocShellLoadState::SetupTriggeringPrincipal(
     if (mReferrerInfo) {
       nsCOMPtr<nsIURI> referrer = mReferrerInfo->GetOriginalReferrer();
       mTriggeringPrincipal =
-          BasePrincipal::CreateCodebasePrincipal(referrer, aOriginAttributes);
+          BasePrincipal::CreateContentPrincipal(referrer, aOriginAttributes);
 
       if (!mTriggeringPrincipal) {
         return NS_ERROR_FAILURE;
@@ -451,6 +460,7 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize() {
   loadState.PrincipalIsExplicit() = mPrincipalIsExplicit;
   loadState.ForceAllowDataURI() = mForceAllowDataURI;
   loadState.OriginalFrameSrc() = mOriginalFrameSrc;
+  loadState.IsFormSubmission() = mIsFormSubmission;
   loadState.LoadType() = mLoadType;
   loadState.Target() = mTarget;
   loadState.LoadFlags() = mLoadFlags;

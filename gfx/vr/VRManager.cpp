@@ -7,6 +7,7 @@
 #include "VRManager.h"
 
 #include "VRManagerParent.h"
+#include "VRShMem.h"
 #include "VRThread.h"
 #include "gfxVR.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -14,12 +15,11 @@
 #include "mozilla/dom/GamepadEventTypes.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 
 #include "gfxVR.h"
-#include "gfxVRMutex.h"
 #include <cstring>
 
 #include "ipc/VRLayerParent.h"
@@ -33,14 +33,9 @@
 #  include <d3d11.h>
 #  include "gfxWindowsPlatform.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
-static const char* kShmemName = "moz.gecko.vr_ext.0.0.1";
 #elif defined(XP_MACOSX)
 #  include "mozilla/gfx/MacIOSurface.h"
-#  include <sys/mman.h>
-#  include <sys/stat.h> /* For mode constants */
-#  include <fcntl.h>    /* For O_* constants */
 #  include <errno.h>
-static const char* kShmemName = "/moz.gecko.vr_ext.0.0.1";
 #elif defined(MOZ_WIDGET_ANDROID)
 #  include <string.h>
 #  include <pthread.h>
@@ -52,18 +47,6 @@ using namespace mozilla;
 using namespace mozilla::gfx;
 using namespace mozilla::layers;
 using namespace mozilla::gl;
-
-#if !defined(MOZ_WIDGET_ANDROID)
-namespace {
-void YieldThread() {
-#  if defined(XP_WIN)
-  ::Sleep(0);
-#  else
-  ::sleep(0);
-#  endif
-}
-}  // anonymous namespace
-#endif  // !defined(MOZ_WIDGET_ANDROID)
 
 namespace mozilla {
 namespace gfx {
@@ -127,25 +110,19 @@ VRManager::VRManager()
       mVRDisplaysRequestedNonFocus(false),
       mVRControllersRequested(false),
       mFrameStarted(false),
-      mExternalShmem(nullptr),
       mTaskInterval(0),
       mCurrentSubmitTaskMonitor("CurrentSubmitTaskMonitor"),
       mCurrentSubmitTask(nullptr),
       mLastSubmittedFrameId(0),
       mLastStartedFrame(0),
       mEnumerationCompleted(false),
-#if defined(XP_MACOSX)
-      mShmemFD(0),
-#elif defined(XP_WIN)
-      mShmemFile(NULL),
-      mMutex(NULL),
-#endif
+      mAppPaused(false),
+      mShmem(nullptr),
       mHapticPulseRemaining{},
       mDisplayInfo{},
       mLastUpdateDisplayInfo{},
       mBrowserState{},
       mLastSensorState{} {
-  MOZ_COUNT_CTOR(VRManager);
   MOZ_ASSERT(sVRManagerSingleton == nullptr);
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -153,183 +130,71 @@ VRManager::VRManager()
   // XRE_IsGPUProcess() is helping us to check some platforms like
   // Win 7 try which are not using GPU process but VR process is enabled.
   mVRProcessEnabled =
-      StaticPrefs::dom_vr_process_enabled() && XRE_IsGPUProcess();
+      StaticPrefs::dom_vr_process_enabled_AtStartup() && XRE_IsGPUProcess();
   VRServiceHost::Init(mVRProcessEnabled);
   mServiceHost = VRServiceHost::Get();
   // We must shutdown before VRServiceHost, which is cleared
   // on ShutdownPhase::ShutdownFinal, potentially before VRManager.
   // We hold a reference to VRServiceHost to ensure it stays
   // alive until we have shut down.
+#else
+  // For Android, there is no VRProcess available and no VR service is
+  // created, so default to false.
+  mVRProcessEnabled = false;
 #endif  // !defined(MOZ_WIDGET_ANDROID)
+
+  nsCOMPtr<nsIObserverService> service = services::GetObserverService();
+  if (service) {
+    service->AddObserver(this, "application-background", false);
+    service->AddObserver(this, "application-foreground", false);
+  }
 }
 
 void VRManager::OpenShmem() {
-  if (mExternalShmem) {
-    mExternalShmem->Clear();
-    return;
-  }
-#if defined(XP_WIN)
-  if (mMutex == NULL) {
-    mMutex = CreateMutex(NULL,   // default security descriptor
-                         false,  // mutex not owned
-                         TEXT("mozilla::vr::ShmemMutex"));  // object name
-    if (mMutex == NULL) {
-      nsAutoCString msg;
-      msg.AppendPrintf("VRManager CreateMutex error \"%lu\".", GetLastError());
-      NS_WARNING(msg.get());
-      MOZ_ASSERT(false);
-      return;
-    }
-    // At xpcshell extension tests, it creates multiple VRManager
-    // instances in plug-contrainer.exe. It causes GetLastError() return
-    // `ERROR_ALREADY_EXISTS`. However, even though `ERROR_ALREADY_EXISTS`, it
-    // still returns the same mutex handle.
-    //
-    // https://docs.microsoft.com/en-us/windows/desktop/api/synchapi/nf-synchapi-createmutexa
-    MOZ_ASSERT(GetLastError() == 0 || GetLastError() == ERROR_ALREADY_EXISTS);
-  }
-#endif  // XP_WIN
+  if (mShmem == nullptr) {
+    mShmem = new VRShMem(nullptr, true /*aRequiresMutex*/);
+
 #if !defined(MOZ_WIDGET_ANDROID)
-  // The VR Service accesses all hardware from a separate process
-  // and replaces the other VRManager when enabled.
-  // If the VR process is not enabled, create an in-process VRService.
-  if (!mVRProcessEnabled) {
-    // If the VR process is disabled, attempt to create a
-    // VR service within the current process
-    mExternalShmem = new VRExternalShmem();
-    // VRExternalShmem is asserted to be POD
-    mExternalShmem->Clear();
-    mServiceHost->CreateService(mExternalShmem);
-    return;
-  }
-#endif
-
-#if defined(XP_MACOSX)
-  if (mShmemFD == 0) {
-    mShmemFD =
-        shm_open(kShmemName, O_RDWR, S_IRUSR | S_IWUSR | S_IROTH | S_IWOTH);
-  }
-  if (mShmemFD <= 0) {
-    mShmemFD = 0;
-    return;
-  }
-
-  struct stat sb;
-  fstat(mShmemFD, &sb);
-  off_t length = sb.st_size;
-  if (length < (off_t)sizeof(VRExternalShmem)) {
-    // TODO - Implement logging (Bug 1558912)
-    CloseShmem();
-    return;
-  }
-
-  mExternalShmem = (VRExternalShmem*)mmap(NULL, length, PROT_READ | PROT_WRITE,
-                                          MAP_SHARED, mShmemFD, 0);
-  if (mExternalShmem == MAP_FAILED) {
-    // TODO - Implement logging (Bug 1558912)
-    mExternalShmem = NULL;
-    CloseShmem();
-    return;
-  }
-
-#elif defined(XP_WIN)
-  if (mShmemFile == NULL) {
-    mShmemFile = CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                                    0, sizeof(VRExternalShmem), kShmemName);
-    MOZ_ASSERT(GetLastError() == 0 || GetLastError() == ERROR_ALREADY_EXISTS);
-    MOZ_ASSERT(mShmemFile);
-    if (mShmemFile == NULL) {
-      // TODO - Implement logging (Bug 1558912)
-      CloseShmem();
+    mShmem->CreateShMem(mVRProcessEnabled /*aCreateOnSharedMemory*/);
+    // The VR Service accesses all hardware from a separate process
+    // and replaces the other VRManager when enabled.
+    // If the VR process is not enabled, create an in-process VRService.
+    if (!mVRProcessEnabled) {
+      // If the VR process is disabled, attempt to create a
+      // VR service within the current process
+      mServiceHost->CreateService(mShmem->GetExternalShmem());
       return;
     }
-  }
-  LARGE_INTEGER length;
-  length.QuadPart = sizeof(VRExternalShmem);
-  mExternalShmem = (VRExternalShmem*)MapViewOfFile(
-      mShmemFile,           // handle to map object
-      FILE_MAP_ALL_ACCESS,  // read/write permission
-      0, 0, length.QuadPart);
-
-  if (mExternalShmem == NULL) {
-    // TODO - Implement logging (Bug 1558912)
-    CloseShmem();
-    return;
-  }
-#elif defined(MOZ_WIDGET_ANDROID)
-  mExternalShmem =
-      (VRExternalShmem*)mozilla::GeckoVRManager::GetExternalContext();
-  if (!mExternalShmem) {
-    return;
-  }
-  int32_t version = -1;
-  int32_t size = 0;
-  if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->systemMutex)) ==
-      0) {
-    version = mExternalShmem->version;
-    size = mExternalShmem->size;
-    pthread_mutex_unlock((pthread_mutex_t*)&(mExternalShmem->systemMutex));
-  } else {
-    return;
-  }
-  if (version != kVRExternalVersion) {
-    mExternalShmem = nullptr;
-    return;
-  }
-  if (size != sizeof(VRExternalShmem)) {
-    mExternalShmem = nullptr;
-    return;
-  }
+#else
+    mShmem->CreateShMemForAndroid();
 #endif
+  } else {
+    mShmem->ClearShMem();
+  }
 }
 
 void VRManager::CloseShmem() {
-#if !defined(MOZ_WIDGET_ANDROID)
-  if (!mVRProcessEnabled) {
-    if (mExternalShmem) {
-      delete mExternalShmem;
-      mExternalShmem = nullptr;
-    }
-    return;
+  if (mShmem != nullptr) {
+    mShmem->CloseShMem();
+    delete mShmem;
+    mShmem = nullptr;
   }
-#endif
-#if defined(XP_MACOSX)
-  if (mExternalShmem) {
-    munmap((void*)mExternalShmem, sizeof(VRExternalShmem));
-    mExternalShmem = NULL;
-  }
-  if (mShmemFD) {
-    close(mShmemFD);
-    mShmemFD = 0;
-  }
-#elif defined(XP_WIN)
-  if (mExternalShmem) {
-    UnmapViewOfFile((void*)mExternalShmem);
-    mExternalShmem = NULL;
-  }
-  if (mShmemFile) {
-    CloseHandle(mShmemFile);
-    mShmemFile = NULL;
-  }
-#elif defined(MOZ_WIDGET_ANDROID)
-  mExternalShmem = NULL;
-#endif
 }
 
 VRManager::~VRManager() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mState == VRManagerState::Disabled);
+
+  nsCOMPtr<nsIObserverService> service = services::GetObserverService();
+  if (service) {
+    service->RemoveObserver(this, "application-background");
+    service->RemoveObserver(this, "application-foreground");
+  }
+
 #if !defined(MOZ_WIDGET_ANDROID)
   mServiceHost->Shutdown();
 #endif
   CloseShmem();
-#if defined(XP_WIN)
-  if (mMutex) {
-    CloseHandle(mMutex);
-    mMutex = NULL;
-  }
-#endif
-  MOZ_COUNT_DTOR(VRManager);
 }
 
 void VRManager::AddLayer(VRLayerParent* aLayer) {
@@ -437,6 +302,12 @@ void VRManager::TaskTimerCallback(nsITimer* aTimer, void* aClosure) {
    */
   VRManager* self = static_cast<VRManager*>(aClosure);
   self->RunTasks();
+
+  if (self->mAppPaused) {
+    // When the apps goes the background (e.g. Android) we should stop the
+    // tasks.
+    self->StopTasks();
+  }
 }
 
 void VRManager::RunTasks() {
@@ -683,22 +554,32 @@ void VRManager::EnumerateVRDisplays() {
 #if !defined(MOZ_WIDGET_ANDROID)
     mServiceHost->StartService();
 #endif
-    if (mExternalShmem) {
+    if (mShmem) {
       mDisplayInfo.Clear();
       mLastUpdateDisplayInfo.Clear();
       mFrameStarted = false;
       mBrowserState.Clear();
       mLastSensorState.Clear();
+      mEnumerationCompleted = false;
       mDisplayInfo.mGroupMask = kVRGroupContent;
       // We must block until enumeration has completed in order
       // to signal that the WebVR promise should be resolved at the
       // right time.
+#if defined(MOZ_WIDGET_ANDROID)
+      // In Android, we need to make sure calling
+      // GeckoVRManager::SetExternalContext() from an external VR service
+      // before doing enumeration.
+      if (mShmem->GetExternalShmem()) {
+        mState = VRManagerState::Enumeration;
+      }
+#else
       mState = VRManagerState::Enumeration;
+#endif  // MOZ_WIDGET_ANDROID
     }
   }  // if (mState == VRManagerState::Idle)
 
   if (mState == VRManagerState::Enumeration) {
-    MOZ_ASSERT(mExternalShmem != nullptr);
+    MOZ_ASSERT(mShmem != nullptr);
 
     PullState();
     if (mEnumerationCompleted) {
@@ -898,7 +779,7 @@ void VRManager::StopVRNavigation(const uint32_t& aDisplayID,
 
 #if !defined(MOZ_WIDGET_ANDROID)
 
-bool VRManager::RunPuppet(const InfallibleTArray<uint64_t>& aBuffer,
+bool VRManager::RunPuppet(const nsTArray<uint64_t>& aBuffer,
                           VRManagerParent* aManagerParent) {
   if (!StaticPrefs::dom_vr_puppet_enabled()) {
     // Sanity check to ensure that a compromised content process
@@ -932,120 +813,19 @@ void VRManager::ResetPuppet(VRManagerParent* aManagerParent) {
 
 #endif  // !defined(MOZ_WIDGET_ANDROID)
 
-#if defined(MOZ_WIDGET_ANDROID)
 void VRManager::PullState(
     const std::function<bool()>& aWaitCondition /* = nullptr */) {
-  if (!mExternalShmem) {
-    return;
+  if (mShmem != nullptr) {
+    mShmem->PullSystemState(mDisplayInfo.mDisplayState, mLastSensorState,
+                            mDisplayInfo.mControllerState,
+                            mEnumerationCompleted, aWaitCondition);
   }
-  bool done = false;
-  while (!done) {
-    if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->systemMutex)) ==
-        0) {
-      while (true) {
-        memcpy(&mDisplayInfo.mDisplayState,
-               (void*)&(mExternalShmem->state.displayState),
-               sizeof(VRDisplayState));
-        memcpy(&mLastSensorState, (void*)&(mExternalShmem->state.sensorState),
-               sizeof(VRHMDSensorState));
-        memcpy(mDisplayInfo.mControllerState,
-               (void*)&(mExternalShmem->state.controllerState),
-               sizeof(VRControllerState) * kVRControllerMaxCount);
-        mEnumerationCompleted = mExternalShmem->state.enumerationCompleted;
-        if (!aWaitCondition || aWaitCondition()) {
-          done = true;
-          break;
-        }
-        // Block current thead using the condition variable until data
-        // changes
-        pthread_cond_wait((pthread_cond_t*)&mExternalShmem->systemCond,
-                          (pthread_mutex_t*)&mExternalShmem->systemMutex);
-      }  // while (true)
-      pthread_mutex_unlock((pthread_mutex_t*)&(mExternalShmem->systemMutex));
-    } else if (!aWaitCondition) {
-      // pthread_mutex_lock failed and we are not waiting for a condition to
-      // exit from PullState call.
-      return;
-    }
-  }  // while (!done) {
 }
-#else
-
-void VRManager::PullState(
-    const std::function<bool()>& aWaitCondition /* = nullptr */) {
-  MOZ_ASSERT(mExternalShmem);
-  if (!mExternalShmem) {
-    return;
-  }
-  while (true) {
-    {  // Scope for WaitForMutex
-#  if defined(XP_WIN)
-      bool status = true;
-      WaitForMutex lock(mMutex);
-      status = lock.GetStatus();
-      if (status) {
-#  endif  // defined(XP_WIN)
-        VRExternalShmem tmp;
-        memcpy(&tmp, (void*)mExternalShmem, sizeof(VRExternalShmem));
-        bool isCleanCopy =
-            tmp.generationA == tmp.generationB && tmp.generationA != 0;
-        if (isCleanCopy) {
-          memcpy(&mDisplayInfo.mDisplayState, &tmp.state.displayState,
-                 sizeof(VRDisplayState));
-          memcpy(&mLastSensorState, &tmp.state.sensorState,
-                 sizeof(VRHMDSensorState));
-          memcpy(mDisplayInfo.mControllerState,
-                 (void*)&(mExternalShmem->state.controllerState),
-                 sizeof(VRControllerState) * kVRControllerMaxCount);
-          mEnumerationCompleted = mExternalShmem->state.enumerationCompleted;
-          // Check for wait condition
-          if (!aWaitCondition || aWaitCondition()) {
-            return;
-          }
-        }  // if (isCleanCopy)
-        // Yield the thread while polling
-        YieldThread();
-#  if defined(XP_WIN)
-      } else if (!aWaitCondition) {
-        // WaitForMutex failed and we are not waiting for a condition to
-        // exit from PullState call.
-        return;
-      }
-#  endif  // defined(XP_WIN)
-    }  // End: Scope for WaitForMutex
-    // Yield the thread while polling
-    YieldThread();
-  }  // while (!true)
-}
-#endif    // defined(MOZ_WIDGET_ANDROID)
 
 void VRManager::PushState(bool aNotifyCond) {
-  if (!mExternalShmem) {
-    return;
+  if (mShmem != nullptr) {
+    mShmem->PushBrowserState(mBrowserState, aNotifyCond);
   }
-#if defined(MOZ_WIDGET_ANDROID)
-  if (pthread_mutex_lock((pthread_mutex_t*)&(mExternalShmem->geckoMutex)) ==
-      0) {
-    memcpy((void*)&(mExternalShmem->geckoState), (void*)&mBrowserState,
-           sizeof(VRBrowserState));
-    if (aNotifyCond) {
-      pthread_cond_signal((pthread_cond_t*)&(mExternalShmem->geckoCond));
-    }
-    pthread_mutex_unlock((pthread_mutex_t*)&(mExternalShmem->geckoMutex));
-  }
-#else
-  bool status = true;
-#  if defined(XP_WIN)
-  WaitForMutex lock(mMutex);
-  status = lock.GetStatus();
-#  endif  // defined(XP_WIN)
-  if (status) {
-    mExternalShmem->geckoGenerationA++;
-    memcpy((void*)&(mExternalShmem->geckoState), (void*)&mBrowserState,
-           sizeof(VRBrowserState));
-    mExternalShmem->geckoGenerationB++;
-  }
-#endif    // defined(MOZ_WIDGET_ANDROID)
 }
 
 void VRManager::Destroy() {
@@ -1268,7 +1048,7 @@ void VRManager::StopPresentation() {
 }
 
 bool VRManager::IsPresenting() {
-  if (mExternalShmem) {
+  if (mShmem) {
     return mDisplayInfo.mPresentingGroups != 0;
   }
   return false;
@@ -1452,7 +1232,7 @@ void VRManager::SubmitFrameInternal(const layers::SurfaceDescriptor& aTexture,
     mCurrentSubmitTask = nullptr;
   }
 
-#if defined(XP_WIN) || defined(XP_MACOSX) || defined(MOZ_WIDGET_ANDROID)
+#if defined(XP_WIN) || defined(XP_MACOSX)
 
   /**
    * Trigger the next VSync immediately after we are successfully
@@ -1468,6 +1248,9 @@ void VRManager::SubmitFrameInternal(const layers::SurfaceDescriptor& aTexture,
 
   loop->PostTask(NewRunnableMethod("gfx::VRManager::StartFrame", this,
                                    &VRManager::StartFrame));
+#elif defined(MOZ_WIDGET_ANDROID)
+  // We are already in the CompositorThreadHolder event loop on Android.
+  StartFrame();
 #endif
 }
 
@@ -1478,6 +1261,28 @@ void VRManager::CancelCurrentSubmitTask() {
     mCurrentSubmitTask = nullptr;
   }
 }
+
+//-----------------------------------------------------------------------------
+// VRManager::nsIObserver
+//-----------------------------------------------------------------------------
+
+NS_IMETHODIMP
+VRManager::Observe(nsISupports* subject, const char* topic,
+                   const char16_t* data) {
+  if (!strcmp(topic, "application-background")) {
+    // StopTasks() is called later in the timer thread based on this flag to
+    // avoid threading issues.
+    mAppPaused = true;
+  } else if (!strcmp(topic, "application-foreground") && mAppPaused) {
+    mAppPaused = false;
+    // When the apps goes the foreground (e.g. Android) we should restart the
+    // tasks.
+    StartTasks();
+  }
+  return NS_OK;
+}
+
+NS_IMPL_ISUPPORTS(VRManager, nsIObserver)
 
 }  // namespace gfx
 }  // namespace mozilla

@@ -16,10 +16,7 @@ add_task(async function testBackgroundTabs() {
   );
 
   await SpecialPowers.pushPrefEnv({
-    set: [
-      [ContentBlocking.prefIntroCount, ContentBlocking.MAX_INTROS],
-      [TP_PREF, true],
-    ],
+    set: [[TP_PREF, true]],
   });
   await UrlClassifierTestUtils.addTestTrackers();
 
@@ -49,7 +46,10 @@ add_task(async function testBackgroundTabs() {
     "Foreground tab has the correct content blocking event."
   );
 
-  ok(!ContentBlocking.iconBox.hasAttribute("active"), "shield is not active");
+  ok(
+    !gProtectionsHandler.iconBox.hasAttribute("active"),
+    "shield is not active"
+  );
 
   await BrowserTestUtils.switchTab(gBrowser, backgroundTab);
 
@@ -65,7 +65,7 @@ add_task(async function testBackgroundTabs() {
     "Foreground tab still has the correct content blocking event."
   );
 
-  ok(ContentBlocking.iconBox.hasAttribute("active"), "shield is active");
+  ok(gProtectionsHandler.iconBox.hasAttribute("active"), "shield is active");
 
   gBrowser.removeTab(backgroundTab);
   gBrowser.removeTab(tab);

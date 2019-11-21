@@ -131,10 +131,6 @@ static const char kGOOGLE_PIN_COMODORSADomainValidationSecureServerCAFingerprint
 static const char kGOOGLE_PIN_DigiCertECCSecureServerCAFingerprint[] =
   "PZXN3lRAy+8tBKk2Ox6F7jIlnzr2Yzmwqc3JnyfXoCw=";
 
-/* GOOGLE_PIN_DigiCertSHA2HighAssuranceServerCA */
-static const char kGOOGLE_PIN_DigiCertSHA2HighAssuranceServerCAFingerprint[] =
-  "k2v657xBsOVe1PQRwOsHsw3bsGT2VzIqz5K+59sNQws=";
-
 /* GOOGLE_PIN_Entrust_SSL */
 static const char kGOOGLE_PIN_Entrust_SSLFingerprint[] =
   "nsxRNo6G40YPZsKV5JQt1TCA8nseQQr/LRqp1Oa8fnw=";
@@ -182,6 +178,10 @@ static const char kGOOGLE_PIN_TrustedCertificateServicesFingerprint[] =
 /* GOOGLE_PIN_UTNDATACorpSGC */
 static const char kGOOGLE_PIN_UTNDATACorpSGCFingerprint[] =
   "QAL80xHQczFWfnG82XHkYEjI3OjRZZcRdTs9qiommvo=";
+
+/* GOOGLE_PIN_UTNUSERFirstClientAuthenticationandEmail */
+static const char kGOOGLE_PIN_UTNUSERFirstClientAuthenticationandEmailFingerprint[] =
+  "Laj56jRU0hFGRko/nQKNxMf7tXscUsc8KwVyovWZotM=";
 
 /* GOOGLE_PIN_UTNUSERFirstHardware */
 static const char kGOOGLE_PIN_UTNUSERFirstHardwareFingerprint[] =
@@ -311,10 +311,6 @@ static const char kTor2Fingerprint[] =
 static const char kTor3Fingerprint[] =
   "CleC1qwUR8JPgH1nXvSe2VHxDe5/KfNs96EusbfSOfo=";
 
-/* TumblrBackup */
-static const char kTumblrBackupFingerprint[] =
-  "avlD96PLERV78IN1fD+ab5cupkUDD9wTZWJjHX6VC9w=";
-
 /* Twitter1 */
 static const char kTwitter1Fingerprint[] =
   "vU9M48LzD/CF34wE5PPf4nBwRyosy06X21J0ap8yS5s=";
@@ -326,10 +322,6 @@ static const char kUSERTrust_ECC_Certification_AuthorityFingerprint[] =
 /* USERTrust RSA Certification Authority */
 static const char kUSERTrust_RSA_Certification_AuthorityFingerprint[] =
   "x4QzPSC810K5/cMjb05Qm4k3Bw5zBn4lTdO/nEW/Td4=";
-
-/* UTN USERFirst Email Root CA */
-static const char kUTN_USERFirst_Email_Root_CAFingerprint[] =
-  "Laj56jRU0hFGRko/nQKNxMf7tXscUsc8KwVyovWZotM=";
 
 /* VeriSign Class 3 Public Primary Certification Authority - G4 */
 static const char kVeriSign_Class_3_Public_Primary_Certification_Authority___G4Fingerprint[] =
@@ -534,7 +526,7 @@ static const char* const kPinset_twitterCDN_Data[] = {
   kVerisign_Class_1_Public_Primary_Certification_Authority___G3Fingerprint,
   kVeriSign_Class_3_Public_Primary_Certification_Authority___G5Fingerprint,
   kGlobalSign_Root_CAFingerprint,
-  kUTN_USERFirst_Email_Root_CAFingerprint,
+  kGOOGLE_PIN_UTNUSERFirstClientAuthenticationandEmailFingerprint,
   kGOOGLE_PIN_VeriSignClass1Fingerprint,
   kGOOGLE_PIN_AddTrustPublicCARootFingerprint,
   kGOOGLE_PIN_UTNDATACorpSGCFingerprint,
@@ -636,16 +628,6 @@ static const char* const kPinset_swehackCom_Data[] = {
 static const StaticFingerprints kPinset_swehackCom = {
   sizeof(kPinset_swehackCom_Data) / sizeof(const char*),
   kPinset_swehackCom_Data
-};
-
-static const char* const kPinset_tumblr_Data[] = {
-  kDigiCert_High_Assurance_EV_Root_CAFingerprint,
-  kTumblrBackupFingerprint,
-  kGOOGLE_PIN_DigiCertSHA2HighAssuranceServerCAFingerprint,
-};
-static const StaticFingerprints kPinset_tumblr = {
-  sizeof(kPinset_tumblr_Data) / sizeof(const char*),
-  kPinset_tumblr_Data
 };
 
 /* Domainlist */
@@ -1139,7 +1121,6 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "www.googlemail.com", false, false, false, -1, &kPinset_google_root_pems },
   { "www.messenger.com", true, false, false, -1, &kPinset_facebook },
   { "www.torproject.org", true, false, false, -1, &kPinset_tor },
-  { "www.tumblr.com", false, true, false, -1, &kPinset_tumblr },
   { "www.twitter.com", true, false, false, -1, &kPinset_twitterCom },
   { "xa.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
   { "xbrlsuccess.appspot.com", true, false, false, -1, &kPinset_google_root_pems },
@@ -1152,8 +1133,8 @@ static const TransportSecurityPreload kPublicKeyPinningPreloadList[] = {
   { "zh.search.yahoo.com", false, true, false, -1, &kPinset_yahoo },
 };
 
-// Pinning Preload List Length = 489;
+// Pinning Preload List Length = 488;
 
 static const int32_t kUnknownId = -1;
 
-static const PRTime kPreloadPKPinsExpirationTime = INT64_C(1575291762630000);
+static const PRTime kPreloadPKPinsExpirationTime = INT64_C(1579525626285000);

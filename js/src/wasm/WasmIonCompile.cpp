@@ -279,6 +279,14 @@ class FunctionCompiler {
     return constant;
   }
 
+  void fence() {
+    if (inDeadCode()) {
+      return;
+    }
+    MWasmFence* ins = MWasmFence::New(alloc());
+    curBlock_->add(ins);
+  }
+
   template <class T>
   MDefinition* unary(MDefinition* op) {
     if (inDeadCode()) {
@@ -567,11 +575,9 @@ class FunctionCompiler {
   }
 
   MWasmLoadTls* maybeLoadBoundsCheckLimit() {
-#ifdef WASM_HUGE_MEMORY
-    if (!env_.isAsmJS()) {
+    if (env_.hugeMemoryEnabled()) {
       return nullptr;
     }
-#endif
     AliasSet aliases = env_.maxMemoryLength.isSome()
                            ? AliasSet::None()
                            : AliasSet::Load(AliasSet::WasmHeapMeta);
@@ -608,6 +614,8 @@ class FunctionCompiler {
                                         MDefinition** base) {
     MOZ_ASSERT(!inDeadCode());
 
+    uint32_t offsetGuardLimit = GetOffsetGuardLimit(env_.hugeMemoryEnabled());
+
     // Fold a constant base into the offset (so the base is 0 in which case
     // the codegen is optimized), if it doesn't wrap or trigger an
     // MWasmAddOffset.
@@ -615,11 +623,7 @@ class FunctionCompiler {
       uint32_t basePtr = (*base)->toConstant()->toInt32();
       uint32_t offset = access->offset();
 
-      static_assert(
-          OffsetGuardLimit < UINT32_MAX,
-          "checking for overflow against OffsetGuardLimit is enough.");
-
-      if (offset < OffsetGuardLimit && basePtr < OffsetGuardLimit - offset) {
+      if (offset < offsetGuardLimit && basePtr < offsetGuardLimit - offset) {
         auto* ins = MConstant::New(alloc(), Int32Value(0), MIRType::Int32);
         curBlock_->add(ins);
         *base = ins;
@@ -635,7 +639,7 @@ class FunctionCompiler {
     //
     // Also add the offset if we have a Wasm atomic access that needs
     // alignment checking and the offset affects alignment.
-    if (access->offset() >= OffsetGuardLimit || mustAdd ||
+    if (access->offset() >= offsetGuardLimit || mustAdd ||
         !JitOptions.wasmFoldOffsets) {
       *base = computeEffectiveAddress(*base, access);
     }
@@ -2800,6 +2804,15 @@ static bool EmitWait(FunctionCompiler& f, ValType type, uint32_t byteSize) {
   return true;
 }
 
+static bool EmitFence(FunctionCompiler& f) {
+  if (!f.iter().readFence()) {
+    return false;
+  }
+
+  f.fence();
+  return true;
+}
+
 static bool EmitWake(FunctionCompiler& f) {
   uint32_t lineOrBytecode = f.readCallSiteLineOrBytecode();
 
@@ -3295,6 +3308,47 @@ static bool EmitTableSize(FunctionCompiler& f) {
 #endif  // ENABLE_WASM_REFTYPES
 
 #ifdef ENABLE_WASM_REFTYPES
+static bool EmitRefFunc(FunctionCompiler& f) {
+  uint32_t funcIndex;
+  if (!f.iter().readRefFunc(&funcIndex)) {
+    return false;
+  }
+
+  if (f.inDeadCode()) {
+    return true;
+  }
+
+  uint32_t lineOrBytecode = f.readCallSiteLineOrBytecode();
+
+  const SymbolicAddressSignature& callee = SASigFuncRef;
+  CallCompileState args;
+  if (!f.passInstance(callee.argTypes[0], &args)) {
+    return false;
+  }
+
+  MDefinition* funcIndexArg = f.constant(Int32Value(funcIndex), MIRType::Int32);
+  if (!funcIndexArg) {
+    return false;
+  }
+  if (!f.passArg(funcIndexArg, callee.argTypes[1], &args)) {
+    return false;
+  }
+
+  if (!f.finishCall(&args)) {
+    return false;
+  }
+
+  // The return value here is either null, denoting an error, or a short-lived
+  // pointer to a location containing a possibly-null ref.
+  MDefinition* ret;
+  if (!f.builtinInstanceMethodCall(callee, lineOrBytecode, args, &ret)) {
+    return false;
+  }
+
+  f.iter().setResult(ret);
+  return true;
+}
+
 static bool EmitRefNull(FunctionCompiler& f) {
   if (!f.iter().readRefNull()) {
     return false;
@@ -3771,6 +3825,8 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
                              MCompare::Compare_RefOrNull));
 #endif
 #ifdef ENABLE_WASM_REFTYPES
+      case uint16_t(Op::RefFunc):
+        CHECK(EmitRefFunc(f));
       case uint16_t(Op::RefNull):
         CHECK(EmitRefNull(f));
       case uint16_t(Op::RefIsNull):
@@ -3854,6 +3910,8 @@ static bool EmitBodyExprs(FunctionCompiler& f) {
             CHECK(EmitWait(f, ValType::I32, 4));
           case uint32_t(ThreadOp::I64Wait):
             CHECK(EmitWait(f, ValType::I64, 8));
+          case uint32_t(ThreadOp::Fence):
+            CHECK(EmitFence(f));
 
           case uint32_t(ThreadOp::I32AtomicLoad):
             CHECK(EmitAtomicLoad(f, ValType::I32, Scalar::Int32));
@@ -4153,7 +4211,8 @@ bool wasm::IonCompileFunctions(const ModuleEnvironment& env, LifoAlloc& lifo,
     if (!locals.appendAll(argTys)) {
       return false;
     }
-    if (!DecodeLocalEntries(d, env.types, env.gcTypesEnabled(), &locals)) {
+    if (!DecodeLocalEntries(d, env.types, env.refTypesEnabled(),
+                            env.gcTypesEnabled(), &locals)) {
       return false;
     }
 

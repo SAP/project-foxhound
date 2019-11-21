@@ -297,7 +297,7 @@ static void CollectOrphans(nsINode* aRemovalRoot,
 #endif
     if (node->HasFlag(MAYBE_ORPHAN_FORM_ELEMENT)) {
       node->UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
-      if (!nsContentUtils::ContentIsDescendantOf(node, aRemovalRoot)) {
+      if (!node->IsInclusiveDescendantOf(aRemovalRoot)) {
         node->ClearForm(true, false);
 
         // When a form control loses its form owner, its state can change.
@@ -338,7 +338,7 @@ static void CollectOrphans(nsINode* aRemovalRoot,
 #endif
     if (node->HasFlag(MAYBE_ORPHAN_FORM_ELEMENT)) {
       node->UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
-      if (!nsContentUtils::ContentIsDescendantOf(node, aRemovalRoot)) {
+      if (!node->IsInclusiveDescendantOf(aRemovalRoot)) {
         node->ClearForm(true);
 
 #ifdef DEBUG
@@ -634,9 +634,8 @@ nsresult HTMLFormElement::SubmitSubmission(
 
   // If there is no link handler, then we won't actually be able to submit.
   Document* doc = GetComposedDoc();
-  nsCOMPtr<nsISupports> container = doc ? doc->GetContainer() : nullptr;
-  nsCOMPtr<nsILinkHandler> linkHandler(do_QueryInterface(container));
-  if (!linkHandler || IsEditable()) {
+  nsCOMPtr<nsIDocShell> container = doc ? doc->GetDocShell() : nullptr;
+  if (!container || IsEditable()) {
     mIsSubmitting = false;
     return NS_OK;
   }
@@ -652,9 +651,8 @@ nsresult HTMLFormElement::SubmitSubmission(
   // STATE_STOP.  As a result, we have to make sure that we simply pretend
   // we're not submitting when submitting to a JS URL.  That's kinda bogus, but
   // there we are.
-  bool schemeIsJavaScript = false;
-  if (NS_SUCCEEDED(actionURI->SchemeIs("javascript", &schemeIsJavaScript)) &&
-      schemeIsJavaScript) {
+  bool schemeIsJavaScript = actionURI->SchemeIs("javascript");
+  if (schemeIsJavaScript) {
     mIsSubmitting = false;
   }
 
@@ -701,7 +699,7 @@ nsresult HTMLFormElement::SubmitSubmission(
 
     nsAutoString target;
     aFormSubmission->GetTarget(target);
-    rv = linkHandler->OnLinkClickSync(
+    rv = nsDocShell::Cast(container)->OnLinkClickSync(
         this, actionURI, target, VoidString(), postDataStream, nullptr, false,
         getter_AddRefs(docShell), getter_AddRefs(mSubmittingRequest),
         aFormSubmission->IsInitiatedFromUserInput());
@@ -740,7 +738,7 @@ nsresult HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
   // Only ask the user about posting from a secure URI to an insecure URI if
   // this element is in the root document. When this is not the case, the mixed
   // content blocker will take care of security for us.
-  Document* parent = OwnerDoc()->GetParentDocument();
+  Document* parent = OwnerDoc()->GetInProcessParentDocument();
   bool isRootDocument = (!parent || nsContentUtils::IsChromeDoc(parent));
   if (!isRootDocument) {
     return NS_OK;
@@ -759,12 +757,7 @@ nsresult HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
   if (!principalURI) {
     principalURI = OwnerDoc()->GetDocumentURI();
   }
-  bool formIsHTTPS;
-  rv = principalURI->SchemeIs("https", &formIsHTTPS);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
+  bool formIsHTTPS = principalURI->SchemeIs("https");
   if (!formIsHTTPS) {
     return NS_OK;
   }
@@ -1486,7 +1479,7 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
 
     actionURL = docURI;
   } else {
-    nsCOMPtr<nsIURI> baseURL = GetBaseURI();
+    nsIURI* baseURL = GetBaseURI();
     NS_ASSERTION(baseURL, "No Base URL found in Form Submit!\n");
     if (!baseURL) {
       return NS_OK;  // No base URL -> exit early, see Bug 30721
@@ -1509,9 +1502,7 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
   // Potentially the page uses the CSP directive 'upgrade-insecure-requests'. In
   // such a case we have to upgrade the action url from http:// to https://.
   // If the actionURL is not http, then there is nothing to do.
-  bool isHttpScheme = false;
-  rv = actionURL->SchemeIs("http", &isHttpScheme);
-  NS_ENSURE_SUCCESS(rv, rv);
+  bool isHttpScheme = actionURL->SchemeIs("http");
   if (isHttpScheme && document->GetUpgradeInsecureRequests(false)) {
     // let's use the old specification before the upgrade for logging
     AutoTArray<nsString, 2> params;

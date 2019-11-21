@@ -22,7 +22,9 @@
 #include <setjmp.h>
 
 #include "builtin/AtomicsObject.h"
-#include "builtin/intl/SharedIntlData.h"
+#ifdef ENABLE_INTL_API
+#  include "builtin/intl/SharedIntlData.h"
+#endif
 #include "builtin/Promise.h"
 #include "frontend/BinASTRuntimeSupport.h"
 #include "frontend/NameCollections.h"
@@ -216,9 +218,26 @@ using ScriptAndCountsVector = GCVector<ScriptAndCounts, 0, SystemAllocPolicy>;
 
 class AutoLockScriptData;
 
+// Self-hosted lazy functions do not maintain a LazyScript as we can compile
+// from the copy in the self-hosting zone. To allow these functions to be
+// called by the JITs, we need a minimal script object. There is one instance
+// per runtime.
+struct SelfHostedLazyScript {
+  SelfHostedLazyScript() = default;
+
+  // Pointer to interpreter trampoline. This field is stored at same location
+  // as in JSScript, allowing the JIT to directly call LazyScripts in the same
+  // way as JSScripts.
+  uint8_t* jitCodeRaw_ = nullptr;
+
+  static constexpr size_t offsetOfJitCodeRaw() {
+    return offsetof(SelfHostedLazyScript, jitCodeRaw_);
+  }
+};
+
 }  // namespace js
 
-struct JSRuntime : public js::MallocProvider<JSRuntime> {
+struct JSRuntime {
  private:
   friend class js::Activation;
   friend class js::ActivationIterator;
@@ -384,6 +403,11 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
   /* Optional warning reporter. */
   js::MainThreadData<JS::WarningReporter> warningReporter;
 
+  // Lazy self-hosted functions use a shared SelfHostedLazyScript instead
+  // instead of a LazyScript. This contains the minimal trampolines for the
+  // scripts to perform direct calls.
+  js::UnprotectedData<js::SelfHostedLazyScript> selfHostedLazyScript;
+
  private:
   /* Gecko profiling metadata */
   js::UnprotectedData<js::GeckoProfilerRuntime> geckoProfiler_;
@@ -417,13 +441,11 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
   js::MainThreadData<js::CTypesActivityCallback> ctypesActivityCallback;
 
  private:
-  js::WriteOnceData<const js::Class*> windowProxyClass_;
+  js::WriteOnceData<const JSClass*> windowProxyClass_;
 
  public:
-  const js::Class* maybeWindowProxyClass() const { return windowProxyClass_; }
-  void setWindowProxyClass(const js::Class* clasp) {
-    windowProxyClass_ = clasp;
-  }
+  const JSClass* maybeWindowProxyClass() const { return windowProxyClass_; }
+  void setWindowProxyClass(const JSClass* clasp) { windowProxyClass_ = clasp; }
 
  private:
   // List of non-ephemeron weak containers to sweep during
@@ -505,7 +527,7 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
 #ifdef DEBUG
   bool currentThreadHasScriptDataAccess() const {
     if (!hasHelperThreadZones()) {
-      return CurrentThreadCanAccessRuntime(this) &&
+      return js::CurrentThreadCanAccessRuntime(this) &&
              activeThreadHasScriptDataAccess;
     }
 
@@ -513,7 +535,7 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
   }
 
   bool currentThreadHasAtomsTableAccess() const {
-    return CurrentThreadCanAccessRuntime(this) &&
+    return js::CurrentThreadCanAccessRuntime(this) &&
            atoms_->mainThreadHasAllLocks();
   }
 #endif
@@ -668,15 +690,15 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
   js::WriteOnceData<js::PropertyName*> emptyString;
 
  private:
-  js::MainThreadData<js::FreeOp*> defaultFreeOp_;
+  js::MainThreadData<JSFreeOp*> defaultFreeOp_;
 
  public:
-  js::FreeOp* defaultFreeOp() {
+  JSFreeOp* defaultFreeOp() {
     MOZ_ASSERT(defaultFreeOp_);
     return defaultFreeOp_;
   }
 
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
   /* Number localization, used by jsnum.cpp. */
   js::WriteOnceData<const char*> thousandsSeparator;
   js::WriteOnceData<const char*> decimalSeparator;
@@ -796,25 +818,24 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
   // these are shared with the parentRuntime, if any.
   js::WriteOnceData<js::WellKnownSymbols*> wellKnownSymbols;
 
+#ifdef ENABLE_INTL_API
   /* Shared Intl data for this runtime. */
   js::MainThreadData<js::intl::SharedIntlData> sharedIntlData;
 
   void traceSharedIntlData(JSTracer* trc);
+#endif
 
   // Table of bytecode and other data that may be shared across scripts
   // within the runtime. This may be modified by threads using
   // AutoLockScriptData.
  private:
-  js::ScriptDataLockData<js::ScriptDataTable> scriptDataTable_;
+  js::ScriptDataLockData<js::RuntimeScriptDataTable> scriptDataTable_;
 
  public:
-  js::ScriptDataTable& scriptDataTable(const js::AutoLockScriptData& lock) {
+  js::RuntimeScriptDataTable& scriptDataTable(
+      const js::AutoLockScriptData& lock) {
     return scriptDataTable_.ref();
   }
-
-  js::WriteOnceData<bool> jitSupportsFloatingPoint;
-  js::WriteOnceData<bool> jitSupportsUnalignedAccesses;
-  js::WriteOnceData<bool> jitSupportsSimd;
 
  private:
   static mozilla::Atomic<size_t> liveRuntimesCount;
@@ -834,16 +855,6 @@ struct JSRuntime : public js::MallocProvider<JSRuntime> {
   JSRuntime* thisFromCtor() { return this; }
 
  public:
-  /*
-   * Call this after allocating memory held by GC things, to update memory
-   * pressure counters or report the OOM error if necessary. If oomError and
-   * cx is not null the function also reports OOM error.
-   *
-   * The function must be called outside the GC lock and in case of OOM error
-   * the caller must ensure that no deadlock possible during OOM reporting.
-   */
-  void updateMallocCounter(size_t nbytes);
-
   void reportAllocationOverflow() { js::ReportAllocationOverflow(nullptr); }
 
   /*

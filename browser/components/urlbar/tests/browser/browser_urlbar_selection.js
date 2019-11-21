@@ -147,12 +147,7 @@ add_task(async function rightClickSelectsAll() {
     "The entire URL should be selected."
   );
 
-  let textBox = document.getAnonymousElementByAttribute(
-    gURLBar.textbox,
-    "anonid",
-    "moz-input-box"
-  );
-  let contextMenu = textBox.menupopup;
+  let contextMenu = gURLBar.querySelector("moz-input-box").menupopup;
 
   // While the context menu is open, test the "Select All" button.
   let contextMenuItem = contextMenu.firstElementChild;
@@ -187,7 +182,7 @@ add_task(async function rightClickSelectsAll() {
     "The entire URL should be selected after clicking selectAll button."
   );
 
-  contextMenu.hidePopup();
+  gURLBar.querySelector("moz-input-box").menupopup.hidePopup();
   gURLBar.blur();
   await SpecialPowers.popPrefEnv();
 });
@@ -212,13 +207,7 @@ add_task(async function contextMenuDoesNotCancelSelection() {
     "The selection should not have changed."
   );
 
-  let textBox = document.getAnonymousElementByAttribute(
-    gURLBar.textbox,
-    "anonid",
-    "moz-input-box"
-  );
-  textBox.menupopup.hidePopup();
-
+  gURLBar.querySelector("moz-input-box").menupopup.hidePopup();
   gURLBar.blur();
 });
 

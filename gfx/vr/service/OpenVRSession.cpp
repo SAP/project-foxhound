@@ -10,7 +10,7 @@
 #include "nsString.h"
 
 #include "OpenVRSession.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 #if defined(XP_WIN)
 #  include <d3d11.h>
@@ -252,7 +252,8 @@ OpenVRSession::~OpenVRSession() {
 }
 
 bool OpenVRSession::Initialize(mozilla::gfx::VRSystemState& aSystemState) {
-  if (!StaticPrefs::dom_vr_enabled() || !StaticPrefs::dom_vr_openvr_enabled()) {
+  if (!StaticPrefs::dom_vr_enabled() ||
+      !StaticPrefs::dom_vr_openvr_enabled_AtStartup()) {
     return false;
   }
   if (mVRSystem != nullptr) {
@@ -308,12 +309,10 @@ bool OpenVRSession::Initialize(mozilla::gfx::VRSystemState& aSystemState) {
     return false;
   }
 
-  if (StaticPrefs::dom_vr_openvr_action_input() && !SetupContollerActions()) {
+  if (StaticPrefs::dom_vr_openvr_action_input_AtStartup() &&
+      !SetupContollerActions()) {
     return false;
   }
-
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      "OpenVRSession::StartHapticThread", [this]() { StartHapticThread(); }));
 
   // Succeeded
   return true;
@@ -334,7 +333,7 @@ bool OpenVRSession::SetupContollerActions() {
   nsCString cosmosManifest;
 
   // Getting / Generating manifest file paths.
-  if (StaticPrefs::dom_vr_process_enabled()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     VRParent* vrParent = VRProcessChild::GetVRParent();
     nsCString output;
 
@@ -390,8 +389,8 @@ bool OpenVRSession::SetupContollerActions() {
         knucklesBindingFile.close();
       }
     }
-    if (vrParent->GetOpenVRControllerManifestPath(
-            OpenVRControllerType::Cosmos, &output)) {
+    if (vrParent->GetOpenVRControllerManifestPath(OpenVRControllerType::Cosmos,
+                                                  &output)) {
       cosmosManifest = output;
     }
     if (!cosmosManifest.Length() || !FileIsExisting(cosmosManifest)) {
@@ -822,7 +821,8 @@ bool OpenVRSession::SetupContollerActions() {
     }
   }
 
-  vr::EVRInputError err = vr::VRInput()->SetActionManifestPath(controllerAction.BeginReading());
+  vr::EVRInputError err =
+      vr::VRInput()->SetActionManifestPath(controllerAction.BeginReading());
   if (err != vr::VRInputError_None) {
     NS_WARNING("OpenVR - SetActionManifestPath failed.");
     return false;
@@ -830,7 +830,7 @@ bool OpenVRSession::SetupContollerActions() {
   // End of setup controller actions.
 
   // Notify the parent process these manifest files are already been recorded.
-  if (StaticPrefs::dom_vr_process_enabled()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     NS_DispatchToMainThread(NS_NewRunnableFunction(
         "SendOpenVRControllerActionPathToParent",
         [controllerAction, viveManifest, WMRManifest, knucklesManifest,
@@ -891,7 +891,9 @@ bool OpenVRSession::InitState(VRSystemState& aSystemState) {
       (int)VRDisplayCapabilityFlags::Cap_Position |
       (int)VRDisplayCapabilityFlags::Cap_External |
       (int)VRDisplayCapabilityFlags::Cap_Present |
-      (int)VRDisplayCapabilityFlags::Cap_StageParameters);
+      (int)VRDisplayCapabilityFlags::Cap_StageParameters |
+      (int)VRDisplayCapabilityFlags::Cap_ImmersiveVR);
+  state.blendMode = VRDisplayBlendMode::Opaque;
   state.reportsDroppedFrames = true;
 
   ::vr::ETrackedPropertyError err;
@@ -1200,8 +1202,9 @@ void OpenVRSession::EnumerateControllers(VRSystemState& aState) {
             mControllerHand[handIndex]
                 .mActionFingerPinky_Value.name.BeginReading(),
             &mControllerHand[handIndex].mActionFingerPinky_Value.handle);
-         vr::VRInput()->GetActionHandle(
-            mControllerHand[handIndex].mActionBumper_Pressed.name.BeginReading(),
+        vr::VRInput()->GetActionHandle(
+            mControllerHand[handIndex]
+                .mActionBumper_Pressed.name.BeginReading(),
             &mControllerHand[handIndex].mActionBumper_Pressed.handle);
 
         nsCString deviceId;
@@ -1648,8 +1651,8 @@ void OpenVRSession::UpdateControllerButtons(VRSystemState& aState) {
     // Button 7: Bumper (Cosmos only)
     if (mControllerHand[stateIndex].mActionBumper_Pressed.handle &&
         vr::VRInput()->GetDigitalActionData(
-            mControllerHand[stateIndex].mActionBumper_Pressed.handle, &actionData,
-            sizeof(actionData),
+            mControllerHand[stateIndex].mActionBumper_Pressed.handle,
+            &actionData, sizeof(actionData),
             vr::k_ulInvalidInputValueHandle) == vr::VRInputError_None &&
         actionData.bActive) {
       bPressed = actionData.bState;
@@ -2025,7 +2028,7 @@ void OpenVRSession::StartFrame(mozilla::gfx::VRSystemState& aSystemState) {
   UpdateHeadsetPose(aSystemState);
   UpdateEyeParameters(aSystemState);
 
-  if (StaticPrefs::dom_vr_openvr_action_input()) {
+  if (StaticPrefs::dom_vr_openvr_action_input_AtStartup()) {
     EnumerateControllers(aSystemState);
 
     vr::VRActiveActionSet_t actionSet = {0};
@@ -2120,8 +2123,8 @@ bool OpenVRSession::SubmitFrame(const VRLayerTextureHandle& aTextureHandle,
     return false;
   }
 
-  const void* ioSurface = surf->GetIOSurfacePtr();
-  tex.handle = (void*)ioSurface;
+  CFTypeRefPtr<IOSurfaceRef> ioSurface = surf->GetIOSurfaceRef();
+  tex.handle = (void*)ioSurface.get();
 #else
   tex.handle = aTextureHandle;
 #endif
@@ -2168,6 +2171,13 @@ void OpenVRSession::VibrateHaptic(uint32_t aControllerIdx,
                                   uint32_t aHapticIndex, float aIntensity,
                                   float aDuration) {
   MutexAutoLock lock(mControllerHapticStateMutex);
+
+  // Initilize the haptic thread when the first time to do vibration.
+  if (!mHapticThread) {
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "OpenVRSession::StartHapticThread", [this]() { StartHapticThread(); }));
+  }
+
   if (aHapticIndex >= kNumOpenVRHaptics ||
       aControllerIdx >= kVRControllerMaxCount) {
     return;
@@ -2237,7 +2247,7 @@ void OpenVRSession::HapticTimerCallback(nsITimer* aTimer, void* aClosure) {
    */
   OpenVRSession* self = static_cast<OpenVRSession*>(aClosure);
 
-  if (StaticPrefs::dom_vr_openvr_action_input()) {
+  if (StaticPrefs::dom_vr_openvr_action_input_AtStartup()) {
     self->UpdateHaptics();
   } else {
     self->UpdateHapticsObsolete();

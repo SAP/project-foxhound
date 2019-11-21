@@ -9,12 +9,14 @@ const {
 } = require("devtools/shared/protocol/lazy-pool");
 const { RootActor } = require("devtools/server/actors/root");
 const { ThreadActor } = require("devtools/server/actors/thread");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const {
   ActorRegistry,
 } = require("devtools/server/actors/utils/actor-registry");
 const { TabSources } = require("devtools/server/actors/utils/TabSources");
 const makeDebugger = require("devtools/server/actors/utils/make-debugger");
+
+const noop = () => {};
 
 var gTestGlobals = new Set();
 DebuggerServer.addTestGlobal = function(global) {
@@ -102,7 +104,7 @@ function TestTargetActor(connection, global) {
   this._attached = false;
   this._extraActors = {};
   // This is a hack in order to enable threadActor to be accessed from getFront
-  this._extraActors.contextActor = this.threadActor;
+  this._extraActors.threadActor = this.threadActor;
   this.makeDebugger = makeDebugger.bind(null, {
     findDebuggees: () => [this._global],
     shouldAddNewGlobalAsDebuggee: g => {
@@ -122,6 +124,8 @@ function TestTargetActor(connection, global) {
 TestTargetActor.prototype = {
   constructor: TestTargetActor,
   actorPrefix: "TestTargetActor",
+  on: noop,
+  off: noop,
 
   get window() {
     return this._global;

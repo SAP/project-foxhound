@@ -40,8 +40,6 @@ from mozharness.mozilla.automation import (
     TBPL_WORST_LEVEL_TUPLE,
 )
 from mozharness.mozilla.secrets import SecretsMixin
-from mozharness.mozilla.testing.errors import TinderBoxPrintRe
-from mozharness.mozilla.testing.unittest import tbox_print_summary
 from mozharness.base.python import (
     PerfherderResourceOptionsMixin,
     VirtualenvMixin,
@@ -100,69 +98,6 @@ class MakeUploadOutputParser(OutputParser):
                 break
         else:
             self.info(line)
-
-
-class CheckTestCompleteParser(OutputParser):
-    tbpl_error_list = TBPL_UPLOAD_ERRORS
-
-    def __init__(self, **kwargs):
-        self.matches = {}
-        super(CheckTestCompleteParser, self).__init__(**kwargs)
-        self.pass_count = 0
-        self.fail_count = 0
-        self.leaked = False
-        self.harness_err_re = TinderBoxPrintRe['harness_error']['full_regex']
-        self.tbpl_status = TBPL_SUCCESS
-
-    def parse_single_line(self, line):
-        # Counts and flags.
-        # Regular expression for crash and leak detections.
-        if "TEST-PASS" in line:
-            self.pass_count += 1
-            return self.info(line)
-        if "TEST-UNEXPECTED-" in line:
-            # Set the error flags.
-            # Or set the failure count.
-            m = self.harness_err_re.match(line)
-            if m:
-                r = m.group(1)
-                if r == "missing output line for total leaks!":
-                    self.leaked = None
-                else:
-                    self.leaked = True
-            self.fail_count += 1
-            return self.warning(line)
-        self.info(line)  # else
-
-    def evaluate_parser(self, return_code,  success_codes=None):
-        success_codes = success_codes or [0]
-
-        if self.num_errors:  # ran into a script error
-            self.tbpl_status = self.worst_level(TBPL_FAILURE, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        if self.fail_count > 0:
-            self.tbpl_status = self.worst_level(TBPL_WARNING, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        # Account for the possibility that no test summary was output.
-        if (self.pass_count == 0 and self.fail_count == 0 and
-           os.environ.get('TRY_SELECTOR') != 'coverage'):
-            self.error('No tests run or test summary not found')
-            self.tbpl_status = self.worst_level(TBPL_WARNING, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        if return_code not in success_codes:
-            self.tbpl_status = self.worst_level(TBPL_FAILURE, self.tbpl_status,
-                                                levels=TBPL_WORST_LEVEL_TUPLE)
-
-        # Print the summary.
-        summary = tbox_print_summary(self.pass_count,
-                                     self.fail_count,
-                                     self.leaked)
-        self.info("TinderboxPrint: check<br/>%s\n" % summary)
-
-        return self.tbpl_status
 
 
 class MozconfigPathError(Exception):
@@ -380,12 +315,6 @@ class BuildOptionParser(object):
         'aarch64-beta-debug': 'builds/releng_sub_%s_configs/%s_aarch64_beta_debug.py',
         'aarch64-pgo': 'builds/releng_sub_%s_configs/%s_aarch64_pgo.py',
         'aarch64-debug': 'builds/releng_sub_%s_configs/%s_aarch64_debug.py',
-        'android-test': 'builds/releng_sub_%s_configs/%s_test.py',
-        'android-test-ccov': 'builds/releng_sub_%s_configs/%s_test_ccov.py',
-        'android-checkstyle': 'builds/releng_sub_%s_configs/%s_checkstyle.py',
-        'android-api-lint': 'builds/releng_sub_%s_configs/%s_api_lint.py',
-        'android-lint': 'builds/releng_sub_%s_configs/%s_lint.py',
-        'android-findbugs': 'builds/releng_sub_%s_configs/%s_findbugs.py',
         'android-geckoview-docs': 'builds/releng_sub_%s_configs/%s_geckoview_docs.py',
         'valgrind': 'builds/releng_sub_%s_configs/%s_valgrind.py',
         'tup': 'builds/releng_sub_%s_configs/%s_tup.py',
@@ -674,33 +603,6 @@ items from that key's value."
         self.info("Both --dump-config and --dump-config-hierarchy don't "
                   "actually run any actions.")
 
-    def _assert_cfg_valid_for_action(self, dependencies, action):
-        """ assert dependency keys are in config for given action.
-
-        Takes a list of dependencies and ensures that each have an
-        assoctiated key in the config. Displays error messages as
-        appropriate.
-
-        """
-        # TODO add type and value checking, not just keys
-        # TODO solution should adhere to: bug 699343
-        # TODO add this to BaseScript when the above is done
-        # for now, let's just use this as a way to save typing...
-        c = self.config
-        undetermined_keys = []
-        err_template = "The key '%s' could not be determined \
-and is needed for the action '%s'. Please add this to your config \
-or run without that action (ie: --no-{action})"
-        for dep in dependencies:
-            if dep not in c:
-                undetermined_keys.append(dep)
-        if undetermined_keys:
-            fatal_msgs = [err_template % (key, action)
-                          for key in undetermined_keys]
-            self.fatal("".join(fatal_msgs))
-        # otherwise:
-        return  # all good
-
     def _query_build_prop_from_app_ini(self, prop, app_ini_path=None):
         dirs = self.query_abs_dirs()
         print_conf_setting_path = os.path.join(dirs['abs_src_dir'],
@@ -815,20 +717,6 @@ or run without that action (ie: --no-{action})"
                 return True
         return False
 
-    def query_check_test_env(self):
-        c = self.config
-        dirs = self.query_abs_dirs()
-        check_test_env = {}
-        if c.get('check_test_env'):
-            for env_var, env_value in c['check_test_env'].iteritems():
-                check_test_env[env_var] = env_value % dirs
-        # Check tests don't upload anything, however our mozconfigs depend on
-        # UPLOAD_PATH, so we prevent configure from re-running by keeping the
-        # environments consistent.
-        if c.get('upload_env'):
-            check_test_env.update(c['upload_env'])
-        return check_test_env
-
     def _rm_old_package(self):
         """rm the old package."""
         c = self.config
@@ -890,10 +778,6 @@ or run without that action (ie: --no-{action})"
         env = self.query_build_env()
         env.update(self.query_mach_build_env())
 
-        self._assert_cfg_valid_for_action(
-            ['tooltool_url'],
-            'build'
-        )
         c = self.config
         dirs = self.query_abs_dirs()
         toolchains = os.environ.get('MOZ_TOOLCHAINS')
@@ -916,8 +800,6 @@ or run without that action (ie: --no-{action})"
             cmd.extend([
                 '--tooltool-manifest',
                 os.path.join(dirs['abs_src_dir'], manifest_src),
-                '--tooltool-url',
-                c['tooltool_url'],
             ])
             auth_file = self._get_tooltool_auth_file()
             if auth_file:
@@ -1202,41 +1084,6 @@ or run without that action (ie: --no-{action})"
             env=env, output_timeout=60*45, halt_on_failure=True,
         )
 
-    def check_test(self):
-        if os.environ.get('USE_ARTIFACT'):
-            self.info('Skipping due to forced artifact build.')
-            return
-        c = self.config
-        dirs = self.query_abs_dirs()
-
-        env = self.query_build_env()
-        env.update(self.query_check_test_env())
-
-        cmd = self._query_mach() + [
-            '--log-no-times',
-            'build',
-            '-v',
-            '--keep-going',
-            'check',
-        ]
-
-        parser = CheckTestCompleteParser(config=c,
-                                         log_obj=self.log_obj)
-        return_code = self.run_command(command=cmd,
-                                       cwd=dirs['abs_src_dir'],
-                                       env=env,
-                                       output_parser=parser)
-        tbpl_status = parser.evaluate_parser(return_code)
-        return_code = EXIT_STATUS_DICT[tbpl_status]
-
-        if return_code:
-            self.return_code = self.worst_level(
-                return_code,  self.return_code,
-                AUTOMATION_EXIT_CODES[::-1]
-            )
-            self.error("'mach build check' did not run successfully. Please "
-                       "check log for errors.")
-
     def _is_configuration_shipped(self):
         """Determine if the current build configuration is shipped to users.
 
@@ -1326,7 +1173,6 @@ or run without that action (ie: --no-{action})"
         yield {
             'name': 'sccache hit rate',
             'value': hits,
-            'extraOptions': self.perfherder_resource_options(),
             'subtests': [],
             'lowerIsBetter': False
         }
@@ -1334,7 +1180,6 @@ or run without that action (ie: --no-{action})"
         yield {
             'name': 'sccache cache_write_errors',
             'value': stats['stats']['cache_write_errors'],
-            'extraOptions': self.perfherder_resource_options(),
             'alertThreshold': 50.0,
             'subtests': [],
         }
@@ -1342,7 +1187,6 @@ or run without that action (ie: --no-{action})"
         yield {
             'name': 'sccache requests_not_cacheable',
             'value': stats['stats']['requests_not_cacheable'],
-            'extraOptions': self.perfherder_resource_options(),
             'alertThreshold': 50.0,
             'subtests': [],
         }
@@ -1439,8 +1283,8 @@ or run without that action (ie: --no-{action})"
         Returns a dictionary of sections and their sizes.
         """
         # Check for `rust_size`, our cross platform version of size. It should
-        # be installed by tooltool in $abs_src_dir/rust-size/rust-size
-        rust_size = os.path.join(self.query_abs_dirs()['abs_src_dir'],
+        # be fetched by run-task in $MOZ_FETCHES_DIR/rust-size/rust-size
+        rust_size = os.path.join(os.environ['MOZ_FETCHES_DIR'],
                                  'rust-size', 'rust-size')
         size_prog = self.which(rust_size)
         if not size_prog:
@@ -1633,7 +1477,8 @@ or run without that action (ie: --no-{action})"
         '''If sccache was in use for this build, shut down the sccache server.'''
         if os.environ.get('USE_SCCACHE') == '1':
             topsrcdir = self.query_abs_dirs()['abs_src_dir']
-            sccache = os.path.join(topsrcdir, 'sccache', 'sccache')
+            sccache_base = os.environ['MOZ_FETCHES_DIR']
+            sccache = os.path.join(sccache_base, 'sccache', 'sccache')
             if self._is_windows():
                 sccache += '.exe'
             self.run_command([sccache, '--stop-server'], cwd=topsrcdir)

@@ -11,8 +11,6 @@ import org.mozilla.geckoview.GeckoView
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ClosedSessionAtStart
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.NullDelegate
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.UiThreadUtils
 import org.junit.Ignore
@@ -38,7 +36,6 @@ import java.lang.ref.WeakReference
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
-@ReuseSession(false)
 class SessionLifecycleTest : BaseSessionTest() {
     companion object {
         val LOGTAG = "SessionLifecycleTest"
@@ -85,8 +82,7 @@ class SessionLifecycleTest : BaseSessionTest() {
         val session = sessionRule.createOpenSession()
 
         session.toParcel { parcel ->
-            val newSession = sessionRule.createClosedSession()
-            newSession.readFromParcel(parcel)
+            val newSession = sessionRule.createFromParcel(parcel)
 
             assertThat("New session has same settings",
                        newSession.settings, equalTo(session.settings))
@@ -100,6 +96,7 @@ class SessionLifecycleTest : BaseSessionTest() {
         sessionRule.session.waitForPageStop()
     }
 
+    @Ignore //Disable test for frequent failures Bug 1532186
     @Test(expected = IllegalStateException::class)
     fun readFromParcel_throwOnAlreadyOpen() {
         //disable readFromParcel_throwOnAlreadyOpen for frequent failures Bug 1532186
@@ -111,22 +108,21 @@ class SessionLifecycleTest : BaseSessionTest() {
     }
 
     @Test fun readFromParcel_canLoadPageAfterRead() {
-        val newSession = sessionRule.createClosedSession()
+        var newSession: GeckoSession? = null
 
         sessionRule.session.toParcel { parcel ->
-            newSession.readFromParcel(parcel)
+            newSession = sessionRule.createFromParcel(parcel)
         }
 
-        newSession.reload()
-        newSession.waitForPageStop()
+        newSession!!.reload()
+        newSession!!.waitForPageStop()
     }
 
     @Test fun readFromParcel_closedSession() {
         val session = sessionRule.createClosedSession()
 
         session.toParcel { parcel ->
-            val newSession = sessionRule.createClosedSession()
-            newSession.readFromParcel(parcel)
+            val newSession = sessionRule.createFromParcel(parcel)
             assertThat("New session should not be open",
                        newSession.isOpen, equalTo(false))
         }
@@ -142,8 +138,7 @@ class SessionLifecycleTest : BaseSessionTest() {
             assertThat("Session is still open", session.isOpen, equalTo(true))
             session.close()
 
-            val newSession = sessionRule.createClosedSession()
-            newSession.readFromParcel(parcel)
+            val newSession = sessionRule.createFromParcel(parcel)
             assertThat("New session should not be open",
                        newSession.isOpen, equalTo(false))
         }
@@ -159,8 +154,7 @@ class SessionLifecycleTest : BaseSessionTest() {
 
         session.toParcel { parcel ->
             assertThat("Session is still open", session.isOpen, equalTo(true))
-            val newSession = sessionRule.createClosedSession()
-            newSession.readFromParcel(parcel)
+            val newSession = sessionRule.createFromParcel(parcel)
             assertThat("New session should be open",
                     newSession.isOpen, equalTo(true))
             assertThat("Old session should be closed",
@@ -172,17 +166,17 @@ class SessionLifecycleTest : BaseSessionTest() {
     }
 
     @Test fun readFromParcel_closeOpenAndLoad() {
-        val newSession = sessionRule.createClosedSession()
+        var newSession: GeckoSession? = null
 
         sessionRule.session.toParcel { parcel ->
-            newSession.readFromParcel(parcel)
+            newSession = sessionRule.createFromParcel(parcel)
         }
 
-        newSession.close()
-        newSession.open()
+        newSession!!.close()
+        newSession!!.open()
 
-        newSession.reload()
-        newSession.waitForPageStop()
+        newSession!!.reload()
+        newSession!!.waitForPageStop()
     }
 
     @Test fun readFromParcel_allowCallsBeforeUnparceling() {
@@ -198,28 +192,31 @@ class SessionLifecycleTest : BaseSessionTest() {
     }
 
     @Test fun readFromParcel_chained() {
-        val session1 = sessionRule.createClosedSession()
-        val session2 = sessionRule.createClosedSession()
-        val session3 = sessionRule.createClosedSession()
+        var session1: GeckoSession? = null
+        var session2: GeckoSession? = null
+        var session3: GeckoSession? = null
 
         sessionRule.session.toParcel { parcel ->
-            session1.readFromParcel(parcel)
+            session1 = sessionRule.createFromParcel(parcel)
         }
-        session1.toParcel { parcel ->
-            session2.readFromParcel(parcel)
+        session1!!.toParcel { parcel ->
+            session2 = sessionRule.createFromParcel(parcel)
         }
-        session2.toParcel { parcel ->
-            session3.readFromParcel(parcel)
+        session2!!.toParcel { parcel ->
+            session3 = sessionRule.createFromParcel(parcel)
         }
 
-        session3.reload()
-        session3.waitForPageStop()
+        session3!!.reload()
+        session3!!.waitForPageStop()
     }
 
     @NullDelegate(GeckoSession.NavigationDelegate::class)
     @ClosedSessionAtStart
     @Test fun readFromParcel_moduleUpdated() {
         val session = sessionRule.createOpenSession()
+
+        session.loadTestPath(HELLO_HTML_PATH)
+        session.waitForPageStop()
 
         // Disable navigation notifications on the old, open session.
         assertThat("Old session navigation delegate should be null",
@@ -246,13 +243,12 @@ class SessionLifecycleTest : BaseSessionTest() {
                    onLocationCount, equalTo(1))
     }
 
-    @WithDevToolsAPI
     @Test fun readFromParcel_focusedInput() {
         // When an input is focused, make sure SessionTextInput is still active after transferring.
         mainSession.loadTestPath(INPUTS_PATH)
         mainSession.waitForPageStop()
 
-        mainSession.evaluateJS("$('#input').focus()")
+        mainSession.evaluateJS("document.querySelector('#input').focus()")
         mainSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
             @AssertCalled(count = 1)
             override fun restartInput(session: GeckoSession, reason: Int) {
@@ -261,13 +257,13 @@ class SessionLifecycleTest : BaseSessionTest() {
             }
         })
 
-        val newSession = sessionRule.createClosedSession()
+        var newSession: GeckoSession? = null
         mainSession.toParcel { parcel ->
-            newSession.readFromParcel(parcel)
+            newSession = sessionRule.createFromParcel(parcel)
         }
 
         // We generate an extra focus event during transfer.
-        newSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
+        newSession!!.waitUntilCalled(object : Callbacks.TextInputDelegate {
             @AssertCalled(count = 1)
             override fun restartInput(session: GeckoSession, reason: Int) {
                 assertThat("Reason should be correct",
@@ -275,8 +271,8 @@ class SessionLifecycleTest : BaseSessionTest() {
             }
         })
 
-        newSession.evaluateJS("$('#input').blur()")
-        newSession.waitUntilCalled(object : Callbacks.TextInputDelegate {
+        newSession!!.evaluateJS("document.querySelector('#input').blur()")
+        newSession!!.waitUntilCalled(object : Callbacks.TextInputDelegate {
             @AssertCalled(count = 1)
             override fun restartInput(session: GeckoSession, reason: Int) {
                 // We generate an extra focus event during transfer.
@@ -291,7 +287,7 @@ class SessionLifecycleTest : BaseSessionTest() {
             GeckoView(InstrumentationRegistry.getTargetContext()).apply {
                 id = 0
                 if (fromSession != null) {
-                    setSession(fromSession, sessionRule.runtime)
+                    setSession(fromSession)
                 }
 
                 val state = SparseArray<Parcelable>()
@@ -300,7 +296,7 @@ class SessionLifecycleTest : BaseSessionTest() {
                 if (ontoSession !== fromSession) {
                     releaseSession()
                     if (ontoSession != null) {
-                        setSession(ontoSession, sessionRule.runtime)
+                        setSession(ontoSession)
                     }
                 }
                 restoreHierarchyState(state)
@@ -386,20 +382,14 @@ class SessionLifecycleTest : BaseSessionTest() {
     }
 
     @ClosedSessionAtStart
-    @Test fun restoreInstanceState_closedSessionOntoOpenSession() {
-        val view = testRestoreInstanceState(mainSession, sessionRule.createOpenSession())
-        assertThat("View session is not restored", view.session, not(equalTo(mainSession)))
-        assertThat("View session is open", view.session?.isOpen, equalTo(true))
-        view.session?.reload()
-        sessionRule.waitForPageStop()
+    @Test(expected = IllegalStateException::class)
+    fun restoreInstanceState_closedSessionOntoOpenSession() {
+        testRestoreInstanceState(mainSession, sessionRule.createOpenSession())
     }
 
-    @Test fun restoreInstanceState_openSessionOntoOpenSession() {
-        val view = testRestoreInstanceState(mainSession, sessionRule.createOpenSession())
-        assertThat("View session is restored", view.session, equalTo(mainSession))
-        assertThat("View session is open", view.session?.isOpen, equalTo(true))
-        view.session?.reload()
-        sessionRule.waitForPageStop()
+    @Test(expected = IllegalStateException::class)
+    fun restoreInstanceState_openSessionOntoOpenSession() {
+        testRestoreInstanceState(mainSession, sessionRule.createOpenSession())
     }
 
     @ClosedSessionAtStart
@@ -482,20 +472,10 @@ class SessionLifecycleTest : BaseSessionTest() {
     }
 
     private fun waitUntilCollected(ref: QueuedWeakReference<*>) {
-        val start = SystemClock.uptimeMillis()
-        while (ref.queue.poll() == null) {
-            val elapsed = SystemClock.uptimeMillis() - start
-            if (elapsed > sessionRule.timeoutMillis) {
-                dumpHprof()
-                throw UiThreadUtils.TimeoutException("Timed out after " + elapsed + "ms")
-            }
-
-            try {
-                UiThreadUtils.loopUntilIdle(100)
-            } catch (e: UiThreadUtils.TimeoutException) {
-            }
+        UiThreadUtils.waitForCondition({
             Runtime.getRuntime().gc()
-        }
+            ref.queue.poll() != null
+        }, sessionRule.timeoutMillis)
     }
 
     class QueuedWeakReference<T> @JvmOverloads constructor(obj: T, var queue: ReferenceQueue<T> =

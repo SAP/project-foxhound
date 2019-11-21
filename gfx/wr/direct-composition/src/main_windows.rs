@@ -133,10 +133,10 @@ impl Rectangle {
         self.visual.make_current();
 
         let pipeline_id = api::PipelineId(0, 0);
-        let layout_size = self.size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
+        let layout_size = self.size.to_f32() / euclid::Scale::new(device_pixel_ratio);
         let mut builder = api::DisplayListBuilder::new(pipeline_id, layout_size);
 
-        let rect = euclid::TypedRect::new(euclid::TypedPoint2D::zero(), layout_size);
+        let rect = euclid::Rect::new(euclid::Point2D::zero(), layout_size);
 
         let region = api::ComplexClipRegion::new(
             rect,
@@ -194,7 +194,7 @@ struct Notifier {
 }
 
 impl api::RenderNotifier for Notifier {
-    fn clone(&self) -> Box<api::RenderNotifier> {
+    fn clone(&self) -> Box<dyn api::RenderNotifier> {
         Box::new(Clone::clone(self))
     }
 

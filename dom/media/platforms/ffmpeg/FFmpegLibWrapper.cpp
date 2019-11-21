@@ -6,7 +6,7 @@
 #include "FFmpegLog.h"
 #include "mozilla/PodOperations.h"
 #ifdef MOZ_FFMPEG
-#  include "mozilla/StaticPrefs.h"
+#  include "mozilla/StaticPrefs_media.h"
 #endif
 #include "mozilla/Types.h"
 #include "PlatformDecoderModule.h"
@@ -151,6 +151,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(av_frame_unref, (AV_FUNC_AVUTIL_55 | AV_FUNC_AVUTIL_56 |
                            AV_FUNC_AVUTIL_57 | AV_FUNC_AVUTIL_58))
   AV_FUNC_OPTION(av_frame_get_colorspace, AV_FUNC_AVUTIL_ALL)
+  AV_FUNC_OPTION(av_frame_get_color_range, AV_FUNC_AVUTIL_ALL)
 #undef AV_FUNC
 #undef AV_FUNC_OPTION
 

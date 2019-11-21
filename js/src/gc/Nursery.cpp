@@ -15,6 +15,7 @@
 #include "jsutil.h"
 
 #include "builtin/MapObject.h"
+#include "debugger/DebugAPI.h"
 #include "gc/FreeOp.h"
 #include "gc/GCInternals.h"
 #include "gc/Memory.h"
@@ -22,7 +23,6 @@
 #include "jit/JitFrames.h"
 #include "jit/JitRealm.h"
 #include "vm/ArrayObject.h"
-#include "vm/Debugger.h"
 #if defined(DEBUG)
 #  include "vm/EnvironmentObject.h"
 #endif
@@ -58,8 +58,16 @@ struct NurseryChunk {
   char data[Nursery::NurseryChunkUsableSize];
   gc::ChunkTrailer trailer;
   static NurseryChunk* fromChunk(gc::Chunk* chunk);
-  void poisonAndInit(JSRuntime* rt, size_t extent = ChunkSize);
+  void poisonAndInit(JSRuntime* rt, size_t size = ChunkSize);
+  void poisonRange(size_t from, size_t size, uint8_t value,
+                   MemCheckKind checkKind);
   void poisonAfterEvict(size_t extent = ChunkSize);
+
+  // The end of the range is always ChunkSize - ArenaSize.
+  void markPagesUnusedHard(size_t from);
+  // The start of the range is always the beginning of the chunk.
+  MOZ_MUST_USE bool markPagesInUseHard(size_t to);
+
   uintptr_t start() const { return uintptr_t(&data); }
   uintptr_t end() const { return uintptr_t(&trailer); }
   gc::Chunk* toChunk(JSRuntime* rt);
@@ -67,28 +75,45 @@ struct NurseryChunk {
 static_assert(sizeof(js::NurseryChunk) == gc::ChunkSize,
               "Nursery chunk size must match gc::Chunk size.");
 
-} /* namespace js */
+}  // namespace js
 
-inline void js::NurseryChunk::poisonAndInit(JSRuntime* rt, size_t extent) {
-  MOZ_ASSERT(extent <= ChunkSize);
-  MOZ_MAKE_MEM_UNDEFINED(this, extent);
+inline void js::NurseryChunk::poisonAndInit(JSRuntime* rt, size_t size) {
+  poisonRange(0, size, JS_FRESH_NURSERY_PATTERN, MemCheckKind::MakeUndefined);
   MOZ_MAKE_MEM_UNDEFINED(&trailer, sizeof(trailer));
-
-  Poison(this, JS_FRESH_NURSERY_PATTERN, extent, MemCheckKind::MakeUndefined);
-
   new (&trailer) gc::ChunkTrailer(rt, &rt->gc.storeBuffer());
+}
+
+inline void js::NurseryChunk::poisonRange(size_t from, size_t size,
+                                          uint8_t value,
+                                          MemCheckKind checkKind) {
+  MOZ_ASSERT(from <= js::Nursery::NurseryChunkUsableSize);
+  MOZ_ASSERT(from + size <= ChunkSize);
+
+  uint8_t* start = reinterpret_cast<uint8_t*>(this) + from;
+
+  // We can poison the same chunk more than once, so first make sure memory
+  // sanitizers will let us poison it.
+  MOZ_MAKE_MEM_UNDEFINED(start, size);
+  Poison(start, value, size, checkKind);
 }
 
 inline void js::NurseryChunk::poisonAfterEvict(size_t extent) {
   MOZ_ASSERT(extent <= ChunkSize);
-  // We can poison the same chunk more than once, so first make sure memory
-  // sanitizers will let us poison it.
-  MOZ_MAKE_MEM_UNDEFINED(this, extent);
-
-  Poison(this, JS_SWEPT_NURSERY_PATTERN, extent, MemCheckKind::MakeNoAccess);
+  poisonRange(0, extent, JS_SWEPT_NURSERY_PATTERN, MemCheckKind::MakeNoAccess);
 }
 
-/* static */
+inline void js::NurseryChunk::markPagesUnusedHard(size_t from) {
+  MOZ_ASSERT(from < ChunkSize - ArenaSize);
+  MarkPagesUnusedHard(reinterpret_cast<void*>(start() + from),
+                      ChunkSize - ArenaSize - from);
+}
+
+inline bool js::NurseryChunk::markPagesInUseHard(size_t to) {
+  MOZ_ASSERT(to <= ChunkSize - ArenaSize);
+  return MarkPagesInUseHard(reinterpret_cast<void*>(start()), to);
+}
+
+// static
 inline js::NurseryChunk* js::NurseryChunk::fromChunk(Chunk* chunk) {
   return reinterpret_cast<NurseryChunk*>(chunk);
 }
@@ -99,22 +124,36 @@ inline Chunk* js::NurseryChunk::toChunk(JSRuntime* rt) {
   return chunk;
 }
 
-void js::NurseryDecommitChunksTask::queueChunk(
+void js::NurseryDecommitTask::queueChunk(
     NurseryChunk* nchunk, const AutoLockHelperThreadState& lock) {
-  // Using the chunk pointers is infalliable.
+  // Using the chunk pointers to build the queue is infallible.
   Chunk* chunk = nchunk->toChunk(runtime());
   chunk->info.prev = nullptr;
   chunk->info.next = queue;
   queue = chunk;
 }
 
-Chunk* js::NurseryDecommitChunksTask::popChunk() {
-  AutoLockHelperThreadState lock;
+void js::NurseryDecommitTask::queueRange(
+    size_t newCapacity, NurseryChunk& newChunk,
+    const AutoLockHelperThreadState& lock) {
+  MOZ_ASSERT(!partialChunk || partialChunk == &newChunk);
 
+  // Only save this to decommit later if there's at least one page to
+  // decommit.
+  if (JS_ROUNDUP(newCapacity, SystemPageSize()) >=
+      JS_ROUNDDOWN(Nursery::NurseryChunkUsableSize, SystemPageSize())) {
+    // Clear the existing decommit request because it may be a larger request
+    // for the same chunk.
+    partialChunk = nullptr;
+    return;
+  }
+  partialChunk = &newChunk;
+  partialCapacity = newCapacity;
+}
+
+Chunk* js::NurseryDecommitTask::popChunk(
+    const AutoLockHelperThreadState& lock) {
   if (!queue) {
-    // We call setFinishing here while we have the lock that checks for work,
-    // rather than in run's loop.
-    setFinishing(lock);
     return nullptr;
   }
 
@@ -125,19 +164,48 @@ Chunk* js::NurseryDecommitChunksTask::popChunk() {
   return chunk;
 }
 
-void js::NurseryDecommitChunksTask::run() {
+void js::NurseryDecommitTask::run() {
   Chunk* chunk;
 
-  while ((chunk = popChunk())) {
-    decommitChunk(chunk);
+  {
+    AutoLockHelperThreadState lock;
+
+    while ((chunk = popChunk(lock)) || partialChunk) {
+      if (chunk) {
+        AutoUnlockHelperThreadState unlock(lock);
+        decommitChunk(chunk);
+        continue;
+      }
+
+      if (partialChunk) {
+        decommitRange(lock);
+        continue;
+      }
+    }
+
+    setFinishing(lock);
   }
 }
 
-void js::NurseryDecommitChunksTask::decommitChunk(Chunk* chunk) {
+void js::NurseryDecommitTask::decommitChunk(Chunk* chunk) {
   chunk->decommitAllArenas();
   {
     AutoLockGC lock(runtime());
     runtime()->gc.recycleChunk(chunk, lock);
+  }
+}
+
+void js::NurseryDecommitTask::decommitRange(AutoLockHelperThreadState& lock) {
+  // Clear this field here before releasing the lock. While the lock is
+  // released the main thread may make new decommit requests or update the range
+  // of the current requested chunk, but it won't attempt to use any
+  // might-be-decommitted-soon memory.
+  NurseryChunk* thisPartialChunk = partialChunk;
+  size_t thisPartialCapacity = partialCapacity;
+  partialChunk = nullptr;
+  {
+    AutoUnlockHelperThreadState unlock(lock);
+    thisPartialChunk->markPagesUnusedHard(thisPartialCapacity);
   }
 }
 
@@ -157,7 +225,7 @@ js::Nursery::Nursery(JSRuntime* rt)
       canAllocateStrings_(true),
       reportTenurings_(0),
       minorGCTriggerReason_(JS::GCReason::NO_REASON),
-      decommitChunksTask(rt)
+      decommitTask(rt)
 #ifdef JS_GC_ZEAL
       ,
       lastCanary_(nullptr)
@@ -176,10 +244,10 @@ bool js::Nursery::init(uint32_t maxNurseryBytes, AutoLockGCBgAlloc& lock) {
     maxNurseryBytes = 0;
   }
 
-  /* maxNurseryBytes parameter is rounded down to a multiple of chunk size. */
+  // maxNurseryBytes parameter is rounded down to a multiple of chunk size.
   chunkCountLimit_ = maxNurseryBytes >> ChunkShift;
 
-  /* If no chunks are specified then the nursery is permanently disabled. */
+  // If no chunks are specified then the nursery is permanently disabled.
   if (chunkCountLimit_ == 0) {
     return true;
   }
@@ -189,11 +257,11 @@ bool js::Nursery::init(uint32_t maxNurseryBytes, AutoLockGCBgAlloc& lock) {
   }
   capacity_ = roundSize(tunables().gcMinNurseryBytes());
   MOZ_ASSERT(capacity_ >= ArenaSize);
-  /* After this point the Nursery has been enabled */
+  // After this point the Nursery has been enabled.
 
   setCurrentChunk(0);
   setStartPosition();
-  poisonAndInitCurrentChunk(true);
+  poisonAndInitCurrentChunk();
 
   char* env = getenv("JS_GC_PROFILE_NURSERY");
   if (env) {
@@ -247,7 +315,7 @@ void js::Nursery::enable() {
 
   setCurrentChunk(0);
   setStartPosition();
-  poisonAndInitCurrentChunk(true);
+  poisonAndInitCurrentChunk();
 #ifdef JS_GC_ZEAL
   if (runtime()->hasZealMode(ZealMode::GenerationalGC)) {
     enterZealMode();
@@ -263,17 +331,20 @@ void js::Nursery::disable() {
     return;
   }
 
+  // Freeing the chunks must not race with decommitting part of one of our
+  // chunks. So join the decommitTask here and also below.
+  decommitTask.join();
   freeChunksFrom(0);
   capacity_ = 0;
 
   // We must reset currentEnd_ so that there is no space for anything in the
-  // nursery.  JIT'd code uses this even if the nursery is disabled.
+  // nursery. JIT'd code uses this even if the nursery is disabled.
   currentEnd_ = 0;
   currentStringEnd_ = 0;
   position_ = 0;
   runtime()->gc.storeBuffer().disable();
 
-  decommitChunksTask.join();
+  decommitTask.join();
 }
 
 void js::Nursery::enableStrings() {
@@ -303,6 +374,24 @@ bool js::Nursery::isEmpty() const {
 #ifdef JS_GC_ZEAL
 void js::Nursery::enterZealMode() {
   if (isEnabled()) {
+    if (isSubChunkMode()) {
+      // The poisoning call below must not race with background decommit,
+      // which could be attempting to decommit the currently-unused part of this
+      // chunk.
+      decommitTask.join();
+      {
+        AutoEnterOOMUnsafeRegion oomUnsafe;
+        if (!chunk(0).markPagesInUseHard(ChunkSize - ArenaSize)) {
+          oomUnsafe.crash("Out of memory trying to extend chunk for zeal mode");
+        }
+      }
+
+      // It'd be simpler to poison the whole chunk, but we can't do that
+      // because the nursery might be partially used.
+      chunk(0).poisonRange(capacity_, NurseryChunkUsableSize - capacity_,
+                           JS_FRESH_NURSERY_PATTERN,
+                           MemCheckKind::MakeUndefined);
+    }
     capacity_ = chunkCountLimit() * ChunkSize;
     setCurrentEnd();
   }
@@ -313,14 +402,14 @@ void js::Nursery::leaveZealMode() {
     MOZ_ASSERT(isEmpty());
     setCurrentChunk(0);
     setStartPosition();
-    poisonAndInitCurrentChunk(true);
+    poisonAndInitCurrentChunk();
   }
 }
 #endif  // JS_GC_ZEAL
 
 JSObject* js::Nursery::allocateObject(JSContext* cx, size_t size,
                                       size_t nDynamicSlots,
-                                      const js::Class* clasp) {
+                                      const JSClass* clasp) {
   // Ensure there's enough space to replace the contents with a
   // RelocationOverlay.
   MOZ_ASSERT(size >= sizeof(RelocationOverlay));
@@ -530,7 +619,7 @@ void* js::Nursery::reallocateBuffer(JSObject* obj, void* oldBuffer,
     return newBuffer;
   }
 
-  /* The nursery cannot make use of the returned slots data. */
+  // The nursery cannot make use of the returned slots data.
   if (newBytes < oldBytes) {
     return oldBuffer;
   }
@@ -616,10 +705,8 @@ inline float js::Nursery::calcPromotionRate(bool* validForTenuring) const {
 
   if (previousGC.nurseryUsedBytes > 0) {
     if (validForTenuring) {
-      /*
-       * We can only use promotion rates if they're likely to be valid,
-       * they're only valid if the nursury was at least 90% full.
-       */
+      // We can only use promotion rates if they're likely to be valid,
+      // they're only valid if the nursery was at least 90% full.
       *validForTenuring = used > capacity * 0.9f;
     }
     rate = tenured / used;
@@ -711,7 +798,7 @@ void js::Nursery::renderProfileJSON(JSONPrinter& json) const {
   json.endObject();
 }
 
-/* static */
+// static
 void js::Nursery::printProfileHeader() {
   fprintf(stderr, "MinorGC:               Reason  PRate Size        ");
 #define PRINT_HEADER(name, text) fprintf(stderr, " %6s", text);
@@ -720,7 +807,7 @@ void js::Nursery::printProfileHeader() {
   fprintf(stderr, "\n");
 }
 
-/* static */
+// static
 void js::Nursery::printProfileDurations(const ProfileDurations& times) {
   for (auto time : times) {
     fprintf(stderr, " %6" PRIi64, static_cast<int64_t>(time.ToMicroseconds()));
@@ -752,6 +839,10 @@ inline void js::Nursery::endProfile(ProfileKey key) {
 }
 
 bool js::Nursery::shouldCollect() const {
+  if (isEmpty()) {
+    return false;
+  }
+
   if (minorGCRequested()) {
     return true;
   }
@@ -766,14 +857,14 @@ bool js::Nursery::shouldCollect() const {
   // and belowFractionThreshold when it's small.
   //
   // When the nursery is small then belowBytesThreshold is a lower threshold
-  // (triggered earlier) than belowFractionThreshold.  So if the fraction
-  // threshold is true, the bytes one will be true also.  The opposite is true
+  // (triggered earlier) than belowFractionThreshold. So if the fraction
+  // threshold is true, the bytes one will be true also. The opposite is true
   // when the nursery is large.
   //
   // Therefore, by the time we cross the threshold we care about, we've already
   // crossed the other one, and we can boolean AND to use either condition
-  // without encoding any "is the nursery big/small" test/threshold.  The point
-  // at which they cross is when the nursery is:  BytesThreshold /
+  // without encoding any "is the nursery big/small" test/threshold. The point
+  // at which they cross is when the nursery is: BytesThreshold /
   // FractionThreshold large.
   //
   // With defaults that's:
@@ -837,7 +928,6 @@ void js::Nursery::collect(JS::GCReason reason) {
   previousGC.reason = JS::GCReason::NO_REASON;
   if (!isEmpty()) {
     doCollection(reason, tenureCounts);
-    poisonAndInitCurrentChunk();
   } else {
     previousGC.nurseryUsedBytes = 0;
     previousGC.nurseryCapacity = capacity();
@@ -849,12 +939,26 @@ void js::Nursery::collect(JS::GCReason reason) {
   // Resize the nursery.
   maybeResizeNursery(reason);
 
+  // Poison/initialise the first chunk.
+  if (isEnabled() && previousGC.nurseryUsedBytes) {
+    // In most cases Nursery::clear() has not poisoned this chunk or marked it
+    // as NoAccess; so we only need to poison the region used during the last
+    // cycle.  Also, if the heap was recently expanded we don't want to
+    // re-poison the new memory.  In both cases we only need to poison until
+    // previousGC.nurseryUsedBytes.
+    //
+    // In cases where this is not true, like generational zeal mode or subchunk
+    // mode, poisonAndInitCurrentChunk() will ignore its parameter.  It will
+    // also clamp the parameter.
+    poisonAndInitCurrentChunk(previousGC.nurseryUsedBytes);
+  }
+
   const float promotionRate = doPretenuring(rt, reason, tenureCounts);
 
   // We ignore gcMaxBytes when allocating for minor collection. However, if we
   // overflowed, we disable the nursery. The next time we allocate, we'll fail
-  // because gcBytes >= gcMaxBytes.
-  if (rt->gc.heapSize.gcBytes() >= tunables().gcMaxBytes()) {
+  // because bytes >= gcMaxBytes.
+  if (rt->gc.heapSize.bytes() >= tunables().gcMaxBytes()) {
     disable();
   }
 
@@ -947,7 +1051,7 @@ void js::Nursery::doCollection(JS::GCReason reason,
   startProfile(ProfileKey::MarkDebugger);
   {
     gcstats::AutoPhase ap(stats(), gcstats::PhaseKind::MARK_ROOTS);
-    Debugger::traceAllForMovingGC(&mover);
+    DebugAPI::traceAllForMovingGC(&mover);
   }
   endProfile(ProfileKey::MarkDebugger);
 
@@ -1119,7 +1223,7 @@ void js::Nursery::sweep(JSTracer* trc) {
   }
 
   for (ZonesIter zone(trc->runtime(), SkipAtoms); !zone.done(); zone.next()) {
-    zone->sweepAfterMinorGC();
+    zone->sweepAfterMinorGC(trc);
   }
 
   sweepDictionaryModeObjects();
@@ -1127,27 +1231,39 @@ void js::Nursery::sweep(JSTracer* trc) {
 }
 
 void js::Nursery::clear() {
-#if defined(JS_GC_ZEAL) || defined(JS_CRASH_DIAGNOSTICS)
-  /* Poison the nursery contents so touching a freed object will crash. */
-  for (unsigned i = currentStartChunk_; i < currentChunk_; ++i) {
+  // Poison the nursery contents so touching a freed object will crash.
+  unsigned firstClearChunk;
+  if (runtime()->hasZealMode(ZealMode::GenerationalGC)) {
+    // Poison all the chunks used in this cycle. The new start chunk is
+    // reposioned in Nursery::collect() but there's no point optimising that in
+    // this case.
+    firstClearChunk = currentStartChunk_;
+  } else {
+    // In normal mode we start at the second chunk, the first one will be used
+    // in the next cycle and poisoned in Nusery::collect();
+    MOZ_ASSERT(currentStartChunk_ == 0);
+    firstClearChunk = 1;
+  }
+  for (unsigned i = firstClearChunk; i < currentChunk_; ++i) {
     chunk(i).poisonAfterEvict();
   }
-  MOZ_ASSERT(maxChunkCount() > 0);
-  chunk(currentChunk_)
-      .poisonAfterEvict(position() - chunk(currentChunk_).start());
-#endif
+  // Clear only the used part of the chunk because that's the part we touched,
+  // but only if it's not going to be re-used immediately (>= firstClearChunk).
+  if (currentChunk_ >= firstClearChunk) {
+    chunk(currentChunk_)
+        .poisonAfterEvict(position() - chunk(currentChunk_).start());
+  }
 
-  /*
-   * Reset the start chunk & position if we're not in this zeal mode, or we're
-   * in it and close to the end of the nursery.
-   */
+  // Reset the start chunk & position if we're not in this zeal mode, or we're
+  // in it and close to the end of the nursery.
+  MOZ_ASSERT(maxChunkCount() > 0);
   if (!runtime()->hasZealMode(ZealMode::GenerationalGC) ||
       (runtime()->hasZealMode(ZealMode::GenerationalGC) &&
        currentChunk_ + 1 == maxChunkCount())) {
     setCurrentChunk(0);
   }
 
-  /* Set current start position for isEmpty checks. */
+  // Set current start position for isEmpty checks.
   setStartPosition();
 }
 
@@ -1193,13 +1309,13 @@ MOZ_ALWAYS_INLINE void js::Nursery::setCurrentChunk(unsigned chunkno) {
   setCurrentEnd();
 }
 
-void js::Nursery::poisonAndInitCurrentChunk(bool fullPoison) {
-  if (fullPoison || runtime()->hasZealMode(ZealMode::GenerationalGC) ||
-      !isSubChunkMode()) {
+void js::Nursery::poisonAndInitCurrentChunk(size_t extent) {
+  if (runtime()->hasZealMode(ZealMode::GenerationalGC) || !isSubChunkMode()) {
     chunk(currentChunk_).poisonAndInit(runtime());
   } else {
-    MOZ_ASSERT(isSubChunkMode());
-    chunk(currentChunk_).poisonAndInit(runtime(), capacity_);
+    extent = Min(capacity_, extent);
+    MOZ_ASSERT(extent <= NurseryChunkUsableSize);
+    chunk(currentChunk_).poisonAndInit(runtime(), extent);
   }
 }
 
@@ -1248,33 +1364,36 @@ void js::Nursery::maybeResizeNursery(JS::GCReason reason) {
     return;
   }
 
-  /*
-   * This incorrect promotion rate results in better nursery sizing
-   * decisions, however we should to better tuning based on the real
-   * promotion rate in the future.
-   */
+  // This incorrect promotion rate results in better nursery sizing
+  // decisions, however we should to better tuning based on the real
+  // promotion rate in the future.
   const float promotionRate =
       float(previousGC.tenuredBytes) / float(previousGC.nurseryCapacity);
 
-  /*
-   * Object lifetimes aren't going to behave linearly, but a better
-   * relationship that works for all programs and can be predicted in
-   * advance doesn't exist.
-   */
+  // Object lifetimes aren't going to behave linearly, but a better
+  // relationship that works for all programs and can be predicted in
+  // advance doesn't exist.
   static const float GrowThreshold = 0.03f;
   static const float ShrinkThreshold = 0.01f;
   static const float PromotionGoal = (GrowThreshold + ShrinkThreshold) / 2.0f;
   const float factor = promotionRate / PromotionGoal;
   MOZ_ASSERT(factor >= 0.0f);
 
-  MOZ_ASSERT((float(capacity()) * factor) <= SIZE_MAX);
+#ifdef DEBUG
+  // This is |... <= SIZE_MAX|, just without the implicit value-changing
+  // conversion that expression would involve and modern clang would warn about.
+  static const float SizeMaxPlusOne =
+      2.0f * float(1ULL << (sizeof(void*) * CHAR_BIT - 1));
+  MOZ_ASSERT((float(capacity()) * factor) < SizeMaxPlusOne);
+#endif
+
   size_t newCapacity = size_t(float(capacity()) * factor);
 
   const size_t minNurseryBytes = roundSize(tunables().gcMinNurseryBytes());
   MOZ_ASSERT(minNurseryBytes >= ArenaSize);
 
   // If one of these conditions is true then we always shrink or grow the
-  // nursery.  This way the thresholds still have an effect even if the goal
+  // nursery. This way the thresholds still have an effect even if the goal
   // seeking says the current size is ideal.
   size_t lowLimit = Max(minNurseryBytes, capacity() / 2);
   size_t highLimit =
@@ -1292,14 +1411,6 @@ void js::Nursery::maybeResizeNursery(JS::GCReason reason) {
 }
 
 bool js::Nursery::maybeResizeExact(JS::GCReason reason) {
-  // Disable the nursery if the user changed the configuration setting. The
-  // nursery can only be re-enabled by resetting the configuration and
-  // restarting firefox.
-  if (tunables().gcMaxNurseryBytes() == 0) {
-    disable();
-    return true;
-  }
-
   // Shrink the nursery to its minimum size if we ran out of memory or
   // received a memory pressure event.
   if (gc::IsOOMReason(reason) || runtime()->gc.systemHasLowMemory()) {
@@ -1314,6 +1425,7 @@ bool js::Nursery::maybeResizeExact(JS::GCReason reason) {
   }
 #endif
 
+  MOZ_ASSERT(tunables().gcMaxNurseryBytes() >= ArenaSize);
   CheckedInt<unsigned> newMaxNurseryChunksChecked =
       (JS_ROUND(CheckedInt<size_t>(tunables().gcMaxNurseryBytes()), ChunkSize) /
        ChunkSize)
@@ -1330,9 +1442,9 @@ bool js::Nursery::maybeResizeExact(JS::GCReason reason) {
   }
   if (newMaxNurseryChunks != chunkCountLimit_) {
     chunkCountLimit_ = newMaxNurseryChunks;
-    /* The configured maximum nursery size is changing */
+    // The configured maximum nursery size is changing.
     if (JS_HOWMANY(capacity_, gc::ChunkSize) > newMaxNurseryChunks) {
-      /* We need to shrink the nursery */
+      // We need to shrink the nursery.
       static_assert(NurseryChunkUsableSize < ChunkSize,
                     "Usable size must be smaller than total size or this "
                     "calculation might overflow");
@@ -1345,10 +1457,7 @@ bool js::Nursery::maybeResizeExact(JS::GCReason reason) {
   MOZ_ASSERT(minNurseryBytes >= ArenaSize);
 
   if (minNurseryBytes > capacity()) {
-    /*
-     * the configured minimum nursery size is changing and we need to grow the
-     * nursery
-     */
+    // the configured minimum nursery size is changing, so grow the nursery.
     MOZ_ASSERT(minNurseryBytes <= roundSize(tunables().gcMaxNurseryBytes()));
     growAllocableSpace(minNurseryBytes);
     return true;
@@ -1370,24 +1479,59 @@ size_t js::Nursery::roundSize(size_t size) const {
 void js::Nursery::growAllocableSpace(size_t newCapacity) {
   MOZ_ASSERT_IF(!isSubChunkMode(), newCapacity > currentChunk_ * ChunkSize);
   MOZ_ASSERT(newCapacity <= chunkCountLimit_ * ChunkSize);
+  MOZ_ASSERT(newCapacity > capacity());
+
+  if (isSubChunkMode()) {
+    // Avoid growing into an area that's about to be decommitted.
+    decommitTask.join();
+
+    MOZ_ASSERT(currentChunk_ == 0);
+
+    // The remainder of the chunk may have been decommitted.
+    if (!chunk(0).markPagesInUseHard(Min(newCapacity, ChunkSize - ArenaSize))) {
+      // The OS won't give us the memory we need, we can't grow.
+      return;
+    }
+
+    // The capacity has changed and since we were in sub-chunk mode we need to
+    // update the poison values / asan infomation for the now-valid region of
+    // this chunk.
+    size_t poisonSize = Min(newCapacity, NurseryChunkUsableSize) - capacity();
+    // Don't poison the trailer.
+    MOZ_ASSERT(capacity() + poisonSize <= NurseryChunkUsableSize);
+    chunk(0).poisonRange(capacity(), poisonSize, JS_FRESH_NURSERY_PATTERN,
+                         MemCheckKind::MakeUndefined);
+  }
+
   capacity_ = newCapacity;
+
   setCurrentEnd();
 }
 
-void js::Nursery::freeChunksFrom(unsigned firstFreeChunk) {
+void js::Nursery::freeChunksFrom(const unsigned firstFreeChunk) {
   MOZ_ASSERT(firstFreeChunk < chunks_.length());
 
-  if (CanUseExtraThreads()) {
+  // The loop below may need to skip the first chunk, so we may use this so we
+  // can modify it.
+  unsigned firstChunkToDecommit = firstFreeChunk;
+
+  if ((firstChunkToDecommit == 0) && isSubChunkMode()) {
+    // Part of the first chunk may be hard-decommitted, un-decommit it so that
+    // the GC's normal chunk-handling doesn't segfault.
+    MOZ_ASSERT(currentChunk_ == 0);
+    if (!chunk(0).markPagesInUseHard(ChunkSize - ArenaSize)) {
+      // Free the chunk if we can't allocate its pages.
+      UnmapPages(static_cast<void*>(&chunk(0)), ChunkSize);
+      firstChunkToDecommit = 1;
+    }
+  }
+
+  {
     AutoLockHelperThreadState lock;
-    for (size_t i = firstFreeChunk; i < chunks_.length(); i++) {
-      decommitChunksTask.queueChunk(chunks_[i], lock);
+    for (size_t i = firstChunkToDecommit; i < chunks_.length(); i++) {
+      decommitTask.queueChunk(chunks_[i], lock);
     }
-    decommitChunksTask.startOrRunIfIdle(lock);
-  } else {
-    // Sequential path
-    for (size_t i = firstFreeChunk; i < chunks_.length(); i++) {
-      decommitChunksTask.decommitChunk(chunks_[i]->toChunk(runtime()));
-    }
+    decommitTask.startOrRunIfIdle(lock);
   }
 
   chunks_.shrinkTo(firstFreeChunk);
@@ -1415,9 +1559,22 @@ void js::Nursery::shrinkAllocableSpace(size_t newCapacity) {
     freeChunksFrom(newCount);
   }
 
+  size_t oldCapacity = capacity_;
   capacity_ = newCapacity;
   MOZ_ASSERT(capacity_ >= ArenaSize);
+
   setCurrentEnd();
+
+  if (isSubChunkMode()) {
+    MOZ_ASSERT(currentChunk_ == 0);
+    chunk(0).poisonRange(newCapacity,
+                         Min(oldCapacity, NurseryChunkUsableSize) - newCapacity,
+                         JS_SWEPT_NURSERY_PATTERN, MemCheckKind::MakeNoAccess);
+
+    AutoLockHelperThreadState lock;
+    decommitTask.queueRange(capacity_, chunk(0), lock);
+    decommitTask.startOrRunIfIdle(lock);
+  }
 }
 
 void js::Nursery::minimizeAllocableSpace() {

@@ -12,6 +12,7 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/NeckoChild.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "nsCookie.h"
@@ -20,6 +21,7 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
+#include "nsIHttpChannel.h"
 #include "nsCookiePermission.h"
 #include "nsIEffectiveTLDService.h"
 #include "nsIURI.h"
@@ -289,10 +291,9 @@ void CookieServiceChild::GetCookieStringFromCookieHashTable(
   }
 
   nsAutoCString hostFromURI, pathFromURI;
-  bool isSecure;
   aHostURI->GetAsciiHost(hostFromURI);
   aHostURI->GetPathQueryRef(pathFromURI);
-  aHostURI->SchemeIs("https", &isSecure);
+  bool isSecure = aHostURI->SchemeIs("https");
   int64_t currentTimeInUsec = PR_Now();
   int64_t currentTime = currentTimeInUsec / PR_USEC_PER_SEC;
 

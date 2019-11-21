@@ -26,6 +26,7 @@
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrototypeList.h"
 #include "mozilla/dom/RootedDictionary.h"
+#include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/SegmentedVector.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Likely.h"
@@ -82,27 +83,15 @@ inline bool IsDOMClass(const JSClass* clasp) {
   return clasp->flags & JSCLASS_IS_DOMJSCLASS;
 }
 
-inline bool IsDOMClass(const js::Class* clasp) {
-  return IsDOMClass(Jsvalify(clasp));
-}
-
 // Return true if the JSClass is used for non-proxy DOM objects.
-inline bool IsNonProxyDOMClass(const js::Class* clasp) {
-  return IsDOMClass(clasp) && !clasp->isProxy();
-}
-
 inline bool IsNonProxyDOMClass(const JSClass* clasp) {
-  return IsNonProxyDOMClass(js::Valueify(clasp));
+  return IsDOMClass(clasp) && !clasp->isProxy();
 }
 
 // Returns true if the JSClass is used for DOM interface and interface
 // prototype objects.
 inline bool IsDOMIfaceAndProtoClass(const JSClass* clasp) {
   return clasp->flags & JSCLASS_IS_DOMIFACEANDPROTOJSCLASS;
-}
-
-inline bool IsDOMIfaceAndProtoClass(const js::Class* clasp) {
-  return IsDOMIfaceAndProtoClass(Jsvalify(clasp));
 }
 
 static_assert(DOM_OBJECT_SLOT == 0,
@@ -133,7 +122,7 @@ inline T* UnwrapPossiblyNotInitializedDOMObject(JSObject* obj) {
   return static_cast<T*>(val.toPrivate());
 }
 
-inline const DOMJSClass* GetDOMClass(const js::Class* clasp) {
+inline const DOMJSClass* GetDOMClass(const JSClass* clasp) {
   return IsDOMClass(clasp) ? DOMJSClass::FromJSClass(clasp) : nullptr;
 }
 
@@ -614,9 +603,10 @@ struct VerifyTraceProtoAndIfaceCacheCalledTracer : public JS::CallbackTracer {
   explicit VerifyTraceProtoAndIfaceCacheCalledTracer(JSContext* cx)
       : JS::CallbackTracer(cx), ok(false) {}
 
-  void onChild(const JS::GCCellPtr&) override {
+  bool onChild(const JS::GCCellPtr&) override {
     // We don't do anything here, we only want to verify that
     // TraceProtoAndIfaceCache was called.
+    return true;
   }
 
   TracerKind getTracerKind() const override {
@@ -732,9 +722,9 @@ struct NamedConstructor {
 // clang-format on
 void CreateInterfaceObjects(
     JSContext* cx, JS::Handle<JSObject*> global,
-    JS::Handle<JSObject*> protoProto, const js::Class* protoClass,
+    JS::Handle<JSObject*> protoProto, const JSClass* protoClass,
     JS::Heap<JSObject*>* protoCache, const char* toStringTag,
-    JS::Handle<JSObject*> interfaceProto, const js::Class* constructorClass,
+    JS::Handle<JSObject*> interfaceProto, const JSClass* constructorClass,
     unsigned ctorNargs, const NamedConstructor* namedConstructors,
     JS::Heap<JSObject*>* constructorCache,
     const NativeProperties* regularProperties,
@@ -1378,17 +1368,9 @@ inline mozilla::dom::ReflectionScope GetReflectionScope(
 
 template <class T>
 inline void ClearWrapper(T* p, nsWrapperCache* cache, JSObject* obj) {
-  // Skip clearing the wrapper when replaying. This method is called during
-  // finalization of |obj|, and when replaying a strong reference is kept on
-  // the contents of the cache: since |obj| is being finalized, the cache
-  // cannot point to |obj|, and clearing here won't do anything.
-  // Additionally, the reference held on the cache may have already been
-  // released, if we are finalizing later than we did while recording, and the
-  // cache may have already been deleted.
-  if (!recordreplay::IsReplaying()) {
-    MOZ_ASSERT(cache->GetWrapperMaybeDead() == obj);
-    cache->ClearWrapper(obj);
-  }
+  MOZ_ASSERT(cache->GetWrapperMaybeDead() == obj ||
+             (js::RuntimeIsBeingDestroyed() && !cache->GetWrapperMaybeDead()));
+  cache->ClearWrapper(obj);
 }
 
 template <class T>
@@ -1396,13 +1378,9 @@ inline void ClearWrapper(T* p, void*, JSObject* obj) {
   // QueryInterface to nsWrapperCache can't GC, we hope.
   JS::AutoSuppressGCAnalysis nogc;
 
-  // Skip clearing the wrapper when replaying, for the same reason as in the
-  // overload above: |p| may have been deleted and we cannot QI it.
-  if (!recordreplay::IsReplaying()) {
-    nsWrapperCache* cache;
-    CallQueryInterface(p, &cache);
-    ClearWrapper(p, cache, obj);
-  }
+  nsWrapperCache* cache;
+  CallQueryInterface(p, &cache);
+  ClearWrapper(p, cache, obj);
 }
 
 template <class T>
@@ -1431,7 +1409,7 @@ inline void UpdateWrapper(T* p, void*, JSObject* obj, const JSObject* old) {
 bool TryPreserveWrapper(JS::Handle<JSObject*> obj);
 
 // Can only be called with a DOM JSClass.
-bool InstanceClassHasProtoAtDepth(const js::Class* clasp, uint32_t protoID,
+bool InstanceClassHasProtoAtDepth(const JSClass* clasp, uint32_t protoID,
                                   uint32_t depth);
 
 // Only set allowNativeWrapper to false if you really know you need it; if in
@@ -1911,7 +1889,7 @@ inline bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
 template <typename T>
 void DoTraceSequence(JSTracer* trc, FallibleTArray<T>& seq);
 template <typename T>
-void DoTraceSequence(JSTracer* trc, InfallibleTArray<T>& seq);
+void DoTraceSequence(JSTracer* trc, nsTArray<T>& seq);
 
 // Class used to trace sequences, with specializations for various
 // sequence types.
@@ -2064,7 +2042,7 @@ void DoTraceSequence(JSTracer* trc, FallibleTArray<T>& seq) {
 }
 
 template <typename T>
-void DoTraceSequence(JSTracer* trc, InfallibleTArray<T>& seq) {
+void DoTraceSequence(JSTracer* trc, nsTArray<T>& seq) {
   SequenceTracer<T>::TraceSequence(trc, seq.Elements(),
                                    seq.Elements() + seq.Length());
 }
@@ -2082,7 +2060,7 @@ class MOZ_RAII SequenceRooter final : private JS::CustomAutoRooter {
 
   template <typename CX>
   SequenceRooter(const CX& cx,
-                 InfallibleTArray<T>* aSequence MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+                 nsTArray<T>* aSequence MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
       : JS::CustomAutoRooter(cx MOZ_GUARD_OBJECT_NOTIFIER_PARAM_TO_PARENT),
         mInfallibleArray(aSequence),
         mSequenceType(eInfallibleArray) {}
@@ -2111,7 +2089,7 @@ class MOZ_RAII SequenceRooter final : private JS::CustomAutoRooter {
   }
 
   union {
-    InfallibleTArray<T>* mInfallibleArray;
+    nsTArray<T>* mInfallibleArray;
     FallibleTArray<T>* mFallibleArray;
     Nullable<nsTArray<T>>* mNullableArray;
   };
@@ -2282,7 +2260,7 @@ inline bool XrayGetNativeProto(JSContext* cx, JS::Handle<JSObject*> obj,
       MOZ_ASSERT(JS_IsNativeFunction(obj, Constructor));
       protop.set(JS::GetRealmFunctionPrototype(cx));
     } else {
-      const js::Class* clasp = js::GetObjectClass(obj);
+      const JSClass* clasp = js::GetObjectClass(obj);
       MOZ_ASSERT(IsDOMIfaceAndProtoClass(clasp));
       ProtoGetter protoGetter =
           DOMIfaceAndProtoJSClass::FromJSClass(clasp)->mGetParentProto;
@@ -2341,12 +2319,12 @@ inline JSObject* GetCachedSlotStorageObject(JSContext* cx,
 
 extern NativePropertyHooks sEmptyNativePropertyHooks;
 
-extern const js::ClassOps sBoringInterfaceObjectClassClassOps;
+extern const JSClassOps sBoringInterfaceObjectClassClassOps;
 
 extern const js::ObjectOps sInterfaceObjectClassObjectOps;
 
 inline bool UseDOMXray(JSObject* obj) {
-  const js::Class* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = js::GetObjectClass(obj);
   return IsDOMClass(clasp) || JS_IsNativeFunction(obj, Constructor) ||
          IsDOMIfaceAndProtoClass(clasp);
 }
@@ -2357,7 +2335,7 @@ inline bool IsDOMConstructor(JSObject* obj) {
     return true;
   }
 
-  const js::Class* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = js::GetObjectClass(obj);
   // Check for a DOM interface object.
   return dom::IsDOMIfaceAndProtoClass(clasp) &&
          dom::DOMIfaceAndProtoJSClass::FromJSClass(clasp)->mType ==
@@ -2467,9 +2445,35 @@ void ConstructJSImplementation(const char* aContractId,
                                JS::MutableHandle<JSObject*> aObject,
                                ErrorResult& aRv);
 
-already_AddRefed<nsIGlobalObject> ConstructJSImplementation(
-    const char* aContractId, const GlobalObject& aGlobal,
-    JS::MutableHandle<JSObject*> aObject, ErrorResult& aRv);
+template <typename T>
+already_AddRefed<T> ConstructJSImplementation(const char* aContractId,
+                                              nsIGlobalObject* aGlobal,
+                                              ErrorResult& aRv) {
+  JS::RootingContext* cx = RootingCx();
+  JS::Rooted<JSObject*> jsImplObj(cx);
+  ConstructJSImplementation(aContractId, aGlobal, &jsImplObj, aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  MOZ_RELEASE_ASSERT(!js::IsWrapper(jsImplObj));
+  JS::Rooted<JSObject*> jsImplGlobal(cx, JS::GetNonCCWObjectGlobal(jsImplObj));
+  RefPtr<T> newObj = new T(jsImplObj, jsImplGlobal, aGlobal);
+  return newObj.forget();
+}
+
+template <typename T>
+already_AddRefed<T> ConstructJSImplementation(const char* aContractId,
+                                              const GlobalObject& aGlobal,
+                                              ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  if (!global) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  return ConstructJSImplementation<T>(aContractId, global, aRv);
+}
 
 /**
  * Convert an nsCString to jsval, returning true on success.
@@ -2545,11 +2549,6 @@ bool ToSupportsIsOnPrimaryInheritanceChain(T* aObject, nsWrapperCache* aCache) {
 // object types.
 inline size_t BindingJSObjectMallocBytes(void* aNativePtr) { return 0; }
 
-// Register a thing which DeferredFinalize might be called on during GC
-// finalization. See DeferredFinalize.h
-template <class T>
-static void RecordReplayRegisterDeferredFinalize(T* aObject);
-
 // The BindingJSObjectCreator class is supposed to be used by a caller that
 // wants to create and initialise a binding JSObject. After initialisation has
 // been successfully completed it should call ForgetObject().
@@ -2571,7 +2570,7 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
     }
   }
 
-  void CreateProxyObject(JSContext* aCx, const js::Class* aClass,
+  void CreateProxyObject(JSContext* aCx, const JSClass* aClass,
                          const DOMProxyHandler* aHandler,
                          JS::Handle<JSObject*> aProto, bool aLazyProto,
                          T* aNative, JS::Handle<JS::Value> aExpandoValue,
@@ -2615,7 +2614,10 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
   void InitializationSucceeded() {
     T* pointer;
     mNative.forget(&pointer);
-    RecordReplayRegisterDeferredFinalize<T>(pointer);
+
+    // Never collect binding objects while recording or replaying, to avoid
+    // non-deterministically releasing references during finalization.
+    recordreplay::HoldJSObject(mReflector);
 
     mReflector = nullptr;
   }
@@ -2710,12 +2712,6 @@ struct DeferredFinalizer {
     DeferredFinalize(Impl::AppendDeferredFinalizePointer,
                      Impl::DeferredFinalize, aObject);
   }
-
-  static void RecordReplayRegisterDeferredFinalize(T* aObject) {
-    typedef DeferredFinalizerImpl<T> Impl;
-    RecordReplayRegisterDeferredFinalizeThing(
-        Impl::AppendDeferredFinalizePointer, Impl::DeferredFinalize, aObject);
-  }
 };
 
 template <class T>
@@ -2723,20 +2719,11 @@ struct DeferredFinalizer<T, true> {
   static void AddForDeferredFinalization(T* aObject) {
     DeferredFinalize(reinterpret_cast<nsISupports*>(aObject));
   }
-
-  static void RecordReplayRegisterDeferredFinalize(T* aObject) {
-    RecordReplayRegisterDeferredFinalizeThing(nullptr, nullptr, aObject);
-  }
 };
 
 template <class T>
 static void AddForDeferredFinalization(T* aObject) {
   DeferredFinalizer<T>::AddForDeferredFinalization(aObject);
-}
-
-template <class T>
-static void RecordReplayRegisterDeferredFinalize(T* aObject) {
-  DeferredFinalizer<T>::RecordReplayRegisterDeferredFinalize(aObject);
 }
 
 // This returns T's CC participant if it participates in CC and does not inherit
@@ -2848,7 +2835,6 @@ bool CreateGlobal(JSContext* aCx, T* aNative, nsWrapperCache* aCache,
     NS_ADDREF(aNative);
 
     aCache->SetWrapper(aGlobal);
-    RecordReplayRegisterDeferredFinalize<T>(aNative);
 
     dom::AllocateProtoAndIfaceCache(
         aGlobal, CreateGlobalOptions<T>::ProtoAndIfaceCacheKind);
@@ -2975,6 +2961,15 @@ struct LenientThisPolicy;
 // A this-extraction policy for cross-origin getters/setters/methods.
 struct CrossOriginThisPolicy;
 
+// A this-extraction policy for getters/setters/methods that should
+// not be allowed to be called cross-origin but expect objects that
+// _can_ be cross-origin.
+struct MaybeCrossOriginObjectThisPolicy;
+
+// A this-extraction policy which is just like
+// MaybeCrossOriginObjectThisPolicy but has lenient-this behavior.
+struct MaybeCrossOriginObjectLenientThisPolicy;
+
 // An exception-reporting policy for normal getters/setters/methods.
 struct ThrowExceptions;
 
@@ -3083,7 +3078,7 @@ already_AddRefed<Element> CreateXULOrHTMLElement(
     const GlobalObject& aGlobal, const JS::CallArgs& aCallArgs,
     JS::Handle<JSObject*> aGivenProto, ErrorResult& aRv);
 
-void SetDocumentAndPageUseCounter(JSObject* aObject, UseCounter aUseCounter);
+void SetUseCounter(JSObject* aObject, UseCounter aUseCounter);
 
 // Warnings
 void DeprecationWarning(JSContext* aCx, JSObject* aObject,

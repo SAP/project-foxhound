@@ -6,7 +6,7 @@
 
 #include "mozilla/layers/CompositorManagerChild.h"
 
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/CompositorManagerParent.h"
 #include "mozilla/layers/CompositorThread.h"
@@ -101,13 +101,13 @@ bool CompositorManagerChild::CreateContentCompositorBridge(
   }
 
   CompositorBridgeOptions options = ContentCompositorOptions();
-  PCompositorBridgeChild* pbridge =
-      sInstance->SendPCompositorBridgeConstructor(options);
-  if (NS_WARN_IF(!pbridge)) {
+
+  RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
+  if (NS_WARN_IF(
+          !sInstance->SendPCompositorBridgeConstructor(bridge, options))) {
     return false;
   }
 
-  auto bridge = static_cast<CompositorBridgeChild*>(pbridge);
   bridge->InitForContent(aNamespace);
   return true;
 }
@@ -131,14 +131,13 @@ CompositorManagerChild::CreateWidgetCompositorBridge(
 
   CompositorBridgeOptions options = WidgetCompositorOptions(
       aScale, vsyncRate, aOptions, aUseExternalSurfaceSize, aSurfaceSize);
-  PCompositorBridgeChild* pbridge =
-      sInstance->SendPCompositorBridgeConstructor(options);
-  if (NS_WARN_IF(!pbridge)) {
+
+  RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
+  if (NS_WARN_IF(
+          !sInstance->SendPCompositorBridgeConstructor(bridge, options))) {
     return nullptr;
   }
 
-  RefPtr<CompositorBridgeChild> bridge =
-      static_cast<CompositorBridgeChild*>(pbridge);
   bridge->InitForWidget(aProcessToken, aLayerManager, aNamespace);
   return bridge.forget();
 }
@@ -154,14 +153,13 @@ CompositorManagerChild::CreateSameProcessWidgetCompositorBridge(
   }
 
   CompositorBridgeOptions options = SameProcessWidgetCompositorOptions();
-  PCompositorBridgeChild* pbridge =
-      sInstance->SendPCompositorBridgeConstructor(options);
-  if (NS_WARN_IF(!pbridge)) {
+
+  RefPtr<CompositorBridgeChild> bridge = new CompositorBridgeChild(sInstance);
+  if (NS_WARN_IF(
+          !sInstance->SendPCompositorBridgeConstructor(bridge, options))) {
     return nullptr;
   }
 
-  RefPtr<CompositorBridgeChild> bridge =
-      static_cast<CompositorBridgeChild*>(pbridge);
   bridge->InitForWidget(1, aLayerManager, aNamespace);
   return bridge.forget();
 }
@@ -215,19 +213,6 @@ void CompositorManagerChild::ActorDestroy(ActorDestroyReason aReason) {
   }
 }
 
-PCompositorBridgeChild* CompositorManagerChild::AllocPCompositorBridgeChild(
-    const CompositorBridgeOptions& aOptions) {
-  CompositorBridgeChild* child = new CompositorBridgeChild(this);
-  child->AddRef();
-  return child;
-}
-
-bool CompositorManagerChild::DeallocPCompositorBridgeChild(
-    PCompositorBridgeChild* aActor) {
-  static_cast<CompositorBridgeChild*>(aActor)->Release();
-  return true;
-}
-
 void CompositorManagerChild::HandleFatalError(const char* aMsg) const {
   dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aMsg, OtherPid());
 }
@@ -269,7 +254,8 @@ void CompositorManagerChild::SetReplyTimeout() {
 #ifndef DEBUG
   // Add a timeout for release builds to kill GPU process when it hangs.
   if (XRE_IsParentProcess() && GPUProcessManager::Get()->GetGPUChild()) {
-    int32_t timeout = StaticPrefs::layers_gpu_process_ipc_reply_timeout_ms();
+    int32_t timeout =
+        StaticPrefs::layers_gpu_process_ipc_reply_timeout_ms_AtStartup();
     SetReplyTimeoutMs(timeout);
   }
 #endif

@@ -15,6 +15,7 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         'public/GeckoProfilerReporter.h',
         'public/ProfileJSONWriter.h',
         'public/ProfilerChild.h',
+        'public/ProfilerCodeAddressService.h',
         'public/ProfilerMarkerPayload.h',
         'public/ProfilerParent.h',
         'public/shared-libraries.h',
@@ -27,6 +28,7 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         'core/ProfiledThreadData.cpp',
         'core/ProfileJSONWriter.cpp',
         'core/ProfilerBacktrace.cpp',
+        'core/ProfilerCodeAddressService.cpp',
         'core/ProfilerMarkerPayload.cpp',
         'core/RegisteredThread.cpp',
         'gecko/ChildProfilerController.cpp',
@@ -137,8 +139,9 @@ EXPORTS += [
     'public/GeckoProfiler.h',
 ]
 
-# vm/GeckoProfiler.h needs to include this and doesn't like #include "ProfilerCounts.h"
 EXPORTS.mozilla += [
+    'public/BlocksRingBufferGeckoExtensions.h',
+    # vm/GeckoProfiler.h needs to include this and doesn't like #include "ProfilerCounts.h"
     'public/ProfilerCounts.h',
 ]
 

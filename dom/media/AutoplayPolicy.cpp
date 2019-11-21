@@ -22,6 +22,7 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsIPermissionManager.h"
 
 mozilla::LazyLogModule gAutoplayPermissionLog("Autoplay");
@@ -39,7 +40,7 @@ static Document* ApproverDocOf(const Document& aDocument) {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
-  ds->GetSameTypeRootTreeItem(getter_AddRefs(rootTreeItem));
+  ds->GetInProcessSameTypeRootTreeItem(getter_AddRefs(rootTreeItem));
   if (!rootTreeItem) {
     return nullptr;
   }

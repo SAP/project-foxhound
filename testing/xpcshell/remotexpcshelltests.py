@@ -244,7 +244,7 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         self.remoteTestRoot = posixpath.join(self.device.test_root, "xpc")
         # Add Android version (SDK level) to mozinfo so that manifest entries
         # can be conditional on android_version.
-        mozinfo.info['android_version'] = self.device.version
+        mozinfo.info['android_version'] = str(self.device.version)
 
         self.localBin = options['localBin']
         self.pathMapping = []
@@ -360,8 +360,8 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
         self.env["HOME"] = self.profileDir
         self.env["XPCSHELL_TEST_TEMP_DIR"] = self.remoteTmpDir
         self.env["XPCSHELL_MINIDUMP_DIR"] = self.remoteMinidumpDir
-
         self.env["MOZ_ANDROID_CPU_ABI"] = self.device.get_prop("ro.product.cpu.abi")
+        self.env["MOZ_ANDROID_DATA_DIR"] = self.remoteBinDir
 
         if self.options['setup']:
             self.pushWrapper()
@@ -398,10 +398,10 @@ class XPCShellRemote(xpcshell.XPCShellTests, object):
                     "ssltunnel",
                     "certutil",
                     "pk12util",
-                    "BadCertServer",
+                    "BadCertAndPinningServer",
                     "OCSPStaplingServer",
                     "GenerateOCSPResponse",
-                    "SymantecSanctionsServer"]
+                    "SanctionsTestServer"]
         for fname in binaries:
             local = os.path.join(self.localBin, fname)
             if os.path.isfile(local):

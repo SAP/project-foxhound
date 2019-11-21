@@ -8,6 +8,7 @@ import os
 
 import mozunit
 import pytest
+import mozpack.path as mozpath
 
 from mozlint.result import Issue, ResultSummary
 
@@ -15,15 +16,17 @@ from mozlint.result import Issue, ResultSummary
 @pytest.fixture
 def path(filedir):
     def _path(name):
-        return os.path.join(filedir, name)
+        return mozpath.join(filedir, name)
     return _path
 
 
 @pytest.fixture(params=[
-    'string.yml',
-    'regex.yml',
     'external.yml',
-    'structured.yml'])
+    'global.yml',
+    'regex.yml',
+    'string.yml',
+    'structured.yml',
+])
 def linter(lintdir, request):
     return os.path.join(lintdir, request.param)
 
@@ -51,6 +54,12 @@ def test_no_filter(lint, lintdir, files):
     lint.lintargs['use_filters'] = False
     result = lint.roll(files)
     assert len(result.issues) == 3
+
+
+def test_global_skipped(lint, lintdir, files):
+    lint.read(os.path.join(lintdir, 'global_skipped.yml'))
+    result = lint.roll(files)
+    assert len(result.issues) == 0
 
 
 if __name__ == '__main__':

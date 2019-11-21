@@ -20,6 +20,8 @@
       this.addEventListener("click", this);
       this.addEventListener("dblclick", this, true);
       this.addEventListener("animationend", this);
+      this.addEventListener("focus", this);
+      this.addEventListener("AriaFocus", this);
 
       this._selectedOnFirstMouseDown = false;
 
@@ -330,16 +332,20 @@
             gBrowser.selectedTab = lastSelectedTab;
 
             // Make sure selection is cleared when tab-switch doesn't happen.
-            gBrowser.clearMultiSelectedTabs(false);
+            gBrowser.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
           }
           gBrowser.addRangeToMultiSelectedTabs(lastSelectedTab, this);
         } else if (accelKey) {
           // Ctrl (Cmd for mac) key is pressed
           eventMaySelectTab = false;
           if (this.multiselected) {
-            gBrowser.removeFromMultiSelectedTabs(this, true);
+            gBrowser.removeFromMultiSelectedTabs(this, {
+              isLastMultiSelectChange: true,
+            });
           } else if (this != gBrowser.selectedTab) {
-            gBrowser.addToMultiSelectedTabs(this, false);
+            gBrowser.addToMultiSelectedTabs(this, {
+              isLastMultiSelectChange: true,
+            });
             gBrowser.lastMultiSelectedTab = this;
           }
         } else if (!this.selected && this.multiselected) {
@@ -380,9 +386,9 @@
 
         // Force positional attributes to update when the
         // target (of the click) is the "active" tab.
-        let updatePositionalAttr = gBrowser.selectedTab == this;
+        let isLastMultiSelectChange = gBrowser.selectedTab == this;
 
-        gBrowser.clearMultiSelectedTabs(updatePositionalAttr);
+        gBrowser.clearMultiSelectedTabs({ isLastMultiSelectChange });
       }
 
       if (
@@ -613,6 +619,27 @@
       }
 
       ContextualIdentityService.setTabStyle(this);
+    }
+
+    updateA11yDescription() {
+      let prevDescTab = gBrowser.tabContainer.querySelector(
+        "tab[aria-describedby]"
+      );
+      if (prevDescTab) {
+        // We can only have a description for the focused tab.
+        prevDescTab.removeAttribute("aria-describedby");
+      }
+      let desc = document.getElementById("tabbrowser-tab-a11y-desc");
+      desc.textContent = gBrowser.getTabTooltip(this, false);
+      this.setAttribute("aria-describedby", "tabbrowser-tab-a11y-desc");
+    }
+
+    on_focus(event) {
+      this.updateA11yDescription();
+    }
+
+    on_AriaFocus(event) {
+      this.updateA11yDescription();
     }
   }
 

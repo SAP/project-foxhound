@@ -4,73 +4,49 @@
 
 "use strict";
 
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
+
 const TRACKING_PAGE =
   "http://tracking.example.org/browser/browser/base/content/test/trackingUI/trackingPage.html";
 
 const TP_PREF = "privacy.trackingprotection.enabled";
 
 add_task(async function setup() {
-  let oldCanRecord = Services.telemetry.canRecordExtended;
-  Services.telemetry.canRecordExtended = true;
-
-  // Avoid the content blocking tour interfering with our tests by popping up.
-  await SpecialPowers.pushPrefEnv({
-    set: [[ContentBlocking.prefIntroCount, ContentBlocking.MAX_INTROS]],
-  });
   await UrlClassifierTestUtils.addTestTrackers();
 
   registerCleanupFunction(() => {
-    Services.telemetry.canRecordExtended = oldCanRecord;
     UrlClassifierTestUtils.cleanupTestTrackers();
   });
 });
 
 async function assertSitesListed(blocked) {
   await BrowserTestUtils.withNewTab(TRACKING_PAGE, async function(browser) {
-    await openIdentityPopup();
-
-    Services.telemetry.clearEvents();
+    await openProtectionsPopup();
 
     let categoryItem = document.getElementById(
-      "identity-popup-content-blocking-category-tracking-protection"
+      "protections-popup-category-tracking-protection"
     );
     ok(
       BrowserTestUtils.is_visible(categoryItem),
       "TP category item is visible"
     );
-    let trackersView = document.getElementById("identity-popup-trackersView");
+    let trackersView = document.getElementById(
+      "protections-popup-trackersView"
+    );
     let viewShown = BrowserTestUtils.waitForEvent(trackersView, "ViewShown");
     categoryItem.click();
     await viewShown;
 
     ok(true, "Trackers view was shown");
 
-    let events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-    ).parent;
-    let buttonEvents = events.filter(
-      e =>
-        e[1] == "security.ui.identitypopup" &&
-        e[2] == "click" &&
-        e[3] == "trackers_subview_btn"
-    );
-    is(buttonEvents.length, 1, "recorded telemetry for the button click");
-
     let listItems = trackersView.querySelectorAll(
-      ".identity-popup-content-blocking-list-item"
+      ".protections-popup-list-item"
     );
     is(listItems.length, 1, "We have 1 tracker in the list");
 
-    let strictInfo = document.getElementById(
-      "identity-popup-trackersView-strict-info"
-    );
-    is(
-      BrowserTestUtils.is_hidden(strictInfo),
-      Services.prefs.getBoolPref(TP_PREF),
-      "Strict info is hidden if TP is enabled."
-    );
-
-    let mainView = document.getElementById("identity-popup-mainView");
+    let mainView = document.getElementById("protections-popup-mainView");
     viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
     let backButton = trackersView.querySelector(".subviewbutton-back");
     backButton.click();
@@ -95,9 +71,7 @@ async function assertSitesListed(blocked) {
     ok(true, "Trackers view was shown");
 
     listItems = Array.from(
-      trackersView.querySelectorAll(
-        ".identity-popup-content-blocking-list-item"
-      )
+      trackersView.querySelectorAll(".protections-popup-list-item")
     );
     is(listItems.length, 2, "We have 2 trackers in the list");
 
@@ -134,10 +108,14 @@ add_task(async function testTrackersSubView() {
   await assertSitesListed(true);
   info("Testing trackers subview with TP enabled and a CB exception.");
   let uri = Services.io.newURI("https://tracking.example.org");
-  Services.perms.add(uri, "trackingprotection", Services.perms.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    uri,
+    "trackingprotection",
+    Services.perms.ALLOW_ACTION
+  );
   await assertSitesListed(false);
   info("Testing trackers subview with TP enabled and a CB exception removed.");
-  Services.perms.remove(uri, "trackingprotection");
+  PermissionTestUtils.remove(uri, "trackingprotection");
   await assertSitesListed(true);
 
   Services.prefs.clearUserPref(TP_PREF);

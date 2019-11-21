@@ -37,17 +37,16 @@ class WebPlatformTestsRunnerSetup(MozbuildObject):
 
     def kwargs_common(self, kwargs):
         tests_src_path = os.path.join(self._here, "tests")
-        if kwargs["product"] == "fennec":
-            # package_name may be non-fennec in the future
+        if kwargs["product"] == "firefox_android":
+            # package_name may be different in the future
             package_name = kwargs["package_name"]
             if not package_name:
                 kwargs["package_name"] = package_name = "org.mozilla.geckoview.test"
 
-            # Note that this import may fail in non-fennec trees
-            from mozrunner.devices.android_device import verify_android_device, grant_runtime_permissions
+            # Note that this import may fail in non-firefox-for-android trees
+            from mozrunner.devices.android_device import verify_android_device
             verify_android_device(self, install=True, verbose=False, xre=True, app=package_name)
 
-            grant_runtime_permissions(self, package_name, kwargs["device_serial"])
             if kwargs["certutil_binary"] is None:
                 kwargs["certutil_binary"] = os.path.join(os.environ.get('MOZ_HOST_BIN'), "certutil")
 
@@ -253,6 +252,10 @@ def create_parser_metadata_summary():
     return metasummary.create_parser()
 
 
+def create_parser_metadata_merge():
+    import metamerge
+    return metamerge.get_parser()
+
 def create_parser_serve():
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__),
                                                     "tests", "tools")))
@@ -277,15 +280,17 @@ class MachCommands(MachCommandBase):
              parser=create_parser_wpt)
     def run_web_platform_tests(self, **params):
         self.setup()
-        if conditions.is_android(self) and params["product"] != "fennec":
+        if conditions.is_android(self) and params["product"] != "firefox_android":
             if params["product"] is None:
-                params["product"] = "fennec"
-            else:
-                raise ValueError("Must specify --product=fennec in Android environment.")
+                params["product"] = "firefox_android"
         if "test_objects" in params:
             for item in params["test_objects"]:
                 params["include"].append(item["name"])
             del params["test_objects"]
+        if params.get('debugger', None):
+            import mozdebug
+            if not mozdebug.get_debugger_info(params.get('debugger')):
+                sys.exit(1)
 
         wpt_setup = self._spawn(WebPlatformTestsRunnerSetup)
         wpt_setup._mach_context = self._mach_context
@@ -295,6 +300,9 @@ class MachCommands(MachCommandBase):
             params["log_mach_screenshot"] = True
 
         logger = wpt_runner.setup_logging(**params)
+
+        if conditions.is_android(self) and params["product"] != "firefox_android":
+            logger.warning("Must specify --product=firefox_android in Android environment.")
 
         return wpt_runner.run(logger, **params)
 
@@ -360,6 +368,15 @@ class MachCommands(MachCommandBase):
         import metasummary
         wpt_setup = self._spawn(WebPlatformTestsRunnerSetup)
         return metasummary.run(wpt_setup.topsrcdir, wpt_setup.topobjdir, **params)
+
+    @Command("wpt-metadata-merge",
+             category="testing",
+             parser=create_parser_metadata_merge)
+    def wpt_meta_merge(self, **params):
+        import metamerge
+        if params["dest"] is None:
+            params["dest"] = params["current"]
+        return metamerge.run(**params)
 
     @Command("wpt-unittest",
              category="testing",

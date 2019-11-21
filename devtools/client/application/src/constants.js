@@ -5,10 +5,36 @@
 "use strict";
 
 const actionTypes = {
+  // manifest substate
+  UPDATE_MANIFEST: "UPDATE_MANIFEST",
+  // page substate
   UPDATE_DOMAIN: "UPDATE_DOMAIN",
+  // ui substate
+  UPDATE_SELECTED_PAGE: "UPDATE_SELECTED_PAGE",
+  // workers substate
   UPDATE_CAN_DEBUG_WORKERS: "UPDATE_CAN_DEBUG_WORKERS",
   UPDATE_WORKERS: "UPDATE_WORKERS",
 };
 
+const PAGE_TYPES = {
+  MANIFEST: "manifest",
+  SERVICE_WORKERS: "service-workers",
+};
+
+const DEFAULT_PAGE = PAGE_TYPES.MANIFEST;
+
+const MANIFEST_ISSUE_LEVELS = {
+  ERROR: "error",
+  WARNING: "warning",
+};
+
 // flatten constants
-module.exports = Object.assign({}, actionTypes);
+module.exports = Object.assign(
+  {},
+  {
+    DEFAULT_PAGE,
+    PAGE_TYPES,
+    MANIFEST_ISSUE_LEVELS,
+  },
+  actionTypes
+);

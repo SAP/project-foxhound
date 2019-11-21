@@ -6,7 +6,7 @@
 
 #include "WebRenderAPI.h"
 
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "LayersLogging.h"
 #include "mozilla/ipc/ByteBuf.h"
 #include "mozilla/webrender/RendererOGL.h"
@@ -70,13 +70,14 @@ class NewRenderer : public RendererEvent {
     *mUseDComp = compositor->UseDComp();
     *mUseTripleBuffering = compositor->UseTripleBuffering();
 
+    bool allow_texture_swizzling = gfx::gfxVars::UseGLSwizzle();
     bool isMainWindow = true;  // TODO!
     bool supportLowPriorityTransactions = isMainWindow;
     bool supportPictureCaching = isMainWindow;
     wr::Renderer* wrRenderer = nullptr;
     if (!wr_window_new(
             aWindowId, mSize.width, mSize.height,
-            supportLowPriorityTransactions,
+            supportLowPriorityTransactions, allow_texture_swizzling,
             StaticPrefs::gfx_webrender_picture_caching() &&
                 supportPictureCaching,
             StaticPrefs::gfx_webrender_start_debug_server(), compositor->gl(),
@@ -579,11 +580,11 @@ void WebRenderAPI::Capture() {
 }
 
 void WebRenderAPI::SetCompositionRecorder(
-    RefPtr<layers::WebRenderCompositionRecorder>&& aRecorder) {
+    UniquePtr<layers::WebRenderCompositionRecorder> aRecorder) {
   class SetCompositionRecorderEvent final : public RendererEvent {
    public:
     explicit SetCompositionRecorderEvent(
-        RefPtr<layers::WebRenderCompositionRecorder>&& aRecorder)
+        UniquePtr<layers::WebRenderCompositionRecorder> aRecorder)
         : mRecorder(std::move(aRecorder)) {
       MOZ_COUNT_CTOR(SetCompositionRecorderEvent);
     }
@@ -600,12 +601,31 @@ void WebRenderAPI::SetCompositionRecorder(
     }
 
    private:
-    RefPtr<layers::WebRenderCompositionRecorder> mRecorder;
+    UniquePtr<layers::WebRenderCompositionRecorder> mRecorder;
   };
 
   auto event = MakeUnique<SetCompositionRecorderEvent>(std::move(aRecorder));
   RunOnRenderThread(std::move(event));
 }
+
+void WebRenderAPI::WriteCollectedFrames() {
+  class WriteCollectedFramesEvent final : public RendererEvent {
+   public:
+    explicit WriteCollectedFramesEvent() {
+      MOZ_COUNT_CTOR(WriteCollectedFramesEvent);
+    }
+
+    ~WriteCollectedFramesEvent() { MOZ_COUNT_DTOR(WriteCollectedFramesEvent); }
+
+    void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
+      aRenderThread.WriteCollectedFramesForWindow(aWindowId);
+    }
+  };
+
+  auto event = MakeUnique<WriteCollectedFramesEvent>();
+  RunOnRenderThread(std::move(event));
+}
+
 void TransactionBuilder::Clear() { wr_resource_updates_clear(mTxn); }
 
 void TransactionBuilder::Notify(wr::Checkpoint aWhen,
@@ -622,8 +642,10 @@ void TransactionBuilder::AddImage(ImageKey key,
 
 void TransactionBuilder::AddBlobImage(BlobImageKey key,
                                       const ImageDescriptor& aDescriptor,
-                                      wr::Vec<uint8_t>& aBytes) {
-  wr_resource_updates_add_blob_image(mTxn, key, &aDescriptor, &aBytes.inner);
+                                      wr::Vec<uint8_t>& aBytes,
+                                      const wr::DeviceIntRect& aVisibleRect) {
+  wr_resource_updates_add_blob_image(mTxn, key, &aDescriptor, &aBytes.inner,
+                                     aVisibleRect);
 }
 
 void TransactionBuilder::AddExternalImage(ImageKey key,
@@ -652,9 +674,10 @@ void TransactionBuilder::UpdateImageBuffer(ImageKey aKey,
 void TransactionBuilder::UpdateBlobImage(BlobImageKey aKey,
                                          const ImageDescriptor& aDescriptor,
                                          wr::Vec<uint8_t>& aBytes,
+                                         const wr::DeviceIntRect& aVisibleRect,
                                          const wr::LayoutIntRect& aDirtyRect) {
   wr_resource_updates_update_blob_image(mTxn, aKey, &aDescriptor, &aBytes.inner,
-                                        aDirtyRect);
+                                        aVisibleRect, aDirtyRect);
 }
 
 void TransactionBuilder::UpdateExternalImage(ImageKey aKey,
@@ -674,8 +697,8 @@ void TransactionBuilder::UpdateExternalImageWithDirtyRect(
       mTxn, aKey, &aDescriptor, aExtID, &aImageType, aChannelIndex, aDirtyRect);
 }
 
-void TransactionBuilder::SetImageVisibleArea(BlobImageKey aKey,
-                                             const wr::DeviceIntRect& aArea) {
+void TransactionBuilder::SetBlobImageVisibleArea(
+    BlobImageKey aKey, const wr::DeviceIntRect& aArea) {
   wr_resource_updates_set_blob_image_visible_area(mTxn, aKey, &aArea);
 }
 
@@ -813,6 +836,8 @@ void DisplayListBuilder::Finalize(
                           &aOutTransaction.mDLDesc, &dl.inner);
   aOutTransaction.mDL.emplace(dl.inner.data, dl.inner.length,
                               dl.inner.capacity);
+  aOutTransaction.mRemotePipelineIds =
+      std::move(SubBuilder(aOutTransaction.mRenderRoot).mRemotePipelineIds);
   dl.inner.capacity = 0;
   dl.inner.data = nullptr;
 }
@@ -1014,6 +1039,25 @@ void DisplayListBuilder::PushClearRectWithComplexRegion(
                                          &spaceAndClip);
 }
 
+void DisplayListBuilder::PushBackdropFilter(
+    const wr::LayoutRect& aBounds, const wr::ComplexClipRegion& aRegion,
+    const nsTArray<wr::FilterOp>& aFilters,
+    const nsTArray<wr::WrFilterData>& aFilterDatas, bool aIsBackfaceVisible) {
+  wr::LayoutRect clip = MergeClipLeaf(aBounds);
+  WRDL_LOG("PushBackdropFilter b=%s c=%s\n", mWrState,
+           Stringify(aBounds).c_str(), Stringify(clip).c_str());
+
+  AutoTArray<wr::ComplexClipRegion, 1> clips;
+  clips.AppendElement(aRegion);
+  auto clipId = DefineClip(Nothing(), aBounds, &clips, nullptr);
+  auto spaceAndClip = WrSpaceAndClip{mCurrentSpaceAndClipChain.space, clipId};
+
+  wr_dp_push_backdrop_filter_with_parent_clip(
+      mWrState, aBounds, clip, aIsBackfaceVisible, &spaceAndClip,
+      aFilters.Elements(), aFilters.Length(), aFilterDatas.Elements(),
+      aFilterDatas.Length());
+}
+
 void DisplayListBuilder::PushLinearGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutPoint& aStartPoint,
@@ -1068,39 +1112,41 @@ void DisplayListBuilder::PushYCbCrPlanarImage(
     bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
     wr::ImageKey aImageChannel1, wr::ImageKey aImageChannel2,
     wr::WrColorDepth aColorDepth, wr::WrYuvColorSpace aColorSpace,
-    wr::ImageRendering aRendering) {
-  wr_dp_push_yuv_planar_image(mWrState, aBounds, MergeClipLeaf(aClip),
-                              aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
-                              aImageChannel0, aImageChannel1, aImageChannel2,
-                              aColorDepth, aColorSpace, aRendering);
+    wr::WrColorRange aColorRange, wr::ImageRendering aRendering) {
+  wr_dp_push_yuv_planar_image(
+      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
+      &mCurrentSpaceAndClipChain, aImageChannel0, aImageChannel1,
+      aImageChannel2, aColorDepth, aColorSpace, aColorRange, aRendering);
 }
 
 void DisplayListBuilder::PushNV12Image(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
     wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
-    wr::WrYuvColorSpace aColorSpace, wr::ImageRendering aRendering) {
+    wr::WrYuvColorSpace aColorSpace, wr::WrColorRange aColorRange,
+    wr::ImageRendering aRendering) {
   wr_dp_push_yuv_NV12_image(mWrState, aBounds, MergeClipLeaf(aClip),
                             aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
                             aImageChannel0, aImageChannel1, aColorDepth,
-                            aColorSpace, aRendering);
+                            aColorSpace, aColorRange, aRendering);
 }
 
 void DisplayListBuilder::PushYCbCrInterleavedImage(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
     wr::WrColorDepth aColorDepth, wr::WrYuvColorSpace aColorSpace,
-    wr::ImageRendering aRendering) {
-  wr_dp_push_yuv_interleaved_image(mWrState, aBounds, MergeClipLeaf(aClip),
-                                   aIsBackfaceVisible,
-                                   &mCurrentSpaceAndClipChain, aImageChannel0,
-                                   aColorDepth, aColorSpace, aRendering);
+    wr::WrColorRange aColorRange, wr::ImageRendering aRendering) {
+  wr_dp_push_yuv_interleaved_image(
+      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
+      &mCurrentSpaceAndClipChain, aImageChannel0, aColorDepth, aColorSpace,
+      aColorRange, aRendering);
 }
 
 void DisplayListBuilder::PushIFrame(const wr::LayoutRect& aBounds,
                                     bool aIsBackfaceVisible,
                                     PipelineId aPipeline,
                                     bool aIgnoreMissingPipeline) {
+  mRemotePipelineIds.AppendElement(aPipeline);
   wr_dp_push_iframe(mWrState, aBounds, MergeClipLeaf(aBounds),
                     aIsBackfaceVisible, &mCurrentSpaceAndClipChain, aPipeline,
                     aIgnoreMissingPipeline);
@@ -1135,10 +1181,9 @@ void DisplayListBuilder::PushBorderGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
     const int32_t aWidth, const int32_t aHeight, bool aFill,
-    const wr::SideOffsets2D<int32_t>& aSlice,
-    const wr::LayoutPoint& aStartPoint, const wr::LayoutPoint& aEndPoint,
-    const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-    const wr::SideOffsets2D<float>& aOutset) {
+    const wr::DeviceIntSideOffsets& aSlice, const wr::LayoutPoint& aStartPoint,
+    const wr::LayoutPoint& aEndPoint, const nsTArray<wr::GradientStop>& aStops,
+    wr::ExtendMode aExtendMode, const wr::LayoutSideOffsets& aOutset) {
   wr_dp_push_border_gradient(mWrState, aBounds, MergeClipLeaf(aClip),
                              aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
                              aWidths, aWidth, aHeight, aFill, aSlice,
@@ -1151,7 +1196,7 @@ void DisplayListBuilder::PushBorderRadialGradient(
     bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
     const wr::LayoutPoint& aCenter, const wr::LayoutSize& aRadius,
     const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-    const wr::SideOffsets2D<float>& aOutset) {
+    const wr::LayoutSideOffsets& aOutset) {
   wr_dp_push_border_radial_gradient(
       mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
       &mCurrentSpaceAndClipChain, aWidths, aFill, aCenter, aRadius,

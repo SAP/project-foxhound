@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -40,16 +38,12 @@ function getValue(dbg, index) {
 // separately controlled from the same debugger.
 add_task(async function() {
   await pushPref("devtools.debugger.features.windowless-workers", true);
+  await pushPref("devtools.debugger.workers-visible", true);
 
   const dbg = await initDebugger("doc-windowless-workers.html");
-  const mainThread = dbg.toolbox.threadClient.actor;
+  const mainThread = dbg.toolbox.threadFront.actor;
 
-  // NOTE: by default we do not wait on worker
-  // commands to complete because the thread could be
-  // shutting down.
-  dbg.client.waitForWorkers(true);
-
-  const workers = await getWorkers(dbg);
+  const workers = await getThreads(dbg);
   ok(workers.length == 2, "Got two workers");
   const thread1 = workers[0].actor;
   const thread2 = workers[1].actor;

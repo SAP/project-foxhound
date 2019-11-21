@@ -27,7 +27,6 @@
           "js",
           "leaf",
           "mainthreadio",
-          "memory",
           "privacy",
           "responsiveness",
           "screenshots",
@@ -37,7 +36,8 @@
           "threads",
           "trackopts",
           "jstracer",
-          "jsallocations"
+          "jsallocations",
+          "preferencereads"
         ]
       },
       {

@@ -1295,15 +1295,6 @@ if CONFIG['MOZ_ENABLE_LIBPROXY']:
         'proxy.h',
     ]
 
-if CONFIG['MOZ_ENABLE_CONTENTMANAGER']:
-    system_headers += [
-        'QtSparql/qsparqlconnection.h',
-        'QtSparql/qsparqlquery.h',
-        'QtSparql/qsparqlresult.h',
-        'SelectMultipleContentItemsPage.h',
-        'SelectSingleContentItemPage.h',
-    ]
-
 if CONFIG['MOZ_SYSTEM_LIBVPX']:
     system_headers += [
         'vpx_mem/vpx_mem.h',
@@ -1327,14 +1318,18 @@ if CONFIG['MOZ_SYSTEM_ICU']:
         'unicode/uclean.h',
         'unicode/ucol.h',
         'unicode/udat.h',
+        'unicode/udata.h',
         'unicode/udatpg.h',
         'unicode/udisplaycontext.h',
         'unicode/uenum.h',
+        'unicode/uformattedvalue.h',
         'unicode/unistr.h',
         'unicode/unorm.h',
         'unicode/unum.h',
+        'unicode/unumberformatter.h',
         'unicode/upluralrules.h',
         'unicode/ureldatefmt.h',
+        'unicode/ures.h',
         'unicode/ustring.h',
         'unicode/utypes.h',
     ]

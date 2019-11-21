@@ -3006,64 +3006,78 @@ GeckoDriver.prototype.deleteSession = function() {
  * @param {string=} id
  *     Optional web element reference to take a screenshot of.
  *     If undefined, a screenshot will be taken of the document element.
- * @param {Array.<string>=} highlights
- *     List of web elements to highlight.
- * @param {boolean} full
- *     True to take a screenshot of the entire document element. Is not
+ * @param {boolean=} full
+ *     True to take a screenshot of the entire document element. Is only
  *     considered if <var>id</var> is not defined. Defaults to true.
  * @param {boolean=} hash
- *     True if the user requests a hash of the image data.
+ *     True if the user requests a hash of the image data. Defaults to false.
  * @param {boolean=} scroll
- *     Scroll to element if |id| is provided.  If undefined, it will
- *     scroll to the element.
+ *     Scroll to element if |id| is provided. Defaults to true.
  *
  * @return {string}
  *     If <var>hash</var> is false, PNG image encoded as Base64 encoded
  *     string.  If <var>hash</var> is true, hex digest of the SHA-256
  *     hash of the Base64 encoded string.
  */
-GeckoDriver.prototype.takeScreenshot = function(cmd) {
+GeckoDriver.prototype.takeScreenshot = async function(cmd) {
   let win = assert.open(this.getCurrentWindow());
 
-  let { id, highlights, full, hash } = cmd.parameters;
-  highlights = highlights || [];
+  let { id, full, hash, scroll } = cmd.parameters;
   let format = hash ? capture.Format.Hash : capture.Format.Base64;
+
+  full = typeof full == "undefined" ? true : full;
+  scroll = typeof scroll == "undefined" ? true : scroll;
+
+  let webEl = id ? WebElement.fromUUID(id, this.context) : null;
+
+  // Only consider full screenshot if no element has been specified
+  full = webEl ? false : full;
+
+  let browsingContext;
+  let rect;
 
   switch (this.context) {
     case Context.Chrome:
-      let highlightEls = highlights
-        .map(ref => WebElement.fromUUID(ref, Context.Chrome))
-        .map(webEl => this.curBrowser.seenEls.get(webEl));
+      browsingContext = win.docShell.browsingContext;
 
-      // viewport
-      let canvas;
-      if (!id && !full) {
-        canvas = capture.viewport(win, highlightEls);
-
-        // element or full document element
+      if (id) {
+        let el = this.curBrowser.seenEls.get(webEl, win);
+        rect = el.getBoundingClientRect();
+      } else if (full) {
+        let clientRect = win.document.documentElement.getBoundingClientRect();
+        rect = new win.DOMRect(0, 0, clientRect.width, clientRect.height);
       } else {
-        let node;
-        if (id) {
-          let webEl = WebElement.fromUUID(id, Context.Chrome);
-          node = this.curBrowser.seenEls.get(webEl);
-        } else {
-          node = win.document.documentElement;
-        }
-
-        canvas = capture.element(node, highlightEls);
-      }
-
-      switch (format) {
-        case capture.Format.Hash:
-          return capture.toHash(canvas);
-
-        case capture.Format.Base64:
-          return capture.toBase64(canvas);
+        // viewport
+        rect = new win.DOMRect(
+          win.pageXOffset,
+          win.pageYOffset,
+          win.innerWidth,
+          win.innerHeight
+        );
       }
       break;
 
     case Context.Content:
-      return this.listener.takeScreenshot(format, cmd.parameters);
+      browsingContext = this.curBrowser.contentBrowser.browsingContext;
+      rect = await this.listener.getScreenshotRect({ el: webEl, full, scroll });
+      break;
+  }
+
+  let canvas = await capture.canvas(
+    win,
+    browsingContext,
+    rect.x,
+    rect.y,
+    rect.width,
+    rect.height
+  );
+
+  switch (format) {
+    case capture.Format.Hash:
+      return capture.toHash(canvas);
+
+    case capture.Format.Base64:
+      return capture.toBase64(canvas);
   }
 
   throw new TypeError(`Unknown context: ${this.context}`);

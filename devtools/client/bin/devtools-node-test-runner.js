@@ -25,12 +25,16 @@ const TEST_TYPES = {
 };
 
 const SUITES = {
-  "aboutdebugging-new": {
-    path: "../aboutdebugging-new/test/jest",
+  aboutdebugging: {
+    path: "../aboutdebugging/test/jest",
     type: TEST_TYPES.JEST,
   },
   accessibility: {
     path: "../accessibility/test/jest",
+    type: TEST_TYPES.JEST,
+  },
+  application: {
+    path: "../application/test/components",
     type: TEST_TYPES.JEST,
   },
   framework: {
@@ -38,11 +42,11 @@ const SUITES = {
     type: TEST_TYPES.JEST,
   },
   netmonitor: {
-    path: "../netmonitor",
+    path: "../netmonitor/test/node",
     type: TEST_TYPES.JEST,
   },
   webconsole: {
-    path: "../webconsole/test",
+    path: "../webconsole/test/node",
     type: TEST_TYPES.MOCHA,
   },
 };
@@ -116,6 +120,18 @@ function runTests() {
   const testPath = path.join(__dirname, SUITES[suite].path);
   chdir(testPath);
 
+  console.log("[devtools-node-test-runner] Check `yarn` is available");
+  try {
+    // This will throw if yarn is unavailable
+    execFileSync("yarn", ["--version"]);
+  } catch (e) {
+    console.log(
+      "[devtools-node-test-runner] ERROR: `yarn` is not installed. " +
+        "See https://yarnpkg.com/docs/install/ "
+    );
+    return false;
+  }
+
   console.log("[devtools-node-test-runner] Run `yarn` in test folder");
   execOut("yarn");
 
@@ -142,6 +158,10 @@ function runTests() {
     console.log(`[devtools-node-test-runner] Test suite [${suite}] succeeded`);
   } else {
     console.log(`[devtools-node-test-runner] Test suite [${suite}] failed`);
+    console.log(
+      "[devtools-node-test-runner] You can find documentation about the " +
+        "devtools node tests at https://docs.firefox-dev.tools/tests/node-tests.html"
+    );
   }
   return success;
 }

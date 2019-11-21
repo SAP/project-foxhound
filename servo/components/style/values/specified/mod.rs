@@ -8,11 +8,12 @@
 
 use super::computed::transform::DirectionVector;
 use super::computed::{Context, ToComputedValue};
+use super::generics::grid::ImplicitGridTracks as GenericImplicitGridTracks;
 use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as GenericTrackBreadth};
 use super::generics::grid::{TrackList as GenericTrackList, TrackSize as GenericTrackSize};
 use super::generics::transform::IsParallelTo;
 use super::generics::{self, GreaterThanOrEqualToOne, NonNegative};
-use super::{Auto, CSSFloat, CSSInteger, Either, None_};
+use super::{CSSFloat, CSSInteger, Either, None_};
 use crate::context::QuirksMode;
 use crate::parser::{Parse, ParserContext};
 use crate::values::serialize_atom_identifier;
@@ -65,11 +66,11 @@ pub use self::length::{NonNegativeLengthPercentage, NonNegativeLengthPercentageO
 #[cfg(feature = "gecko")]
 pub use self::list::ListStyleType;
 pub use self::list::MozListReversed;
-pub use self::list::{QuotePair, Quotes};
+pub use self::list::Quotes;
 pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::percentage::Percentage;
-pub use self::position::{GridAutoFlow, GridTemplateAreas, Position};
+pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, PositionOrAuto};
 pub use self::position::{PositionComponent, ZIndex};
 pub use self::rect::NonNegativeLengthOrNumberRect;
 pub use self::resolution::Resolution;
@@ -77,11 +78,10 @@ pub use self::svg::MozContextProperties;
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
 pub use self::svg_path::SVGPathData;
-pub use self::table::XSpan;
 pub use self::text::{InitialLetter, LetterSpacing, LineBreak, LineHeight, TextAlign};
 pub use self::text::{OverflowWrap, TextEmphasisPosition, TextEmphasisStyle, WordBreak};
 pub use self::text::{TextAlignKeyword, TextDecorationLine, TextOverflow, WordSpacing};
-pub use self::text::{TextDecorationSkipInk, TextTransform};
+pub use self::text::{TextDecorationLength, TextDecorationSkipInk, TextTransform};
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
@@ -121,7 +121,6 @@ pub mod resolution;
 pub mod source_size_list;
 pub mod svg;
 pub mod svg_path;
-pub mod table;
 pub mod text;
 pub mod time;
 pub mod transform;
@@ -402,18 +401,34 @@ impl Parse for NonNegativeNumberOrPercentage {
     }
 }
 
-#[allow(missing_docs)]
+/// The value of Opacity is <alpha-value>, which is "<number> | <percentage>".
+/// However, we serialize the specified value as number, so it's ok to store
+/// the Opacity as Number.
 #[derive(
     Clone, Copy, Debug, MallocSizeOf, PartialEq, PartialOrd, SpecifiedValueInfo, ToCss, ToShmem,
 )]
 pub struct Opacity(Number);
 
 impl Parse for Opacity {
+    /// Opacity accepts <number> | <percentage>, so we parse it as NumberOrPercentage,
+    /// and then convert into an Number if it's a Percentage.
+    /// https://drafts.csswg.org/cssom/#serializing-css-values
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        Number::parse(context, input).map(Opacity)
+        let number = match NumberOrPercentage::parse(context, input)? {
+            NumberOrPercentage::Percentage(p) => Number {
+                value: p.get(),
+                calc_clamping_mode: if p.is_calc() {
+                    Some(AllowedNumericType::All)
+                } else {
+                    None
+                },
+            },
+            NumberOrPercentage::Number(n) => n,
+        };
+        Ok(Opacity(number))
     }
 }
 
@@ -610,6 +625,9 @@ pub type TrackBreadth = GenericTrackBreadth<LengthPercentage>;
 /// The specified value of a grid `<track-size>`
 pub type TrackSize = GenericTrackSize<LengthPercentage>;
 
+/// The specified value of a grid `<track-size>+`
+pub type ImplicitGridTracks = GenericImplicitGridTracks<TrackSize>;
+
 /// The specified value of a grid `<track-list>`
 /// (could also be `<auto-track-list>` or `<explicit-track-list>`)
 pub type TrackList = GenericTrackList<LengthPercentage, Integer>;
@@ -621,7 +639,7 @@ pub type GridLine = GenericGridLine<Integer>;
 pub type GridTemplateComponent = GenericGridTemplateComponent<LengthPercentage, Integer>;
 
 /// rect(...)
-pub type ClipRect = generics::ClipRect<LengthOrAuto>;
+pub type ClipRect = generics::GenericClipRect<LengthOrAuto>;
 
 impl Parse for ClipRect {
     fn parse<'i, 't>(
@@ -634,7 +652,7 @@ impl Parse for ClipRect {
 
 impl ClipRect {
     /// Parses a rect(<top>, <left>, <bottom>, <right>), allowing quirks.
-    pub fn parse_quirky<'i, 't>(
+    fn parse_quirky<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
         allow_quirks: AllowQuirks,
@@ -678,7 +696,7 @@ impl ClipRect {
 }
 
 /// rect(...) | auto
-pub type ClipRectOrAuto = Either<ClipRect, Auto>;
+pub type ClipRectOrAuto = generics::GenericClipRectOrAuto<ClipRect>;
 
 impl ClipRectOrAuto {
     /// Parses a ClipRect or Auto, allowing quirks.
@@ -688,10 +706,10 @@ impl ClipRectOrAuto {
         allow_quirks: AllowQuirks,
     ) -> Result<Self, ParseError<'i>> {
         if let Ok(v) = input.try(|i| ClipRect::parse_quirky(context, i, allow_quirks)) {
-            Ok(Either::First(v))
-        } else {
-            Auto::parse(context, input).map(Either::Second)
+            return Ok(generics::GenericClipRectOrAuto::Rect(v))
         }
+        input.expect_ident_matching("auto")?;
+        Ok(generics::GenericClipRectOrAuto::Auto)
     }
 }
 

@@ -19,6 +19,7 @@
 #include "wasm/WasmInstance.h"
 
 #include "jit/AtomicOperations.h"
+#include "jit/Disassemble.h"
 #include "jit/InlinableNatives.h"
 #include "jit/JitCommon.h"
 #include "jit/JitRealm.h"
@@ -445,59 +446,55 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
   uint32_t memLen = mem->volatileMemoryLength();
 
   if (len == 0) {
-    // Even though the length is zero, we must check for a valid offset.  But
-    // zero-length operations at the edge of the memory are allowed.
-    if (dstByteOffset <= memLen && srcByteOffset <= memLen) {
-      return 0;
+    // Zero length copies that are out-of-bounds do not trap.
+    return 0;
+  }
+
+  // Here, we know that |len - 1| cannot underflow.
+  bool mustTrap = false;
+
+  // As we're supposed to write data until we trap we have to deal with
+  // arithmetic overflow in the limit calculation.
+  uint64_t highestDstOffset = uint64_t(dstByteOffset) + uint64_t(len - 1);
+  uint64_t highestSrcOffset = uint64_t(srcByteOffset) + uint64_t(len - 1);
+
+  bool copyDown = srcByteOffset < dstByteOffset;
+
+  if (highestDstOffset >= memLen || highestSrcOffset >= memLen) {
+    // We would read past the end of the source or write past the end of the
+    // target.
+    if (copyDown) {
+      // We would trap on the first read or write, so don't read or write
+      // anything.
+      len = 0;
+    } else {
+      // Compute what we have space for in target and what's available in the
+      // source and pick the lowest value as the new len.
+      uint64_t srcAvail = memLen < srcByteOffset ? 0 : memLen - srcByteOffset;
+      uint64_t dstAvail = memLen < dstByteOffset ? 0 : memLen - dstByteOffset;
+      MOZ_ASSERT(len > Min(srcAvail, dstAvail));
+      len = uint32_t(Min(srcAvail, dstAvail));
     }
-  } else {
-    // Here, we know that |len - 1| cannot underflow.
-    bool mustTrap = false;
+    mustTrap = true;
+  }
 
-    // As we're supposed to write data until we trap we have to deal with
-    // arithmetic overflow in the limit calculation.
-    uint64_t highestDstOffset = uint64_t(dstByteOffset) + uint64_t(len - 1);
-    uint64_t highestSrcOffset = uint64_t(srcByteOffset) + uint64_t(len - 1);
-
-    bool copyDown =
-        srcByteOffset < dstByteOffset && dstByteOffset < highestSrcOffset;
-
-    if (highestDstOffset >= memLen || highestSrcOffset >= memLen) {
-      // We would read past the end of the source or write past the end of the
-      // target.
-      if (copyDown) {
-        // We would trap on the first read or write, so don't read or write
-        // anything.
-        len = 0;
-      } else {
-        // Compute what we have space for in target and what's available in the
-        // source and pick the lowest value as the new len.
-        uint64_t srcAvail = memLen < srcByteOffset ? 0 : memLen - srcByteOffset;
-        uint64_t dstAvail = memLen < dstByteOffset ? 0 : memLen - dstByteOffset;
-        MOZ_ASSERT(len > Min(srcAvail, dstAvail));
-        len = uint32_t(Min(srcAvail, dstAvail));
-      }
-      mustTrap = true;
+  if (len > 0) {
+    // The required write direction is indicated by `copyDown`, but apart from
+    // the trap that may happen without writing anything, the direction is not
+    // currently observable as there are no fences nor any read/write protect
+    // operation.  So memmove is good enough to handle overlaps.
+    SharedMem<uint8_t*> dataPtr = mem->buffer().dataPointerEither();
+    if (mem->isShared()) {
+      AtomicOperations::memmoveSafeWhenRacy(
+          dataPtr + dstByteOffset, dataPtr + srcByteOffset, size_t(len));
+    } else {
+      uint8_t* rawBuf = dataPtr.unwrap(/*Unshared*/);
+      memmove(rawBuf + dstByteOffset, rawBuf + srcByteOffset, size_t(len));
     }
+  }
 
-    if (len > 0) {
-      // The required write direction is indicated by `copyDown`, but apart from
-      // the trap that may happen without writing anything, the direction is not
-      // currently observable as there are no fences nor any read/write protect
-      // operation.  So memmove is good enough to handle overlaps.
-      SharedMem<uint8_t*> dataPtr = mem->buffer().dataPointerEither();
-      if (mem->isShared()) {
-        AtomicOperations::memmoveSafeWhenRacy(
-            dataPtr + dstByteOffset, dataPtr + srcByteOffset, size_t(len));
-      } else {
-        uint8_t* rawBuf = dataPtr.unwrap(/*Unshared*/);
-        memmove(rawBuf + dstByteOffset, rawBuf + srcByteOffset, size_t(len));
-      }
-    }
-
-    if (!mustTrap) {
-      return 0;
-    }
+  if (!mustTrap) {
+    return 0;
   }
 
   JSContext* cx = TlsContext.get();
@@ -534,44 +531,41 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
   uint32_t memLen = mem->volatileMemoryLength();
 
   if (len == 0) {
-    // Even though the length is zero, we must check for a valid offset.  But
-    // zero-length operations at the edge of the memory are allowed.
-    if (byteOffset <= memLen) {
-      return 0;
-    }
-  } else {
-    // Here, we know that |len - 1| cannot underflow.
+    // Zero length fills that are out-of-bounds do not trap.
+    return 0;
+  }
 
-    bool mustTrap = false;
+  // Here, we know that |len - 1| cannot underflow.
 
-    // We must write data until we trap, so we have to deal with arithmetic
-    // overflow in the limit calculation.
-    uint64_t highestOffset = uint64_t(byteOffset) + uint64_t(len - 1);
-    if (highestOffset >= memLen) {
-      // We would write past the end.  Compute what we have space for in the
-      // target and make that the new len.
-      uint64_t avail = memLen < byteOffset ? 0 : memLen - byteOffset;
-      MOZ_ASSERT(len > avail);
-      len = uint32_t(avail);
-      mustTrap = true;
-    }
+  bool mustTrap = false;
 
-    if (len > 0) {
-      // The required write direction is upward, but that is not currently
-      // observable as there are no fences nor any read/write protect operation.
-      SharedMem<uint8_t*> dataPtr = mem->buffer().dataPointerEither();
-      if (mem->isShared()) {
-        AtomicOperations::memsetSafeWhenRacy(dataPtr + byteOffset, int(value),
-                                             size_t(len));
-      } else {
-        uint8_t* rawBuf = dataPtr.unwrap(/*Unshared*/);
-        memset(rawBuf + byteOffset, int(value), size_t(len));
-      }
-    }
+  // We must write data until we trap, so we have to deal with arithmetic
+  // overflow in the limit calculation.
+  uint64_t highestOffset = uint64_t(byteOffset) + uint64_t(len - 1);
+  if (highestOffset >= memLen) {
+    // We would write past the end.  Compute what we have space for in the
+    // target and make that the new len.
+    uint64_t avail = memLen < byteOffset ? 0 : memLen - byteOffset;
+    MOZ_ASSERT(len > avail);
+    len = uint32_t(avail);
+    mustTrap = true;
+  }
 
-    if (!mustTrap) {
-      return 0;
+  if (len > 0) {
+    // The required write direction is upward, but that is not currently
+    // observable as there are no fences nor any read/write protect operation.
+    SharedMem<uint8_t*> dataPtr = mem->buffer().dataPointerEither();
+    if (mem->isShared()) {
+      AtomicOperations::memsetSafeWhenRacy(dataPtr + byteOffset, int(value),
+                                           size_t(len));
+    } else {
+      uint8_t* rawBuf = dataPtr.unwrap(/*Unshared*/);
+      memset(rawBuf + byteOffset, int(value), size_t(len));
     }
+  }
+
+  if (!mustTrap) {
+    return 0;
   }
 
   JSContext* cx = TlsContext.get();
@@ -609,50 +603,46 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
   //   memoryBase[ dstOffset .. dstOffset + len - 1 ]
 
   if (len == 0) {
-    // Even though the length is zero, we must check for valid offsets.  But
-    // zero-length operations at the edge of the memory or the segment are
-    // allowed.
-    if (dstOffset <= memLen && srcOffset <= segLen) {
-      return 0;
+    // Zero length inits that are out-of-bounds do not trap.
+    return 0;
+  }
+
+  // Here, we know that |len - 1| cannot underflow.
+
+  bool mustTrap = false;
+
+  // As we're supposed to write data until we trap we have to deal with
+  // arithmetic overflow in the limit calculation.
+  uint64_t highestDstOffset = uint64_t(dstOffset) + uint64_t(len - 1);
+  uint64_t highestSrcOffset = uint64_t(srcOffset) + uint64_t(len - 1);
+
+  if (highestDstOffset >= memLen || highestSrcOffset >= segLen) {
+    // We would read past the end of the source or write past the end of the
+    // target.  Compute what we have space for in target and what's available
+    // in the source and pick the lowest value as the new len.
+    uint64_t srcAvail = segLen < srcOffset ? 0 : segLen - srcOffset;
+    uint64_t dstAvail = memLen < dstOffset ? 0 : memLen - dstOffset;
+    MOZ_ASSERT(len > Min(srcAvail, dstAvail));
+    len = uint32_t(Min(srcAvail, dstAvail));
+    mustTrap = true;
+  }
+
+  if (len > 0) {
+    // The required read/write direction is upward, but that is not currently
+    // observable as there are no fences nor any read/write protect operation.
+    SharedMem<uint8_t*> dataPtr = mem->buffer().dataPointerEither();
+    if (mem->isShared()) {
+      AtomicOperations::memcpySafeWhenRacy(
+          dataPtr + dstOffset, (uint8_t*)seg.bytes.begin() + srcOffset, len);
+    } else {
+      uint8_t* rawBuf = dataPtr.unwrap(/*Unshared*/);
+      memcpy(rawBuf + dstOffset, (const char*)seg.bytes.begin() + srcOffset,
+             len);
     }
-  } else {
-    // Here, we know that |len - 1| cannot underflow.
+  }
 
-    bool mustTrap = false;
-
-    // As we're supposed to write data until we trap we have to deal with
-    // arithmetic overflow in the limit calculation.
-    uint64_t highestDstOffset = uint64_t(dstOffset) + uint64_t(len - 1);
-    uint64_t highestSrcOffset = uint64_t(srcOffset) + uint64_t(len - 1);
-
-    if (highestDstOffset >= memLen || highestSrcOffset >= segLen) {
-      // We would read past the end of the source or write past the end of the
-      // target.  Compute what we have space for in target and what's available
-      // in the source and pick the lowest value as the new len.
-      uint64_t srcAvail = segLen < srcOffset ? 0 : segLen - srcOffset;
-      uint64_t dstAvail = memLen < dstOffset ? 0 : memLen - dstOffset;
-      MOZ_ASSERT(len > Min(srcAvail, dstAvail));
-      len = uint32_t(Min(srcAvail, dstAvail));
-      mustTrap = true;
-    }
-
-    if (len > 0) {
-      // The required read/write direction is upward, but that is not currently
-      // observable as there are no fences nor any read/write protect operation.
-      SharedMem<uint8_t*> dataPtr = mem->buffer().dataPointerEither();
-      if (mem->isShared()) {
-        AtomicOperations::memcpySafeWhenRacy(
-            dataPtr + dstOffset, (uint8_t*)seg.bytes.begin() + srcOffset, len);
-      } else {
-        uint8_t* rawBuf = dataPtr.unwrap(/*Unshared*/);
-        memcpy(rawBuf + dstOffset, (const char*)seg.bytes.begin() + srcOffset,
-               len);
-      }
-    }
-
-    if (!mustTrap) {
-      return 0;
-    }
+  if (!mustTrap) {
+    return 0;
   }
 
   JS_ReportErrorNumberASCII(TlsContext.get(), GetErrorMessage, nullptr,
@@ -673,65 +663,59 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
   uint32_t dstTableLen = dstTable->length();
 
   if (len == 0) {
-    // Even though the number of items to copy is zero, we must check for valid
-    // offsets.  But zero-length operations at the edge of the table are
-    // allowed.
-    if (dstOffset <= dstTableLen && srcOffset <= srcTableLen) {
-      return 0;
+    // Zero length copies that are out-of-bounds do not trap.
+    return 0;
+  }
+
+  // Here, we know that |len - 1| cannot underflow.
+  bool mustTrap = false;
+
+  // As we're supposed to write data until we trap we have to deal with
+  // arithmetic overflow in the limit calculation.
+  uint64_t highestDstOffset = uint64_t(dstOffset) + (len - 1);
+  uint64_t highestSrcOffset = uint64_t(srcOffset) + (len - 1);
+
+  bool copyDown = srcOffset < dstOffset;
+
+  if (highestDstOffset >= dstTableLen || highestSrcOffset >= srcTableLen) {
+    // We would read past the end of the source or write past the end of the
+    // target.
+    if (copyDown) {
+      // We would trap on the first read or write, so don't read or write
+      // anything.
+      len = 0;
+    } else {
+      // Compute what we have space for in target and what's available in the
+      // source and pick the lowest value as the new len.
+      uint64_t srcAvail = srcTableLen < srcOffset ? 0 : srcTableLen - srcOffset;
+      uint64_t dstAvail = dstTableLen < dstOffset ? 0 : dstTableLen - dstOffset;
+      MOZ_ASSERT(len > Min(srcAvail, dstAvail));
+      len = uint32_t(Min(srcAvail, dstAvail));
     }
-  } else {
-    // Here, we know that |len - 1| cannot underflow.
-    bool mustTrap = false;
+    mustTrap = true;
+  }
 
-    // As we're supposed to write data until we trap we have to deal with
-    // arithmetic overflow in the limit calculation.
-    uint64_t highestDstOffset = uint64_t(dstOffset) + (len - 1);
-    uint64_t highestSrcOffset = uint64_t(srcOffset) + (len - 1);
-
-    bool copyDown = srcOffset < dstOffset && dstOffset < highestSrcOffset;
-
-    if (highestDstOffset >= dstTableLen || highestSrcOffset >= srcTableLen) {
-      // We would read past the end of the source or write past the end of the
-      // target.
-      if (copyDown) {
-        // We would trap on the first read or write, so don't read or write
-        // anything.
-        len = 0;
-      } else {
-        // Compute what we have space for in target and what's available in the
-        // source and pick the lowest value as the new len.
-        uint64_t srcAvail =
-            srcTableLen < srcOffset ? 0 : srcTableLen - srcOffset;
-        uint64_t dstAvail =
-            dstTableLen < dstOffset ? 0 : dstTableLen - dstOffset;
-        MOZ_ASSERT(len > Min(srcAvail, dstAvail));
-        len = uint32_t(Min(srcAvail, dstAvail));
+  if (len > 0) {
+    // The required write direction is indicated by `copyDown`, but apart from
+    // the trap that may happen without writing anything, the direction is not
+    // currently observable as there are no fences nor any read/write protect
+    // operation.  So Table::copy is good enough, so long as we handle
+    // overlaps.
+    if (&srcTable == &dstTable && dstOffset > srcOffset) {
+      for (uint32_t i = len; i > 0; i--) {
+        dstTable->copy(*srcTable, dstOffset + (i - 1), srcOffset + (i - 1));
       }
-      mustTrap = true;
-    }
-
-    if (len > 0) {
-      // The required write direction is indicated by `copyDown`, but apart from
-      // the trap that may happen without writing anything, the direction is not
-      // currently observable as there are no fences nor any read/write protect
-      // operation.  So Table::copy is good enough, so long as we handle
-      // overlaps.
-      if (&srcTable == &dstTable && dstOffset > srcOffset) {
-        for (uint32_t i = len; i > 0; i--) {
-          dstTable->copy(*srcTable, dstOffset + (i - 1), srcOffset + (i - 1));
-        }
-      } else if (&srcTable == &dstTable && dstOffset == srcOffset) {
-        // No-op
-      } else {
-        for (uint32_t i = 0; i < len; i++) {
-          dstTable->copy(*srcTable, dstOffset + i, srcOffset + i);
-        }
+    } else if (&srcTable == &dstTable && dstOffset == srcOffset) {
+      // No-op
+    } else {
+      for (uint32_t i = 0; i < len; i++) {
+        dstTable->copy(*srcTable, dstOffset + i, srcOffset + i);
       }
     }
+  }
 
-    if (!mustTrap) {
-      return 0;
-    }
+  if (!mustTrap) {
+    return 0;
   }
 
   JS_ReportErrorNumberASCII(TlsContext.get(), GetErrorMessage, nullptr,
@@ -842,38 +826,35 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   //   tableBase[ dstOffset .. dstOffset + len - 1 ]
 
   if (len == 0) {
-    // Even though the length is zero, we must check for valid offsets.  But
-    // zero-length operations at the edge of the table or segment are allowed.
-    if (dstOffset <= tableLen && srcOffset <= segLen) {
-      return 0;
-    }
-  } else {
-    // Here, we know that |len - 1| cannot underflow.
-    bool mustTrap = false;
+    // Zero length inits that are out-of-bounds do not trap.
+    return 0;
+  }
 
-    // As we're supposed to write data until we trap we have to deal with
-    // arithmetic overflow in the limit calculation.
-    uint64_t highestDstOffset = uint64_t(dstOffset) + uint64_t(len - 1);
-    uint64_t highestSrcOffset = uint64_t(srcOffset) + uint64_t(len - 1);
+  // Here, we know that |len - 1| cannot underflow.
+  bool mustTrap = false;
 
-    if (highestDstOffset >= tableLen || highestSrcOffset >= segLen) {
-      // We would read past the end of the source or write past the end of the
-      // target.  Compute what we have space for in target and what's available
-      // in the source and pick the lowest value as the new len.
-      uint64_t srcAvail = segLen < srcOffset ? 0 : segLen - srcOffset;
-      uint64_t dstAvail = tableLen < dstOffset ? 0 : tableLen - dstOffset;
-      MOZ_ASSERT(len > Min(srcAvail, dstAvail));
-      len = uint32_t(Min(srcAvail, dstAvail));
-      mustTrap = true;
-    }
+  // As we're supposed to write data until we trap we have to deal with
+  // arithmetic overflow in the limit calculation.
+  uint64_t highestDstOffset = uint64_t(dstOffset) + uint64_t(len - 1);
+  uint64_t highestSrcOffset = uint64_t(srcOffset) + uint64_t(len - 1);
 
-    if (len > 0) {
-      instance->initElems(tableIndex, seg, dstOffset, srcOffset, len);
-    }
+  if (highestDstOffset >= tableLen || highestSrcOffset >= segLen) {
+    // We would read past the end of the source or write past the end of the
+    // target.  Compute what we have space for in target and what's available
+    // in the source and pick the lowest value as the new len.
+    uint64_t srcAvail = segLen < srcOffset ? 0 : segLen - srcOffset;
+    uint64_t dstAvail = tableLen < dstOffset ? 0 : tableLen - dstOffset;
+    MOZ_ASSERT(len > Min(srcAvail, dstAvail));
+    len = uint32_t(Min(srcAvail, dstAvail));
+    mustTrap = true;
+  }
 
-    if (!mustTrap) {
-      return 0;
-    }
+  if (len > 0) {
+    instance->initElems(tableIndex, seg, dstOffset, srcOffset, len);
+  }
+
+  if (!mustTrap) {
+    return 0;
   }
 
   JS_ReportErrorNumberASCII(TlsContext.get(), GetErrorMessage, nullptr,
@@ -890,44 +871,41 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   Table& table = *instance->tables()[tableIndex];
 
   if (len == 0) {
-    // Even though the length is zero, we must check for a valid offset.  But
-    // zero-length operations at the edge of the table are allowed.
-    if (start <= table.length()) {
-      return 0;
-    }
-  } else {
-    // Here, we know that |len - 1| cannot underflow.
+    // Zero length fills that are out-of-bounds do not trap.
+    return 0;
+  }
 
-    bool mustTrap = false;
+  // Here, we know that |len - 1| cannot underflow.
 
-    // We must write the table until we trap, so we have to deal with
-    // arithmetic overflow in the limit calculation.
-    uint64_t highestOffset = uint64_t(start) + uint64_t(len - 1);
-    if (highestOffset >= table.length()) {
-      // We would write past the end.  Compute what we have space for in the
-      // target and make that the new len.
-      uint64_t avail = table.length() < start ? 0 : table.length() - start;
-      MOZ_ASSERT(len > avail);
-      len = uint32_t(avail);
-      mustTrap = true;
-    }
+  bool mustTrap = false;
 
-    AnyRef ref = AnyRef::fromCompiledCode(value);
+  // We must write the table until we trap, so we have to deal with
+  // arithmetic overflow in the limit calculation.
+  uint64_t highestOffset = uint64_t(start) + uint64_t(len - 1);
+  if (highestOffset >= table.length()) {
+    // We would write past the end.  Compute what we have space for in the
+    // target and make that the new len.
+    uint64_t avail = table.length() < start ? 0 : table.length() - start;
+    MOZ_ASSERT(len > avail);
+    len = uint32_t(avail);
+    mustTrap = true;
+  }
 
-    switch (table.kind()) {
-      case TableKind::AnyRef:
-        table.fillAnyRef(start, len, ref);
-        break;
-      case TableKind::FuncRef:
-        table.fillFuncRef(start, len, ref, cx);
-        break;
-      case TableKind::AsmJS:
-        MOZ_CRASH("not asm.js");
-    }
+  AnyRef ref = AnyRef::fromCompiledCode(value);
 
-    if (!mustTrap) {
-      return 0;
-    }
+  switch (table.kind()) {
+    case TableKind::AnyRef:
+      table.fillAnyRef(start, len, ref);
+      break;
+    case TableKind::FuncRef:
+      table.fillFuncRef(start, len, ref, cx);
+      break;
+    case TableKind::AsmJS:
+      MOZ_CRASH("not asm.js");
+  }
+
+  if (!mustTrap) {
+    return 0;
   }
 
   JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
@@ -968,8 +946,7 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   RootedAnyRef ref(TlsContext.get(), AnyRef::fromCompiledCode(initValue));
   Table& table = *instance->tables()[tableIndex];
 
-  JSContext* cx = TlsContext.get();
-  uint32_t oldSize = table.grow(delta, cx);
+  uint32_t oldSize = table.grow(delta);
 
   if (oldSize != uint32_t(-1) && initValue != nullptr) {
     switch (table.kind()) {
@@ -977,7 +954,7 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
         table.fillAnyRef(oldSize, delta, ref);
         break;
       case TableKind::FuncRef:
-        table.fillFuncRef(oldSize, delta, ref, cx);
+        table.fillFuncRef(oldSize, delta, ref, TlsContext.get());
         break;
       case TableKind::AsmJS:
         MOZ_CRASH("not asm.js");
@@ -1019,6 +996,36 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   MOZ_ASSERT(SASigTableSize.failureMode == FailureMode::Infallible);
   Table& table = *instance->tables()[tableIndex];
   return table.length();
+}
+
+/* static */ void* Instance::funcRef(Instance* instance, uint32_t funcIndex) {
+  MOZ_ASSERT(SASigFuncRef.failureMode == FailureMode::FailOnInvalidRef);
+  JSContext* cx = TlsContext.get();
+
+  Tier tier = instance->code().bestTier();
+  const MetadataTier& metadataTier = instance->metadata(tier);
+  const FuncImportVector& funcImports = metadataTier.funcImports;
+
+  // If this is an import, we need to recover the original wrapper function to
+  // maintain referential equality between a re-exported function and
+  // 'ref.func'. The imported function object is stable across tiers, which is
+  // what we want.
+  if (funcIndex < funcImports.length()) {
+    FuncImportTls& import = instance->funcImportTls(funcImports[funcIndex]);
+    return AnyRef::fromJSObject(import.fun).forCompiledCode();
+  }
+
+  RootedFunction fun(cx);
+  RootedWasmInstanceObject instanceObj(cx, instance->object());
+  if (!WasmInstanceObject::getExportedFunction(cx, instanceObj, funcIndex,
+                                               &fun)) {
+    // Validation ensures that we always have a valid funcIndex, so we must
+    // have OOM'ed
+    ReportOutOfMemory(cx);
+    return AnyRef::invalid().forCompiledCode();
+  }
+
+  return AnyRef::fromJSObject(fun).forCompiledCode();
 }
 
 /* static */ void Instance::postBarrier(Instance* instance,
@@ -1216,8 +1223,7 @@ Instance::Instance(JSContext* cx, Handle<WasmInstanceObject*> object,
 
   tlsData()->memoryBase =
       memory ? memory->buffer().dataPointerEither().unwrap() : nullptr;
-  tlsData()->boundsCheckLimit =
-      memory ? memory->buffer().wasmBoundsCheckLimit() : 0;
+  tlsData()->boundsCheckLimit = memory ? memory->boundsCheckLimit() : 0;
   tlsData()->instance = this;
   tlsData()->realm = realm_;
   tlsData()->cx = cx;
@@ -1361,7 +1367,7 @@ bool Instance::init(JSContext* cx, const DataSegmentVector& dataSegments,
     return false;
   }
   for (size_t i = 0; i < elemSegments.length(); i++) {
-    if (!elemSegments[i]->active()) {
+    if (elemSegments[i]->kind == ElemSegment::Kind::Passive) {
       passiveElemSegments_[i] = elemSegments[i];
     }
   }
@@ -1882,13 +1888,13 @@ void Instance::ensureProfilingLabels(bool profilingEnabled) const {
   return code_->ensureProfilingLabels(profilingEnabled);
 }
 
-void Instance::onMovingGrowMemory(uint8_t* prevMemoryBase) {
+void Instance::onMovingGrowMemory() {
   MOZ_ASSERT(!isAsmJS());
   MOZ_ASSERT(!memory_->isShared());
 
   ArrayBufferObject& buffer = memory_->buffer().as<ArrayBufferObject>();
   tlsData()->memoryBase = buffer.dataPointer();
-  tlsData()->boundsCheckLimit = buffer.wasmBoundsCheckLimit();
+  tlsData()->boundsCheckLimit = memory_->boundsCheckLimit();
 }
 
 void Instance::onMovingGrowTable(const Table* theTable) {
@@ -1983,9 +1989,34 @@ JSString* Instance::createDisplayURL(JSContext* cx) {
   return result.finishString();
 }
 
+WasmBreakpointSite* Instance::getOrCreateBreakpointSite(JSContext* cx,
+                                                        uint32_t offset) {
+  MOZ_ASSERT(debugEnabled());
+  return debug().getOrCreateBreakpointSite(cx, this, offset);
+}
+
+void Instance::destroyBreakpointSite(JSFreeOp* fop, uint32_t offset) {
+  MOZ_ASSERT(debugEnabled());
+  return debug().destroyBreakpointSite(fop, this, offset);
+}
+
+void Instance::disassembleExport(JSContext* cx, uint32_t funcIndex, Tier tier,
+                                 PrintCallback callback) const {
+  const MetadataTier& metadataTier = metadata(tier);
+  const FuncExport& funcExport = metadataTier.lookupFuncExport(funcIndex);
+  const CodeRange& range = metadataTier.codeRange(funcExport);
+  const CodeTier& codeTier = code(tier);
+  const ModuleSegment& segment = codeTier.segment();
+
+  MOZ_ASSERT(range.begin() < segment.length());
+  MOZ_ASSERT(range.end() < segment.length());
+
+  uint8_t* functionCode = segment.base() + range.begin();
+  jit::Disassemble(functionCode, range.end() - range.begin(), callback);
+}
+
 void Instance::addSizeOfMisc(MallocSizeOf mallocSizeOf,
                              Metadata::SeenSet* seenMetadata,
-                             ShareableBytes::SeenSet* seenBytes,
                              Code::SeenSet* seenCode,
                              Table::SeenSet* seenTables, size_t* code,
                              size_t* data) const {
@@ -1996,8 +2027,8 @@ void Instance::addSizeOfMisc(MallocSizeOf mallocSizeOf,
   }
 
   if (maybeDebug_) {
-    maybeDebug_->addSizeOfMisc(mallocSizeOf, seenMetadata, seenBytes, seenCode,
-                               code, data);
+    maybeDebug_->addSizeOfMisc(mallocSizeOf, seenMetadata, seenCode, code,
+                               data);
   }
 
   code_->addSizeOfMiscIfNotSeen(mallocSizeOf, seenMetadata, seenCode, code,

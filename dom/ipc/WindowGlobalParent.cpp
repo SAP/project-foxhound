@@ -18,6 +18,8 @@
 #include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/dom/ipc/StructuredCloneData.h"
+#include "mozilla/ServoCSSParser.h"
+#include "mozilla/ServoStyleSet.h"
 #include "mozJSComponentLoader.h"
 #include "nsContentUtils.h"
 #include "nsDocShell.h"
@@ -50,8 +52,8 @@ WindowGlobalParent::WindowGlobalParent(const WindowGlobalInit& aInit,
       mInnerWindowId(aInit.innerWindowId()),
       mOuterWindowId(aInit.outerWindowId()),
       mInProcess(aInProcess),
-      mIPCClosed(true),  // Closed until WGP::Init
-      mIsInitialDocument(false) {
+      mIsInitialDocument(false),
+      mHasBeforeUnload(false) {
   MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "Parent process only");
   MOZ_RELEASE_ASSERT(mDocumentPrincipal, "Must have a valid principal");
 
@@ -62,10 +64,6 @@ WindowGlobalParent::WindowGlobalParent(const WindowGlobalInit& aInit,
 
 void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
   MOZ_ASSERT(Manager(), "Should have a manager!");
-  MOZ_ASSERT(!mFrameLoader, "Cannot Init() a WindowGlobalParent twice!");
-
-  MOZ_ASSERT(mIPCClosed, "IPC shouldn't be open yet");
-  mIPCClosed = false;
 
   // Register this WindowGlobal in the gWindowGlobalParentsById map.
   if (!gWindowGlobalParentsById) {
@@ -79,11 +77,21 @@ void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
   // Determine which content process the window global is coming from.
   dom::ContentParentId processId(0);
   if (!mInProcess) {
-    processId = static_cast<ContentParent*>(Manager()->Manager())->ChildID();
+    ContentParent* cp = static_cast<ContentParent*>(Manager()->Manager());
+    processId = cp->ChildID();
+
+    // Ensure the content process has permissions for this principal.
+    cp->TransmitPermissionsForPrincipal(mDocumentPrincipal);
   }
 
   mBrowsingContext = CanonicalBrowsingContext::Cast(aInit.browsingContext());
   MOZ_ASSERT(mBrowsingContext);
+
+  MOZ_DIAGNOSTIC_ASSERT(
+      !mBrowsingContext->GetParent() ||
+          mBrowsingContext->GetEmbedderWindowGlobal(),
+      "When creating a non-root WindowGlobalParent, the WindowGlobalParent "
+      "for our embedder should've already been created.");
 
   // Attach ourself to the browsing context.
   mBrowsingContext->RegisterWindowGlobal(this);
@@ -94,33 +102,9 @@ void WindowGlobalParent::Init(const WindowGlobalInit& aInit) {
     mBrowsingContext->SetCurrentWindowGlobal(this);
   }
 
-  // Determine what toplevel frame element our WindowGlobalParent is being
-  // embedded in.
-  RefPtr<Element> frameElement;
-  if (mInProcess) {
-    // In the in-process case, we can get it from the other side's
-    // WindowGlobalChild.
-    MOZ_ASSERT(Manager()->GetProtocolId() == PInProcessMsgStart);
-    RefPtr<WindowGlobalChild> otherSide = GetChildActor();
-    if (otherSide && otherSide->WindowGlobal()) {
-      // Get the toplevel window from the other side.
-      RefPtr<nsDocShell> docShell =
-          nsDocShell::Cast(otherSide->WindowGlobal()->GetDocShell());
-      if (docShell) {
-        docShell->GetTopFrameElement(getter_AddRefs(frameElement));
-      }
-    }
-  } else {
-    // In the cross-process case, we can get the frame element from our manager.
-    MOZ_ASSERT(Manager()->GetProtocolId() == PBrowserMsgStart);
-    frameElement = static_cast<BrowserParent*>(Manager())->GetOwnerElement();
-  }
-
-  // Extract the nsFrameLoader from the current frame element. We may not have a
-  // nsFrameLoader if we are a chrome document.
-  RefPtr<nsFrameLoaderOwner> flOwner = do_QueryObject(frameElement);
-  if (flOwner) {
-    mFrameLoader = flOwner->GetFrameLoader();
+  // Ensure we have a document URI
+  if (!mDocumentURI) {
+    NS_NewURI(getter_AddRefs(mDocumentURI), "about:blank");
   }
 
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
@@ -139,7 +123,7 @@ already_AddRefed<WindowGlobalParent> WindowGlobalParent::GetByInnerWindowId(
 }
 
 already_AddRefed<WindowGlobalChild> WindowGlobalParent::GetChildActor() {
-  if (mIPCClosed) {
+  if (!CanSend()) {
     return nullptr;
   }
   IProtocol* otherSide = InProcessParent::ChildActorFor(this);
@@ -147,10 +131,21 @@ already_AddRefed<WindowGlobalChild> WindowGlobalParent::GetChildActor() {
 }
 
 already_AddRefed<BrowserParent> WindowGlobalParent::GetBrowserParent() {
-  if (IsInProcess() || mIPCClosed) {
+  if (IsInProcess() || !CanSend()) {
     return nullptr;
   }
   return do_AddRef(static_cast<BrowserParent*>(Manager()));
+}
+
+already_AddRefed<nsFrameLoader> WindowGlobalParent::GetRootFrameLoader() {
+  dom::BrowsingContext* top = BrowsingContext()->Top();
+
+  RefPtr<nsFrameLoaderOwner> frameLoaderOwner =
+      do_QueryObject(top->GetEmbedderElement());
+  if (frameLoaderOwner) {
+    return frameLoaderOwner->GetFrameLoader();
+  }
+  return nullptr;
 }
 
 uint64_t WindowGlobalParent::ContentParentId() {
@@ -178,10 +173,47 @@ bool WindowGlobalParent::IsProcessRoot() {
   return ContentParentId() != embedder->ContentParentId();
 }
 
+mozilla::ipc::IPCResult WindowGlobalParent::RecvLoadURI(
+    dom::BrowsingContext* aTargetBC,
+    nsDocShellLoadState* aLoadState) {
+  if (!aTargetBC || aTargetBC->IsDiscarded()) {
+    MOZ_LOG(
+        BrowsingContext::GetLog(), LogLevel::Debug,
+        ("ParentIPC: Trying to send a message with dead or detached context"));
+    return IPC_OK();
+  }
+
+  // FIXME: For cross-process loads, we should double check CanAccess() for the
+  // source browsing context in the parent process.
+
+  if (aTargetBC->Group() != BrowsingContext()->Group()) {
+    return IPC_FAIL(this, "Illegal cross-group BrowsingContext load");
+  }
+
+  // FIXME: We should really initiate the load in the parent before bouncing
+  // back down to the child.
+
+  WindowGlobalParent* wgp = aTargetBC->Canonical()->GetCurrentWindowGlobal();
+  if (!wgp) {
+    MOZ_LOG(
+        BrowsingContext::GetLog(), LogLevel::Debug,
+        ("ParentIPC: Target BrowsingContext has no WindowGlobalParent"));
+    return IPC_OK();
+  }
+
+  Unused << wgp->SendLoadURIInChild(aLoadState);
+  return IPC_OK();
+}
+
 IPCResult WindowGlobalParent::RecvUpdateDocumentURI(nsIURI* aURI) {
   // XXX(nika): Assert that the URI change was one which makes sense (either
   // about:blank -> a real URI, or a legal push/popstate URI change?)
   mDocumentURI = aURI;
+  return IPC_OK();
+}
+
+IPCResult WindowGlobalParent::RecvSetHasBeforeUnload(bool aHasBeforeUnload) {
+  mHasBeforeUnload = aHasBeforeUnload;
   return IPC_OK();
 }
 
@@ -191,7 +223,7 @@ IPCResult WindowGlobalParent::RecvBecomeCurrentWindowGlobal() {
 }
 
 IPCResult WindowGlobalParent::RecvDestroy() {
-  if (!mIPCClosed) {
+  if (CanSend()) {
     RefPtr<BrowserParent> browserParent = GetBrowserParent();
     if (!browserParent || !browserParent->IsDestroyed()) {
       // Make a copy so that we can avoid potential iterator invalidation when
@@ -237,7 +269,7 @@ const nsAString& WindowGlobalParent::GetRemoteType() {
 
 already_AddRefed<JSWindowActorParent> WindowGlobalParent::GetActor(
     const nsAString& aName, ErrorResult& aRv) {
-  if (mIPCClosed) {
+  if (!CanSend()) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return nullptr;
   }
@@ -268,7 +300,7 @@ already_AddRefed<JSWindowActorParent> WindowGlobalParent::GetActor(
 }
 
 bool WindowGlobalParent::IsCurrentGlobal() {
-  return !mIPCClosed && mBrowsingContext->GetCurrentWindowGlobal() == this;
+  return CanSend() && mBrowsingContext->GetCurrentWindowGlobal() == this;
 }
 
 IPCResult WindowGlobalParent::RecvDidEmbedBrowsingContext(
@@ -287,7 +319,7 @@ already_AddRefed<Promise> WindowGlobalParent::ChangeFrameRemoteness(
     return nullptr;
   }
 
-  nsIGlobalObject* global = xpc::NativeGlobal(xpc::PrivilegedJunkScope());
+  nsIGlobalObject* global = GetParentObject();
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (aRv.Failed()) {
     return nullptr;
@@ -328,6 +360,8 @@ already_AddRefed<Promise> WindowGlobalParent::ChangeFrameRemoteness(
         // in-process frame. For remote frames, the BrowserBridgeParent::Init
         // method should've already set up the OwnerProcessId.
         uint64_t childId = browserParent->Manager()->ChildID();
+        MOZ_ASSERT_IF(bridge,
+                      browsingContext == browserParent->GetBrowsingContext());
         MOZ_ASSERT_IF(bridge, browsingContext->IsOwnedByProcess(childId));
         browsingContext->SetOwnerProcessId(childId);
 
@@ -343,6 +377,51 @@ already_AddRefed<Promise> WindowGlobalParent::ChangeFrameRemoteness(
   return promise.forget();
 }
 
+already_AddRefed<mozilla::dom::Promise> WindowGlobalParent::DrawSnapshot(
+    const DOMRect* aRect, double aScale, const nsAString& aBackgroundColor,
+    mozilla::ErrorResult& aRv) {
+  nsIGlobalObject* global = GetParentObject();
+  RefPtr<Promise> promise = Promise::Create(global, aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  nscolor color;
+  if (NS_WARN_IF(!ServoCSSParser::ComputeColor(nullptr, NS_RGB(0, 0, 0),
+                                               aBackgroundColor, &color,
+                                               nullptr, nullptr))) {
+    aRv = NS_ERROR_FAILURE;
+    return nullptr;
+  }
+
+  if (!gfx::CrossProcessPaint::Start(this, aRect, (float)aScale, color,
+                                     gfx::CrossProcessPaintFlags::None,
+                                     promise)) {
+    aRv = NS_ERROR_FAILURE;
+    return nullptr;
+  }
+  return promise.forget();
+}
+
+void WindowGlobalParent::DrawSnapshotInternal(gfx::CrossProcessPaint* aPaint,
+                                              const Maybe<IntRect>& aRect,
+                                              float aScale,
+                                              nscolor aBackgroundColor,
+                                              uint32_t aFlags) {
+  auto promise = SendDrawSnapshot(aRect, aScale, aBackgroundColor, aFlags);
+
+  RefPtr<gfx::CrossProcessPaint> paint(aPaint);
+  RefPtr<WindowGlobalParent> wgp(this);
+  promise->Then(
+      GetMainThreadSerialEventTarget(), __func__,
+      [paint, wgp](PaintFragment&& aFragment) {
+        paint->ReceiveFragment(wgp, std::move(aFragment));
+      },
+      [paint, wgp](ResponseRejectReason&& aReason) {
+        paint->LostFragment(wgp);
+      });
+}
+
 already_AddRefed<Promise> WindowGlobalParent::GetSecurityInfo(
     ErrorResult& aRv) {
   RefPtr<BrowserParent> browserParent = GetBrowserParent();
@@ -351,7 +430,7 @@ already_AddRefed<Promise> WindowGlobalParent::GetSecurityInfo(
     return nullptr;
   }
 
-  nsIGlobalObject* global = xpc::NativeGlobal(xpc::PrivilegedJunkScope());
+  nsIGlobalObject* global = GetParentObject();
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (aRv.Failed()) {
     return nullptr;
@@ -383,7 +462,6 @@ already_AddRefed<Promise> WindowGlobalParent::GetSecurityInfo(
 }
 
 void WindowGlobalParent::ActorDestroy(ActorDestroyReason aWhy) {
-  mIPCClosed = true;
   gWindowGlobalParentsById->Remove(mInnerWindowId);
   mBrowsingContext->UnregisterWindowGlobal(this);
 
@@ -413,13 +491,12 @@ JSObject* WindowGlobalParent::WrapObject(JSContext* aCx,
   return WindowGlobalParent_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-nsISupports* WindowGlobalParent::GetParentObject() {
+nsIGlobalObject* WindowGlobalParent::GetParentObject() {
   return xpc::NativeGlobal(xpc::PrivilegedJunkScope());
 }
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(WindowGlobalParent, WindowGlobalActor,
-                                   mFrameLoader, mBrowsingContext,
-                                   mWindowActors)
+                                   mBrowsingContext, mWindowActors)
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(WindowGlobalParent,
                                                WindowGlobalActor)

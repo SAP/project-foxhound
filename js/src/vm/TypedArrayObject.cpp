@@ -149,7 +149,7 @@ void TypedArrayObject::assertZeroLengthArrayData() const {
 }
 #endif
 
-void TypedArrayObject::finalize(FreeOp* fop, JSObject* obj) {
+void TypedArrayObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(!IsInsideNursery(obj));
   TypedArrayObject* curObj = &obj->as<TypedArrayObject>();
 
@@ -340,7 +340,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
       return nullptr;
     }
 
-    const Class* clasp = TypedArrayObject::protoClassForType(ArrayTypeID());
+    const JSClass* clasp = TypedArrayObject::protoClassForType(ArrayTypeID());
     return GlobalObject::createBlankPrototypeInheriting(cx, clasp,
                                                         typedArrayProto);
   }
@@ -353,10 +353,10 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
       return nullptr;
     }
 
-    JSFunction* fun =
-        NewFunctionWithProto(cx, class_constructor, 3, JSFunction::NATIVE_CTOR,
-                             nullptr, ClassName(key, cx), ctorProto,
-                             gc::AllocKind::FUNCTION, SingletonObject);
+    JSFunction* fun = NewFunctionWithProto(
+        cx, class_constructor, 3, FunctionFlags::NATIVE_CTOR, nullptr,
+        ClassName(key, cx), ctorProto, gc::AllocKind::FUNCTION,
+        SingletonObject);
 
     if (fun) {
       fun->setJitInfo(&jit::JitInfo_TypedArrayConstructor);
@@ -365,7 +365,7 @@ class TypedArrayObjectTemplate : public TypedArrayObject {
     return fun;
   }
 
-  static inline const Class* instanceClass() {
+  static inline const JSClass* instanceClass() {
     return TypedArrayObject::classForType(ArrayTypeID());
   }
 
@@ -1874,11 +1874,7 @@ bool TypedArrayObject::set(JSContext* cx, unsigned argc, Value* vp) {
 
 /* static */ const JSFunctionSpec TypedArrayObject::protoFunctions[] = {
     JS_SELF_HOSTED_FN("subarray", "TypedArraySubarray", 2, 0),
-#if 0 /* disabled until perf-testing is completed */
-    JS_SELF_HOSTED_FN("set", "TypedArraySet", 2, 0),
-#else
     JS_FN("set", TypedArrayObject::set, 1, 0),
-#endif
     JS_SELF_HOSTED_FN("copyWithin", "TypedArrayCopyWithin", 3, 0),
     JS_SELF_HOSTED_FN("every", "TypedArrayEvery", 1, 0),
     JS_SELF_HOSTED_FN("fill", "TypedArrayFill", 3, 0),
@@ -1928,7 +1924,7 @@ static const ClassSpec TypedArrayObjectSharedTypedArrayPrototypeClassSpec = {
     nullptr,
     ClassSpec::DontDefineConstructor};
 
-/* static */ const Class TypedArrayObject::sharedTypedArrayPrototypeClass = {
+/* static */ const JSClass TypedArrayObject::sharedTypedArrayPrototypeClass = {
     "TypedArrayPrototype", JSCLASS_HAS_CACHED_PROTO(JSProto_TypedArray),
     JS_NULL_CLASS_OPS, &TypedArrayObjectSharedTypedArrayPrototypeClassSpec};
 
@@ -2134,7 +2130,7 @@ bool TypedArrayObject::getElements(JSContext* cx,
  * TypedArrayObject boilerplate
  */
 
-static const ClassOps TypedArrayClassOps = {
+static const JSClassOps TypedArrayClassOps = {
     nullptr,                      /* addProperty */
     nullptr,                      /* delProperty */
     nullptr,                      /* enumerate   */
@@ -2179,7 +2175,7 @@ static const ClassSpec
 #undef IMPL_TYPED_ARRAY_CLASS_SPEC
 };
 
-const Class TypedArrayObject::classes[Scalar::MaxTypedArrayViewType] = {
+const JSClass TypedArrayObject::classes[Scalar::MaxTypedArrayViewType] = {
 #define IMPL_TYPED_ARRAY_CLASS(NativeType, Name)                               \
   {#Name "Array",                                                              \
    JSCLASS_HAS_RESERVED_SLOTS(TypedArrayObject::RESERVED_SLOTS) |              \
@@ -2206,7 +2202,7 @@ const Class TypedArrayObject::classes[Scalar::MaxTypedArrayViewType] = {
 // with %TypedArray%.prototype.)  It's not clear this is desirable (see
 // above), but it's what we've always done, so keep doing it till we
 // implement @@toStringTag or ES6 changes.
-const Class TypedArrayObject::protoClasses[Scalar::MaxTypedArrayViewType] = {
+const JSClass TypedArrayObject::protoClasses[Scalar::MaxTypedArrayViewType] = {
 #define IMPL_TYPED_ARRAY_PROTO_CLASS(NativeType, Name)                      \
   {#Name "ArrayPrototype", JSCLASS_HAS_CACHED_PROTO(JSProto_##Name##Array), \
    JS_NULL_CLASS_OPS, &TypedArrayObjectClassSpecs[Scalar::Type::Name]},
@@ -2475,7 +2471,7 @@ struct ExternalTypeOf<uint8_clamped> {
     if (!obj) {                                                              \
       return nullptr;                                                        \
     }                                                                        \
-    const Class* clasp = obj->getClass();                                    \
+    const JSClass* clasp = obj->getClass();                                  \
     if (clasp != TypedArrayObjectTemplate<NativeType>::instanceClass()) {    \
       return nullptr;                                                        \
     }                                                                        \
@@ -2486,7 +2482,7 @@ struct ExternalTypeOf<uint8_clamped> {
     return js::Unwrap##Name##Array(obj) != nullptr;                          \
   }                                                                          \
                                                                              \
-  const js::Class* const js::detail::Name##ArrayClassPtr =                   \
+  const JSClass* const js::detail::Name##ArrayClassPtr =                     \
       &js::TypedArrayObject::classes                                         \
           [TypedArrayObjectTemplate<NativeType>::ArrayTypeID()];             \
                                                                              \

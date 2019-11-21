@@ -53,23 +53,47 @@ static_assert(sizeof(AbortReasonOr<bool>) <= sizeof(uintptr_t),
 // will not be nullptr.
 
 class JitContext {
- public:
-  JitContext(JSContext* cx, TempAllocator* temp);
-  JitContext(CompileRuntime* rt, CompileRealm* realm, TempAllocator* temp);
-  explicit JitContext(TempAllocator* temp);
-  JitContext();
-  ~JitContext();
+  JitContext* prev_ = nullptr;
+  CompileRealm* realm_ = nullptr;
+  int assemblerCount_ = 0;
 
+#ifdef DEBUG
+  // Whether this thread is actively Ion compiling (does not include Wasm or
+  // IonBuilder).
+  bool inIonBackend_ = false;
+
+  // Whether this thread is actively Ion compiling in a context where a minor
+  // GC could happen simultaneously. If this is true, this thread cannot use
+  // any pointers into the nursery.
+  bool inIonBackendSafeForMinorGC_ = false;
+
+  bool isCompilingWasm_ = false;
+  bool oom_ = false;
+#endif
+
+ public:
   // Running context when executing on the main thread. Not available during
   // compilation.
-  JSContext* cx;
+  JSContext* cx = nullptr;
 
   // Allocator for temporary memory during compilation.
-  TempAllocator* temp;
+  TempAllocator* temp = nullptr;
 
   // Wrappers with information about the current runtime/realm for use
   // during compilation.
-  CompileRuntime* runtime;
+  CompileRuntime* runtime = nullptr;
+
+  // Constructor for compilations happening on the main thread.
+  JitContext(JSContext* cx, TempAllocator* temp);
+
+  // Constructor for off-thread Ion compilations.
+  JitContext(CompileRuntime* rt, CompileRealm* realm, TempAllocator* temp);
+
+  // Constructors for Wasm compilation.
+  explicit JitContext(TempAllocator* temp);
+  JitContext();
+
+  ~JitContext();
 
   int getNextAssemblerId() { return assemblerCount_++; }
 
@@ -83,20 +107,29 @@ class JitContext {
   bool isCompilingWasm() { return isCompilingWasm_; }
   bool hasOOM() { return oom_; }
   void setOOM() { oom_ = true; }
-#endif
 
- private:
-  JitContext* prev_;
-  CompileRealm* realm_;
-#ifdef DEBUG
-  bool isCompilingWasm_;
-  bool oom_;
+  bool inIonBackend() const { return inIonBackend_; }
+
+  bool inIonBackendSafeForMinorGC() const {
+    return inIonBackendSafeForMinorGC_;
+  }
+
+  void enterIonBackend(bool safeForMinorGC) {
+    MOZ_ASSERT(!inIonBackend_);
+    MOZ_ASSERT(!inIonBackendSafeForMinorGC_);
+    inIonBackend_ = true;
+    inIonBackendSafeForMinorGC_ = safeForMinorGC;
+  }
+  void leaveIonBackend() {
+    MOZ_ASSERT(inIonBackend_);
+    inIonBackend_ = false;
+    inIonBackendSafeForMinorGC_ = false;
+  }
 #endif
-  int assemblerCount_;
 };
 
-// Initialize Ion statically for all JSRuntimes.
-MOZ_MUST_USE bool InitializeIon();
+// Process-wide initialization of JIT data structures.
+MOZ_MUST_USE bool InitializeJit();
 
 // Get and set the current JIT context.
 JitContext* GetJitContext();
@@ -136,7 +169,7 @@ static inline bool IsErrorStatus(JitExecStatus status) {
 struct EnterJitData;
 
 // Walk the stack and invalidate active Ion frames for the invalid scripts.
-void Invalidate(TypeZone& types, FreeOp* fop,
+void Invalidate(TypeZone& types, JSFreeOp* fop,
                 const RecompileInfoVector& invalid, bool resetUses = true,
                 bool cancelOffThread = true);
 void Invalidate(JSContext* cx, const RecompileInfoVector& invalid,
@@ -163,26 +196,17 @@ void FreeIonBuilder(IonBuilder* builder);
 void LinkIonScript(JSContext* cx, HandleScript calleescript);
 uint8_t* LazyLinkTopActivation(JSContext* cx, LazyLinkExitFrameLayout* frame);
 
-static inline bool IsIonEnabled(JSContext* cx) {
-#if defined(JS_CODEGEN_NONE)
-  return false;
-#else
-  return cx->options().ion() && cx->options().baseline() &&
-         cx->runtime()->jitSupportsFloatingPoint;
-#endif
-}
-
-inline bool IsIonInlinableGetterOrSetterPC(jsbytecode* pc) {
+inline bool IsIonInlinableGetterOrSetterOp(JSOp op) {
   // GETPROP, CALLPROP, LENGTH, GETELEM, and JSOP_CALLELEM. (Inlined Getters)
   // SETPROP, SETNAME, SETGNAME (Inlined Setters)
-  return IsGetPropPC(pc) || IsGetElemPC(pc) || IsSetPropPC(pc);
+  return IsGetPropOp(op) || IsGetElemOp(op) || IsSetPropOp(op);
 }
 
-inline bool IsIonInlinablePC(jsbytecode* pc) {
+inline bool IsIonInlinableOp(JSOp op) {
   // CALL, FUNCALL, FUNAPPLY, EVAL, NEW (Normal Callsites)
   // or an inlinable getter or setter.
-  return (IsCallPC(pc) && !IsSpreadCallPC(pc)) ||
-         IsIonInlinableGetterOrSetterPC(pc);
+  return (IsCallOp(op) && !IsSpreadCallOp(op)) ||
+         IsIonInlinableGetterOrSetterOp(op);
 }
 
 inline bool TooManyActualArguments(unsigned nargs) {
@@ -201,16 +225,36 @@ inline size_t NumLocalsAndArgs(JSScript* script) {
   return num;
 }
 
+// Debugging RAII class which marks the current thread as performing an Ion
+// backend compilation.
+class MOZ_RAII AutoEnterIonBackend {
+ public:
+  explicit AutoEnterIonBackend(
+      bool safeForMinorGC MOZ_GUARD_OBJECT_NOTIFIER_PARAM) {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+
+#ifdef DEBUG
+    JitContext* jcx = GetJitContext();
+    jcx->enterIonBackend(safeForMinorGC);
+#endif
+  }
+
+#ifdef DEBUG
+  ~AutoEnterIonBackend() {
+    JitContext* jcx = GetJitContext();
+    jcx->leaveIonBackend();
+  }
+#endif
+
+  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+};
+
 bool OffThreadCompilationAvailable(JSContext* cx);
 
 void ForbidCompilation(JSContext* cx, JSScript* script);
 
 size_t SizeOfIonData(JSScript* script, mozilla::MallocSizeOf mallocSizeOf);
-void DestroyJitScripts(FreeOp* fop, JSScript* script);
-void TraceJitScripts(JSTracer* trc, JSScript* script);
 
-bool JitSupportsFloatingPoint();
-bool JitSupportsUnalignedAccesses();
 bool JitSupportsSimd();
 bool JitSupportsAtomics();
 

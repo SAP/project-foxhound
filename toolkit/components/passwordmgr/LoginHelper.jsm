@@ -443,7 +443,7 @@ this.LoginHelper = {
 
       for (let prop of aNewLoginData.enumerator) {
         switch (prop.name) {
-          // nsILoginInfo
+          // nsILoginInfo (fall through)
           case "origin":
           case "httpRealm":
           case "formActionOrigin":
@@ -451,7 +451,7 @@ this.LoginHelper = {
           case "password":
           case "usernameField":
           case "passwordField":
-          // nsILoginMetaInfo
+          // nsILoginMetaInfo (fall through)
           case "guid":
           case "timeCreated":
           case "timeLastUsed":
@@ -781,15 +781,19 @@ this.LoginHelper = {
    *                 The name of the entry point, used for telemetry
    */
   openPasswordManager(window, { filterString = "", entryPoint = "" } = {}) {
-    Services.telemetry.recordEvent("pwmgr", "open_management", entryPoint);
     if (this.managementURI && window.openTrustedLinkIn) {
       let managementURL = this.managementURI.replace(
         "%DOMAIN%",
         window.encodeURIComponent(filterString)
       );
-      window.openTrustedLinkIn(managementURL, "tab");
+      // We assume that managementURL has a '?' already
+      window.openTrustedLinkIn(
+        managementURL + `&entryPoint=${entryPoint}`,
+        "tab"
+      );
       return;
     }
+    Services.telemetry.recordEvent("pwmgr", "open_management", entryPoint);
     let win = Services.wm.getMostRecentWindow("Toolkit:PasswordManager");
     if (win) {
       win.setFilter(filterString);
@@ -1082,6 +1086,35 @@ this.LoginHelper = {
       changeType
     );
   },
+
+  isUserFacingLogin(login) {
+    return !login.origin.startsWith("chrome://");
+  },
+
+  async getAllUserFacingLogins() {
+    try {
+      let logins = await Services.logins.getAllLoginsAsync();
+      return logins.filter(this.isUserFacingLogin);
+    } catch (e) {
+      if (e.result == Cr.NS_ERROR_ABORT) {
+        // If the user cancels the MP prompt then return no logins.
+        return [];
+      }
+      throw e;
+    }
+  },
+
+  createLoginAlreadyExistsError(guid) {
+    // The GUID is stored in an nsISupportsString here because we cannot pass
+    // raw JS objects within Components.Exception due to bug 743121.
+    let guidSupportsString = Cc[
+      "@mozilla.org/supports-string;1"
+    ].createInstance(Ci.nsISupportsString);
+    guidSupportsString.data = guid;
+    return Components.Exception("This login already exists.", {
+      data: guidSupportsString,
+    });
+  },
 };
 
 LoginHelper.init();
@@ -1093,6 +1126,5 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("LoginHelper");
-  return logger;
+  return LoginHelper.createLogger("LoginHelper");
 });

@@ -1,9 +1,14 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac } from "common/Actions.jsm";
 import { ErrorBoundary } from "content-src/components/ErrorBoundary/ErrorBoundary";
 import { FluentOrText } from "content-src/components/FluentOrText/FluentOrText";
 import React from "react";
 import { SectionMenu } from "content-src/components/SectionMenu/SectionMenu";
 import { SectionMenuOptions } from "content-src/lib/section-menu-options";
+import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
 
 const VISIBLE = "visible";
 const VISIBILITY_CHANGE_EVENT = "visibilitychange";
@@ -16,7 +21,6 @@ export class CollapsibleSection extends React.PureComponent {
     this.onKeyPress = this.onKeyPress.bind(this);
     this.onTransitionEnd = this.onTransitionEnd.bind(this);
     this.enableOrDisableAnimation = this.enableOrDisableAnimation.bind(this);
-    this.onMenuButtonClick = this.onMenuButtonClick.bind(this);
     this.onMenuButtonMouseEnter = this.onMenuButtonMouseEnter.bind(this);
     this.onMenuButtonMouseLeave = this.onMenuButtonMouseLeave.bind(this);
     this.onMenuUpdate = this.onMenuUpdate.bind(this);
@@ -115,6 +119,7 @@ export class CollapsibleSection extends React.PureComponent {
 
   onKeyPress(event) {
     if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
       this.onHeaderClick();
     }
   }
@@ -152,11 +157,6 @@ export class CollapsibleSection extends React.PureComponent {
         className={`icon icon-small-spacer icon-${icon || "webextension"}`}
       />
     );
-  }
-
-  onMenuButtonClick(event) {
-    event.preventDefault();
-    this.setState({ showContextMenu: true });
   }
 
   onMenuButtonMouseEnter() {
@@ -224,16 +224,13 @@ export class CollapsibleSection extends React.PureComponent {
               >
                 {this.renderIcon()}
                 <FluentOrText message={title} />
-              </span>
-              <span
-                className="click-target"
-                role="button"
-                tabIndex="0"
-                onKeyPress={this.onKeyPress}
-                onClick={this.onHeaderClick}
-              >
                 {isCollapsible && (
                   <span
+                    data-l10n-id={
+                      collapsed
+                        ? "newtab-section-expand-section-label"
+                        : "newtab-section-collapse-section-label"
+                    }
                     className={`collapsible-arrow icon ${
                       collapsed
                         ? "icon-arrowhead-forward-small"
@@ -254,14 +251,11 @@ export class CollapsibleSection extends React.PureComponent {
             </span>
           </h3>
           <div>
-            <button
-              aria-haspopup="true"
-              className="context-menu-button icon"
-              data-l10n-id="newtab-menu-section-tooltip"
-              onClick={this.onMenuButtonClick}
-              ref={this.setContextMenuButtonRef}
-            />
-            {showContextMenu && (
+            <ContextMenuButton
+              tooltip="newtab-menu-section-tooltip"
+              onUpdate={this.onMenuUpdate}
+              refFunction={this.setContextMenuButtonRef}
+            >
               <SectionMenu
                 id={id}
                 extraOptions={extraMenuOptions}
@@ -269,14 +263,13 @@ export class CollapsibleSection extends React.PureComponent {
                 showPrefName={showPrefName}
                 privacyNoticeURL={privacyNoticeURL}
                 collapsed={collapsed}
-                onUpdate={this.onMenuUpdate}
                 isFixed={isFixed}
                 isFirst={isFirst}
                 isLast={isLast}
                 dispatch={dispatch}
                 isWebExtension={isWebExtension}
               />
-            )}
+            </ContextMenuButton>
           </div>
         </div>
         <ErrorBoundary className="section-body-fallback">

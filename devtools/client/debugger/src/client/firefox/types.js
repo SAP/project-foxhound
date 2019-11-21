@@ -21,11 +21,11 @@ import type {
   Frame,
   SourceId,
   QueuedSourceData,
-  Worker,
   Range,
 } from "../../types";
 
 import type { EventListenerCategoryList } from "../../actions/types";
+import actions from "../../actions";
 
 type URL = string;
 
@@ -112,7 +112,7 @@ export type SourcePacket = {
 };
 
 /**
- * Sources Packet from calling threadClient.getSources();
+ * Sources Packet from calling threadFront.getSources();
  * @memberof firefox/packets
  * @static
  */
@@ -186,7 +186,27 @@ export type Actions = {
   resumed: ActorId => void,
   newQueuedSources: (QueuedSourceData[]) => void,
   fetchEventListeners: () => void,
-  updateWorkers: () => void,
+  updateThreads: typeof actions.updateThreads,
+};
+
+type ConsoleClient = {
+  evaluateJS: (
+    script: Script,
+    func: Function,
+    params?: { frameActor: ?FrameId }
+  ) => void,
+  evaluateJSAsync: (
+    script: Script,
+    func: Function,
+    params?: { frameActor: ?FrameId }
+  ) => Promise<{ result: Grip | null }>,
+  autocomplete: (
+    input: string,
+    cursor: number,
+    func: Function,
+    frameId: ?string
+  ) => void,
+  emit: (string, any) => void,
 };
 
 /**
@@ -194,37 +214,26 @@ export type Actions = {
  * @memberof firefox
  * @static
  */
-export type TabTarget = {
+export type Target = {
   on: (string, Function) => void,
   emit: (string, any) => void,
-  activeConsole: {
-    evaluateJS: (
-      script: Script,
-      func: Function,
-      params?: { frameActor: ?FrameId }
-    ) => void,
-    evaluateJSAsync: (
-      script: Script,
-      func: Function,
-      params?: { frameActor: ?FrameId }
-    ) => Promise<{ result: Grip | null }>,
-    autocomplete: (
-      input: string,
-      cursor: number,
-      func: Function,
-      frameId: ?string
-    ) => void,
-    emit: (string, any) => void,
-  },
   form: { consoleActor: any },
   root: any,
   navigateTo: ({ url: string }) => Promise<*>,
   listWorkers: () => Promise<*>,
   reload: () => Promise<*>,
   destroy: () => void,
+  threadFront: ThreadFront,
+  activeConsole: ConsoleClient,
+
+  name: string,
   isBrowsingContext: boolean,
   isContentProcess: boolean,
+  isWorkerTarget: boolean,
   traits: Object,
+  chrome: Boolean,
+  url: string,
+  isAddon: Boolean,
 };
 
 /**
@@ -246,6 +255,7 @@ export type DebuggerClient = {
   mainRoot: {
     traits: any,
     getFront: string => Promise<*>,
+    listProcesses: () => Promise<{ processes: ProcessDescriptor }>,
   },
   connect: () => Promise<*>,
   request: (packet: Object) => Promise<*>,
@@ -254,11 +264,7 @@ export type DebuggerClient = {
   release: (actor: String) => {},
 };
 
-export type TabClient = {
-  listWorkers: () => Promise<*>,
-  addListener: (string, Function) => void,
-  on: (string, Function) => void,
-};
+type ProcessDescriptor = Object;
 
 /**
  * A grip is a JSON value that refers to a specific JavaScript value in the
@@ -315,7 +321,7 @@ export type FunctionGrip = {|
  */
 export type SourceClient = {
   source: () => { source: any, contentType?: string },
-  _activeThread: ThreadClient,
+  _activeThread: ThreadFront,
   actor: string,
   getBreakpointPositionsCompressed: (range: ?Range) => Promise<any>,
   prettyPrint: number => Promise<*>,
@@ -335,11 +341,11 @@ export type ObjectClient = {
 };
 
 /**
- * ThreadClient
+ * ThreadFront
  * @memberof firefox
  * @static
  */
-export type ThreadClient = {
+export type ThreadFront = {
   resume: Function => Promise<*>,
   stepIn: Function => Promise<*>,
   stepOver: Function => Promise<*>,
@@ -363,22 +369,23 @@ export type ThreadClient = {
   getSources: () => Promise<SourcesPacket>,
   reconfigure: ({ observeAsmJS: boolean }) => Promise<*>,
   getLastPausePacket: () => ?PausedPacket,
-  _parent: TabClient,
+  _parent: Target,
   actor: ActorId,
   actorID: ActorId,
   request: (payload: Object) => Promise<*>,
   url: string,
-  setActiveEventBreakpoints: (string[]) => void,
+  setActiveEventBreakpoints: (string[]) => Promise<void>,
   getAvailableEventBreakpoints: () => Promise<EventListenerCategoryList>,
   skipBreakpoints: boolean => Promise<{| skip: boolean |}>,
+  detach: () => Promise<void>,
 };
 
 export type Panel = {|
   emit: (eventName: string) => void,
   openLink: (url: string) => void,
-  openWorkerToolbox: (worker: Worker) => void,
   openElementInInspector: (grip: Object) => void,
   openConsoleAndEvaluate: (input: string) => void,
   highlightDomElement: (grip: Object) => void,
   unHighlightDomElement: (grip: Object) => void,
+  getToolboxStore: () => any,
 |};

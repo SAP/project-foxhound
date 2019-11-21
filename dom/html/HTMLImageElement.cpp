@@ -41,11 +41,11 @@
 #include "imgRequestProxy.h"
 
 #include "nsILoadGroup.h"
+#include "mozilla/CycleCollectedJSContext.h"
 
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MappedDeclarations.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 #include "nsLayoutUtils.h"
 
@@ -75,11 +75,11 @@ namespace dom {
 // Calls LoadSelectedImage on host element unless it has been superseded or
 // canceled -- this is the synchronous section of "update the image data".
 // https://html.spec.whatwg.org/multipage/embedded-content.html#update-the-image-data
-class ImageLoadTask : public Runnable {
+class ImageLoadTask : public MicroTaskRunnable {
  public:
   ImageLoadTask(HTMLImageElement* aElement, bool aAlwaysLoad,
                 bool aUseUrgentStartForChannel)
-      : Runnable("dom::ImageLoadTask"),
+      : MicroTaskRunnable(),
         mElement(aElement),
         mAlwaysLoad(aAlwaysLoad),
         mUseUrgentStartForChannel(aUseUrgentStartForChannel) {
@@ -87,14 +87,18 @@ class ImageLoadTask : public Runnable {
     mDocument->BlockOnload();
   }
 
-  NS_IMETHOD Run() override {
+  virtual void Run(AutoSlowOperation& aAso) override {
     if (mElement->mPendingImageLoadTask == this) {
       mElement->mPendingImageLoadTask = nullptr;
       mElement->mUseUrgentStartForChannel = mUseUrgentStartForChannel;
       mElement->LoadSelectedImage(true, true, mAlwaysLoad);
     }
     mDocument->UnblockOnload(false);
-    return NS_OK;
+  }
+
+  virtual bool Suppressed() override {
+    nsIGlobalObject* global = mElement->GetOwnerGlobal();
+    return global && global->IsInSyncOperation();
   }
 
   bool AlwaysLoad() { return mAlwaysLoad; }
@@ -418,7 +422,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   } else if (aName == nsGkAtoms::referrerpolicy &&
              aNamespaceID == kNameSpaceID_None && aNotify) {
     ReferrerPolicy referrerPolicy = GetImageReferrerPolicy();
-    if (!InResponsiveMode() && referrerPolicy != RP_Unset &&
+    if (!InResponsiveMode() && referrerPolicy != ReferrerPolicy::_empty &&
         aValueMaybeChanged &&
         referrerPolicy != ReferrerPolicyFromAttr(aOldValue)) {
       // XXX: Bug 1076583 - We still use the older synchronous algorithm
@@ -790,7 +794,7 @@ void HTMLImageElement::QueueImageLoadTask(bool aAlwaysLoad) {
   // The task checks this to determine if it was the last
   // queued event, and so earlier tasks are implicitly canceled.
   mPendingImageLoadTask = task;
-  nsContentUtils::RunInStableState(task.forget());
+  CycleCollectedJSContext::Get()->DispatchToMicroTask(task.forget());
 }
 
 bool HTMLImageElement::HaveSrcsetOrInPicture() {
@@ -1202,16 +1206,6 @@ void HTMLImageElement::DestroyContent() {
 
 void HTMLImageElement::MediaFeatureValuesChanged() {
   QueueImageLoadTask(false);
-}
-
-void HTMLImageElement::FlushUseCounters() {
-  nsCOMPtr<imgIRequest> request;
-  GetRequest(CURRENT_REQUEST, getter_AddRefs(request));
-
-  nsCOMPtr<imgIContainer> container;
-  request->GetImage(getter_AddRefs(container));
-
-  static_cast<image::Image*>(container.get())->ReportUseCounters();
 }
 
 }  // namespace dom

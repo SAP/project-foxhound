@@ -192,7 +192,9 @@ bool NotificationController::QueueMutationEvent(AccTreeMutationEvent* aEvent) {
 
   // It is not possible to have a text change event for something other than a
   // hyper text accessible.
-  if (!container->IsHyperText()) {
+  // If the accessible doesn't have a frame, we are probably mid frame
+  // destruction bail early.
+  if (!container->IsHyperText() || !container->GetFrame()) {
     return true;
   }
 
@@ -413,35 +415,9 @@ void NotificationController::ScheduleChildDocBinding(DocAccessible* aDocument) {
 }
 
 void NotificationController::ScheduleContentInsertion(
-    nsIContent* aStartChildNode, nsIContent* aEndChildNode) {
-  // The frame constructor guarantees that only ranges with the same parent
-  // arrive here in presence of dynamic changes to the page, see
-  // nsCSSFrameConstructor::IssueSingleInsertNotifications' callers.
-  nsINode* parent = aStartChildNode->GetFlattenedTreeParentNode();
-  if (!parent) {
-    return;
-  }
-
-  Accessible* container = mDocument->AccessibleOrTrueContainer(parent);
-  if (!container) {
-    return;
-  }
-
-  AutoTArray<nsCOMPtr<nsIContent>, 10> list;
-  for (nsIContent* node = aStartChildNode; node != aEndChildNode;
-       node = node->GetNextSibling()) {
-    MOZ_ASSERT(parent == node->GetFlattenedTreeParentNode());
-    // Notification triggers for content insertion even if no content was
-    // actually inserted (like if the content is display: none). Try to catch
-    // this case early.
-    if (node->GetPrimaryFrame() ||
-        (node->IsElement() && node->AsElement()->IsDisplayContents())) {
-      list.AppendElement(node);
-    }
-  }
-
-  if (!list.IsEmpty()) {
-    mContentInsertions.LookupOrAdd(container)->AppendElements(list);
+    Accessible* aContainer, nsTArray<nsCOMPtr<nsIContent>>& aInsertions) {
+  if (!aInsertions.IsEmpty()) {
+    mContentInsertions.LookupOrAdd(aContainer)->AppendElements(aInsertions);
     ScheduleProcessing();
   }
 }
@@ -828,18 +804,8 @@ void NotificationController::WillRefresh(mozilla::TimeStamp aTime) {
     }
   }
 
-  // Process only currently queued generic notifications.
-  nsTArray<RefPtr<Notification>> notifications;
-  notifications.SwapElements(mNotifications);
-
-  uint32_t notificationCount = notifications.Length();
-  for (uint32_t idx = 0; idx < notificationCount; idx++) {
-    notifications[idx]->Process();
-    if (!mDocument) return;
-  }
-
   // Process invalidation list of the document after all accessible tree
-  // modification are done.
+  // mutation is done.
   mDocument->ProcessInvalidationList();
 
   // Process relocation list.
@@ -852,6 +818,20 @@ void NotificationController::WillRefresh(mozilla::TimeStamp aTime) {
     }
   }
   mRelocations.Clear();
+
+  // Process only currently queued generic notifications.
+  // These are used for processing aria-activedescendant, DOMMenuItemActive,
+  // etc. Therefore, they must be processed after relocations, since relocated
+  // subtrees might not have been created before relocation processing and the
+  // target might be inside a relocated subtree.
+  nsTArray<RefPtr<Notification>> notifications;
+  notifications.SwapElements(mNotifications);
+
+  uint32_t notificationCount = notifications.Length();
+  for (uint32_t idx = 0; idx < notificationCount; idx++) {
+    notifications[idx]->Process();
+    if (!mDocument) return;
+  }
 
   // If a generic notification occurs after this point then we may be allowed to
   // process it synchronously.  However we do not want to reenter if fireing

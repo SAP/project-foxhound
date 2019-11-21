@@ -148,7 +148,7 @@ def test_roll_warnings(lint, linters, files):
 
 
 def fake_run_worker(config, paths, **lintargs):
-    result = ResultSummary()
+    result = ResultSummary(lintargs['root'])
     result.issues['count'].append(1)
     return result
 
@@ -185,6 +185,37 @@ def test_max_paths_per_job(monkeypatch, lint, linters, files, max_paths, expecte
     lint.read(linters)
     num_jobs = len(lint.roll(files, num_procs=2).issues['count'])
     assert num_jobs == expected_jobs
+
+
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="monkeypatch issues with multiprocessing on Windows")
+@pytest.mark.parametrize('num_procs', [1, 4, 8, 16])
+def test_number_of_jobs_global(monkeypatch, lint, linters, files, num_procs):
+    monkeypatch.setattr(sys.modules[lint.__module__], '_run_worker', fake_run_worker)
+
+    linters = linters('global')
+    lint.read(linters)
+    num_jobs = len(lint.roll(files, num_procs=num_procs).issues['count'])
+
+    assert num_jobs == 1
+
+
+@pytest.mark.skipif(platform.system() == 'Windows',
+                    reason="monkeypatch issues with multiprocessing on Windows")
+@pytest.mark.parametrize('max_paths', [1, 4, 16])
+def test_max_paths_per_job_global(monkeypatch, lint, linters, files, max_paths):
+    monkeypatch.setattr(sys.modules[lint.__module__], '_run_worker', fake_run_worker)
+
+    files = files[:4]
+    assert len(files) == 4
+
+    linters = linters('global')[:1]
+    assert len(linters) == 1
+
+    lint.MAX_PATHS_PER_JOB = max_paths
+    lint.read(linters)
+    num_jobs = len(lint.roll(files, num_procs=2).issues['count'])
+    assert num_jobs == 1
 
 
 @pytest.mark.skipif(platform.system() == 'Windows',

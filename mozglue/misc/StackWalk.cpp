@@ -115,14 +115,16 @@ CRITICAL_SECTION gDbgHelpCS;
 // more difficult for WalkStackMain64 to read the suspended thread's counter.
 static Atomic<size_t> sStackWalkSuppressions;
 
+void SuppressStackWalking() { ++sStackWalkSuppressions; }
+
+void DesuppressStackWalking() { --sStackWalkSuppressions; }
+
 MFBT_API
-AutoSuppressStackWalking::AutoSuppressStackWalking() {
-  ++sStackWalkSuppressions;
-}
+AutoSuppressStackWalking::AutoSuppressStackWalking() { SuppressStackWalking(); }
 
 MFBT_API
 AutoSuppressStackWalking::~AutoSuppressStackWalking() {
-  --sStackWalkSuppressions;
+  DesuppressStackWalking();
 }
 
 static uint8_t* sJitCodeRegionStart;
@@ -670,6 +672,8 @@ MFBT_API bool MozDescribeCodeAddress(void* aPC,
 #    include <cxxabi.h>
 #  endif  // MOZ_DEMANGLE_SYMBOLS
 
+namespace mozilla {
+
 void DemangleSymbol(const char* aSymbol, char* aBuffer, int aBufLen) {
   aBuffer[0] = '\0';
 
@@ -684,6 +688,8 @@ void DemangleSymbol(const char* aSymbol, char* aBuffer, int aBufLen) {
   }
 #  endif  // MOZ_DEMANGLE_SYMBOLS
 }
+
+}  // namespace mozilla
 
 // {x86, ppc} x {Linux, Mac} stackwalking code.
 #  if ((defined(__i386) || defined(PPC) || defined(__ppc__)) && \

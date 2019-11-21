@@ -1,3 +1,7 @@
+if (Services.prefs.getBoolPref("fission.autostart")) {
+  requestLongerTimeout(2);
+}
+
 add_task(async function setup() {
   Services.prefs.setBoolPref("privacy.firstparty.isolate", true);
   Services.prefs.setBoolPref("signon.management.page.enabled", true);
@@ -168,7 +172,7 @@ add_task(async function test_aboutURL() {
   let aboutURLs = [];
 
   // List of about: URLs that will initiate network requests.
-  let networkURLs = ["credits"];
+  let networkURLs = ["credits", "logins"];
 
   for (let cid in Cc) {
     let result = cid.match(
@@ -186,7 +190,7 @@ add_task(async function test_aboutURL() {
       let flags = am.getURIFlags(uri);
 
       // We load pages with URI_SAFE_FOR_UNTRUSTED_CONTENT set, this means they
-      // are not loaded with System Principal but with codebase principal.
+      // are not loaded with System Principal but with content principal.
       // Also we skip pages with HIDE_FROM_ABOUTABOUT, some of them may have
       // errors while loading.
       if (
@@ -194,7 +198,10 @@ add_task(async function test_aboutURL() {
         !(flags & Ci.nsIAboutModule.HIDE_FROM_ABOUTABOUT) &&
         !networkURLs.includes(aboutType) &&
         // handle about:newtab in browser_firstPartyIsolation_about_newtab.js
-        aboutType !== "newtab"
+        aboutType !== "newtab" &&
+        // protections kicks of async messaging as soon as it loads,
+        // this test closes the tab too soon causing errors
+        aboutType !== "protections"
       ) {
         aboutURLs.push(aboutType);
       }
@@ -227,8 +234,8 @@ add_task(async function test_aboutURL() {
         "The about page should have firstPartyDomain set"
       );
       Assert.ok(
-        content.document.nodePrincipal.isCodebasePrincipal,
-        "The principal should be a codebase principal."
+        content.document.nodePrincipal.isContentPrincipal,
+        "The principal should be a content principal."
       );
     });
 

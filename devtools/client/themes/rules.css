@@ -11,20 +11,12 @@
   --rule-unused-value-text-color: var(--grey-45);
   --rule-overridden-name-text-color: var(--grey-50);
   --rule-overridden-value-text-color: var(--grey-45);
-
-  /* This should be --yellow-50 but since we need an opacity of 0.4, we hard-code the
-  resulting color here for now. */
-  --rule-property-highlight-background-color: #FFF697;
 }
 
 :root.theme-dark {
   --rule-highlight-background-color: #521C76;
   --rule-header-background-color: #222225;
   --rule-pseudo-class-text-color: var(--yellow-50);
-
-  /* This should be --yellow-50 but since we need an opacity of 0.3, we hard-code the
-  resulting color here for now. */
-  --rule-property-highlight-background-color: #605913;
 
   --rule-unused-name-text-color: var(--grey-45);
   --rule-unused-value-text-color: #787878;
@@ -69,7 +61,7 @@
 }
 
 .ruleview-reveal-panel label {
-  -moz-user-select: none;
+  user-select: none;
   flex-grow: 1;
   display: flex;
   align-items: center;
@@ -116,7 +108,7 @@
 /* Rule View Container */
 
 #ruleview-container {
-  -moz-user-select: text;
+  user-select: text;
   overflow: auto;
   flex: auto;
   height: 100%;
@@ -148,10 +140,6 @@
 
 .ruleview-property:not(:hover) > .ruleview-enableproperty {
   pointer-events: none;
-}
-
-.ruleview-property-highlight-background-color {
-  background-color: var(--rule-property-highlight-background-color);
 }
 
 .ruleview-expandable-container {
@@ -204,7 +192,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 
-  -moz-user-select: none;
+  user-select: none;
   margin-bottom: 2px;
   margin-left: 1ch;
 }
@@ -239,8 +227,7 @@
   width: 100%;
   align-items: center;
   display: flex;
-
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .ruleview-expandable-header {
@@ -398,7 +385,7 @@
   margin-left: -6px;
 }
 
-.ruleview-expander.theme-twisty:dir(rtl):not([open]) {
+.ruleview-propertycontainer .ruleview-expander:dir(rtl):not([open]) {
   /* for preventing .theme-twisty's wrong direction in rtl; Bug 1296648 */
   transform: rotate(-90deg);
 }
@@ -543,6 +530,11 @@
   right: 0;
   bottom: 0;
   z-index: -1;
+}
+
+.ruleview-swatch.ruleview-colorswatch {
+  border: none;
+  padding: 0;
 }
 
 .ruleview-bezierswatch {
@@ -696,11 +688,5 @@
 }
 
 .flash-out {
-  animation: flash-out 1s ease-out;
-}
-
-@keyframes flash-out {
-  from {
-    background: var(--rule-property-highlight-background-color);
-  }
+  transition: background 1s;
 }

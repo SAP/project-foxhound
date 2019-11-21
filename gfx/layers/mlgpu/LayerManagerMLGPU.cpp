@@ -25,7 +25,7 @@
 #include "CompositionRecorder.h"
 #include "mozilla/layers/Diagnostics.h"
 #include "mozilla/layers/TextRenderer.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 
 #ifdef XP_WIN
 #  include "mozilla/widget/WinCompositorWidget.h"
@@ -193,7 +193,7 @@ already_AddRefed<CanvasLayer> LayerManagerMLGPU::CreateCanvasLayer() {
 TextureFactoryIdentifier LayerManagerMLGPU::GetTextureFactoryIdentifier() {
   TextureFactoryIdentifier ident;
   if (mDevice) {
-    ident = mDevice->GetTextureFactoryIdentifier();
+    ident = mDevice->GetTextureFactoryIdentifier(mWidget);
   }
   ident.mUsingAdvancedLayers = true;
   return ident;
@@ -313,6 +313,12 @@ void LayerManagerMLGPU::Composite() {
   if (!mSwapChain->ApplyNewInvalidRegion(std::move(mInvalidRegion),
                                          diagnosticRect)) {
     mProfilerScreenshotGrabber.NotifyEmptyFrame();
+
+    // Discard the current payloads. These payloads did not require a composite
+    // (they caused no changes to anything visible), so we don't want to measure
+    // their latency.
+    mPayload.Clear();
+
     return;
   }
 

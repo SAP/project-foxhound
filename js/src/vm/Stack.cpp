@@ -8,12 +8,12 @@
 
 #include <utility>
 
+#include "debugger/DebugAPI.h"
 #include "gc/Marking.h"
 #include "jit/BaselineFrame.h"
 #include "jit/JitcodeMap.h"
 #include "jit/JitRealm.h"
 #include "jit/shared/CodeGenerator-shared.h"
-#include "vm/Debugger.h"
 #include "vm/JSContext.h"
 #include "vm/Opcodes.h"
 #include "wasm/WasmInstance.h"
@@ -122,6 +122,7 @@ static inline void AssertScopeMatchesEnvironment(Scope* scope,
         case ScopeKind::Catch:
         case ScopeKind::NamedLambda:
         case ScopeKind::StrictNamedLambda:
+        case ScopeKind::FunctionLexical:
           MOZ_ASSERT(&env->as<LexicalEnvironmentObject>().scope() ==
                      si.scope());
           env = &env->as<LexicalEnvironmentObject>().enclosingEnvironment();
@@ -1216,8 +1217,8 @@ bool FrameIter::matchCallee(JSContext* cx, HandleFunction fun) const {
   // As we do not know if the calleeTemplate is the real function, or the
   // template from which it would be cloned, we compare properties which are
   // stable across the cloning of JSFunctions.
-  if (((currentCallee->flags() ^ fun->flags()) &
-       JSFunction::STABLE_ACROSS_CLONES) != 0 ||
+  if (((currentCallee->flags().toRaw() ^ fun->flags().toRaw()) &
+       FunctionFlags::STABLE_ACROSS_CLONES) != 0 ||
       currentCallee->nargs() != fun->nargs()) {
     return false;
   }
@@ -1625,7 +1626,7 @@ void jit::JitActivation::removeRematerializedFramesFromDebugger(JSContext* cx,
   }
   if (RematerializedFrameTable::Ptr p = rematerializedFrames_->lookup(top)) {
     for (uint32_t i = 0; i < p->value().length(); i++) {
-      Debugger::handleUnrecoverableIonBailoutError(cx, p->value()[i].get());
+      DebugAPI::handleUnrecoverableIonBailoutError(cx, p->value()[i].get());
     }
     rematerializedFrames_->remove(p);
   }
@@ -1815,7 +1816,7 @@ void JS::ProfilingFrameIterator::settleFrames() {
       jsJitIter().frameType() == jit::FrameType::WasmToJSJit) {
     wasm::Frame* fp = (wasm::Frame*)jsJitIter().fp();
     iteratorDestroy();
-    new (storage()) wasm::ProfilingFrameIterator(*activation_->asJit(), fp);
+    new (storage()) wasm::ProfilingFrameIterator(fp);
     kind_ = Kind::Wasm;
     MOZ_ASSERT(!wasmIter().done());
     return;

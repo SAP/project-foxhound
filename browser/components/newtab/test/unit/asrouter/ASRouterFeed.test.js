@@ -13,6 +13,7 @@ describe("ASRouterFeed", () => {
   let globals;
   let FakeBookmarkPanelHub;
   let FakeToolbarBadgeHub;
+  let FakeToolbarPanelHub;
   beforeEach(() => {
     sandbox = sinon.createSandbox();
     globals = new GlobalOverrider();
@@ -23,10 +24,19 @@ describe("ASRouterFeed", () => {
     FakeToolbarBadgeHub = {
       init: sandbox.stub(),
     };
+    FakeToolbarPanelHub = {
+      init: sandbox.stub(),
+      uninit: sandbox.stub(),
+    };
     globals.set("BookmarkPanelHub", FakeBookmarkPanelHub);
     globals.set("ToolbarBadgeHub", FakeToolbarBadgeHub);
+    globals.set("ToolbarPanelHub", FakeToolbarPanelHub);
 
     Router = new _ASRouter({ providers: [FAKE_LOCAL_PROVIDER] });
+    FakeToolbarPanelHub = {
+      init: sandbox.stub(),
+      uninit: sandbox.stub(),
+    };
 
     storage = {
       get: sandbox.stub().returns(Promise.resolve([])),

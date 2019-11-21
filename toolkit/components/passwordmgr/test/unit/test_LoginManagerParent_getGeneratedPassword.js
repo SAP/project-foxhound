@@ -35,7 +35,7 @@ add_task(async function test_getGeneratedPassword() {
     .callsFake(() => {
       return {
         currentWindowGlobal: {
-          documentPrincipal: Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          documentPrincipal: Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             "https://www.example.com^userContextId=6"
           ),
         },
@@ -48,7 +48,11 @@ add_task(async function test_getGeneratedPassword() {
 
   let password1 = LMP.getGeneratedPassword(99);
   notEqual(password1, null, "Check password was returned");
-  equal(password1.length, 15, "Check password length");
+  equal(
+    password1.length,
+    LoginTestUtils.generation.LENGTH,
+    "Check password length"
+  );
   equal(LMP._generatedPasswordsByPrincipalOrigin.size, 1, "1 added to cache");
   equal(
     LMP._generatedPasswordsByPrincipalOrigin.get(
@@ -72,7 +76,7 @@ add_task(async function test_getGeneratedPassword() {
     .callsFake(() => {
       return {
         currentWindowGlobal: {
-          documentPrincipal: Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          documentPrincipal: Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             "https://www.mozilla.org^userContextId=2"
           ),
         },
@@ -84,7 +88,11 @@ add_task(async function test_getGeneratedPassword() {
     password3,
     "Different password for a different origin for the same BC"
   );
-  equal(password3.length, 15, "Check password3 length");
+  equal(
+    password3.length,
+    LoginTestUtils.generation.LENGTH,
+    "Check password3 length"
+  );
 
   info("Now checks cases where null should be returned");
 

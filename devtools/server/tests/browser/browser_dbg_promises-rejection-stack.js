@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -16,7 +14,9 @@ const ObjectClient = require("devtools/shared/client/object-client");
 // The code in the document above leaves an uncaught rejection. This is only
 // reported to the testing framework if the code is loaded in the main process.
 if (!gMultiProcessBrowser) {
-  ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
+  const { PromiseTestUtils } = ChromeUtils.import(
+    "resource://testing-common/PromiseTestUtils.jsm"
+  );
   PromiseTestUtils.expectUncaughtRejection(/hello/);
 }
 
@@ -24,7 +24,7 @@ const TEST_DATA = [
   {
     functionDisplayName: "returnPromise/<",
     line: 21,
-    column: 47,
+    column: 53,
   },
   {
     functionDisplayName: "returnPromise",

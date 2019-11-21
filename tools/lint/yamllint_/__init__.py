@@ -2,17 +2,18 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import, print_function
+
 import re
 import os
 import signal
 import subprocess
 from collections import defaultdict
 
-import which
-from mozprocess import ProcessHandlerMixin
-
+from mozfile import which
 from mozlint import result
 from mozlint.pathutils import get_ancestors_by_name
+from mozprocess import ProcessHandlerMixin
 
 
 here = os.path.abspath(os.path.dirname(__file__))
@@ -71,10 +72,7 @@ def get_yamllint_binary():
     if binary:
         return binary
 
-    try:
-        return which.which('yamllint')
-    except which.WhichError:
-        return None
+    return which('yamllint')
 
 
 def _run_pip(*args):

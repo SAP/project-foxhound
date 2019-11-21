@@ -11,6 +11,7 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/net/DNSRequestChild.h"
 #include "mozilla/Preferences.h"
 #include "nsDebugImpl.h"
 #include "nsThreadManager.h"
@@ -22,6 +23,7 @@
 #endif
 
 #ifdef MOZ_WEBRTC
+#  include "mozilla/net/ProxyConfigLookupChild.h"
 #  include "mozilla/net/WebrtcProxyChannelChild.h"
 #endif
 
@@ -115,6 +117,12 @@ void SocketProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
 void SocketProcessChild::CleanUp() {
   LOG(("SocketProcessChild::CleanUp\n"));
 
+  for (auto iter = mSocketProcessBridgeParentMap.Iter(); !iter.Done();
+       iter.Next()) {
+    if (!iter.Data()->Closed()) {
+      iter.Data()->Close();
+    }
+  }
   NS_ShutdownXPCOM(nullptr);
 }
 
@@ -202,6 +210,34 @@ bool SocketProcessChild::DeallocPWebrtcProxyChannelChild(
   WebrtcProxyChannelChild* child =
       static_cast<WebrtcProxyChannelChild*>(aActor);
   child->ReleaseIPDLReference();
+#endif
+  return true;
+}
+
+PDNSRequestChild* SocketProcessChild::AllocPDNSRequestChild(
+    const nsCString& aHost, const OriginAttributes& aOriginAttributes,
+    const uint32_t& aFlags) {
+  // We don't allocate here: instead we always use IPDL constructor that takes
+  // an existing object
+  MOZ_ASSERT_UNREACHABLE("AllocPDNSRequestChild should not be called on child");
+  return nullptr;
+}
+
+bool SocketProcessChild::DeallocPDNSRequestChild(PDNSRequestChild* aChild) {
+  DNSRequestChild* p = static_cast<DNSRequestChild*>(aChild);
+  p->ReleaseIPDLReference();
+  return true;
+}
+
+PProxyConfigLookupChild* SocketProcessChild::AllocPProxyConfigLookupChild() {
+  MOZ_CRASH("AllocPProxyConfigLookupChild should not be called");
+  return nullptr;
+}
+
+bool SocketProcessChild::DeallocPProxyConfigLookupChild(
+    PProxyConfigLookupChild* aActor) {
+#ifdef MOZ_WEBRTC
+  delete static_cast<ProxyConfigLookupChild*>(aActor);
 #endif
   return true;
 }

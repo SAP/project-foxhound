@@ -224,14 +224,15 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
                                  nsISupports* aData, bool aAnonymize) {
   nsAutoCString windowPath("explicit/");
 
-  // Avoid calling aWindow->GetTop() if there's no outer window.  It will work
-  // just fine, but will spew a lot of warnings.
+  // Avoid calling aWindow->GetInProcessTop() if there's no outer window.  It
+  // will work just fine, but will spew a lot of warnings.
   nsGlobalWindowOuter* top = nullptr;
   nsCOMPtr<nsIURI> location;
   if (aWindow->GetOuterWindow()) {
     // Our window should have a null top iff it has a null docshell.
-    MOZ_ASSERT(!!aWindow->GetTopInternal() == !!aWindow->GetDocShell());
-    top = aWindow->GetTopInternal();
+    MOZ_ASSERT(!!aWindow->GetInProcessTopInternal() ==
+               !!aWindow->GetDocShell());
+    top = aWindow->GetInProcessTopInternal();
     if (top) {
       location = GetWindowURI(top);
     }
@@ -419,8 +420,52 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
                "Number of event listeners in a window, including event "
                "listeners on nodes and other event targets.");
 
-  REPORT_SIZE("/layout/line-boxes", mArenaSizes.mLineBoxes,
-              "Memory used by line boxes within a window.");
+  // There are many different kinds of frames, but it is very likely
+  // that only a few matter.  Implement a cutoff so we don't bloat
+  // about:memory with many uninteresting entries.
+  const size_t ARENA_SUNDRIES_THRESHOLD =
+      js::MemoryReportingSundriesThreshold();
+
+  size_t presArenaSundriesSize = 0;
+#define ARENA_OBJECT(name_, sundries_size_, prefix_)                    \
+  {                                                                     \
+    size_t size = windowSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_);  \
+    if (size < ARENA_SUNDRIES_THRESHOLD) {                              \
+      sundries_size_ += size;                                           \
+    } else {                                                            \
+      REPORT_SUM_SIZE(prefix_ #name_, size,                             \
+                      "Memory used by objects of type " #name_          \
+                      " within a window.");                             \
+    }                                                                   \
+    aWindowTotalSizes->mArenaSizes.NS_ARENA_SIZES_FIELD(name_) += size; \
+  }
+#define PRES_ARENA_OBJECT(name_) \
+  ARENA_OBJECT(name_, presArenaSundriesSize, "/layout/pres-arena/")
+#include "nsPresArenaObjectList.h"
+#undef PRES_ARENA_OBJECT
+
+  if (presArenaSundriesSize > 0) {
+    REPORT_SUM_SIZE(
+        "/layout/pres-arena/sundries", presArenaSundriesSize,
+        "The sum of all memory used by objects in the arena which were too "
+        "small to be shown individually.");
+  }
+
+  size_t displayListArenaSundriesSize = 0;
+#define DISPLAY_LIST_ARENA_OBJECT(name_)            \
+  ARENA_OBJECT(name_, displayListArenaSundriesSize, \
+               "/layout/display-list-arena/")
+#include "nsDisplayListArenaTypes.h"
+#undef DISPLAY_LIST_ARENA_OBJECT
+
+  if (displayListArenaSundriesSize > 0) {
+    REPORT_SUM_SIZE(
+        "/layout/display-list-arena/sundries", displayListArenaSundriesSize,
+        "The sum of all memory used by objects in the DL arena which were too "
+        "small to be shown individually.");
+  }
+
+#undef ARENA_OBJECT
 
   // There are many different kinds of style structs, but it is likely that
   // only a few matter. Implement a cutoff so we don't bloat about:memory with
@@ -428,38 +473,6 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   const size_t STYLE_SUNDRIES_THRESHOLD =
       js::MemoryReportingSundriesThreshold();
 
-  // There are many different kinds of frames, but it is very likely
-  // that only a few matter.  Implement a cutoff so we don't bloat
-  // about:memory with many uninteresting entries.
-  const size_t FRAME_SUNDRIES_THRESHOLD =
-      js::MemoryReportingSundriesThreshold();
-
-  size_t frameSundriesSize = 0;
-#define FRAME_ID(classname, ...)                                            \
-  {                                                                         \
-    size_t size = windowSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(classname);  \
-    if (size < FRAME_SUNDRIES_THRESHOLD) {                                  \
-      frameSundriesSize += size;                                            \
-    } else {                                                                \
-      REPORT_SUM_SIZE("/layout/frames/" #classname, size,                   \
-                      "Memory used by frames of type " #classname           \
-                      " within a window.");                                 \
-    }                                                                       \
-    aWindowTotalSizes->mArenaSizes.NS_ARENA_SIZES_FIELD(classname) += size; \
-  }
-#define ABSTRACT_FRAME_ID(...)
-#include "mozilla/FrameIdList.h"
-#undef FRAME_ID
-#undef ABSTRACT_FRAME_ID
-
-  if (frameSundriesSize > 0) {
-    REPORT_SUM_SIZE(
-        "/layout/frames/sundries", frameSundriesSize,
-        "The sum of all memory used by frames which were too small to be shown "
-        "individually.");
-  }
-
-  // This is the style structs.
   size_t styleSundriesSize = 0;
 #define STYLE_STRUCT(name_)                                             \
   {                                                                     \
@@ -641,21 +654,26 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
   REPORT("window-objects/property-tables", windowTotalSizes.mPropertyTablesSize,
          "This is the sum of all windows' 'property-tables' numbers.");
 
-  REPORT("window-objects/layout/line-boxes",
-         windowTotalSizes.mArenaSizes.mLineBoxes,
-         "This is the sum of all windows' 'layout/line-boxes' numbers.");
+  size_t presArenaTotal = 0;
+#define PRES_ARENA_OBJECT(name_) \
+  presArenaTotal += windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_);
+#include "nsPresArenaObjectList.h"
+#undef PRES_ARENA_OBJECT
 
-  size_t frameTotal = 0;
-#define FRAME_ID(classname, ...) \
-  frameTotal += windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(classname);
-#define ABSTRACT_FRAME_ID(...)
-#include "mozilla/FrameIdList.h"
-#undef FRAME_ID
-#undef ABSTRACT_FRAME_ID
+  REPORT("window-objects/layout/pres-arena", presArenaTotal,
+         "Memory used for the pres arena within windows. "
+         "This is the sum of all windows' 'layout/pres-arena/' numbers.");
 
-  REPORT("window-objects/layout/frames", frameTotal,
-         "Memory used for layout frames within windows. "
-         "This is the sum of all windows' 'layout/frames/' numbers.");
+  size_t displayListArenaTotal = 0;
+#define DISPLAY_LIST_ARENA_OBJECT(name_) \
+  displayListArenaTotal +=               \
+      windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(name_);
+#include "nsDisplayListArenaTypes.h"
+#undef DISPLAY_LIST_ARENA_OBJECT
+
+  REPORT("window-objects/layout/display-list-arena", displayListArenaTotal,
+         "Memory used for the display list arena within windows. This is the "
+         "sum of all windows' 'layout/display-list-arena/' numbers.");
 
   size_t styleTotal = 0;
 #define STYLE_STRUCT(name_) \
@@ -799,10 +817,10 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
 
   // Populate nonDetachedTabGroups.
   for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
-    // Null outer window implies null top, but calling GetTop() when there's no
-    // outer window causes us to spew debug warnings.
+    // Null outer window implies null top, but calling GetInProcessTop() when
+    // there's no outer window causes us to spew debug warnings.
     nsGlobalWindowInner* window = iter.UserData();
-    if (!window->GetOuterWindow() || !window->GetTopInternal()) {
+    if (!window->GetOuterWindow() || !window->GetInProcessTopInternal()) {
       // This window is detached, so we don't care about its tab group.
       continue;
     }
@@ -827,12 +845,12 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
 
     nsPIDOMWindowInner* window = nsPIDOMWindowInner::From(iwindow);
 
-    // Avoid calling GetTop() if we have no outer window.  Nothing will break if
-    // we do, but it will spew debug output, which can cause our test logs to
-    // overflow.
+    // Avoid calling GetInProcessTop() if we have no outer window.  Nothing
+    // will break if we do, but it will spew debug output, which can cause our
+    // test logs to overflow.
     nsCOMPtr<nsPIDOMWindowOuter> top;
     if (window->GetOuterWindow()) {
-      top = window->GetOuterWindow()->GetTop();
+      top = window->GetOuterWindow()->GetInProcessTop();
     }
 
     if (top) {

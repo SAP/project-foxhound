@@ -8,6 +8,7 @@
 #define mozilla_dom_CanonicalBrowsingContext_h
 
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/MediaController.h"
 #include "mozilla/RefPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
@@ -60,13 +61,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  // This functions would set/reset its user gesture activation flag and then
-  // notify other browsing contexts which are not the one related with the
-  // current window global to set/reset the flag. (the corresponding browsing
-  // context of the current global window has been set/reset before calling this
-  // function)
-  void NotifySetUserGestureActivationFromIPC(bool aIsUserGestureActivation);
-
   // This function is used to start the autoplay media which are delayed to
   // start. If needed, it would also notify the content browsing context which
   // are related with the canonical browsing content tree to start delayed
@@ -78,14 +72,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // other top level windows in other processes.
   void NotifyMediaMutedChanged(bool aMuted);
 
-  // Validate that the given process is allowed to perform the given
-  // transaction. aSource is |nullptr| if set in the parent process.
-  bool ValidateTransaction(const Transaction& aTransaction,
-                           ContentParent* aSource);
-
-  void SetFieldEpochsForChild(ContentParent* aChild,
-                              const FieldEpochs& aEpochs);
-  const FieldEpochs& GetFieldEpochsForChild(ContentParent* aChild);
+  // This function would update the media action for the current outer window
+  // and propogate the action to other browsing contexts in content processes.
+  void UpdateMediaAction(MediaControlActions aAction);
 
  protected:
   void Traverse(nsCycleCollectionTraversalCallback& cb);
@@ -108,10 +97,6 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   nsTHashtable<nsRefPtrHashKey<WindowGlobalParent>> mWindowGlobals;
   RefPtr<WindowGlobalParent> mCurrentWindowGlobal;
   RefPtr<WindowGlobalParent> mEmbedderWindowGlobal;
-
-  // Generation information for each content process which has interacted with
-  // this CanonicalBrowsingContext, by ChildID.
-  nsDataHashtable<nsUint64HashKey, FieldEpochs> mChildFieldEpochs;
 };
 
 }  // namespace dom

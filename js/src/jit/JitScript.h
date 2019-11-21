@@ -16,8 +16,10 @@ class JSScript;
 namespace js {
 namespace jit {
 
+class ControlFlowGraph;
+
 // Describes a single wasm::ImportExit which jumps (via an import with
-// the given index) directly to a BaselineScript or IonScript.
+// the given index) directly to a JitScript.
 struct DependentWasmImport {
   wasm::Instance* instance;
   size_t importIndex;
@@ -25,6 +27,29 @@ struct DependentWasmImport {
   DependentWasmImport(wasm::Instance& instance, size_t importIndex)
       : instance(&instance), importIndex(importIndex) {}
 };
+
+// Information about a script's bytecode, used by IonBuilder. This is cached
+// in JitScript.
+struct IonBytecodeInfo {
+  bool usesEnvironmentChain = false;
+  bool modifiesArguments = false;
+};
+
+// Magic BaselineScript value indicating Baseline compilation has been disabled.
+static constexpr uintptr_t BaselineDisabledScript = 0x1;
+
+static BaselineScript* const BaselineDisabledScriptPtr =
+    reinterpret_cast<BaselineScript*>(BaselineDisabledScript);
+
+// Magic IonScript values indicating Ion compilation has been disabled or the
+// script is being Ion-compiled off-thread.
+static constexpr uintptr_t IonDisabledScript = 0x1;
+static constexpr uintptr_t IonCompilingScript = 0x2;
+
+static IonScript* const IonDisabledScriptPtr =
+    reinterpret_cast<IonScript*>(IonDisabledScript);
+static IonScript* const IonCompilingScriptPtr =
+    reinterpret_cast<IonScript*>(IonCompilingScript);
 
 // [SMDOC] JitScript
 //
@@ -91,12 +116,6 @@ class alignas(uintptr_t) JitScript final {
   // Allocated space for fallback IC stubs.
   FallbackICStubSpace fallbackStubSpace_ = {};
 
-  // The freeze constraints added to stack type sets will only directly
-  // invalidate the script containing those stack type sets. This Vector
-  // contains compilations that inlined this script, so we can invalidate
-  // them as well.
-  RecompileInfoVector inlinedCompilations_;
-
   // Like JSScript::jitCodeRaw_ but when the script has an IonScript this can
   // point to a separate entry point that skips the argument type checks.
   uint8_t* jitCodeSkipArgCheck_ = nullptr;
@@ -107,6 +126,57 @@ class alignas(uintptr_t) JitScript final {
 
   // Profile string used by the profiler for Baseline Interpreter frames.
   const char* profileString_ = nullptr;
+
+  // Data allocated lazily the first time this script is compiled, inlined, or
+  // analyzed by IonBuilder. This is done lazily to improve performance and
+  // memory usage as most scripts are never Ion-compiled.
+  struct CachedIonData {
+    // The freeze constraints added to stack type sets will only directly
+    // invalidate the script containing those stack type sets. This Vector
+    // contains compilations that inlined this script, so we can invalidate
+    // them as well.
+    RecompileInfoVector inlinedCompilations_;
+
+    // For functions with a call object, template objects to use for the call
+    // object and decl env object (linked via the call object's enclosing
+    // scope).
+    HeapPtr<EnvironmentObject*> templateEnv = nullptr;
+
+    // Cached control flow graph for IonBuilder. Owned by JitZone::cfgSpace and
+    // can be purged by Zone::discardJitCode.
+    ControlFlowGraph* controlFlowGraph = nullptr;
+
+    // The total bytecode length of all scripts we inlined when we Ion-compiled
+    // this script. 0 if Ion did not compile this script or if we didn't inline
+    // anything.
+    uint16_t inlinedBytecodeLength = 0;
+
+    // The max inlining depth where we can still inline all functions we inlined
+    // when we Ion-compiled this script. This starts as UINT8_MAX, since we have
+    // no data yet, and won't affect inlining heuristics in that case. The value
+    // is updated when we Ion-compile this script. See makeInliningDecision for
+    // more info.
+    uint8_t maxInliningDepth = UINT8_MAX;
+
+    // Analysis information based on the script and its bytecode.
+    IonBytecodeInfo bytecodeInfo = {};
+
+    CachedIonData(EnvironmentObject* templateEnv, IonBytecodeInfo bytecodeInfo);
+
+    CachedIonData(const CachedIonData&) = delete;
+    void operator=(const CachedIonData&) = delete;
+
+    void trace(JSTracer* trc);
+  };
+  js::UniquePtr<CachedIonData> cachedIonData_;
+
+  // Baseline code for the script. Either nullptr, BaselineDisabledScriptPtr or
+  // a valid BaselineScript*.
+  BaselineScript* baselineScript_ = nullptr;
+
+  // Ion code for this script. Either nullptr, IonDisabledScriptPtr,
+  // IonCompilingScriptPtr or a valid IonScript*.
+  IonScript* ionScript_ = nullptr;
 
   // Offset of the StackTypeSet array.
   uint32_t typeSetOffset_ = 0;
@@ -132,6 +202,11 @@ class alignas(uintptr_t) JitScript final {
 
     // Whether freeze constraints for stack type sets have been generated.
     bool hasFreezeConstraints : 1;
+
+    // Flag set if this script has ever been Ion compiled, either directly or
+    // inlined into another script. This is cleared when the script's type
+    // information or caches are cleared.
+    bool ionCompiledOrInlined : 1;
   };
   Flags flags_ = {};  // Zero-initialize flags.
 
@@ -151,6 +226,17 @@ class alignas(uintptr_t) JitScript final {
     flags_.typesGeneration = generation;
   }
 
+  bool hasCachedIonData() const { return !!cachedIonData_; }
+
+  CachedIonData& cachedIonData() {
+    MOZ_ASSERT(hasCachedIonData());
+    return *cachedIonData_.get();
+  }
+  const CachedIonData& cachedIonData() const {
+    MOZ_ASSERT(hasCachedIonData());
+    return *cachedIonData_.get();
+  }
+
  public:
   JitScript(JSScript* script, uint32_t typeSetOffset,
             uint32_t bytecodeTypeMapOffset, uint32_t allocBytes,
@@ -161,11 +247,17 @@ class alignas(uintptr_t) JitScript final {
     // The contents of the fallback stub space are removed and freed
     // separately after the next minor GC. See prepareForDestruction.
     MOZ_ASSERT(fallbackStubSpace_.isEmpty());
+
+    // BaselineScript and IonScript must have been destroyed at this point.
+    MOZ_ASSERT(!hasBaselineScript());
+    MOZ_ASSERT(!hasIonScript());
   }
 #endif
 
   MOZ_MUST_USE bool initICEntriesAndBytecodeTypeMap(JSContext* cx,
                                                     JSScript* script);
+
+  MOZ_MUST_USE bool ensureHasCachedIonData(JSContext* cx, HandleScript script);
 
   bool hasFreezeConstraints(const js::AutoSweepJitScript& sweep) const {
     MOZ_ASSERT(sweep.jitScript() == this);
@@ -179,18 +271,26 @@ class alignas(uintptr_t) JitScript final {
   inline bool typesNeedsSweep(Zone* zone) const;
   void sweepTypes(const js::AutoSweepJitScript& sweep, Zone* zone);
 
-  RecompileInfoVector& inlinedCompilations(
+  void setIonCompiledOrInlined() { flags_.ionCompiledOrInlined = true; }
+  void clearIonCompiledOrInlined() { flags_.ionCompiledOrInlined = false; }
+  bool ionCompiledOrInlined() const { return flags_.ionCompiledOrInlined; }
+
+  RecompileInfoVector* maybeInlinedCompilations(
       const js::AutoSweepJitScript& sweep) {
     MOZ_ASSERT(sweep.jitScript() == this);
-    return inlinedCompilations_;
+    if (!hasCachedIonData()) {
+      return nullptr;
+    }
+    return &cachedIonData().inlinedCompilations_;
   }
   MOZ_MUST_USE bool addInlinedCompilation(const js::AutoSweepJitScript& sweep,
                                           RecompileInfo info) {
     MOZ_ASSERT(sweep.jitScript() == this);
-    if (!inlinedCompilations_.empty() && inlinedCompilations_.back() == info) {
+    auto& inlinedCompilations = cachedIonData().inlinedCompilations_;
+    if (!inlinedCompilations.empty() && inlinedCompilations.back() == info) {
       return true;
     }
-    return inlinedCompilations_.append(info);
+    return inlinedCompilations.append(info);
   }
 
   uint32_t numICEntries() const {
@@ -228,6 +328,8 @@ class alignas(uintptr_t) JitScript final {
                                  JSScript* script);
   inline StackTypeSet* argTypes(const AutoSweepJitScript& sweep,
                                 JSScript* script, unsigned i);
+
+  static size_t NumTypeSets(JSScript* script);
 
   /* Get the type set for values observed at an opcode. */
   inline StackTypeSet* bytecodeTypes(const AutoSweepJitScript& sweep,
@@ -290,6 +392,10 @@ class alignas(uintptr_t) JitScript final {
   static constexpr size_t offsetOfJitCodeSkipArgCheck() {
     return offsetof(JitScript, jitCodeSkipArgCheck_);
   }
+  static size_t offsetOfBaselineScript() {
+    return offsetof(JitScript, baselineScript_);
+  }
+  static size_t offsetOfIonScript() { return offsetof(JitScript, ionScript_); }
 
 #ifdef DEBUG
   void printTypes(JSContext* cx, HandleScript script);
@@ -343,6 +449,122 @@ class alignas(uintptr_t) JitScript final {
   void unlinkDependentWasmImports();
 
   size_t allocBytes() const { return allocBytes_; }
+
+  EnvironmentObject* templateEnvironment() const {
+    return cachedIonData().templateEnv;
+  }
+
+  const ControlFlowGraph* controlFlowGraph() const {
+    return cachedIonData().controlFlowGraph;
+  }
+  void setControlFlowGraph(ControlFlowGraph* controlFlowGraph) {
+    MOZ_ASSERT(controlFlowGraph);
+    cachedIonData().controlFlowGraph = controlFlowGraph;
+  }
+  void clearControlFlowGraph() {
+    if (hasCachedIonData()) {
+      cachedIonData().controlFlowGraph = nullptr;
+    }
+  }
+
+  bool modifiesArguments() const {
+    return cachedIonData().bytecodeInfo.modifiesArguments;
+  }
+  bool usesEnvironmentChain() const {
+    return cachedIonData().bytecodeInfo.usesEnvironmentChain;
+  }
+
+  uint8_t maxInliningDepth() const {
+    return hasCachedIonData() ? cachedIonData().maxInliningDepth : UINT8_MAX;
+  }
+  void resetMaxInliningDepth() { cachedIonData().maxInliningDepth = UINT8_MAX; }
+
+  void setMaxInliningDepth(uint32_t depth) {
+    MOZ_ASSERT(depth <= UINT8_MAX);
+    cachedIonData().maxInliningDepth = depth;
+  }
+
+  uint16_t inlinedBytecodeLength() const {
+    return hasCachedIonData() ? cachedIonData().inlinedBytecodeLength : 0;
+  }
+  void setInlinedBytecodeLength(uint32_t len) {
+    if (len > UINT16_MAX) {
+      len = UINT16_MAX;
+    }
+    cachedIonData().inlinedBytecodeLength = len;
+  }
+
+ private:
+  // Methods to set baselineScript_ to a BaselineScript*, nullptr, or
+  // BaselineDisabledScriptPtr.
+  void setBaselineScriptImpl(JSScript* script, BaselineScript* baselineScript);
+  void setBaselineScriptImpl(JSFreeOp* fop, JSScript* script,
+                             BaselineScript* baselineScript);
+
+ public:
+  // Methods for getting/setting/clearing a BaselineScript*.
+  bool hasBaselineScript() const {
+    bool res = baselineScript_ && baselineScript_ != BaselineDisabledScriptPtr;
+    MOZ_ASSERT_IF(!res, !hasIonScript());
+    return res;
+  }
+  BaselineScript* baselineScript() const {
+    MOZ_ASSERT(hasBaselineScript());
+    return baselineScript_;
+  }
+  void setBaselineScript(JSScript* script, BaselineScript* baselineScript) {
+    MOZ_ASSERT(!hasBaselineScript());
+    setBaselineScriptImpl(script, baselineScript);
+    MOZ_ASSERT(hasBaselineScript());
+  }
+  MOZ_MUST_USE BaselineScript* clearBaselineScript(JSFreeOp* fop,
+                                                   JSScript* script) {
+    BaselineScript* baseline = baselineScript();
+    setBaselineScriptImpl(fop, script, nullptr);
+    return baseline;
+  }
+
+ private:
+  // Methods to set ionScript_ to an IonScript*, nullptr, or one of the special
+  // Ion{Disabled,Compiling}ScriptPtr values.
+  void setIonScriptImpl(JSFreeOp* fop, JSScript* script, IonScript* ionScript);
+  void setIonScriptImpl(JSScript* script, IonScript* ionScript);
+
+ public:
+  // Methods for getting/setting/clearing an IonScript*.
+  bool hasIonScript() const {
+    bool res = ionScript_ && ionScript_ != IonDisabledScriptPtr &&
+               ionScript_ != IonCompilingScriptPtr;
+    MOZ_ASSERT_IF(res, baselineScript_);
+    return res;
+  }
+  IonScript* ionScript() const {
+    MOZ_ASSERT(hasIonScript());
+    return ionScript_;
+  }
+  void setIonScript(JSScript* script, IonScript* ionScript) {
+    MOZ_ASSERT(!hasIonScript());
+    setIonScriptImpl(script, ionScript);
+    MOZ_ASSERT(hasIonScript());
+  }
+  MOZ_MUST_USE IonScript* clearIonScript(JSFreeOp* fop, JSScript* script) {
+    IonScript* ion = ionScript();
+    setIonScriptImpl(fop, script, nullptr);
+    return ion;
+  }
+
+  // Methods for off-thread compilation.
+  bool isIonCompilingOffThread() const {
+    return ionScript_ == IonCompilingScriptPtr;
+  }
+  void setIsIonCompilingOffThread(JSScript* script) {
+    MOZ_ASSERT(ionScript_ == nullptr);
+    setIonScriptImpl(script, IonCompilingScriptPtr);
+  }
+  void clearIsIonCompilingOffThread(JSScript* script) {
+    MOZ_ASSERT(isIonCompilingOffThread());
+    setIonScriptImpl(script, nullptr);
+  }
 };
 
 // Ensures no JitScripts are purged in the current zone.

@@ -20,7 +20,7 @@ import { renderWasmText } from "./wasm";
 import { toEditorLine } from "./editor";
 export { isMinified } from "./isMinified";
 import { getURL, getFileExtension } from "./sources-tree";
-import { prefs, features } from "./prefs";
+import { features } from "./prefs";
 
 import type {
   SourceId,
@@ -42,25 +42,7 @@ export const sourceTypes = {
   vue: "vue",
 };
 
-/**
- * Trims the query part or reference identifier of a url string, if necessary.
- *
- * @memberof utils/source
- * @static
- */
-function trimUrlQuery(url: string): string {
-  const length = url.length;
-  const q1 = url.indexOf("?");
-  const q2 = url.indexOf("&");
-  const q3 = url.indexOf("#");
-  const q = Math.min(
-    q1 != -1 ? q1 : length,
-    q2 != -1 ? q2 : length,
-    q3 != -1 ? q3 : length
-  );
-
-  return url.slice(0, q);
-}
+const javascriptLikeExtensions = ["marko", "es6", "vue", "jsm"];
 
 export function shouldBlackbox(source: ?Source) {
   if (!source) {
@@ -78,23 +60,6 @@ export function shouldBlackbox(source: ?Source) {
   return true;
 }
 
-export function shouldPrettyPrint(
-  source: Source,
-  content: SourceContent
-): boolean {
-  if (
-    !source ||
-    isPretty(source) ||
-    !isJavaScript(source, content) ||
-    isOriginal(source) ||
-    (prefs.clientSourceMapsEnabled && source.sourceMapURL)
-  ) {
-    return false;
-  }
-
-  return true;
-}
-
 /**
  * Returns true if the specified url and/or content type are specific to
  * javascript files.
@@ -106,10 +71,10 @@ export function shouldPrettyPrint(
  * @static
  */
 export function isJavaScript(source: Source, content: SourceContent): boolean {
-  const url = source.url;
+  const extension = getFileExtension(source).toLowerCase();
   const contentType = content.type === "wasm" ? null : content.contentType;
   return (
-    (url && /\.(jsm|js)?$/.test(trimUrlQuery(url))) ||
+    javascriptLikeExtensions.includes(extension) ||
     !!(contentType && contentType.includes("javascript"))
   );
 }
@@ -327,7 +292,7 @@ export function getMode(
   content: SourceContent,
   symbols?: Symbols
 ): { name: string, base?: Object } {
-  const { url } = source;
+  const extension = getFileExtension(source);
 
   if (content.type !== "text") {
     return { name: "text" };
@@ -335,7 +300,7 @@ export function getMode(
 
   const { contentType, value: text } = content;
 
-  if ((url && url.match(/\.jsx$/i)) || (symbols && symbols.hasJsx)) {
+  if (extension === "jsx" || (symbols && symbols.hasJsx)) {
     if (symbols && symbols.hasTypes) {
       return { name: "text/typescript-jsx" };
     }
@@ -351,26 +316,23 @@ export function getMode(
   }
 
   const languageMimeMap = [
-    { ext: ".c", mode: "text/x-csrc" },
-    { ext: ".kt", mode: "text/x-kotlin" },
-    { ext: ".cpp", mode: "text/x-c++src" },
-    { ext: ".m", mode: "text/x-objectivec" },
-    { ext: ".rs", mode: "text/x-rustsrc" },
-    { ext: ".hx", mode: "text/x-haxe" },
+    { ext: "c", mode: "text/x-csrc" },
+    { ext: "kt", mode: "text/x-kotlin" },
+    { ext: "cpp", mode: "text/x-c++src" },
+    { ext: "m", mode: "text/x-objectivec" },
+    { ext: "rs", mode: "text/x-rustsrc" },
+    { ext: "hx", mode: "text/x-haxe" },
   ];
 
   // check for C and other non JS languages
-  if (url) {
-    const result = languageMimeMap.find(({ ext }) => url.endsWith(ext));
-
-    if (result !== undefined) {
-      return { name: result.mode };
-    }
+  const result = languageMimeMap.find(({ ext }) => extension === ext);
+  if (result !== undefined) {
+    return { name: result.mode };
   }
 
-  // if the url ends with .marko or .es6 we set the name to Javascript so
-  // syntax highlighting works for these file extensions too
-  if (url && url.match(/\.marko|\.es6$/i)) {
+  // if the url ends with a known Javascript-like URL, provide JavaScript mode.
+  // uses the first part of the URL to ignore query string
+  if (javascriptLikeExtensions.find(ext => ext === extension)) {
     return { name: "javascript" };
   }
 
@@ -461,6 +423,10 @@ export function getSourceClassnames(source: Object, symbols?: Symbols) {
 
   if (symbols && !symbols.loading && symbols.framework) {
     return symbols.framework.toLowerCase();
+  }
+
+  if (isUrlExtension(source.url)) {
+    return "extension";
   }
 
   return sourceTypes[getFileExtension(source)] || defaultClassName;

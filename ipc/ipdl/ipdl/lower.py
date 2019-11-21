@@ -264,6 +264,10 @@ def _uniqueptr(T):
     return Type('UniquePtr', T=T)
 
 
+def _alreadyaddrefed(T):
+    return Type('already_AddRefed', T=T)
+
+
 def _tuple(types, const=False, ref=False):
     return Type('Tuple', T=types, const=const, ref=ref)
 
@@ -1125,7 +1129,7 @@ class MessageDecl(ipdl.ast.MessageDecl):
             # implementors take these parameters as T*, and
             # std::move(RefPtr<T>) doesn't coerce to T*.
             cxxargs.extend([
-                p.var() if p.ipdltype.isCxx() and p.ipdltype.isRefcounted() else ExprMove(p.var())
+                p.var() if p.ipdltype.isRefcounted() else ExprMove(p.var())
                 for p in self.params
             ])
         elif paramsems == 'in':
@@ -2045,10 +2049,13 @@ class _ParamTraits():
                 if (id == 1) {  // kFreedActorId
                     ${var}->FatalError("Actor has been |delete|d");
                 }
-                MOZ_ASSERT(
+                MOZ_RELEASE_ASSERT(
                     ${actor}->GetIPCChannel() == ${var}->GetIPCChannel(),
                     "Actor must be from the same channel as the"
                     " actor it's being sent over");
+                MOZ_RELEASE_ASSERT(
+                    ${var}->CanSend(),
+                    "Actor must still be open when sending");
             }
 
             ${write};
@@ -3325,15 +3332,25 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
                 # add the Alloc interface for managed actors
                 actortype = md.actorDecl().bareType(self.side)
 
+                if managed.isRefcounted():
+                    if not self.receivesMessage(md):
+                        continue
+
+                    actortype.ptr = False
+                    actortype = _alreadyaddrefed(actortype)
+
                 self.cls.addstmt(StmtDecl(MethodDecl(
                     _allocMethod(managed, self.side),
                     params=md.makeCxxParams(side=self.side, implicit=False),
                     ret=actortype, methodspec=MethodSpec.PURE)))
 
-            # add the Dealloc interface for all managed actors, even without
-            # ctors.  This is useful for protocols which use ManagedEndpoint
-            # for construction.
+            # add the Dealloc interface for all managed non-refcounted actors,
+            # even without ctors. This is useful for protocols which use
+            # ManagedEndpoint for construction.
             for managed in ptype.manages:
+                if managed.isRefcounted():
+                    continue
+
                 self.cls.addstmt(StmtDecl(MethodDecl(
                     _deallocMethod(managed, self.side),
                     params=[Decl(p.managedCxxType(managed, self.side), 'aActor')],
@@ -3401,6 +3418,19 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
 
         self.cls.addstmts([dtor, Whitespace.NL])
 
+        if ptype.isRefcounted():
+            self.cls.addcode(
+                '''
+                NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
+                ''')
+            self.cls.addstmt(Label.PROTECTED)
+            self.cls.addcode(
+                '''
+                void ActorAlloc() final { AddRef(); }
+                void ActorDealloc() final { Release(); }
+                ''')
+
+        self.cls.addstmt(Label.PUBLIC)
         if not ptype.isToplevel():
             if 1 == len(p.managers):
                 # manager() const
@@ -3820,6 +3850,12 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             switchontype = StmtSwitch(pvar)
             for managee in p.managesStmts:
                 manageeipdltype = managee.decl.type
+                # Reference counted actor types don't have corresponding
+                # `Dealloc` methods, as they are deallocated by releasing the
+                # IPDL-held reference.
+                if manageeipdltype.isRefcounted():
+                    continue
+
                 case = StmtCode(
                     '''
                     ${concrete}->${dealloc}(static_cast<${type}>(aListener));
@@ -3912,7 +3948,16 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         if self.sendsMessage(md):
             isasync = decltype.isAsync()
 
-            if isctor:
+            # NOTE: Don't generate helper ctors for refcounted types.
+            #
+            # Safety concerns around providing your own actor to a ctor (namely
+            # that the return value won't be checked, and the argument will be
+            # `delete`-ed) are less critical with refcounted actors, due to the
+            # actor being held alive by the callsite.
+            #
+            # This allows refcounted actors to not implement crashing AllocPFoo
+            # methods on the sending side.
+            if isctor and not md.decl.type.constructedType().isRefcounted():
                 self.cls.addstmts([self.genHelperCtor(md), Whitespace.NL])
 
             if isctor and isasync:
@@ -3960,35 +4005,45 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
     def genAsyncCtor(self, md):
         actor = md.actorDecl()
         method = MethodDefn(self.makeSendMethodDecl(md))
-        method.addstmts(self.bindManagedActor(actor) + [Whitespace.NL])
 
         msgvar, stmts = self.makeMessage(md, errfnSendCtor)
         sendok, sendstmts = self.sendAsync(md, msgvar)
 
-        warnif = StmtIf(ExprNot(sendok))
-        warnif.addifstmt(_printWarningMessage('Error sending constructor'))
+        method.addcode(
+            '''
+            $*{bind}
 
-        method.addstmts(
-            # Build our constructor message & verify it.
-            stmts
-            + self.genVerifyMessage(md.decl.type.verify, md.params,
-                                    errfnSendCtor, ExprVar('msg__'))
+            // Build our constructor message & verify it.
+            $*{stmts}
+            $*{verify}
 
-            # Notify the other side about the newly created actor.
-            #
-            # If the MessageChannel is closing, and we haven't been told yet,
-            # this send may fail. This error is ignored to treat it like a
-            # message being lost due to the other side shutting down before
-            # processing it.
-            #
-            # NOTE: We don't free the actor here, as our caller may be
-            # depending on it being alive after calling SendConstructor.
-            + sendstmts
+            // Notify the other side about the newly created actor. This can
+            // fail if our manager has already been destroyed.
+            //
+            // NOTE: If the send call fails due to toplevel channel teardown,
+            // the `IProtocol::ChannelSend` wrapper absorbs the error for us,
+            // so we don't tear down actors unexpectedly.
+            $*{sendstmts}
 
-            # Warn if the message failed to send, and return our newly created
-            # actor.
-            + [warnif,
-               StmtReturn(actor.var())])
+            // Warn, destroy the actor, and return null if the message failed to
+            // send. Otherwise, return the successfully created actor reference.
+            if (!${sendok}) {
+                NS_WARNING("Error sending ${actorname} constructor");
+                $*{destroy}
+                return nullptr;
+            }
+            return ${actor};
+            ''',
+            bind=self.bindManagedActor(actor),
+            stmts=stmts,
+            verify=self.genVerifyMessage(md.decl.type.verify, md.params,
+                                         errfnSendCtor, ExprVar('msg__')),
+            sendstmts=sendstmts,
+            sendok=sendok,
+            destroy=self.destroyActor(md, actor.var(),
+                                      why=_DestroyReason.FailedConstructor),
+            actor=actor.var(),
+            actorname=actor.ipdltype.protocol.name() + self.side.capitalize())
 
         lbl = CaseLabel(md.pqReplyId())
         case = StmtBlock()
@@ -4001,45 +4056,53 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
     def genBlockingCtorMethod(self, md):
         actor = md.actorDecl()
         method = MethodDefn(self.makeSendMethodDecl(md))
-        method.addstmts(self.bindManagedActor(actor) + [Whitespace.NL])
 
         msgvar, stmts = self.makeMessage(md, errfnSendCtor)
+        verify = self.genVerifyMessage(md.decl.type.verify, md.params,
+                                       errfnSendCtor, ExprVar('msg__'))
 
         replyvar = self.replyvar
         sendok, sendstmts = self.sendBlocking(md, msgvar, replyvar)
-
-        failIf = StmtIf(ExprNot(sendok))
-        failIf.addifstmt(_printWarningMessage('Error sending constructor'))
-        failIf.addifstmts(self.destroyActor(md, actor.var(),
-                                            why=_DestroyReason.FailedConstructor))
-        failIf.addifstmt(StmtReturn(ExprLiteral.NULL))
-
-        method.addstmts(
-            # Build our constructor message & verify it.
-            stmts
-            + [Whitespace.NL,
-                StmtDecl(Decl(Type('Message'), replyvar.name))]
-            + self.genVerifyMessage(md.decl.type.verify, md.params,
-                                    errfnSendCtor, ExprVar('msg__'))
-
-            # Synchronously send the constructor message to the other side.
-            #
-            # If the MessageChannel is closing, and we haven't been told yet,
-            # this send may fail. This error is ignored to treat it like a
-            # message being lost due to the other side shutting down before
-            # processing it.
-            #
-            # NOTE: We also free the actor here.
-            + sendstmts
-
-            # Warn, destroy the actor and return null if the message failed to
-            # send.
-            + [failIf])
-
-        stmts = self.deserializeReply(
+        replystmts = self.deserializeReply(
             md, ExprAddrOf(replyvar), self.side,
             errfnSendCtor, errfnSentinel(ExprLiteral.NULL))
-        method.addstmts(stmts + [StmtReturn(actor.var())])
+
+        method.addcode(
+            '''
+            $*{bind}
+
+            // Build our constructor message & verify it.
+            $*{stmts}
+            $*{verify}
+
+            // Synchronously send the constructor message to the other side. If
+            // the send fails, e.g. due to the remote side shutting down, the
+            // actor will be destroyed and potentially freed.
+            Message ${replyvar};
+            $*{sendstmts}
+
+            if (!(${sendok})) {
+                // Warn, destroy the actor and return null if the message
+                // failed to send.
+                NS_WARNING("Error sending constructor");
+                $*{destroy}
+                return nullptr;
+            }
+
+            $*{replystmts}
+            return ${actor};
+            ''',
+            bind=self.bindManagedActor(actor),
+            stmts=stmts,
+            verify=verify,
+            replyvar=replyvar,
+            sendstmts=sendstmts,
+            sendok=sendok,
+            destroy=self.destroyActor(md, actor.var(),
+                                      why=_DestroyReason.FailedConstructor),
+            replystmts=replystmts,
+            actor=actor.var(),
+            actorname=actor.ipdltype.protocol.name() + self.side.capitalize())
 
         return method
 
@@ -4054,7 +4117,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         return [StmtCode(
             '''
             if (!${actor}) {
-                NS_WARNING("Error constructing actor ${actorname}");
+                NS_WARNING("Cannot bind null ${actorname} actor");
                 return ${errfn};
             }
 
@@ -4072,9 +4135,10 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         helperdecl.params = helperdecl.params[1:]
         helper = MethodDefn(helperdecl)
 
-        callctor = self.callAllocActor(md, retsems='out', side=self.side)
-        helper.addstmt(StmtReturn(ExprCall(
-            ExprVar(helperdecl.name), args=[callctor] + callctor.args)))
+        helper.addstmts([
+            self.callAllocActor(md, retsems='out', side=self.side),
+            StmtReturn(ExprCall(ExprVar(helperdecl.name), args=md.makeCxxArgs())),
+        ])
         return helper
 
     def genAsyncDtor(self, md):
@@ -4267,7 +4331,6 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
     def genCtorRecvCase(self, md):
         lbl = CaseLabel(md.pqMsgId())
         case = StmtBlock()
-        actorvar = md.actorDecl().var()
         actorhandle = self.handlevar
 
         stmts = self.deserializeMessage(md, self.side, errfnRecv,
@@ -4279,9 +4342,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             + [StmtDecl(Decl(r.bareType(self.side), r.var().name))
                 for r in md.returns]
             # alloc the actor, register it under the foreign ID
-            + [StmtExpr(ExprAssn(
-                actorvar,
-                self.callAllocActor(md, retsems='in', side=self.side)))]
+            + [self.callAllocActor(md, retsems='in', side=self.side)]
             + self.bindManagedActor(md.actorDecl(), errfn=_Result.ValuError,
                                     idexpr=_actorHId(actorhandle))
             + [Whitespace.NL]
@@ -4536,7 +4597,7 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
             [StmtDecl(Decl(_iterType(ptr=False), self.itervar.name),
                       initargs=[msgvar])]
             + decls + [StmtDecl(Decl(p.bareType(side), p.var().name))
-                       for p in md.params]
+                       for p in md.params[start:]]
             + [Whitespace.NL]
             + reads + [_ParamTraits.checkedRead(p.ipdltype, ExprAddrOf(p.var()),
                                                 msgexpr, ExprAddrOf(itervar),
@@ -4730,10 +4791,18 @@ class _GenerateProtocolActorCode(ipdl.ast.Visitor):
         return [stmt]
 
     def callAllocActor(self, md, retsems, side):
-        return self.thisCall(
+        actortype = md.actorDecl().bareType(self.side)
+        if md.decl.type.constructedType().isRefcounted():
+            actortype.ptr = False
+            actortype = _refptr(actortype)
+
+        callalloc = self.thisCall(
             _allocMethod(md.decl.type.constructedType(), side),
             args=md.makeCxxArgs(retsems=retsems, retcallsems='out',
                                 implicit=False))
+
+        return StmtDecl(Decl(actortype, md.actorDecl().var().name),
+                        init=callalloc)
 
     def invokeRecvHandler(self, md, implicit=True):
         retsems = 'in'

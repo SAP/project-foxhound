@@ -213,8 +213,13 @@ interface nsISearchService : nsISupports
    * This method should only be called when you need or want to wait for the
    * full initialization of the search service, which may include waiting for
    * outbound service requests.
+   *
+   * @param skipRegionCheck
+   *        Flag to avoid SearchService from waiting on the results
+   *        of the region lookups before completing initialisation.
+   *        Exposed for testing only.
    */
-  Promise init();
+  Promise init([optional] in boolean skipRegionCheck);
 
   /**
    * Exposed for testing.
@@ -342,6 +347,16 @@ interface nsISearchService : nsISupports
   Promise addEnginesFromExtension(in jsval extension);
 
   /**
+   * Returns an engine object given a search WebExtension.
+   *
+   * @returns an array of nsISearchEngine objects.
+   */
+  Promise getEngineParams(in jsval extension,
+                          in jsval manifest,
+                          in AString locale,
+                          in jsval params);
+
+  /**
    * Un-hides all engines in the set of engines returned by getDefaultEngines.
    */
   void restoreDefaultEngines();
@@ -433,6 +448,12 @@ interface nsISearchService : nsISupports
    * ignoring changes the user may have subsequently made.
    */
   readonly attribute nsISearchEngine originalDefaultEngine;
+
+  /**
+   * The original Engine object that is the default for this region when in
+   * private browsing mode, ignoring changes the user may have subsequently made.
+   */
+  readonly attribute nsISearchEngine originalPrivateDefaultEngine;
 
   /**
    * The currently active search engine.

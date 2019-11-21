@@ -126,16 +126,21 @@ EXPORTS.mozilla += [
     'NSPRLogModulesParser.h',
     'OwningNonNull.h',
     'SizeOfState.h',
+    'StaticLocalPtr.h',
     'StaticMonitor.h',
     'StaticMutex.h',
     'StaticPtr.h',
     'TupleCycleCollection.h',
 ]
 
+SOURCES += [
 # nsDebugImpl isn't unified because we disable PGO so that NS_ABORT_OOM isn't
 # optimized away oddly.
-SOURCES += [
     'nsDebugImpl.cpp',
+# nsDumpUtils.cpp includes SpecialSystemDirectory.h which includes
+# nsLocalFileMac.h which upsets other files in this dir that have a different
+# idea about what `TextRange` means.
+    'nsDumpUtils.cpp',
 ]
 SOURCES['nsDebugImpl.cpp'].no_pgo = True
 
@@ -163,7 +168,6 @@ UNIFIED_SOURCES += [
     'nsCycleCollectionParticipant.cpp',
     'nsCycleCollector.cpp',
     'nsCycleCollectorTraceJSHelpers.cpp',
-    'nsDumpUtils.cpp',
     'nsErrorService.cpp',
     'nsGZFileWriter.cpp',
     'nsID.cpp',
@@ -242,5 +246,5 @@ LOCAL_INCLUDES += [
     '/xpcom/ds',
 ]
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     CXXFLAGS += CONFIG['TK_CFLAGS']

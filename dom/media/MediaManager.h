@@ -95,10 +95,6 @@ class MediaDevice : public nsIMediaDevice {
   nsresult Stop();
   nsresult Deallocate();
 
-  void Pull(const RefPtr<SourceMediaStream>& aStream, TrackID aTrackID,
-            StreamTime aEndOfAppendedData, StreamTime aDesiredTime,
-            const PrincipalHandle& aPrincipal);
-
   void GetSettings(dom::MediaTrackSettings& aOutSettings) const;
 
   dom::MediaSourceEnum GetMediaSource() const;
@@ -122,6 +118,7 @@ class MediaDevice : public nsIMediaDevice {
   const RefPtr<AudioDeviceInfo> mSinkInfo;
   const dom::MediaDeviceKind mKind;
   const bool mScary;
+  const bool mIsFake;
   const nsString mType;
   const nsString mName;
   const nsString mID;
@@ -273,7 +270,18 @@ class MediaManager final : public nsIMediaManagerService,
                                const uint64_t aWindowId);
   static already_AddRefed<nsIWritableVariant> ToJSArray(
       MediaDeviceSet& aDevices);
-  static void GuessVideoDeviceGroupIDs(MediaManager::MediaDeviceSet& aDevices);
+
+  /**
+   * This function tries to guess the group id for a video device in aDevices
+   * based on the device name. If the name of only one audio device in aAudios
+   * contains the name of the video device, then, this video device will take
+   * the group id of the audio device. Since this is a guess we try to minimize
+   * the probability of false positive. If we fail to find a correlation we
+   * leave the video group id untouched. In that case the group id will be the
+   * video device name.
+   */
+  static void GuessVideoDeviceGroupIDs(MediaDeviceSet& aDevices,
+                                       const MediaDeviceSet& aAudios);
 
  private:
   enum class DeviceEnumerationType : uint8_t {

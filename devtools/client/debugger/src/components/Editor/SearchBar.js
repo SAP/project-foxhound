@@ -141,15 +141,15 @@ class SearchBar extends Component<Props, State> {
     }
   };
 
-  closeSearch = (e: SyntheticEvent<HTMLElement>) => {
-    const { cx, closeFileSearch, editor, searchOn } = this.props;
+  closeSearch = (e: SyntheticKeyboardEvent<HTMLElement>) => {
+    const { cx, closeFileSearch, editor, searchOn, query } = this.props;
+    this.clearSearch();
     if (editor && searchOn) {
-      this.clearSearch();
       closeFileSearch(cx, editor);
       e.stopPropagation();
       e.preventDefault();
     }
-    this.setState({ query: "", inputFocused: false });
+    this.setState({ query, inputFocused: false });
   };
 
   toggleSearch = (e: SyntheticKeyboardEvent<HTMLElement>) => {
@@ -157,11 +157,14 @@ class SearchBar extends Component<Props, State> {
     e.preventDefault();
     const { editor, searchOn, setActiveSearch } = this.props;
 
+    // Set inputFocused to false, so that search query is highlighted whenever search shortcut is used, even if the input already has focus.
+    this.setState({ inputFocused: false });
+
     if (!searchOn) {
       setActiveSearch("file");
     }
 
-    if (searchOn && editor) {
+    if (this.props.searchOn && editor) {
       const query = editor.codeMirror.getSelection() || this.state.query;
 
       if (query !== "") {

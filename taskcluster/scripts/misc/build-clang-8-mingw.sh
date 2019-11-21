@@ -21,53 +21,23 @@ else
   exit 1;
 fi
 
-WORKSPACE=$HOME/workspace
-HOME_DIR=$WORKSPACE/build
-UPLOAD_DIR=$HOME/artifacts
-
-TOOLCHAIN_DIR=$WORKSPACE/moz-toolchain
+TOOLCHAIN_DIR=$MOZ_FETCHES_DIR/llvm-project
 INSTALL_DIR=$TOOLCHAIN_DIR/build/stage3/clang
 CROSS_PREFIX_DIR=$INSTALL_DIR/$machine-w64-mingw32
-SRC_DIR=$TOOLCHAIN_DIR/src
 
 make_flags="-j$(nproc)"
-
-mingw_version=8db8dd5aa1885e7807424a06bd14eebc9c0effd4
-libunwind_version=6ee92fcc97350ae32db3172a269e9afcc2bab686
-llvm_mingw_version=c3a16814bd26aa6702e1e5b482a3d9044bb0f725
 
 # This is default value of _WIN32_WINNT. Gecko configure script explicitly sets this,
 # so this is not used to build Gecko itself. We default to 0x601, which is Windows 7.
 default_win32_winnt=0x601
 
-cd $HOME_DIR/src
+cd $GECKO_PATH
 
-. taskcluster/scripts/misc/tooltool-download.sh
 patch_file="$(pwd)/taskcluster/scripts/misc/mingw-winrt.patch"
 
 prepare() {
-  mkdir -p $TOOLCHAIN_DIR
-  touch $TOOLCHAIN_DIR/.build-clang
-
-  mkdir -p $SRC_DIR
-  pushd $SRC_DIR
-
-  git clone -n git://git.code.sf.net/p/mingw-w64/mingw-w64
-  pushd mingw-w64
-  git checkout $mingw_version
+  pushd $MOZ_FETCHES_DIR/mingw-w64
   patch -p1 <$patch_file
-  popd
-
-  git clone https://github.com/llvm-mirror/libunwind.git
-  pushd libunwind
-  git checkout $libunwind_version
-  popd
-
-  git clone https://github.com/mstorsjo/llvm-mingw.git
-  pushd llvm-mingw
-  git checkout $llvm_mingw_version
-  popd
-
   popd
 }
 
@@ -99,32 +69,34 @@ EOF
 build_mingw() {
   mkdir mingw-w64-headers
   pushd mingw-w64-headers
-  $SRC_DIR/mingw-w64/mingw-w64-headers/configure --host=$machine-w64-mingw32 \
-                                                 --enable-sdk=all \
-                                                 --enable-idl \
-                                                 --with-default-msvcrt=ucrt \
-                                                 --with-default-win32-winnt=$default_win32_winnt \
-                                                 --prefix=$CROSS_PREFIX_DIR
+  $MOZ_FETCHES_DIR/mingw-w64/mingw-w64-headers/configure \
+    --host=$machine-w64-mingw32 \
+    --enable-sdk=all \
+    --enable-idl \
+    --with-default-msvcrt=ucrt \
+    --with-default-win32-winnt=$default_win32_winnt \
+    --prefix=$CROSS_PREFIX_DIR
   make $make_flags install
   popd
 
   mkdir mingw-w64-crt
   pushd mingw-w64-crt
-  $SRC_DIR/mingw-w64/mingw-w64-crt/configure --host=$machine-w64-mingw32 \
-                                             $crt_flags \
-                                             --with-default-msvcrt=ucrt \
-                                             CC="$CC" \
-                                             AR=llvm-ar \
-                                             RANLIB=llvm-ranlib \
-                                             DLLTOOL=llvm-dlltool \
-                                             --prefix=$CROSS_PREFIX_DIR
+  $MOZ_FETCHES_DIR/mingw-w64/mingw-w64-crt/configure \
+    --host=$machine-w64-mingw32 \
+    $crt_flags \
+    --with-default-msvcrt=ucrt \
+    CC="$CC" \
+    AR=llvm-ar \
+    RANLIB=llvm-ranlib \
+    DLLTOOL=llvm-dlltool \
+    --prefix=$CROSS_PREFIX_DIR
   make $make_flags
   make $make_flags install
   popd
 
   mkdir widl
   pushd widl
-  $SRC_DIR/mingw-w64/mingw-w64-tools/widl/configure --target=$machine-w64-mingw32 --prefix=$INSTALL_DIR
+  $MOZ_FETCHES_DIR/mingw-w64/mingw-w64-tools/widl/configure --target=$machine-w64-mingw32 --prefix=$INSTALL_DIR
   make $make_flags
   make $make_flags install
   popd
@@ -143,7 +115,7 @@ build_compiler_rt() {
       -DCMAKE_C_COMPILER_WORKS=1 \
       -DCMAKE_C_COMPILER_TARGET=$compiler_rt_machine-windows-gnu \
       -DCOMPILER_RT_DEFAULT_TARGET_ONLY=TRUE \
-      $SRC_DIR/compiler-rt/lib/builtins
+      $TOOLCHAIN_DIR/compiler-rt/lib/builtins
   make $make_flags
   mkdir -p $INSTALL_DIR/lib/clang/$CLANG_VERSION/lib/windows
   cp lib/windows/libclang_rt.builtins-$compiler_rt_machine.a $INSTALL_DIR/lib/clang/$CLANG_VERSION/lib/windows/
@@ -191,9 +163,9 @@ build_libcxx() {
       -DLIBUNWIND_ENABLE_THREADS=TRUE \
       -DLIBUNWIND_ENABLE_SHARED=FALSE \
       -DLIBUNWIND_ENABLE_CROSS_UNWINDING=FALSE \
-      -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -Wno-dll-attribute-on-redeclaration -nostdinc++ -I$SRC_DIR/libcxx/include -DPSAPI_VERSION=2" \
+      -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -Wno-dll-attribute-on-redeclaration -nostdinc++ -I$TOOLCHAIN_DIR/libcxx/include -DPSAPI_VERSION=2" \
       -DCMAKE_C_FLAGS="-Wno-dll-attribute-on-redeclaration" \
-      $SRC_DIR/libunwind
+      $MOZ_FETCHES_DIR/libunwind
   make $make_flags
   make $make_flags install
   popd
@@ -218,12 +190,12 @@ build_libcxx() {
       -DLIBCXXABI_ENABLE_THREADS=ON \
       -DLIBCXXABI_TARGET_TRIPLE=$machine-w64-mingw32 \
       -DLIBCXXABI_ENABLE_SHARED=OFF \
-      -DLIBCXXABI_LIBCXX_INCLUDES=$SRC_DIR/libcxx/include \
+      -DLIBCXXABI_LIBCXX_INCLUDES=$TOOLCHAIN_DIR/libcxx/include \
       -DLLVM_NO_OLD_LIBSTDCXX=TRUE \
       -DCXX_SUPPORTS_CXX11=TRUE \
       -DCXX_SUPPORTS_CXX_STD=TRUE \
       -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -D_LIBCPP_DISABLE_VISIBILITY_ANNOTATIONS -D_LIBCPP_HAS_THREAD_API_WIN32" \
-      $SRC_DIR/libcxxabi
+      $TOOLCHAIN_DIR/libcxxabi
   make $make_flags VERBOSE=1
   popd
 
@@ -254,10 +226,10 @@ build_libcxx() {
       -DLIBCXX_ENABLE_FILESYSTEM=OFF \
       -DLIBCXX_ENABLE_STATIC_ABI_LIBRARY=TRUE \
       -DLIBCXX_CXX_ABI=libcxxabi \
-      -DLIBCXX_CXX_ABI_INCLUDE_PATHS=$SRC_DIR/libcxxabi/include \
+      -DLIBCXX_CXX_ABI_INCLUDE_PATHS=$TOOLCHAIN_DIR/libcxxabi/include \
       -DLIBCXX_CXX_ABI_LIBRARY_PATH=../libcxxabi/lib \
       -DCMAKE_CXX_FLAGS="${DEBUG_FLAGS} -D_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS" \
-      $SRC_DIR/libcxx
+      $TOOLCHAIN_DIR/libcxx
   make $make_flags VERBOSE=1
   make $make_flags install
 
@@ -275,7 +247,7 @@ build_utils() {
   ln -s llvm-strip $machine-w64-mingw32-strip
   ln -s llvm-readobj $machine-w64-mingw32-readobj
   ln -s llvm-objcopy $machine-w64-mingw32-objcopy
-  ./clang $SRC_DIR/llvm-mingw/wrappers/windres-wrapper.c -O2 -Wl,-s -o $machine-w64-mingw32-windres
+  ./clang $MOZ_FETCHES_DIR/llvm-mingw/wrappers/windres-wrapper.c -O2 -Wl,-s -o $machine-w64-mingw32-windres
   popd
 }
 
@@ -286,9 +258,8 @@ prepare
 # gets a bit too verbose here
 set +x
 
-cd build/build-clang
-# |mach python| sets up a virtualenv for us!
-../../mach python ./build-clang.py -c clang-8-mingw.json --skip-tar
+cd $TOOLCHAIN_DIR
+python3 $GECKO_PATH/build/build-clang/build-clang.py -c $GECKO_PATH/$2 --skip-tar
 
 set -x
 

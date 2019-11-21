@@ -8,6 +8,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
+  PromiseUtils: "resource://gre/modules/PromiseUtils.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   RemoteSettingsClient: "resource://services-settings/RemoteSettingsClient.jsm",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
@@ -177,24 +178,47 @@ const kDefaultenginenamePref = "browser.search.defaultenginename";
 const kTestEngineName = "Test search engine";
 const TOPIC_LOCALES_CHANGE = "intl:app-locales-changed";
 
-function getDefaultEngineName(isUS) {
+/**
+ * Overrides list.json with test data from the specified location,
+ * e.g. data/list.json.
+ *
+ * @param {string} url
+ *   The resource url to set the location from.
+ */
+function useTestEngineConfig(url = "resource://test/data/") {
+  const resProt = Services.io
+    .getProtocolHandler("resource")
+    .QueryInterface(Ci.nsIResProtocolHandler);
+  resProt.setSubstitution("search-extensions", Services.io.newURI(url));
+}
+
+/**
+ * Loads the current default engine list.json via parsing the json manually.
+ *
+ * @param {boolean} isUS
+ *   If this is false, the requested locale will be checked, otherwise the
+ *   US region will be used if it exists.
+ * @param {boolean} privateMode
+ *   If this is true, then the engine for private mode is returned.
+ * @returns {string}
+ *   Returns the name of the private engine.
+ */
+function getDefaultEngineName(isUS = false, privateMode = false) {
   // The list of visibleDefaultEngines needs to match or the cache will be ignored.
   let chan = NetUtil.newChannel({
     uri: "resource://search-extensions/list.json",
     loadUsingSystemPrincipal: true,
   });
+  const settingName = privateMode ? "searchPrivateDefault" : "searchDefault";
   let searchSettings = parseJsonFromStream(chan.open());
-  let defaultEngineName = searchSettings.default.searchDefault;
+  let defaultEngineName = searchSettings.default[settingName];
 
-  if (isUS === undefined) {
+  if (!isUS) {
     isUS = Services.locale.requestedLocale == "en-US" && isUSTimezone();
   }
 
-  if (
-    isUS &&
-    ("US" in searchSettings && "searchDefault" in searchSettings.US)
-  ) {
-    defaultEngineName = searchSettings.US.searchDefault;
+  if (isUS && ("US" in searchSettings && settingName in searchSettings.US)) {
+    defaultEngineName = searchSettings.US[settingName];
   }
   return defaultEngineName;
 }
@@ -325,6 +349,8 @@ async function withGeoServer(
   testFn,
   {
     visibleDefaultEngines = null,
+    geoLookupData = null,
+    preGeolookupPromise = Promise.resolve,
     cohort = null,
     intval200 = 86400 * 365,
     intval503 = 86400,
@@ -373,6 +399,15 @@ async function withGeoServer(
     }, delay);
   });
 
+  srv.registerPathHandler("/lookup_geoip", async (metadata, response) => {
+    response.processAsync();
+    await preGeolookupPromise;
+    response.setStatusLine("1.1", 200, "OK");
+    response.write(JSON.stringify(geoLookupData));
+    response.finish();
+    gRequests.push(metadata);
+  });
+
   srv.start(-1);
 
   let url = `http://localhost:${srv.identity.primaryPort}/${path}?`;
@@ -386,15 +421,14 @@ async function withGeoServer(
     SearchUtils.BROWSER_SEARCH_PREF + PREF_SEARCH_URL,
     "about:blank"
   );
-  Services.prefs.setCharPref(
-    "browser.search.geoip.url",
-    'data:application/json,{"country_code": "FR"}'
-  );
+
+  let geoLookupUrl = geoLookupData
+    ? `http://localhost:${srv.identity.primaryPort}/lookup_geoip`
+    : 'data:application/json,{"country_code": "FR"}';
+  Services.prefs.setCharPref("browser.search.geoip.url", geoLookupUrl);
 
   try {
     await testFn(gRequests);
-  } catch (ex) {
-    throw ex;
   } finally {
     srv.stop(() => {});
     defaultBranch.setCharPref(PREF_SEARCH_URL, originalURL);

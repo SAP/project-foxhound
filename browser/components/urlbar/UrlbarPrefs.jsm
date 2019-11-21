@@ -98,6 +98,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // The maximum number of results in the urlbar popup.
   ["maxRichResults", 10],
 
+  // Whether the quantum bar displays the major design update.
+  ["megabar", false],
+
   // One-off search buttons enabled status.
   ["oneOffSearches", false],
 
@@ -107,9 +110,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Whether to open the urlbar view when the input field is focused by the user.
   ["openViewOnFocus", false],
-
-  // Whether the quantum bar is enabled.
-  ["quantumbar", false],
 
   // Whether speculative connections should be enabled.
   ["speculativeConnect.enabled", true],
@@ -149,6 +149,7 @@ const PREF_OTHER_DEFAULTS = new Map([
   ["keyword.enabled", true],
   ["browser.search.suggest.enabled", true],
   ["ui.popup.disable_autohide", false],
+  ["browser.fixup.dns_first_for_single_words", false],
 ]);
 
 // Maps preferences under browser.urlbar.suggest to behavior names, as defined

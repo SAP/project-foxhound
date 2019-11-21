@@ -87,7 +87,7 @@ class NewProxyCache {
   mozilla::UniquePtr<Entry[], JS::FreePolicy> entries_;
 
  public:
-  MOZ_ALWAYS_INLINE bool lookup(const Class* clasp, TaggedProto proto,
+  MOZ_ALWAYS_INLINE bool lookup(const JSClass* clasp, TaggedProto proto,
                                 ObjectGroup** group, Shape** shape) const {
     if (!entries_) {
       return false;
@@ -255,7 +255,7 @@ class ObjectRealm {
 
   using IteratorCache =
       js::HashSet<js::PropertyIteratorObject*, js::IteratorHashPolicy,
-                  js::SystemAllocPolicy>;
+                  js::ZoneAllocPolicy>;
   IteratorCache iteratorCache;
 
   static inline ObjectRealm& get(const JSObject* obj);
@@ -330,7 +330,7 @@ class JS::Realm : public JS::shadow::Realm {
   // Names are only removed from this list by a |delete IdentifierReference|
   // that successfully removes that global property.
   using VarNamesSet =
-      JS::GCHashSet<JSAtom*, js::DefaultHasher<JSAtom*>, js::SystemAllocPolicy>;
+      JS::GCHashSet<JSAtom*, js::DefaultHasher<JSAtom*>, js::ZoneAllocPolicy>;
   VarNamesSet varNames_;
 
   friend class js::AutoSetNewObjectMetadata;
@@ -462,7 +462,7 @@ class JS::Realm : public JS::shadow::Realm {
   ~Realm();
 
   MOZ_MUST_USE bool init(JSContext* cx, JSPrincipals* principals);
-  void destroy(js::FreeOp* fop);
+  void destroy(JSFreeOp* fop);
   void clearTables();
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
@@ -562,8 +562,8 @@ class JS::Realm : public JS::shadow::Realm {
 
   void purge();
 
-  void fixupAfterMovingGC();
-  void fixupScriptMapsAfterMovingGC();
+  void fixupAfterMovingGC(JSTracer* trc);
+  void fixupScriptMapsAfterMovingGC(JSTracer* trc);
 
 #ifdef JSGC_HASH_TABLE_CHECKS
   void checkObjectGroupTablesAfterMovingGC() {
@@ -767,9 +767,6 @@ class JS::Realm : public JS::shadow::Realm {
   // If we scheduled delazification for turning on debug mode, delazify all
   // scripts.
   bool ensureDelazifyScriptsForDebugger(JSContext* cx);
-
-  void clearBreakpointsIn(js::FreeOp* fop, js::Debugger* dbg,
-                          JS::HandleObject handler);
 
   // Initializes randomNumberGenerator if needed.
   mozilla::non_crypto::XorShift128PlusRNG& getOrCreateRandomNumberGenerator();

@@ -34,7 +34,7 @@ const COLLAPSE_DETAILS_PANE = L10N.getStr("collapseDetailsPane");
 const CACHE_TITLE = L10N.getStr("netmonitor.tab.cache");
 const COOKIES_TITLE = L10N.getStr("netmonitor.tab.cookies");
 const HEADERS_TITLE = L10N.getStr("netmonitor.tab.headers");
-const WEBSOCKETS_TITLE = L10N.getStr("netmonitor.tab.webSockets");
+const MESSAGES_TITLE = L10N.getStr("netmonitor.tab.messages");
 const PARAMS_TITLE = L10N.getStr("netmonitor.tab.params");
 const RESPONSE_TITLE = L10N.getStr("netmonitor.tab.response");
 const SECURITY_TITLE = L10N.getStr("netmonitor.tab.security");
@@ -56,7 +56,7 @@ class TabboxPanel extends Component {
       selectTab: PropTypes.func.isRequired,
       sourceMapService: PropTypes.object,
       hideToggleButton: PropTypes.bool,
-      toggleNetworkDetails: PropTypes.func.isRequired,
+      toggleNetworkDetails: PropTypes.func,
       openNetworkDetails: PropTypes.func.isRequired,
       showWebSocketsTab: PropTypes.bool,
     };
@@ -96,7 +96,6 @@ class TabboxPanel extends Component {
       return null;
     }
 
-    const channelId = request.channelId;
     const showWebSocketsPanel =
       request.cause.type === "websocket" &&
       Services.prefs.getBoolPref("devtools.netmonitor.features.webSockets") &&
@@ -124,6 +123,7 @@ class TabboxPanel extends Component {
         {
           id: PANELS.HEADERS,
           title: HEADERS_TITLE,
+          className: "panel-with-code",
         },
         HeadersPanel({
           cloneSelectedRequest,
@@ -135,11 +135,11 @@ class TabboxPanel extends Component {
       showWebSocketsPanel &&
         TabPanel(
           {
-            id: PANELS.WEBSOCKETS,
-            title: WEBSOCKETS_TITLE,
+            id: PANELS.MESSAGES,
+            title: MESSAGES_TITLE,
+            className: "panel-with-code",
           },
           WebSocketsPanel({
-            channelId,
             connector,
           })
         ),
@@ -147,6 +147,7 @@ class TabboxPanel extends Component {
         {
           id: PANELS.COOKIES,
           title: COOKIES_TITLE,
+          className: "panel-with-code",
         },
         CookiesPanel({
           connector,
@@ -158,6 +159,7 @@ class TabboxPanel extends Component {
         {
           id: PANELS.PARAMS,
           title: PARAMS_TITLE,
+          className: "panel-with-code",
         },
         ParamsPanel({ connector, openLink, request })
       ),
@@ -165,6 +167,7 @@ class TabboxPanel extends Component {
         {
           id: PANELS.RESPONSE,
           title: RESPONSE_TITLE,
+          className: "panel-with-code",
         },
         ResponsePanel({ request, openLink, connector })
       ),
@@ -192,6 +195,7 @@ class TabboxPanel extends Component {
           {
             id: PANELS.STACK_TRACE,
             title: STACK_TRACE_TITLE,
+            className: "panel-with-code",
           },
           StackTracePanel({ connector, openLink, request, sourceMapService })
         ),

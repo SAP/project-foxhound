@@ -1,9 +1,10 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /* Import stylesheets for specific tooltip widgets */
+@import url(chrome://devtools/skin/badge.css);
+@import url(chrome://devtools/skin/accessibility-color-contrast.css);
 @import url(chrome://devtools/content/shared/widgets/cubic-bezier.css);
 @import url(chrome://devtools/content/shared/widgets/filter-widget.css);
 @import url(chrome://devtools/content/shared/widgets/spectrum.css);
@@ -81,20 +82,21 @@ strong {
 /* Tooltip: Inactive CSS tooltip */
 
 .devtools-tooltip-inactive-css {
-  color: var(--theme-body-color);
-  padding: 5px 13px;
+  color: var(--theme-arrowpanel-color);
+  padding: 7px 14px 9px;
+  font-size: 12px;
   margin: 0;
 }
 
 .devtools-tooltip-inactive-css,
 .devtools-tooltip-inactive-css strong {
-  -moz-user-select: text;
+  user-select: text;
   -moz-user-focus: normal;
 }
 
 .devtools-tooltip-inactive-css p {
   margin-block-start: 0;
-  margin-block-end: 0.63em;
+  margin-block-end: calc(1em - 4px);
 }
 
 .devtools-tooltip-inactive-css p:last-child {
@@ -104,10 +106,6 @@ strong {
 .devtools-tooltip-inactive-css .link {
   color: var(--theme-highlight-blue);
   cursor: pointer;
-}
-
-.tooltip-bottom .devtools-tooltip-inactive-css {
-  padding: 2px 13px 7px;
 }
 
 /* Tooltip: Tiles */
@@ -224,12 +222,14 @@ strong {
   flex-shrink: 0;
 }
 
-/* In RTL locales, only use RTL on the tooltip content, keep LTR for positioning */
-.tooltip-container:-moz-locale-dir(rtl) {
+/* In RTL locales and context, only use RTL on the tooltip content, keep LTR for positioning */
+.tooltip-container:-moz-locale-dir(rtl),
+.tooltip-container:dir(rtl) {
   direction: ltr;
 }
 
-.tooltip-panel:-moz-locale-dir(rtl) {
+.tooltip-panel:-moz-locale-dir(rtl),
+.tooltip-panel:dir(rtl) {
   direction: rtl;
 }
 
@@ -359,6 +359,7 @@ strong {
    * padding.
    */
   margin-bottom: 0;
+  padding-top: 6px;
   padding-bottom: 2px;
 }
 
@@ -369,6 +370,7 @@ strong {
    */
   margin-top: 0;
   padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 .tooltip-container[type="doorhanger"].tooltip-top > .tooltip-arrow {
@@ -441,8 +443,9 @@ strong {
   background-position: center left 7px;
 }
 
-.tooltip-container[type="doorhanger"] .menuitem > .command[aria-checked="true"]:-moz-locale-dir(rtl) {
-  background-position: center right 7px;
+.tooltip-container[type="doorhanger"] .menuitem > .command[aria-checked="true"]:-moz-locale-dir(rtl),
+.tooltip-container[type="doorhanger"] .menuitem > .command[aria-checked="true"]:dir(rtl) {
+  background-position-x: right 7px;
 }
 
 .tooltip-container[type="doorhanger"] .menuitem > .command > .label {
@@ -623,6 +626,12 @@ strong {
   line-height: 14px;
 }
 
+.event-tooltip-editor-frame {
+  border-style: none;
+  height: 100%;
+  width: 100%;
+}
+
 /* Tooltip: HTML Search */
 
 #searchbox-panel-listbox {
@@ -637,6 +646,55 @@ strong {
 }
 
 /* Tooltip: Image tooltip */
+
+/*
+ * Overview of the Image Tooltip layout.
+ *
+ * ┌─────────────────────────────────────────┐
+ * │ .devtools-tooltip-image-container       │
+ * │ ┌─────────────────────────────────────┐ │
+ * │ │ .devtools-tooltip-image-wrapper     │ │
+ * │ │ ┌─────────────────────────────────┐ │ │
+ * │ │ │ .devtools-tooltip-image         │ │ │
+ * │ │ │ (the actual image tag)          │ │ │
+ * │ │ └─────────────────────────────────┘ │ │
+ * │ └─────────────────────────────────────┘ │
+ * │ ┌─────────────────────────────────────┐ │
+ * │ │ .devtools-tooltip-image-dimensions  │ │
+ * │ └─────────────────────────────────────┘ │
+ * └─────────────────────────────────────────┘
+ *
+ */
+
+.devtools-tooltip-image-container {
+  /* Saved as variables to be synchronized easily with ImageTooltipHelper.js */
+  --image-tooltip-image-padding: 4px;
+  --image-tooltip-label-height: 20px;
+
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 100px;
+  text-align: center;
+}
+
+.devtools-tooltip-image-wrapper {
+  align-items: center;
+  display: flex;
+  flex: 1;
+  padding: var(--image-tooltip-image-padding);
+  justify-content: center;
+  min-height: 1px
+}
+
+.devtools-tooltip-image {
+  max-height: 100%;
+}
+
+.devtools-tooltip-image-dimensions {
+  height: var(--image-tooltip-label-height);
+  text-align: center;
+}
 
 .devtools-tooltip-image-broken {
   box-sizing: border-box;
@@ -655,7 +713,7 @@ strong {
   font-size: 12px;
   padding: 7px;
   width: 100%;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .onboarding-icon {
@@ -702,16 +760,35 @@ strong {
   max-width: 212px;
 }
 
+.invoke-confirm .close-confirm-dialog-button::before {
+  background-image: url("chrome://devtools/skin/images/close.svg");
+}
+
 .invoke-confirm .confirm-label {
   margin: 0;
   padding: 4px;
   background-color: var(--theme-toolbar-background-alt);
+  display: flex;
+  align-items: start;
+}
+
+.invoke-confirm .confirm-label p {
+  margin: 0;
+  padding: 0;
+  flex-grow: 1;
+  hyphens: auto;
 }
 
 .invoke-confirm .emphasized {
   font-family: var(--monospace-font-family);
   font-weight: bold;
   overflow-wrap: break-word;
+}
+
+.invoke-confirm .close-confirm-dialog-button {
+  padding: 0;
+  margin: 0;
+  flex-grow: 0;
 }
 
 .invoke-confirm .confirm-button {

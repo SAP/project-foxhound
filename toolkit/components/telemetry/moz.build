@@ -22,7 +22,7 @@ LOCAL_INCLUDES += [
     '/xpcom/threads',
 ]
 
-SPHINX_TREES['telemetry'] = 'docs'
+SPHINX_TREES['/toolkit/components/telemetry'] = 'docs'
 
 with Files('docs/**'):
     SCHEDULES.exclusive = ['docs']
@@ -77,6 +77,7 @@ SOURCES += [
     'core/TelemetryHistogram.cpp',
     'core/TelemetryOrigin.cpp',
     'core/TelemetryScalar.cpp',
+    'geckoview/streaming/GeckoViewStreamingTelemetry.cpp',
     'geckoview/TelemetryGeckoViewPersistence.cpp',
     'other/CombinedStacks.cpp',
     'other/ProcessedStack.cpp',
@@ -156,6 +157,8 @@ histogram_files = [
     'Histograms.json',
     '/dom/base/UseCounters.conf',
     '/dom/base/nsDeprecatedOperationList.h',
+    '!/layout/style/ServoCSSPropList.py',
+    '/servo/components/style/properties/counted_unknown_properties.py',
 ]
 
 data = GENERATED_FILES['TelemetryHistogramData.inc']

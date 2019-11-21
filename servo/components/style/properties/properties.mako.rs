@@ -17,7 +17,7 @@ use servo_arc::{Arc, UniqueArc};
 use std::borrow::Cow;
 use std::{ops, ptr};
 use std::fmt::{self, Write};
-use std::mem::{self, ManuallyDrop};
+use std::mem;
 
 use cssparser::{Parser, RGBA, TokenSerializationType};
 use cssparser::ParserInput;
@@ -38,6 +38,7 @@ use style_traits::{CssWriter, KeywordsCollectFn, ParseError, ParsingMode};
 use style_traits::{SpecifiedValueInfo, StyleParseErrorKind, ToCss};
 use to_shmem::impl_trivial_to_shmem;
 use crate::stylesheets::{CssRuleType, Origin, UrlExtraData};
+use crate::use_counters::UseCounters;
 use crate::values::generics::text::LineHeight;
 use crate::values::{computed, resolved};
 use crate::values::computed::NonNegativeLength;
@@ -53,7 +54,7 @@ pub use self::cascade::*;
 
 <%!
     from collections import defaultdict
-    from data import Method, Keyword, to_rust_ident, to_camel_case, SYSTEM_FONT_LONGHANDS
+    from data import Method, PropertyRestrictions, Keyword, to_rust_ident, to_camel_case, SYSTEM_FONT_LONGHANDS
     import os.path
 %>
 
@@ -167,7 +168,7 @@ pub mod shorthands {
         for p in data.longhands:
             if p.name in ['direction', 'unicode-bidi']:
                 continue;
-            if not p.enabled_in_content() and not p.experimental(product):
+            if not p.enabled_in_content() and not p.experimental(engine):
                 continue;
             if p.logical:
                 logical_longhands.append(p.name)
@@ -177,6 +178,7 @@ pub mod shorthands {
         data.declare_shorthand(
             "all",
             logical_longhands + other_longhands,
+            engines="gecko servo-2013 servo-2020",
             spec="https://drafts.csswg.org/css-cascade-3/#all-shorthand"
         )
     %>
@@ -294,12 +296,12 @@ impl Clone for PropertyDeclaration {
             }
 
             unsafe {
-                let mut out = mem::uninitialized();
+                let mut out = mem::MaybeUninit::uninit();
                 ptr::write(
-                    &mut out as *mut _ as *mut CopyVariants,
+                    out.as_mut_ptr() as *mut CopyVariants,
                     *(self as *const _ as *const CopyVariants),
                 );
-                return out;
+                return out.assume_init();
             }
         }
 
@@ -333,15 +335,15 @@ impl Clone for PropertyDeclaration {
             % else:
             ${" |\n".join("{}(ref value)".format(v["name"]) for v in vs)} => {
                 unsafe {
-                    let mut out = ManuallyDrop::new(mem::uninitialized());
+                    let mut out = mem::MaybeUninit::uninit();
                     ptr::write(
-                        &mut out as *mut _ as *mut PropertyDeclarationVariantRepr<${ty}>,
+                        out.as_mut_ptr() as *mut PropertyDeclarationVariantRepr<${ty}>,
                         PropertyDeclarationVariantRepr {
                             tag: *(self as *const _ as *const u16),
                             value: value.clone(),
                         },
                     );
-                    ManuallyDrop::into_inner(out)
+                    out.assume_init()
                 }
             }
             % endif
@@ -426,7 +428,10 @@ pub struct NonCustomPropertyId(usize);
 pub const NON_CUSTOM_PROPERTY_ID_COUNT: usize =
     ${len(data.longhands) + len(data.shorthands) + len(data.all_aliases())};
 
-% if product == "gecko":
+/// The length of all counted unknown properties.
+pub const COUNTED_UNKNOWN_PROPERTY_COUNT: usize = ${len(data.counted_unknown_properties)};
+
+% if engine == "gecko":
 #[allow(dead_code)]
 unsafe fn static_assert_nscsspropertyid() {
     % for i, property in enumerate(data.longhands + data.shorthands + data.all_aliases()):
@@ -492,20 +497,28 @@ impl NonCustomPropertyId {
     fn enabled_for_all_content(self) -> bool {
         ${static_non_custom_property_id_set(
             "EXPERIMENTAL",
-            lambda p: p.experimental(product)
+            lambda p: p.experimental(engine)
         )}
 
         ${static_non_custom_property_id_set(
             "ALWAYS_ENABLED",
-            lambda p: (not p.experimental(product)) and p.enabled_in_content()
+            lambda p: (not p.experimental(engine)) and p.enabled_in_content()
         )}
 
         let passes_pref_check = || {
-            % if product == "servo":
-                static PREF_NAME: [Option< &str>; ${len(data.longhands) + len(data.shorthands)}] = [
-                    % for property in data.longhands + data.shorthands:
-                        % if property.servo_pref:
-                            Some("${property.servo_pref}"),
+            % if engine == "gecko":
+                unsafe { structs::nsCSSProps_gPropertyEnabled[self.0] }
+            % else:
+                static PREF_NAME: [Option< &str>; ${
+                    len(data.longhands) + len(data.shorthands) + len(data.all_aliases())
+                }] = [
+                    % for property in data.longhands + data.shorthands + data.all_aliases():
+                        <%
+                            attrs = {"servo-2013": "servo_2013_pref", "servo-2020": "servo_2020_pref"}
+                            pref = getattr(property, attrs[engine])
+                        %>
+                        % if pref:
+                            Some("${pref}"),
                         % else:
                             None,
                         % endif
@@ -517,8 +530,6 @@ impl NonCustomPropertyId {
                 };
 
                 prefs::pref_map().get(pref).as_bool().unwrap_or(false)
-            % else:
-                unsafe { structs::nsCSSProps_gPropertyEnabled[self.0] }
             % endif
         };
 
@@ -812,6 +823,22 @@ impl LonghandIdSet {
         &IGNORED_WHEN_COLORS_DISABLED
     }
 
+    /// Returns the set of properties that are declared as having no effect on
+    /// Gecko <scrollbar> elements or their descendant scrollbar parts.
+    #[cfg(debug_assertions)]
+    #[cfg(feature = "gecko")]
+    #[inline]
+    pub fn has_no_effect_on_gecko_scrollbars() -> &'static Self {
+        // data.py asserts that has_no_effect_on_gecko_scrollbars is True or
+        // False for properties that are inherited and Gecko pref controlled,
+        // and is None for all other properties.
+        ${static_longhand_id_set(
+            "HAS_NO_EFFECT_ON_SCROLLBARS",
+            lambda p: p.has_effect_on_gecko_scrollbars is False
+        )}
+        &HAS_NO_EFFECT_ON_SCROLLBARS
+    }
+
     /// Iterate over the current longhand id set.
     pub fn iter(&self) -> LonghandIdSetIterator {
         LonghandIdSetIterator { longhands: self, cur: 0, }
@@ -958,13 +985,10 @@ bitflags! {
         const APPLIES_TO_CUE = 1 << 6;
         /// This longhand property applies to ::marker.
         const APPLIES_TO_MARKER = 1 << 7;
-        /// This property's getComputedStyle implementation requires layout
-        /// to be flushed.
-        const GETCS_NEEDS_LAYOUT_FLUSH = 1 << 8;
         /// This property is a legacy shorthand.
         ///
         /// https://drafts.csswg.org/css-cascade/#legacy-shorthand
-        const IS_LEGACY_SHORTHAND = 1 << 9;
+        const IS_LEGACY_SHORTHAND = 1 << 8;
 
         /* The following flags are currently not used in Rust code, they
          * only need to be listed in corresponding properties so that
@@ -987,6 +1011,28 @@ bitflags! {
         if logical_count * 2 != len(props):
             raise RuntimeError("Logical group {} has ".format(group) +
                                "unbalanced logical / physical properties")
+
+    FIRST_LINE_RESTRICTIONS = PropertyRestrictions.first_line(data)
+    FIRST_LETTER_RESTRICTIONS = PropertyRestrictions.first_letter(data)
+    MARKER_RESTRICTIONS = PropertyRestrictions.marker(data)
+    PLACEHOLDER_RESTRICTIONS = PropertyRestrictions.placeholder(data)
+    CUE_RESTRICTIONS = PropertyRestrictions.cue(data)
+
+    def restriction_flags(property):
+        name = property.name
+        flags = []
+        if name in FIRST_LINE_RESTRICTIONS:
+            flags.append("APPLIES_TO_FIRST_LINE")
+        if name in FIRST_LETTER_RESTRICTIONS:
+            flags.append("APPLIES_TO_FIRST_LETTER")
+        if name in PLACEHOLDER_RESTRICTIONS:
+            flags.append("APPLIES_TO_PLACEHOLDER")
+        if name in MARKER_RESTRICTIONS:
+            flags.append("APPLIES_TO_MARKER")
+        if name in CUE_RESTRICTIONS:
+            flags.append("APPLIES_TO_CUE")
+        return flags
+
 %>
 
 /// A group for properties which may override each other
@@ -1190,7 +1236,7 @@ impl LonghandId {
         // constant expression support.
         const FLAGS: [u16; ${len(data.longhands)}] = [
             % for property in data.longhands:
-                % for flag in property.flags:
+                % for flag in property.flags + restriction_flags(property):
                     PropertyFlags::${flag}.bits |
                 % endfor
                 0,
@@ -1204,7 +1250,7 @@ impl LonghandId {
     /// processing these properties.
     fn is_visited_dependent(&self) -> bool {
         matches!(*self,
-            % if product == "gecko":
+            % if engine == "gecko":
             LonghandId::ColumnRuleColor |
             LonghandId::TextEmphasisColor |
             LonghandId::WebkitTextFillColor |
@@ -1214,13 +1260,15 @@ impl LonghandId {
             LonghandId::Stroke |
             LonghandId::CaretColor |
             % endif
-            LonghandId::Color |
+            % if engine in ["gecko", "servo-2013"]:
             LonghandId::BackgroundColor |
             LonghandId::BorderTopColor |
             LonghandId::BorderRightColor |
             LonghandId::BorderBottomColor |
             LonghandId::BorderLeftColor |
-            LonghandId::OutlineColor
+            LonghandId::OutlineColor |
+            % endif
+            LonghandId::Color
         )
     }
 
@@ -1241,7 +1289,7 @@ impl LonghandId {
     /// correct.
     fn is_early_property(&self) -> bool {
         matches!(*self,
-            % if product == 'gecko':
+            % if engine == "gecko":
 
             // Needed to properly compute the writing mode, to resolve logical
             // properties, and similar stuff. In this block instead of along
@@ -1267,12 +1315,14 @@ impl LonghandId {
             LonghandId::MozScriptLevel |
             % endif
 
+            % if engine in ["gecko", "servo-2013"]:
             // Needed to compute the first available font, in order to
             // compute font-relative units correctly.
             LonghandId::FontSize |
             LonghandId::FontWeight |
             LonghandId::FontStretch |
             LonghandId::FontStyle |
+            % endif
             LonghandId::FontFamily |
 
             // Needed to properly compute the writing mode, to resolve logical
@@ -1742,6 +1792,35 @@ impl ToCss for PropertyId {
     }
 }
 
+/// The counted unknown property list which is used for css use counters.
+#[derive(Clone, Copy, Debug, Eq, FromPrimitive, Hash, PartialEq)]
+#[repr(u8)]
+pub enum CountedUnknownProperty {
+    % for prop in data.counted_unknown_properties:
+    /// ${prop.name}
+    ${prop.camel_case},
+    % endfor
+}
+
+impl CountedUnknownProperty {
+    /// Parse the counted unknown property.
+    pub fn parse_for_test(property_name: &str) -> Option<Self> {
+        ascii_case_insensitive_phf_map! {
+            unknown_id -> CountedUnknownProperty = {
+                % for property in data.counted_unknown_properties:
+                "${property.name}" => CountedUnknownProperty::${property.camel_case},
+                % endfor
+            }
+        }
+        unknown_id(property_name).cloned()
+    }
+
+    /// Returns the underlying index, used for use counter.
+    pub fn bit(self) -> usize {
+        self as usize
+    }
+}
+
 impl PropertyId {
     /// Return the longhand id that this property id represents.
     #[inline]
@@ -1755,16 +1834,30 @@ impl PropertyId {
 
     /// Returns a given property from the string `s`.
     ///
-    /// Returns Err(()) for unknown non-custom properties.
-    fn parse_unchecked(property_name: &str) -> Result<Self, ()> {
+    /// Returns Err(()) for unknown properties.
+    fn parse_unchecked(
+        property_name: &str,
+        use_counters: Option< &UseCounters>,
+    ) -> Result<Self, ()> {
+        // A special id for css use counters.
+        // ShorthandAlias is not used in the Servo build.
+        // That's why we need to allow dead_code.
+        #[allow(dead_code)]
+        pub enum StaticId {
+            Longhand(LonghandId),
+            Shorthand(ShorthandId),
+            LonghandAlias(LonghandId, AliasId),
+            ShorthandAlias(ShorthandId, AliasId),
+            CountedUnknown(CountedUnknownProperty),
+        }
         ascii_case_insensitive_phf_map! {
-            property_id -> PropertyId = {
+            static_id -> StaticId = {
                 % for (kind, properties) in [("Longhand", data.longhands), ("Shorthand", data.shorthands)]:
                 % for property in properties:
-                "${property.name}" => PropertyId::${kind}(${kind}Id::${property.camel_case}),
+                "${property.name}" => StaticId::${kind}(${kind}Id::${property.camel_case}),
                 % for alias in property.alias:
                 "${alias.name}" => {
-                    PropertyId::${kind}Alias(
+                    StaticId::${kind}Alias(
                         ${kind}Id::${property.camel_case},
                         AliasId::${alias.camel_case},
                     )
@@ -1772,11 +1865,29 @@ impl PropertyId {
                 % endfor
                 % endfor
                 % endfor
+                % for property in data.counted_unknown_properties:
+                "${property.name}" => {
+                    StaticId::CountedUnknown(CountedUnknownProperty::${property.camel_case})
+                },
+                % endfor
             }
         }
 
-        if let Some(id) = property_id(property_name) {
-            return Ok(id.clone())
+        if let Some(id) = static_id(property_name) {
+            return Ok(match *id {
+                StaticId::Longhand(id) => PropertyId::Longhand(id),
+                StaticId::Shorthand(id) => PropertyId::Shorthand(id),
+                StaticId::LonghandAlias(id, alias) => PropertyId::LonghandAlias(id, alias),
+                StaticId::ShorthandAlias(id, alias) => PropertyId::ShorthandAlias(id, alias),
+                StaticId::CountedUnknown(unknown_prop) => {
+                    if let Some(counters) = use_counters {
+                        counters.counted_unknown_properties.record(unknown_prop);
+                    }
+
+                    // Always return Err(()) because these aren't valid custom property names.
+                    return Err(());
+                }
+            });
         }
 
         let name = crate::custom_properties::parse_name(property_name)?;
@@ -1787,7 +1898,7 @@ impl PropertyId {
     /// enabled for all content.
     #[inline]
     pub fn parse_enabled_for_all_content(name: &str) -> Result<Self, ()> {
-        let id = Self::parse_unchecked(name)?;
+        let id = Self::parse_unchecked(name, None)?;
 
         if !id.enabled_for_all_content() {
             return Err(());
@@ -1801,7 +1912,7 @@ impl PropertyId {
     /// allowed in this context.
     #[inline]
     pub fn parse(name: &str, context: &ParserContext) -> Result<Self, ()> {
-        let id = Self::parse_unchecked(name)?;
+        let id = Self::parse_unchecked(name, context.use_counters)?;
 
         if !id.allowed_in(context) {
             return Err(());
@@ -1819,7 +1930,7 @@ impl PropertyId {
         name: &str,
         context: &ParserContext,
     ) -> Result<Self, ()> {
-        let id = Self::parse_unchecked(name)?;
+        let id = Self::parse_unchecked(name, None)?;
 
         if !id.allowed_in_ignoring_rule_type(context) {
             return Err(());
@@ -2113,7 +2224,7 @@ impl PropertyDeclaration {
     /// Returns whether or not the property is set by a system font
     pub fn get_system(&self) -> Option<SystemFont> {
         match *self {
-            % if product == "gecko":
+            % if engine == "gecko":
             % for prop in SYSTEM_FONT_LONGHANDS:
                 PropertyDeclaration::${to_camel_case(prop)}(ref prop) => {
                     prop.get_system()
@@ -2317,7 +2428,8 @@ impl PropertyDeclaration {
 }
 
 type SubpropertiesArray<T> =
-    [T; ${max(len(s.sub_properties) for s in data.shorthands_except_all())}];
+    [T; ${max(len(s.sub_properties) for s in data.shorthands_except_all()) \
+          if data.shorthands_except_all() else 0}];
 
 type SubpropertiesVec<T> = ArrayVec<SubpropertiesArray<T>>;
 
@@ -3143,7 +3255,7 @@ impl ComputedValuesInner {
     }
 }
 
-% if product == "gecko":
+% if engine == "gecko":
     pub use crate::servo_arc::RawOffsetArc as BuilderArc;
     /// Clone an arc, returning a regular arc
     fn clone_arc<T: 'static>(x: &BuilderArc<T>) -> Arc<T> {
@@ -3456,7 +3568,7 @@ impl<'a> StyleBuilder<'a> {
     }
     % endif
 
-    % if not property.is_vector or property.simple_vector_bindings or product != "gecko":
+    % if not property.is_vector or property.simple_vector_bindings or engine in ["servo-2013", "servo-2020"]:
     /// Set the `${property.ident}` to the computed value `value`.
     #[allow(non_snake_case)]
     pub fn set_${property.ident}(
@@ -3844,7 +3956,7 @@ macro_rules! longhand_properties_idents {
     }
 }
 
-% if product == "servo":
+% if engine in ["servo-2013", "servo-2020"]:
 % for effect_name in ["repaint", "reflow_out_of_flow", "reflow", "rebuild_and_reflow_inline", "rebuild_and_reflow"]:
     macro_rules! restyle_damage_${effect_name} {
         ($old: ident, $new: ident, $damage: ident, [ $($effect:expr),* ]) => ({

@@ -6,6 +6,8 @@
 
 #include "ServiceWorkerEvents.h"
 
+#include <utility>
+
 #include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsIConsoleReportCollector.h"
@@ -41,6 +43,7 @@
 #include "mozilla/dom/PushMessageDataBinding.h"
 #include "mozilla/dom/PushUtil.h"
 #include "mozilla/dom/Request.h"
+#include "mozilla/dom/ServiceWorkerOp.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/Response.h"
 #include "mozilla/dom/WorkerScope.h"
@@ -134,6 +137,14 @@ void FetchEvent::PostInit(
   mChannel = aChannel;
   mRegistration = aRegistration;
   mScriptSpec.Assign(aScriptSpec);
+}
+
+void FetchEvent::PostInit(const nsACString& aScriptSpec,
+                          RefPtr<FetchEventOp> aRespondWithHandler) {
+  MOZ_ASSERT(aRespondWithHandler);
+
+  mScriptSpec.Assign(aScriptSpec);
+  mRespondWithHandler = std::move(aRespondWithHandler);
 }
 
 /*static*/
@@ -373,7 +384,7 @@ class StartResponse final : public Runnable {
       // Synthetic response. The buck stops at the worker script.
       url = mScriptSpec;
     }
-    rv = NS_NewURI(getter_AddRefs(uri), url, nullptr, nullptr);
+    rv = NS_NewURI(getter_AddRefs(uri), url);
     NS_ENSURE_SUCCESS(rv, false);
     int16_t decision = nsIContentPolicy::ACCEPT;
     rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, EmptyCString(), &decision);
@@ -795,11 +806,21 @@ void FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv) {
 
   StopImmediatePropagation();
   mWaitToRespond = true;
-  RefPtr<RespondWithHandler> handler = new RespondWithHandler(
-      mChannel, mRegistration, mRequest->Mode(), ir->IsClientRequest(),
-      mRequest->Redirect(), mScriptSpec, NS_ConvertUTF8toUTF16(requestURL),
-      ir->GetFragment(), spec, line, column);
-  aArg.AppendNativeHandler(handler);
+
+  if (mChannel) {
+    RefPtr<RespondWithHandler> handler = new RespondWithHandler(
+        mChannel, mRegistration, mRequest->Mode(), ir->IsClientRequest(),
+        mRequest->Redirect(), mScriptSpec, NS_ConvertUTF8toUTF16(requestURL),
+        ir->GetFragment(), spec, line, column);
+
+    aArg.AppendNativeHandler(handler);
+  } else {
+    MOZ_ASSERT(mRespondWithHandler);
+
+    mRespondWithHandler->RespondWithCalledAt(spec, line, column);
+    aArg.AppendNativeHandler(mRespondWithHandler);
+    mRespondWithHandler = nullptr;
+  }
 
   if (!WaitOnPromise(aArg)) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
@@ -838,9 +859,16 @@ void FetchEvent::ReportCanceled() {
   // nsString requestURL;
   // CopyUTF8toUTF16(url, requestURL);
 
-  ::AsyncLog(mChannel.get(), mPreventDefaultScriptSpec,
-             mPreventDefaultLineNumber, mPreventDefaultColumnNumber,
-             NS_LITERAL_CSTRING("InterceptionCanceledWithURL"), requestURL);
+  if (mChannel) {
+    ::AsyncLog(mChannel.get(), mPreventDefaultScriptSpec,
+               mPreventDefaultLineNumber, mPreventDefaultColumnNumber,
+               NS_LITERAL_CSTRING("InterceptionCanceledWithURL"), requestURL);
+  } else {
+    mRespondWithHandler->ReportCanceled(mPreventDefaultScriptSpec,
+                                        mPreventDefaultLineNumber,
+                                        mPreventDefaultColumnNumber);
+    mRespondWithHandler = nullptr;
+  }
 }
 
 namespace {
@@ -848,7 +876,7 @@ namespace {
 class WaitUntilHandler final : public PromiseNativeHandler {
   WorkerPrivate* mWorkerPrivate;
   const nsCString mScope;
-  nsCString mSourceSpec;
+  nsString mSourceSpec;
   uint32_t mLine;
   uint32_t mColumn;
   nsString mRejectValue;
@@ -877,7 +905,7 @@ class WaitUntilHandler final : public PromiseNativeHandler {
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
     mWorkerPrivate->AssertIsOnWorkerThread();
 
-    nsCString spec;
+    nsString spec;
     uint32_t line = 0;
     uint32_t column = 0;
     nsContentUtils::ExtractErrorValues(aCx, aValue, spec, &line, &column,
@@ -918,9 +946,8 @@ class WaitUntilHandler final : public PromiseNativeHandler {
     // because there is no documeny yet, and the navigation is no longer
     // being intercepted.
 
-    swm->ReportToAllClients(mScope, message, NS_ConvertUTF8toUTF16(mSourceSpec),
-                            EmptyString(), mLine, mColumn,
-                            nsIScriptError::errorFlag);
+    swm->ReportToAllClients(mScope, message, mSourceSpec, EmptyString(), mLine,
+                            mColumn, nsIScriptError::errorFlag);
   }
 };
 

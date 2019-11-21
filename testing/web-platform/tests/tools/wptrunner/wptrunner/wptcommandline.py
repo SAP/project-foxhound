@@ -256,8 +256,10 @@ scheme host and port.""")
                              help="Path to the folder containing browser prefs")
     gecko_group.add_argument("--disable-e10s", dest="gecko_e10s", action="store_false", default=True,
                              help="Run tests without electrolysis preferences")
-    gecko_group.add_argument("--enable-webrender", dest="enable_webrender", action="store_true", default=False,
-                             help="Enable the WebRender compositor in Gecko.")
+    gecko_group.add_argument("--enable-webrender", dest="enable_webrender", action="store_true", default=None,
+                             help="Enable the WebRender compositor in Gecko (defaults to disabled).")
+    gecko_group.add_argument("--no-enable-webrender", dest="enable_webrender", action="store_false",
+                             help="Disable the WebRender compositor in Gecko.")
     gecko_group.add_argument("--stackfix-dir", dest="stackfix_dir", action="store",
                              help="Path to directory containing assertion stack fixing scripts")
     gecko_group.add_argument("--lsan-dir", dest="lsan_dir", action="store",
@@ -267,7 +269,7 @@ scheme host and port.""")
                              help="Defines an extra user preference (overrides those in prefs_root)")
     gecko_group.add_argument("--leak-check", dest="leak_check", action="store_true", default=None,
                              help="Enable leak checking (enabled by default for debug builds, "
-                             "silently ignored for opt)")
+                             "silently ignored for opt, mobile)")
     gecko_group.add_argument("--no-leak-check", dest="leak_check", action="store_false", default=None,
                              help="Disable leak checking")
     gecko_group.add_argument("--stylo-threads", action="store", type=int, default=1,
@@ -552,6 +554,9 @@ def check_args(kwargs):
     if kwargs["reftest_screenshot"] is None:
         kwargs["reftest_screenshot"] = "unexpected"
 
+    if kwargs["enable_webrender"] is None:
+        kwargs["enable_webrender"] = False
+
     return kwargs
 
 
@@ -606,9 +611,13 @@ def create_parser_update(product_choices=None):
                         help="Sync the tests with the latest from upstream (implies --patch)")
     parser.add_argument("--full", action="store_true", default=False,
                         help=("For all tests that are updated, remove any existing conditions and missing subtests"))
-    parser.add_argument("--stability", nargs="?", action="store", const="unstable", default=None,
+    parser.add_argument("--disable-intermittent", nargs="?", action="store", const="unstable", default=None,
         help=("Reason for disabling tests. When updating test results, disable tests that have "
               "inconsistent results across many runs with the given reason."))
+    parser.add_argument("--update-intermittent", action="store_true", default=False,
+                        help=("Update test metadata with expected intermittent statuses."))
+    parser.add_argument("--remove-intermittent", action="store_true", default=False,
+                        help=("Remove obsolete intermittent statuses from expected statuses."))
     parser.add_argument("--no-remove-obsolete", action="store_false", dest="remove_obsolete", default=True,
                         help=("Don't remove metadata files that no longer correspond to a test file"))
     parser.add_argument("--no-store-state", action="store_false", dest="store_state",

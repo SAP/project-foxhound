@@ -27,6 +27,9 @@ interface WindowGlobalParent {
   // embedder is in a different process.
   readonly attribute boolean isProcessRoot;
 
+  // True if this window has registered a "beforeunload" event handler.
+  readonly attribute boolean hasBeforeUnload;
+
   // Is the document loaded in this WindowGlobalParent the initial document
   // implicitly created while "creating a new browsing context".
   // https://html.spec.whatwg.org/multipage/browsers.html#creating-a-new-browsing-context
@@ -55,6 +58,25 @@ interface WindowGlobalParent {
   Promise<unsigned long long> changeFrameRemoteness(
     BrowsingContext? bc, DOMString remoteType,
     unsigned long long pendingSwitchId);
+
+  /**
+   * Renders a region of the frame into an image bitmap.
+   *
+   * @param rect Specify the area of the window to render, in CSS pixels. This
+   * is relative to the current scroll position. If null, the entire viewport
+   * is rendered.
+   * @param scale The scale to render the window at. Use devicePixelRatio
+   * to have comparable rendering to the OS.
+   * @param backgroundColor The background color to use.
+   *
+   * This API can only be used in the parent process, as content processes
+   * cannot access the rendering of out of process iframes. This API works
+   * with remote and local frames.
+   */
+  [Throws]
+  Promise<ImageBitmap> drawSnapshot(DOMRect? rect,
+                                    double scale,
+                                    DOMString backgroundColor);
 
   /**
    * Fetches the securityInfo object for this window. This function will

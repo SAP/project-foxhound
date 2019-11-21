@@ -149,6 +149,8 @@ public abstract class GeckoApp extends GeckoActivity
     public static final String PREFS_WAS_STOPPED           = "wasStopped";
     public static final String PREFS_CRASHED_COUNT         = "crashedCount";
     public static final String PREFS_CLEANUP_TEMP_FILES    = "cleanupTempFiles";
+    public static final String PREFS_ENHANCED_SEARCH_USAGE = "enhancedSearchUsed";
+    public static final String PREFS_ENHANCED_SEARCH_READY = "enhancedSearchReady";
 
     /**
      * Used with SharedPreferences, per profile, to determine if this is the first run of
@@ -1102,19 +1104,20 @@ public abstract class GeckoApp extends GeckoActivity
         mLayerView = (GeckoView) findViewById(R.id.layer_view);
         // Disable automatic state staving - we require some special handling that we need to do
         // ourselves.
-        mLayerView.setSaveFromParentEnabled(false);
+        mLayerView.setSaveEnabled(false);
 
         final GeckoSession session = new GeckoSession(
                 new GeckoSessionSettings.Builder()
                         .chromeUri("chrome://browser/content/browser.xul")
                         .build());
         session.setContentDelegate(this);
+        session.open(GeckoApplication.getRuntime());
 
         // If the view already has a session, we need to ensure it is closed.
         if (mLayerView.getSession() != null) {
             mLayerView.getSession().close();
         }
-        mLayerView.setSession(session, GeckoApplication.getRuntime());
+        mLayerView.setSession(session);
         mLayerView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         if (mIsRestoringActivity && !receivedSavedInstanceState) {
             restoreGeckoViewState(getGeckoApplication().getSavedState());

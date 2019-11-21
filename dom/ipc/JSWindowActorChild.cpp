@@ -35,6 +35,8 @@ void JSWindowActorChild::Init(const nsAString& aName,
   MOZ_ASSERT(!mManager, "Cannot Init() a JSWindowActorChild twice!");
   SetName(aName);
   mManager = aManager;
+
+  InvokeCallback(CallbackFunction::ActorCreated);
 }
 
 namespace {
@@ -69,7 +71,7 @@ class AsyncMessageToParent : public Runnable {
 void JSWindowActorChild::SendRawMessage(const JSWindowActorMessageMeta& aMeta,
                                         ipc::StructuredCloneData&& aData,
                                         ErrorResult& aRv) {
-  if (NS_WARN_IF(!mCanSend || !mManager || mManager->IsClosed())) {
+  if (NS_WARN_IF(!mCanSend || !mManager || !mManager->CanSend())) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }

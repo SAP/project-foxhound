@@ -15,7 +15,21 @@ treeherder:
         'py3': 'Python 3 unit tests'
         'A': 'Android Gradle tests'
         'Bpgo': 'Profile-guided optimization builds'
-        'Fetch-URL': 'Fetch and store content'
+        'Btime': 'Browsertime performance tests on Firefox'
+        'Btime-1proc': 'Browsertime performance tests on Firefox without e10s'
+        'Btime-fis': 'Browsertime performance tests on Firefox with fission enabled'
+        'Btime-Prof': 'Browsertime performance tests on Firefox with Gecko Profiling'
+        'Btime-Prof-1proc': 'Browsertime performance tests on Firefox with Gecko Profiling and without e10s'
+        'Btime-ChC': 'Browsertime performance tests on Google Chrome Canary'
+        'Btime-ChD': 'Browsertime performance tests on Google Chrome Dev'
+        'Btime-Cr': 'Browsertime performance tests on Google Chromium'
+        'Btime-P': 'Browsertime power tests on Firefox'
+        'Btime-P-1proc': 'Browsertime power tests on Firefox without e10s'
+        'Btime-fenix': 'Browsertime performance tests on Fenix'
+        'Btime-fennec': 'Browsertime performance tests on Fennec'
+        'Btime-fennec-1proc': 'Browsertime performance tests on Fennec without e10s'
+        'Btime-refbrow': 'Browsertime performance tests on the reference browser'
+        'Fetch': 'Fetch and store content'
         'Fxfn-l': 'Firefox functional tests (local)'
         'Fxfn-l-1proc': 'Firefox functional tests (local) without e10s'
         'Fxfn-r': 'Firefox functional tests (remote)'
@@ -49,6 +63,7 @@ treeherder:
         'Rap-fennec': 'Raptor performance tests on Fennec'
         'Rap-fennec-1proc': 'Raptor performance tests on Fennec without e10s'
         'Rap-refbrow': 'Raptor performance tests on the reference browser'
+        'remote': 'Remote debugging protocol tests'
         'T': 'Talos performance tests'
         'T-1proc': 'Talos performance tests without e10s'
         'T-fis': 'Talos performance tests with fission enabled'
@@ -88,6 +103,7 @@ treeherder:
         'Deb7': 'Packages for Debian 7'
         'Deb7-32': 'Packages for Debian 7 32-bits'
         'Deb9': 'Packages for Debian 9'
+        'Deb10': 'Packages for Debian 10'
         'Nexus 5-L': 'Nexus 5-L Device Image'
         'I': 'Docker Image Builds'
         'TL': 'Toolchain builds for Linux 64-bits'
@@ -112,8 +128,15 @@ treeherder:
         'pipfu': 'pipfile update'
         'WR': 'WebRender standalone'
         'Gd': 'Geckodriver'
-        'clang': 'Clang Tidy & Format'
-        'coverity': 'Coverity Static Analysis'
+        'cpp': 'C/C++ checks'
+        'pedantic': 'pedantic checks'
+        'text': 'Check on texts'
+        'misc': 'Misc checks'
+        'js': 'JavaScript checks'
+        'py': 'Python checks'
+        'java': 'Java checks'
+        'SS': 'Shadow scheduler'
+        'test-info': 'Test manifest skip/fail information'
 
 index:
     products:
@@ -224,22 +247,22 @@ scriptworker:
             - 'project:releng:signing:cert:nightly-signing'
         'linux-depsigning':
             - 'project:releng:signing:cert:dep-signing'
-        'scriptworker-prov-v1/beetmoverworker-v1':
+        'scriptworker-k8s/gecko-3-beetmover':
             - 'project:releng:beetmover:bucket:release'
             - 'project:releng:beetmover:bucket:nightly'
             - 'project:releng:beetmover:bucket:partner'
             - 'project:releng:beetmover:bucket:maven-production'
-        'scriptworker-prov-v1/beetmoverworker-dev':
+        'scriptworker-k8s/gecko-1-beetmover':
             - 'project:releng:beetmover:bucket:dep'
             - 'project:releng:beetmover:bucket:dep-partner'
             - 'project:releng:beetmover:bucket:maven-staging'
-        'scriptworker-prov-v1/balrogworker-v1':
+        'scriptworker-k8s/gecko-3-balrog':
             - 'project:releng:balrog:server:nightly'
             - 'project:releng:balrog:server:aurora'
             - 'project:releng:balrog:server:beta'
             - 'project:releng:balrog:server:release'
             - 'project:releng:balrog:server:esr'
-        'scriptworker-prov-v1/balrog-dev':
+        'scriptworker-k8s/gecko-1-balrog':
             - 'project:releng:balrog:server:dep'
 
 partner-urls:
@@ -281,36 +304,31 @@ task-priority:
 
 workers:
     aliases:
-        b-android:
-            provisioner: aws-provisioner-v1
-            implementation: docker-worker
-            os: linux
-            worker-type: 'gecko-{level}-{alias}'
         b-linux.*:
-            provisioner: aws-provisioner-v1
+            provisioner: 'gecko-{level}'
             implementation: docker-worker
             os: linux
-            worker-type: 'gecko-{level}-{alias}'
+            worker-type: '{alias}'
         b-win2012:
-            provisioner: aws-provisioner-v1
+            provisioner: 'gecko-{level}'
             implementation: generic-worker
             os: windows
-            worker-type: 'gecko-{level}-{alias}'
+            worker-type: '{alias}'
         images:
-            provisioner: aws-provisioner-v1
+            provisioner: 'gecko-{level}'
             implementation: docker-worker
             os: linux
-            worker-type: 'gecko-{level}-{alias}'
+            worker-type: '{alias}'
         linux-depsigning:
-            provisioner: scriptworker-prov-v1
+            provisioner: scriptworker-k8s
             implementation: scriptworker-signing
             os: linux
-            worker-type: depsigning
+            worker-type: gecko-t-signing
         linux-signing:
-            provisioner: scriptworker-prov-v1
+            provisioner: scriptworker-k8s
             implementation: scriptworker-signing
             os: linux
-            worker-type: signing-linux-v1
+            worker-type: gecko-3-signing
         mac-depsigning:
             provisioner: scriptworker-prov-v1
             implementation: scriptworker-iscript
@@ -332,10 +350,10 @@ workers:
             os: linux-bitbar
             worker-type: 'gecko-{alias}'
         t-linux(-large|-xlarge):
-            provisioner: aws-provisioner-v1
+            provisioner: 'gecko-t'
             implementation: docker-worker
             os: linux
-            worker-type: 'gecko-{alias}'
+            worker-type: '{alias}'
         t-linux-talos:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -352,13 +370,13 @@ workers:
             os: macosx
             worker-type: 'gecko-{alias}'
         t-linux-xlarge-pgo:
-            provisioner: aws-provisioner-v1
+            provisioner:
+                by-level:
+                    '3': 'gecko-{level}'
+                    default: 'gecko-t'
             implementation: docker-worker
             os: linux
-            worker-type:
-                by-level:
-                    '3': 'gecko-{level}-t-linux-xlarge'
-                    default: 'gecko-t-linux-xlarge'
+            worker-type: 't-linux-xlarge'
         t-osx-1010-pgo:
             provisioner: releng-hardware
             implementation: generic-worker
@@ -375,21 +393,21 @@ workers:
                 by-level:
                     '3': 'gecko-{level}-t-osx-1014'
                     default: 'gecko-t-osx-1014'
-        t-win10-64(|-gpu):
-            provisioner: aws-provisioner-v1
+        t-win10-64(|-gpu-s):
+            provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows
-            worker-type: 'gecko-{alias}'
-        t-win10-64(-hw|-ref-hw|-ux):
+            worker-type: '{alias}'
+        t-win10-64(-hw|-ref-hw):
             provisioner: releng-hardware
             implementation: generic-worker
             os: windows
             worker-type: 'gecko-{alias}'
         t-win7-32(|-gpu):
-            provisioner: aws-provisioner-v1
+            provisioner: 'gecko-t'
             implementation: generic-worker
             os: windows
-            worker-type: 'gecko-{alias}'
+            worker-type: '{alias}'
         t-win64-aarch64-laptop:
             provisioner: bitbar
             implementation: generic-worker
@@ -412,7 +430,7 @@ mac-notarization:
     mac-entitlements:
         by-platform:
             macosx64.*:
-                by-project:
-                    mozilla-(central|beta|release): security/mac/hardenedruntime/production.entitlements.xml
+                by-release-level:
+                    production: security/mac/hardenedruntime/production.entitlements.xml
                     default: security/mac/hardenedruntime/developer.entitlements.xml
             default: ''

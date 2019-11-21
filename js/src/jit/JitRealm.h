@@ -195,10 +195,6 @@ class JitRuntime {
                            WriteOnceData<JitCode*>>
       debugTrapHandlers_;
 
-  // Thunk used to fix up on-stack recompile of baseline scripts.
-  WriteOnceData<JitCode*> baselineDebugModeOSRHandler_;
-  WriteOnceData<void*> baselineDebugModeOSRHandlerNoFrameRegPopAddr_;
-
   // BaselineInterpreter state.
   BaselineInterpreter baselineInterpreter_;
 
@@ -267,8 +263,6 @@ class JitRuntime {
                               MIRType type);
   void generateFreeStub(MacroAssembler& masm);
   JitCode* generateDebugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
-  JitCode* generateBaselineDebugModeOSRHandler(
-      JSContext* cx, uint32_t* noFrameRegPopOffsetOut);
 
   bool generateVMWrapper(JSContext* cx, MacroAssembler& masm,
                          const VMFunctionData& f, void* nativeFun,
@@ -329,8 +323,6 @@ class JitRuntime {
   }
 
   JitCode* debugTrapHandler(JSContext* cx, DebugTrapHandlerKind kind);
-  JitCode* getBaselineDebugModeOSRHandler(JSContext* cx);
-  void* getBaselineDebugModeOSRHandlerAddress(JSContext* cx, bool popFrameReg);
 
   BaselineInterpreter& baselineInterpreter() { return baselineInterpreter_; }
 
@@ -692,8 +684,8 @@ class JitRealm {
 };
 
 // Called from Zone::discardJitCode().
-void InvalidateAll(FreeOp* fop, JS::Zone* zone);
-void FinishInvalidation(FreeOp* fop, JSScript* script);
+void InvalidateAll(JSFreeOp* fop, JS::Zone* zone);
+void FinishInvalidation(JSFreeOp* fop, JSScript* script);
 
 // This class ensures JIT code is executable on its destruction. Creators
 // must call makeWritable(), and not attempt to write to the buffer if it fails.
@@ -746,22 +738,6 @@ class MOZ_RAII AutoWritableJitCode : private AutoWritableJitCodeFallible {
   explicit AutoWritableJitCode(JitCode* code)
       : AutoWritableJitCode(code->runtimeFromMainThread(), code->raw(),
                             code->bufferSize()) {}
-};
-
-class MOZ_STACK_CLASS MaybeAutoWritableJitCode {
-  mozilla::Maybe<AutoWritableJitCode> awjc_;
-
- public:
-  MaybeAutoWritableJitCode(void* addr, size_t size, ReprotectCode reprotect) {
-    if (reprotect) {
-      awjc_.emplace(addr, size);
-    }
-  }
-  MaybeAutoWritableJitCode(JitCode* code, ReprotectCode reprotect) {
-    if (reprotect) {
-      awjc_.emplace(code);
-    }
-  }
 };
 
 }  // namespace jit

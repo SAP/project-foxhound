@@ -10,60 +10,85 @@ ChromeUtils.defineModuleGetter(
   "AppConstants",
   "resource://gre/modules/AppConstants.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "UpdateUtils",
-  "resource://gre/modules/UpdateUtils.jsm"
-);
 
 // NB: Eagerly load modules that will be loaded/constructed/initialized in the
 // common case to avoid the overhead of wrapping and detecting lazy loading.
 const { actionCreators: ac, actionTypes: at } = ChromeUtils.import(
   "resource://activity-stream/common/Actions.jsm"
 );
-const { AboutPreferences } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "AboutPreferences",
   "resource://activity-stream/lib/AboutPreferences.jsm"
 );
-const { DefaultPrefs } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "DefaultPrefs",
   "resource://activity-stream/lib/ActivityStreamPrefs.jsm"
 );
-const { NewTabInit } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "NewTabInit",
   "resource://activity-stream/lib/NewTabInit.jsm"
 );
-const { SectionsFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "SectionsFeed",
   "resource://activity-stream/lib/SectionsManager.jsm"
 );
-const { PlacesFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "PlacesFeed",
   "resource://activity-stream/lib/PlacesFeed.jsm"
 );
-const { PrefsFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrefsFeed",
   "resource://activity-stream/lib/PrefsFeed.jsm"
 );
-const { Store } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "Store",
   "resource://activity-stream/lib/Store.jsm"
 );
-const { SystemTickFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "SystemTickFeed",
   "resource://activity-stream/lib/SystemTickFeed.jsm"
 );
-const { TelemetryFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "TelemetryFeed",
   "resource://activity-stream/lib/TelemetryFeed.jsm"
 );
-const { FaviconFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "FaviconFeed",
   "resource://activity-stream/lib/FaviconFeed.jsm"
 );
-const { TopSitesFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "TopSitesFeed",
   "resource://activity-stream/lib/TopSitesFeed.jsm"
 );
-const { TopStoriesFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "TopStoriesFeed",
   "resource://activity-stream/lib/TopStoriesFeed.jsm"
 );
-const { HighlightsFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "HighlightsFeed",
   "resource://activity-stream/lib/HighlightsFeed.jsm"
 );
-const { ASRouterFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "ASRouterFeed",
   "resource://activity-stream/lib/ASRouterFeed.jsm"
 );
-const { DiscoveryStreamFeed } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "DiscoveryStreamFeed",
   "resource://activity-stream/lib/DiscoveryStreamFeed.jsm"
 );
 
@@ -104,9 +129,6 @@ const DEFAULT_SITES = new Map([
 ]);
 const GEO_PREF = "browser.search.region";
 const SPOCS_GEOS = ["US"];
-const IS_NIGHTLY_OR_UNBRANDED_BUILD = ["nightly", "default"].includes(
-  UpdateUtils.getUpdateChannel(true)
-);
 
 // Determine if spocs should be shown for a geo/locale
 function showSpocs({ geo }) {
@@ -445,19 +467,16 @@ const PREFS_CONFIG = new Map([
     {
       title: "Configuration for the new pocket new tab",
       getValue: ({ geo, locale }) => {
-        // XXX hardcoded_layout only works for en-*, so fix before adding locales
-        const locales = {
-          US: ["en-CA", "en-GB", "en-US", "en-ZA"],
-          CA: ["en-CA", "en-GB", "en-US", "en-ZA"],
-        }[geo];
+        // PLEASE NOTE:
+        // hardcoded_layout in `lib/DiscoveryStreamFeed.jsm` only works for en-* and requires refactoring for non english locales
+        const dsEnablementMatrix = {
+          US: ["en-CA", "en-GB", "en-US"],
+          CA: ["en-CA", "en-GB", "en-US"],
+        };
 
-        // Enable for US/en-US in all channels.
-        // Enable for specific geos and locales for Nightly.
+        // Verify that the current geo & locale combination is enabled
         const isEnabled =
-          (geo === `US` && locale === `en-US`) ||
-          (IS_NIGHTLY_OR_UNBRANDED_BUILD &&
-            locales &&
-            locales.includes(locale));
+          !!dsEnablementMatrix[geo] && dsEnablementMatrix[geo].includes(locale);
 
         return JSON.stringify({
           api_key_pref: "extensions.pocket.oAuthConsumerKey",
@@ -479,6 +498,14 @@ const PREFS_CONFIG = new Map([
       title:
         "Endpoint prefixes (comma-separated) that are allowed to be requested",
       value: "https://getpocket.cdn.mozilla.net/,https://spocs.getpocket.com/",
+    },
+  ],
+  [
+    "discoverystream.engagementLabelEnabled",
+    {
+      title:
+        "Allow the display of engagement labels for discovery stream components (eg: Trending, Popular, etc)",
+      value: false,
     },
   ],
   [
@@ -701,11 +728,25 @@ this.ActivityStream = class ActivityStream {
 
     // Update the pref config of those with dynamic values
     for (const pref of PREFS_CONFIG.keys()) {
+      // Only need to process dynamic prefs
       const prefConfig = PREFS_CONFIG.get(pref);
       if (!prefConfig.getValue) {
         continue;
       }
 
+      // Have the dynamic pref just reuse using existing default, e.g., those
+      // set via Autoconfig or policy
+      try {
+        const existingDefault = this._defaultPrefs.get(pref);
+        if (existingDefault !== undefined && prefConfig.value === undefined) {
+          prefConfig.getValue = () => existingDefault;
+        }
+      } catch (ex) {
+        // We get NS_ERROR_UNEXPECTED for prefs that have a user value (causing
+        // default branch to believe there's a type) but no actual default value
+      }
+
+      // Compute the dynamic value (potentially generic based on dummy geo)
       const newValue = prefConfig.getValue({
         geo: this.geo,
         locale: this.locale,

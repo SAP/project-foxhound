@@ -242,6 +242,15 @@ nsresult TransceiverImpl::UpdateConduit() {
   return NS_OK;
 }
 
+void TransceiverImpl::SetReceiveTrackMuted(bool aMuted) {
+  if (!mReceiveTrack) {
+    return;
+  }
+
+  // This sets the muted state for mReceiveTrack and all its clones.
+  static_cast<RemoteTrackSource&>(mReceiveTrack->GetSource()).SetMuted(aMuted);
+}
+
 nsresult TransceiverImpl::UpdatePrincipal(nsIPrincipal* aPrincipal) {
   if (mJsepTransceiver->IsStopped()) {
     return NS_OK;
@@ -601,14 +610,26 @@ static nsresult JsepCodecDescToAudioCodecConfig(
 static nsresult NegotiatedDetailsToAudioCodecConfigs(
     const JsepTrackNegotiatedDetails& aDetails,
     std::vector<UniquePtr<AudioCodecConfig>>* aConfigs) {
+  UniquePtr<AudioCodecConfig> telephoneEvent;
+
   if (aDetails.GetEncodingCount()) {
     for (const auto& codec : aDetails.GetEncoding(0).GetCodecs()) {
       UniquePtr<AudioCodecConfig> config;
       if (NS_FAILED(JsepCodecDescToAudioCodecConfig(*codec, &config))) {
         return NS_ERROR_INVALID_ARG;
       }
-      aConfigs->push_back(std::move(config));
+      if (config->mName == "telephone-event") {
+        telephoneEvent = std::move(config);
+      } else {
+        aConfigs->push_back(std::move(config));
+      }
     }
+  }
+
+  // Put telephone event at the back, because webrtc.org crashes if we don't
+  // If we need to do even more sorting, we should use std::sort.
+  if (telephoneEvent) {
+    aConfigs->push_back(std::move(telephoneEvent));
   }
 
   if (aConfigs->empty()) {

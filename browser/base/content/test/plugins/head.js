@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyServiceGetters(this, {
 
 // Various tests in this directory may define gTestBrowser, to use as the
 // default browser under test in some of the functions below.
-/* global gTestBrowser */
+/* global gTestBrowser:true */
 
 /**
  * Waits a specified number of miliseconds.
@@ -163,14 +163,11 @@ function promiseForPluginInfo(aId, aBrowser) {
   });
 }
 
-// Return a promise and call the plugin's nsIObjectLoadingContent
-// playPlugin() method.
+// Return a promise and call the plugin's playPlugin() method.
 function promisePlayObject(aId, aBrowser) {
   let browser = aBrowser || gTestBrowser;
   return ContentTask.spawn(browser, aId, async function(contentId) {
-    let plugin = content.document.getElementById(contentId);
-    let objLoadingContent = plugin.QueryInterface(Ci.nsIObjectLoadingContent);
-    objLoadingContent.playPlugin();
+    content.document.getElementById(contentId).playPlugin();
   });
 }
 

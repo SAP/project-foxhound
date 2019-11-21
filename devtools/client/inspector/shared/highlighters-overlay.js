@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -34,7 +32,7 @@ class HighlightersOverlay {
    */
   constructor(inspector) {
     this.inspector = inspector;
-    this.inspectorFront = this.inspector.inspector;
+    this.inspectorFront = this.inspector.inspectorFront;
     this.store = this.inspector.store;
     this.target = this.inspector.target;
     this.telemetry = this.inspector.telemetry;
@@ -504,7 +502,8 @@ class HighlightersOverlay {
     const { grids, highlighterSettings } = this.store.getState();
     const grid = grids.find(g => g.nodeFront === nodeFront);
     const color = grid ? grid.color : DEFAULT_HIGHLIGHTER_COLOR;
-    return Object.assign({}, highlighterSettings, { color });
+    const zIndex = grid ? grid.zIndex : 0;
+    return Object.assign({}, highlighterSettings, { color, zIndex });
   }
 
   /**
@@ -672,9 +671,13 @@ class HighlightersOverlay {
     // Since the subgrid and its parent grid container were previously both highlighted
     // and the parent grid container (the given node) has just been hidden, show a
     // translucent highlight of the parent grid container.
-    for (const parentGridNode of this.subgridToParentMap.values()) {
-      if (parentGridNode === node) {
-        await this.showParentGridHighlighter(parentGridNode);
+    for (const highlightedNode of this.gridHighlighters.keys()) {
+      const parentGridNode = await this.walker.getParentGridNode(
+        highlightedNode
+      );
+      if (node === parentGridNode) {
+        this.subgridToParentMap.set(highlightedNode, node);
+        await this.showParentGridHighlighter(node);
         break;
       }
     }
@@ -713,8 +716,10 @@ class HighlightersOverlay {
     }
 
     const highlighter = this.parentGridHighlighters.get(node);
-    await highlighter.hide();
-    this.extraGridHighlighterPool.push(highlighter);
+    if (highlighter) {
+      await highlighter.hide();
+      this.extraGridHighlighterPool.push(highlighter);
+    }
     this.state.grids.delete(node);
     this.parentGridHighlighters.delete(node);
   }

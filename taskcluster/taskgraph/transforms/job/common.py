@@ -84,7 +84,9 @@ def add_artifacts(config, job, taskdesc, path):
 
 def docker_worker_add_artifacts(config, job, taskdesc):
     """ Adds an artifact directory to the task """
-    add_artifacts(config, job, taskdesc, path='{workdir}/artifacts/'.format(**job['run']))
+    path = '{workdir}/artifacts/'.format(**job['run'])
+    taskdesc['worker'].setdefault('env', {})['UPLOAD_DIR'] = path
+    add_artifacts(config, job, taskdesc, path)
 
 
 def generic_worker_add_artifacts(config, job, taskdesc):
@@ -208,7 +210,7 @@ def setup_secrets(config, job, taskdesc):
             job['treeherder']['kind'], config.params['level'], sec))
 
 
-def docker_worker_add_tooltool(config, job, taskdesc, internal=False):
+def add_tooltool(config, job, taskdesc, internal=False):
     """Give the task access to tooltool.
 
     Enables the tooltool cache. Adds releng proxy. Configures scopes.
@@ -220,15 +222,16 @@ def docker_worker_add_tooltool(config, job, taskdesc, internal=False):
     reserved for use with ``run-task``.
     """
 
-    assert job['worker']['implementation'] in ('docker-worker',)
+    if job['worker']['implementation'] in ('docker-worker',):
+        level = config.params['level']
+        add_cache(job, taskdesc, 'tooltool-cache'.format(level),
+                  '{workdir}/tooltool-cache'.format(**job['run']))
 
-    level = config.params['level']
-    add_cache(job, taskdesc, 'tooltool-cache'.format(level),
-              '{workdir}/tooltool-cache'.format(**job['run']))
-
-    taskdesc['worker'].setdefault('env', {}).update({
-        'TOOLTOOL_CACHE': '{workdir}/tooltool-cache'.format(**job['run']),
-    })
+        taskdesc['worker'].setdefault('env', {}).update({
+            'TOOLTOOL_CACHE': '{workdir}/tooltool-cache'.format(**job['run']),
+        })
+    elif not internal:
+        return
 
     taskdesc['worker']['taskcluster-proxy'] = True
     taskdesc['scopes'].extend([

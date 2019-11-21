@@ -26,7 +26,7 @@
 namespace mozilla {
 
 namespace media {
-class ShutdownTicket;
+class ShutdownBlocker;
 }
 
 template <typename T>
@@ -119,6 +119,8 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
   bool OnGraphThreadOrNotRunning() const override;
   bool OnGraphThread() const override;
 
+  bool Destroyed() const override;
+
 #ifdef DEBUG
   /**
    * True if we're on aDriver's thread, or if we're on mGraphRunner's thread
@@ -170,7 +172,19 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    * and other state controlled by the media graph thread.
    * This is called during application shutdown.
    */
-  void ForceShutDown(media::ShutdownTicket* aShutdownTicket);
+  void ForceShutDown();
+
+  /**
+   * Sets mShutdownBlocker and makes it block shutdown.
+   * Main thread only. Not idempotent.
+   */
+  void AddShutdownBlocker();
+
+  /**
+   * Removes mShutdownBlocker and unblocks shutdown.
+   * Main thread only. Idempotent.
+   */
+  void RemoveShutdownBlocker();
 
   /**
    * Called before the thread runs.
@@ -440,6 +454,10 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    */
   void RemoveStreamGraphThread(MediaStream* aStream);
   /**
+   * Remove a stream from the graph. Main thread.
+   */
+  void RemoveStream(MediaStream* aStream);
+  /**
    * Remove aPort from the graph and release it.
    */
   void DestroyPort(MediaInputPort* aPort);
@@ -452,6 +470,8 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
   }
 
   uint32_t AudioOutputChannelCount() const { return mOutputChannels; }
+
+  double AudioOutputLatency();
 
   /**
    * The audio input channel count for a MediaStreamGraph is the max of all the
@@ -644,6 +664,24 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    * callbacks to a common single thread, shared across GraphDrivers.
    */
   const UniquePtr<GraphRunner> mGraphRunner;
+
+  /**
+   * Main-thread view of the number of streams in this graph, for lifetime
+   * management.
+   *
+   * When this becomes zero, the graph is marked as forbidden to add more
+   * streams to. It will be shut down shortly after.
+   */
+  size_t mMainThreadStreamCount = 0;
+
+  /**
+   * Main-thread view of the number of ports in this graph, to catch bugs.
+   *
+   * When this becomes zero, and mMainThreadStreamCount is 0, the graph is
+   * marked as forbidden to add more ControlMessages to. It will be shut down
+   * shortly after.
+   */
+  size_t mMainThreadPortCount = 0;
 
   /**
    * Graphs own owning references to their driver, until shutdown. When a driver
@@ -848,10 +886,10 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
   bool mForceShutDown;
 
   /**
-   * Drop this reference during shutdown to unblock shutdown.
+   * Remove this blocker to unblock shutdown.
    * Only accessed on the main thread.
    **/
-  RefPtr<media::ShutdownTicket> mForceShutdownTicket;
+  RefPtr<media::ShutdownBlocker> mShutdownBlocker;
 
   /**
    * True when we have posted an event to the main thread to run
@@ -950,6 +988,12 @@ class MediaStreamGraphImpl : public MediaStreamGraph,
    * Read by stable state runnable on main thread. Protected by mMonitor.
    */
   GraphTime mNextMainThreadGraphTime = 0;
+
+  /**
+   * Cached audio output latency, in seconds. Main thread only. This is reset
+   * whenever the audio device running this MediaStreamGraph changes.
+   */
+  double mAudioOutputLatency;
 };
 
 }  // namespace mozilla

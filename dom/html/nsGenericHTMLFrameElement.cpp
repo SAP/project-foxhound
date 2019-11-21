@@ -11,7 +11,7 @@
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ErrorResult.h"
 #include "GeckoProfiler.h"
 #include "nsAttrValueInlines.h"
@@ -419,19 +419,6 @@ bool nsGenericHTMLFrameElement::IsHTMLFocusable(bool aWithMouse,
 /* [infallible] */
 nsresult nsGenericHTMLFrameElement::GetReallyIsBrowser(bool* aOut) {
   *aOut = mReallyIsBrowser;
-  return NS_OK;
-}
-
-/* [infallible] */
-NS_IMETHODIMP nsGenericHTMLFrameElement::GetIsolated(bool* aOut) {
-  *aOut = true;
-
-  if (!nsContentUtils::IsSystemPrincipal(NodePrincipal())) {
-    return NS_OK;
-  }
-
-  // Isolation is only disabled if the attribute is present
-  *aOut = !HasAttr(kNameSpaceID_None, nsGkAtoms::noisolation);
   return NS_OK;
 }
 

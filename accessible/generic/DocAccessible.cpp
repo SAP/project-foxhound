@@ -96,10 +96,6 @@ DocAccessible::DocAccessible(dom::Document* aDocument,
 
   MOZ_ASSERT(mPresShell, "should have been given a pres shell");
   mPresShell->SetDocAccessible(this);
-
-  // If this is a XUL Document, it should not implement nsHyperText
-  if (mDocumentNode && mDocumentNode->IsXULDocument())
-    mGenericTypes &= ~eHyperText;
 }
 
 DocAccessible::~DocAccessible() {
@@ -193,7 +189,7 @@ role DocAccessible::NativeRole() const {
   nsCOMPtr<nsIDocShell> docShell = nsCoreUtils::GetDocShellFor(mDocumentNode);
   if (docShell) {
     nsCOMPtr<nsIDocShellTreeItem> sameTypeRoot;
-    docShell->GetSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
+    docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
     int32_t itemType = docShell->ItemType();
     if (sameTypeRoot == docShell) {
       // Root of content or chrome tree
@@ -201,10 +197,6 @@ role DocAccessible::NativeRole() const {
         return roles::CHROME_WINDOW;
 
       if (itemType == nsIDocShellTreeItem::typeContent) {
-#ifdef MOZ_XUL
-        if (mDocumentNode && mDocumentNode->IsXULDocument())
-          return roles::APPLICATION;
-#endif
         return roles::DOCUMENT;
       }
     } else if (itemType == nsIDocShellTreeItem::typeContent) {
@@ -346,13 +338,6 @@ void DocAccessible::URL(nsAString& aURL) const {
 }
 
 void DocAccessible::DocType(nsAString& aType) const {
-#ifdef MOZ_XUL
-  if (mDocumentNode->IsXULDocument()) {
-    aType.AssignLiteral("window");  // doctype not implemented for XUL at time
-                                    // of writing - causes assertion
-    return;
-  }
-#endif
   dom::DocumentType* docType = mDocumentNode->GetDoctype();
   if (docType) docType->GetPublicId(aType);
 }
@@ -498,7 +483,7 @@ nsRect DocAccessible::RelativeBounds(nsIFrame** aRelativeFrame) const {
       bounds = scrollPort;
     }
 
-    document = parentDoc = document->GetParentDocument();
+    document = parentDoc = document->GetInProcessParentDocument();
   }
 
   return bounds;
@@ -689,7 +674,19 @@ void DocAccessible::AttributeWillChange(dom::Element* aElement,
 }
 
 void DocAccessible::NativeAnonymousChildListChange(nsIContent* aContent,
-                                                   bool aIsRemove) {}
+                                                   bool aIsRemove) {
+  if (aIsRemove) {
+#ifdef A11Y_LOG
+    if (logging::IsEnabled(logging::eTree)) {
+      logging::MsgBegin("TREE", "Anonymous content removed; doc: %p", this);
+      logging::Node("node", aContent);
+      logging::MsgEnd();
+    }
+#endif
+
+    ContentRemoved(aContent);
+  }
+}
 
 void DocAccessible::AttributeChanged(dom::Element* aElement,
                                      int32_t aNameSpaceID, nsAtom* aAttribute,
@@ -997,7 +994,7 @@ void DocAccessible::ARIAActiveDescendantChanged(Accessible* aAccessible) {
     nsAutoString id;
     if (elm->AsElement()->GetAttr(kNameSpaceID_None,
                                   nsGkAtoms::aria_activedescendant, id)) {
-      dom::Element* activeDescendantElm = elm->OwnerDoc()->GetElementById(id);
+      dom::Element* activeDescendantElm = IDRefsIterator::GetElem(elm, id);
       if (activeDescendantElm) {
         Accessible* activeDescendant = GetAccessible(activeDescendantElm);
         if (activeDescendant) {
@@ -1179,6 +1176,16 @@ Accessible* DocAccessible::GetAccessibleOrContainer(
       }
     }
 
+    // Check if node is in zero-sized map
+    if (aNoContainerIfPruned && currNode->IsHTMLElement(nsGkAtoms::map)) {
+      if (nsIFrame* frame = currNode->AsContent()->GetPrimaryFrame()) {
+        if (nsLayoutUtils::GetAllInFlowRectsUnion(frame, frame->GetParent())
+                .IsEmpty()) {
+          return nullptr;
+        }
+      }
+    }
+
     if (Accessible* accessible = GetAccessible(currNode)) {
       return accessible;
     }
@@ -1266,12 +1273,148 @@ void DocAccessible::ContentInserted(nsIContent* aStartChildNode,
                                     nsIContent* aEndChildNode) {
   // Ignore content insertions until we constructed accessible tree. Otherwise
   // schedule tree update on content insertion after layout.
-  if (mNotificationController && HasLoadState(eTreeConstructed)) {
-    // Update the whole tree of this document accessible when the container is
-    // null (document element is inserted or removed).
-    mNotificationController->ScheduleContentInsertion(aStartChildNode,
-                                                      aEndChildNode);
+  if (!mNotificationController || !HasLoadState(eTreeConstructed)) {
+    return;
   }
+
+  // The frame constructor guarantees that only ranges with the same parent
+  // arrive here in presence of dynamic changes to the page, see
+  // nsCSSFrameConstructor::IssueSingleInsertNotifications' callers.
+  nsINode* parent = aStartChildNode->GetFlattenedTreeParentNode();
+  if (!parent) {
+    return;
+  }
+
+  Accessible* container = AccessibleOrTrueContainer(parent);
+  if (!container) {
+    return;
+  }
+
+  AutoTArray<nsCOMPtr<nsIContent>, 10> list;
+  for (nsIContent* node = aStartChildNode; node != aEndChildNode;
+       node = node->GetNextSibling()) {
+    MOZ_ASSERT(parent == node->GetFlattenedTreeParentNode());
+    if (PruneOrInsertSubtree(node)) {
+      list.AppendElement(node);
+    }
+  }
+
+  mNotificationController->ScheduleContentInsertion(container, list);
+}
+
+bool DocAccessible::PruneOrInsertSubtree(nsIContent* aRoot) {
+  bool insert = false;
+
+  // In the case that we are, or are in, a shadow host, we need to assure
+  // some accessibles are removed if they are not rendered anymore.
+  nsIContent* shadowHost =
+      aRoot->GetShadowRoot() ? aRoot : aRoot->GetContainingShadowHost();
+  if (shadowHost) {
+    dom::ExplicitChildIterator iter(shadowHost);
+
+    // Check all explicit children in the host, if they are not slotted
+    // then remove their accessibles and subtrees.
+    while (nsIContent* childNode = iter.GetNextChild()) {
+      if (!childNode->GetPrimaryFrame() &&
+          !nsCoreUtils::IsDisplayContents(childNode)) {
+        ContentRemoved(childNode);
+      }
+    }
+
+    // If this is a slot, check to see if its fallback content is rendered,
+    // if not - remove it.
+    if (aRoot->IsHTMLElement(nsGkAtoms::slot)) {
+      for (nsIContent* childNode = aRoot->GetFirstChild(); childNode;
+           childNode = childNode->GetNextSibling()) {
+        if (!childNode->GetPrimaryFrame() &&
+            !nsCoreUtils::IsDisplayContents(childNode)) {
+          ContentRemoved(childNode);
+        }
+      }
+    }
+  }
+
+  // If we already have an accessible, check if we need to remove it, recreate
+  // it, or keep it in place.
+  Accessible* acc = GetAccessible(aRoot);
+  if (acc) {
+    MOZ_ASSERT(aRoot == acc->GetContent(), "Accessible has differing content!");
+#ifdef A11Y_LOG
+    if (logging::IsEnabled(logging::eTree)) {
+      logging::MsgBegin(
+          "TREE", "inserted content already has accessible; doc: %p", this);
+      logging::Node("content node", aRoot);
+      logging::AccessibleInfo("accessible node", acc);
+      logging::MsgEnd();
+    }
+#endif
+
+    nsIFrame* frame = acc->GetFrame();
+
+    // Accessible has no frame and it's not display:contents. Remove it.
+    // As well as removing the a11y subtree, we must also remove Accessibles
+    // for DOM descendants, since some of these might be relocated Accessibles
+    // and their DOM nodes are now hidden as well.
+    if (!frame && !nsCoreUtils::IsDisplayContents(aRoot)) {
+      ContentRemoved(aRoot);
+      return false;
+    }
+
+    // If it's a XULLabel it was probably reframed because a `value` attribute
+    // was added. The accessible creates its text leaf upon construction, so we
+    // need to recreate. Remove it, and schedule for reconstruction.
+    if (acc->IsXULLabel()) {
+      ContentRemoved(acc);
+      return true;
+    }
+
+    // It is a broken image that is being reframed because it either got
+    // or lost an `alt` tag that would rerender this node as text.
+    if (frame && (acc->IsImage() != (frame->AccessibleType() == eImageType))) {
+      ContentRemoved(aRoot);
+      return true;
+    }
+
+    // The accessible can be reparented or reordered in its parent.
+    // We schedule it for reinsertion. For example, a slotted element
+    // can change its slot attribute to a different slot.
+    insert = true;
+  } else {
+    // If there is no current accessible, and the node has a frame, or is
+    // display:contents, schedule it for insertion.
+    if (aRoot->GetPrimaryFrame() || nsCoreUtils::IsDisplayContents(aRoot)) {
+      // This may be a new subtree, the insertion process will recurse through
+      // its descendants.
+      if (!GetAccessibleOrDescendant(aRoot)) {
+        return true;
+      }
+
+      // Content is not an accessible, but has accessible descendants.
+      // We schedule this container for insertion strictly for the case where it
+      // itself now needs an accessible. We will still need to recurse into the
+      // descendant content to prune accessibles, and in all likelyness to
+      // insert accessibles since accessible insertions will likeley get missed
+      // in an existing subtree.
+      insert = true;
+    }
+  }
+
+  if (Accessible* container = AccessibleOrTrueContainer(aRoot)) {
+    AutoTArray<nsCOMPtr<nsIContent>, 10> list;
+    dom::AllChildrenIterator iter =
+        dom::AllChildrenIterator(aRoot, nsIContent::eAllChildren, true);
+    while (nsIContent* childNode = iter.GetNextChild()) {
+      if (PruneOrInsertSubtree(childNode)) {
+        list.AppendElement(childNode);
+      }
+    }
+
+    if (!list.IsEmpty()) {
+      mNotificationController->ScheduleContentInsertion(container, list);
+    }
+  }
+
+  return insert;
 }
 
 void DocAccessible::RecreateAccessible(nsIContent* aContent) {
@@ -1602,6 +1745,12 @@ bool DocAccessible::UpdateAccessibleOnAttrChange(dom::Element* aElement,
     return true;
   }
 
+  if (aAttribute == nsGkAtoms::type) {
+    // If the input[type] changes, we should recreate the accessible.
+    RecreateAccessible(aElement);
+    return true;
+  }
+
   return false;
 }
 
@@ -1658,6 +1807,7 @@ class InsertIterator final {
   TreeWalker mWalker;
 
   const nsTArray<nsCOMPtr<nsIContent> >* mNodes;
+  nsTHashtable<nsPtrHashKey<const nsIContent>> mProcessedNodes;
   uint32_t mNodesIdx;
 };
 
@@ -1683,7 +1833,15 @@ bool InsertIterator::Next() {
     // what means there's no container. Ignore the insertion too.
     nsIContent* prevNode = mNodes->SafeElementAt(mNodesIdx - 1);
     nsIContent* node = mNodes->ElementAt(mNodesIdx++);
-    Accessible* container = Document()->AccessibleOrTrueContainer(node, true);
+    // Check to see if we already processed this node with this iterator.
+    // this can happen if we get two redundant insertions in the case of a
+    // text and frame insertion.
+    if (!mProcessedNodes.EnsureInserted(node)) {
+      continue;
+    }
+
+    Accessible* container = Document()->AccessibleOrTrueContainer(
+        node->GetFlattenedTreeParentNode(), true);
     if (container != Context()) {
       continue;
     }
@@ -1752,20 +1910,17 @@ void DocAccessible::ProcessContentInserted(
   do {
     Accessible* parent = iter.Child()->Parent();
     if (parent) {
-      if (parent != aContainer) {
+      Accessible* previousSibling = iter.ChildBefore();
+      if (parent != aContainer ||
+          iter.Child()->PrevSibling() != previousSibling) {
 #ifdef A11Y_LOG
-        logging::TreeInfo("stealing accessible", 0, "old parent", parent,
+        logging::TreeInfo("relocating accessible", 0, "old parent", parent,
                           "new parent", aContainer, "child", iter.Child(),
                           nullptr);
 #endif
-        MOZ_ASSERT_UNREACHABLE("stealing accessible");
-        continue;
+        MoveChild(iter.Child(), aContainer,
+                  previousSibling ? previousSibling->IndexInParent() + 1 : 0);
       }
-
-#ifdef A11Y_LOG
-      logging::TreeInfo("binding to same parent", logging::eVerbose, "parent",
-                        aContainer, "child", iter.Child(), nullptr);
-#endif
       continue;
     }
 
@@ -1897,6 +2052,20 @@ void DocAccessible::ContentRemoved(nsIContent* aContentNode) {
   while (nsIContent* childNode = iter.GetNextChild()) {
     ContentRemoved(childNode);
   }
+
+  // If this node has a shadow root, remove its explicit children too.
+  // The host node may be removed after the shadow root was attached, and
+  // before we asynchronously prune the light DOM and construct the shadow DOM.
+  // If this is a case where the node does not have its own accessible, we will
+  // not recurse into its current children, so we need to use an
+  // ExplicitChildIterator in order to get its accessible children in the light
+  // DOM, since they are not accessible anymore via AllChildrenIterator.
+  if (aContentNode->GetShadowRoot()) {
+    dom::ExplicitChildIterator iter = dom::ExplicitChildIterator(aContentNode);
+    while (nsIContent* childNode = iter.GetNextChild()) {
+      ContentRemoved(childNode);
+    }
+  }
 }
 
 bool DocAccessible::RelocateARIAOwnedIfNeeded(nsIContent* aElement) {
@@ -1938,7 +2107,7 @@ void DocAccessible::DoARIAOwnsRelocation(Accessible* aOwner) {
     // Make an attempt to create an accessible if it wasn't created yet.
     if (!child) {
       // An owned child cannot be an ancestor of the owner.
-      if (nsContentUtils::ContentIsDescendantOf(aOwner->Elm(), childEl)) {
+      if (aOwner->Elm()->IsInclusiveDescendantOf(childEl)) {
         continue;
       }
 
@@ -2276,14 +2445,14 @@ bool DocAccessible::IsLoadEventTarget() const {
   NS_ASSERTION(treeItem, "No document shell for document!");
 
   nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;
-  treeItem->GetParent(getter_AddRefs(parentTreeItem));
+  treeItem->GetInProcessParent(getter_AddRefs(parentTreeItem));
 
   // Not a root document.
   if (parentTreeItem) {
     // Return true if it's either:
     // a) tab document;
     nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
-    treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
+    treeItem->GetInProcessRootTreeItem(getter_AddRefs(rootTreeItem));
     if (parentTreeItem == rootTreeItem) return true;
 
     // b) frame/iframe document and its parent document is not in loading state

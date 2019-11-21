@@ -5,7 +5,6 @@
 package org.mozilla.geckoview.test
 
 import android.support.test.InstrumentationRegistry
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
 
 import android.support.test.filters.MediumTest
 import android.support.test.runner.AndroidJUnit4
@@ -19,7 +18,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.geckoview.*
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
 import org.mozilla.geckoview.test.util.Callbacks
 import org.mozilla.geckoview.test.util.HttpBin
 import java.net.URI
@@ -28,23 +26,24 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
-@ReuseSession(false)
 class WebExtensionTest : BaseSessionTest() {
     companion object {
         val TEST_ENDPOINT: String = "http://localhost:4243"
+        val TABS_CREATE_BACKGROUND: String = "resource://android/assets/web_extensions/tabs-create/"
+        val TABS_CREATE_REMOVE_BACKGROUND: String = "resource://android/assets/web_extensions/tabs-create-remove/"
+        val TABS_REMOVE_BACKGROUND: String = "resource://android/assets/web_extensions/tabs-remove/"
         val MESSAGING_BACKGROUND: String = "resource://android/assets/web_extensions/messaging/"
         val MESSAGING_CONTENT: String = "resource://android/assets/web_extensions/messaging-content/"
     }
 
     @Test
-    @WithDevToolsAPI
     fun registerWebExtension() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
 
         // First let's check that the color of the border is empty before loading
         // the WebExtension
-        val colorBefore = sessionRule.evaluateJS(mainSession, "document.body.style.borderColor")
+        val colorBefore = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat("The border color should be empty when loading without extensions.",
                 colorBefore as String, equalTo(""))
 
@@ -57,7 +56,7 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForPageStop()
 
         // Check that the WebExtension was applied by checking the border color
-        val color = sessionRule.evaluateJS(mainSession, "document.body.style.borderColor")
+        val color = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat("Content script should have been applied",
                 color as String, equalTo("red"))
 
@@ -68,7 +67,7 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForPageStop()
 
         // Check that the WebExtension was not applied after being unregistered
-        val colorAfter = sessionRule.evaluateJS(mainSession, "document.body.style.borderColor")
+        val colorAfter = mainSession.evaluateJS("document.body.style.borderColor")
         assertThat("Content script should have been applied",
                 colorAfter as String, equalTo(""))
     }
@@ -120,6 +119,104 @@ class WebExtensionTest : BaseSessionTest() {
         sessionRule.waitForResult(sessionRule.runtime.unregisterWebExtension(messaging))
     }
 
+    // This test
+    // - Listen for a new tab request from a web extension
+    // - Registers a web extension
+    // - Waits for onNewTab request
+    // - Verify that request came from right extension
+    @Test
+    fun testBrowserTabsCreate() {
+        val tabsCreateResult = GeckoResult<Void>()
+        var tabsExtension : WebExtension? = null
+
+        val tabDelegate = object : WebExtensionController.TabDelegate {
+            override fun onNewTab(source: WebExtension?, uri: String?): GeckoResult<GeckoSession> {
+                Assert.assertEquals(uri, "https://www.mozilla.org/en-US/")
+                Assert.assertEquals(tabsExtension, source)
+                tabsCreateResult.complete(null)
+                return GeckoResult.fromValue(GeckoSession(sessionRule.session.settings))
+            }
+        }
+        sessionRule.runtime.webExtensionController.tabDelegate = tabDelegate
+        tabsExtension = WebExtension(TABS_CREATE_BACKGROUND)
+
+        sessionRule.waitForResult(sessionRule.runtime.registerWebExtension(tabsExtension))
+        sessionRule.waitForResult(tabsCreateResult)
+
+        sessionRule.waitForResult(sessionRule.runtime.unregisterWebExtension(tabsExtension))
+    }
+
+    // This test
+    // - Create and assign WebExtension TabDelegate to handle creation and closing of tabs
+    // - Registers a WebExtension
+    // - Extension requests creation of new tab
+    // - TabDelegate handles creation of new tab
+    // - Extension requests removal of newly created tab
+    // - TabDelegate handles closing of newly created tab
+    // - Verify that close request came from right extension and targeted session
+    @Test
+    fun testBrowserTabsCreateBrowserTabsRemove() {
+        val onCloseRequestResult = GeckoResult<Void>()
+        var tabsExtension : WebExtension? = null
+        var extensionCreatedSession : GeckoSession? = null
+
+        val tabDelegate = object : WebExtensionController.TabDelegate {
+            override fun onNewTab(source: WebExtension?, uri: String?): GeckoResult<GeckoSession> {
+                extensionCreatedSession = GeckoSession(sessionRule.session.settings)
+                return GeckoResult.fromValue(extensionCreatedSession)
+            }
+
+            override fun onCloseTab(source: WebExtension?, session: GeckoSession): GeckoResult<AllowOrDeny> {
+                Assert.assertEquals(tabsExtension, source)
+                Assert.assertNotEquals(null, extensionCreatedSession)
+                Assert.assertEquals(extensionCreatedSession, session)
+                onCloseRequestResult.complete(null)
+                return GeckoResult.ALLOW;
+            }
+        }
+
+        sessionRule.runtime.webExtensionController.tabDelegate = tabDelegate
+        tabsExtension = WebExtension(TABS_CREATE_REMOVE_BACKGROUND)
+
+        sessionRule.waitForResult(sessionRule.runtime.registerWebExtension(tabsExtension))
+        sessionRule.waitForResult(onCloseRequestResult)
+
+        sessionRule.waitForResult(sessionRule.runtime.unregisterWebExtension(tabsExtension))
+    }
+
+    // This test
+    // - Create and assign WebExtension TabDelegate to handle closing of tabs
+    // - Create new GeckoSession for WebExtension to close
+    // - Load url that will allow extension to identify the tab
+    // - Registers a WebExtension
+    // - Extension finds the tab by url and removes it
+    // - TabDelegate handles closing of the tab
+    // - Verify that request targets previously created GeckoSession
+    @Test
+    fun testBrowserTabsRemove() {
+        val onCloseRequestResult = GeckoResult<Void>()
+        val existingSession = sessionRule.createOpenSession()
+
+        val tabDelegate = object : WebExtensionController.TabDelegate {
+            override fun onCloseTab(source: WebExtension?, session: GeckoSession): GeckoResult<AllowOrDeny> {
+                Assert.assertEquals(existingSession, session)
+                onCloseRequestResult.complete(null)
+                return GeckoResult.ALLOW;
+            }
+        }
+
+        existingSession.loadTestPath("$HELLO_HTML_PATH?tabToClose")
+        existingSession.waitForPageStop()
+
+        sessionRule.runtime.webExtensionController.tabDelegate = tabDelegate
+        val tabsExtension = WebExtension(TABS_REMOVE_BACKGROUND)
+
+        sessionRule.waitForResult(sessionRule.runtime.registerWebExtension(tabsExtension))
+        sessionRule.waitForResult(onCloseRequestResult)
+
+        sessionRule.waitForResult(sessionRule.runtime.unregisterWebExtension(tabsExtension))
+    }
+
     private fun createWebExtension(background: Boolean,
                                    messageDelegate: WebExtension.MessageDelegate): WebExtension {
         val webExtension: WebExtension
@@ -138,7 +235,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentMessaging() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -146,7 +242,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun backgroundMessaging() {
         testOnMessage(true)
     }
@@ -213,7 +308,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortMessaging() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -221,7 +315,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun backgroundPortMessaging() {
         testPortMessage(true)
     }
@@ -295,7 +388,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortDisconnect() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -308,7 +400,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortDisconnectAfterRefresh() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -375,7 +466,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun contentPortDisconnectFromApp() {
         mainSession.loadUri("example.com")
         sessionRule.waitForPageStop()
@@ -448,7 +538,6 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    @WithDevToolsAPI
     fun iframeTopLevel() {
         val httpBin = HttpBin(InstrumentationRegistry.getTargetContext(), URI.create(TEST_ENDPOINT))
 

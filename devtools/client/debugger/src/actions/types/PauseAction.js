@@ -12,6 +12,7 @@ import type {
   Scope,
   Why,
   ThreadContext,
+  Previews,
 } from "../../types";
 
 import type { PromiseAction } from "../utils/middleware/promise";
@@ -147,4 +148,17 @@ export type PauseAction =
   | {|
       +type: "TOGGLE_MAP_SCOPES",
       +mapScopes: boolean,
+    |}
+  | {|
+      +type: "SET_EXPANDED_SCOPE",
+      +cx: ThreadContext,
+      +thread: string,
+      +path: string,
+      +expanded: boolean,
+    |}
+  | {|
+      +type: "ADD_INLINE_PREVIEW",
+      +thread: string,
+      +frame: Frame,
+      +previews: Previews,
     |};

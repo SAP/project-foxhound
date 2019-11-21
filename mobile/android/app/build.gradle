@@ -50,7 +50,7 @@ android {
     }
 
     dexOptions {
-        javaMaxHeapSize "4g"
+        javaMaxHeapSize "6g"
         jumboMode = true
     }
 
@@ -266,7 +266,7 @@ dependencies {
     implementation project(path: ':thirdparty')
 
     testImplementation 'junit:junit:4.12'
-    testImplementation 'org.robolectric:robolectric:3.8'
+    testImplementation 'org.robolectric:robolectric:4.3'
     testImplementation 'org.simpleframework:simple-http:6.0.1'
     testImplementation 'org.mockito:mockito-core:1.10.19'
 
@@ -366,8 +366,9 @@ android.applicationVariants.all { variant ->
     // the main sourceSet without losing the stub, so we cover all the
     // configurations here.
     android.sourceSets."${variant.name}".manifest.srcFile "${rewriteManifestPackage.destinationDir}/AndroidManifest.xml"
-    variant.preBuild.dependsOn rewriteManifestPackage
-
+    variant.preBuildProvider.configure {
+        dependsOn rewriteManifestPackage
+    }
 
     // Local (read, not 'official') builds want to reflect developer changes to
     // AndroidManifest.xml.in, strings.xml, and preprocessed Java code.  To do
@@ -414,7 +415,12 @@ if (gradle.startParameter.taskNames.any { it.endsWith('UnitTest') }) {
 // to generate one report per invocation: https://stackoverflow.com/a/42720235.
 // Run two tasks, accepting the cost of duplicate work.
 android.applicationVariants.all { variant ->
+    def jarTask = tasks["bundle${variant.name.capitalize()}Classes"]
+    def bundleJar = jarTask.outputs.files.find({ it.name == 'classes.jar' })
+
     task("findbugsHtml${variant.name.capitalize()}", type: FindBugs) {
+        outputs.upToDateWhen { false } // We always want to re-run findbugs when asked.
+
         // TODO: figure out how to share the shared configuration.
         description "Analyze ${variant.name} code with findbugs (HTML report)"
         group "Verification"
@@ -424,12 +430,12 @@ android.applicationVariants.all { variant ->
         reportLevel = "high"   // For now we only care about high priority bugs. After we have fixed
                                // the issues with medium/low priority we can lower the report level here.
 
-        classes = files("$project.buildDir/intermediates/classes")
-        source = variant.javaCompile.source
-        classpath = variant.javaCompile.classpath
+        classes = files(bundleJar)
+        source = variant.javaCompileProvider.get().source
+        classpath = variant.javaCompileProvider.get().classpath + files(android.bootClasspath)
 
         excludeFilter = file("findbugs-exclude.xml")
-        dependsOn "bundleAppClasses${variant.name.capitalize()}"
+        dependsOn jarTask
 
         reports {
             html.enabled = true // HTML reports for humans.
@@ -439,6 +445,8 @@ android.applicationVariants.all { variant ->
     }
 
     task("findbugsXml${variant.name.capitalize()}", type: FindBugs) {
+        outputs.upToDateWhen { false } // We always want to re-run findbugs when asked.
+
         // TODO: figure out how to share the shared configuration.
         description "Analyze ${variant.name} code with findbugs (XML report)"
         group "Verification"
@@ -448,12 +456,12 @@ android.applicationVariants.all { variant ->
         reportLevel = "high"   // For now we only care about high priority bugs. After we have fixed
                                // the issues with medium/low priority we can lower the report level here.
         
-        classes = files("$project.buildDir/intermediates/classes")
-        source = variant.javaCompile.source
-        classpath = variant.javaCompile.classpath
+        classes = files(bundleJar)
+        source = variant.javaCompileProvider.get().source
+        classpath = variant.javaCompileProvider.get().classpath + files(android.bootClasspath)
 
         excludeFilter = file("findbugs-exclude.xml")
-        dependsOn "bundleAppClasses${variant.name.capitalize()}"
+        dependsOn jarTask
 
         reports {
             xml.enabled = true // XML reports for machines.

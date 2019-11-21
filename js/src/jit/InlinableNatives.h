@@ -31,6 +31,7 @@
                                                    \
   _(IntlGuardToCollator)                           \
   _(IntlGuardToDateTimeFormat)                     \
+  _(IntlGuardToLocale)                             \
   _(IntlGuardToNumberFormat)                       \
   _(IntlGuardToPluralRules)                        \
   _(IntlGuardToRelativeTimeFormat)                 \
@@ -152,7 +153,6 @@
   _(IntrinsicPossiblyWrappedTypedArrayLength)      \
   _(IntrinsicTypedArrayByteOffset)                 \
   _(IntrinsicTypedArrayElementShift)               \
-  _(IntrinsicSetDisjointTypedElements)             \
                                                    \
   _(IntrinsicObjectIsTypedObject)                  \
   _(IntrinsicObjectIsTransparentTypedObject)       \

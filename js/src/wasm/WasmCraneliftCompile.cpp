@@ -20,15 +20,12 @@
 
 #include "mozilla/ScopeExit.h"
 
+#include "jit/Disassemble.h"
 #include "js/Printf.h"
 
 #include "wasm/cranelift/baldrapi.h"
 #include "wasm/cranelift/clifapi.h"
 #include "wasm/WasmGenerator.h"
-#if defined(JS_CODEGEN_X64) && defined(JS_JITSPEW) && \
-    defined(ENABLE_WASM_CRANELIFT)
-#  include "zydis/ZydisAPI.h"
-#endif
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -70,17 +67,6 @@ static inline SymbolicAddress ToSymbolicAddress(BD_SymbolicAddress bd) {
       break;
   }
   MOZ_CRASH("unknown baldrdash symbolic address");
-}
-
-static void DisassembleCode(uint8_t* code, size_t codeLen) {
-#if defined(JS_CODEGEN_X64) && defined(JS_JITSPEW) && \
-    defined(ENABLE_WASM_CRANELIFT)
-  zydisDisassemble(code, codeLen, [](const char* text) {
-    JitSpew(JitSpew_Codegen, "%s", text);
-  });
-#else
-  JitSpew(JitSpew_Codegen, "*** No disassembly available ***");
-#endif
 }
 
 static bool GenerateCraneliftCode(WasmMacroAssembler& masm,
@@ -241,7 +227,20 @@ class AutoCranelift {
 
  public:
   explicit AutoCranelift(const ModuleEnvironment& env)
-      : env_(env), compiler_(nullptr) {}
+      : env_(env), compiler_(nullptr) {
+#ifdef WASM_SUPPORTS_HUGE_MEMORY
+    if (env.hugeMemoryEnabled()) {
+      // In the huge memory configuration, we always reserve the full 4 GB
+      // index space for a heap.
+      staticEnv_.staticMemoryBound = HugeIndexRange;
+      staticEnv_.memoryGuardSize = HugeOffsetGuardLimit;
+    } else {
+      staticEnv_.memoryGuardSize = OffsetGuardLimit;
+    }
+#endif
+    // Otherwise, heap bounds are stored in the `boundsCheckLimit` field
+    // of TlsData.
+  }
   bool init() {
     compiler_ = cranelift_compiler_create(&staticEnv_, &env_);
     return !!compiler_;
@@ -261,10 +260,8 @@ CraneliftFuncCompileInput::CraneliftFuncCompileInput(
       index(func.index),
       offset_in_module(func.lineOrBytecode) {}
 
-#ifndef WASM_HUGE_MEMORY
 static_assert(offsetof(TlsData, boundsCheckLimit) == sizeof(size_t),
               "fix make_heap() in wasm2clif.rs");
-#endif
 
 CraneliftStaticEnvironment::CraneliftStaticEnvironment()
     :
@@ -289,18 +286,13 @@ CraneliftStaticEnvironment::CraneliftStaticEnvironment()
       hasBmi2(false),
       hasLzcnt(false),
 #endif
-      staticMemoryBound(
-#ifdef WASM_HUGE_MEMORY
-          // In the huge memory configuration, we always reserve the full 4 GB
-          // index space for a heap.
-          IndexRange
+#if defined(XP_WIN)
+      platformIsWindows(true),
 #else
-          // Otherwise, heap bounds are stored in the `boundsCheckLimit` field
-          // of TlsData.
-          0
+      platformIsWindows(false),
 #endif
-          ),
-      memoryGuardSize(OffsetGuardLimit),
+      staticMemoryBound(0),
+      memoryGuardSize(0),
       instanceTlsOffset(offsetof(TlsData, instance)),
       interruptTlsOffset(offsetof(TlsData, interrupt)),
       cxTlsOffset(offsetof(TlsData, cx)),
@@ -443,17 +435,31 @@ bool wasm::CraneliftCompileFunctions(const ModuleEnvironment& env,
     if (codeBuf) {
       masm.executableCopy(codeBuf, totalCodeSize);
 
-      for (const FuncCompileInput& func : inputs) {
+      const CodeRangeVector& codeRanges = code->codeRanges;
+      MOZ_ASSERT(codeRanges.length() >= inputs.length());
+
+      // Within the current batch, functions' code ranges have been added in the
+      // same order as the inputs.
+      size_t firstCodeRangeIndex = codeRanges.length() - inputs.length();
+
+      for (size_t i = 0; i < inputs.length(); i++) {
+        int funcIndex = inputs[i].index;
+        mozilla::Unused << funcIndex;
+
         JitSpew(JitSpew_Codegen, "# ========================================");
         JitSpew(JitSpew_Codegen, "# Start of wasm cranelift code for index %d",
-                (int)func.index);
+                funcIndex);
 
-        uint32_t codeStart = code->codeRanges[func.index].begin();
-        uint32_t codeEnd = code->codeRanges[func.index].end();
-        DisassembleCode(codeBuf + codeStart, codeEnd - codeStart);
+        size_t codeRangeIndex = firstCodeRangeIndex + i;
+        uint32_t codeStart = codeRanges[codeRangeIndex].begin();
+        uint32_t codeEnd = codeRanges[codeRangeIndex].end();
+
+        jit::Disassemble(
+            codeBuf + codeStart, codeEnd - codeStart,
+            [](const char* text) { JitSpew(JitSpew_Codegen, "%s", text); });
 
         JitSpew(JitSpew_Codegen, "# End of wasm cranelift code for index %d",
-                (int)func.index);
+                funcIndex);
       }
       js_free(codeBuf);
     }

@@ -48,6 +48,9 @@ const WS_URL = "ws://127.0.0.1:8888/browser/devtools/client/netmonitor/test/";
 const WS_HTTP_URL =
   "http://127.0.0.1:8888/browser/devtools/client/netmonitor/test/";
 
+const WS_BASE_URL =
+  "http://mochi.test:8888/browser/devtools/client/netmonitor/test/";
+const WS_PAGE_URL = WS_BASE_URL + "html_ws-test-page.html";
 const API_CALLS_URL = EXAMPLE_URL + "html_api-calls-test-page.html";
 const SIMPLE_URL = EXAMPLE_URL + "html_simple-test-page.html";
 const NAVIGATE_URL = EXAMPLE_URL + "html_navigate-test-page.html";
@@ -154,10 +157,6 @@ Services.prefs.setCharPref(
 // Increase UI limit for responses rendered using CodeMirror in tests.
 Services.prefs.setIntPref("devtools.netmonitor.response.ui.limit", 1024 * 105);
 
-// Support for columns resizing is currently hidden behind this pref,
-// but testing is on
-Services.prefs.setBoolPref("devtools.netmonitor.features.resizeColumns", true);
-
 registerCleanupFunction(() => {
   info("finish() was called, cleaning up...");
 
@@ -167,7 +166,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.netmonitor.columnsData");
   Services.prefs.clearUserPref("devtools.netmonitor.response.ui.limit");
   Services.prefs.clearUserPref("devtools.netmonitor.visibleColumns");
-  Services.prefs.clearUserPref("devtools.netmonitor.features.resizeColumns");
   Services.cookies.removeAll();
 });
 

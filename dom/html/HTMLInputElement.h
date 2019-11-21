@@ -471,6 +471,11 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
     SetHTMLBoolAttr(nsGkAtoms::autofocus, aValue, aRv);
   }
 
+  void GetCapture(nsAString& aValue);
+  void SetCapture(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::capture, aValue, aRv);
+  }
+
   bool DefaultChecked() const {
     return HasAttr(kNameSpaceID_None, nsGkAtoms::checked);
   }
@@ -1377,11 +1382,6 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
    * time and month. TODO: week and datetime-local.
    */
   static bool IsDateTimeInputType(uint8_t aType);
-
-  /**
-   * Flushes the layout frame tree to make sure we have up-to-date frames.
-   */
-  void FlushFrames();
 
   /**
    * Returns true if the element should prevent dispatching another DOMActivate.

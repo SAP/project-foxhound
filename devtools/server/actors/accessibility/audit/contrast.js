@@ -13,12 +13,6 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "getBounds",
-  "devtools/server/actors/highlighters/utils/accessibility",
-  true
-);
-loader.lazyRequireGetter(
-  this,
   "getCurrentZoom",
   "devtools/shared/layout/utils",
   true
@@ -37,14 +31,20 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "DevToolsWorker",
-  "devtools/shared/worker/worker",
+  "getContrastRatioAgainstBackground",
+  "devtools/shared/accessibility",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "accessibility",
-  "devtools/shared/constants",
+  "getTextProperties",
+  "devtools/shared/accessibility",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "DevToolsWorker",
+  "devtools/shared/worker/worker",
   true
 );
 loader.lazyRequireGetter(
@@ -55,66 +55,11 @@ loader.lazyRequireGetter(
 
 const WORKER_URL = "resource://devtools/server/actors/accessibility/worker.js";
 const HIGHLIGHTED_PSEUDO_CLASS = ":-moz-devtools-highlighted";
-// CSS pixel value (constant) that corresponds to 14 point text size which defines large
-// text when font text is bold (font weight is greater than or equal to 600).
-const BOLD_LARGE_TEXT_MIN_PIXELS = 18.66;
-// CSS pixel value (constant) that corresponds to 18 point text size which defines large
-// text for normal text (e.g. not bold).
-const LARGE_TEXT_MIN_PIXELS = 24;
+const {
+  LARGE_TEXT: { BOLD_LARGE_TEXT_MIN_PIXELS, LARGE_TEXT_MIN_PIXELS },
+} = require("devtools/shared/accessibility");
 
 loader.lazyGetter(this, "worker", () => new DevToolsWorker(WORKER_URL));
-
-/**
- * Get text style properties for a given node, if possible.
- * @param  {DOMNode} node
- *         DOM node for which text styling information is to be calculated.
- * @return {Object}
- *         Color and text size information for a given DOM node.
- */
-function getTextProperties(node) {
-  const computedStyles = CssLogic.getComputedStyle(node);
-  if (!computedStyles) {
-    return null;
-  }
-
-  const {
-    color,
-    "font-size": fontSize,
-    "font-weight": fontWeight,
-  } = computedStyles;
-  const opacity = parseFloat(computedStyles.opacity);
-
-  let { r, g, b, a } = colorUtils.colorToRGBA(color, true);
-  // If the element has opacity in addition to background alpha value, take it
-  // into account. TODO: this does not handle opacity set on ancestor elements
-  // (see bug https://bugzilla.mozilla.org/show_bug.cgi?id=1544721).
-  a = opacity * a;
-  const textRgbaColor = new colorUtils.CssColor(
-    `rgba(${r}, ${g}, ${b}, ${a})`,
-    true
-  );
-  // TODO: For cases where text color is transparent, it likely comes from the color of
-  // the background that is underneath it (commonly from background-clip: text
-  // property). With some additional investigation it might be possible to calculate the
-  // color contrast where the color of the background is used as text color and the
-  // color of the ancestor's background is used as its background.
-  if (textRgbaColor.isTransparent()) {
-    return null;
-  }
-
-  const isBoldText = parseInt(fontWeight, 10) >= 600;
-  const size = parseFloat(fontSize);
-  const isLargeText =
-    size >= (isBoldText ? BOLD_LARGE_TEXT_MIN_PIXELS : LARGE_TEXT_MIN_PIXELS);
-
-  return {
-    color: [r, g, b, a],
-    isLargeText,
-    isBoldText,
-    size,
-    opacity,
-  };
-}
 
 /**
  * Get canvas rendering context for the current target window bound by the bounds of the
@@ -168,56 +113,58 @@ function getImageCtx(win, bounds, zoom, scale, node) {
 }
 
 /**
- * Get contrast ratio score based on WCAG criteria.
- * @param  {Number} ratio
- *         Value of the contrast ratio for a given accessible object.
- * @param  {Boolean} isLargeText
- *         True if the accessible object contains large text.
- * @return {String}
- *         Value that represents calculated contrast ratio score.
+ * Calculate the transformed RGBA when a color matrix is set in docShell by
+ * multiplying the color matrix with the RGBA vector.
+ *
+ * @param  {Array}  rgba
+ *         Original RGBA array which we want to transform.
+ * @param  {Array}  colorMatrix
+ *         Flattened 4x5 color matrix that is set in docShell.
+ *         A 4x5 matrix of the form:
+ *           1  2  3  4  5
+ *           6  7  8  9  10
+ *           11 12 13 14 15
+ *           16 17 18 19 20
+ *         will be set in docShell as:
+ *           [1, 6, 11, 16, 2, 7, 12, 17, 3, 8, 13, 18, 4, 9, 14, 19, 5, 10, 15, 20]
+ * @return {Array}
+ *         Transformed RGBA after the color matrix is multiplied with the original RGBA.
  */
-function getContrastRatioScore(ratio, isLargeText) {
-  const {
-    SCORES: { FAIL, AA, AAA },
-  } = accessibility;
-  const levels = isLargeText ? { AA: 3, AAA: 4.5 } : { AA: 4.5, AAA: 7 };
+function getTransformedRGBA(rgba, colorMatrix) {
+  const transformedRGBA = [0, 0, 0, 0];
 
-  let score = FAIL;
-  if (ratio >= levels.AAA) {
-    score = AAA;
-  } else if (ratio >= levels.AA) {
-    score = AA;
+  // Only use the first four columns of the color matrix corresponding to R, G, B and A
+  // color channels respectively. The fifth column is a fixed offset that does not need
+  // to be considered for the matrix multiplication. We end up multiplying a 4x4 color
+  // matrix with a 4x1 RGBA vector.
+  for (let i = 0; i < 16; i++) {
+    const row = i % 4;
+    const col = Math.floor(i / 4);
+    transformedRGBA[row] += colorMatrix[i] * rgba[col];
   }
 
-  return score;
+  return transformedRGBA;
 }
 
 /**
- * Calculates the contrast ratio of the referenced DOM node.
+ * Find RGBA or a range of RGBAs for the background pixels under the text.
  *
- * @param  {DOMNode} node
- *         The node for which we want to calculate the contrast ratio.
+ * @param  {DOMNode}  node
+ *         Node for which we want to get the background color data.
  * @param  {Object}  options
- *         - bounds   {Object}
- *                    Bounds for the accessible object.
- *         - win      {Object}
- *                    Target window.
- *
+ *         - bounds       {Object}
+ *                        Bounds for the accessible object.
+ *         - win          {Object}
+ *                        Target window.
+ *         - size         {Number}
+ *                        Font size of the selected text node
+ *         - isBoldText   {Boolean}
+ *                        True if selected text node is bold
  * @return {Object}
- *         An object that may contain one or more of the following fields: error,
- *         isLargeText, value, min, max values for contrast.
+ *         Object with one or more of the following RGBA fields: value, min, max
  */
-async function getContrastRatioFor(node, options = {}) {
-  const props = getTextProperties(node);
-  if (!props) {
-    return {
-      error: true,
-    };
-  }
-
-  const { color, isLargeText, isBoldText, size, opacity } = props;
-  const bounds = getBounds(options.win, options.bounds);
-  const zoom = 1 / getCurrentZoom(options.win);
+function getBackgroundFor(node, { win, bounds, size, isBoldText }) {
+  const zoom = 1 / getCurrentZoom(win);
   // When calculating colour contrast, we traverse image data for text nodes that are
   // drawn both with and without transparent text. Image data arrays are typically really
   // big. In cases when the font size is fairly large or when the page is zoomed in image
@@ -241,8 +188,8 @@ async function getContrastRatioFor(node, options = {}) {
   // is zoomed out (scaling in this case would've been scaling up).
   scale = scale > 1 ? 1 : scale;
 
-  const textContext = getImageCtx(options.win, bounds, zoom, scale);
-  const backgroundContext = getImageCtx(options.win, bounds, zoom, scale, node);
+  const textContext = getImageCtx(win, bounds, zoom, scale);
+  const backgroundContext = getImageCtx(win, bounds, zoom, scale, node);
 
   const { data: dataText } = textContext.getImageData(
     0,
@@ -257,7 +204,7 @@ async function getContrastRatioFor(node, options = {}) {
     bounds.height * scale
   );
 
-  const rgba = await worker.performTask(
+  return worker.performTask(
     "getBgRGBA",
     {
       dataTextBuf: dataText.buffer,
@@ -265,6 +212,45 @@ async function getContrastRatioFor(node, options = {}) {
     },
     [dataText.buffer, dataBackground.buffer]
   );
+}
+
+/**
+ * Calculates the contrast ratio of the referenced DOM node.
+ *
+ * @param  {DOMNode} node
+ *         The node for which we want to calculate the contrast ratio.
+ * @param  {Object}  options
+ *         - bounds                           {Object}
+ *                                            Bounds for the accessible object.
+ *         - win                              {Object}
+ *                                            Target window.
+ *         - appliedColorMatrix               {Array|null}
+ *                                            Simulation color matrix applied to
+ *                                            to the viewport, if it exists.
+ * @return {Object}
+ *         An object that may contain one or more of the following fields: error,
+ *         isLargeText, value, min, max values for contrast.
+ */
+async function getContrastRatioFor(node, options = {}) {
+  const computedStyle = CssLogic.getComputedStyle(node);
+  const props = computedStyle ? getTextProperties(computedStyle) : null;
+
+  if (!props) {
+    return {
+      error: true,
+    };
+  }
+
+  const { isLargeText, isBoldText, size, opacity } = props;
+  const { appliedColorMatrix } = options;
+  const color = appliedColorMatrix
+    ? getTransformedRGBA(props.color, appliedColorMatrix)
+    : props.color;
+  let rgba = await getBackgroundFor(node, {
+    ...options,
+    isBoldText,
+    size,
+  });
 
   if (!rgba) {
     // Fallback (original) contrast calculation algorithm. It tries to get the
@@ -287,49 +273,35 @@ async function getContrastRatioFor(node, options = {}) {
       a = opacity * a;
     }
 
-    const value = colorUtils.calculateContrastRatio([r, g, b, a], color);
-    return {
-      value,
-      color,
-      backgroundColor: [r, g, b, a],
-      isLargeText,
-      score: getContrastRatioScore(value, isLargeText),
-    };
+    return getContrastRatioAgainstBackground(
+      {
+        value: appliedColorMatrix
+          ? getTransformedRGBA([r, g, b, a], appliedColorMatrix)
+          : [r, g, b, a],
+      },
+      {
+        color,
+        isLargeText,
+      }
+    );
   }
 
-  if (rgba.value) {
-    const value = colorUtils.calculateContrastRatio(rgba.value, color);
-    return {
-      value,
-      color,
-      backgroundColor: rgba.value,
-      isLargeText,
-      score: getContrastRatioScore(value, isLargeText),
-    };
+  if (appliedColorMatrix) {
+    rgba = rgba.value
+      ? {
+          value: getTransformedRGBA(rgba.value, appliedColorMatrix),
+        }
+      : {
+          min: getTransformedRGBA(rgba.min, appliedColorMatrix),
+          max: getTransformedRGBA(rgba.max, appliedColorMatrix),
+        };
   }
 
-  let min = colorUtils.calculateContrastRatio(rgba.min, color);
-  let max = colorUtils.calculateContrastRatio(rgba.max, color);
-
-  // Flip minimum and maximum contrast ratios if necessary.
-  if (min > max) {
-    [min, max] = [max, min];
-    [rgba.min, rgba.max] = [rgba.max, rgba.min];
-  }
-
-  const score = getContrastRatioScore(min, isLargeText);
-
-  return {
-    min,
-    max,
+  return getContrastRatioAgainstBackground(rgba, {
     color,
-    backgroundColorMin: rgba.min,
-    backgroundColorMax: rgba.max,
     isLargeText,
-    score,
-    scoreMin: score,
-    scoreMax: getContrastRatioScore(max, isLargeText),
-  };
+  });
 }
 
 exports.getContrastRatioFor = getContrastRatioFor;
+exports.getBackgroundFor = getBackgroundFor;

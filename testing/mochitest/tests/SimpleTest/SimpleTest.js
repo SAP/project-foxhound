@@ -228,6 +228,8 @@ SimpleTest._inChaosMode = false;
 SimpleTest.expected = 'pass';
 SimpleTest.num_failed = 0;
 
+SpecialPowers.setAsDefaultAssertHandler();
+
 function usesFailurePatterns() {
   return Array.isArray(SimpleTest.expected);
 }
@@ -1093,9 +1095,9 @@ SimpleTest.testInChaosMode = function() {
     SimpleTest._inChaosMode = true;
 };
 
-SimpleTest.timeout = function() {
-    for (let func of SimpleTest._timeoutFunctions) {
-        func();
+SimpleTest.timeout = async function() {
+    for (const func of SimpleTest._timeoutFunctions) {
+        await func();
     }
     SimpleTest._timeoutFunctions = [];
 }

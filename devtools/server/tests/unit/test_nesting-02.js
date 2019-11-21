@@ -1,4 +1,3 @@
-/* -*- js-indent-level: 2; indent-tabs-mode: nil -*- */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -18,13 +17,13 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-nesting", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
       // Reach over the protocol connection and get a reference to the thread
       // actor.
       // TODO: rewrite tests so we don't do this kind of reaching anymore..
       gThreadActor = gClient._transport._serverConnection.getActor(
-        threadClient.actorID
+        threadFront.actorID
       );
 
       test_nesting();

@@ -10,6 +10,7 @@
 
 #include "mozilla/AddonManagerWebAPI.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "nsEscape.h"
 #include "nsIObserver.h"
 #include "nsISubstitutingProtocolHandler.h"
@@ -388,9 +389,9 @@ NS_IMPL_ISUPPORTS(AtomSetPref, nsIObserver, nsISupportsWeakReference)
 /* static */
 bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
   // With the exception of top-level about:blank documents with null
-  // principals, we never match documents that have non-codebase principals,
+  // principals, we never match documents that have non-content principals,
   // including those with null principals or system principals.
-  if (aDoc.Principal() && !aDoc.Principal()->GetIsCodebasePrincipal()) {
+  if (aDoc.Principal() && !aDoc.Principal()->GetIsContentPrincipal()) {
     return true;
   }
 
@@ -773,7 +774,7 @@ bool WindowShouldMatchActiveTab(nsPIDOMWindowOuter* aWin) {
     return false;
   }
 
-  nsCOMPtr<nsPIDOMWindowOuter> parent = aWin->GetParent();
+  nsCOMPtr<nsPIDOMWindowOuter> parent = aWin->GetInProcessParent();
   MOZ_ASSERT(parent != nullptr);
   return WindowShouldMatchActiveTab(parent);
 }
@@ -830,7 +831,7 @@ nsIPrincipal* DocInfo::Principal() const {
 }
 
 const URLInfo& DocInfo::PrincipalURL() const {
-  if (!(Principal() && Principal()->GetIsCodebasePrincipal())) {
+  if (!(Principal() && Principal()->GetIsContentPrincipal())) {
     return URL();
   }
 

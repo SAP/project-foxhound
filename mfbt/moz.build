@@ -38,6 +38,7 @@ EXPORTS.mozilla = [
     'EnumeratedRange.h',
     'EnumSet.h',
     'EnumTypeTraits.h',
+    'fallible.h',
     'FastBernoulliTrial.h',
     'FloatingPoint.h',
     'FStream.h',
@@ -150,11 +151,12 @@ UNIFIED_SOURCES += [
     'RandomNum.cpp',
     'SHA1.cpp',
     'TaggedAnonymousMemory.cpp',
+    'UniquePtrExtensions.cpp',
     'Unused.cpp',
     'Utf8.cpp',
 ]
 
-if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter'):
+if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter', 'tools/update-packaging'):
     # RecordReplay.cpp uses files from js/
     UNIFIED_SOURCES += [
         'RecordReplay.cpp',

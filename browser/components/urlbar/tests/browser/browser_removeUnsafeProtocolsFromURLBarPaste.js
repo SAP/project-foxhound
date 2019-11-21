@@ -55,10 +55,6 @@ if (supportsReturnWithoutNewline) {
   pairs.push(["java\rscript:foo", "foo"]);
 }
 
-var clipboardHelper = Cc["@mozilla.org/widget/clipboardhelper;1"].getService(
-  Ci.nsIClipboardHelper
-);
-
 async function paste(input) {
   try {
     await SimpleTest.promiseClipboardChange(input, () => {
@@ -80,7 +76,7 @@ add_task(async function test_stripUnsafeProtocolPaste() {
     await paste(inputValue);
 
     Assert.equal(
-      gURLBar.textValue,
+      gURLBar.value,
       expectedURL,
       `entering ${inputValue} strips relevant bits.`
     );

@@ -16,7 +16,6 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 
-#include "builtin/String.h"
 #include "gc/Barrier.h"
 #include "gc/Cell.h"
 #include "gc/Heap.h"
@@ -169,7 +168,9 @@ static const size_t UINT32_CHAR_BUFFER_LENGTH = sizeof("4294967295") - 1;
  */
 // clang-format on
 
-class JSString : public js::gc::Cell {
+class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
+  using Base = js::gc::CellWithLengthAndFlags<js::gc::Cell>;
+
  protected:
   // TaintFox: We add another pointer size of inline chars here to make the total size of JString
   // evenly divisible by the gc::CellSize on 32 bit platforms.
@@ -180,21 +181,8 @@ class JSString : public js::gc::Cell {
 
   /* Fields only apply to string types commented on the right. */
   struct Data {
-    // First word of a Cell has additional requirements from GC and normally
-    // would store a pointer. If a single word isn't large enough, the length
-    // is stored separately.
-    //          32      16       0
-    //  --------------------------
-    //  | Length | Index | Flags |
-    //  --------------------------
-    //
-    // NOTE: This is also used for temporary storage while linearizing a Rope.
-    uintptr_t flags_; /* JSString */
-
-#if JS_BITS_PER_WORD == 32
-    // Additional storage for length if |flags_| is too small to fit both.
-    uint32_t length_; /* JSString */
-#endif
+    // Note: 32-bit length and flags fields are inherited from
+    // CellWithLengthAndFlags.
 
     // Taintfox: add the taint information
     StringTaint taint_;
@@ -221,7 +209,6 @@ class JSString : public js::gc::Cell {
         } u3;
       } s;
     };
-
   } d;
 
  public:
@@ -293,7 +280,7 @@ class JSString : public js::gc::Cell {
    */
 
   // The low bits of flag word are reserved by GC.
-  static_assert(js::gc::Cell::ReservedBits <= 3,
+  static_assert(Base::NumFlagBitsReservedForGC <= 3,
                 "JSString::flags must reserve enough bits for Cell");
 
   static const uint32_t NON_ATOM_BIT = js::gc::Cell::JSSTRING_BIT;
@@ -356,10 +343,10 @@ class JSString : public js::gc::Cell {
 
     /* Ensure js::shadow::String has the same layout. */
     using JS::shadow::String;
-    static_assert(offsetof(JSString, d.flags_) == offsetof(String, flags_),
+    static_assert(JSString::offsetOfRawFlagsField() == offsetof(String, flags_),
                   "shadow::String flags offset must match JSString");
 #if JS_BITS_PER_WORD == 32
-    static_assert(offsetof(JSString, d.length_) == offsetof(String, length_),
+    static_assert(JSString::offsetOfLength() == offsetof(String, length_),
                   "shadow::String length offset must match JSString");
 #endif
     static_assert(offsetof(JSString, d.s.u2.nonInlineCharsLatin1) ==
@@ -403,7 +390,7 @@ class JSString : public js::gc::Cell {
 
   }
 
-  /* Avoid lame compile errors in JSRope::flatten */
+  /* Avoid silly compile errors in JSRope::flatten */
   friend class JSRope;
 
   friend class js::gc::RelocationOverlay;
@@ -450,7 +437,7 @@ class JSString : public js::gc::Cell {
   void finalizeTaint() { d.taint_.~StringTaint(); }
 
   MOZ_ALWAYS_INLINE
-  uint32_t flags() const { return uint32_t(d.flags_); }
+  uint32_t flags() const { return flagsField(); }
 
   template <typename CharT>
   static MOZ_ALWAYS_INLINE void checkStringCharsArena(const CharT* chars) {
@@ -461,44 +448,13 @@ class JSString : public js::gc::Cell {
 
  public:
   MOZ_ALWAYS_INLINE
-  size_t length() const {
-#if JS_BITS_PER_WORD == 32
-    return d.length_;
-#else
-    return uint32_t(d.flags_ >> 32);
-#endif
-  }
+  size_t length() const { return lengthField(); }
 
  protected:
-  MOZ_ALWAYS_INLINE
-  void setFlagBit(uint32_t flags) { d.flags_ |= uintptr_t(flags); }
+  void setFlattenData(uintptr_t data) { setTemporaryGCUnsafeData(data); }
 
-  MOZ_ALWAYS_INLINE
-  void clearFlagBit(uint32_t flags) { d.flags_ &= ~uintptr_t(flags); }
-
-  MOZ_ALWAYS_INLINE
-  void setLengthAndFlags(uint32_t len, uint32_t flags) {
-#if JS_BITS_PER_WORD == 32
-    d.flags_ = flags;
-    d.length_ = len;
-#else
-    d.flags_ = uint64_t(len) << 32 | uint64_t(flags);
-#endif
-  }
-
-  // Flatten algorithm stores a temporary word by clobbering flags. This is
-  // not GC-safe and user must ensure JSString::flags are never checked
-  // (including by asserts) while this data is stored.
-  MOZ_ALWAYS_INLINE
-  void setFlattenData(uintptr_t data) { d.flags_ = data; }
-
-  // To get back the data, values to safely re-initialize clobbered flags
-  // must be provided.
-  MOZ_ALWAYS_INLINE
   uintptr_t unsetFlattenData(uint32_t len, uint32_t flags) {
-    uintptr_t data = d.flags_;
-    setLengthAndFlags(len, flags);
-    return data;
+    return unsetTemporaryGCUnsafeData(len, flags);
   }
 
   // Get correct non-inline chars enum arm for given type
@@ -642,7 +598,7 @@ class JSString : public js::gc::Cell {
 
   /* Only called by the GC for strings with the AllocKind::STRING kind. */
 
-  inline void finalize(js::FreeOp* fop);
+  inline void finalize(JSFreeOp* fop);
 
   /* Gets the number of bytes that the chars take on the heap. */
 
@@ -653,30 +609,9 @@ class JSString : public js::gc::Cell {
     return offsetof(JSString, d.taint_);
   }
 
-  // Offsets for direct field from jit code. A number of places directly
-  // access 32-bit length and flags fields so do endian trickery here.
-#if JS_BITS_PER_WORD == 32
-  static constexpr size_t offsetOfFlags() {
-    return offsetof(JSString, d.flags_);
-  }
-  static constexpr size_t offsetOfLength() {
-    return offsetof(JSString, d.length_);
-  }
-#elif MOZ_LITTLE_ENDIAN
-  static constexpr size_t offsetOfFlags() {
-    return offsetof(JSString, d.flags_);
-  }
-  static constexpr size_t offsetOfLength() {
-    return offsetof(JSString, d.flags_) + sizeof(uint32_t);
-  }
-#else
-  static constexpr size_t offsetOfFlags() {
-    return offsetof(JSString, d.flags_) + sizeof(uint32_t);
-  }
-  static constexpr size_t offsetOfLength() {
-    return offsetof(JSString, d.flags_);
-  }
-#endif
+  // Make offset accessors public.
+  using Base::offsetOfFlags;
+  using Base::offsetOfLength;
 
  private:
   // To help avoid writing Spectre-unsafe code, we only allow MacroAssembler
@@ -1105,7 +1040,7 @@ class JSFlatString : public JSLinearString {
 
   inline size_t allocSize() const;
 
-  inline void finalize(js::FreeOp* fop);
+  inline void finalize(JSFreeOp* fop);
 
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dumpRepresentation(js::GenericPrinter& out, int indent) const;
@@ -1241,7 +1176,7 @@ class JSFatInlineString : public JSInlineString
 
   // Only called by the GC for strings with the AllocKind::FAT_INLINE_STRING
   // kind.
-  MOZ_ALWAYS_INLINE void finalize(js::FreeOp* fop);
+  MOZ_ALWAYS_INLINE void finalize(JSFreeOp* fop);
 };
 
 static_assert(sizeof(JSFatInlineString) % js::gc::CellAlignBytes == 0,
@@ -1271,7 +1206,7 @@ class JSExternalString : public JSLinearString {
 
   // Only called by the GC for strings with the AllocKind::EXTERNAL_STRING
   // kind.
-  inline void finalize(js::FreeOp* fop);
+  inline void finalize(JSFreeOp* fop);
 
   // Free the external chars and allocate a new buffer, converting this to a
   // flat string (which still lives in an AllocKind::EXTERNAL_STRING
@@ -1362,7 +1297,7 @@ class FatInlineAtom : public JSAtom {
   HashNumber hash() const { return hash_; }
   void initHash(HashNumber hash) { hash_ = hash; }
 
-  inline void finalize(js::FreeOp* fop);
+  inline void finalize(JSFreeOp* fop);
 };
 
 static_assert(
@@ -1634,8 +1569,8 @@ template <js::AllowGC allowGC, typename CharT>
 extern JSFlatString* NewStringDontDeflate(
     JSContext* cx, UniquePtr<CharT[], JS::FreePolicy> chars, size_t length);
 
-extern JSLinearString*
-NewDependentString(JSContext* cx, JSString* base, size_t start, size_t length);
+extern JSLinearString* NewDependentString(JSContext* cx, JSString* base,
+                                          size_t start, size_t length);
 
 /* Take ownership of an array of Latin1Chars. */
 extern JSFlatString* NewLatin1StringZ(JSContext* cx, UniqueChars chars);

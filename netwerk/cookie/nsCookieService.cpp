@@ -22,6 +22,7 @@
 #include "nsIServiceManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIWebProgressListener.h"
+#include "nsIHttpChannel.h"
 
 #include "nsIIOService.h"
 #include "nsIPermissionManager.h"
@@ -60,7 +61,8 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/FileUtils.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Telemetry.h"
 #include "nsIConsoleService.h"
 #include "nsTPriorityQueue.h"
@@ -3033,7 +3035,10 @@ void nsCookieService::GetCookiesForURI(
   // (but not if there was an error)
   switch (cookieStatus) {
     case STATUS_REJECTED:
-      NotifyRejected(aHostURI, aChannel, rejectedReason, OPERATION_READ);
+      // If we don't have any cookies from this host, fail silently.
+      if (priorCookieCount) {
+        NotifyRejected(aHostURI, aChannel, rejectedReason, OPERATION_READ);
+      }
       return;
     default:
       break;
@@ -3047,10 +3052,7 @@ void nsCookieService::GetCookiesForURI(
   // check if aHostURI is using an https secure protocol.
   // if it isn't, then we can't send a secure cookie over the connection.
   // if SchemeIs fails, assume an insecure connection, to be on the safe side
-  bool isSecure;
-  if (NS_FAILED(aHostURI->SchemeIs("https", &isSecure))) {
-    isSecure = false;
-  }
+  bool isSecure = aHostURI->SchemeIs("https");
 
   nsCookie* cookie;
   int64_t currentTimeInUsec = PR_Now();
@@ -3232,35 +3234,32 @@ bool nsCookieService::CanSetCookie(nsIURI* aHostURI, const nsCookieKey& aKey,
   // 1 = nonsecure and "https:"
   // 2 = secure and "http:"
   // 3 = secure and "https:"
-  bool isHTTPS = true;
-  nsresult rv = aHostURI->SchemeIs("https", &isHTTPS);
-  if (NS_SUCCEEDED(rv)) {
-    Telemetry::Accumulate(
-        Telemetry::COOKIE_SCHEME_SECURITY,
-        ((aCookieData.isSecure()) ? 0x02 : 0x00) | ((isHTTPS) ? 0x01 : 0x00));
+  bool isHTTPS = aHostURI->SchemeIs("https");
+  Telemetry::Accumulate(
+      Telemetry::COOKIE_SCHEME_SECURITY,
+      ((aCookieData.isSecure()) ? 0x02 : 0x00) | ((isHTTPS) ? 0x01 : 0x00));
 
-    // Collect telemetry on how often are first- and third-party cookies set
-    // from HTTPS origins:
-    //
-    // 0 (000) = first-party and "http:"
-    // 1 (001) = first-party and "http:" with bogus Secure cookie flag?!
-    // 2 (010) = first-party and "https:"
-    // 3 (011) = first-party and "https:" with Secure cookie flag
-    // 4 (100) = third-party and "http:"
-    // 5 (101) = third-party and "http:" with bogus Secure cookie flag?!
-    // 6 (110) = third-party and "https:"
-    // 7 (111) = third-party and "https:" with Secure cookie flag
-    if (aThirdPartyUtil) {
-      bool isThirdParty = true;
+  // Collect telemetry on how often are first- and third-party cookies set
+  // from HTTPS origins:
+  //
+  // 0 (000) = first-party and "http:"
+  // 1 (001) = first-party and "http:" with bogus Secure cookie flag?!
+  // 2 (010) = first-party and "https:"
+  // 3 (011) = first-party and "https:" with Secure cookie flag
+  // 4 (100) = third-party and "http:"
+  // 5 (101) = third-party and "http:" with bogus Secure cookie flag?!
+  // 6 (110) = third-party and "https:"
+  // 7 (111) = third-party and "https:" with Secure cookie flag
+  if (aThirdPartyUtil) {
+    bool isThirdParty = true;
 
-      if (aChannel) {
-        aThirdPartyUtil->IsThirdPartyChannel(aChannel, aHostURI, &isThirdParty);
-      }
-      Telemetry::Accumulate(Telemetry::COOKIE_SCHEME_HTTPS,
-                            (isThirdParty ? 0x04 : 0x00) |
-                                (isHTTPS ? 0x02 : 0x00) |
-                                (aCookieData.isSecure() ? 0x01 : 0x00));
+    if (aChannel) {
+      aThirdPartyUtil->IsThirdPartyChannel(aChannel, aHostURI, &isThirdParty);
     }
+    Telemetry::Accumulate(Telemetry::COOKIE_SCHEME_HTTPS,
+                          (isThirdParty ? 0x04 : 0x00) |
+                              (isHTTPS ? 0x02 : 0x00) |
+                              (aCookieData.isSecure() ? 0x01 : 0x00));
   }
 
   int64_t currentTimeInUsec = PR_Now();
@@ -3456,8 +3455,8 @@ void nsCookieService::AddInternal(const nsCookieKey& aKey, nsCookie* aCookie,
                            aCookie->Path(), exactIter);
   bool foundSecureExact = foundCookie && exactIter.Cookie()->IsSecure();
   bool isSecure = true;
-  if (aHostURI && NS_FAILED(aHostURI->SchemeIs("https", &isSecure))) {
-    isSecure = false;
+  if (aHostURI) {
+    isSecure = aHostURI->SchemeIs("https");
   }
   bool oldCookieIsSession = false;
   // Step1, call FindSecureCookie(). FindSecureCookie() would
@@ -3916,10 +3915,8 @@ nsresult nsCookieService::GetBaseDomain(nsIEffectiveTLDService* aTLDService,
     return NS_ERROR_INVALID_ARG;
 
   // block any URIs without a host that aren't file:// URIs.
-  if (aBaseDomain.IsEmpty()) {
-    bool isFileURI = false;
-    aHostURI->SchemeIs("file", &isFileURI);
-    if (!isFileURI) return NS_ERROR_INVALID_ARG;
+  if (aBaseDomain.IsEmpty() && !aHostURI->SchemeIs("file")) {
+    return NS_ERROR_INVALID_ARG;
   }
 
   return NS_OK;
@@ -3996,20 +3993,19 @@ CookieStatus nsCookieService::CheckPrefs(
   *aRejectedReason = 0;
 
   // don't let ftp sites get/set cookies (could be a security issue)
-  bool ftp;
-  if (NS_SUCCEEDED(aHostURI->SchemeIs("ftp", &ftp)) && ftp) {
+  if (aHostURI->SchemeIs("ftp")) {
     COOKIE_LOGFAILURE(aCookieHeader.IsVoid() ? GET_COOKIE : SET_COOKIE,
                       aHostURI, aCookieHeader, "ftp sites cannot read cookies");
     return STATUS_REJECTED_WITH_ERROR;
   }
 
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(aHostURI, aOriginAttrs);
+      BasePrincipal::CreateContentPrincipal(aHostURI, aOriginAttrs);
 
   if (!principal) {
     COOKIE_LOGFAILURE(aCookieHeader.IsVoid() ? GET_COOKIE : SET_COOKIE,
                       aHostURI, aCookieHeader,
-                      "non-codebase principals cannot get/set cookies");
+                      "non-content principals cannot get/set cookies");
     return STATUS_REJECTED_WITH_ERROR;
   }
 
@@ -4095,9 +4091,9 @@ CookieStatus nsCookieService::CheckPrefs(
     }
 
     if (StaticPrefs::network_cookie_thirdparty_nonsecureSessionOnly()) {
-      bool isHTTPS = false;
-      aHostURI->SchemeIs("https", &isHTTPS);
-      if (!isHTTPS) return STATUS_ACCEPT_SESSION;
+      if (!aHostURI->SchemeIs("https")) {
+        return STATUS_ACCEPT_SESSION;
+      }
     }
   }
 
@@ -4801,8 +4797,8 @@ nsresult nsCookieService::RemoveCookiesWithOriginAttributes(
 }
 
 NS_IMETHODIMP
-nsCookieService::RemoveCookiesFromRootDomain(const nsACString& aHost,
-                                             const nsAString& aPattern) {
+nsCookieService::RemoveCookiesFromExactHost(const nsACString& aHost,
+                                            const nsAString& aPattern) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   mozilla::OriginAttributesPattern pattern;
@@ -4810,10 +4806,10 @@ nsCookieService::RemoveCookiesFromRootDomain(const nsACString& aHost,
     return NS_ERROR_INVALID_ARG;
   }
 
-  return RemoveCookiesFromRootDomain(aHost, pattern);
+  return RemoveCookiesFromExactHost(aHost, pattern);
 }
 
-nsresult nsCookieService::RemoveCookiesFromRootDomain(
+nsresult nsCookieService::RemoveCookiesFromExactHost(
     const nsACString& aHost, const mozilla::OriginAttributesPattern& aPattern) {
   nsAutoCString host(aHost);
   nsresult rv = NormalizeHost(host);
@@ -4854,11 +4850,7 @@ nsresult nsCookieService::RemoveCookiesFromRootDomain(
       nsListIter iter(entry, i - 1);
       RefPtr<nsCookie> cookie = iter.Cookie();
 
-      bool hasRootDomain = false;
-      rv = mTLDService->HasRootDomain(cookie->RawHost(), aHost, &hasRootDomain);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (!hasRootDomain) {
+      if (!aHost.Equals(cookie->RawHost())) {
         continue;
       }
 

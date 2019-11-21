@@ -12,7 +12,7 @@
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/intl/OSPreferences.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 
 #include "gfx2DGlue.h"
 #include "gfxFT2FontList.h"
@@ -93,7 +93,7 @@ gfxAndroidPlatform::gfxAndroidPlatform() {
   mOffscreenFormat = GetScreenDepth() == 16 ? SurfaceFormat::R5G6B5_UINT16
                                             : SurfaceFormat::X8R8G8B8_UINT32;
 
-  if (StaticPrefs::gfx_android_rgb16_force()) {
+  if (StaticPrefs::gfx_android_rgb16_force_AtStartup()) {
     mOffscreenFormat = SurfaceFormat::R5G6B5_UINT16;
   }
 }
@@ -225,8 +225,7 @@ void gfxAndroidPlatform::GetCommonFallbackFonts(
   aFontList.AppendElement("Droid Sans Fallback");
 }
 
-void gfxAndroidPlatform::GetSystemFontList(
-    InfallibleTArray<FontListEntry>* retValue) {
+void gfxAndroidPlatform::GetSystemFontList(nsTArray<FontListEntry>* retValue) {
   gfxFT2FontList::PlatformFontList()->GetSystemFontList(retValue);
 }
 

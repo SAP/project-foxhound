@@ -1763,7 +1763,7 @@ nsSiteSecurityService::Enumerate(uint32_t aType,
       return NS_ERROR_INVALID_ARG;
   }
 
-  InfallibleTArray<mozilla::dom::DataStorageItem> items;
+  nsTArray<mozilla::dom::DataStorageItem> items;
   mSiteStateStorage->GetAll(&items);
 
   nsCOMArray<nsISiteSecurityState> states;

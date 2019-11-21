@@ -5,6 +5,7 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
 import argparse
+import errno
 import json
 import logging
 import os
@@ -24,7 +25,6 @@ from mozbuild.base import (
     MachCommandBase,
     MachCommandConditions as conditions,
 )
-from moztest.resolve import TEST_SUITES
 
 UNKNOWN_TEST = '''
 I was unable to find tests from the given argument(s).
@@ -49,9 +49,8 @@ TEST_HELP = '''
 Test or tests to run. Tests can be specified by filename, directory, suite
 name or suite alias.
 
-The following test suites and aliases are supported: %s
-''' % ', '.join(sorted(TEST_SUITES))
-TEST_HELP = TEST_HELP.strip()
+The following test suites and aliases are supported: {}
+'''.strip()
 
 
 @SettingsProvider
@@ -73,12 +72,16 @@ class TestConfig(object):
 
 def get_test_parser():
     from mozlog.commandline import add_logging_group
+    from moztest.resolve import TEST_SUITES
     parser = argparse.ArgumentParser()
-    parser.add_argument('what', default=None, nargs='+', help=TEST_HELP)
+    parser.add_argument('what', default=None, nargs='+',
+                        help=TEST_HELP.format(', '.join(sorted(TEST_SUITES))))
     parser.add_argument('extra_args', default=None, nargs=argparse.REMAINDER,
                         help="Extra arguments to pass to the underlying test command(s). "
                              "If an underlying command doesn't recognize the argument, it "
                              "will fail.")
+    parser.add_argument('--debugger', default=None, action='store',
+                        nargs='?', help="Specify a debugger to use.")
     add_logging_group(parser)
     return parser
 
@@ -138,6 +141,7 @@ class AddTest(MachCommandBase):
     def addtest(self, suite=None, test=None, doc=None, overwrite=False,
                 editor=MISSING_ARG, **kwargs):
         import addtest
+        from moztest.resolve import TEST_SUITES
 
         if not suite and not test:
             return create_parser_addtest().parse_args(["--help"])
@@ -189,7 +193,11 @@ class AddTest(MachCommandBase):
         creator.check_args()
 
         paths = []
+        added_tests = False
         for path, template in creator:
+            if not template:
+                continue
+            added_tests = True
             if (path):
                 paths.append(path)
                 print("Adding a test file at {} (suite `{}`)".format(path, suite))
@@ -204,6 +212,9 @@ class AddTest(MachCommandBase):
             else:
                 # write to stdout if you passed only suite and doc and not a file path
                 print(template)
+
+        if not added_tests:
+            return 1
 
         if test:
             creator.update_manifest()
@@ -318,6 +329,19 @@ class Test(MachCommandBase):
         if not run_suites and not run_tests:
             print(UNKNOWN_TEST)
             return 1
+
+        if log_args.get('debugger', None):
+            import mozdebug
+            if not mozdebug.get_debugger_info(log_args.get('debugger')):
+                sys.exit(1)
+            extra_args_debugger_notation = '='.join([
+                    '--debugger',
+                    log_args.get('debugger')
+                ]).encode('ascii')
+            if extra_args:
+                extra_args.append(extra_args_debugger_notation)
+            else:
+                extra_args = [extra_args_debugger_notation]
 
         # Create shared logger
         format_args = {'level': self._mach_context.settings['test']['level']}
@@ -490,7 +514,7 @@ class CheckSpiderMonkeyCommand(MachCommandBase):
             python,
             os.path.join(self.topsrcdir, 'js', 'src', 'tests', 'jstests.py'),
             js,
-            '--jitflags=all',
+            '--jitflags=jstests',
         ] + params
         return subprocess.call(jstest_cmd)
 
@@ -667,9 +691,8 @@ class TestInfoCommand(MachCommandBase):
     @CommandArgument('--verbose', action='store_true',
                      help='Enable debug logging.')
     def test_info(self, **params):
-
-        import which
         from mozbuild.base import MozbuildObject
+        from mozfile import which
 
         self.branches = params['branches']
         self.start = params['start']
@@ -698,17 +721,15 @@ class TestInfoCommand(MachCommandBase):
 
         self._hg = None
         if conditions.is_hg(build_obj):
-            if self._is_windows():
-                self._hg = which.which('hg.exe')
-            else:
-                self._hg = which.which('hg')
+            self._hg = which('hg')
+            if not self._hg:
+                raise OSError(errno.ENOENT, "Could not find 'hg' on PATH.")
 
         self._git = None
         if conditions.is_git(build_obj):
-            if self._is_windows():
-                self._git = which.which('git.exe')
-            else:
-                self._git = which.which('git')
+            self._git = which('git')
+            if not self._git:
+                raise OSError(errno.ENOENT, "Could not find 'git' on PATH.")
 
         for test_name in params['test_names']:
             print("===== %s =====" % test_name)
@@ -870,10 +891,12 @@ class TestInfoCommand(MachCommandBase):
         tp = record['build']['type']
         if type(tp) is list:
             tp = "-".join(tp)
+        e10s = ""
         if 'run' in record and 'type' in record['run'] and 'e10s' in str(record['run']['type']):
             e10s = "-e10s"
-        else:
-            e10s = ""
+        if 'run' in record and 'type' in record['run'] and 'fis' in str(record['run']['type']):
+            # fission implies e10s - keep the label simple
+            e10s = "-fis"
         return "%s/%s%s:" % (platform, tp, e10s)
 
     def submit(self, query):
@@ -908,6 +931,14 @@ class TestInfoCommand(MachCommandBase):
                     ]},
                     "aggregate": "sum",
                     "default": 0
+                },
+                {
+                    "name": "skips",
+                    "value": {"case": [
+                        {"when": {"eq": {"result.status": "SKIP"}}, "then": 1}
+                    ]},
+                    "aggregate": "sum",
+                    "default": 0
                 }
             ],
             "where": {"and": [
@@ -933,6 +964,7 @@ class TestInfoCommand(MachCommandBase):
                 runs = record['count']
                 total_runs = total_runs + runs
                 failures = record.get('failures', 0)
+                skips = record.get('skips', 0)
                 total_failures = total_failures + failures
                 rate = (float)(failures) / runs
                 if rate >= worst_rate:
@@ -940,8 +972,8 @@ class TestInfoCommand(MachCommandBase):
                     worst_platform = platform
                     worst_failures = failures
                     worst_runs = runs
-                print("%-40s %6d failures in %6d runs" % (
-                    platform, failures, runs))
+                print("%-40s %6d failures (%6d skipped) in %6d runs" % (
+                    platform, failures, skips, runs))
             print("\nTotal: %d failures in %d runs or %.3f failures/run" %
                   (total_failures, total_runs, (float)(total_failures) / total_runs))
             if worst_failures > 0:
@@ -1145,6 +1177,180 @@ class TestInfoCommand(MachCommandBase):
         else:
             print("No tasks found.")
 
+    @SubCommand('test-info', 'report',
+                description='Generate a json report of test manifests and/or tests '
+                            'categorized by Bugzilla component and optionally filtered '
+                            'by path, component, and/or manifest annotations.')
+    @CommandArgument('--components', default=None,
+                     help='Comma-separated list of Bugzilla components.'
+                          ' eg. Testing::General,Core::WebVR')
+    @CommandArgument('--flavor',
+                     help='Limit results to tests of the specified flavor (eg. "xpcshell").')
+    @CommandArgument('--subsuite',
+                     help='Limit results to tests of the specified subsuite (eg. "devtools").')
+    @CommandArgument('paths', nargs=argparse.REMAINDER,
+                     help='File system paths of interest.')
+    @CommandArgument('--show-manifests', action='store_true',
+                     help='Include test manifests in report.')
+    @CommandArgument('--show-tests', action='store_true',
+                     help='Include individual tests in report.')
+    @CommandArgument('--show-summary', action='store_true',
+                     help='Include summary in report.')
+    @CommandArgument('--filter-values',
+                     help='Comma-separated list of value regular expressions to filter on; '
+                          'displayed tests contain all specified values.')
+    @CommandArgument('--filter-keys',
+                     help='Comma-separated list of test keys to filter on, '
+                          'like "skip-if"; only these fields will be searched '
+                          'for filter-values.')
+    @CommandArgument('--no-component-report', action='store_false',
+                     dest="show_components", default=True,
+                     help='Do not categorize by bugzilla component.')
+    @CommandArgument('--output-file',
+                     help='Path to report file.')
+    def test_report(self, components, flavor, subsuite, paths,
+                    show_manifests, show_tests, show_summary,
+                    filter_values, filter_keys, show_components, output_file):
+        import mozpack.path as mozpath
+        import re
+        from moztest.resolve import TestResolver
+
+        def matches_filters(test):
+            '''
+               Return True if all of the requested filter_values are found in this test;
+               if filter_keys are specified, restrict search to those test keys.
+            '''
+            for value in filter_values:
+                value_found = False
+                for key in test:
+                    if not filter_keys or key in filter_keys:
+                        if re.search(value, test[key]):
+                            value_found = True
+                            break
+                if not value_found:
+                    return False
+            return True
+
+        # Ensure useful report by default
+        if not show_manifests and not show_tests and not show_summary:
+            show_manifests = True
+            show_summary = True
+
+        by_component = {}
+        if components:
+            components = components.split(',')
+        if filter_keys:
+            filter_keys = filter_keys.split(',')
+        if filter_values:
+            filter_values = filter_values.split(',')
+        else:
+            filter_values = []
+
+        print("Finding tests...")
+        resolver = self._spawn(TestResolver)
+        tests = list(resolver.resolve_tests(paths=paths, flavor=flavor,
+                                            subsuite=subsuite))
+
+        manifest_paths = set()
+        for t in tests:
+            manifest_paths.add(t['manifest'])
+        manifest_count = len(manifest_paths)
+        print("Resolver found {} tests, {} manifests".format(len(tests), manifest_count))
+
+        if show_manifests:
+            by_component['manifests'] = {}
+            manifest_paths = list(manifest_paths)
+            manifest_paths.sort()
+            for manifest_path in manifest_paths:
+                relpath = mozpath.relpath(manifest_path, self.topsrcdir)
+                print("  {}".format(relpath))
+                if mozpath.commonprefix((manifest_path, self.topsrcdir)) != self.topsrcdir:
+                    continue
+                reader = self.mozbuild_reader(config_mode='empty')
+                manifest_info = None
+                for info_path, info in reader.files_info([manifest_path]).items():
+                    bug_component = info.get('BUG_COMPONENT')
+                    key = "{}::{}".format(bug_component.product, bug_component.component)
+                    if (info_path == relpath) and ((not components) or (key in components)):
+                        manifest_info = {
+                            'manifest': relpath,
+                            'tests': 0,
+                            'skipped': 0
+                        }
+                        rkey = key if show_components else 'all'
+                        if rkey in by_component['manifests']:
+                            by_component['manifests'][rkey].append(manifest_info)
+                        else:
+                            by_component['manifests'][rkey] = [manifest_info]
+                        break
+                if manifest_info:
+                    for t in tests:
+                        if t['manifest'] == manifest_path:
+                            manifest_info['tests'] += 1
+                            if t.get('skip-if'):
+                                manifest_info['skipped'] += 1
+            for key in by_component['manifests']:
+                by_component['manifests'][key].sort()
+
+        if show_tests:
+            by_component['tests'] = {}
+
+        if show_tests or show_summary:
+            test_count = 0
+            failed_count = 0
+            skipped_count = 0
+            component_set = set()
+            for t in tests:
+                reader = self.mozbuild_reader(config_mode='empty')
+                if not matches_filters(t):
+                    continue
+                test_count += 1
+                relpath = t.get('srcdir_relpath')
+                for info_path, info in reader.files_info([relpath]).items():
+                    bug_component = info.get('BUG_COMPONENT')
+                    key = "{}::{}".format(bug_component.product, bug_component.component)
+                    if (info_path == relpath) and ((not components) or (key in components)):
+                        component_set.add(key)
+                        test_info = {'test': relpath}
+                        for test_key in ['skip-if', 'fail-if']:
+                            value = t.get(test_key)
+                            if value:
+                                test_info[test_key] = value
+                        if t.get('fail-if'):
+                            failed_count += 1
+                        if t.get('skip-if'):
+                            skipped_count += 1
+                        if show_tests:
+                            rkey = key if show_components else 'all'
+                            if rkey in by_component['tests']:
+                                by_component['tests'][rkey].append(test_info)
+                            else:
+                                by_component['tests'][rkey] = [test_info]
+                        break
+            if show_tests:
+                for key in by_component['tests']:
+                    by_component['tests'][key].sort()
+
+        if show_summary:
+            by_component['summary'] = {}
+            by_component['summary']['components'] = len(component_set)
+            by_component['summary']['manifests'] = manifest_count
+            by_component['summary']['tests'] = test_count
+            by_component['summary']['failed tests'] = failed_count
+            by_component['summary']['skipped tests'] = skipped_count
+
+        json_report = json.dumps(by_component, indent=2, sort_keys=True)
+        if output_file:
+            output_file = os.path.abspath(output_file)
+            output_dir = os.path.dirname(output_file)
+            if not os.path.isdir(output_dir):
+                os.makedirs(output_dir)
+
+            with open(output_file, 'w') as f:
+                f.write(json_report)
+        else:
+            print(json_report)
+
 
 @CommandProvider
 class RustTests(MachCommandBase):
@@ -1156,3 +1362,42 @@ class RustTests(MachCommandBase):
                                                     what=['pre-export',
                                                           'export',
                                                           'recurse_rusttests'])
+
+
+@CommandProvider
+class TestFluentMigration(MachCommandBase):
+    @Command('fluent-migration-test', category='testing',
+             description="Test Fluent migration recipes.")
+    @CommandArgument('test_paths', nargs='*', metavar='N',
+                     help="Recipe paths to test.")
+    def run_migration_tests(self, test_paths=None, **kwargs):
+        if not test_paths:
+            test_paths = []
+        self._activate_virtualenv()
+        from test_fluent_migrations import fmt
+        rv = 0
+        with_context = []
+        for to_test in test_paths:
+            try:
+                context = fmt.inspect_migration(to_test)
+                for issue in context['issues']:
+                    self.log(logging.ERROR, 'fluent-migration-test', {
+                        'error': issue['msg'],
+                        'file': to_test,
+                    }, 'ERROR in {file}: {error}')
+                if context['issues']:
+                    continue
+                with_context.append({
+                    'to_test': to_test,
+                    'references': context['references'],
+                })
+            except Exception as e:
+                self.log(logging.ERROR, 'fluent-migration-test', {
+                    'error': str(e),
+                    'file': to_test
+                }, 'ERROR in {file}: {error}')
+                rv |= 1
+        obj_dir = fmt.prepare_object_dir(self)
+        for context in with_context:
+            rv |= fmt.test_migration(self, obj_dir, **context)
+        return rv

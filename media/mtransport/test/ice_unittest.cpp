@@ -537,7 +537,7 @@ class IceTestPeer : public sigslot::has_slots<> {
 
     test_utils_->sts_target()->Dispatch(
         WrapRunnableRet(&res, ice_ctx_, &NrIceCtx::StartGathering,
-                        default_route_only, false),
+                        default_route_only, false, false),
         NS_DISPATCH_SYNC);
 
     ASSERT_TRUE(NS_SUCCEEDED(res));
@@ -757,7 +757,7 @@ class IceTestPeer : public sigslot::has_slots<> {
       ice_ctx_->SetControlling(offerer_ ? NrIceCtx::ICE_CONTROLLING
                                         : NrIceCtx::ICE_CONTROLLED);
       // Now start checks
-      res = ice_ctx_->StartChecks(offerer_);
+      res = ice_ctx_->StartChecks();
       ASSERT_TRUE(NS_SUCCEEDED(res));
     }
   }
@@ -952,7 +952,7 @@ class IceTestPeer : public sigslot::has_slots<> {
         NS_DISPATCH_SYNC);
     // Now start checks
     test_utils_->sts_target()->Dispatch(
-        WrapRunnableRet(&res, ice_ctx_, &NrIceCtx::StartChecks, offerer_),
+        WrapRunnableRet(&res, ice_ctx_, &NrIceCtx::StartChecks),
         NS_DISPATCH_SYNC);
     ASSERT_TRUE(NS_SUCCEEDED(res));
   }
@@ -984,7 +984,9 @@ class IceTestPeer : public sigslot::has_slots<> {
 
   void CandidateInitialized(NrIceMediaStream* stream,
                             const std::string& raw_candidate,
-                            const std::string& ufrag) {
+                            const std::string& ufrag,
+                            const std::string& mdns_addr,
+                            const std::string& actual_addr) {
     std::string candidate(FilterCandidate(raw_candidate));
     if (candidate.empty()) {
       return;

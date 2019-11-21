@@ -2,8 +2,12 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+## These messages are used as headings in the recommendation doorhanger
+
 cfr-doorhanger-extension-heading = Recommended Extension
+cfr-doorhanger-feature-heading = Recommended Feature
 cfr-doorhanger-pintab-heading = Try This: Pin Tab
+##
 
 cfr-doorhanger-extension-sumo-link =
   .tooltiptext = Why am I seeing this
@@ -74,6 +78,12 @@ cfr-doorhanger-bookmark-fxa-close-btn-tooltip =
   .aria-label = Close button
   .title = Close
 
+## Protections panel
+
+cfr-protections-panel-header = Browse without being followed
+cfr-protections-panel-body = Keep your data to yourself. { -brand-short-name } protects you from many of the most common trackers that follow what you do online.
+cfr-protections-panel-link-text = Learn more
+
 ## What's New toolbar button and panel
 
 cfr-whatsnew-button =
@@ -81,3 +91,68 @@ cfr-whatsnew-button =
   .tooltiptext = What’s New
 
 cfr-whatsnew-panel-header = What’s New
+
+cfr-whatsnew-release-notes-link-text = Read the release notes
+
+cfr-whatsnew-fx70-title = { -brand-short-name } now fights harder for your privacy
+cfr-whatsnew-fx70-body =
+   The latest update enhances the Tracking Protection feature and makes it
+   easier than ever to create secure passwords for every site.
+
+cfr-whatsnew-tracking-protect-title = Protect yourself from trackers
+cfr-whatsnew-tracking-protect-body =
+   { -brand-short-name } blocks many common social and cross-site trackers that
+   follow what you do online.
+cfr-whatsnew-tracking-protect-link-text = View Your Report
+
+# This string is displayed before a large numeral that indicates the total
+# number of tracking elements blocked. Don’t add $blockedCount to your
+# localization, because it would result in the number showing twice.
+cfr-whatsnew-tracking-blocked-title =
+  { $blockedCount ->
+    [one] Tracker blocked
+   *[other] Trackers blocked
+  }
+cfr-whatsnew-tracking-blocked-subtitle =
+   Since { DATETIME($earliestDate, month: "long", year: "numeric") }
+cfr-whatsnew-tracking-blocked-link-text = View Report
+
+cfr-whatsnew-lockwise-backup-title = Back up your passwords
+cfr-whatsnew-lockwise-backup-body =
+   Now generate secure passwords you can access anywhere you sign in.
+cfr-whatsnew-lockwise-backup-link-text = Turn on backups
+
+cfr-whatsnew-lockwise-take-title = Take your passwords with you
+cfr-whatsnew-lockwise-take-body =
+   The { -lockwise-brand-short-name } mobile app lets you securely access your
+   backed up passwords from anywhere.
+cfr-whatsnew-lockwise-take-link-text = Get the app
+
+## Bookmark Sync
+
+cfr-doorhanger-sync-bookmarks-header = Get this bookmark on your phone
+cfr-doorhanger-sync-bookmarks-body = Take your bookmarks, passwords, history and more everywhere you’re signed into { -brand-product-name }.
+cfr-doorhanger-sync-bookmarks-ok-button = Turn on { -sync-brand-short-name }
+  .accesskey = T
+
+## Login Sync
+
+cfr-doorhanger-sync-logins-header = Never Lose a Password Again
+cfr-doorhanger-sync-logins-body = Securely store and sync your passwords to all your devices.
+cfr-doorhanger-sync-logins-ok-button = Turn on { -sync-brand-short-name }
+  .accesskey = T
+
+## Send Tab
+
+cfr-doorhanger-send-tab-header = Read this on the go
+cfr-doorhanger-send-tab-recipe-header = Take this recipe to the kitchen
+cfr-doorhanger-send-tab-body = Send Tab lets you easily share this link to your phone or anywhere you’re signed in to { -brand-product-name }.
+cfr-doorhanger-send-tab-ok-button = Try Send Tab
+  .accesskey = T
+
+## Firefox Send
+
+cfr-doorhanger-firefox-send-header = Share this PDF securely
+cfr-doorhanger-firefox-send-body = Keep your sensitive documents safe from prying eyes with end-to-end encryption and a link that disappears when you’re done.
+cfr-doorhanger-firefox-send-ok-button = Try { -send-brand-name }
+  .accesskey = T

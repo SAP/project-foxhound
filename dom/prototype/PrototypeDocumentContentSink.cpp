@@ -410,7 +410,9 @@ nsresult PrototypeDocumentContentSink::InsertXMLStylesheetPI(
 }
 
 void PrototypeDocumentContentSink::CloseElement(Element* aElement) {
-  if (aElement->IsXULElement(nsGkAtoms::linkset)) {
+  if (nsIContent::RequiresDoneAddingChildren(
+          aElement->NodeInfo()->NamespaceID(),
+          aElement->NodeInfo()->NameAtom())) {
     aElement->DoneAddingChildren(false);
   }
 }
@@ -511,6 +513,12 @@ nsresult PrototypeDocumentContentSink::ResumeWalkInternal() {
           // ...and append it to the content model.
           rv = nodeToPushTo->AppendChildTo(child, false);
           if (NS_FAILED(rv)) return rv;
+
+          if (nsIContent::RequiresDoneCreatingElement(
+                  protoele->mNodeInfo->NamespaceID(),
+                  protoele->mNodeInfo->NameAtom())) {
+            child->DoneCreatingElement();
+          }
 
           // If it has children, push the element onto the context
           // stack and begin to process them.
@@ -738,7 +746,7 @@ nsresult PrototypeDocumentContentSink::LoadScript(
   mCurrentScriptProto = aScriptProto;
 
   if (isChromeDoc && aScriptProto->mSrcLoading) {
-    // Another XULDocument load has started, which is still in progress.
+    // Another document load has started, which is still in progress.
     // Remember to ResumeWalk this document when the load completes.
     mNextSrcLoadWaiter = aScriptProto->mSrcLoadWaiters;
     aScriptProto->mSrcLoadWaiters = this;
@@ -807,7 +815,7 @@ PrototypeDocumentContentSink::OnStreamComplete(nsIStreamLoader* aLoader,
   }
 
   if (NS_SUCCEEDED(aStatus)) {
-    // If the including XUL document is a FastLoad document, and we're
+    // If the including document is a FastLoad document, and we're
     // compiling an out-of-line script (one with src=...), then we must
     // be writing a new FastLoad file.  If we were reading this script
     // from the FastLoad file, XULContentSinkImpl::OpenScript (over in
@@ -820,7 +828,7 @@ PrototypeDocumentContentSink::OnStreamComplete(nsIStreamLoader* aLoader,
 
     MOZ_ASSERT(!mOffThreadCompiling && (mOffThreadCompileStringLength == 0 &&
                                         !mOffThreadCompileStringBuf),
-               "XULDocument can't load multiple scripts at once");
+               "PrototypeDocument can't load multiple scripts at once");
 
     rv = ScriptLoader::ConvertToUTF16(channel, string, stringLen, EmptyString(),
                                       mDocument, mOffThreadCompileStringBuf,
@@ -902,7 +910,7 @@ PrototypeDocumentContentSink::OnScriptCompileComplete(JSScript* aScript,
     // containing a companion nsXULPrototypeScript node that owns a
     // GC root protecting the script object.  Otherwise, the script
     // cache entry will dangle once the uncached prototype document
-    // is released when its owning XULDocument is unloaded.
+    // is released when its owning document is unloaded.
     //
     // (See http://bugzilla.mozilla.org/show_bug.cgi?id=98207 for
     // the true crime story.)
@@ -919,7 +927,7 @@ PrototypeDocumentContentSink::OnScriptCompileComplete(JSScript* aScript,
 
   rv = ResumeWalk();
 
-  // Load a pointer to the prototype-script's list of XULDocuments who
+  // Load a pointer to the prototype-script's list of documents who
   // raced to load the same script
   PrototypeDocumentContentSink** docp = &scriptProto->mSrcLoadWaiters;
 
@@ -1054,6 +1062,10 @@ nsresult PrototypeDocumentContentSink::CreateElementFromPrototype(
     }
   }
 
+  if (result->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
+    mDocument->mL10nProtoElements.Put(result, aPrototype);
+    result->SetElementCreatedFromPrototypeAndHasUnmodifiedL10n();
+  }
   result.forget(aResult);
 
   return NS_OK;
@@ -1063,7 +1075,7 @@ nsresult PrototypeDocumentContentSink::AddAttributes(
     nsXULPrototypeElement* aPrototype, Element* aElement) {
   nsresult rv;
 
-  for (uint32_t i = 0; i < aPrototype->mNumAttributes; ++i) {
+  for (size_t i = 0; i < aPrototype->mAttributes.Length(); ++i) {
     nsXULPrototypeAttribute* protoattr = &(aPrototype->mAttributes[i]);
     nsAutoString valueStr;
     protoattr->mValue.ToString(valueStr);

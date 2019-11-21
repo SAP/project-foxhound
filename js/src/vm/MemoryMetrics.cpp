@@ -12,6 +12,7 @@
 #include "gc/PublicIterators.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
+#include "util/Text.h"
 #include "vm/ArrayObject.h"
 #include "vm/BigIntType.h"
 #include "vm/HelperThreads.h"
@@ -118,8 +119,6 @@ bool InefficientNonFlatteningStringHashPolicy::match(const JSString* const& k,
 
 namespace JS {
 
-NotableStringInfo::NotableStringInfo() : StringInfo(), buffer(0), length(0) {}
-
 template <typename CharT>
 static void StoreStringChars(char* buffer, size_t bufferSize, JSString* str) {
   const CharT* chars;
@@ -145,82 +144,33 @@ static void StoreStringChars(char* buffer, size_t bufferSize, JSString* str) {
 NotableStringInfo::NotableStringInfo(JSString* str, const StringInfo& info)
     : StringInfo(info), length(str->length()) {
   size_t bufferSize = Min(str->length() + 1, size_t(MAX_SAVED_CHARS));
-  buffer = js_pod_malloc<char>(bufferSize);
+  buffer.reset(js_pod_malloc<char>(bufferSize));
   if (!buffer) {
     MOZ_CRASH("oom");
   }
 
   if (str->hasLatin1Chars()) {
-    StoreStringChars<Latin1Char>(buffer, bufferSize, str);
+    StoreStringChars<Latin1Char>(buffer.get(), bufferSize, str);
   } else {
-    StoreStringChars<char16_t>(buffer, bufferSize, str);
+    StoreStringChars<char16_t>(buffer.get(), bufferSize, str);
   }
 }
-
-NotableStringInfo::NotableStringInfo(NotableStringInfo&& info)
-    : StringInfo(std::move(info)), length(info.length) {
-  buffer = info.buffer;
-  info.buffer = nullptr;
-}
-
-NotableStringInfo& NotableStringInfo::operator=(NotableStringInfo&& info) {
-  MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
-  this->~NotableStringInfo();
-  new (this) NotableStringInfo(std::move(info));
-  return *this;
-}
-
-NotableClassInfo::NotableClassInfo() : ClassInfo(), className_(nullptr) {}
 
 NotableClassInfo::NotableClassInfo(const char* className, const ClassInfo& info)
     : ClassInfo(info) {
-  size_t bytes = strlen(className) + 1;
-  className_ = js_pod_malloc<char>(bytes);
+  className_ = DuplicateString(className);
   if (!className_) {
     MOZ_CRASH("oom");
   }
-  PodCopy(className_, className, bytes);
 }
-
-NotableClassInfo::NotableClassInfo(NotableClassInfo&& info)
-    : ClassInfo(std::move(info)) {
-  className_ = info.className_;
-  info.className_ = nullptr;
-}
-
-NotableClassInfo& NotableClassInfo::operator=(NotableClassInfo&& info) {
-  MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
-  this->~NotableClassInfo();
-  new (this) NotableClassInfo(std::move(info));
-  return *this;
-}
-
-NotableScriptSourceInfo::NotableScriptSourceInfo()
-    : ScriptSourceInfo(), filename_(nullptr) {}
 
 NotableScriptSourceInfo::NotableScriptSourceInfo(const char* filename,
                                                  const ScriptSourceInfo& info)
     : ScriptSourceInfo(info) {
-  size_t bytes = strlen(filename) + 1;
-  filename_ = js_pod_malloc<char>(bytes);
+  filename_ = DuplicateString(filename);
   if (!filename_) {
     MOZ_CRASH("oom");
   }
-  PodCopy(filename_, filename, bytes);
-}
-
-NotableScriptSourceInfo::NotableScriptSourceInfo(NotableScriptSourceInfo&& info)
-    : ScriptSourceInfo(std::move(info)) {
-  filename_ = info.filename_;
-  info.filename_ = nullptr;
-}
-
-NotableScriptSourceInfo& NotableScriptSourceInfo::operator=(
-    NotableScriptSourceInfo&& info) {
-  MOZ_ASSERT(this != &info, "self-move assignment is prohibited");
-  this->~NotableScriptSourceInfo();
-  new (this) NotableScriptSourceInfo(std::move(info));
-  return *this;
 }
 
 }  // namespace JS
@@ -233,7 +183,6 @@ struct StatsClosure {
   ObjectPrivateVisitor* opv;
   SourceSet seenSources;
   wasm::Metadata::SeenSet wasmSeenMetadata;
-  wasm::ShareableBytes::SeenSet wasmSeenBytes;
   wasm::Code::SeenSet wasmSeenCode;
   wasm::Table::SeenSet wasmSeenTables;
   bool anonymize;
@@ -266,9 +215,7 @@ static void StatsZoneCallback(JSRuntime* rt, void* data, Zone* zone) {
   // CollectRuntimeStats reserves enough space.
   MOZ_ALWAYS_TRUE(rtStats->zoneStatsVector.growBy(1));
   ZoneStats& zStats = rtStats->zoneStatsVector.back();
-  if (!zStats.initStrings()) {
-    MOZ_CRASH("oom");
-  }
+  zStats.initStrings();
   rtStats->initExtraZoneStats(zone, &zStats);
   rtStats->currZoneStats = &zStats;
 
@@ -288,9 +235,7 @@ static void StatsRealmCallback(JSContext* cx, void* data,
   // CollectRuntimeStats reserves enough space.
   MOZ_ALWAYS_TRUE(rtStats->realmStatsVector.growBy(1));
   RealmStats& realmStats = rtStats->realmStatsVector.back();
-  if (!realmStats.initClasses()) {
-    MOZ_CRASH("oom");
-  }
+  realmStats.initClasses();
   rtStats->initExtraRealmStats(realm, &realmStats);
 
   realm->setRealmStats(&realmStats);
@@ -409,7 +354,7 @@ static void StatsCellCallback(JSRuntime* rt, void* data, void* thing,
           CollectScriptSourceStats<granularity>(closure, ss);
         }
         module.addSizeOfMisc(rtStats->mallocSizeOf_, &closure->wasmSeenMetadata,
-                             &closure->wasmSeenBytes, &closure->wasmSeenCode,
+                             &closure->wasmSeenCode,
                              &info.objectsNonHeapCodeWasm,
                              &info.objectsMallocHeapMisc);
       } else if (obj->is<WasmInstanceObject>()) {
@@ -419,14 +364,13 @@ static void StatsCellCallback(JSRuntime* rt, void* data, void* thing,
         }
         instance.addSizeOfMisc(
             rtStats->mallocSizeOf_, &closure->wasmSeenMetadata,
-            &closure->wasmSeenBytes, &closure->wasmSeenCode,
-            &closure->wasmSeenTables, &info.objectsNonHeapCodeWasm,
-            &info.objectsMallocHeapMisc);
+            &closure->wasmSeenCode, &closure->wasmSeenTables,
+            &info.objectsNonHeapCodeWasm, &info.objectsMallocHeapMisc);
       }
 
       realmStats.classInfo.add(info);
 
-      const Class* clasp = obj->getClass();
+      const JSClass* clasp = obj->getClass();
       const char* className = clasp->name;
       AddClassInfo(granularity, realmStats, className, info);
 
@@ -573,26 +517,14 @@ static void StatsCellCallback(JSRuntime* rt, void* data, void* thing,
   zStats->unusedGCThings.addToKind(traceKind, -thingSize);
 }
 
-bool ZoneStats::initStrings() {
+void ZoneStats::initStrings() {
   isTotals = false;
-  allStrings = js_new<StringsHashMap>();
-  if (!allStrings) {
-    js_delete(allStrings);
-    allStrings = nullptr;
-    return false;
-  }
-  return true;
+  allStrings.emplace();
 }
 
-bool RealmStats::initClasses() {
+void RealmStats::initClasses() {
   isTotals = false;
-  allClasses = js_new<ClassesHashMap>();
-  if (!allClasses) {
-    js_delete(allClasses);
-    allClasses = nullptr;
-    return false;
-  }
-  return true;
+  allClasses.emplace();
 }
 
 static bool FindNotableStrings(ZoneStats& zStats) {
@@ -610,20 +542,17 @@ static bool FindNotableStrings(ZoneStats& zStats) {
       continue;
     }
 
-    if (!zStats.notableStrings.growBy(1)) {
+    if (!zStats.notableStrings.emplaceBack(str, info)) {
       return false;
     }
-
-    zStats.notableStrings.back() = NotableStringInfo(str, info);
 
     // We're moving this string from a non-notable to a notable bucket, so
     // subtract it out of the non-notable tallies.
     zStats.stringInfo.subtract(info);
   }
-  // Delete |allStrings| now, rather than waiting for zStats's destruction,
-  // to reduce peak memory consumption during reporting.
-  js_delete(zStats.allStrings);
-  zStats.allStrings = nullptr;
+  // Release |allStrings| now, rather than waiting for zStats's destruction, to
+  // reduce peak memory consumption during reporting.
+  zStats.allStrings.reset();
   return true;
 }
 
@@ -644,20 +573,17 @@ static bool FindNotableClasses(RealmStats& realmStats) {
       continue;
     }
 
-    if (!realmStats.notableClasses.growBy(1)) {
+    if (!realmStats.notableClasses.emplaceBack(className, info)) {
       return false;
     }
-
-    realmStats.notableClasses.back() = NotableClassInfo(className, info);
 
     // We're moving this class from a non-notable to a notable bucket, so
     // subtract it out of the non-notable tallies.
     realmStats.classInfo.subtract(info);
   }
-  // Delete |allClasses| now, rather than waiting for zStats's destruction,
-  // to reduce peak memory consumption during reporting.
-  js_delete(realmStats.allClasses);
-  realmStats.allClasses = nullptr;
+  // Release |allClasses| now, rather than waiting for zStats's destruction, to
+  // reduce peak memory consumption during reporting.
+  realmStats.allClasses.reset();
   return true;
 }
 
@@ -677,21 +603,17 @@ static bool FindNotableScriptSources(JS::RuntimeSizes& runtime) {
       continue;
     }
 
-    if (!runtime.notableScriptSources.growBy(1)) {
+    if (!runtime.notableScriptSources.emplaceBack(filename, info)) {
       return false;
     }
-
-    runtime.notableScriptSources.back() =
-        NotableScriptSourceInfo(filename, info);
 
     // We're moving this script source from a non-notable to a notable
     // bucket, so subtract its sizes from the non-notable tallies.
     runtime.scriptSourceInfo.subtract(info);
   }
-  // Delete |allScriptSources| now, rather than waiting for zStats's
+  // Release |allScriptSources| now, rather than waiting for zStats's
   // destruction, to reduce peak memory consumption during reporting.
-  js_delete(runtime.allScriptSources);
-  runtime.allScriptSources = nullptr;
+  runtime.allScriptSources.reset();
   return true;
 }
 

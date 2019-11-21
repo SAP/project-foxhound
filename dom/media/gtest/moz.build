@@ -14,6 +14,7 @@ LOCAL_INCLUDES += [
 ]
 
 UNIFIED_SOURCES += [
+    'AudioGenerator.cpp',
     'MockMediaResource.cpp',
     'TestAudioBuffers.cpp',
     'TestAudioCallbackDriver.cpp',
@@ -22,14 +23,17 @@ UNIFIED_SOURCES += [
     'TestAudioPacketizer.cpp',
     'TestAudioSegment.cpp',
     'TestAudioTrackEncoder.cpp',
+    'TestBenchmarkStorage.cpp',
     'TestBitWriter.cpp',
     'TestBlankVideoDataCreator.cpp',
     'TestBufferReader.cpp',
     'TestDataMutex.cpp',
+    'TestDecoderBenchmark.cpp',
     'TestDriftCompensation.cpp',
     'TestGMPUtils.cpp',
     'TestGroupId.cpp',
     'TestIntervalSet.cpp',
+    'TestKeyValueStorage.cpp',
     'TestMediaDataDecoder.cpp',
     'TestMediaDataEncoder.cpp',
     'TestMediaEventSource.cpp',
@@ -37,6 +41,7 @@ UNIFIED_SOURCES += [
     'TestMediaSpan.cpp',
     'TestMP3Demuxer.cpp',
     'TestMP4Demuxer.cpp',
+    'TestMuxer.cpp',
     'TestOpusParser.cpp',
     'TestRust.cpp',
     'TestTimeUnit.cpp',

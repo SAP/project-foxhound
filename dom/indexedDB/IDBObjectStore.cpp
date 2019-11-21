@@ -689,26 +689,16 @@ class ValueDeserializationHelper {
     MOZ_ASSERT(aFile.mType == StructuredCloneFile::eWasmBytecode);
     MOZ_ASSERT(!aFile.mBlob);
 
-    // If we don't have a WasmModule, we are probably using it for an index
-    // creation, but Wasm module can't be used in index creation, so just make a
-    // dummy object.
-    if (!aFile.mWasmModule) {
-      JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
+    // Just create a plain object here, support for de-serialization of
+    // WebAssembly.Modules has been removed in bug 1561876. Full removal is
+    // tracked in bug 1487479.
 
-      if (NS_WARN_IF(!obj)) {
-        return false;
-      }
-
-      aResult.set(obj);
-      return true;
-    }
-
-    JS::Rooted<JSObject*> moduleObj(aCx, aFile.mWasmModule->createObject(aCx));
-    if (NS_WARN_IF(!moduleObj)) {
+    JS::Rooted<JSObject*> obj(aCx, JS_NewPlainObject(aCx));
+    if (NS_WARN_IF(!obj)) {
       return false;
     }
 
-    aResult.set(moduleObj);
+    aResult.set(obj);
     return true;
   }
 };
@@ -804,7 +794,7 @@ JSObject* CopyingStructuredCloneReadCallback(JSContext* aCx,
   MOZ_ASSERT(aTag != SCTAG_DOM_FILE_WITHOUT_LASTMODIFIEDDATE);
 
   if (aTag == SCTAG_DOM_BLOB || aTag == SCTAG_DOM_FILE ||
-      aTag == SCTAG_DOM_MUTABLEFILE || aTag == SCTAG_DOM_WASM) {
+      aTag == SCTAG_DOM_MUTABLEFILE) {
     auto* cloneInfo =
         static_cast<IDBObjectStore::StructuredCloneInfo*>(aClosure);
 
@@ -854,28 +844,14 @@ JSObject* CopyingStructuredCloneReadCallback(JSContext* aCx,
       return result;
     }
 
-    if (aTag == SCTAG_DOM_MUTABLEFILE) {
-      MOZ_ASSERT(file.mType == StructuredCloneFile::eMutableFile);
+    MOZ_ASSERT(file.mType == StructuredCloneFile::eMutableFile);
 
-      JS::Rooted<JS::Value> wrappedMutableFile(aCx);
-      if (NS_WARN_IF(!ToJSValue(aCx, file.mMutableFile, &wrappedMutableFile))) {
-        return nullptr;
-      }
-
-      result.set(&wrappedMutableFile.toObject());
-
-      return result;
-    }
-
-    MOZ_ASSERT(file.mType == StructuredCloneFile::eWasmBytecode);
-
-    JS::Rooted<JSObject*> wrappedModule(aCx,
-                                        file.mWasmModule->createObject(aCx));
-    if (NS_WARN_IF(!wrappedModule)) {
+    JS::Rooted<JS::Value> wrappedMutableFile(aCx);
+    if (NS_WARN_IF(!ToJSValue(aCx, file.mMutableFile, &wrappedMutableFile))) {
       return nullptr;
     }
 
-    result.set(wrappedModule);
+    result.set(&wrappedMutableFile.toObject());
 
     return result;
   }
@@ -929,6 +905,9 @@ void IDBObjectStore::AppendIndexUpdateInfo(
     nsTArray<IndexUpdateInfo>& aUpdateInfoArray, ErrorResult& aRv) {
   const bool localeAware = !aLocale.IsEmpty();
 
+  // This precondition holds when `aVal` is the result of a structured clone.
+  js::AutoAssertNoContentJS noContentJS(aCx);
+
   if (!aMultiEntry) {
     Key key;
     aRv = aKeyPath.ExtractKey(aCx, aVal, key);
@@ -966,7 +945,7 @@ void IDBObjectStore::AppendIndexUpdateInfo(
   }
 
   bool isArray;
-  if (!JS_IsArrayObject(aCx, val, &isArray)) {
+  if (NS_WARN_IF(!JS_IsArrayObject(aCx, val, &isArray))) {
     IDB_REPORT_INTERNAL_ERR();
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     return;
@@ -981,8 +960,27 @@ void IDBObjectStore::AppendIndexUpdateInfo(
     }
 
     for (uint32_t arrayIndex = 0; arrayIndex < arrayLength; arrayIndex++) {
-      JS::Rooted<JS::Value> arrayItem(aCx);
-      if (NS_WARN_IF(!JS_GetElement(aCx, array, arrayIndex, &arrayItem))) {
+      JS::RootedId indexId(aCx);
+      if (NS_WARN_IF(!JS_IndexToId(aCx, arrayIndex, &indexId))) {
+        IDB_REPORT_INTERNAL_ERR();
+        aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+        return;
+      }
+
+      bool hasOwnProperty;
+      if (NS_WARN_IF(
+              !JS_HasOwnPropertyById(aCx, array, indexId, &hasOwnProperty))) {
+        IDB_REPORT_INTERNAL_ERR();
+        aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+        return;
+      }
+
+      if (!hasOwnProperty) {
+        continue;
+      }
+
+      JS::RootedValue arrayItem(aCx);
+      if (NS_WARN_IF(!JS_GetPropertyById(aCx, array, indexId, &arrayItem))) {
         IDB_REPORT_INTERNAL_ERR();
         aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
         return;

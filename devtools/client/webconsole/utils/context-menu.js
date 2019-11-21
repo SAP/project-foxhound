@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -153,7 +151,7 @@ function createContextMenu(
           selectedObjectActor: actor,
         };
 
-        webConsoleUI.jsterm.requestEvaluation(evalString, options).then(res => {
+        webConsoleUI.evaluateJSAsync(evalString, options).then(res => {
           webConsoleUI.jsterm.focus();
           webConsoleUI.hud.setInputValue(res.result);
         });
@@ -191,9 +189,12 @@ function createContextMenu(
       disabled: !actor && !variableText,
       click: () => {
         if (actor) {
-          // The Debugger.Object of the OA will be bound to |_self| during evaluation,
-          webConsoleUI.jsterm
-            .copyObject(`_self`, { selectedObjectActor: actor })
+          // The Debugger.Object of the OA will be bound to |_self| during evaluation.
+          // See server/actors/webconsole/eval-with-debugger.js `evalWithDebugger`.
+          webConsoleUI
+            .evaluateJSAsync("copy(_self)", {
+              selectedObjectActor: actor,
+            })
             .then(res => {
               clipboardHelper.copyString(res.helperResult.value);
             });
@@ -285,8 +286,8 @@ function createContextMenu(
         label: l10n.getStr("webconsole.menu.timeWarp.label"),
         disabled: false,
         click: () => {
-          const threadClient = toolbox.threadClient;
-          threadClient.timeWarp(executionPoint);
+          const threadFront = toolbox.threadFront;
+          threadFront.timeWarp(executionPoint);
         },
       })
     );

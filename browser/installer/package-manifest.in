@@ -98,7 +98,7 @@
 @BINPATH@/ucrtbase.dll
 #endif
 #endif
-#ifdef MOZ_GTK3
+#ifdef MOZ_GTK
 @BINPATH@/@DLL_PREFIX@mozgtk@DLL_SUFFIX@
 @BINPATH@/gtk2/@DLL_PREFIX@mozgtk@DLL_SUFFIX@
 #ifdef MOZ_WAYLAND
@@ -198,7 +198,6 @@
 #ifdef ENABLE_REMOTE_AGENT
 @RESPATH@/chrome/remote@JAREXT@
 @RESPATH@/chrome/remote.manifest
-@RESPATH@/defaults/pref/remote.js
 #endif
 
 ; Marionette remote control protocol
@@ -207,7 +206,6 @@
 @RESPATH@/chrome/marionette.manifest
 @RESPATH@/components/marionette.manifest
 @RESPATH@/components/marionette.js
-@RESPATH@/defaults/pref/marionette.js
 #endif
 
 #if defined(ENABLE_TESTS) && defined(MOZ_DEBUG)
@@ -263,17 +261,14 @@
 ; [Webide Files]
 @RESPATH@/browser/chrome/webide@JAREXT@
 @RESPATH@/browser/chrome/webide.manifest
-@RESPATH@/browser/@PREF_DIR@/webide.js
 
 ; [DevTools Startup Files]
 @RESPATH@/browser/chrome/devtools-startup@JAREXT@
 @RESPATH@/browser/chrome/devtools-startup.manifest
-@RESPATH@/browser/@PREF_DIR@/devtools-startup.js
 
 ; DevTools
 @RESPATH@/browser/chrome/devtools@JAREXT@
 @RESPATH@/browser/chrome/devtools.manifest
-@RESPATH@/browser/@PREF_DIR@/devtools-client.js
 @RESPATH@/browser/@PREF_DIR@/debugger.js
 
 ; shell icons
@@ -303,9 +298,6 @@
 ; Technically this is an app pref file, but we are keeping it in the original
 ; gre location for now.
 @RESPATH@/defaults/pref/channel-prefs.js
-
-; Services (gre) prefs
-@RESPATH@/defaults/pref/services-sync.js
 
 ; [Layout Engine Resources]
 ; Style Sheets, Graphics and other Resources used by the layout engine.
@@ -338,6 +330,7 @@
 @RESPATH@/res/fonts/*
 @RESPATH@/res/dtd/*
 @RESPATH@/res/language.properties
+@RESPATH@/res/locale/layout/HtmlForm.properties
 #ifdef XP_MACOSX
 @RESPATH@/res/MainMenu.nib/
 #endif

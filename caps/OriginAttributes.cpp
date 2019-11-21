@@ -17,26 +17,6 @@ namespace mozilla {
 
 using dom::URLParams;
 
-bool OriginAttributes::sFirstPartyIsolation = false;
-bool OriginAttributes::sRestrictedOpenerAccess = false;
-bool OriginAttributes::sBlockPostMessageForFPI = false;
-
-void OriginAttributes::InitPrefs() {
-  MOZ_ASSERT(NS_IsMainThread());
-  static bool sInited = false;
-  if (!sInited) {
-    sInited = true;
-    Preferences::AddBoolVarCache(&sFirstPartyIsolation,
-                                 "privacy.firstparty.isolate");
-    Preferences::AddBoolVarCache(
-        &sRestrictedOpenerAccess,
-        "privacy.firstparty.isolate.restrict_opener_access");
-    Preferences::AddBoolVarCache(
-        &sBlockPostMessageForFPI,
-        "privacy.firstparty.isolate.block_post_message");
-  }
-}
-
 void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
                                            nsIURI* aURI, bool aForced) {
   bool isFirstPartyEnabled = IsFirstPartyEnabled();
@@ -158,6 +138,15 @@ void OriginAttributes::CreateSuffix(nsACString& aStr) const {
                sanitizedFirstPartyDomain);
   }
 
+  if (!mGeckoViewSessionContextId.IsEmpty()) {
+    nsAutoString sanitizedGeckoViewUserContextId(mGeckoViewSessionContextId);
+    sanitizedGeckoViewUserContextId.ReplaceChar(
+        dom::quota::QuotaManager::kReplaceChars, '+');
+
+    params.Set(NS_LITERAL_STRING("geckoViewUserContextId"),
+               sanitizedGeckoViewUserContextId);
+  }
+
   aStr.Truncate();
 
   params.Serialize(value);
@@ -240,6 +229,13 @@ class MOZ_STACK_CLASS PopulateFromSuffixIterator final
     if (aName.EqualsLiteral("firstPartyDomain")) {
       MOZ_RELEASE_ASSERT(mOriginAttributes->mFirstPartyDomain.IsEmpty());
       mOriginAttributes->mFirstPartyDomain.Assign(aValue);
+      return true;
+    }
+
+    if (aName.EqualsLiteral("geckoViewUserContextId")) {
+      MOZ_RELEASE_ASSERT(
+          mOriginAttributes->mGeckoViewSessionContextId.IsEmpty());
+      mOriginAttributes->mGeckoViewSessionContextId.Assign(aValue);
       return true;
     }
 

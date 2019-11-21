@@ -92,9 +92,11 @@ def gradle_android_intermediates_folder(build_config):
     productFlavor = uncapitalize(''.join(imap(capitalize, build_config.geckoview.variant.productFlavors)))
     buildType = uncapitalize(build_config.geckoview.variant.buildType)
 
-    return "gradle/build/mobile/android/geckoview/intermediates/classes/{}/{}".format(
+    return "gradle/build/mobile/android/geckoview/intermediates/javac/{}{}/compile{}{}JavaWithJavac/classes".format(
             productFlavor,
-            buildType)
+            capitalize(buildType),
+            capitalize(productFlavor),
+            capitalize(buildType))
 
 set_config('GRADLE_ANDROID_GECKOVIEW_APILINT_FOLDER', gradle_android_intermediates_folder)
 
@@ -216,7 +218,7 @@ set_config('GRADLE_ANDROID_TEST_TASKS', gradle_android_test_tasks)
 def gradle_android_lint_tasks(build_config):
     '''Gradle tasks run by |mach android lint|.'''
     return [
-        'app:lint{app.variant.name}'.format(app=build_config.app),
+        'geckoview:lint{app.variant.name}'.format(app=build_config.app),
     ]
 
 set_config('GRADLE_ANDROID_LINT_TASKS', gradle_android_lint_tasks)
@@ -304,6 +306,25 @@ def gradle_android_geckoview_docs_archive_tasks(build_config):
     ]
 
 set_config('GRADLE_ANDROID_GECKOVIEW_DOCS_ARCHIVE_TASKS', gradle_android_geckoview_docs_archive_tasks)
+
+
+@depends(gradle_android_build_config)
+def gradle_android_geckoview_docs_output_files(build_config):
+    '''Output files for GeckoView javadoc.'''
+
+    def uncapitalize(s):
+        if s:
+            return s[0].lower() + s[1:]
+        else:
+            return s
+
+    variant = uncapitalize(build_config.geckoview.variant.name)
+
+    return [
+        'gradle/build/mobile/android/geckoview/reports/javadoc-results-{}.json'.format(variant),
+    ]
+
+set_config('GRADLE_ANDROID_GECKOVIEW_DOCS_OUTPUT_FILES', gradle_android_geckoview_docs_output_files)
 
 
 @depends(gradle_android_build_config)

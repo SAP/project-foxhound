@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -24,7 +22,7 @@ const {
   MESSAGE_CLOSE,
   MESSAGE_TYPE,
   MESSAGE_UPDATE_PAYLOAD,
-  PAUSED_EXCECUTION_POINT,
+  PAUSED_EXECUTION_POINT,
   PRIVATE_MESSAGES_CLEAR,
 } = require("../constants");
 
@@ -70,7 +68,7 @@ function messagesClearLogpoint(logpointId) {
 
 function setPauseExecutionPoint(executionPoint) {
   return {
-    type: PAUSED_EXCECUTION_POINT,
+    type: PAUSED_EXECUTION_POINT,
     executionPoint,
   };
 }
@@ -118,29 +116,14 @@ function messageGetMatchingElements(id, cssSelectors) {
   };
 }
 
-function messageGetTableData(id, client, dataType) {
-  return ({ dispatch }) => {
-    let fetchObjectActorData;
-    if (["Map", "WeakMap", "Set", "WeakSet"].includes(dataType)) {
-      fetchObjectActorData = cb => client.enumEntries(cb);
-    } else {
-      fetchObjectActorData = cb =>
-        client.enumProperties(
-          {
-            ignoreNonIndexedProperties: dataType === "Array",
-          },
-          cb
-        );
-    }
+function messageGetTableData(id, grip, dataType) {
+  return async ({ dispatch, services }) => {
+    const needEntries = ["Map", "WeakMap", "Set", "WeakSet"].includes(dataType);
+    const results = await (needEntries
+      ? services.fetchObjectEntries(grip)
+      : services.fetchObjectProperties(grip, dataType === "Array"));
 
-    fetchObjectActorData(enumResponse => {
-      const { iterator } = enumResponse;
-      // eslint-disable-next-line mozilla/use-returnValue
-      iterator.slice(0, iterator.count, sliceResponse => {
-        const { ownProperties } = sliceResponse;
-        dispatch(messageUpdatePayload(id, ownProperties));
-      });
-    });
+    dispatch(messageUpdatePayload(id, results));
   };
 }
 

@@ -14,7 +14,7 @@ load 381777-1.svg
 load 383685-1.svg
 load 385096.html
 load 385554-1.html
-load 385554-2.xul
+load chrome://reftest/content/crashtests/dom/svg/crashtests/385554-2.xul
 load 388712-1.svg
 load 395616-1.html
 load 396618-1.html
@@ -95,3 +95,4 @@ load 1531578-1.html
 load test_nested_svg.html
 load 1555795.html
 load 1560179.html
+load 1572904.html

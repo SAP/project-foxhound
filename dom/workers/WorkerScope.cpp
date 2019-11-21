@@ -25,6 +25,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/SharedWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
 #include "mozilla/dom/TimeoutHandler.h"
@@ -716,7 +717,7 @@ namespace {
 
 class ReportFetchListenerWarningRunnable final : public Runnable {
   const nsCString mScope;
-  nsCString mSourceSpec;
+  nsString mSourceSpec;
   uint32_t mLine;
   uint32_t mColumn;
 
@@ -738,8 +739,8 @@ class ReportFetchListenerWarningRunnable final : public Runnable {
 
     ServiceWorkerManager::LocalizeAndReportToAllClients(
         mScope, "ServiceWorkerNoFetchHandler", nsTArray<nsString>{},
-        nsIScriptError::warningFlag, NS_ConvertUTF8toUTF16(mSourceSpec),
-        EmptyString(), mLine, mColumn);
+        nsIScriptError::warningFlag, mSourceSpec, EmptyString(), mLine,
+        mColumn);
 
     return NS_OK;
   }
@@ -856,6 +857,21 @@ already_AddRefed<Promise> ServiceWorkerGlobalScope::SkipWaiting(
   RefPtr<Promise> promise = Promise::Create(this, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
+  }
+
+  if (ServiceWorkerParentInterceptEnabled()) {
+    mWorkerPrivate->SetServiceWorkerSkipWaitingFlag()->Then(
+        GetCurrentThreadSerialEventTarget(), __func__,
+        [promise](bool aOk) {
+          Unused << NS_WARN_IF(!aOk);
+          promise->MaybeResolveWithUndefined();
+        },
+        [promise](nsresult aRv) {
+          MOZ_ASSERT(NS_FAILED(aRv));
+          promise->MaybeResolveWithUndefined();
+        });
+
+    return promise.forget();
   }
 
   RefPtr<PromiseWorkerProxy> promiseProxy =

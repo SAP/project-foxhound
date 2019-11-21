@@ -32,6 +32,11 @@ ext.configureVariantWithGeckoBinaries = { variant ->
 
     def syncLibsFromDistDir = task("syncLibsFromDistDirFor${variant.name.capitalize()}", type: Sync) {
         onlyIf {
+            if (!mozconfig.substs.COMPILE_ENVIRONMENT && !mozconfig.substs.MOZ_ARTIFACT_BUILDS) {
+                // We won't have JNI libraries if we're not compiling and we're not downloading
+                // artifacts.  Such a configuration is used for running lints, generating docs, etc.
+                return true
+            }
             if (source.empty) {
                 throw new StopExecutionException("Required JNI libraries not found in ${distDir}/lib.  Have you built and packaged?")
             }
@@ -84,18 +89,9 @@ ext.configureVariantWithGeckoBinaries = { variant ->
 }
 
 ext.configureLibraryVariantWithJNIWrappers = { variant, module ->
-    // Library variants have two essentially independent transform* tasks:
-    //
-    // - ...WithSyncLibJars... is used by assemble* and bundle*
-    // - ...WithPrepareIntermediateJars... is used by consuming applications.
-    //
-    // It's not really possible to insert something immediately _after_
-    // ...WithPrepareIntermediateJars..., so we make the consuming moz.build
-    // system invoke this target directly, and force the
-    // ...WithPrepareIntermediateJars... dependency.  The real consumer of the
-    // JNI wrappers is the moz.build system, which always builds geckoview to
-    // consume from Fennec, so that dependency likely adds less to the build time.
-    def jarTask = tasks["transformClassesAndResourcesWithPrepareIntermediateJarsFor${variant.name.capitalize()}"]
+    // BundleLibRuntime prepares the library for further processing to be
+    // incorporated in an app. We use this version to create the JNI wrappers.
+    def jarTask = tasks["bundleLibRuntime${variant.name.capitalize()}"]
     def bundleJar = jarTask.outputs.files.find({ it.name == 'classes.jar' })
 
     def annotationProcessorsJarTask = project(':annotations').jar
@@ -112,9 +108,9 @@ ext.configureLibraryVariantWithJNIWrappers = { variant, module ->
             // Configure the classpath at evaluation-time, not at
             // configuration-time: see above comment.
             doFirst {
-                classpath variant.javaCompile.classpath
+                classpath variant.javaCompileProvider.get().classpath
                 // Include android.jar.
-                classpath variant.javaCompile.options.bootClasspath
+                classpath variant.javaCompileProvider.get().options.bootstrapClasspath
             }
     
             main = 'org.mozilla.gecko.annotationProcessors.AnnotationProcessor'
@@ -137,14 +133,14 @@ ext.configureLibraryVariantWithJNIWrappers = { variant, module ->
     }
 
     if (module == 'Generated') {
-        tasks["bundle${variant.name.capitalize()}"].dependsOn wrapperTask
+        tasks["bundle${variant.name.capitalize()}Aar"].dependsOn wrapperTask
     } else {
         tasks["assemble${variant.name.capitalize()}"].dependsOn wrapperTask
     }
 }
 
 ext.configureApplicationVariantWithJNIWrappers = { variant, module ->
-    def jarTask = tasks["bundleAppClasses${variant.name.capitalize()}"]
+    def jarTask = tasks["bundle${variant.name.capitalize()}Classes"]
     def bundleJar = jarTask.outputs.files.find({ it.name == 'classes.jar' })
 
     def annotationProcessorsJarTask = project(':annotations').jar
@@ -161,9 +157,9 @@ ext.configureApplicationVariantWithJNIWrappers = { variant, module ->
             // Configure the classpath at evaluation-time, not at
             // configuration-time: see above comment.
             doFirst {
-                classpath variant.javaCompile.classpath
+                classpath variant.javaCompileProvider.get().classpath
                 // Include android.jar.
-                classpath variant.javaCompile.options.bootClasspath
+                classpath variant.javaCompileProvider.get().options.bootstrapClasspath
             }
         
             main = 'org.mozilla.gecko.annotationProcessors.AnnotationProcessor'

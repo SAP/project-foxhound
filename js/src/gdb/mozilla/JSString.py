@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # Pretty-printers for SpiderMonkey strings.
 
 import gdb
@@ -39,10 +43,10 @@ class JSStringPtr(Common):
 
     def chars(self):
         d = self.value['d']
-        flags = d['flags_']
-        if 'length_' in d.type:
-            length = d['length_']
-        else:
+        flags = self.value['flags_']
+        try:
+            length = self.value['length_']
+        except gdb.error:
             # If we couldn't fetch the length directly, it must be stored
             # within `flags`.
             length = flags >> 32

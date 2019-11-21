@@ -40,6 +40,7 @@
 #include "js/TypeDecls.h"            // jsbytecode
 #include "vm/BigIntType.h"           // BigInt
 #include "vm/BytecodeUtil.h"         // JSOp
+#include "vm/Instrumentation.h"      // InstrumentationKind
 #include "vm/Interpreter.h"          // CheckIsObjectKind, CheckIsCallableKind
 #include "vm/Iteration.h"            // IteratorKind
 #include "vm/JSFunction.h"           // JSFunction, FunctionPrefixKind
@@ -101,7 +102,9 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   mozilla::Maybe<EitherParser> ep_ = {};
   BCEParserHandle* parser = nullptr;
 
-  unsigned firstLine = 0; /* first line, for JSScript::initFromEmitter */
+  // First line and column, for JSScript::initFromEmitter.
+  unsigned firstLine = 0;
+  unsigned firstColumn = 0;
 
   uint32_t maxFixedSlots = 0; /* maximum number of fixed frame slots so far */
 
@@ -132,9 +135,6 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // Script contains JSOP_CALLSITEOBJ.
   bool hasCallSiteObj = false;
 
-  // Script contains singleton initializer JSOP_OBJECT.
-  bool hasSingletons = false;
-
   // Script contains finally block.
   bool hasTryFinally = false;
 
@@ -163,6 +163,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // The end location of a function body that is being emitted.
   mozilla::Maybe<uint32_t> functionBodyEndPos = {};
 
+  // Mask of operation kinds which need instrumentation. This is obtained from
+  // the compile options and copied here for efficiency.
+  uint32_t instrumentationKinds = 0;
+
   /*
    * Note that BytecodeEmitters are magic: they own the arena "top-of-stack"
    * space above their tempMark points. This means that you cannot alloc from
@@ -173,7 +177,7 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // Internal constructor, for delegation use only.
   BytecodeEmitter(
       BytecodeEmitter* parent, SharedContext* sc, JS::Handle<JSScript*> script,
-      JS::Handle<LazyScript*> lazyScript, uint32_t lineNum,
+      JS::Handle<LazyScript*> lazyScript, uint32_t line, uint32_t column,
       EmitterMode emitterMode,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
@@ -192,60 +196,27 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   BytecodeEmitter(
       BytecodeEmitter* parent, BCEParserHandle* parser, SharedContext* sc,
       JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
-      uint32_t lineNum, EmitterMode emitterMode = Normal,
+      uint32_t line, uint32_t column, EmitterMode emitterMode = Normal,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
   BytecodeEmitter(
       BytecodeEmitter* parent, const EitherParser& parser, SharedContext* sc,
       JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
-      uint32_t lineNum, EmitterMode emitterMode = Normal,
+      uint32_t line, uint32_t column, EmitterMode emitterMode = Normal,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid());
 
   template <typename Unit>
   BytecodeEmitter(
       BytecodeEmitter* parent, Parser<FullParseHandler, Unit>* parser,
       SharedContext* sc, JS::Handle<JSScript*> script,
-      JS::Handle<LazyScript*> lazyScript, uint32_t lineNum,
+      JS::Handle<LazyScript*> lazyScript, uint32_t line, uint32_t column,
       EmitterMode emitterMode = Normal,
       FieldInitializers fieldInitializers = FieldInitializers::Invalid())
       : BytecodeEmitter(parent, EitherParser(parser), sc, script, lazyScript,
-                        lineNum, emitterMode, fieldInitializers) {}
-
-  // An alternate constructor that uses a TokenPos for the starting
-  // line and that sets functionBodyEndPos as well.
-  BytecodeEmitter(
-      BytecodeEmitter* parent, BCEParserHandle* parser, SharedContext* sc,
-      JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
-      TokenPos bodyPosition, EmitterMode emitterMode = Normal,
-      FieldInitializers fieldInitializers = FieldInitializers::Invalid())
-      : BytecodeEmitter(parent, parser, sc, script, lazyScript,
-                        parser->errorReporter().lineAt(bodyPosition.begin),
-                        emitterMode, fieldInitializers) {
-    initFromBodyPosition(bodyPosition);
-  }
-
-  BytecodeEmitter(
-      BytecodeEmitter* parent, const EitherParser& parser, SharedContext* sc,
-      JS::Handle<JSScript*> script, JS::Handle<LazyScript*> lazyScript,
-      TokenPos bodyPosition, EmitterMode emitterMode = Normal,
-      FieldInitializers fieldInitializers = FieldInitializers::Invalid())
-      : BytecodeEmitter(parent, parser, sc, script, lazyScript,
-                        parser.errorReporter().lineAt(bodyPosition.begin),
-                        emitterMode, fieldInitializers) {
-    initFromBodyPosition(bodyPosition);
-  }
-
-  template <typename Unit>
-  BytecodeEmitter(
-      BytecodeEmitter* parent, Parser<FullParseHandler, Unit>* parser,
-      SharedContext* sc, JS::Handle<JSScript*> script,
-      JS::Handle<LazyScript*> lazyScript, TokenPos bodyPosition,
-      EmitterMode emitterMode = Normal,
-      FieldInitializers fieldInitializers = FieldInitializers::Invalid())
-      : BytecodeEmitter(parent, EitherParser(parser), sc, script, lazyScript,
-                        bodyPosition, emitterMode, fieldInitializers) {}
+                        line, column, emitterMode, fieldInitializers) {}
 
   MOZ_MUST_USE bool init();
+  MOZ_MUST_USE bool init(TokenPos bodyPosition);
 
   template <typename T>
   T* findInnermostNestableControl() const;
@@ -323,9 +294,11 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   bool inPrologue() const { return mainOffset_.isNothing(); }
 
-  void switchToMain() {
+  MOZ_MUST_USE bool switchToMain() {
     MOZ_ASSERT(inPrologue());
     mainOffset_.emplace(bytecodeSection().code().length());
+
+    return emitInstrumentation(InstrumentationKind::Main);
   }
 
   void setFunctionBodyEndPos(uint32_t pos) {
@@ -414,9 +387,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   // Emit three bytecodes, an opcode with two bytes of immediate operands.
   MOZ_MUST_USE bool emit3(JSOp op, jsbytecode op1, jsbytecode op2);
 
-  // Helper to emit JSOP_DUPAT. The argument is the value's depth on the
-  // JS stack, as measured from the top.
-  MOZ_MUST_USE bool emitDupAt(unsigned slotFromTop);
+  // Helper to duplicate one or more stack values. |slotFromTop| is the value's
+  // depth on the JS stack, as measured from the top. |count| is the number of
+  // values to duplicate, in theiro original order.
+  MOZ_MUST_USE bool emitDupAt(unsigned slotFromTop, unsigned count = 1);
 
   // Helper to emit JSOP_POP or JSOP_POPN.
   MOZ_MUST_USE bool emitPopN(unsigned n);
@@ -476,8 +450,12 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitIndex32(JSOp op, uint32_t index);
   MOZ_MUST_USE bool emitIndexOp(JSOp op, uint32_t index);
 
-  MOZ_MUST_USE bool emitAtomOp(JSAtom* atom, JSOp op);
-  MOZ_MUST_USE bool emitAtomOp(uint32_t atomIndex, JSOp op);
+  MOZ_MUST_USE bool emitAtomOp(
+      JSAtom* atom, JSOp op,
+      ShouldInstrument shouldInstrument = ShouldInstrument::No);
+  MOZ_MUST_USE bool emitAtomOp(
+      uint32_t atomIndex, JSOp op,
+      ShouldInstrument shouldInstrument = ShouldInstrument::No);
 
   MOZ_MUST_USE bool emitArrayLiteral(ListNode* array);
   MOZ_MUST_USE bool emitArray(ParseNode* arrayHead, uint32_t count);
@@ -541,11 +519,8 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitDeclarationList(ListNode* declList);
   MOZ_MUST_USE bool emitSingleDeclaration(ListNode* declList, NameNode* decl,
                                           ParseNode* initializer);
-  // emitSetFunName should be of type ElemOpEmitter::EmitSetFunctionName, but
-  // that's not possible due to C++ declaration order.
   MOZ_MUST_USE bool emitAssignmentRhs(ParseNode* rhs,
-                                      HandleAtom anonFunctionName,
-                                      bool* emitSetFunName);
+                                      HandleAtom anonFunctionName);
   MOZ_MUST_USE bool emitAssignmentRhs(uint8_t offset);
 
   MOZ_MUST_USE bool emitNewInit();
@@ -589,7 +564,8 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   MOZ_MUST_USE bool emitElemObjAndKey(PropertyByValue* elem, bool isSuper,
                                       ElemOpEmitter& eoe);
-  MOZ_MUST_USE bool emitElemOpBase(JSOp op);
+  MOZ_MUST_USE bool emitElemOpBase(
+      JSOp op, ShouldInstrument shouldInstrument = ShouldInstrument::No);
   MOZ_MUST_USE bool emitElemOp(PropertyByValue* elem, JSOp op);
   MOZ_MUST_USE bool emitElemIncDec(UnaryNode* incDec);
 
@@ -789,6 +765,29 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitPipeline(ListNode* node);
 
   MOZ_MUST_USE bool emitExportDefault(BinaryNode* exportNode);
+
+  MOZ_MUST_USE bool emitReturnRval() {
+    return emitInstrumentation(InstrumentationKind::Exit) &&
+           emit1(JSOP_RETRVAL);
+  }
+
+  MOZ_MUST_USE bool emitInstrumentation(InstrumentationKind kind,
+                                        uint32_t npopped = 0) {
+    return MOZ_LIKELY(!instrumentationKinds) ||
+           emitInstrumentationSlow(kind, std::function<bool(uint32_t)>());
+  }
+
+  MOZ_MUST_USE bool emitInstrumentationForOpcode(JSOp op, uint32_t atomIndex) {
+    return MOZ_LIKELY(!instrumentationKinds) ||
+           emitInstrumentationForOpcodeSlow(op, atomIndex);
+  }
+
+ private:
+  MOZ_MUST_USE bool emitInstrumentationSlow(
+      InstrumentationKind kind,
+      const std::function<bool(uint32_t)>& pushOperandsCallback);
+  MOZ_MUST_USE bool emitInstrumentationForOpcodeSlow(JSOp op,
+                                                     uint32_t atomIndex);
 };
 
 class MOZ_RAII AutoCheckUnstableEmitterScope {

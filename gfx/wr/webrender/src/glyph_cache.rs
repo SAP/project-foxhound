@@ -2,18 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#[cfg(feature = "pathfinder")]
-use crate::api::units::DeviceIntPoint;
 use crate::glyph_rasterizer::{FontInstance, GlyphFormat, GlyphKey, GlyphRasterizer};
 use crate::internal_types::FastHashMap;
 use crate::render_backend::{FrameId, FrameStamp};
 use crate::render_task::RenderTaskCache;
-#[cfg(feature = "pathfinder")]
-use crate::render_task::RenderTaskCacheKey;
 use crate::resource_cache::ResourceClassCache;
 use std::sync::Arc;
 use crate::texture_cache::{EvictionNotice, TextureCache};
-#[cfg(not(feature = "pathfinder"))]
 use crate::texture_cache::TextureCacheHandle;
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -21,12 +16,7 @@ use crate::texture_cache::TextureCacheHandle;
 #[derive(Clone, Debug)]
 pub struct CachedGlyphInfo {
     pub format: GlyphFormat,
-    #[cfg(not(feature = "pathfinder"))]
     pub texture_cache_handle: TextureCacheHandle,
-    #[cfg(feature = "pathfinder")]
-    pub render_task_cache_key: RenderTaskCacheKey,
-    #[cfg(feature = "pathfinder")]
-    pub origin: DeviceIntPoint,
 }
 
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -43,26 +33,6 @@ pub enum GlyphCacheEntry {
 }
 
 impl GlyphCacheEntry {
-    #[cfg(feature = "pathfinder")]
-    fn get_allocated_size(&self, texture_cache: &TextureCache, render_task_cache: &RenderTaskCache)
-                          -> Option<usize> {
-        match *self {
-            GlyphCacheEntry::Cached(ref glyph) => {
-                let render_task_cache_key = &glyph.render_task_cache_key;
-                render_task_cache.get_allocated_size_for_render_task(texture_cache,
-                                                                     &render_task_cache_key)
-            }
-            GlyphCacheEntry::Pending => Some(0),
-            // If the cache only has blank glyphs left, just get rid of it.
-            GlyphCacheEntry::Blank => None,
-        }
-    }
-
-    #[cfg(feature = "pathfinder")]
-    fn mark_unused(&self, _: &mut TextureCache) {
-    }
-
-    #[cfg(not(feature = "pathfinder"))]
     fn get_allocated_size(&self, texture_cache: &TextureCache, _: &RenderTaskCache)
                           -> Option<usize> {
         match *self {
@@ -75,13 +45,11 @@ impl GlyphCacheEntry {
         }
     }
 
-    #[cfg(not(feature = "pathfinder"))]
     fn mark_unused(&self, texture_cache: &mut TextureCache) {
         if let GlyphCacheEntry::Cached(ref glyph) = *self {
             texture_cache.mark_unused(&glyph.texture_cache_handle);
         }
-    }
-}
+    }}
 
 #[allow(dead_code)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
@@ -116,6 +84,31 @@ impl GlyphKeyCache {
         }
         self.clear();
         self.user_data.bytes_used = 0;
+    }
+
+    fn prune_glyphs(
+        &mut self,
+        excess_bytes_used: usize,
+        texture_cache: &mut TextureCache,
+        render_task_cache: &RenderTaskCache,
+    ) -> usize {
+        let mut pruned = 0;
+        self.retain(|_, entry| {
+            if pruned <= excess_bytes_used {
+                match entry.get_allocated_size(texture_cache, render_task_cache) {
+                    Some(size) => {
+                        pruned += size;
+                        entry.mark_unused(texture_cache);
+                        false
+                    }
+                    None => true,
+                }
+            } else {
+                true
+            }
+        });
+        self.user_data.bytes_used -= pruned;
+        pruned
     }
 
     pub fn add_glyph(&mut self, key: GlyphKey, value: GlyphCacheEntry) {
@@ -153,7 +146,7 @@ pub struct GlyphCache {
 
 impl GlyphCache {
     /// The default space usage threshold, in bytes, after which to start pruning away old fonts.
-    pub const DEFAULT_MAX_BYTES_USED: usize = 5 * 1024 * 1024;
+    pub const DEFAULT_MAX_BYTES_USED: usize = 6 * 1024 * 1024;
 
     pub fn new(max_bytes_used: usize) -> Self {
         GlyphCache {
@@ -232,7 +225,11 @@ impl GlyphCache {
 
     /// Check the total space usage of the glyph cache. If it exceeds the maximum usage threshold,
     /// then start clearing the oldest glyphs until below the threshold.
-    fn prune_excess_usage(&mut self, texture_cache: &mut TextureCache) {
+    fn prune_excess_usage(
+        &mut self,
+        texture_cache: &mut TextureCache,
+        render_task_cache: &RenderTaskCache,
+    ) {
         if self.bytes_used < self.max_bytes_used {
             return;
         }
@@ -243,22 +240,32 @@ impl GlyphCache {
         });
         // Clear out the oldest caches until below the threshold.
         for cache in caches {
-            self.bytes_used -= cache.user_data.bytes_used;
-            cache.clear_glyphs(texture_cache);
             if self.bytes_used < self.max_bytes_used {
                 break;
+            }
+            let excess = self.bytes_used - self.max_bytes_used;
+            if excess >= cache.user_data.bytes_used {
+                // If the excess is greater than the cache's size, just clear the whole thing.
+                cache.clear_glyphs(texture_cache);
+                self.bytes_used -= cache.user_data.bytes_used;
+            } else {
+                // Otherwise, just clear as little of the cache as needs to remove the excess
+                // and avoid rematerialization costs.
+                self.bytes_used -= cache.prune_glyphs(excess, texture_cache, render_task_cache);
             }
         }
     }
 
-    pub fn begin_frame(&mut self,
-                       stamp: FrameStamp,
-                       texture_cache: &mut TextureCache,
-                       render_task_cache: &RenderTaskCache,
-                       glyph_rasterizer: &mut GlyphRasterizer) {
+    pub fn begin_frame(
+        &mut self,
+        stamp: FrameStamp,
+        texture_cache: &mut TextureCache,
+        render_task_cache: &RenderTaskCache,
+        glyph_rasterizer: &mut GlyphRasterizer,
+    ) {
         self.current_frame = stamp.frame_id();
         self.clear_evicted(texture_cache, render_task_cache);
-        self.prune_excess_usage(texture_cache);
+        self.prune_excess_usage(texture_cache, render_task_cache);
         // Clearing evicted glyphs and pruning excess usage might have produced empty caches,
         // so get rid of them if possible.
         self.clear_empty_caches(glyph_rasterizer);

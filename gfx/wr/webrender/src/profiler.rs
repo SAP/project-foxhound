@@ -5,7 +5,7 @@
 use api::{ColorF, ColorU};
 use crate::debug_render::DebugRenderer;
 use crate::device::query::{GpuSampler, GpuTimer, NamedTag};
-use euclid::{Point2D, Rect, Size2D, vec2};
+use euclid::{Point2D, Rect, Size2D, vec2, default};
 use crate::internal_types::FastHashMap;
 use crate::renderer::{MAX_VERTEX_TEXTURE_WIDTH, wr_has_been_initialized};
 use std::collections::vec_deque::VecDeque;
@@ -322,8 +322,12 @@ pub struct AverageTimeProfileCounter {
     average_over_ns: u64,
     start_ns: u64,
     sum_ns: u64,
+    max_ns: u64,
     num_samples: u64,
-    nanoseconds: u64,
+    avg_nanoseconds: u64,
+    // Maximum time over the averaging window.
+    // When the timings are noisy, this is more representative of the perceived performance.
+    max_nanoseconds: u64,
     invert: bool,
 }
 
@@ -334,8 +338,10 @@ impl AverageTimeProfileCounter {
             average_over_ns,
             start_ns: precise_time_ns(),
             sum_ns: 0,
+            max_ns: 0,
             num_samples: 0,
-            nanoseconds: 0,
+            avg_nanoseconds: 0,
+            max_nanoseconds: 0,
             invert,
         }
     }
@@ -343,19 +349,24 @@ impl AverageTimeProfileCounter {
     #[allow(dead_code)]
     fn reset(&mut self) {
         self.start_ns = precise_time_ns();
-        self.nanoseconds = 0;
+        self.avg_nanoseconds = 0;
+        self.max_nanoseconds = 0;
         self.sum_ns = 0;
         self.num_samples = 0;
+        self.max_ns = 0;
     }
 
     pub fn set(&mut self, ns: u64) {
         let now = precise_time_ns();
         if (now - self.start_ns) > self.average_over_ns && self.num_samples > 0 {
-            self.nanoseconds = self.sum_ns / self.num_samples;
+            self.avg_nanoseconds = self.sum_ns / self.num_samples;
+            self.max_nanoseconds = self.max_ns;
             self.start_ns = now;
             self.sum_ns = 0;
             self.num_samples = 0;
+            self.max_ns = 0;
         }
+        self.max_ns = self.max_ns.max(ns);
         self.sum_ns += ns;
         self.num_samples += 1;
     }
@@ -380,9 +391,13 @@ impl ProfileCounter for AverageTimeProfileCounter {
 
     fn value(&self) -> String {
         if self.invert {
-            format!("{:.2} fps", 1000000000.0 / self.nanoseconds as f64)
+            format!("{:.2} fps", 1000000000.0 / self.avg_nanoseconds as f64)
         } else {
-            format!("{:.2} ms", self.nanoseconds as f64 / 1000000.0)
+            format!(
+                "{:.2} ms (max {:.2} ms)",
+                self.avg_nanoseconds as f64 / 1000000.0,
+                self.max_nanoseconds as f64 / 1000000.0
+            )
         }
     }
 }
@@ -416,20 +431,20 @@ impl FrameProfileCounters {
 
 #[derive(Clone)]
 pub struct TextureCacheProfileCounters {
-    pub pages_a8_linear: ResourceProfileCounter,
-    pub pages_a16_linear: ResourceProfileCounter,
-    pub pages_rgba8_linear: ResourceProfileCounter,
-    pub pages_rgba8_nearest: ResourceProfileCounter,
+    pub pages_alpha8_linear: ResourceProfileCounter,
+    pub pages_alpha16_linear: ResourceProfileCounter,
+    pub pages_color8_linear: ResourceProfileCounter,
+    pub pages_color8_nearest: ResourceProfileCounter,
     pub pages_picture: ResourceProfileCounter,
 }
 
 impl TextureCacheProfileCounters {
     pub fn new() -> Self {
         TextureCacheProfileCounters {
-            pages_a8_linear: ResourceProfileCounter::new("Texture A8 cached pages"),
-            pages_a16_linear: ResourceProfileCounter::new("Texture A16 cached pages"),
-            pages_rgba8_linear: ResourceProfileCounter::new("Texture RGBA8 cached pages (L)"),
-            pages_rgba8_nearest: ResourceProfileCounter::new("Texture RGBA8 cached pages (N)"),
+            pages_alpha8_linear: ResourceProfileCounter::new("Texture A8 cached pages"),
+            pages_alpha16_linear: ResourceProfileCounter::new("Texture A16 cached pages"),
+            pages_color8_linear: ResourceProfileCounter::new("Texture RGBA8 cached pages (L)"),
+            pages_color8_nearest: ResourceProfileCounter::new("Texture RGBA8 cached pages (N)"),
             pages_picture: ResourceProfileCounter::new("Picture cached pages"),
         }
     }
@@ -565,6 +580,7 @@ impl BackendProfileCounters {
                 yuv_image: ResourceProfileCounter::new("Interned YUV images"),
                 clip: ResourceProfileCounter::new("Interned clips"),
                 filter_data: ResourceProfileCounter::new("Interned filter data"),
+                backdrop: ResourceProfileCounter::new("Interned backdrops"),
             },
         }
     }
@@ -687,7 +703,7 @@ impl ProfileGraph {
         y: f32,
         description: &'static str,
         debug_renderer: &mut DebugRenderer,
-    ) -> Rect<f32> {
+    ) -> default::Rect<f32> {
         let size = Size2D::new(600.0, 120.0);
         let line_height = debug_renderer.line_height();
         let graph_rect = Rect::new(Point2D::new(x, y), size);
@@ -812,7 +828,7 @@ impl GpuFrameCollection {
 }
 
 impl GpuFrameCollection {
-    fn draw(&self, x: f32, y: f32, debug_renderer: &mut DebugRenderer) -> Rect<f32> {
+    fn draw(&self, x: f32, y: f32, debug_renderer: &mut DebugRenderer) -> default::Rect<f32> {
         let graph_rect = Rect::new(
             Point2D::new(x, y),
             Size2D::new(GRAPH_WIDTH, GRAPH_HEIGHT),
@@ -1019,7 +1035,7 @@ impl Profiler {
         label_color: ColorU,
         counters: &[(ColorU, &IntProfileCounter)],
         debug_renderer: &mut DebugRenderer,
-    ) -> Rect<f32> {
+    ) -> default::Rect<f32> {
         let mut rect = debug_renderer.add_text(
             self.draw_state.x_left,
             self.draw_state.y_left,
@@ -1212,9 +1228,9 @@ impl Profiler {
 
         Profiler::draw_counters(
             &[
-                &backend_profile.resources.texture_cache.pages_a8_linear,
-                &backend_profile.resources.texture_cache.pages_rgba8_linear,
-                &backend_profile.resources.texture_cache.pages_rgba8_nearest,
+                &backend_profile.resources.texture_cache.pages_alpha8_linear,
+                &backend_profile.resources.texture_cache.pages_color8_linear,
+                &backend_profile.resources.texture_cache.pages_color8_nearest,
                 &backend_profile.ipc.display_lists,
             ],
             debug_renderer,

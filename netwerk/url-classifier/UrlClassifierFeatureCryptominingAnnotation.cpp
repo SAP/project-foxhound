@@ -8,7 +8,6 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -88,11 +87,6 @@ UrlClassifierFeatureCryptominingAnnotation::MaybeCreate(nsIChannel* aChannel) {
       ("UrlClassifierFeatureCryptominingAnnotation: MaybeCreate for channel %p",
        aChannel));
 
-  if (!StaticPrefs::
-          privacy_trackingprotection_cryptomining_annotate_enabled()) {
-    return nullptr;
-  }
-
   if (!UrlClassifierCommon::ShouldEnableClassifier(aChannel)) {
     return nullptr;
   }
@@ -150,7 +144,7 @@ UrlClassifierFeatureCryptominingAnnotation::ProcessChannel(
   UrlClassifierCommon::SetTrackingInfo(aChannel, aList, aHashes);
 
   UrlClassifierCommon::AnnotateChannel(
-      aChannel, AntiTrackingCommon::eCryptomining, flags,
+      aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_CRYPTOMINING_CONTENT);
   return NS_OK;
 }

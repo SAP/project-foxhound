@@ -13,7 +13,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 #include "mozilla/UseCounter.h"
 
@@ -54,6 +54,7 @@
 #include "mozilla/dom/HTMLEmbedElement.h"
 #include "mozilla/dom/HTMLElementBinding.h"
 #include "mozilla/dom/HTMLEmbedElementBinding.h"
+#include "mozilla/dom/MaybeCrossOriginObject.h"
 #include "mozilla/dom/ReportingUtils.h"
 #include "mozilla/dom/XULElementBinding.h"
 #include "mozilla/dom/XULFrameElementBinding.h"
@@ -677,7 +678,7 @@ bool DefineUnforgeableAttributes(JSContext* cx, JS::Handle<JSObject*> obj,
 // funToString ObjectOps member for interface objects.
 JSString* InterfaceObjectToString(JSContext* aCx, JS::Handle<JSObject*> aObject,
                                   bool /* isToSource */) {
-  const js::Class* clasp = js::GetObjectClass(aObject);
+  const JSClass* clasp = js::GetObjectClass(aObject);
   MOZ_ASSERT(IsDOMIfaceAndProtoClass(clasp));
 
   const DOMIfaceAndProtoJSClass* ifaceAndProtoJSClass =
@@ -726,7 +727,7 @@ static bool DefineConstructor(JSContext* cx, JS::Handle<JSObject*> global,
 
 static JSObject* CreateInterfaceObject(
     JSContext* cx, JS::Handle<JSObject*> global,
-    JS::Handle<JSObject*> constructorProto, const js::Class* constructorClass,
+    JS::Handle<JSObject*> constructorProto, const JSClass* constructorClass,
     unsigned ctorNargs, const NamedConstructor* namedConstructors,
     JS::Handle<JSObject*> proto, const NativeProperties* properties,
     const NativeProperties* chromeOnlyProperties, const char* name,
@@ -735,8 +736,8 @@ static JSObject* CreateInterfaceObject(
   JS::Rooted<JSObject*> constructor(cx);
   MOZ_ASSERT(constructorProto);
   MOZ_ASSERT(constructorClass);
-  constructor = JS_NewObjectWithGivenProto(cx, Jsvalify(constructorClass),
-                                           constructorProto);
+  constructor =
+      JS_NewObjectWithGivenProto(cx, constructorClass, constructorProto);
   if (!constructor) {
     return nullptr;
   }
@@ -855,13 +856,13 @@ static JSObject* CreateInterfaceObject(
 
 static JSObject* CreateInterfacePrototypeObject(
     JSContext* cx, JS::Handle<JSObject*> global,
-    JS::Handle<JSObject*> parentProto, const js::Class* protoClass,
+    JS::Handle<JSObject*> parentProto, const JSClass* protoClass,
     const NativeProperties* properties,
     const NativeProperties* chromeOnlyProperties,
     const char* const* unscopableNames, const char* toStringTag,
     bool isGlobal) {
   JS::Rooted<JSObject*> ourProto(
-      cx, JS_NewObjectWithUniqueType(cx, Jsvalify(protoClass), parentProto));
+      cx, JS_NewObjectWithUniqueType(cx, protoClass, parentProto));
   if (!ourProto ||
       // We don't try to define properties on the global's prototype; those
       // properties go on the global itself.
@@ -953,9 +954,9 @@ bool DefineProperties(JSContext* cx, JS::Handle<JSObject*> obj,
 
 void CreateInterfaceObjects(
     JSContext* cx, JS::Handle<JSObject*> global,
-    JS::Handle<JSObject*> protoProto, const js::Class* protoClass,
+    JS::Handle<JSObject*> protoProto, const JSClass* protoClass,
     JS::Heap<JSObject*>* protoCache, const char* toStringTag,
-    JS::Handle<JSObject*> constructorProto, const js::Class* constructorClass,
+    JS::Handle<JSObject*> constructorProto, const JSClass* constructorClass,
     unsigned ctorNargs, const NamedConstructor* namedConstructors,
     JS::Heap<JSObject*>* constructorCache, const NativeProperties* properties,
     const NativeProperties* chromeOnlyProperties, const char* name,
@@ -1091,7 +1092,7 @@ bool TryPreserveWrapper(JS::Handle<JSObject*> obj) {
   JSAddPropertyOp addProperty = clasp->getAddProperty();
 
   // We expect all proxies to be nsISupports.
-  MOZ_RELEASE_ASSERT(!js::Valueify(clasp)->isProxy(),
+  MOZ_RELEASE_ASSERT(!clasp->isProxy(),
                      "Should not call addProperty for proxies.");
 
   // The class should have an addProperty hook iff it is a CC participant.
@@ -1107,7 +1108,7 @@ bool TryPreserveWrapper(JS::Handle<JSObject*> obj) {
 }
 
 // Can only be called with a DOM JSClass.
-bool InstanceClassHasProtoAtDepth(const js::Class* clasp, uint32_t protoID,
+bool InstanceClassHasProtoAtDepth(const JSClass* clasp, uint32_t protoID,
                                   uint32_t depth) {
   const DOMJSClass* domClass = DOMJSClass::FromJSClass(clasp);
   return static_cast<uint32_t>(domClass->mInterfaceChain[depth]) == protoID;
@@ -1326,7 +1327,7 @@ inline const NativePropertyHooks* GetNativePropertyHooksFromConstructorFunction(
 
 inline const NativePropertyHooks* GetNativePropertyHooks(
     JSContext* cx, JS::Handle<JSObject*> obj, DOMObjectType& type) {
-  const js::Class* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = js::GetObjectClass(obj);
 
   const DOMJSClass* domClass = GetDOMClass(clasp);
   if (domClass) {
@@ -1742,7 +1743,7 @@ static void DEBUG_CheckXBLLookup(JSContext* cx, JS::PropertyDescriptor* desc) {
     }
 
     if (id.get() == GetJSIDByIndex(cx, XPCJSContext::IDX_ISINSTANCE)) {
-      const js::Class* objClass = js::GetObjectClass(obj);
+      const JSClass* objClass = js::GetObjectClass(obj);
       if (IsDOMIfaceAndProtoClass(objClass) &&
           DOMIfaceAndProtoJSClass::FromJSClass(objClass)
               ->wantsInterfaceHasInstance) {
@@ -1766,7 +1767,7 @@ static void DEBUG_CheckXBLLookup(JSContext* cx, JS::PropertyDescriptor* desc) {
 
     if (id.get() == SYMBOL_TO_JSID(JS::GetWellKnownSymbol(
                         cx, JS::SymbolCode::hasInstance))) {
-      const js::Class* objClass = js::GetObjectClass(obj);
+      const JSClass* objClass = js::GetObjectClass(obj);
       if (IsDOMIfaceAndProtoClass(objClass) &&
           DOMIfaceAndProtoJSClass::FromJSClass(objClass)
               ->wantsInterfaceHasInstance) {
@@ -2046,7 +2047,7 @@ NativePropertyHooks sEmptyNativePropertyHooks = {nullptr,
                                                  constructors::id::_ID_Count,
                                                  nullptr};
 
-const js::ClassOps sBoringInterfaceObjectClassClassOps = {
+const JSClassOps sBoringInterfaceObjectClassClassOps = {
     nullptr,             /* addProperty */
     nullptr,             /* delProperty */
     nullptr,             /* enumerate */
@@ -2425,7 +2426,7 @@ bool InterfaceHasInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
     return CallOrdinaryHasInstance(cx, args);
   }
 
-  const js::Class* thisClass = js::GetObjectClass(thisObj);
+  const JSClass* thisClass = js::GetObjectClass(thisObj);
 
   if (!IsDOMIfaceAndProtoClass(thisClass)) {
     return CallOrdinaryHasInstance(cx, args);
@@ -2501,7 +2502,7 @@ bool InterfaceIsInstance(JSContext* cx, unsigned argc, JS::Value* vp) {
     return true;
   }
 
-  const js::Class* thisClass = js::GetObjectClass(thisObj);
+  const JSClass* thisClass = js::GetObjectClass(thisObj);
   if (!IsDOMIfaceAndProtoClass(thisClass)) {
     args.rval().setBoolean(false);
     return true;
@@ -2573,24 +2574,6 @@ bool GetContentGlobalForJSImplementedObject(JSContext* cx,
   MOZ_ASSERT(NS_SUCCEEDED(rv));
   MOZ_ASSERT(*globalObj);
   return true;
-}
-
-already_AddRefed<nsIGlobalObject> ConstructJSImplementation(
-    const char* aContractId, const GlobalObject& aGlobal,
-    JS::MutableHandle<JSObject*> aObject, ErrorResult& aRv) {
-  // Get the global object to use as a parent and for initialization.
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
-  if (!global) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-
-  ConstructJSImplementation(aContractId, global, aObject, aRv);
-
-  if (aRv.Failed()) {
-    return nullptr;
-  }
-  return global.forget();
 }
 
 void ConstructJSImplementation(const char* aContractId,
@@ -2928,15 +2911,8 @@ struct MaybeGlobalThisPolicy : public NormalThisPolicy {
   // We want the HandleInvalidThis of NormalThisPolicy.
 };
 
-// There are some LenientThis things on globals, so we inherit from
-// MaybeGlobalThisPolicy.
-struct LenientThisPolicy : public MaybeGlobalThisPolicy {
-  // We want the HasValidThisValue of MaybeGlobalThisPolicy.
-
-  // We want the ExtractThisObject of MaybeGlobalThisPolicy.
-
-  // We want the MaybeUnwrapThisObject of MaybeGlobalThisPolicy.
-
+// Shared LenientThis behavior for our two different LenientThis policies.
+struct LenientThisPolicyMixin {
   static bool HandleInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
                                 bool aSecurityError, prototypes::ID aProtoId) {
     MOZ_ASSERT(!JS_IsExceptionPending(aCx));
@@ -2946,6 +2922,20 @@ struct LenientThisPolicy : public MaybeGlobalThisPolicy {
     aArgs.rval().set(JS::UndefinedValue());
     return true;
   }
+};
+
+// There are some LenientThis things on globals, so we inherit from
+// MaybeGlobalThisPolicy.
+struct LenientThisPolicy : public MaybeGlobalThisPolicy,
+                           public LenientThisPolicyMixin {
+  // We want the HasValidThisValue of MaybeGlobalThisPolicy.
+
+  // We want the ExtractThisObject of MaybeGlobalThisPolicy.
+
+  // We want the MaybeUnwrapThisObject of MaybeGlobalThisPolicy.
+
+  // We want HandleInvalidThis from LenientThisPolicyMixin
+  using LenientThisPolicyMixin::HandleInvalidThis;
 };
 
 // There are some cross-origin things on globals, so we inherit from
@@ -3009,6 +2999,57 @@ struct CrossOriginThisPolicy : public MaybeGlobalThisPolicy {
   }
 
   // We want the HandleInvalidThis of MaybeGlobalThisPolicy.
+};
+
+// Some objects that can be cross-origin objects are globals, so we inherit
+// from MaybeGlobalThisPolicy.
+struct MaybeCrossOriginObjectThisPolicy : public MaybeGlobalThisPolicy {
+  // We want the HasValidThisValue of MaybeGlobalThisPolicy.
+
+  // We want the ExtractThisObject of MaybeGlobalThisPolicy.
+
+  // We want the MaybeUnwrapThisObject of MaybeGlobalThisPolicy
+
+  static MOZ_ALWAYS_INLINE nsresult UnwrapThisObject(
+      JS::MutableHandle<JSObject*> aObj, JSContext* aCx, void*& aSelf,
+      prototypes::ID aProtoID, uint32_t aProtoDepth) {
+    // There are two cases at this point: either aObj is a cross-compartment
+    // wrapper (CCW) or it's not.  If it is, we don't need to do anything
+    // special compared to MaybeGlobalThisPolicy: the CCW will do the relevant
+    // security checks.  Which is good, because if we tried to do the
+    // cross-origin object check _before_ unwrapping it would always come back
+    // as "same-origin" and if we tried to do it after unwrapping it would be
+    // completely wrong: the checks rely on the two sides of the comparison
+    // being symmetric (can access each other or cannot access each other), but
+    // if we have a CCW we could have an Xray, which is asymmetric.  And then
+    // we'd think we should deny access, whereas we should actually allow
+    // access.
+    //
+    // If we do _not_ have a CCW here, then we need to check whether it's a
+    // cross-origin-accessible object, and if it is check whether it's
+    // same-origin-domain with our current callee.
+    if (!js::IsCrossCompartmentWrapper(aObj) &&
+        xpc::IsCrossOriginAccessibleObject(aObj) &&
+        !MaybeCrossOriginObjectMixins::IsPlatformObjectSameOrigin(aCx, aObj)) {
+      return NS_ERROR_XPC_SECURITY_MANAGER_VETO;
+    }
+
+    return MaybeGlobalThisPolicy::UnwrapThisObject(aObj, aCx, aSelf, aProtoID,
+                                                   aProtoDepth);
+  }
+
+  // We want the HandleInvalidThis of MaybeGlobalThisPolicy.
+};
+
+// And in some cases we are dealing with a maybe-cross-origin object _and_ need
+// [LenientThis] behavior.
+struct MaybeCrossOriginObjectLenientThisPolicy
+    : public MaybeCrossOriginObjectThisPolicy,
+      public LenientThisPolicyMixin {
+  // We want to get all of our behavior from
+  // MaybeCrossOriginObjectLenientThisPolicy, except for HandleInvalidThis,
+  // which should come from LenientThisPolicyMixin.
+  using LenientThisPolicyMixin::HandleInvalidThis;
 };
 
 /**
@@ -3102,6 +3143,15 @@ template bool GenericGetter<CrossOriginThisPolicy, ThrowExceptions>(
     JSContext* cx, unsigned argc, JS::Value* vp);
 // There aren't any cross-origin Promise-returning getters, so don't
 // bother instantiating that specialization.
+template bool GenericGetter<MaybeCrossOriginObjectThisPolicy, ThrowExceptions>(
+    JSContext* cx, unsigned argc, JS::Value* vp);
+// There aren't any maybe-cross-origin-object Promise-returning getters, so
+// don't bother instantiating that specialization.
+template bool GenericGetter<MaybeCrossOriginObjectLenientThisPolicy,
+                            ThrowExceptions>(JSContext* cx, unsigned argc,
+                                             JS::Value* vp);
+// There aren't any maybe-cross-origin-object Promise-returning lenient-this
+// getters, so don't bother instantiating that specialization.
 
 template <typename ThisPolicy>
 bool GenericSetter(JSContext* cx, unsigned argc, JS::Value* vp) {
@@ -3150,6 +3200,11 @@ template bool GenericSetter<LenientThisPolicy>(JSContext* cx, unsigned argc,
                                                JS::Value* vp);
 template bool GenericSetter<CrossOriginThisPolicy>(JSContext* cx, unsigned argc,
                                                    JS::Value* vp);
+template bool GenericSetter<MaybeCrossOriginObjectThisPolicy>(JSContext* cx,
+                                                              unsigned argc,
+                                                              JS::Value* vp);
+template bool GenericSetter<MaybeCrossOriginObjectLenientThisPolicy>(
+    JSContext* cx, unsigned argc, JS::Value* vp);
 
 template <typename ThisPolicy, typename ExceptionPolicy>
 bool GenericMethod(JSContext* cx, unsigned argc, JS::Value* vp) {
@@ -3201,6 +3256,12 @@ template bool GenericMethod<CrossOriginThisPolicy, ThrowExceptions>(
     JSContext* cx, unsigned argc, JS::Value* vp);
 // There aren't any cross-origin Promise-returning methods, so don't
 // bother instantiating that specialization.
+template bool GenericMethod<MaybeCrossOriginObjectThisPolicy, ThrowExceptions>(
+    JSContext* cx, unsigned argc, JS::Value* vp);
+template bool GenericMethod<MaybeCrossOriginObjectThisPolicy,
+                            ConvertExceptionsToPromises>(JSContext* cx,
+                                                         unsigned argc,
+                                                         JS::Value* vp);
 
 }  // namespace binding_detail
 
@@ -3301,6 +3362,12 @@ void AssertReturnTypeMatchesJitinfo(const JSJitInfo* aJitInfo,
 #endif
 
 bool CallerSubsumes(JSObject* aObject) {
+  // Remote object proxies are not CCWs, so unwrapping them does not get you
+  // their "real" principal, but we want to treat them like cross-origin objects
+  // when considering them as WebIDL arguments, for consistency.
+  if (IsRemoteObjectProxy(aObject)) {
+    return false;
+  }
   nsIPrincipal* objPrin =
       nsContentUtils::ObjectPrincipal(js::UncheckedUnwrap(aObject));
   return nsContentUtils::SubjectPrincipal()->Subsumes(objPrin);
@@ -3447,7 +3514,7 @@ bool ForEachHandler(JSContext* aCx, unsigned aArgc, JS::Value* aVp) {
 
 static inline prototypes::ID GetProtoIdForNewtarget(
     JS::Handle<JSObject*> aNewTarget) {
-  const js::Class* newTargetClass = js::GetObjectClass(aNewTarget);
+  const JSClass* newTargetClass = js::GetObjectClass(aNewTarget);
   if (IsDOMIfaceAndProtoClass(newTargetClass)) {
     const DOMIfaceAndProtoJSClass* newTargetIfaceClass =
         DOMIfaceAndProtoJSClass::FromJSClass(newTargetClass);
@@ -3878,11 +3945,11 @@ void AssertReflectorHasGivenProto(JSContext* aCx, JSObject* aReflector,
 }  // namespace binding_detail
 #endif  // DEBUG
 
-void SetDocumentAndPageUseCounter(JSObject* aObject, UseCounter aUseCounter) {
+void SetUseCounter(JSObject* aObject, UseCounter aUseCounter) {
   nsGlobalWindowInner* win =
       xpc::WindowGlobalOrNull(js::UncheckedUnwrap(aObject));
   if (win && win->GetDocument()) {
-    win->GetDocument()->SetDocumentAndPageUseCounter(aUseCounter);
+    win->GetDocument()->SetUseCounter(aUseCounter);
   }
 }
 
@@ -4021,7 +4088,7 @@ void DeprecationWarning(const GlobalObject& aGlobal,
     if (window && window->GetExtantDoc()) {
       window->GetExtantDoc()->WarnOnceAbout(aOperation);
 
-      nsAutoCString fileName;
+      nsAutoString fileName;
       Nullable<uint32_t> lineNumber;
       Nullable<uint32_t> columnNumber;
       uint32_t line = 0;
@@ -4032,8 +4099,7 @@ void DeprecationWarning(const GlobalObject& aGlobal,
         columnNumber.SetValue(column);
       }
 
-      MaybeReportDeprecation(window, aOperation,
-                             NS_ConvertUTF8toUTF16(fileName), lineNumber,
+      MaybeReportDeprecation(window, aOperation, fileName, lineNumber,
                              columnNumber);
     }
 

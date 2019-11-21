@@ -45,7 +45,6 @@ function configureStore(webConsoleUI, options = {}) {
   const logLimit =
     options.logLimit || Math.max(getIntPref("devtools.hud.loglimit"), 1);
   const sidebarToggle = getBoolPref(PREFS.FEATURES.SIDEBAR_TOGGLE);
-  const jstermCodeMirror = getBoolPref(PREFS.FEATURES.JSTERM_CODE_MIRROR);
   const autocomplete = getBoolPref(PREFS.FEATURES.AUTOCOMPLETE);
   const groupWarnings = getBoolPref(PREFS.FEATURES.GROUP_WARNINGS);
   const editor = getBoolPref(PREFS.FEATURES.EDITOR);
@@ -55,7 +54,6 @@ function configureStore(webConsoleUI, options = {}) {
     prefs: PrefState({
       logLimit,
       sidebarToggle,
-      jstermCodeMirror,
       autocomplete,
       historyCount,
       groupWarnings,
@@ -78,6 +76,8 @@ function configureStore(webConsoleUI, options = {}) {
         ? getBoolPref(PREFS.UI.CONTENT_MESSAGES)
         : true,
       editor: getBoolPref(PREFS.UI.EDITOR),
+      editorWidth: getIntPref(PREFS.UI.EDITOR_WIDTH),
+      showEditorOnboarding: getBoolPref(PREFS.UI.EDITOR_ONBOARDING),
       timestampsVisible: getBoolPref(PREFS.UI.MESSAGE_TIMESTAMP),
     }),
   };

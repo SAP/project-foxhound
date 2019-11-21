@@ -23,6 +23,7 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/FlushType.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/Saturate.h"
 #include "mozilla/ScrollTypes.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoStyleConsts.h"
@@ -257,26 +258,26 @@ class PresShell final : public nsStubDocumentObserver,
    * on out-of-memory.
    */
   void* AllocateFrame(nsQueryFrame::FrameIID aID, size_t aSize) {
-    void* result = mFrameArena.AllocateByFrameID(aID, aSize);
-    RecordAlloc(result);
-    return result;
+#define FRAME_ID(classname, ...)                                  \
+  static_assert(size_t(nsQueryFrame::FrameIID::classname##_id) == \
+                    size_t(eArenaObjectID_##classname),           \
+                "");
+#define ABSTRACT_FRAME_ID(classname)                              \
+  static_assert(size_t(nsQueryFrame::FrameIID::classname##_id) == \
+                    size_t(eArenaObjectID_##classname),           \
+                "");
+#include "mozilla/FrameIdList.h"
+#undef FRAME_ID
+#undef ABSTRACT_FRAME_ID
+    return AllocateByObjectID(ArenaObjectID(size_t(aID)), aSize);
   }
 
   void FreeFrame(nsQueryFrame::FrameIID aID, void* aPtr) {
-    RecordFree(aPtr);
-    if (!mIsDestroying) {
-      mFrameArena.FreeByFrameID(aID, aPtr);
-    }
+    return FreeByObjectID(ArenaObjectID(size_t(aID)), aPtr);
   }
 
-  /**
-   * This is for allocating other types of objects (not frames).  Separate free
-   * lists are maintained for each type (aID), which must always correspond to
-   * the same aSize value.  AllocateByObjectID is infallible and will abort on
-   * out-of-memory.
-   */
   void* AllocateByObjectID(ArenaObjectID aID, size_t aSize) {
-    void* result = mFrameArena.AllocateByObjectID(aID, aSize);
+    void* result = mFrameArena.Allocate(aID, aSize);
     RecordAlloc(result);
     return result;
   }
@@ -284,7 +285,7 @@ class PresShell final : public nsStubDocumentObserver,
   void FreeByObjectID(ArenaObjectID aID, void* aPtr) {
     RecordFree(aPtr);
     if (!mIsDestroying) {
-      mFrameArena.FreeByObjectID(aID, aPtr);
+      mFrameArena.Free(aID, aPtr);
     }
   }
 
@@ -578,29 +579,6 @@ class PresShell final : public nsStubDocumentObserver,
   bool ScrollFrameRectIntoView(nsIFrame* aFrame, const nsRect& aRect,
                                ScrollAxis aVertical, ScrollAxis aHorizontal,
                                ScrollFlags aScrollFlags);
-
-  /**
-   * Determine if a rectangle specified in the frame's coordinate system
-   * intersects "enough" with the viewport to be considered visible. This
-   * is not a strict test against the viewport -- it's a test against
-   * the intersection of the viewport and the frame's ancestor scrollable
-   * frames. If it doesn't intersect enough, return a value indicating
-   * which direction the frame's topmost ancestor scrollable frame would
-   * need to be scrolled to bring the frame into view.
-   * @param aFrame frame that aRect coordinates are specified relative to
-   * @param aRect rectangle in twips to test for visibility
-   * @param aMinTwips is the minimum distance in from the edge of the
-   *                  visible area that an object must be to be counted
-   *                  visible
-   * @return RectVisibility::Visible if the rect is visible
-   *         RectVisibility::AboveViewport
-   *         RectVisibility::BelowViewport
-   *         RectVisibility::LeftOfViewport
-   *         RectVisibility::RightOfViewport rectangle is outside the
-   *         topmost ancestor scrollable frame in the specified direction
-   */
-  RectVisibility GetRectVisibility(nsIFrame* aFrame, const nsRect& aRect,
-                                   nscoord aMinTwips) const;
 
   /**
    * Suppress notification of the frame manager that frames are
@@ -2810,6 +2788,16 @@ class PresShell final : public nsStubDocumentObserver,
   nsIFrame* mDrawEventTargetFrame = nullptr;
 #endif  // #ifdef DEBUG
 
+  enum class FlushKind : uint8_t { Style, Layout, Count };
+
+  // Send the current number of flush requests for aFlushType to telemetry and
+  // reset the count.
+  void PingReqsPerFlushTelemetry(FlushKind aFlushKind);
+
+  // Send the current non-zero number of style and layout flushes to telemetry
+  // and reset the count.
+  void PingFlushPerTickTelemetry(FlushType aFlushType);
+
  private:
   // IMPORTANT: The ownership implicit in the following member variables
   // has been explicitly checked.  If you add any members to this class,
@@ -2974,7 +2962,8 @@ class PresShell final : public nsStubDocumentObserver,
   // The focus information needed for async keyboard scrolling
   FocusTarget mAPZFocusTarget;
 
-  nsPresArena<8192> mFrameArena;
+  using Arena = nsPresArena<8192, ArenaObjectID, eArenaObjectID_COUNT>;
+  Arena mFrameArena;
 
   Maybe<nsPoint> mVisualViewportOffset;
 
@@ -3171,6 +3160,9 @@ class PresShell final : public nsStubDocumentObserver,
   static bool sDisableNonTestMouseEvents;
 
   static bool sProcessInteractable;
+
+  EnumeratedArray<FlushKind, FlushKind::Count, SaturateUint8> mReqsPerFlush;
+  EnumeratedArray<FlushKind, FlushKind::Count, SaturateUint8> mFlushesPerTick;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(PresShell, NS_PRESSHELL_IID)

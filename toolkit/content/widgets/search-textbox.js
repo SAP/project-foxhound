@@ -46,16 +46,6 @@
         });
       }
 
-      this.addEventListener("click", event => {
-        if (
-          this.clickSelectsAll &&
-          document.activeElement == this.inputField &&
-          this.inputField.selectionStart == this.inputField.selectionEnd
-        ) {
-          this.editor.selectAll();
-        }
-      });
-
       this.addEventListener("input", event => {
         if (this.searchButton) {
           this._searchIcons.selectedIndex = 0;
@@ -161,6 +151,9 @@
         this.setAttribute("searchbutton", "true");
         this.removeAttribute("aria-autocomplete");
         // Hack for the button to get the right accessible:
+        // If you update the 'onclick' event handler code within the
+        // _searchButtonIcon you also have to update the sha512 hash in the
+        // CSP of about:addons within extensions.xul.
         this._searchButtonIcon.setAttribute("onclick", "true");
       } else {
         this.removeAttribute("searchbutton");
@@ -209,18 +202,6 @@
 
     get disabled() {
       return this.inputField.disabled;
-    }
-
-    get clickSelectsAll() {
-      return this.getAttribute("clickSelectsAll") == "true";
-    }
-
-    set clickSelectsAll(val) {
-      if (val) {
-        this.setAttribute("clickSelectsAll", "true");
-      } else {
-        this.removeAttribute("clickSelectsAll");
-      }
     }
 
     reset() {

@@ -9,6 +9,7 @@
 #include "ClientInfo.h"
 #include "ClientState.h"
 #include "mozilla/SystemGroup.h"
+#include "mozilla/ResultExtensions.h"
 #include "nsContentUtils.h"
 #include "nsFocusManager.h"
 #include "nsIBrowserDOMWindow.h"
@@ -149,9 +150,8 @@ class WebProgressListener final : public nsIWebProgressListener,
 NS_IMPL_ISUPPORTS(WebProgressListener, nsIWebProgressListener,
                   nsISupportsWeakReference);
 
-nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
-                    nsPIDOMWindowOuter** aWindow) {
-  MOZ_DIAGNOSTIC_ASSERT(aWindow);
+nsresult OpenWindow(const ClientOpenWindowArgs& aArgs, BrowsingContext** aBC) {
+  MOZ_DIAGNOSTIC_ASSERT(aBC);
 
   // [[1. Let url be the result of parsing url with entry settings object's API
   //   base URL.]]
@@ -212,8 +212,7 @@ nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
       return rv;
     }
 
-    nsCOMPtr<mozIDOMWindowProxy> newWindow;
-    rv = pwwatch->OpenWindow2(
+    MOZ_TRY(pwwatch->OpenWindow2(
         nullptr, spec.get(), nullptr, nullptr, false, false, true, nullptr,
         // Not a spammy popup; we got permission, we swear!
         /* aIsPopupSpam = */ false,
@@ -222,13 +221,8 @@ nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
         // window.
         /* aForceNoOpener = */ false,
         /* aForceNoReferrer = */ false,
-        /* aLoadInfp = */ nullptr, getter_AddRefs(newWindow));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    nsCOMPtr<nsPIDOMWindowOuter> pwindow = nsPIDOMWindowOuter::From(newWindow);
-    pwindow.forget(aWindow);
-    MOZ_DIAGNOSTIC_ASSERT(*aWindow);
+        /* aLoadInfp = */ nullptr, aBC));
+    MOZ_DIAGNOSTIC_ASSERT(*aBC);
     return NS_OK;
   }
 
@@ -254,20 +248,8 @@ nsresult OpenWindow(const ClientOpenWindowArgs& aArgs,
     return NS_ERROR_FAILURE;
   }
 
-  nsCOMPtr<mozIDOMWindowProxy> win;
-  rv = bwin->OpenURI(uri, nullptr, nsIBrowserDOMWindow::OPEN_DEFAULTWINDOW,
-                     nsIBrowserDOMWindow::OPEN_NEW, principal, csp,
-                     getter_AddRefs(win));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  NS_ENSURE_STATE(win);
-
-  nsCOMPtr<nsPIDOMWindowOuter> pWin = nsPIDOMWindowOuter::From(win);
-  pWin.forget(aWindow);
-  MOZ_DIAGNOSTIC_ASSERT(*aWindow);
-
-  return NS_OK;
+  return bwin->OpenURI(uri, nullptr, nsIBrowserDOMWindow::OPEN_DEFAULTWINDOW,
+                       nsIBrowserDOMWindow::OPEN_NEW, principal, csp, aBC);
 }
 
 void WaitForLoad(const ClientOpenWindowArgs& aArgs,
@@ -390,8 +372,10 @@ RefPtr<ClientOpPromise> ClientOpenWindowInCurrentProcess(
   java::GeckoApp::LaunchOrBringToFront();
 #endif  // MOZ_WIDGET_ANDROID
 
-  nsCOMPtr<nsPIDOMWindowOuter> outerWindow;
-  nsresult rv = OpenWindow(aArgs, getter_AddRefs(outerWindow));
+  RefPtr<BrowsingContext> bc;
+  nsresult rv = OpenWindow(aArgs, getter_AddRefs(bc));
+
+  nsCOMPtr<nsPIDOMWindowOuter> outerWindow(bc->GetDOMWindow());
 
 #ifdef MOZ_WIDGET_ANDROID
   // If we get the NOT_AVAILABLE error that means the browser is still
@@ -402,10 +386,15 @@ RefPtr<ClientOpPromise> ClientOpenWindowInCurrentProcess(
     p->Then(
         SystemGroup::EventTargetFor(TaskCategory::Other), __func__,
         [aArgs, promise](bool aResult) {
-          nsCOMPtr<nsPIDOMWindowOuter> outerWindow;
-          nsresult rv = OpenWindow(aArgs, getter_AddRefs(outerWindow));
+          RefPtr<BrowsingContext> bc;
+          nsresult rv = OpenWindow(aArgs, getter_AddRefs(bc));
           if (NS_WARN_IF(NS_FAILED(rv))) {
             promise->Reject(rv, __func__);
+            return;
+          }
+          nsCOMPtr<nsPIDOMWindowOuter> outerWindow(bc->GetDOMWindow());
+          if (NS_WARN_IF(!outerWindow)) {
+            promise->Reject(NS_ERROR_FAILURE, __func__);
             return;
           }
 

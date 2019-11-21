@@ -2,6 +2,13 @@
 var prefetch = Cc["@mozilla.org/prefetch-service;1"].getService(
   Ci.nsIPrefetchService
 );
+
+var ReferrerInfo = Components.Constructor(
+  "@mozilla.org/referrer-info;1",
+  "nsIReferrerInfo",
+  "init"
+);
+
 var ios = Services.io;
 var prefs = Services.prefs;
 
@@ -30,7 +37,9 @@ function run_test() {
 
 add_test(function test_cancel1() {
   var uri = ios.newURI("http://localhost/1");
-  prefetch.prefetchURI(uri, uri, node1, true);
+  var referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, uri);
+
+  prefetch.prefetchURI(uri, referrerInfo, node1, true);
 
   Assert.ok(prefetch.hasMoreElements(), "There is a request in the queue");
 
@@ -38,7 +47,7 @@ add_test(function test_cancel1() {
   var didFail = 0;
 
   try {
-    prefetch.prefetchURI(uri, uri, node1, true);
+    prefetch.prefetchURI(uri, referrerInfo, node1, true);
   } catch (e) {
     didFail = 1;
   }
@@ -61,8 +70,10 @@ add_test(function test_cancel2() {
   // in the queue and canceling one will not cancel the other.
 
   var uri = ios.newURI("http://localhost/1");
-  prefetch.prefetchURI(uri, uri, node1, true);
-  prefetch.prefetchURI(uri, uri, node2, true);
+  var referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, uri);
+
+  prefetch.prefetchURI(uri, referrerInfo, node1, true);
+  prefetch.prefetchURI(uri, referrerInfo, node2, true);
 
   Assert.ok(prefetch.hasMoreElements(), "There are requests in the queue");
 
@@ -83,7 +94,9 @@ add_test(function test_cancel3() {
   // Request a prefetch of a uri. Trying to cancel a prefetch for the same uri
   // with a different node will fail.
   var uri = ios.newURI("http://localhost/1");
-  prefetch.prefetchURI(uri, uri, node1, true);
+  var referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, uri);
+
+  prefetch.prefetchURI(uri, referrerInfo, node1, true);
 
   Assert.ok(prefetch.hasMoreElements(), "There is a request in the queue");
 
@@ -111,7 +124,9 @@ add_test(function test_cancel4() {
   // with the same node will fail.
   var uri1 = ios.newURI("http://localhost/1");
   var uri2 = ios.newURI("http://localhost/2");
-  prefetch.prefetchURI(uri1, uri1, node1, true);
+  var referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, uri1);
+
+  prefetch.prefetchURI(uri1, referrerInfo, node1, true);
 
   Assert.ok(prefetch.hasMoreElements(), "There is a request in the queue");
 

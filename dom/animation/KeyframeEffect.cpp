@@ -23,7 +23,9 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/TypeTraits.h"
 #include "Layers.h"              // For Layer
 #include "nsComputedDOMStyle.h"  // nsComputedDOMStyle::GetComputedStyle
@@ -48,7 +50,7 @@ void AnimationProperty::SetPerformanceWarning(
   mPerformanceWarning = Some(aWarning);
 
   nsAutoString localizedString;
-  if (nsLayoutUtils::IsAnimationLoggingEnabled() &&
+  if (StaticPrefs::layers_offmainthreadcomposition_log_animations() &&
       mPerformanceWarning->ToLocalizedString(localizedString)) {
     nsAutoCString logMessage = NS_ConvertUTF16toUTF8(localizedString);
     AnimationUtils::LogAsyncAnimationFailure(logMessage, aElement);
@@ -1604,7 +1606,8 @@ void KeyframeEffect::CalculateCumulativeChangeHint(
   mNeedsStyleData = false;
 
   nsPresContext* presContext =
-      nsContentUtils::GetContextForContent(mTarget->mElement);
+      mTarget ? nsContentUtils::GetContextForContent(mTarget->mElement)
+              : nullptr;
   if (!presContext) {
     // Change hints make no sense if we're not rendered.
     //
@@ -1878,6 +1881,13 @@ KeyframeEffect::MatchForCompositor KeyframeEffect::IsMatchForCompositor(
         return KeyframeEffect::MatchForCompositor::No;
       }
     }
+  }
+
+  // Bug 1429305: Drop this after supporting compositor animations for motion
+  // path.
+  if (aPropertySet.Intersects(nsCSSPropertyIDSet::TransformLikeProperties()) &&
+      !aFrame->StyleDisplay()->mOffsetPath.IsNone()) {
+    return KeyframeEffect::MatchForCompositor::No;
   }
 
   return mAnimation->IsPlaying() ? KeyframeEffect::MatchForCompositor::Yes

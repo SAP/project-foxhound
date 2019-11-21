@@ -137,15 +137,13 @@ class BackgroundParentImpl : public PBackgroundParent {
   virtual bool DeallocPPendingIPCBlobParent(
       PPendingIPCBlobParent* aActor) override;
 
-  virtual PIPCBlobInputStreamParent* AllocPIPCBlobInputStreamParent(
-      const nsID& aID, const uint64_t& aSize) override;
+  virtual already_AddRefed<PIPCBlobInputStreamParent>
+  AllocPIPCBlobInputStreamParent(const nsID& aID,
+                                 const uint64_t& aSize) override;
 
   virtual mozilla::ipc::IPCResult RecvPIPCBlobInputStreamConstructor(
       PIPCBlobInputStreamParent* aActor, const nsID& aID,
       const uint64_t& aSize) override;
-
-  virtual bool DeallocPIPCBlobInputStreamParent(
-      PIPCBlobInputStreamParent* aActor) override;
 
   virtual PTemporaryIPCBlobParent* AllocPTemporaryIPCBlobParent() override;
 
@@ -172,6 +170,17 @@ class BackgroundParentImpl : public PBackgroundParent {
       const RemoteWorkerData& aData) override;
 
   virtual bool DeallocPRemoteWorkerParent(PRemoteWorkerParent* aActor) override;
+
+  virtual mozilla::dom::PRemoteWorkerControllerParent*
+  AllocPRemoteWorkerControllerParent(
+      const mozilla::dom::RemoteWorkerData& aRemoteWorkerData) override;
+
+  virtual mozilla::ipc::IPCResult RecvPRemoteWorkerControllerConstructor(
+      mozilla::dom::PRemoteWorkerControllerParent* aActor,
+      const mozilla::dom::RemoteWorkerData& aRemoteWorkerData) override;
+
+  virtual bool DeallocPRemoteWorkerControllerParent(
+      mozilla::dom::PRemoteWorkerControllerParent* aActor) override;
 
   virtual mozilla::dom::PRemoteWorkerServiceParent*
   AllocPRemoteWorkerServiceParent() override;
@@ -282,14 +291,11 @@ class BackgroundParentImpl : public PBackgroundParent {
 
   virtual mozilla::ipc::IPCResult RecvShutdownQuotaManager() override;
 
-  virtual PFileSystemRequestParent* AllocPFileSystemRequestParent(
-      const FileSystemParams&) override;
+  virtual already_AddRefed<PFileSystemRequestParent>
+  AllocPFileSystemRequestParent(const FileSystemParams&) override;
 
   virtual mozilla::ipc::IPCResult RecvPFileSystemRequestConstructor(
       PFileSystemRequestParent* actor, const FileSystemParams& params) override;
-
-  virtual bool DeallocPFileSystemRequestParent(
-      PFileSystemRequestParent*) override;
 
   // Gamepad API Background IPC
   virtual PGamepadEventChannelParent* AllocPGamepadEventChannelParent()
@@ -309,14 +315,12 @@ class BackgroundParentImpl : public PBackgroundParent {
   virtual bool DeallocPWebAuthnTransactionParent(
       PWebAuthnTransactionParent* aActor) override;
 
-  virtual PHttpBackgroundChannelParent* AllocPHttpBackgroundChannelParent(
-      const uint64_t& aChannelId) override;
+  virtual already_AddRefed<PHttpBackgroundChannelParent>
+  AllocPHttpBackgroundChannelParent(const uint64_t& aChannelId) override;
 
   virtual mozilla::ipc::IPCResult RecvPHttpBackgroundChannelConstructor(
       PHttpBackgroundChannelParent* aActor,
       const uint64_t& aChannelId) override;
-  virtual bool DeallocPHttpBackgroundChannelParent(
-      PHttpBackgroundChannelParent* aActor) override;
 
   virtual PClientManagerParent* AllocPClientManagerParent() override;
 
@@ -380,6 +384,10 @@ class BackgroundParentImpl : public PBackgroundParent {
   virtual mozilla::ipc::IPCResult RecvRemoveEndpoint(
       const nsString& aGroupName, const nsCString& aEndpointURL,
       const PrincipalInfo& aPrincipalInfo) override;
+
+  virtual dom::PMediaTransportParent* AllocPMediaTransportParent() override;
+  virtual bool DeallocPMediaTransportParent(
+      dom::PMediaTransportParent* aActor) override;
 };
 
 }  // namespace ipc

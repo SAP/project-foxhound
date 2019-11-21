@@ -13,7 +13,7 @@ add_task(async function basic() {
       "Clicking the history dropmarker should initiate an empty search instead of searching for the loaded URL"
     );
     is(
-      gURLBar.value,
+      gURLBar.untrimmedValue,
       "http://example.com/",
       "Clicking the history dropmarker should not change the input value"
     );
@@ -50,12 +50,7 @@ add_task(async function proxyState() {
 
 async function clickDropmarker() {
   await UrlbarTestUtils.promisePopupOpen(window, () => {
-    let historyDropMarker = window.document.getAnonymousElementByAttribute(
-      gURLBar.textbox,
-      "anonid",
-      "historydropmarker"
-    );
-    EventUtils.synthesizeMouseAtCenter(historyDropMarker, {}, window);
+    EventUtils.synthesizeMouseAtCenter(gURLBar.dropmarker, {}, window);
   });
   let queryContext = await gURLBar.lastQueryContextPromise;
   return queryContext;

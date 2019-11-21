@@ -181,12 +181,6 @@ nsStyleSheetService::LoadAndRegisterSheet(nsIURI* aSheetURI,
   return rv;
 }
 
-static nsresult LoadSheet(nsIURI* aURI, css::SheetParsingMode aParsingMode,
-                          RefPtr<StyleSheet>* aResult) {
-  RefPtr<css::Loader> loader = new css::Loader;
-  return loader->LoadSheetSync(aURI, aParsingMode, true, aResult);
-}
-
 nsresult nsStyleSheetService::LoadAndRegisterSheetInternal(
     nsIURI* aSheetURI, uint32_t aSheetType) {
   NS_ENSURE_ARG_POINTER(aSheetURI);
@@ -210,12 +204,13 @@ nsresult nsStyleSheetService::LoadAndRegisterSheetInternal(
       return NS_ERROR_INVALID_ARG;
   }
 
-  RefPtr<StyleSheet> sheet;
-  nsresult rv = LoadSheet(aSheetURI, parsingMode, &sheet);
-  NS_ENSURE_SUCCESS(rv, rv);
-  MOZ_ASSERT(sheet);
-  mSheets[aSheetType].AppendElement(sheet);
-
+  RefPtr<css::Loader> loader = new css::Loader;
+  auto result = loader->LoadSheetSync(aSheetURI, parsingMode,
+                                      css::Loader::UseSystemPrincipal::Yes);
+  if (result.isErr()) {
+    return result.unwrapErr();
+  }
+  mSheets[aSheetType].AppendElement(result.unwrap());
   return NS_OK;
 }
 
@@ -264,9 +259,7 @@ nsStyleSheetService::PreloadSheet(nsIURI* aSheetURI, uint32_t aSheetType,
   nsresult rv = GetParsingMode(aSheetType, &parsingMode);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  RefPtr<PreloadedStyleSheet> sheet;
-  rv = PreloadedStyleSheet::Create(aSheetURI, parsingMode,
-                                   getter_AddRefs(sheet));
+  auto sheet = MakeRefPtr<PreloadedStyleSheet>(aSheetURI, parsingMode);
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = sheet->Preload();
@@ -295,11 +288,7 @@ nsStyleSheetService::PreloadSheetAsync(nsIURI* aSheetURI, uint32_t aSheetType,
     return errv.StealNSResult();
   }
 
-  RefPtr<PreloadedStyleSheet> sheet;
-  rv = PreloadedStyleSheet::Create(aSheetURI, parsingMode,
-                                   getter_AddRefs(sheet));
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  auto sheet = MakeRefPtr<PreloadedStyleSheet>(aSheetURI, parsingMode);
   sheet->PreloadAsync(WrapNotNull(promise));
 
   if (!ToJSValue(aCx, promise, aRval)) {

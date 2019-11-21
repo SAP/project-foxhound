@@ -18,6 +18,7 @@
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/WorkerPrivate.h"
@@ -225,6 +226,9 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
  private:
   ~WebSocketImpl() {
+    MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread() == mIsMainThread ||
+                          mDisconnectingOrDisconnected);
+
     // If we threw during Init we never called disconnect
     if (!mDisconnectingOrDisconnected) {
       Disconnect();
@@ -232,42 +236,9 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
   }
 };
 
-NS_IMPL_ADDREF(WebSocketImpl)
-NS_IMPL_QUERY_INTERFACE(WebSocketImpl, nsIInterfaceRequestor,
-                        nsIWebSocketListener, nsIObserver,
-                        nsISupportsWeakReference, nsIRequest, nsIEventTarget)
-
-NS_IMETHODIMP_(MozExternalRefCountType) WebSocketImpl::Release(void) {
-  MOZ_ASSERT(int32_t(mRefCnt) > 0, "dup release");
-
-  if (!mRefCnt.isThreadSafe) {
-    NS_ASSERT_OWNINGTHREAD(WebSocketImpl);
-  }
-
-  nsrefcnt count = mRefCnt - 1;
-  // If WebSocketImpl::Disconnect is not called, the last release of
-  // WebSocketImpl should be on the right thread.
-  if (count == 0 && !IsTargetThread() && !mDisconnectingOrDisconnected) {
-    DebugOnly<nsresult> rv = Dispatch(NewNonOwningRunnableMethod(
-        "dom::WebSocketImpl::Release", this, &WebSocketImpl::Release));
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    return count;
-  }
-
-  count = --mRefCnt;
-  NS_LOG_RELEASE(this, count, "WebSocketImpl");
-
-  if (count == 0) {
-    if (!mRefCnt.isThreadSafe) {
-      NS_ASSERT_OWNINGTHREAD(WebSocketImpl);
-    }
-
-    mRefCnt = 1; /* stabilize */
-    delete (this);
-    return 0;
-  }
-  return count;
-}
+NS_IMPL_ISUPPORTS(WebSocketImpl, nsIInterfaceRequestor, nsIWebSocketListener,
+                  nsIObserver, nsISupportsWeakReference, nsIRequest,
+                  nsIEventTarget)
 
 class CallDispatchConnectionCloseEvents final : public CancelableRunnable {
  public:
@@ -572,11 +543,11 @@ class DisconnectInternalRunnable final : public WorkerMainThreadRunnable {
 }  // namespace
 
 void WebSocketImpl::Disconnect() {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread() == mIsMainThread);
+
   if (mDisconnectingOrDisconnected) {
     return;
   }
-
-  AssertIsOnTargetThread();
 
   // DontKeepAliveAnyMore() and DisconnectInternal() can release the object. So
   // hold a reference to this until the end of the method.
@@ -1178,7 +1149,8 @@ class AsyncOpenRunnable final : public WebSocketMainThreadRunnable {
     }
 
     uint64_t windowID = 0;
-    nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+    nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+        aWindow->GetInProcessScriptableTop();
     nsCOMPtr<nsPIDOMWindowInner> topInner;
     if (topWindow) {
       topInner = topWindow->GetCurrentInnerWindow();
@@ -1400,7 +1372,8 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     }
 
     uint64_t windowID = 0;
-    nsCOMPtr<nsPIDOMWindowOuter> topWindow = outerWindow->GetScriptableTop();
+    nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+        outerWindow->GetInProcessScriptableTop();
     nsCOMPtr<nsPIDOMWindowInner> topInner;
     if (topWindow) {
       topInner = topWindow->GetCurrentInnerWindow();
@@ -1639,20 +1612,16 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
   // Don't allow https:// to open ws://
   if (!mIsServerSide && !mSecure &&
       !Preferences::GetBool("network.websocket.allowInsecureFromHTTPS",
-                            false)) {
+                            false) &&
+      !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
+          mAsciiHost)) {
     nsCOMPtr<nsIURI> originURI;
     if (aLoadingPrincipal) {
       aLoadingPrincipal->GetURI(getter_AddRefs(originURI));
     }
 
-    if (originURI) {
-      bool originIsHttps = false;
-      rv = originURI->SchemeIs("https", &originIsHttps);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (originIsHttps) {
-        return NS_ERROR_DOM_SECURITY_ERR;
-      }
+    if (originURI && originURI->SchemeIs("https")) {
+      return NS_ERROR_DOM_SECURITY_ERR;
     }
   }
 
@@ -2726,7 +2695,7 @@ nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
     }
 
     nsCOMPtr<nsPIDOMWindowOuter> parentWindow =
-        innerWindow->GetScriptableParent();
+        innerWindow->GetInProcessScriptableParent();
     if (NS_WARN_IF(!parentWindow)) {
       return NS_ERROR_DOM_SECURITY_ERR;
     }
@@ -2739,19 +2708,14 @@ nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
 
     // We are at the top. Let's see if we have an opener window.
     if (innerWindow == currentInnerWindow) {
-      ErrorResult error;
-      parentWindow =
-          nsGlobalWindowInner::Cast(innerWindow)->GetOpenerWindow(error);
-      if (NS_WARN_IF(error.Failed())) {
-        error.SuppressException();
-        return NS_ERROR_DOM_SECURITY_ERR;
-      }
-
+      parentWindow = nsGlobalWindowOuter::Cast(innerWindow->GetOuterWindow())
+                         ->GetSameProcessOpener();
       if (!parentWindow) {
         break;
       }
 
-      if (parentWindow->GetScriptableTop() == innerWindow->GetScriptableTop()) {
+      if (parentWindow->GetInProcessScriptableTop() ==
+          innerWindow->GetInProcessScriptableTop()) {
         break;
       }
 

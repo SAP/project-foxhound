@@ -4,7 +4,12 @@
 
 "use strict";
 
-loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerServer",
+  "devtools/server/debugger-server",
+  true
+);
 loader.lazyRequireGetter(
   this,
   "DebuggerClient",
@@ -38,7 +43,6 @@ exports.TargetFactory = {
     target = await promise;
     // Then replace the promise with the target object
     targets.set(tab, target);
-    target.attachTab(tab);
     target.once("close", () => {
       targets.delete(tab);
     });
@@ -66,7 +70,7 @@ exports.TargetFactory = {
       DebuggerServer.init();
 
       // When connecting to a local tab, we only need the root actor.
-      // Then we are going to call DebuggerServer.connectToFrame and talk
+      // Then we are going to call frame-connector.js' connectToFrame and talk
       // directly with actors living in the child process.
       // We also need browser actors for actor registry which enabled addons
       // to register custom actors.
@@ -86,7 +90,7 @@ exports.TargetFactory = {
     // Connect the local client to the local server
     await client.connect();
 
-    // Fetch the FrameTargetActor's Front
+    // Fetch the FrameTargetActor's Front which is a BrowsingContextTargetFront
     return client.mainRoot.getTab({ tab });
   },
 

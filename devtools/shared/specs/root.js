@@ -47,7 +47,7 @@ const rootSpecPrototype = {
         tabId: Option(0, "number"),
       },
       response: {
-        tab: RetVal("browsingContextTarget"),
+        tab: RetVal("json"),
       },
     },
 
@@ -65,7 +65,7 @@ const rootSpecPrototype = {
         iconDataURL: Option(0, "boolean"),
       },
       response: {
-        addons: RetVal("array:addonTarget"),
+        addons: RetVal("array:webExtensionDescriptor"),
       },
     },
 

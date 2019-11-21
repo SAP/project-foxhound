@@ -15,7 +15,7 @@
 #include "js/SourceText.h"
 #include "MessageEventRunnable.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/CallbackDebuggerNotification.h"
 #include "mozilla/dom/ClientManager.h"
@@ -36,6 +36,7 @@
 #include "mozilla/dom/PerformanceStorageWorker.h"
 #include "mozilla/dom/PromiseDebugging.h"
 #include "mozilla/dom/RemoteWorkerChild.h"
+#include "mozilla/dom/RemoteWorkerService.h"
 #include "mozilla/dom/TimeoutHandler.h"
 #include "mozilla/dom/WorkerBinding.h"
 #include "mozilla/StorageAccess.h"
@@ -53,6 +54,7 @@
 #include "nsIURI.h"
 #include "nsIURL.h"
 #include "nsPrintfCString.h"
+#include "nsProxyRelease.h"
 #include "nsQueryObject.h"
 #include "nsRFPService.h"
 #include "nsSandboxFlags.h"
@@ -874,6 +876,25 @@ class CancelingRunnable final : public Runnable {
 
 } /* anonymous namespace */
 
+nsString ComputeWorkerPrivateId() {
+  nsresult rv;
+  nsCOMPtr<nsIUUIDGenerator> uuidGenerator =
+      do_GetService("@mozilla.org/uuid-generator;1", &rv);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+
+  nsID uuid;
+  rv = uuidGenerator->GenerateUUIDInPlace(&uuid);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  char buffer[NSID_LENGTH];
+  uuid.ToProvidedString(buffer);
+
+  nsString id;
+  // Remove {} and the null terminator
+  id.AssignASCII(&buffer[1], NSID_LENGTH - 3);
+
+  return id;
+}
+
 class WorkerPrivate::EventTarget final : public nsISerialEventTarget {
   // This mutex protects mWorkerPrivate and must be acquired *before* the
   // WorkerPrivate's mutex whenever they must both be held.
@@ -1348,9 +1369,9 @@ void WorkerPrivate::UpdateReferrerInfoFromHeader(
     return;
   }
 
-  net::ReferrerPolicy policy =
-      nsContentUtils::GetReferrerPolicyFromHeader(headerValue);
-  if (policy == net::RP_Unset) {
+  ReferrerPolicy policy =
+      ReferrerInfo::ReferrerPolicyFromHeaderString(headerValue);
+  if (policy == ReferrerPolicy::_empty) {
     return;
   }
 
@@ -2047,7 +2068,7 @@ bool WorkerPrivate::PrincipalIsValid() const {
 
 WorkerPrivate::WorkerThreadAccessible::WorkerThreadAccessible(
     WorkerPrivate* const aParent)
-    : mNumHoldersPreventingShutdownStart(0),
+    : mNumWorkerRefsPreventingShutdownStart(0),
       mDebuggerEventLoopLevel(0),
       mErrorHandlerRecursionCount(0),
       mNextTimeoutId(1),
@@ -2095,7 +2116,7 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
                              WorkerType aWorkerType,
                              const nsAString& aWorkerName,
                              const nsACString& aServiceWorkerScope,
-                             WorkerLoadInfo& aLoadInfo)
+                             WorkerLoadInfo& aLoadInfo, nsString&& aId)
     : mMutex("WorkerPrivate Mutex"),
       mCondVar(mMutex, "WorkerPrivate CondVar"),
       mParent(aParent),
@@ -2130,7 +2151,8 @@ WorkerPrivate::WorkerPrivate(WorkerPrivate* aParent,
       mDebuggerRegistered(false),
       mDebuggerReady(true),
       mIsInAutomation(false),
-      mPerformanceCounter(nullptr) {
+      mPerformanceCounter(nullptr),
+      mId(std::move(aId)) {
   MOZ_ASSERT_IF(!IsDedicatedWorker(), NS_IsMainThread());
 
   if (aParent) {
@@ -2234,7 +2256,7 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
     JSContext* aCx, const nsAString& aScriptURL, bool aIsChromeWorker,
     WorkerType aWorkerType, const nsAString& aWorkerName,
     const nsACString& aServiceWorkerScope, WorkerLoadInfo* aLoadInfo,
-    ErrorResult& aRv) {
+    ErrorResult& aRv, nsString aId) {
   WorkerPrivate* parent =
       NS_IsMainThread() ? nullptr : GetCurrentThreadWorkerPrivate();
 
@@ -2286,9 +2308,9 @@ already_AddRefed<WorkerPrivate> WorkerPrivate::Constructor(
 
   MOZ_ASSERT(runtimeService);
 
-  RefPtr<WorkerPrivate> worker =
-      new WorkerPrivate(parent, aScriptURL, aIsChromeWorker, aWorkerType,
-                        aWorkerName, aServiceWorkerScope, *aLoadInfo);
+  RefPtr<WorkerPrivate> worker = new WorkerPrivate(
+      parent, aScriptURL, aIsChromeWorker, aWorkerType, aWorkerName,
+      aServiceWorkerScope, *aLoadInfo, std::move(aId));
 
   // Gecko contexts always have an explicitly-set default locale (set by
   // XPJSRuntime::Initialize for the main thread, set by
@@ -2508,7 +2530,7 @@ nsresult WorkerPrivate::GetLoadInfo(JSContext* aCx, nsPIDOMWindowInner* aWindow,
         if (document->GetSandboxFlags() & SANDBOXED_ORIGIN) {
           nsCOMPtr<Document> tmpDoc = document;
           do {
-            tmpDoc = tmpDoc->GetParentDocument();
+            tmpDoc = tmpDoc->GetInProcessParentDocument();
           } while (tmpDoc && tmpDoc->GetSandboxFlags() & SANDBOXED_ORIGIN);
 
           if (tmpDoc) {
@@ -2706,7 +2728,7 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
       while (mControlQueue.IsEmpty() &&
              !(debuggerRunnablesPending = !mDebuggerQueue.IsEmpty()) &&
              !(normalRunnablesPending = NS_HasPendingEvents(mThread)) &&
-             !(mStatus != Running && !HasActiveHolders())) {
+             !(mStatus != Running && !HasActiveWorkerRefs())) {
         WaitForWorkerEvents();
       }
 
@@ -2724,7 +2746,7 @@ void WorkerPrivate::DoRunLoop(JSContext* aCx) {
     }
 
     // if all holders are done then we can kill this thread.
-    if (currentStatus != Running && !HasActiveHolders()) {
+    if (currentStatus != Running && !HasActiveWorkerRefs()) {
       // Now we are ready to kill the worker thread.
       if (currentStatus == Canceling) {
         NotifyInternal(Killing);
@@ -3503,7 +3525,9 @@ void WorkerPrivate::RemoveChildWorker(WorkerPrivate* aChildWorker) {
   }
 }
 
-bool WorkerPrivate::AddHolder(WorkerHolder* aHolder, WorkerStatus aFailStatus) {
+bool WorkerPrivate::AddWorkerRef(WorkerRef* aWorkerRef,
+                                 WorkerStatus aFailStatus) {
+  MOZ_ASSERT(aWorkerRef);
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
 
   {
@@ -3514,46 +3538,46 @@ bool WorkerPrivate::AddHolder(WorkerHolder* aHolder, WorkerStatus aFailStatus) {
     }
   }
 
-  MOZ_ASSERT(!data->mHolders.Contains(aHolder), "Already know about this one!");
+  MOZ_ASSERT(!data->mWorkerRefs.Contains(aWorkerRef),
+             "Already know about this one!");
 
-  if (aHolder->GetBehavior() == WorkerHolder::PreventIdleShutdownStart) {
-    if (!data->mNumHoldersPreventingShutdownStart &&
+  if (aWorkerRef->IsPreventingShutdown()) {
+    if (!data->mNumWorkerRefsPreventingShutdownStart &&
         !ModifyBusyCountFromWorker(true)) {
       return false;
     }
-    data->mNumHoldersPreventingShutdownStart += 1;
+    data->mNumWorkerRefsPreventingShutdownStart += 1;
   }
 
-  data->mHolders.AppendElement(aHolder);
+  data->mWorkerRefs.AppendElement(aWorkerRef);
   return true;
 }
 
-void WorkerPrivate::RemoveHolder(WorkerHolder* aHolder) {
+void WorkerPrivate::RemoveWorkerRef(WorkerRef* aWorkerRef) {
+  MOZ_ASSERT(aWorkerRef);
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
 
-  MOZ_ASSERT(data->mHolders.Contains(aHolder), "Didn't know about this one!");
-  data->mHolders.RemoveElement(aHolder);
+  MOZ_ASSERT(data->mWorkerRefs.Contains(aWorkerRef),
+             "Didn't know about this one!");
+  data->mWorkerRefs.RemoveElement(aWorkerRef);
 
-  if (aHolder->GetBehavior() == WorkerHolder::PreventIdleShutdownStart) {
-    data->mNumHoldersPreventingShutdownStart -= 1;
-    if (!data->mNumHoldersPreventingShutdownStart &&
+  if (aWorkerRef->IsPreventingShutdown()) {
+    data->mNumWorkerRefsPreventingShutdownStart -= 1;
+    if (!data->mNumWorkerRefsPreventingShutdownStart &&
         !ModifyBusyCountFromWorker(false)) {
       NS_WARNING("Failed to modify busy count!");
     }
   }
 }
 
-void WorkerPrivate::NotifyHolders(WorkerStatus aStatus) {
+void WorkerPrivate::NotifyWorkerRefs(WorkerStatus aStatus) {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
 
   NS_ASSERTION(aStatus > Closing, "Bad status!");
 
-  nsTObserverArray<WorkerHolder*>::ForwardIterator iter(data->mHolders);
+  nsTObserverArray<WorkerRef*>::ForwardIterator iter(data->mWorkerRefs);
   while (iter.HasMore()) {
-    WorkerHolder* holder = iter.GetNext();
-    if (!holder->Notify(aStatus)) {
-      NS_WARNING("Failed to notify holder!");
-    }
+    iter.GetNext()->Notify();
   }
 
   AutoTArray<WorkerPrivate*, 10> children;
@@ -3649,6 +3673,8 @@ bool WorkerPrivate::RunCurrentSyncLoop() {
   JSContext* cx = GetJSContext();
   MOZ_ASSERT(cx);
 
+  AutoPushEventLoopGlobal eventLoopGlobal(this, cx);
+
   // This should not change between now and the time we finish running this sync
   // loop.
   uint32_t currentLoopIndex = mSyncLoopStack.Length() - 1;
@@ -3713,7 +3739,10 @@ bool WorkerPrivate::RunCurrentSyncLoop() {
       MOZ_ALWAYS_TRUE(NS_ProcessNextEvent(mThread, false));
 
       // Now *might* be a good time to GC. Let the JS engine make the decision.
-      if (JS::CurrentGlobalOrNull(cx)) {
+      if (GetCurrentEventLoopGlobal()) {
+        // If GetCurrentEventLoopGlobal() is non-null, our JSContext is in a
+        // Realm, so it's safe to try to GC.
+        MOZ_ASSERT(JS::CurrentGlobalOrNull(cx));
         JS_MaybeGC(cx);
       }
     }
@@ -3902,6 +3931,9 @@ void WorkerPrivate::EnterDebuggerEventLoop() {
 
   JSContext* cx = GetJSContext();
   MOZ_ASSERT(cx);
+
+  AutoPushEventLoopGlobal eventLoopGlobal(this, cx);
+
   CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::Get();
 
   uint32_t currentEventLoopLevel = ++data->mDebuggerEventLoopLevel;
@@ -3956,7 +3988,10 @@ void WorkerPrivate::EnterDebuggerEventLoop() {
       ccjscx->PerformDebuggerMicroTaskCheckpoint();
 
       // Now *might* be a good time to GC. Let the JS engine make the decision.
-      if (JS::CurrentGlobalOrNull(cx)) {
+      if (GetCurrentEventLoopGlobal()) {
+        // If GetCurrentEventLoopGlobal() is non-null, our JSContext is in a
+        // Realm, so it's safe to try to GC.
+        MOZ_ASSERT(JS::CurrentGlobalOrNull(cx));
         JS_MaybeGC(cx);
       }
     }
@@ -4060,7 +4095,7 @@ bool WorkerPrivate::NotifyInternal(WorkerStatus aStatus) {
 
   // Let all our holders know the new status.
   if (aStatus > Closing) {
-    NotifyHolders(aStatus);
+    NotifyWorkerRefs(aStatus);
   }
 
   // If this is the first time our status has changed then we need to clear the
@@ -4132,6 +4167,7 @@ void WorkerPrivate::ReportError(JSContext* aCx,
                                           &stackGlobal);
 
   if (stack) {
+    JSAutoRealm ar(aCx, stackGlobal);
     report->SerializeWorkerStack(aCx, this, stack);
   }
 
@@ -4801,11 +4837,13 @@ void WorkerPrivate::AssertIsOnWorkerThread() const {
 void WorkerPrivate::DumpCrashInformation(nsACString& aString) {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
 
-  nsTObserverArray<WorkerHolder*>::ForwardIterator iter(data->mHolders);
+  nsTObserverArray<WorkerRef*>::ForwardIterator iter(data->mWorkerRefs);
   while (iter.HasMore()) {
-    WorkerHolder* holder = iter.GetNext();
-    aString.Append("|");
-    aString.Append(holder->Name());
+    WorkerRef* workerRef = iter.GetNext();
+    if (workerRef->IsPreventingShutdown()) {
+      aString.Append("|");
+      aString.Append(workerRef->Name());
+    }
   }
 }
 
@@ -4842,25 +4880,50 @@ RemoteWorkerChild* WorkerPrivate::GetRemoteWorkerController() {
   return mRemoteWorkerController;
 }
 
-nsAString& WorkerPrivate::Id() {
-  AssertIsOnMainThread();
+void WorkerPrivate::SetRemoteWorkerControllerWeakRef(
+    ThreadSafeWeakPtr<RemoteWorkerChild> aWeakRef) {
+  MOZ_ASSERT(aWeakRef);
+  MOZ_ASSERT(!mRemoteWorkerControllerWeakRef);
+  MOZ_ASSERT(IsServiceWorker());
 
-  if (mID.IsEmpty()) {
-    nsresult rv;
-    nsCOMPtr<nsIUUIDGenerator> uuidGenerator =
-        do_GetService("@mozilla.org/uuid-generator;1", &rv);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+  mRemoteWorkerControllerWeakRef = std::move(aWeakRef);
+}
 
-    nsID uuid;
-    rv = uuidGenerator->GenerateUUIDInPlace(&uuid);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-    char buffer[NSID_LENGTH];
-    uuid.ToProvidedString(buffer);
-    // Remove {} and the null terminator
-    mID.AssignASCII(&buffer[1], NSID_LENGTH - 3);
+ThreadSafeWeakPtr<RemoteWorkerChild>
+WorkerPrivate::GetRemoteWorkerControllerWeakRef() {
+  MOZ_ASSERT(IsServiceWorker());
+  return mRemoteWorkerControllerWeakRef;
+}
+
+RefPtr<GenericPromise> WorkerPrivate::SetServiceWorkerSkipWaitingFlag() {
+  AssertIsOnWorkerThread();
+  MOZ_ASSERT(IsServiceWorker());
+
+  RefPtr<RemoteWorkerChild> rwc(mRemoteWorkerControllerWeakRef);
+
+  if (!rwc) {
+    return GenericPromise::CreateAndReject(NS_ERROR_DOM_ABORT_ERR, __func__);
   }
 
-  return mID;
+  RefPtr<GenericPromise> promise =
+      rwc->MaybeSendSetServiceWorkerSkipWaitingFlag();
+
+  NS_ProxyRelease("WorkerPrivate::mRemoteWorkerControllerWeakRef",
+                  RemoteWorkerService::Thread(), rwc.forget());
+
+  return promise;
+}
+
+const nsAString& WorkerPrivate::Id() {
+  AssertIsOnMainThread();
+
+  if (mId.IsEmpty()) {
+    mId = ComputeWorkerPrivateId();
+  }
+
+  MOZ_ASSERT(!mId.IsEmpty());
+
+  return mId;
 }
 
 NS_IMPL_ADDREF(WorkerPrivate::EventTarget)
@@ -4959,6 +5022,21 @@ WorkerPrivate::EventTarget::IsOnCurrentThreadInfallible() {
   }
 
   return mWorkerPrivate->IsOnCurrentThread();
+}
+
+WorkerPrivate::AutoPushEventLoopGlobal::AutoPushEventLoopGlobal(
+    WorkerPrivate* aWorkerPrivate, JSContext* aCx)
+    : mWorkerPrivate(aWorkerPrivate) {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerPrivate->mWorkerThreadAccessible, data);
+  mOldEventLoopGlobal = data->mCurrentEventLoopGlobal.forget();
+  if (JSObject* global = JS::CurrentGlobalOrNull(aCx)) {
+    data->mCurrentEventLoopGlobal = xpc::NativeGlobal(global);
+  }
+}
+
+WorkerPrivate::AutoPushEventLoopGlobal::~AutoPushEventLoopGlobal() {
+  MOZ_ACCESS_THREAD_BOUND(mWorkerPrivate->mWorkerThreadAccessible, data);
+  data->mCurrentEventLoopGlobal = mOldEventLoopGlobal.forget();
 }
 
 }  // namespace dom

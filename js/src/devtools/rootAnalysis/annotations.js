@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 /* -*- indent-tabs-mode: nil; js-indent-level: 4 -*- */
 
 "use strict";
@@ -88,8 +92,8 @@ var ignoreClasses = {
 var ignoreCallees = {
     "js::Class.trace" : true,
     "js::Class.finalize" : true,
-    "js::ClassOps.trace" : true,
-    "js::ClassOps.finalize" : true,
+    "JSClassOps.trace" : true,
+    "JSClassOps.finalize" : true,
     "JSRuntime.destroyPrincipals" : true,
     "icu_50::UObject.__deleting_dtor" : true, // destructors in ICU code can't cause GC
     "mozilla::CycleCollectedJSRuntime.DescribeCustomObjects" : true, // During tracing, cannot GC.

@@ -28,7 +28,8 @@ class nsPIDOMWindowInner;
 
 namespace mozilla {
 class AsyncLogger;
-};
+class AudioCaptureStream;
+};  // namespace mozilla
 
 extern mozilla::AsyncLogger gMSGTraceLogger;
 
@@ -365,17 +366,8 @@ class MediaStream : public mozilla::LinkedListElement<MediaStream> {
   void RunAfterPendingUpdates(already_AddRefed<nsIRunnable> aRunnable);
 
   // Signal that the client is done with this MediaStream. It will be deleted
-  // later. Do not mix usage of Destroy() with RegisterUser()/UnregisterUser().
-  // That will cause the MediaStream to be destroyed twice, which will cause
-  // some assertions to fail.
+  // later.
   virtual void Destroy();
-  // Signal that a client is using this MediaStream. Useful to not have to
-  // explicitly manage ownership (responsibility to Destroy()) when there are
-  // multiple clients using a MediaStream.
-  void RegisterUser();
-  // Signal that a client no longer needs this MediaStream. When the number of
-  // clients using this MediaStream reaches 0, it will be destroyed.
-  void UnregisterUser();
 
   // Returns the main-thread's view of how much data has been processed by
   // this stream.
@@ -511,6 +503,10 @@ class MediaStream : public mozilla::LinkedListElement<MediaStream> {
   void DecrementSuspendCount();
 
  protected:
+  // Called on graph thread before handing control to the main thread to
+  // release streams.
+  virtual void NotifyForcedShutdown() {}
+
   // |AdvanceTimeVaryingValuesToCurrentTime| will be override in
   // SourceMediaStream.
   virtual void AdvanceTimeVaryingValuesToCurrentTime(GraphTime aCurrentTime,
@@ -614,7 +610,6 @@ class MediaStream : public mozilla::LinkedListElement<MediaStream> {
   bool mMainThreadFinished;
   bool mFinishedNotificationSent;
   bool mMainThreadDestroyed;
-  int mNrOfMainThreadUsers;
 
   // Our media stream graph.  null if destroyed on the graph thread.
   MediaStreamGraphImpl* mGraph;
@@ -828,6 +823,25 @@ class SourceMediaStream : public MediaStream {
   nsTArray<TrackData> mPendingTracks;
   nsTArray<TrackBound<DirectMediaStreamTrackListener>> mDirectTrackListeners;
   bool mFinishPending;
+};
+
+/**
+ * A ref-counted wrapper of a MediaStream that allows multiple users to share a
+ * reference to the same MediaStream with the purpose of being guaranteed that
+ * the graph it is in is kept alive.
+ *
+ * Automatically suspended on creation and destroyed on destruction. Main thread
+ * only.
+ */
+struct SharedDummyStream {
+  NS_INLINE_DECL_REFCOUNTING(SharedDummyStream)
+  explicit SharedDummyStream(MediaStream* aStream) : mStream(aStream) {
+    mStream->Suspend();
+  }
+  const RefPtr<MediaStream> mStream;
+
+ private:
+  ~SharedDummyStream() { mStream->Destroy(); }
 };
 
 /**
@@ -1222,7 +1236,7 @@ class MediaStreamGraph {
   /**
    * Create a stream that will mix all its audio input.
    */
-  ProcessedMediaStream* CreateAudioCaptureStream(TrackID aTrackId);
+  AudioCaptureStream* CreateAudioCaptureStream(TrackID aTrackId);
 
   /**
    * Add a new stream to the graph.  Main thread.
@@ -1272,6 +1286,8 @@ class MediaStreamGraph {
    */
   TrackRate GraphRate() const { return mSampleRate; }
 
+  double AudioOutputLatency();
+
   void RegisterCaptureStreamForWindow(uint64_t aWindowId,
                                       ProcessedMediaStream* aCaptureStream);
   void UnregisterCaptureStreamForWindow(uint64_t aWindowId);
@@ -1298,6 +1314,9 @@ class MediaStreamGraph {
   // which case we must be on the main thread).
   virtual bool OnGraphThreadOrNotRunning() const = 0;
   virtual bool OnGraphThread() const = 0;
+
+  // Intended only for internal assertions. Main thread only.
+  virtual bool Destroyed() const = 0;
 
   /**
    * Sample rate at which this graph runs. For real time graphs, this is

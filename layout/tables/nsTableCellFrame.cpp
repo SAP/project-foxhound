@@ -80,7 +80,6 @@ nsTableCellFrame::nsTableCellFrame(ComputedStyle* aStyle,
   mPriorAvailISize = 0;
 
   SetContentEmpty(false);
-  SetHasPctOverBSize(false);
 }
 
 nsTableCellFrame::~nsTableCellFrame() {}
@@ -238,6 +237,7 @@ void nsTableCellFrame::AppendFrames(ChildListID aListID,
 }
 
 void nsTableCellFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                    const nsLineList::iterator* aPrevFrameLine,
                                     nsFrameList& aFrameList) {
   MOZ_CRASH("unsupported operation");
 }
@@ -622,7 +622,8 @@ void nsTableCellFrame::BlockDirAlignChild(WritingMode aWM, nscoord aMaxAscent) {
   }
   if (HasView()) {
     nsContainerFrame::SyncFrameViewAfterReflow(PresContext(), this, GetView(),
-                                               desiredSize.VisualOverflow(), 0);
+                                               desiredSize.VisualOverflow(),
+                                               ReflowChildFlags::Default);
   }
 }
 
@@ -854,8 +855,6 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
           .SetComputedBSize(computedUnpaginatedBSize);
       DISPLAY_REFLOW_CHANGE();
     }
-  } else {
-    SetHasPctOverBSize(false);
   }
 
   WritingMode kidWM = firstKid->GetWritingMode();
@@ -891,7 +890,7 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
   bool firstReflow = firstKid->HasAnyStateBits(NS_FRAME_FIRST_REFLOW);
 
   ReflowChild(firstKid, aPresContext, kidSize, kidReflowInput, wm, kidOrigin,
-              containerSize, 0, aStatus);
+              containerSize, ReflowChildFlags::Default, aStatus);
   if (aStatus.IsOverflowIncomplete()) {
     // Don't pass OVERFLOW_INCOMPLETE through tables until they can actually
     // handle it
@@ -923,7 +922,7 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
 
   // Place the child
   FinishReflowChild(firstKid, aPresContext, kidSize, &kidReflowInput, wm,
-                    kidOrigin, containerSize, 0);
+                    kidOrigin, containerSize, ReflowChildFlags::Default);
 
   if (tableFrame->IsBorderCollapse()) {
     nsTableFrame::InvalidateTableFrame(firstKid, origRect, origVisualOverflow,
@@ -952,15 +951,9 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
 
   // the overflow area will be computed when BlockDirAlignChild() gets called
 
-  if (aReflowInput.mFlags.mSpecialBSizeReflow) {
-    if (aDesiredSize.BSize(wm) > BSize(wm)) {
-      // set a bit indicating that the pct bsize contents exceeded
-      // the height that they could honor in the pass 2 reflow
-      SetHasPctOverBSize(true);
-    }
-    if (NS_UNCONSTRAINEDSIZE == aReflowInput.AvailableBSize()) {
-      aDesiredSize.BSize(wm) = BSize(wm);
-    }
+  if (aReflowInput.mFlags.mSpecialBSizeReflow &&
+      NS_UNCONSTRAINEDSIZE == aReflowInput.AvailableBSize()) {
+    aDesiredSize.BSize(wm) = BSize(wm);
   }
 
   // If our parent is in initial reflow, it'll handle invalidating our

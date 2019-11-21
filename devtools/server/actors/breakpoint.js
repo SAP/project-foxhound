@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,7 +44,7 @@ function BreakpointActor(threadActor, location) {
 BreakpointActor.prototype = {
   setOptions(options) {
     for (const [script, offsets] of this.scripts) {
-      this._updateOptionsForScript(script, offsets, options);
+      this._newOffsetsOrOptions(script, offsets, this.options, options);
     }
 
     this.options = options;
@@ -71,11 +69,7 @@ BreakpointActor.prototype = {
    */
   addScript: function(script, offsets) {
     this.scripts.set(script, offsets.concat(this.scripts.get(offsets) || []));
-    for (const offset of offsets) {
-      script.setBreakpoint(offset, this);
-    }
-
-    this._updateOptionsForScript(script, offsets, this.options);
+    this._newOffsetsOrOptions(script, offsets, null, this.options);
   },
 
   /**
@@ -88,12 +82,20 @@ BreakpointActor.prototype = {
     this.scripts.clear();
   },
 
-  // Update any state affected by changing options on a script this breakpoint
-  // is associated with.
-  _updateOptionsForScript(script, offsets, options) {
+  /**
+   * Called on changes to this breakpoint's script offsets or options.
+   */
+  _newOffsetsOrOptions(script, offsets, oldOptions, options) {
     // When replaying, logging breakpoints are handled using an API to get logged
     // messages from throughout the recording.
     if (this.threadActor.dbg.replaying && options.logValue) {
+      if (
+        oldOptions &&
+        oldOptions.logValue == options.logValue &&
+        oldOptions.condition == options.condition
+      ) {
+        return;
+      }
       for (const offset of offsets) {
         const { lineNumber, columnNumber } = script.getOffsetLocation(offset);
         script.replayVirtualConsoleLog(
@@ -113,6 +115,15 @@ BreakpointActor.prototype = {
           }
         );
       }
+      return;
+    }
+
+    // In all other cases, this is used as a script breakpoint handler.
+    // Clear any existing handler first in case this is called multiple times
+    // after options change.
+    for (const offset of offsets) {
+      script.clearBreakpoint(this, offset);
+      script.setBreakpoint(offset, this);
     }
   },
 
@@ -178,8 +189,7 @@ BreakpointActor.prototype = {
 
     if (
       this.threadActor.sources.isBlackBoxed(sourceActor.url, line, column) ||
-      this.threadActor.skipBreakpoints ||
-      frame.onStep
+      this.threadActor.skipBreakpoints
     ) {
       return undefined;
     }
@@ -195,18 +205,12 @@ BreakpointActor.prototype = {
       return undefined;
     }
 
-    if (!this.threadActor.hasMoved(location, "breakpoint")) {
+    if (!this.threadActor.hasMoved(frame, "breakpoint")) {
       return undefined;
     }
 
     const reason = { type: "breakpoint", actors: [this.actorID] };
     const { condition, logValue } = this.options || {};
-
-    // When replaying, breakpoints with log values are handled via
-    // _updateOptionsForScript.
-    if (logValue && this.threadActor.dbg.replaying) {
-      return undefined;
-    }
 
     if (condition) {
       const { result, message } = this.checkCondition(frame, condition);
@@ -241,7 +245,7 @@ BreakpointActor.prototype = {
       } else if ("return" in completion) {
         value = completion.return;
       } else {
-        value = ["[Logpoint threw]: " + this.getThrownMessage(completion)];
+        value = [this.getThrownMessage(completion)];
         level = "logPointError";
       }
 

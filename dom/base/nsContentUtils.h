@@ -38,7 +38,6 @@
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/intl/LineBreaker.h"
 #include "mozilla/intl/WordBreaker.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "mozilla/Logging.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/Maybe.h"
@@ -109,6 +108,7 @@ class nsAttrValue;
 class nsITransferable;
 class nsPIWindowRoot;
 class nsIWindowProvider;
+class nsIReferrerInfo;
 
 struct JSRuntime;
 
@@ -336,41 +336,18 @@ class nsContentUtils {
   static nsINode* GetCrossDocParentNode(nsINode* aChild);
 
   /**
-   * Do not ever pass null pointers to this method.  If one of your
-   * nsIContents is null, you have to decide for yourself what
-   * "IsDescendantOf" really means.
-   *
-   * @param  aPossibleDescendant node to test for being a descendant of
-   *         aPossibleAncestor
-   * @param  aPossibleAncestor node to test for being an ancestor of
-   *         aPossibleDescendant
-   * @return true if aPossibleDescendant is a descendant of
-   *         aPossibleAncestor (or is aPossibleAncestor).  false
-   *         otherwise.
-   */
-  static bool ContentIsDescendantOf(const nsINode* aPossibleDescendant,
-                                    const nsINode* aPossibleAncestor);
-
-  /**
-   * Similar to ContentIsDescendantOf, except will treat an HTMLTemplateElement
-   * or ShadowRoot as an ancestor of things in the corresponding
-   * DocumentFragment. See the concept of "host-including inclusive ancestor" in
-   * the DOM specification.
+   * Similar to nsINode::IsInclusiveDescendantOf, except will treat an
+   * HTMLTemplateElement or ShadowRoot as an ancestor of things in the
+   * corresponding DocumentFragment. See the concept of "host-including
+   * inclusive ancestor" in the DOM specification.
    */
   static bool ContentIsHostIncludingDescendantOf(
       const nsINode* aPossibleDescendant, const nsINode* aPossibleAncestor);
 
   /**
-   * Similar to above, but does special case only ShadowRoot,
-   * not HTMLTemplateElement.
-   */
-  static bool ContentIsShadowIncludingDescendantOf(
-      const nsINode* aPossibleDescendant, const nsINode* aPossibleAncestor);
-
-  /**
-   * Similar to ContentIsDescendantOf except it crosses document boundaries,
-   * this function uses ancestor/descendant relations in the composed document
-   * (see shadow DOM spec).
+   * Similar to nsINode::IsInclusiveDescendantOf except it crosses document
+   * boundaries, this function uses ancestor/descendant relations in the
+   * composed document (see shadow DOM spec).
    */
   static bool ContentIsCrossDocDescendantOf(nsINode* aPossibleDescendant,
                                             nsINode* aPossibleAncestor);
@@ -472,7 +449,7 @@ class nsContentUtils {
                                int32_t* aNode2Index = nullptr);
 
   struct ComparePointsCache {
-    int32_t ComputeIndexOf(nsINode* aParent, nsINode* aChild) {
+    int32_t ComputeIndexOf(const nsINode* aParent, const nsINode* aChild) {
       if (aParent == mParent && aChild == mChild) {
         return mIndex;
       }
@@ -484,8 +461,8 @@ class nsContentUtils {
     }
 
    private:
-    nsINode* mParent = nullptr;
-    nsINode* mChild = nullptr;
+    const nsINode* mParent = nullptr;
+    const nsINode* mChild = nullptr;
     int32_t mIndex = 0;
   };
 
@@ -508,8 +485,8 @@ class nsContentUtils {
    *      On the other hand, nsINode can have ATTRCHILD_ARRAY_MAX_CHILD_COUN
    *      (0x3FFFFF) at most.  Therefore, they can be int32_t for now.
    */
-  static int32_t ComparePoints(nsINode* aParent1, int32_t aOffset1,
-                               nsINode* aParent2, int32_t aOffset2,
+  static int32_t ComparePoints(const nsINode* aParent1, int32_t aOffset1,
+                               const nsINode* aParent2, int32_t aOffset2,
                                bool* aDisconnected = nullptr,
                                ComparePointsCache* aParent1Cache = nullptr);
   template <typename FPT, typename FRT, typename SPT, typename SRT>
@@ -569,8 +546,6 @@ class nsContentUtils {
    * Returns true if aChar is of class Ps, Pi, Po, Pf, or Pe.
    */
   static bool IsFirstLetterPunctuation(uint32_t aChar);
-  static bool IsFirstLetterPunctuationAt(const nsTextFragment* aFrag,
-                                         uint32_t aOffset);
 
   /**
    * Returns true if aChar is of class Lu, Ll, Lt, Lm, Lo, Nd, Nl or No
@@ -595,9 +570,9 @@ class nsContentUtils {
   static bool IsHTMLWhitespaceOrNBSP(char16_t aChar);
 
   /**
-   * Is the HTML local name a block element?
+   * https://developer.mozilla.org/en-US/docs/Web/HTML/Block-level_elements
    */
-  static bool IsHTMLBlock(nsIContent* aContent);
+  static bool IsHTMLBlockLevelElement(nsIContent* aContent);
 
   enum ParseHTMLIntegerResultFlags {
     eParseHTMLInteger_NoFlags = 0,
@@ -883,9 +858,7 @@ class nsContentUtils {
    *                 will be used.
    * @param aLoadingDocument the document we belong to
    * @param aLoadingPrincipal the principal doing the load
-   * @param aReferrer the referrer URI
-   * @param aReferrerPolicy the referrer-sending policy to use on channel
-   *         creation
+   * @param aReferrerInfo the referrerInfo use on channel creation
    * @param aObserver the observer for the image load
    * @param aLoadFlags the load flags to use.  See nsIRequest
    * @param [aContentPolicyType=nsIContentPolicy::TYPE_INTERNAL_IMAGE]
@@ -897,9 +870,9 @@ class nsContentUtils {
   static nsresult LoadImage(
       nsIURI* aURI, nsINode* aContext, Document* aLoadingDocument,
       nsIPrincipal* aLoadingPrincipal, uint64_t aRequestContextID,
-      nsIURI* aReferrer, mozilla::net::ReferrerPolicy aReferrerPolicy,
-      imgINotificationObserver* aObserver, int32_t aLoadFlags,
-      const nsAString& initiatorType, imgRequestProxy** aRequest,
+      nsIReferrerInfo* aReferrerInfo, imgINotificationObserver* aObserver,
+      int32_t aLoadFlags, const nsAString& initiatorType,
+      imgRequestProxy** aRequest,
       uint32_t aContentPolicyType = nsIContentPolicy::TYPE_INTERNAL_IMAGE,
       bool aUseUrgentStartForChannel = false);
 
@@ -1125,6 +1098,8 @@ class nsContentUtils {
     eMATHML_PROPERTIES,
     eSECURITY_PROPERTIES,
     eNECKO_PROPERTIES,
+    eFORMS_PROPERTIES_MAYBESPOOF,
+    eFORMS_PROPERTIES_en_US,
     PropertiesFile_COUNT
   };
   static nsresult ReportToConsole(
@@ -1896,7 +1871,6 @@ class nsContentUtils {
    * security check using aContent's principal.
    *
    * @param aContent the node on which a link was triggered.
-   * @param aPresContext the pres context, must be non-null.
    * @param aLinkURI the URI of the link, must be non-null.
    * @param aTargetSpec the target (like target=, may be empty).
    * @param aClick whether this was a click or not (if false, this method
@@ -1904,9 +1878,9 @@ class nsContentUtils {
    * @param aIsTrusted If false, JS Context will be pushed to stack
    *                   when the link is triggered.
    */
-  static void TriggerLink(nsIContent* aContent, nsPresContext* aPresContext,
-                          nsIURI* aLinkURI, const nsString& aTargetSpec,
-                          bool aClick, bool aIsTrusted);
+  static void TriggerLink(nsIContent* aContent, nsIURI* aLinkURI,
+                          const nsString& aTargetSpec, bool aClick,
+                          bool aIsTrusted);
 
   /**
    * Get the link location.
@@ -1975,6 +1949,14 @@ class nsContentUtils {
    * Check whether an application should be allowed to use offline APIs.
    */
   static bool OfflineAppAllowed(nsIPrincipal* aPrincipal);
+
+  /**
+   * Determine whether the principal or document is allowed access to the
+   * localization system. We don't want the web to ever see this but all our UI
+   * including in content pages should pass this test.
+   */
+  static bool PrincipalAllowsL10n(nsIPrincipal* aPrincipal,
+                                  nsIURI* aDocumentURI);
 
   /**
    * If offline-apps.allow_by_default is true, we set offline-app permission
@@ -2064,15 +2046,6 @@ class nsContentUtils {
    * Returns true if we are doing StableState/MetastableState.
    */
   static bool IsInStableOrMetaStableState();
-
-  /* Process viewport META data. This gives us information for the scale
-   * and zoom of a page on mobile devices. We stick the information in
-   * the document header and use it later on after rendering.
-   *
-   * See Bug #436083
-   */
-  static nsresult ProcessViewportInfo(Document* aDocument,
-                                      const nsAString& viewportInfo);
 
   static JSContext* GetCurrentJSContext();
 
@@ -2664,6 +2637,14 @@ class nsContentUtils {
   static mozilla::TextEditor* GetActiveEditor(nsPresContext* aPresContext);
 
   /**
+   * Returns `TextEditor` which manages `aAnonymousContent` if there is.
+   * Note that this method returns `nullptr` if `TextEditor` for the
+   * `aAnonymousContent` hasn't been created yet.
+   */
+  static mozilla::TextEditor* GetTextEditorFromAnonymousNodeWithoutCreation(
+      nsIContent* aAnonymousContent);
+
+  /**
    * Returns a LogModule that dump calls from content script are logged to.
    * This can be enabled with the 'Dump' module, and is useful for synchronizing
    * content JS to other logging modules.
@@ -2858,18 +2839,8 @@ class nsContentUtils {
    * @param the channel from which to get the Referrer-Policy header
    * @return referrer policy from the response header in aChannel
    */
-  static mozilla::net::ReferrerPolicy GetReferrerPolicyFromChannel(
+  static mozilla::dom::ReferrerPolicy GetReferrerPolicyFromChannel(
       nsIChannel* aChannel);
-
-  /*
-   * Parse a referrer policy from a Referrer-Policy header
-   * https://www.w3.org/TR/referrer-policy/#parse-referrer-policy-from-header
-   *
-   * @param aHeader the response's Referrer-Policy header to parse
-   * @return referrer policy from the response header.
-   */
-  static mozilla::net::ReferrerPolicy GetReferrerPolicyFromHeader(
-      const nsAString& aHeader);
 
   static bool IsNonSubresourceRequest(nsIChannel* aChannel);
 
@@ -3086,6 +3057,12 @@ class nsContentUtils {
   static uint64_t GenerateBrowsingContextId();
 
   /**
+   * Generate a window ID which is unique across processes and will never be
+   * recycled.
+   */
+  static uint64_t GenerateWindowId();
+
+  /**
    * Determine whether or not the user is currently interacting with the web
    * browser. This method is safe to call from off of the main thread.
    */
@@ -3253,7 +3230,7 @@ class nsContentUtils {
   static nsIInterfaceRequestor* sSameOriginChecker;
 
   static bool sIsHandlingKeyBoardEvent;
-  static bool sAllowXULXBL_for_file;
+
   // Taintfox
   static bool sEncodeDecodeURLHash;
   static bool sGettersDecodeURLHash;
@@ -3328,6 +3305,10 @@ nsContentUtils::InternalContentPolicyTypeToExternal(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET:
     case nsIContentPolicy::TYPE_INTERNAL_STYLESHEET_PRELOAD:
       return nsIContentPolicy::TYPE_STYLESHEET;
+
+    case nsIContentPolicy::TYPE_INTERNAL_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
+      return nsIContentPolicy::TYPE_DTD;
 
     default:
       return aType;

@@ -18,8 +18,9 @@ add_task(async function() {
     // This is due to a fetch request that has the default user context. Since
     // the fetch request omits credentials, the user context doesn't matter.
     "addons",
-    // about:credits will initiate network request.
+    // about:credits and about:logins will initiate network request.
     "credits",
+    "logins",
     // about:telemetry will fetch Telemetry asynchronously and takes longer,
     // so we skip this for now.
     "telemetry",
@@ -28,6 +29,9 @@ add_task(async function() {
     // about:debugging requires specific wait code for internal pending RDP requests.
     "debugging",
     "debugging-new",
+    // about:protections uses RPM to send a message as soon as the page loads,
+    // the page is destoryed before getting a response.
+    "protections",
   ];
 
   for (let cid in Cc) {

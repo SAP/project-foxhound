@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -16,7 +15,7 @@ add_task(async function() {
 async function runTests() {
   const target = await TargetFactory.forTab(gBrowser.selectedTab);
   await target.attach();
-  const inspector = await target.getInspector();
+  const inspector = await target.getFront("inspector");
   const walker = inspector.walker;
   const { ed, win, edWin } = await setup({
     autocomplete: true,

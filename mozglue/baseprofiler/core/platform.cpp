@@ -46,6 +46,7 @@
 #  include "mozilla/ArrayUtils.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/AutoProfilerLabel.h"
+#  include "mozilla/BaseProfilerDetail.h"
 #  include "mozilla/Printf.h"
 #  include "mozilla/Services.h"
 #  include "mozilla/StackWalk.h"
@@ -172,7 +173,6 @@ static uint32_t AvailableFeatures() {
   // Now remove features not supported on this platform/configuration.
   ProfilerFeature::ClearJava(features);
   ProfilerFeature::ClearJS(features);
-  ProfilerFeature::ClearMemory(features);
   ProfilerFeature::ClearResponsiveness(features);
   ProfilerFeature::ClearScreenshots(features);
 #  if !defined(HAVE_NATIVE_UNWIND)
@@ -197,7 +197,7 @@ static uint32_t DefaultFeatures() {
 static uint32_t StartupExtraDefaultFeatures() {
   // Enable mainthreadio by default for startup profiles as startup is heavy on
   // I/O operations, and main thread I/O is really important to see there.
-  return ProfilerFeature::MainThreadIO | ProfilerFeature::Memory;
+  return ProfilerFeature::MainThreadIO;
 }
 
 // The auto-lock/unlock mutex that guards accesses to CorePS and ActivePS.
@@ -215,10 +215,10 @@ class MOZ_RAII PSAutoLock {
   void operator=(const PSAutoLock&) = delete;
 
  private:
-  static PSMutex gPSMutex;
+  static detail::BaseProfilerMutex gPSMutex;
 };
 
-PSMutex PSAutoLock::gPSMutex;
+detail::BaseProfilerMutex PSAutoLock::gPSMutex;
 
 // Only functions that take a PSLockRef arg can access CorePS's and ActivePS's
 // fields.
@@ -982,8 +982,8 @@ class Registers {
   void Clear() { memset(this, 0, sizeof(*this)); }
 
   // These fields are filled in by
-  // SamplerThread::SuspendAndSampleAndResumeThread() for periodic and
-  // backtrace samples, and by SyncPopulate() for synchronous samples.
+  // Sampler::SuspendAndSampleAndResumeThread() for periodic and backtrace
+  // samples, and by SyncPopulate() for synchronous samples.
   Address mPC;  // Instruction pointer.
   Address mSP;  // Stack pointer.
   Address mFP;  // Frame pointer.
@@ -1631,7 +1631,6 @@ static void locked_profiler_stream_json_for_this_process(
                                         aSinceTime);
     buffer.StreamCountersToJSON(aWriter, CorePS::ProcessStartTime(),
                                 aSinceTime);
-    buffer.StreamMemoryToJSON(aWriter, CorePS::ProcessStartTime(), aSinceTime);
 
     // Lists the samples for each thread profile
     aWriter.StartArrayProperty("threads");
@@ -1727,7 +1726,8 @@ static void PrintUsageThenExit(int aExitCode) {
       "  '..._VERBOSE_LOGGING' (most verbose)\n"
       "\n"
       "  MOZ_BASE_PROFILER_STARTUP\n"
-      "  If set to any value, starts the profiler immediately on start-up.\n"
+      "  If set to any value other than '' or '0'/'N'/'n', starts the\n"
+      "  profiler immediately on start-up.\n"
       "  Useful if you want profile code that runs very early.\n"
       "\n"
       "  MOZ_BASE_PROFILER_STARTUP_ENTRIES=<1..>\n"
@@ -1884,7 +1884,7 @@ class Sampler {
 // active. It periodically runs through all registered threads, finds those
 // that should be sampled, then pauses and samples them.
 
-class SamplerThread : public Sampler {
+class SamplerThread {
  public:
   // Creates a sampler thread, but doesn't start it.
   SamplerThread(PSLockRef aLock, uint32_t aActivityGeneration,
@@ -1901,6 +1901,9 @@ class SamplerThread : public Sampler {
   // This suspends the calling thread for the given number of microseconds.
   // Best effort timing.
   void SleepMicro(uint32_t aMicroseconds);
+
+  // The sampler used to suspend and sample threads.
+  Sampler mSampler;
 
   // The activity generation, for detecting when the sampler thread must stop.
   const uint32_t mActivityGeneration;
@@ -2008,8 +2011,10 @@ void SamplerThread::Run() {
             }
           }
 
+          AUTO_PROFILER_STATS(base_SamplerThread_Run_DoPeriodicSample);
+
           now = TimeStamp::NowUnfuzzed();
-          SuspendAndSampleAndResumeThread(
+          mSampler.SuspendAndSampleAndResumeThread(
               lock, *registeredThread, [&](const Registers& aRegs) {
                 DoPeriodicSample(lock, *registeredThread, *profiledThreadData,
                                  now, aRegs);
@@ -2026,16 +2031,10 @@ void SamplerThread::Run() {
 #  endif
         TimeStamp threadsSampled = TimeStamp::NowUnfuzzed();
 
-        buffer.AddEntry(
-            ProfileBufferEntry::ProfilerOverheadTime(delta.ToMilliseconds()));
-        buffer.AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(
-            (lockAcquired - sampleStart).ToMilliseconds()));
-        buffer.AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(
-            (expiredMarkersCleaned - lockAcquired).ToMilliseconds()));
-        buffer.AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(
-            (countersSampled - expiredMarkersCleaned).ToMilliseconds()));
-        buffer.AddEntry(ProfileBufferEntry::ProfilerOverheadDuration(
-            (threadsSampled - countersSampled).ToMilliseconds()));
+        buffer.CollectOverheadStats(delta, lockAcquired - sampleStart,
+                                    expiredMarkersCleaned - lockAcquired,
+                                    countersSampled - expiredMarkersCleaned,
+                                    threadsSampled - countersSampled);
       }
 
       Maybe<double> duration = ActivePS::Duration(lock);
@@ -2248,7 +2247,10 @@ void profiler_init(void* aStackTop) {
     // created on demand at the first call to PlatformStart().
 
     const char* startupEnv = getenv("MOZ_BASE_PROFILER_STARTUP");
-    if (!startupEnv || startupEnv[0] == '\0') {
+    if (!startupEnv || startupEnv[0] == '\0' ||
+        ((startupEnv[0] == '0' || startupEnv[0] == 'N' ||
+          startupEnv[0] == 'n') &&
+         startupEnv[1] == '\0')) {
       return;
     }
 
@@ -2615,9 +2617,7 @@ Maybe<ProfilerBufferInfo> profiler_get_buffer_info() {
     return Nothing();
   }
 
-  return Some(ProfilerBufferInfo{ActivePS::Buffer(lock).mRangeStart,
-                                 ActivePS::Buffer(lock).mRangeEnd,
-                                 ActivePS::Capacity(lock).Value()});
+  return Some(ActivePS::Buffer(lock).GetProfilerBufferInfo());
 }
 
 // This basically duplicates AutoProfilerLabel's constructor.
@@ -3146,6 +3146,8 @@ static void racy_profiler_add_marker(
   if (!racyRegisteredThread || !racyRegisteredThread->IsBeingProfiled()) {
     return;
   }
+
+  AUTO_PROFILER_STATS(base_racy_profiler_add_marker);
 
   TimeStamp origin = (aPayload && !aPayload->GetStartTime().IsNull())
                          ? aPayload->GetStartTime()

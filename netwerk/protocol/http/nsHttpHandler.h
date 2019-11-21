@@ -157,6 +157,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   bool CriticalRequestPrioritization() {
     return mCriticalRequestPrioritization;
   }
+
+  bool IsDocumentNosniffEnabled() { return mRespectDocumentNoSniff; }
   bool UseH2Deps() { return mUseH2Deps; }
   bool IsH2WebsocketsEnabled() { return mEnableH2Websockets; }
 
@@ -331,9 +333,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   already_AddRefed<AltSvcMapping> GetAltServiceMapping(
       const nsACString& scheme, const nsACString& host, int32_t port, bool pb,
+      bool isolated, const nsACString& topWindowOrigin,
       const OriginAttributes& originAttributes) {
-    return mConnMgr->GetAltServiceMapping(scheme, host, port, pb,
-                                          originAttributes);
+    return mConnMgr->GetAltServiceMapping(scheme, host, port, pb, isolated,
+                                          topWindowOrigin, originAttributes);
   }
 
   //
@@ -430,6 +433,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t DefaultHpackBuffer() const { return mDefaultHpackBuffer; }
 
   bool Bug1563538() const { return mBug1563538; }
+  bool Bug1563695() const { return mBug1563695; }
+  bool Bug1556491() const { return mBug1556491; }
 
   uint32_t MaxHttpResponseHeaderSize() const {
     return mMaxHttpResponseHeaderSize;
@@ -650,6 +655,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // while those elements load.
   bool mCriticalRequestPrioritization;
 
+  // Whether to respect X-Content-Type nosniff on Page loads
+  bool mRespectDocumentNoSniff;
+
   // TCP Keepalive configuration values.
 
   // True if TCP keepalive is enabled for short-lived conns.
@@ -675,6 +683,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // Pref for the whole fix that bug provides
   Atomic<bool, Relaxed> mBug1563538;
+  Atomic<bool, Relaxed> mBug1563695;
+  Atomic<bool, Relaxed> mBug1556491;
 
   // The max size (in bytes) for received Http response header.
   uint32_t mMaxHttpResponseHeaderSize;
@@ -762,10 +772,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   void BlacklistSpdy(const nsHttpConnectionInfo* ci);
   MOZ_MUST_USE bool IsSpdyBlacklisted(const nsHttpConnectionInfo* ci);
 
-  virtual nsresult EnsureHSTSDataReadyNative(
-      already_AddRefed<mozilla::net::HSTSDataCallbackWrapper> aCallback)
-      override;
-
  private:
   nsTHashtable<nsCStringHashKey> mBlacklistedSpdyOrigins;
 
@@ -797,11 +803,6 @@ class nsHttpsHandler : public nsIHttpProtocolHandler,
   nsHttpsHandler() = default;
 
   MOZ_MUST_USE nsresult Init();
-  virtual nsresult EnsureHSTSDataReadyNative(
-      already_AddRefed<mozilla::net::HSTSDataCallbackWrapper> aCallback)
-      override {
-    return gHttpHandler->EnsureHSTSDataReadyNative(std::move(aCallback));
-  }
 };
 
 //-----------------------------------------------------------------------------

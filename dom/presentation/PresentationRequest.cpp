@@ -469,7 +469,7 @@ bool PresentationRequest::IsProhibitMixedSecurityContexts(Document* aDocument) {
       return true;
     }
 
-    doc = doc->GetParentDocument();
+    doc = doc->GetInProcessParentDocument();
   }
 
   return false;
@@ -504,7 +504,7 @@ bool PresentationRequest::IsPrioriAuthenticatedURL(const nsAString& aUrl) {
 
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+      BasePrincipal::CreateContentPrincipal(uri, attrs);
   if (NS_WARN_IF(!principal)) {
     return false;
   }

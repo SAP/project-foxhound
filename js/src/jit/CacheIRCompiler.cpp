@@ -962,7 +962,7 @@ template GCPtr<JS::Value>& CacheIRStubInfo::getStubField<ICStub>(
     ICStub* stub, uint32_t offset) const;
 template GCPtr<jsid>& CacheIRStubInfo::getStubField<ICStub>(
     ICStub* stub, uint32_t offset) const;
-template GCPtr<Class*>& CacheIRStubInfo::getStubField<ICStub>(
+template GCPtr<JSClass*>& CacheIRStubInfo::getStubField<ICStub>(
     ICStub* stub, uint32_t offset) const;
 template GCPtr<ArrayObject*>& CacheIRStubInfo::getStubField<ICStub>(
     ICStub* stub, uint32_t offset) const;
@@ -1318,7 +1318,7 @@ bool CacheIRCompiler::emitGuardIsNumber() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsObject() {
+bool CacheIRCompiler::emitGuardToObject() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_OBJECT) {
@@ -1434,7 +1434,7 @@ bool CacheIRCompiler::emitGuardIsObjectOrNull() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsBoolean() {
+bool CacheIRCompiler::emitGuardToBoolean() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
@@ -1456,7 +1456,7 @@ bool CacheIRCompiler::emitGuardIsBoolean() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsString() {
+bool CacheIRCompiler::emitGuardToString() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_STRING) {
@@ -1472,7 +1472,7 @@ bool CacheIRCompiler::emitGuardIsString() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsSymbol() {
+bool CacheIRCompiler::emitGuardToSymbol() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_SYMBOL) {
@@ -1488,7 +1488,7 @@ bool CacheIRCompiler::emitGuardIsSymbol() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsBigInt() {
+bool CacheIRCompiler::emitGuardToBigInt() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   if (allocator.knownType(inputId) == JSVAL_TYPE_BIGINT) {
@@ -1504,7 +1504,7 @@ bool CacheIRCompiler::emitGuardIsBigInt() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsInt32() {
+bool CacheIRCompiler::emitGuardToInt32() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
@@ -1526,7 +1526,7 @@ bool CacheIRCompiler::emitGuardIsInt32() {
   return true;
 }
 
-bool CacheIRCompiler::emitGuardIsInt32Index() {
+bool CacheIRCompiler::emitGuardToInt32Index() {
   JitSpew(JitSpew_Codegen, __FUNCTION__);
   ValOperandId inputId = reader.valOperandId();
   Register output = allocator.defineRegister(masm, reader.int32OperandId());
@@ -1638,7 +1638,7 @@ bool CacheIRCompiler::emitGuardClass() {
     return false;
   }
 
-  const Class* clasp = nullptr;
+  const JSClass* clasp = nullptr;
   switch (reader.guardClassKind()) {
     case GuardClassKind::Array:
       clasp = &ArrayObject::class_;
@@ -1709,7 +1709,7 @@ bool CacheIRCompiler::emitGuardSpecificNativeFunction() {
   }
 
   // Ensure obj is a function.
-  const Class* clasp = &JSFunction::class_;
+  const JSClass* clasp = &JSFunction::class_;
   masm.branchTestObjClass(Assembler::NotEqual, obj, clasp, scratch, obj,
                           failure->label());
 
@@ -2678,15 +2678,15 @@ bool CacheIRCompiler::emitLoadFunctionLengthResult() {
   // If the length was resolved before the length property might be shadowed.
   masm.branchTest32(
       Assembler::NonZero, scratch,
-      Imm32(JSFunction::INTERPRETED_LAZY | JSFunction::RESOLVED_LENGTH),
+      Imm32(FunctionFlags::INTERPRETED_LAZY | FunctionFlags::RESOLVED_LENGTH),
       failure->label());
 
   Label boundFunction;
-  masm.branchTest32(Assembler::NonZero, scratch, Imm32(JSFunction::BOUND_FUN),
-                    &boundFunction);
+  masm.branchTest32(Assembler::NonZero, scratch,
+                    Imm32(FunctionFlags::BOUND_FUN), &boundFunction);
   Label interpreted;
-  masm.branchTest32(Assembler::NonZero, scratch, Imm32(JSFunction::INTERPRETED),
-                    &interpreted);
+  masm.branchTest32(Assembler::NonZero, scratch,
+                    Imm32(FunctionFlags::INTERPRETED), &interpreted);
 
   // Load the length of the native function.
   masm.load16ZeroExtend(Address(obj, JSFunction::offsetOfNargs()), scratch);
@@ -2705,8 +2705,9 @@ bool CacheIRCompiler::emitLoadFunctionLengthResult() {
   // Load the length from the function's script.
   masm.loadPtr(Address(obj, JSFunction::offsetOfScript()), scratch);
   masm.loadPtr(Address(scratch, JSScript::offsetOfScriptData()), scratch);
-  masm.load16ZeroExtend(Address(scratch, SharedScriptData::offsetOfFunLength()),
-                        scratch);
+  masm.loadPtr(Address(scratch, RuntimeScriptData::offsetOfISD()), scratch);
+  masm.load16ZeroExtend(
+      Address(scratch, ImmutableScriptData::offsetOfFunLength()), scratch);
 
   masm.bind(&done);
   EmitStoreResult(masm, scratch, JSVAL_TYPE_INT32, output);
@@ -3100,7 +3101,7 @@ bool CacheIRCompiler::emitGuardFunctionIsConstructor() {
   }
 
   // Ensure obj is a constructor
-  masm.branchTestFunctionFlags(funcReg, JSFunction::CONSTRUCTOR,
+  masm.branchTestFunctionFlags(funcReg, FunctionFlags::CONSTRUCTOR,
                                Assembler::Zero, failure->label());
   return true;
 }
@@ -3114,8 +3115,8 @@ bool CacheIRCompiler::emitGuardNotClassConstructor() {
     return false;
   }
 
-  masm.branchFunctionKind(Assembler::Equal, JSFunction::ClassConstructor, fun,
-                          scratch, failure->label());
+  masm.branchFunctionKind(Assembler::Equal, FunctionFlags::ClassConstructor,
+                          fun, scratch, failure->label());
   return true;
 }
 

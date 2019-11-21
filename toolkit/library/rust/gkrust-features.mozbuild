@@ -4,7 +4,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-gkrust_features = ['servo', 'bindgen']
+gkrust_features = []
 
 if CONFIG['MOZ_DEBUG']:
     gkrust_features += [
@@ -18,6 +18,9 @@ if CONFIG['MOZ_WEBRENDER_DEBUGGER']:
 
 if CONFIG['MOZ_PULSEAUDIO']:
     gkrust_features += ['cubeb_pulse_rust']
+
+if CONFIG['MOZ_AUDIOUNIT_RUST']:
+    gkrust_features += ['cubeb_coreaudio_rust']
 
 if CONFIG['MOZ_RUST_SIMD']:
     gkrust_features += ['simd-accel']

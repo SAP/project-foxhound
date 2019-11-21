@@ -31,7 +31,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Telemetry.h"
 #include "gfxSVGGlyphs.h"
 #include "gfx2DGlue.h"
@@ -166,9 +166,10 @@ bool gfxFontEntry::TestCharacterMap(uint32_t aCh) {
 nsresult gfxFontEntry::InitializeUVSMap() {
   // mUVSOffset will not be initialized
   // until cmap is initialized.
-  if (!mCharacterMap) {
+  if (!mCharacterMap && !mShmemCharacterMap) {
     ReadCMAP();
-    NS_ASSERTION(mCharacterMap, "failed to initialize character map");
+    NS_ASSERTION(mCharacterMap || mShmemCharacterMap,
+                 "failed to initialize character map");
   }
 
   if (!mUVSOffset) {

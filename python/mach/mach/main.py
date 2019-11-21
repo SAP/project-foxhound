@@ -36,6 +36,7 @@ from .decorators import (
 from .dispatcher import CommandAction
 from .logging import LoggingManager
 from .registrar import Registrar
+from .util import setenv
 
 SUGGEST_MACH_BUSTED = r'''
 You can invoke |./mach busted| to check if this issue is already on file. If it
@@ -354,7 +355,7 @@ To see more help for a specific command, run:
             # is a TTY. This provides a mechanism to allow said processes to
             # enable emitting code codes, for example.
             if os.isatty(orig_stdout.fileno()):
-                os.environ[b'MACH_STDOUT_ISATTY'] = b'1'
+                setenv('MACH_STDOUT_ISATTY', '1')
 
             return self._run(argv)
         except KeyboardInterrupt:
@@ -428,6 +429,17 @@ To see more help for a specific command, run:
                                                  ' '.join(e.arguments)))
             return 1
 
+        if not hasattr(args, 'mach_handler'):
+            raise MachError('ArgumentParser result missing mach handler info.')
+
+        handler = getattr(args, 'mach_handler')
+
+        # This is used by the `mach` driver to find the command name amidst
+        # global arguments.
+        if args.print_command:
+            print(handler.name)
+            sys.exit(0)
+
         # Add JSON logging to a file if requested.
         if args.logfile:
             self.log_manager.add_json_handler(args.logfile)
@@ -453,51 +465,6 @@ To see more help for a specific command, run:
             # Argument parsing has already happened, so settings that apply
             # to command line handling (e.g alias, defaults) will be ignored.
             self.load_settings(args.settings_file)
-
-        def _check_debugger(program):
-            """Checks if debugger specified in command line is installed.
-
-            Uses mozdebug to locate debuggers.
-
-            If the call does not raise any exceptions, mach is permitted
-            to continue execution.
-
-            Otherwise, mach execution is halted.
-
-            Args:
-                program (str): debugger program name.
-            """
-            import mozdebug
-            info = mozdebug.get_debugger_info(program)
-            if info is None:
-                print("Specified debugger '{}' is not found.\n".format(program) +
-                      "Is it installed? Is it in your PATH?")
-                sys.exit(1)
-
-        # For the codepath where ./mach <test_type> --debugger=<program>,
-        # assert that debugger value exists first, then check if installed on system.
-        if (hasattr(args.command_args, "debugger") and
-                getattr(args.command_args, "debugger") is not None):
-            _check_debugger(getattr(args.command_args, "debugger"))
-        # For the codepath where ./mach test --debugger=<program> <test_type>,
-        # debugger must be specified from command line with the = operator.
-        # Otherwise, an IndexError is raised, which is converted to an exit code of 1.
-        elif (hasattr(args.command_args, "extra_args") and
-                getattr(args.command_args, "extra_args")):
-            extra_args = getattr(args.command_args, "extra_args")
-            try:
-                debugger = [ea.split("=")[1] for ea in extra_args if "debugger" in ea]
-            except IndexError:
-                print("Debugger must be specified with '=' when invoking ./mach test.\n" +
-                      "Please correct the command and try again.")
-                sys.exit(1)
-            if debugger:
-                _check_debugger(''.join(debugger))
-
-        if not hasattr(args, 'mach_handler'):
-            raise MachError('ArgumentParser result missing mach handler info.')
-
-        handler = getattr(args, 'mach_handler')
 
         # if --disable-tests flag was enabled in the mozconfig used to compile
         # the build, tests will be disabled.
@@ -662,6 +629,8 @@ To see more help for a specific command, run:
         global_group.add_argument('--settings', dest='settings_file',
                                   metavar='FILENAME', default=None,
                                   help='Path to settings file.')
+        global_group.add_argument('--print-command', action='store_true',
+                                  help=argparse.SUPPRESS)
 
         for args, kwargs in self.global_arguments:
             global_group.add_argument(*args, **kwargs)

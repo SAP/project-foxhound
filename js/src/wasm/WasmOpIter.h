@@ -144,6 +144,7 @@ enum class OpKind {
   End,
   Wait,
   Wake,
+  Fence,
   AtomicLoad,
   AtomicStore,
   AtomicBinOp,
@@ -428,6 +429,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readI64Const(int64_t* i64);
   MOZ_MUST_USE bool readF32Const(float* f32);
   MOZ_MUST_USE bool readF64Const(double* f64);
+  MOZ_MUST_USE bool readRefFunc(uint32_t* funcTypeIndex);
   MOZ_MUST_USE bool readRefNull();
   MOZ_MUST_USE bool readCall(uint32_t* calleeIndex, ValueVector* argValues);
   MOZ_MUST_USE bool readCallIndirect(uint32_t* funcTypeIndex,
@@ -442,6 +444,7 @@ class MOZ_STACK_CLASS OpIter : private Policy {
   MOZ_MUST_USE bool readWait(LinearMemoryAddress<Value>* addr,
                              ValType resultType, uint32_t byteSize,
                              Value* value, Value* timeout);
+  MOZ_MUST_USE bool readFence();
   MOZ_MUST_USE bool readAtomicLoad(LinearMemoryAddress<Value>* addr,
                                    ValType resultType, uint32_t byteSize);
   MOZ_MUST_USE bool readAtomicStore(LinearMemoryAddress<Value>* addr,
@@ -762,7 +765,7 @@ inline bool OpIter<Policy>::readBlockType(ExprType* type) {
     case uint8_t(ExprType::FuncRef):
     case uint8_t(ExprType::AnyRef):
 #ifdef ENABLE_WASM_REFTYPES
-      known = true;
+      known = env_.refTypesEnabled();
 #endif
       break;
     case uint8_t(ExprType::Ref):
@@ -1471,6 +1474,22 @@ inline bool OpIter<Policy>::readF64Const(double* f64) {
 }
 
 template <typename Policy>
+inline bool OpIter<Policy>::readRefFunc(uint32_t* funcTypeIndex) {
+  MOZ_ASSERT(Classify(op_) == OpKind::RefFunc);
+
+  if (!readVarU32(funcTypeIndex)) {
+    return fail("unable to read function index");
+  }
+  if (*funcTypeIndex >= env_.funcTypes.length()) {
+    return fail("function index out of range");
+  }
+  if (!env_.validForRefFunc.getBit(*funcTypeIndex)) {
+    return fail("function index is not in an element segment");
+  }
+  return push(StackType(ValType::FuncRef));
+}
+
+template <typename Policy>
 inline bool OpIter<Policy>::readRefNull() {
   MOZ_ASSERT(Classify(op_) == OpKind::RefNull);
 
@@ -1479,7 +1498,8 @@ inline bool OpIter<Policy>::readRefNull() {
 
 template <typename Policy>
 inline bool OpIter<Policy>::readValType(ValType* type) {
-  return d_.readValType(env_.types, env_.gcTypesEnabled(), type);
+  return d_.readValType(env_.types, env_.refTypesEnabled(),
+                        env_.gcTypesEnabled(), type);
 }
 
 template <typename Policy>
@@ -1699,6 +1719,19 @@ inline bool OpIter<Policy>::readWait(LinearMemoryAddress<Value>* addr,
   }
 
   infalliblePush(ValType::I32);
+  return true;
+}
+
+template <typename Policy>
+inline bool OpIter<Policy>::readFence() {
+  MOZ_ASSERT(Classify(op_) == OpKind::Fence);
+  uint8_t flags;
+  if (!readFixedU8(&flags)) {
+    return fail("expected memory order after fence");
+  }
+  if (flags != 0) {
+    return fail("non-zero memory order not supported yet");
+  }
   return true;
 }
 

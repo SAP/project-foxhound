@@ -27,7 +27,6 @@ class nsILoadGroup;
 
 namespace mozilla {
 namespace dom {
-class HTMLAllCollection;
 template <typename T>
 struct Nullable;
 class WindowProxyHolder;
@@ -36,7 +35,7 @@ class WindowProxyHolder;
 
 class nsHTMLDocument : public mozilla::dom::Document {
  protected:
-  typedef mozilla::net::ReferrerPolicy ReferrerPolicy;
+  typedef mozilla::dom::ReferrerPolicy ReferrerPolicy;
   typedef mozilla::dom::Document Document;
   typedef mozilla::Encoding Encoding;
   template <typename T>
@@ -48,9 +47,6 @@ class nsHTMLDocument : public mozilla::dom::Document {
 
   nsHTMLDocument();
   virtual nsresult Init() override;
-
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(nsHTMLDocument, Document)
 
   // Document
   virtual void Reset(nsIChannel* aChannel, nsILoadGroup* aLoadGroup) override;
@@ -72,8 +68,6 @@ class nsHTMLDocument : public mozilla::dom::Document {
   virtual Element* GetUnfocusedKeyEventTarget() override;
 
   nsContentList* GetExistingForms() const { return mForms; }
-
-  mozilla::dom::HTMLAllCollection* All();
 
   // Returns whether an object was found for aName.
   bool ResolveName(JSContext* aCx, const nsAString& aName,
@@ -120,15 +114,11 @@ class nsHTMLDocument : public mozilla::dom::Document {
                    mozilla::ErrorResult& rv) {
     JS::Rooted<JS::Value> v(cx);
     if ((aFound = ResolveName(cx, aName, &v, rv))) {
+      SetUseCounter(mozilla::eUseCounter_custom_HTMLDocumentNamedGetterHit);
       aRetval.set(v.toObjectOrNull());
     }
   }
   void GetSupportedNames(nsTArray<nsString>& aNames);
-  void Clear() const {
-    // Deprecated
-  }
-  void CaptureEvents();
-  void ReleaseEvents();
   // We're picking up GetLocation from Document
   already_AddRefed<mozilla::dom::Location> GetLocation() const {
     return Document::GetLocation();
@@ -139,8 +129,6 @@ class nsHTMLDocument : public mozilla::dom::Document {
 
   void GetFormsAndFormControls(nsContentList** aFormList,
                                nsContentList** aFormControlList);
-
-  void UserInteractionForTesting();
 
  protected:
   ~nsHTMLDocument();
@@ -176,8 +164,6 @@ class nsHTMLDocument : public mozilla::dom::Document {
 
   friend class ContentListHolder;
   ContentListHolder* mContentListHolder;
-
-  RefPtr<mozilla::dom::HTMLAllCollection> mAll;
 
   /** # of forms in the document, synchronously set */
   int32_t mNumForms;

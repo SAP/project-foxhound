@@ -560,60 +560,9 @@ menuitem.bookmark-item {
   }
 }
 
-/* ::::: URL Bar Zoom Reset Button ::::: */
-@keyframes urlbar-zoom-reset-pulse {
-  0% {
-    transform: scale(0);
-  }
-  75% {
-    transform: scale(1.5);
-  }
-  100% {
-    transform: scale(1.0);
-  }
-}
-
-#urlbar-zoom-button {
-  -moz-appearance: none;
-  color: inherit;
-}
-
-#urlbar-search-footer {
-  border-top: 1px solid var(--panel-separator-color);
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings {
-  -moz-appearance: none;
-  -moz-user-focus: ignore;
-  color: GrayText;
-  margin: 0;
-  border: 0;
-  padding: 8px 20px;
-  background: transparent;
-}
-
-#urlbar-search-settings:hover {
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings:hover:active {
-  background-color: var(--arrowpanel-dimmed-further);
-}
-
-.urlbar-display {
-  margin-inline-start: 0;
-}
-
 #pageAction-urlbar-shareURL,
 #pageAction-panel-shareURL {
   list-style-image: url("chrome://browser/skin/share.svg");
-}
-
-%include ../shared/urlbarSearchSuggestionsNotification.inc.css
-
-#search-container {
-  min-width: calc(54px + 11ch);
 }
 
 /* identity box */
@@ -623,29 +572,12 @@ menuitem.bookmark-item {
 /* autocomplete */
 
 %include ../shared/autocomplete.inc.css
-%include ../shared/urlbar-autocomplete.inc.css
-
-#urlbarView-results {
-  font-size: 1.15em;
-}
 
 #PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
   border-top: 1px solid ThreeDShadow;
 }
 
-.ac-title {
-  font-size: 14px;
-}
-
-.ac-tags {
-  font-size: 12px;
-}
-
-.ac-separator,
-.ac-url,
-.ac-action {
-  font-size: 12px;
-}
+%include ../shared/urlbar-autocomplete.inc.css
 
 @media (-moz-windows-default-theme) {
   :root {
@@ -732,21 +664,6 @@ toolbarbutton.bookmark-item[dragover="true"][open="true"] {
   -moz-appearance: none;
   background: Highlight !important;
   color: HighlightText !important;
-}
-
-/* rules for menupopup drop indicators */
-.menupopup-drop-indicator-bar {
-  position: relative;
-  /* these two margins must together compensate the indicator's height */
-  margin-top: -1px;
-  margin-bottom: -1px;
-}
-
-.menupopup-drop-indicator {
-  list-style-image: none;
-  height: 2px;
-  margin-inline-end: -4em;
-  background-color: Highlight;
 }
 
 %include ../shared/notification-icons.inc.css
@@ -961,11 +878,6 @@ panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic
 }
 
 %include browser-aero.css
-
-.browser-extension-panel > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 0;
-  overflow: hidden;
-}
 
 @media (-moz-os-version: windows-win7) {
   .cui-widget-panelview[id^=PanelUI-webext-] {

@@ -57,7 +57,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsDOMJSUtils.h"
@@ -300,9 +299,6 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
       .setWasmVerbose(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_verbose")))
       .setThrowOnAsmJSValidationFailure(GetWorkerPref<bool>(
           NS_LITERAL_CSTRING("throw_on_asmjs_validation_failure")))
-      .setBaseline(GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit")))
-      .setIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion")))
-      .setNativeRegExp(GetWorkerPref<bool>(NS_LITERAL_CSTRING("native_regexp")))
       .setAsyncStack(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asyncstack")))
       .setWerror(GetWorkerPref<bool>(NS_LITERAL_CSTRING("werror")))
 #ifdef FUZZING
@@ -433,14 +429,6 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
                            ? uint32_t(-1)
                            : uint32_t(prefValue) * 1024 * 1024;
       UpdateOtherJSGCMemoryOption(rts, JSGC_MAX_BYTES, value);
-      continue;
-    }
-
-    matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX "high_water_mark");
-    if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 1)) {
-      int32_t prefValue = GetWorkerPref(matchName, 128);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_MAX_MALLOC_BYTES,
-                                  uint32_t(prefValue) * 1024 * 1024);
       continue;
     }
 
@@ -1020,6 +1008,11 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     return mWorkerPrivate->UsesSystemPrincipal();
   }
 
+  void ReportError(JSErrorReport* aReport,
+                   JS::ConstUTF8CharsZ aToStringResult) override {
+    mWorkerPrivate->ReportError(Context(), aToStringResult, aReport);
+  }
+
   WorkerPrivate* GetWorkerPrivate() const { return mWorkerPrivate; }
 
  private:
@@ -1442,11 +1435,7 @@ bool RuntimeService::ScheduleWorker(WorkerPrivate* aWorkerPrivate) {
     }
   }
 
-  int32_t priority = aWorkerPrivate->IsChromeWorker()
-                         ? nsISupportsPriority::PRIORITY_NORMAL
-                         : nsISupportsPriority::PRIORITY_LOW;
-
-  if (NS_FAILED(thread->SetPriority(priority))) {
+  if (NS_FAILED(thread->SetPriority(nsISupportsPriority::PRIORITY_NORMAL))) {
     NS_WARNING("Could not set the thread's priority!");
   }
 
@@ -1612,14 +1601,11 @@ nsresult RuntimeService::Init() {
   // We assume atomic 32bit reads/writes. If this assumption doesn't hold on
   // some wacky platform then the worst that could happen is that the close
   // handler will run for a slightly different amount of time.
-  if (NS_FAILED(Preferences::AddIntVarCache(
-          &sDefaultJSSettings.content.maxScriptRuntime,
-          PREF_MAX_SCRIPT_RUN_TIME_CONTENT, MAX_SCRIPT_RUN_TIME_SEC)) ||
-      NS_FAILED(Preferences::AddIntVarCache(
-          &sDefaultJSSettings.chrome.maxScriptRuntime,
-          PREF_MAX_SCRIPT_RUN_TIME_CHROME, -1))) {
-    NS_WARNING("Failed to register timeout cache!");
-  }
+  Preferences::AddIntVarCache(&sDefaultJSSettings.content.maxScriptRuntime,
+                              PREF_MAX_SCRIPT_RUN_TIME_CONTENT,
+                              MAX_SCRIPT_RUN_TIME_SEC);
+  Preferences::AddIntVarCache(&sDefaultJSSettings.chrome.maxScriptRuntime,
+                              PREF_MAX_SCRIPT_RUN_TIME_CHROME, -1);
 
   int32_t maxPerDomain =
       Preferences::GetInt(PREF_WORKERS_MAX_PER_DOMAIN, MAX_WORKERS_PER_DOMAIN);

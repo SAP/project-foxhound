@@ -8,7 +8,6 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -90,11 +89,6 @@ UrlClassifierFeatureSocialTrackingAnnotation::MaybeCreate(
        "%p",
        aChannel));
 
-  if (!StaticPrefs::
-          privacy_trackingprotection_socialtracking_annotate_enabled()) {
-    return nullptr;
-  }
-
   if (!UrlClassifierCommon::ShouldEnableClassifier(aChannel)) {
     return nullptr;
   }
@@ -140,13 +134,15 @@ UrlClassifierFeatureSocialTrackingAnnotation::ProcessChannel(
 
   static std::vector<UrlClassifierCommon::ClassificationData>
       sClassificationData = {
-          {NS_LITERAL_CSTRING("facebook-socialtracking-track-"),
+          {NS_LITERAL_CSTRING("social-tracking-protection-facebook-"),
            nsIHttpChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_FACEBOOK},
-          {NS_LITERAL_CSTRING("twitter-socialtracking-track-"),
+          {NS_LITERAL_CSTRING("social-tracking-protection-linkedin-"),
+           nsIHttpChannel::ClassificationFlags::
+               CLASSIFIED_SOCIALTRACKING_LINKEDIN},
+          {NS_LITERAL_CSTRING("social-tracking-protection-twitter-"),
            nsIHttpChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_TWITTER},
-          // TODO: fix this list of tables and flags
       };
 
   uint32_t flags = UrlClassifierCommon::TablesToClassificationFlags(
@@ -154,7 +150,7 @@ UrlClassifierFeatureSocialTrackingAnnotation::ProcessChannel(
       nsIHttpChannel::ClassificationFlags::CLASSIFIED_SOCIALTRACKING);
 
   UrlClassifierCommon::AnnotateChannel(
-      aChannel, AntiTrackingCommon::eSocialTracking, flags,
+      aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_SOCIALTRACKING_CONTENT);
 
   return NS_OK;

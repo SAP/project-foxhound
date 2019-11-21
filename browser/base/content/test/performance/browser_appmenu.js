@@ -45,11 +45,14 @@ const EXPECTED_APPMENU_OPEN_REFLOWS = [
 add_task(async function() {
   await ensureNoPreloadedBrowser();
 
-  let textBoxRect = document
-    .getAnonymousElementByAttribute(gURLBar.textbox, "anonid", "moz-input-box")
+  let textBoxRect = gURLBar
+    .querySelector("moz-input-box")
     .getBoundingClientRect();
   let menuButtonRect = document
     .getElementById("PanelUI-menu-button")
+    .getBoundingClientRect();
+  let fxaToolbarButtonRect = document
+    .getElementById("fxa-toolbar-menu-button")
     .getBoundingClientRect();
   let firstTabRect = gBrowser.selectedTab.getBoundingClientRect();
   let frameExpectations = {
@@ -83,6 +86,14 @@ add_task(async function() {
           r.y1 >= firstTabRect.top &&
           r.y2 <= firstTabRect.bottom,
       },
+      {
+        name: "the fxa toolbar changes icon when first clicked",
+        condition: r =>
+          r.x1 >= fxaToolbarButtonRect.left &&
+          r.x2 <= fxaToolbarButtonRect.right &&
+          r.y1 >= fxaToolbarButtonRect.top &&
+          r.y2 <= fxaToolbarButtonRect.bottom,
+      },
     ],
   };
 
@@ -103,7 +114,8 @@ add_task(async function() {
       // exhausted, we go back up a level.
       async function openSubViewsRecursively(currentView) {
         let navButtons = Array.from(
-          currentView.querySelectorAll(".subviewbutton-nav")
+          // Ensure that only enabled buttons are tested
+          currentView.querySelectorAll(".subviewbutton-nav:not([disabled])")
         );
         if (!navButtons) {
           return;

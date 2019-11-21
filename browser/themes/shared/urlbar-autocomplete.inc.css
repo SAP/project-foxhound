@@ -8,6 +8,8 @@
 %define urlbarViewPadding 4px
 %define urlbarViewIconMarginEnd 8px
 %define urlbarViewFaviconOffset (@urlbarViewPadding@ + 16px /* type icon width */ + @urlbarViewIconMarginEnd@)
+%define urlbarViewInlineStartPadding (@urlbarBreakoutHorizontalExtend@ - 16px /* type icon width */ - @urlbarViewIconMarginEnd@ - 2px /* border */)
+%define urlbarViewHorizontalMargin 8px
 
 :root {
   --autocomplete-popup-background: var(--arrowpanel-background);
@@ -26,23 +28,84 @@
   --urlbar-popup-action-color: #30e60b;
 }
 
-#urlbar-results {
-  -moz-appearance: none;
+.urlbarView {
+  /* Don't handle window drag events in case we are overlapping a toolbar */
+  -moz-window-dragging: no-drag;
+  text-shadow: none;
+}
+
+.urlbarView.megabar {
+  margin-inline: @urlbarViewHorizontalMargin@;
+}
+
+.urlbarView:not(.megabar) {
+  position: fixed;
+  z-index: 3;
+  left: 0;
+  right: 0;
   background: var(--autocomplete-popup-background);
   color: var(--autocomplete-popup-color);
-  border: 1px solid var(--chrome-content-separator-color);
-  border-left-style: none;
-  border-right-style: none;
+  border-block: 1px solid var(--chrome-content-separator-color);
+  box-shadow: 0 5px 18px rgba(0, 0, 0, .2);
 }
 
-.urlbarView-body-inner {
-  box-sizing: border-box;
+#urlbar-contextual-tip {
+  align-items: center;
+  display: flex;
+  padding-top: 24px;
+  padding-bottom: 24px;
+  padding-inline-start: calc(@urlbarViewInlineStartPadding@);
+  padding-inline-end: calc(@urlbarBreakoutHorizontalExtend@ - @urlbarViewHorizontalMargin@);
 }
 
-#urlbarView-results {
-  box-sizing: border-box;
-  padding: @urlbarViewPadding@;
+.urlbarView:not(.megabar) #urlbar-contextual-tip {
+  padding-inline-start: var(--item-padding-start, calc(5px + @urlbarViewFaviconOffset@));
+  padding-inline-end: var(--item-padding-end, 5px);
+}
+
+#urlbar-contextual-tip-title {
+  flex-grow: 1;
+  padding-inline-end: 75px;
+}
+
+#urlbar-contextual-tip-button {
+  height: 2.3em;
+  width: 9.15em;
+  font-size: inherit;
+  border: none;
+  border-radius: 2px;
+  color: white;
+  background-color: #0060df; /* corresponds to blue-60 */
+}
+
+#urlbar-contextual-tip-button:hover {
+  background-color: #003eaa; /* corresponds to blue-70 */
+}
+
+#urlbar-contextual-tip-button:active {
+  background-color: #002275; /* corresponds to blue-80 */
+}
+
+#urlbar-contextual-tip-button:-moz-focusring {
+  box-shadow: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3);
+}
+
+#urlbar-contextual-tip-link {
+  text-align: end;
+}
+
+.urlbarView.megabar .urlbarView-body-inner {
+  width: calc(var(--urlbar-width) + 2 * @urlbarBreakoutHorizontalExtend@ - 2 * @urlbarViewHorizontalMargin@ - 2px /* urlbar border */);
+  border-top: 1px solid var(--panel-separator-color);
+}
+
+.urlbarView-results {
+  padding-block: @urlbarViewPadding@;
   white-space: nowrap;
+}
+
+.urlbarView:not(.megabar) .urlbarView-results {
+  padding-inline: @urlbarViewPadding@;
 }
 
 .urlbarView-row {
@@ -51,6 +114,11 @@
   fill-opacity: .6;
   padding-top: 6px;
   padding-bottom: 6px;
+  padding-inline-start: calc(@urlbarViewInlineStartPadding@);
+  padding-inline-end: calc(@urlbarBreakoutHorizontalExtend@ - @urlbarViewHorizontalMargin@);
+}
+
+.urlbarView:not(.megabar) .urlbarView-row {
   padding-inline-start: calc(var(--item-padding-start, calc(5px + @urlbarViewFaviconOffset@)) - @urlbarViewFaviconOffset@);
   padding-inline-end: var(--item-padding-end, 5px);
 }
@@ -101,10 +169,20 @@
   -moz-context-properties: fill, fill-opacity;
 }
 
+#urlbar-contextual-tip-icon {
+  min-width: 24px;
+  height: 24px;
+  margin-inline-end: @urlbarViewIconMarginEnd@;
+  background-repeat: no-repeat;
+  background-size: contain;
+  -moz-context-properties: fill, fill-opacity;
+}
+
 @media (min-resolution: 2dppx) {
   .urlbarView-type-icon,
-  .urlbarView-favicon {
-    transform: translateY(-1.5px);
+  .urlbarView-favicon,
+  #urlbar-contextual-tip-icon {
+      transform: translateY(-1.5px);
   }
 }
 
@@ -113,7 +191,7 @@
 }
 
 .urlbarView-row[type=remotetab] > .urlbarView-row-inner > .urlbarView-type-icon,
-#urlbar-results:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-type-icon {
+.urlbarView:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-type-icon {
   background-image: url(chrome://browser/skin/tab.svg);
 }
 
@@ -169,8 +247,8 @@
 .urlbarView-row[type=remotetab]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-url,
 .urlbarView-row[type=search]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-title:not(:empty) ~ .urlbarView-action,
 .urlbarView-row[type=search]:not([selected]):not(:hover) > .urlbarView-row-inner > .urlbarView-title-separator,
-#urlbar-results[actionoverride] .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-action,
-#urlbar-results:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-url {
+.urlbarView[actionoverride] .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-action,
+.urlbarView:not([actionoverride]) .urlbarView-row[type=switchtab] > .urlbarView-row-inner > .urlbarView-url {
   /* Use visibility:collapse instead of display:none since the latter can
      confuse the overflow state of title and url elements when their content
      changes while they're hidden. */
@@ -194,98 +272,61 @@
   color: var(--autocomplete-popup-highlight-background);
 }
 
-/* legacy URL bar styles below */
+/* Search one-offs. */
+#urlbar .search-one-offs:not([hidden]) {
+  display: flex;
+  align-items: start;
+  padding-block: 16px;
+}
 
-#PopupAutoCompleteRichResult,
+.urlbarView.megabar .search-one-offs {
+  padding-inline: calc(@urlbarBreakoutHorizontalExtend@ - @urlbarViewHorizontalMargin@);
+}
+
+#urlbar:not(.megabar) .search-one-offs {
+  padding-inline-start: var(--item-padding-start, 5px);
+  padding-inline-end: var(--item-padding-end, 5px);
+}
+
+#urlbar .search-panel-one-offs {
+  padding-inline-start: 12px;
+  /* Make sure we can fit at least three buttons horizontally. */
+  min-width: 120px;
+  box-sizing: content-box;
+}
+
+#urlbar .search-panel-header {
+  padding: 0;
+  min-height: 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+#urlbar .search-panel-one-offs-header-label {
+  margin: 0;
+}
+
+#urlbar .searchbar-engine-one-off-item {
+  min-width: 32px;
+  height: 32px;
+  margin: 0 4px;
+}
+
+#urlbar .search-one-offs-spacer {
+  flex-grow: 1;
+}
+
+/* search bar popup */
+
 #PopupSearchAutoComplete {
   background: var(--autocomplete-popup-background);
   color: var(--autocomplete-popup-color);
   border-color: var(--arrowpanel-border-color);
 }
 
-#PopupAutoCompleteRichResult .autocomplete-richlistbox {
-  padding: 4px 3px;
-  background: transparent;
-  color: inherit;
-}
-
-#PopupAutoCompleteRichResult .autocomplete-richlistitem {
-  min-height: 30px;
-  font: message-box;
-  border-radius: 2px;
-  padding-inline-start: var(--item-padding-start);
-  /* For the space after the autocomplete text we have to use a transparent
-     border instead of padding, because the latter would considered part of the
-     scrollable area when generating the overflow events that we use to
-     constrain the autocomplete result item size. */
-  border-inline-end: var(--item-padding-end) solid transparent;
-}
-
-#PopupAutoCompleteRichResult .autocomplete-richlistitem[selected],
 #PopupSearchAutoComplete .autocomplete-richlistitem[selected] {
   background: var(--autocomplete-popup-highlight-background);
   color: var(--autocomplete-popup-highlight-color);
 }
 
-:root[uidensity=touch] #PopupAutoCompleteRichResult .autocomplete-richlistitem {
-  min-height: 40px;
-}
-
-/* Awesomebar popup items */
-
-.ac-separator:not([selected=true]) {
-  color: var(--panel-disabled-color);
-}
-
-.ac-url:not([selected=true]),
-.autocomplete-richlistitem.aliasOffer > .ac-action:not([selected=true]) {
-  color: var(--urlbar-popup-url-color);
-}
-
-.ac-action:not([selected=true]) {
-  color: var(--urlbar-popup-action-color);
-}
-
-html|span.ac-tag {
-  background-color: var(--arrowpanel-dimmed);
-  border-radius: 2px;
-  border: 1px solid var(--panel-separator-color);
-  padding: 0 1px;
-}
-
-.ac-tags-text[selected] > html|span.ac-tag {
-  background-color: var(--autocomplete-popup-highlight-color);
-  color: var(--autocomplete-popup-highlight-background);
-}
-
-html|span.ac-emphasize-text-title,
-html|span.ac-emphasize-text-tag,
-html|span.ac-emphasize-text-url {
-  font-weight: 600;
-}
-
-.ac-site-icon,
-.ac-type-icon {
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-  fill-opacity: 0.6;
-}
-
-.ac-site-icon[selected],
-.ac-type-icon[selected] {
-  fill-opacity: 1;
-}
-
-.ac-type-icon[type=bookmark] {
-  list-style-image: url("chrome://browser/skin/bookmark.svg");
-}
-
-.ac-type-icon[type=keyword],
-.ac-site-icon[type=searchengine] {
-  list-style-image: url(chrome://browser/skin/search-glass.svg);
-}
-
-.ac-type-icon[type=switchtab],
-.ac-type-icon[type=remotetab] {
-  list-style-image: url("chrome://browser/skin/tab.svg");
-}

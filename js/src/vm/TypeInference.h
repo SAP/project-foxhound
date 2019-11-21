@@ -224,7 +224,7 @@ class TypeNewScriptInitializer {
 /* Is this a reasonable PC to be doing inlining on? */
 inline bool isInlinableCall(jsbytecode* pc);
 
-bool ClassCanHaveExtraProperties(const Class* clasp);
+bool ClassCanHaveExtraProperties(const JSClass* clasp);
 
 class RecompileInfo {
   JSScript* script_;
@@ -311,7 +311,7 @@ class TypeZone {
   void addPendingRecompile(JSContext* cx, const RecompileInfo& info);
   void addPendingRecompile(JSContext* cx, JSScript* script);
 
-  void processPendingRecompiles(FreeOp* fop, RecompileInfoVector& recompiles);
+  void processPendingRecompiles(JSFreeOp* fop, RecompileInfoVector& recompiles);
 
   bool isSweepingTypes() const { return sweepingTypes; }
   void setSweepingTypes(bool sweeping) {

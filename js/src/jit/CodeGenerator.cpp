@@ -31,7 +31,7 @@
 #include "gc/Nursery.h"
 #include "irregexp/NativeRegExpMacroAssembler.h"
 #include "jit/AtomicOperations.h"
-#include "jit/BaselineCompiler.h"
+#include "jit/BaselineCodeGen.h"
 #include "jit/IonBuilder.h"
 #include "jit/IonIC.h"
 #include "jit/IonOptimizationLevels.h"
@@ -1569,7 +1569,7 @@ void CodeGenerator::visitDoubleToString(LDoubleToString* lir) {
       lir, ArgList(input), StoreRegisterTo(output));
 
   // Try double to integer conversion and run integer to string code.
-  masm.convertDoubleToInt32(input, temp, ool->entry(), true);
+  masm.convertDoubleToInt32(input, temp, ool->entry(), false);
   emitIntToString(temp, output, ool->entry());
 
   masm.bind(ool->rejoin());
@@ -3419,7 +3419,7 @@ void CodeGenerator::visitLambda(LLambda* lir) {
 
   emitLambdaInit(output, envChain, info);
 
-  if (info.flags & JSFunction::EXTENDED) {
+  if (info.flags & FunctionFlags::EXTENDED) {
     static_assert(FunctionExtended::NUM_EXTENDED_SLOTS == 2,
                   "All slots must be initialized");
     masm.storeValue(UndefinedValue(),
@@ -3507,7 +3507,7 @@ void CodeGenerator::visitLambdaArrow(LLambdaArrow* lir) {
   emitLambdaInit(output, envChain, info);
 
   // Initialize extended slots. Lexical |this| is stored in the first one.
-  MOZ_ASSERT(info.flags & JSFunction::EXTENDED);
+  MOZ_ASSERT(info.flags & FunctionFlags::EXTENDED);
   static_assert(FunctionExtended::NUM_EXTENDED_SLOTS == 2,
                 "All slots must be initialized");
   static_assert(FunctionExtended::ARROW_NEWTARGET_SLOT == 0,
@@ -4983,9 +4983,14 @@ void CodeGenerator::visitCallGeneric(LCallGeneric* call) {
   if (call->mir()->isConstructing()) {
     masm.branchIfNotInterpretedConstructor(calleereg, nargsreg, &invoke);
   } else {
-    masm.branchIfFunctionHasNoJitEntry(calleereg, /* isConstructing */ false,
-                                       &invoke);
-    masm.branchFunctionKind(Assembler::Equal, JSFunction::ClassConstructor,
+    // See visitCallKnown.
+    if (call->mir()->needsArgCheck()) {
+      masm.branchIfFunctionHasNoJitEntry(calleereg, /* isConstructing */ false,
+                                         &invoke);
+    } else {
+      masm.branchIfFunctionHasNoScript(calleereg, &invoke);
+    }
+    masm.branchFunctionKind(Assembler::Equal, FunctionFlags::ClassConstructor,
                             calleereg, objreg, &invoke);
   }
 
@@ -5110,14 +5115,6 @@ void CodeGenerator::visitCallKnown(LCallKnown* call) {
 
   MOZ_ASSERT_IF(target->isClassConstructor(), call->isConstructing());
 
-  Label uncompiled;
-  if (!target->isNativeWithJitEntry()) {
-    // The calleereg is known to be a non-native function, but might point
-    // to a LazyScript instead of a JSScript.
-    masm.branchIfFunctionHasNoJitEntry(calleereg, call->isConstructing(),
-                                       &uncompiled);
-  }
-
   if (call->mir()->maybeCrossRealm()) {
     masm.switchToObjectRealm(calleereg, objreg);
   }
@@ -5125,7 +5122,22 @@ void CodeGenerator::visitCallKnown(LCallKnown* call) {
   if (call->mir()->needsArgCheck()) {
     masm.loadJitCodeRaw(calleereg, objreg);
   } else {
+    // In order to use the jitCodeNoArgCheck entry point, we must ensure the
+    // JSFunction is pointing to the canonical JSScript. Due to lambda cloning,
+    // we may still be referencing the original LazyScript.
+    //
+    // NOTE: We checked that canonical function script had a valid JitScript.
+    // This will not be tossed without all Ion code being tossed first.
+
+    Label uncompiled, end;
+    masm.branchIfFunctionHasNoScript(calleereg, &uncompiled);
     masm.loadJitCodeNoArgCheck(calleereg, objreg);
+    masm.jump(&end);
+
+    // jitCodeRaw is still valid even if uncompiled.
+    masm.bind(&uncompiled);
+    masm.loadJitCodeRaw(calleereg, objreg);
+    masm.bind(&end);
   }
 
   // Nestle the StackPointer up to the argument vector.
@@ -5152,24 +5164,6 @@ void CodeGenerator::visitCallKnown(LCallKnown* call) {
   // The return address has already been removed from the Ion frame.
   int prefixGarbage = sizeof(JitFrameLayout) - sizeof(void*);
   masm.adjustStack(prefixGarbage - unusedStack);
-
-  if (uncompiled.used()) {
-    Label end;
-    masm.jump(&end);
-
-    // Handle uncompiled functions.
-    masm.bind(&uncompiled);
-    if (call->isConstructing() && target->nargs() > call->numActualArgs()) {
-      emitCallInvokeFunctionShuffleNewTarget(call, calleereg, target->nargs(),
-                                             unusedStack);
-    } else {
-      emitCallInvokeFunction(call, calleereg, call->isConstructing(),
-                             call->ignoresReturnValue(), call->numActualArgs(),
-                             unusedStack);
-    }
-
-    masm.bind(&end);
-  }
 
   // If the return value of the constructing function is Primitive,
   // replace the return value with the Object from CreateThis.
@@ -5440,7 +5434,7 @@ void CodeGenerator::emitApplyGeneric(T* apply) {
                                      &invoke);
 
   // Guard that calleereg is not a class constrcuctor
-  masm.branchFunctionKind(Assembler::Equal, JSFunction::ClassConstructor,
+  masm.branchFunctionKind(Assembler::Equal, FunctionFlags::ClassConstructor,
                           calleereg, objreg, &invoke);
 
   // Call with an Ion frame or a rectifier frame.
@@ -7660,21 +7654,6 @@ void CodeGenerator::visitTypedArrayElementShift(LTypedArrayElementShift* lir) {
   masm.move32(Imm32(0), out);
 
   masm.bind(&done);
-}
-
-void CodeGenerator::visitSetDisjointTypedElements(
-    LSetDisjointTypedElements* lir) {
-  Register target = ToRegister(lir->target());
-  Register targetOffset = ToRegister(lir->targetOffset());
-  Register source = ToRegister(lir->source());
-
-  Register temp = ToRegister(lir->temp());
-
-  masm.setupUnalignedABICall(temp);
-  masm.passABIArg(target);
-  masm.passABIArg(targetOffset);
-  masm.passABIArg(source);
-  masm.callWithABI(JS_FUNC_TO_DATA_PTR(void*, js::SetDisjointTypedElements));
 }
 
 void CodeGenerator::visitTypedObjectDescr(LTypedObjectDescr* lir) {
@@ -10926,7 +10905,7 @@ bool CodeGenerator::link(JSContext* cx, CompilerConstraintList* constraints) {
     ionScript->setHasProfilingInstrumentation();
   }
 
-  script->setIonScript(cx->runtime(), ionScript);
+  script->jitScript()->setIonScript(script, ionScript);
 
   Assembler::PatchDataWithValueCheck(
       CodeLocationLabel(code, invalidateEpilogueData_), ImmPtr(ionScript),
@@ -12794,11 +12773,12 @@ void CodeGenerator::emitIsCallableOrConstructor(Register object,
   if (mode == Callable) {
     masm.move32(Imm32(1), output);
   } else {
-    static_assert(mozilla::IsPowerOfTwo(unsigned(JSFunction::CONSTRUCTOR)),
-                  "JSFunction::CONSTRUCTOR has only one bit set");
+    static_assert(mozilla::IsPowerOfTwo(unsigned(FunctionFlags::CONSTRUCTOR)),
+                  "FunctionFlags::CONSTRUCTOR has only one bit set");
 
     masm.load16ZeroExtend(Address(object, JSFunction::offsetOfFlags()), output);
-    masm.rshift32(Imm32(mozilla::FloorLog2(JSFunction::CONSTRUCTOR)), output);
+    masm.rshift32(Imm32(mozilla::FloorLog2(FunctionFlags::CONSTRUCTOR)),
+                  output);
     masm.and32(Imm32(1), output);
   }
   masm.jump(&done);
@@ -12809,15 +12789,15 @@ void CodeGenerator::emitIsCallableOrConstructor(Register object,
   // more complicated.
   masm.branchTestClassIsProxy(true, output, failure);
 
-  masm.branchPtr(Assembler::NonZero, Address(output, offsetof(js::Class, cOps)),
+  masm.branchPtr(Assembler::NonZero, Address(output, offsetof(JSClass, cOps)),
                  ImmPtr(nullptr), &hasCOps);
   masm.move32(Imm32(0), output);
   masm.jump(&done);
 
   masm.bind(&hasCOps);
-  masm.loadPtr(Address(output, offsetof(js::Class, cOps)), output);
-  size_t opsOffset = mode == Callable ? offsetof(js::ClassOps, call)
-                                      : offsetof(js::ClassOps, construct);
+  masm.loadPtr(Address(output, offsetof(JSClass, cOps)), output);
+  size_t opsOffset = mode == Callable ? offsetof(JSClassOps, call)
+                                      : offsetof(JSClassOps, construct);
   masm.cmpPtrSet(Assembler::NonZero, Address(output, opsOffset),
                  ImmPtr(nullptr), output);
 
@@ -12996,13 +12976,13 @@ void CodeGenerator::visitIsTypedArray(LIsTypedArray* lir) {
   Label done;
 
   static_assert(Scalar::Int8 == 0, "Int8 is the first typed array class");
-  const Class* firstTypedArrayClass =
+  const JSClass* firstTypedArrayClass =
       TypedArrayObject::classForType(Scalar::Int8);
 
   static_assert(
       (Scalar::BigUint64 - Scalar::Int8) == Scalar::MaxTypedArrayViewType - 1,
       "BigUint64 is the last typed array class");
-  const Class* lastTypedArrayClass =
+  const JSClass* lastTypedArrayClass =
       TypedArrayObject::classForType(Scalar::BigUint64);
 
   masm.loadObjClassUnsafe(object, output);
@@ -13355,9 +13335,6 @@ void CodeGenerator::visitWasmTrap(LWasmTrap* lir) {
 }
 
 void CodeGenerator::visitWasmBoundsCheck(LWasmBoundsCheck* ins) {
-#ifdef WASM_HUGE_MEMORY
-  MOZ_CRASH("No wasm bounds check for huge memory");
-#else
   const MWasmBoundsCheck* mir = ins->mir();
   Register ptr = ToRegister(ins->ptr());
   Register boundsCheckLimit = ToRegister(ins->boundsCheckLimit());
@@ -13365,7 +13342,6 @@ void CodeGenerator::visitWasmBoundsCheck(LWasmBoundsCheck* ins) {
   masm.wasmBoundsCheck(Assembler::Below, ptr, boundsCheckLimit, &ok);
   masm.wasmTrap(wasm::Trap::OutOfBounds, mir->bytecodeOffset());
   masm.bind(&ok);
-#endif
 }
 
 void CodeGenerator::visitWasmAlignmentCheck(LWasmAlignmentCheck* ins) {
@@ -13738,18 +13714,18 @@ void CodeGenerator::visitFinishBoundFunctionInit(
   // If the length or name property is resolved, it might be shadowed.
   masm.branchTest32(
       Assembler::NonZero, temp1,
-      Imm32(JSFunction::INTERPRETED_LAZY | JSFunction::RESOLVED_NAME |
-            JSFunction::RESOLVED_LENGTH),
+      Imm32(FunctionFlags::INTERPRETED_LAZY | FunctionFlags::RESOLVED_NAME |
+            FunctionFlags::RESOLVED_LENGTH),
       slowPath);
 
   Label notBoundTarget, loadName;
-  masm.branchTest32(Assembler::Zero, temp1, Imm32(JSFunction::BOUND_FUN),
+  masm.branchTest32(Assembler::Zero, temp1, Imm32(FunctionFlags::BOUND_FUN),
                     &notBoundTarget);
   {
     // Call into the VM if the target's name atom contains the bound
     // function prefix.
     masm.branchTest32(Assembler::NonZero, temp1,
-                      Imm32(JSFunction::HAS_BOUND_FUNCTION_NAME_PREFIX),
+                      Imm32(FunctionFlags::HAS_BOUND_FUNCTION_NAME_PREFIX),
                       slowPath);
 
     // We also take the slow path when target's length isn't an int32.
@@ -13759,8 +13735,8 @@ void CodeGenerator::visitFinishBoundFunctionInit(
     // Bound functions reuse HAS_GUESSED_ATOM for
     // HAS_BOUND_FUNCTION_NAME_PREFIX, so skip the guessed atom check below.
     static_assert(
-        JSFunction::HAS_BOUND_FUNCTION_NAME_PREFIX ==
-            JSFunction::HAS_GUESSED_ATOM,
+        FunctionFlags::HAS_BOUND_FUNCTION_NAME_PREFIX ==
+            FunctionFlags::HAS_GUESSED_ATOM,
         "HAS_BOUND_FUNCTION_NAME_PREFIX is shared with HAS_GUESSED_ATOM");
     masm.jump(&loadName);
   }
@@ -13768,7 +13744,7 @@ void CodeGenerator::visitFinishBoundFunctionInit(
 
   Label guessed, hasName;
   masm.branchTest32(Assembler::NonZero, temp1,
-                    Imm32(JSFunction::HAS_GUESSED_ATOM), &guessed);
+                    Imm32(FunctionFlags::HAS_GUESSED_ATOM), &guessed);
   masm.bind(&loadName);
   masm.loadPtr(Address(target, JSFunction::offsetOfAtom()), temp2);
   masm.branchTestPtr(Assembler::NonZero, temp2, temp2, &hasName);
@@ -13777,7 +13753,7 @@ void CodeGenerator::visitFinishBoundFunctionInit(
 
     // Unnamed class expression don't have a name property. To avoid
     // looking it up from the prototype chain, we take the slow path here.
-    masm.branchFunctionKind(Assembler::Equal, JSFunction::ClassConstructor,
+    masm.branchFunctionKind(Assembler::Equal, FunctionFlags::ClassConstructor,
                             target, temp2, slowPath);
 
     // An absent name property defaults to the empty string.
@@ -13793,23 +13769,26 @@ void CodeGenerator::visitFinishBoundFunctionInit(
   // CONSTRUCTOR flag.
   Label isConstructor, boundFlagsComputed;
   masm.load16ZeroExtend(Address(bound, JSFunction::offsetOfFlags()), temp2);
-  masm.branchTest32(Assembler::NonZero, temp1, Imm32(JSFunction::CONSTRUCTOR),
-                    &isConstructor);
+  masm.branchTest32(Assembler::NonZero, temp1,
+                    Imm32(FunctionFlags::CONSTRUCTOR), &isConstructor);
   {
-    masm.or32(Imm32(JSFunction::BOUND_FUN), temp2);
+    masm.or32(Imm32(FunctionFlags::BOUND_FUN), temp2);
     masm.jump(&boundFlagsComputed);
   }
   masm.bind(&isConstructor);
-  { masm.or32(Imm32(JSFunction::BOUND_FUN | JSFunction::CONSTRUCTOR), temp2); }
+  {
+    masm.or32(Imm32(FunctionFlags::BOUND_FUN | FunctionFlags::CONSTRUCTOR),
+              temp2);
+  }
   masm.bind(&boundFlagsComputed);
   masm.store16(temp2, Address(bound, JSFunction::offsetOfFlags()));
 
   // Load the target function's length.
   Label isInterpreted, isBound, lengthLoaded;
-  masm.branchTest32(Assembler::NonZero, temp1, Imm32(JSFunction::BOUND_FUN),
+  masm.branchTest32(Assembler::NonZero, temp1, Imm32(FunctionFlags::BOUND_FUN),
                     &isBound);
-  masm.branchTest32(Assembler::NonZero, temp1, Imm32(JSFunction::INTERPRETED),
-                    &isInterpreted);
+  masm.branchTest32(Assembler::NonZero, temp1,
+                    Imm32(FunctionFlags::INTERPRETED), &isInterpreted);
   {
     // Load the length property of a native function.
     masm.load16ZeroExtend(Address(target, JSFunction::offsetOfNargs()), temp1);
@@ -13826,8 +13805,9 @@ void CodeGenerator::visitFinishBoundFunctionInit(
     // Load the length property of an interpreted function.
     masm.loadPtr(Address(target, JSFunction::offsetOfScript()), temp1);
     masm.loadPtr(Address(temp1, JSScript::offsetOfScriptData()), temp1);
-    masm.load16ZeroExtend(Address(temp1, SharedScriptData::offsetOfFunLength()),
-                          temp1);
+    masm.loadPtr(Address(temp1, RuntimeScriptData::offsetOfISD()), temp1);
+    masm.load16ZeroExtend(
+        Address(temp1, ImmutableScriptData::offsetOfFunLength()), temp1);
   }
   masm.bind(&lengthLoaded);
 
@@ -14047,6 +14027,11 @@ void CodeGenerator::visitWasmCompareAndSelect(LWasmCompareAndSelect* ins) {
   }
 
   MOZ_CRASH("in CodeGenerator::visitWasmCompareAndSelect: unexpected types");
+}
+
+void CodeGenerator::visitWasmFence(LWasmFence* lir) {
+  MOZ_ASSERT(gen->compilingWasm());
+  masm.memoryBarrier(MembarFull);
 }
 
 static_assert(!std::is_polymorphic<CodeGenerator>::value,

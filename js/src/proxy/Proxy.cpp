@@ -687,10 +687,9 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
        * Assert that this proxy is tracked in the wrapper map. We maintain
        * the invariant that the wrapped object is the key in the wrapper map.
        */
-      Value key = ObjectValue(*referent);
-      WrapperMap::Ptr p = proxy->compartment()->lookupWrapper(key);
+      ObjectWrapperMap::Ptr p = proxy->compartment()->lookupWrapper(referent);
       MOZ_ASSERT(p);
-      MOZ_ASSERT(*p->value().unsafeGet() == ObjectValue(*proxy));
+      MOZ_ASSERT(*p->value().unsafeGet() == proxy);
     }
   }
 #endif
@@ -716,7 +715,7 @@ void ProxyObject::trace(JSTracer* trc, JSObject* obj) {
   Proxy::trace(trc, obj);
 }
 
-static void proxy_Finalize(FreeOp* fop, JSObject* obj) {
+static void proxy_Finalize(JSFreeOp* fop, JSObject* obj) {
   // Suppress a bogus warning about finalize().
   JS::AutoSuppressGCAnalysis nogc;
 
@@ -724,7 +723,9 @@ static void proxy_Finalize(FreeOp* fop, JSObject* obj) {
   obj->as<ProxyObject>().handler()->finalize(fop, obj);
 
   if (!obj->as<ProxyObject>().usingInlineValueArray()) {
-    fop->free_(js::detail::GetProxyDataLayout(obj)->values());
+    // Bug 1560019: This allocation is not tracked, but is only present when
+    // objects are swapped which is assumed to be relatively rare.
+    fop->freeUntracked(js::detail::GetProxyDataLayout(obj)->values());
   }
 }
 
@@ -741,7 +742,7 @@ size_t js::proxy_ObjectMoved(JSObject* obj, JSObject* old) {
   return proxy.handler()->objectMoved(obj, old);
 }
 
-const ClassOps js::ProxyClassOps = {
+const JSClassOps js::ProxyClassOps = {
     nullptr,            /* addProperty */
     nullptr,            /* delProperty */
     nullptr,            /* enumerate   */
@@ -764,7 +765,7 @@ const ObjectOps js::ProxyObjectOps = {
     proxy_DeleteProperty, Proxy::getElements,
     Proxy::fun_toString};
 
-const Class js::ProxyClass =
+const JSClass js::ProxyClass =
     PROXY_CLASS_DEF("Proxy", JSCLASS_HAS_CACHED_PROTO(JSProto_Proxy) |
                                  JSCLASS_HAS_RESERVED_SLOTS(2));
 

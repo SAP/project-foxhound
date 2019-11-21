@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "TypedObjectConstants.h"
 
 ///////////////////////////////////////////////////////////////////////////
@@ -111,6 +115,12 @@ function TypedObjectGetScalar(descr, typedObj, offset) {
 
   case JS_SCALARTYPEREPR_FLOAT64:
     return Load_float64(typedObj, offset | 0);
+
+  case JS_SCALARTYPEREPR_BIGINT64:
+    return Load_bigint64(typedObj, offset | 0);
+
+  case JS_SCALARTYPEREPR_BIGUINT64:
+    return Load_biguint64(typedObj, offset | 0);
   }
 
   assert(false, "Unhandled scalar type: " + type);
@@ -250,6 +260,12 @@ function TypedObjectSetScalar(descr, typedObj, offset, fromValue) {
 
   case JS_SCALARTYPEREPR_FLOAT64:
     return Store_float64(typedObj, offset | 0, +fromValue);
+
+  case JS_SCALARTYPEREPR_BIGINT64:
+    return Store_bigint64(typedObj, offset | 0, fromValue);
+
+  case JS_SCALARTYPEREPR_BIGUINT64:
+    return Store_biguint64(typedObj, offset | 0, fromValue);
   }
 
   assert(false, "Unhandled scalar type: " + type);
@@ -481,6 +497,7 @@ function TypedObjectArrayTypeBuild(a, b, c) {
       ThrowTypeError(JSMSG_TYPEDOBJECT_BAD_ARGS);
     else
       ThrowTypeError(JSMSG_TYPEDOBJECT_BAD_ARGS);
+      break;
   default:
     ThrowTypeError(JSMSG_TYPEDOBJECT_BAD_ARGS);
   }

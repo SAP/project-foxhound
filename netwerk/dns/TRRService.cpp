@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsICaptivePortalService.h"
+#include "nsIParentalControlsService.h"
 #include "nsIObserverService.h"
 #include "nsIURIMutator.h"
 #include "nsNetUtil.h"
@@ -12,12 +13,14 @@
 #include "TRRService.h"
 
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Tokenizer.h"
 
 static const char kOpenCaptivePortalLoginEvent[] = "captive-portal-login";
 static const char kClearPrivateData[] = "clear-private-data";
 static const char kPurge[] = "browser:purge-session-history";
 static const char kDisableIpv6Pref[] = "network.dns.disableIPv6";
+static const char kCaptivedetectCanonicalURL[] = "captivedetect.canonicalURL";
 
 #define TRR_PREF_PREFIX "network.trr."
 #define TRR_PREF(x) TRR_PREF_PREFIX x
@@ -37,7 +40,6 @@ TRRService::TRRService()
     : mInitialized(false),
       mMode(0),
       mTRRBlacklistExpireTime(72 * 3600),
-      mTRRTimeout(3000),
       mLock("trrservice"),
       mConfirmationNS(NS_LITERAL_CSTRING("example.com")),
       mWaitForCaptive(true),
@@ -49,7 +51,8 @@ TRRService::TRRService()
       mClearTRRBLStorage(false),
       mConfirmationState(CONFIRM_INIT),
       mRetryConfirmInterval(1000),
-      mTRRFailures(0) {
+      mTRRFailures(0),
+      mParentalControlEnabled(false) {
   MOZ_ASSERT(NS_IsMainThread(), "wrong thread");
 }
 
@@ -73,6 +76,7 @@ nsresult TRRService::Init() {
   if (prefBranch) {
     prefBranch->AddObserver(TRR_PREF_PREFIX, this, true);
     prefBranch->AddObserver(kDisableIpv6Pref, this, true);
+    prefBranch->AddObserver(kCaptivedetectCanonicalURL, this, true);
   }
   nsCOMPtr<nsICaptivePortalService> captivePortalService =
       do_GetService(NS_CAPTIVEPORTAL_CID);
@@ -88,12 +92,24 @@ nsresult TRRService::Init() {
          captiveState, (int)mCaptiveIsPassed));
   }
 
+  GetParentalControlEnabledInternal();
+
   ReadPrefs(nullptr);
 
   gTRRService = this;
 
   LOG(("Initialized TRRService\n"));
   return NS_OK;
+}
+
+void TRRService::GetParentalControlEnabledInternal() {
+  nsCOMPtr<nsIParentalControlsService> pc =
+      do_CreateInstance("@mozilla.org/parental-controls-service;1");
+  if (pc) {
+    pc->GetParentalControlsEnabled(&mParentalControlEnabled);
+    LOG(("TRRService::GetParentalControlEnabledInternal=%d\n",
+         mParentalControlEnabled));
+  }
 }
 
 bool TRRService::Enabled() {
@@ -239,13 +255,6 @@ nsresult TRRService::ReadPrefs(const char* name) {
       mTRRBlacklistExpireTime = secs;
     }
   }
-  if (!name || !strcmp(name, TRR_PREF("request-timeout"))) {
-    // number of milliseconds
-    uint32_t ms;
-    if (NS_SUCCEEDED(Preferences::GetUint(TRR_PREF("request-timeout"), &ms))) {
-      mTRRTimeout = ms;
-    }
-  }
   if (!name || !strcmp(name, TRR_PREF("early-AAAA"))) {
     bool tmp;
     if (NS_SUCCEEDED(Preferences::GetBool(TRR_PREF("early-AAAA"), &tmp))) {
@@ -285,7 +294,8 @@ nsresult TRRService::ReadPrefs(const char* name) {
       mDisableAfterFails = fails;
     }
   }
-  if (!name || !strcmp(name, TRR_PREF("excluded-domains"))) {
+  if (!name || !strcmp(name, TRR_PREF("excluded-domains")) ||
+      !strcmp(name, kCaptivedetectCanonicalURL)) {
     nsAutoCString excludedDomains;
     Preferences::GetCString(TRR_PREF("excluded-domains"), excludedDomains);
 
@@ -296,6 +306,20 @@ nsresult TRRService::ReadPrefs(const char* name) {
       nsAutoCString token(tokenizer.nextToken());
       LOG(("TRRService::ReadPrefs excluded-domains host:[%s]\n", token.get()));
       mExcludedDomains.PutEntry(token);
+    }
+
+    nsAutoCString canonicalSiteURL;
+    Preferences::GetCString(kCaptivedetectCanonicalURL, canonicalSiteURL);
+
+    nsCOMPtr<nsIURI> uri;
+    nsresult rv = NS_NewURI(getter_AddRefs(uri), canonicalSiteURL,
+                            UTF_8_ENCODING, nullptr);
+    if (NS_SUCCEEDED(rv)) {
+      nsAutoCString host;
+      uri->GetHost(host);
+      LOG(("TRRService::ReadPrefs excluded-domains captive portal URL:[%s]\n",
+           host.get()));
+      mExcludedDomains.PutEntry(host);
     }
   }
 
@@ -312,6 +336,14 @@ nsresult TRRService::GetCredentials(nsCString& result) {
   MutexAutoLock lock(mLock);
   result = mPrivateCred;
   return NS_OK;
+}
+
+uint32_t TRRService::GetRequestTimeout() {
+  if (mMode == MODE_TRRONLY) {
+    return StaticPrefs::network_trr_request_timeout_mode_trronly_ms();
+  }
+
+  return StaticPrefs::network_trr_request_timeout_ms();
 }
 
 nsresult TRRService::Start() {
@@ -531,22 +563,23 @@ bool TRRService::IsTRRBlacklisted(const nsACString& aHost,
 }
 
 bool TRRService::IsExcludedFromTRR(const nsACString& aHost) {
-  if (mExcludedDomains.GetEntry(aHost)) {
-    LOG(("Host [%s] Is Excluded From TRR via pref\n", aHost.BeginReading()));
-    return true;
-  }
+  int32_t dot = 0;
+  // iteratively check the sub-domain of |aHost|
+  while (dot < static_cast<int32_t>(aHost.Length())) {
+    nsDependentCSubstring subdomain =
+        Substring(aHost, dot, aHost.Length() - dot);
 
-  int32_t dot = aHost.FindChar('.');
-  if (dot != kNotFound) {
-    // there was a dot, check the parent first
-    dot++;
-    nsDependentCSubstring domain = Substring(aHost, dot, aHost.Length() - dot);
-    nsAutoCString check(domain);
-
-    // recursively check the domain part of this name
-    if (IsExcludedFromTRR(check)) {
+    if (mExcludedDomains.GetEntry(subdomain)) {
+      LOG(("Subdomain [%s] of host [%s] Is Excluded From TRR via pref\n",
+           subdomain.BeginReading(), aHost.BeginReading()));
       return true;
     }
+
+    dot = aHost.FindChar('.', dot + 1);
+    if (dot == kNotFound) {
+      break;
+    }
+    dot++;
   }
 
   return false;

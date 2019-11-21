@@ -48,6 +48,15 @@ class BaseMatrix {
     T components[6];
   };
 
+  template <class T2>
+  explicit BaseMatrix(const BaseMatrix<T2>& aOther)
+      : _11(aOther._11),
+        _12(aOther._12),
+        _21(aOther._21),
+        _22(aOther._22),
+        _31(aOther._31),
+        _32(aOther._32) {}
+
   MOZ_ALWAYS_INLINE BaseMatrix Copy() const { return BaseMatrix<T>(*this); }
 
   friend std::ostream& operator<<(std::ostream& aStream,
@@ -1727,10 +1736,23 @@ class Matrix4x4Typed {
         aUnknown._31, aUnknown._32, aUnknown._33, aUnknown._34,
         aUnknown._41, aUnknown._42, aUnknown._43, aUnknown._44};
   }
+  /**
+   * For convenience, overload FromUnknownMatrix() for Maybe<Matrix>.
+   */
+  static Maybe<Matrix4x4Typed> FromUnknownMatrix(
+      const Maybe<Matrix4x4>& aUnknown) {
+    if (aUnknown.isSome()) {
+      return Some(FromUnknownMatrix(*aUnknown));
+    }
+    return Nothing();
+  }
 };
 
 typedef Matrix4x4Typed<UnknownUnits, UnknownUnits> Matrix4x4;
 typedef Matrix4x4Typed<UnknownUnits, UnknownUnits, double> Matrix4x4Double;
+
+// This typedef is for IPDL, which can't reference a template-id directly.
+typedef Maybe<Matrix4x4> MaybeMatrix4x4;
 
 class Matrix5x4 {
  public:

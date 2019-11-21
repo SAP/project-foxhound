@@ -79,7 +79,7 @@ graph_config_schema = Schema({
     Required('workers'): {
         Required('aliases'): {
             text_type: {
-                Required('provisioner'): text_type,
+                Required('provisioner'): optionally_keyed_by('level', text_type),
                 Required('implementation'): text_type,
                 Required('os'): text_type,
                 Required('worker-type'): optionally_keyed_by('level', text_type),
@@ -89,9 +89,10 @@ graph_config_schema = Schema({
     Required('mac-notarization'): {
         Required('mac-behavior'):
             optionally_keyed_by('platform', 'release-type',
-                                Any('mac_notarize', 'mac_pkg', 'mac_sign', 'mac_sign_and_pkg')),
+                                Any('mac_notarize', 'mac_geckodriver', 'mac_sign',
+                                    'mac_sign_and_pkg')),
         Required('mac-entitlements'):
-            optionally_keyed_by('platform', 'project', text_type),
+            optionally_keyed_by('platform', 'release-level', text_type),
     },
 })
 

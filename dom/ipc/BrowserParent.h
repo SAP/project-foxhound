@@ -159,7 +159,16 @@ class BrowserParent final : public PBrowserParent,
   // Returns the top-level widget for our frameloader's document.
   already_AddRefed<nsIWidget> GetDocWidget() const;
 
+  /**
+   * Returns the widget which may have native focus and handles text input
+   * like keyboard input, IME, etc.
+   */
+  already_AddRefed<nsIWidget> GetTextInputHandlingWidget() const;
+
   nsIXULBrowserWindow* GetXULBrowserWindow();
+
+  static uint32_t GetMaxTouchPoints(Element* aElement);
+  uint32_t GetMaxTouchPoints() { return GetMaxTouchPoints(mFrameElement); }
 
   /**
    * Return the top level DocAccessibleParent for this BrowserParent.
@@ -274,8 +283,6 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvAccessKeyNotHandled(
       const WidgetKeyboardEvent& aEvent);
 
-  mozilla::ipc::IPCResult RecvSetHasBeforeUnload(const bool& aHasBeforeUnload);
-
   mozilla::ipc::IPCResult RecvRegisterProtocolHandler(const nsString& aScheme,
                                                       nsIURI* aHandlerURI,
                                                       const nsString& aTitle,
@@ -304,6 +311,11 @@ class BrowserParent final : public PBrowserParent,
       const RequestData& aRequestData, const nsresult aStatus,
       const nsString& aMessage);
 
+  mozilla::ipc::IPCResult RecvOnSecurityChange(
+      const Maybe<WebProgressData>& aWebProgressData,
+      const RequestData& aRequestData, const uint32_t aState,
+      const Maybe<WebProgressSecurityChangeData>& aSecurityChangeData);
+
   mozilla::ipc::IPCResult RecvOnContentBlockingEvent(
       const Maybe<WebProgressData>& aWebProgressData,
       const RequestData& aRequestData, const uint32_t& aEvent);
@@ -321,9 +333,12 @@ class BrowserParent final : public PBrowserParent,
 
   mozilla::ipc::IPCResult RecvSessionStoreUpdate(
       const Maybe<nsCString>& aDocShellCaps, const Maybe<bool>& aPrivatedMode,
-      const nsTArray<nsCString>& aPositions,
-      const nsTArray<int32_t>& aPositionDescendants, const uint32_t& aFlushId,
-      const bool& aIsFinal);
+      const nsTArray<nsCString>&& aPositions,
+      const nsTArray<int32_t>&& aPositionDescendants,
+      const nsTArray<InputFormData>& aInputs,
+      const nsTArray<CollectedInputDataValue>& aIdVals,
+      const nsTArray<CollectedInputDataValue>& aXPathVals,
+      const uint32_t& aFlushId, const bool& aIsFinal, const uint32_t& aEpoch);
 
   mozilla::ipc::IPCResult RecvBrowserFrameOpenWindow(
       PBrowserParent* aOpener, const nsString& aURL, const nsString& aName,
@@ -332,16 +347,16 @@ class BrowserParent final : public PBrowserParent,
 
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsString& aMessage, const ClonedMessageData& aData,
-      InfallibleTArray<CpowEntry>&& aCpows, nsIPrincipal* aPrincipal,
+      nsTArray<CpowEntry>&& aCpows, nsIPrincipal* aPrincipal,
       nsTArray<ipc::StructuredCloneData>* aRetVal);
 
   mozilla::ipc::IPCResult RecvRpcMessage(
       const nsString& aMessage, const ClonedMessageData& aData,
-      InfallibleTArray<CpowEntry>&& aCpows, nsIPrincipal* aPrincipal,
+      nsTArray<CpowEntry>&& aCpows, nsIPrincipal* aPrincipal,
       nsTArray<ipc::StructuredCloneData>* aRetVal);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMessage,
-                                           InfallibleTArray<CpowEntry>&& aCpows,
+                                           nsTArray<CpowEntry>&& aCpows,
                                            nsIPrincipal* aPrincipal,
                                            const ClonedMessageData& aData);
 
@@ -447,6 +462,11 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvDispatchKeyboardEvent(
       const mozilla::WidgetKeyboardEvent& aEvent);
 
+  mozilla::ipc::IPCResult RecvScrollRectIntoView(
+      const nsRect& aRect, const ScrollAxis& aVertical,
+      const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
+      const int32_t& aAppUnitsPerDevPixel);
+
   PColorPickerParent* AllocPColorPickerParent(const nsString& aTitle,
                                               const nsString& aInitialColor);
 
@@ -464,19 +484,14 @@ class BrowserParent final : public PBrowserParent,
       const uint64_t& aParentID, const uint32_t& aMsaaID,
       const IAccessibleHolder& aDocCOMProxy) override;
 
-  PWindowGlobalParent* AllocPWindowGlobalParent(const WindowGlobalInit& aInit);
+  mozilla::ipc::IPCResult RecvNewWindowGlobal(
+      ManagedEndpoint<PWindowGlobalParent>&& aEndpoint,
+      const WindowGlobalInit& aInit);
 
-  bool DeallocPWindowGlobalParent(PWindowGlobalParent* aActor);
-
-  virtual mozilla::ipc::IPCResult RecvPWindowGlobalConstructor(
-      PWindowGlobalParent* aActor, const WindowGlobalInit& aInit) override;
-
-  PBrowserBridgeParent* AllocPBrowserBridgeParent(
+  already_AddRefed<PBrowserBridgeParent> AllocPBrowserBridgeParent(
       const nsString& aPresentationURL, const nsString& aRemoteType,
       BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags,
       const TabId& aTabId);
-
-  bool DeallocPBrowserBridgeParent(PBrowserBridgeParent* aActor);
 
   virtual mozilla::ipc::IPCResult RecvPBrowserBridgeConstructor(
       PBrowserBridgeParent* aActor, const nsString& aPresentationURL,
@@ -567,7 +582,8 @@ class BrowserParent final : public PBrowserParent,
   void SendRealMouseEvent(WidgetMouseEvent& aEvent);
 
   void SendRealDragEvent(WidgetDragEvent& aEvent, uint32_t aDragAction,
-                         uint32_t aDropEffect, nsIPrincipal* aPrincipal);
+                         uint32_t aDropEffect, nsIPrincipal* aPrincipal,
+                         nsIContentSecurityPolicy* aCsp);
 
   void SendMouseWheelEvent(WidgetWheelEvent& aEvent);
 
@@ -639,7 +655,7 @@ class BrowserParent final : public PBrowserParent,
   LayoutDeviceToLayoutDeviceMatrix4x4 GetChildToParentConversionMatrix();
 
   void SetChildToParentConversionMatrix(
-      const LayoutDeviceToLayoutDeviceMatrix4x4& aMatrix);
+      const Maybe<LayoutDeviceToLayoutDeviceMatrix4x4>& aMatrix);
 
   // Returns the offset from the origin of our frameloader's nearest widget to
   // the origin of its layout frame. This offset is used to translate event
@@ -673,16 +689,11 @@ class BrowserParent final : public PBrowserParent,
 
   void LayerTreeUpdate(const LayersObserverEpoch& aEpoch, bool aActive);
 
-  void RequestRootPaint(gfx::CrossProcessPaint* aPaint, IntRect aRect,
-                        float aScale, nscolor aBackgroundColor);
-  void RequestSubPaint(gfx::CrossProcessPaint* aPaint, float aScale,
-                       nscolor aBackgroundColor);
-
   mozilla::ipc::IPCResult RecvInvokeDragSession(
       nsTArray<IPCDataTransfer>&& aTransfers, const uint32_t& aAction,
       Maybe<Shmem>&& aVisualDnDData, const uint32_t& aStride,
       const gfx::SurfaceFormat& aFormat, const LayoutDeviceIntRect& aDragRect,
-      nsIPrincipal* aPrincipal);
+      nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp);
 
   void AddInitialDnDDataTo(DataTransfer* aDataTransfer,
                            nsIPrincipal** aPrincipal);
@@ -716,7 +727,6 @@ class BrowserParent final : public PBrowserParent,
   void Deprioritize();
 
   bool GetHasContentOpener();
-  bool GetHasBeforeUnload();
 
   bool StartApzAutoscroll(float aAnchorX, float aAnchorY, nsViewID aScrollId,
                           uint32_t aPresShellId);
@@ -767,8 +777,7 @@ class BrowserParent final : public PBrowserParent,
                                        const Maybe<URIParams>& aLastVisitedURI,
                                        const uint32_t& aFlags);
 
-  mozilla::ipc::IPCResult RecvQueryVisitedState(
-      InfallibleTArray<URIParams>&& aURIs);
+  mozilla::ipc::IPCResult RecvQueryVisitedState(nsTArray<URIParams>&& aURIs);
 
   mozilla::ipc::IPCResult RecvFireFrameLoadEvent(bool aIsTrusted);
 
@@ -821,6 +830,8 @@ class BrowserParent final : public PBrowserParent,
   static void PushFocus(BrowserParent* aBrowserParent);
 
   static void PopFocus(BrowserParent* aBrowserParent);
+
+  void OnSubFrameCrashed();
 
  public:
   static void PopFocusAll();
@@ -943,10 +954,6 @@ class BrowserParent final : public PBrowserParent,
   // at least once.
   bool mHasPresented;
 
-  // True if at least one window hosted in the BrowserChild has added a
-  // beforeunload event listener.
-  bool mHasBeforeUnload;
-
   // True when the remote browser is created and ready to handle input events.
   bool mIsReadyToHandleInputEvents;
 
@@ -981,7 +988,7 @@ struct MOZ_STACK_CLASS BrowserParent::AutoUseNewTab final {
   }
 
  private:
-  BrowserParent* mNewTab;
+  RefPtr<BrowserParent> mNewTab;
   nsCString* mURLToLoad;
 };
 

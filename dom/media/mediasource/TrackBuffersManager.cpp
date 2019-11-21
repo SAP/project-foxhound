@@ -14,7 +14,7 @@
 #include "WebMDemuxer.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsMimeTypes.h"
 
 #ifdef MOZ_FMP4
@@ -493,6 +493,20 @@ void TrackBuffersManager::DoEvictData(const TimeUnit& aPlaybackTime,
   // Video is what takes the most space, only evict there if we have video.
   auto& track = HasVideo() ? mVideoTracks : mAudioTracks;
   const auto& buffer = track.GetTrackBuffer();
+  if (buffer.IsEmpty()) {
+    // Buffer has been emptied while the eviction was queued, nothing to do.
+    return;
+  }
+  if (track.mBufferedRanges.Length() == 0) {
+    MSE_DEBUG(
+        "DoEvictData running with no buffered ranges. 0 duration data likely "
+        "present in our buffer(s). Evicting all data!");
+    // We have no buffered ranges, but may still have data. This happens if the
+    // buffer is full of 0 duration data. Normal removal procedures don't clear
+    // 0 duration data, so blow away all our data.
+    RemoveAllCodedFrames();
+    return;
+  }
   // Remove any data we've already played, or before the next sample to be
   // demuxed whichever is lowest.
   TimeUnit lowerLimit = std::min(track.mNextSampleTime, aPlaybackTime);
@@ -660,6 +674,80 @@ bool TrackBuffersManager::CodedFrameRemoval(TimeInterval aInterval) {
   }
 
   return dataRemoved;
+}
+
+void TrackBuffersManager::RemoveAllCodedFrames() {
+  // This is similar to RemoveCodedFrames, but will attempt to remove ALL
+  // the frames. This is not to spec, as explained below at step 3.1. Steps
+  // below coincide with Remove Coded Frames algorithm from the spec.
+  MSE_DEBUG("RemoveAllCodedFrames called.");
+  MOZ_ASSERT(OnTaskQueue());
+
+  // 1. Let start be the starting presentation timestamp for the removal range.
+  TimeUnit start{};
+  // 2. Let end be the end presentation timestamp for the removal range.
+  TimeUnit end = TimeUnit::FromMicroseconds(1);
+  // Find an end time such that our range will include every frame in every
+  // track. We do this by setting the end of our interval to the largest end
+  // time seen + 1 microsecond.
+  for (TrackData* track : GetTracksList()) {
+    for (auto& frame : track->GetTrackBuffer()) {
+      MOZ_ASSERT(frame->mTime >= start,
+                 "Shouldn't have frame at negative time!");
+      TimeUnit frameEnd = frame->mTime + frame->mDuration;
+      if (frameEnd > end) {
+        end = frameEnd + TimeUnit::FromMicroseconds(1);
+      }
+    }
+  }
+
+  // 3. For each track buffer in this source buffer, run the following steps:
+  TimeIntervals removedInterval{TimeInterval(start, end)};
+  for (TrackData* track : GetTracksList()) {
+    // 1. Let remove end timestamp be the current value of duration
+    // ^ It's off spec, but we ignore this in order to clear 0 duration frames.
+    // If we don't ignore this rule and our buffer is full of 0 duration frames
+    // at timestamp n, we get an eviction range of [0, n). When we get to step
+    // 3.3 below, the 0 duration frames will not be evicted because their
+    // timestamp is not less than remove end timestamp -- it will in fact be
+    // equal to remove end timestamp.
+    //
+    // 2. If this track buffer has a random access point timestamp that is
+    // greater than or equal to end, then update remove end timestamp to that
+    // random access point timestamp.
+    // ^ We've made sure end > any sample's timestamp, so can skip this.
+    //
+    // 3. Remove all media data, from this track buffer, that contain starting
+    // timestamps greater than or equal to start and less than the remove end
+    // timestamp.
+    // 4. Remove decoding dependencies of the coded frames removed in the
+    // previous step: Remove all coded frames between the coded frames removed
+    // in the previous step and the next random access point after those removed
+    // frames.
+
+    // This should remove every frame in the track because removedInterval was
+    // constructed such that every frame in any track falls into that interval.
+    RemoveFrames(removedInterval, *track, 0, RemovalMode::kRemoveFrame);
+
+    // 5. If this object is in activeSourceBuffers, the current playback
+    // position is greater than or equal to start and less than the remove end
+    // timestamp, and HTMLMediaElement.readyState is greater than HAVE_METADATA,
+    // then set the HTMLMediaElement.readyState attribute to HAVE_METADATA and
+    // stall playback. This will be done by the MDSM during playback.
+    // TODO properly, so it works even if paused.
+  }
+
+  UpdateBufferedRanges();
+  MOZ_ASSERT(mAudioBufferedRanges.Length() == 0,
+             "Should have no buffered video ranges after evicting everything.");
+  MOZ_ASSERT(mVideoBufferedRanges.Length() == 0,
+             "Should have no buffered video ranges after evicting everything.");
+  mSizeSourceBuffer = mVideoTracks.mSizeBuffer + mAudioTracks.mSizeBuffer;
+  MOZ_ASSERT(mSizeSourceBuffer == 0,
+             "Buffer should be empty after evicting everything!");
+  if (mBufferFull && mSizeSourceBuffer < EvictionThreshold()) {
+    mBufferFull = false;
+  }
 }
 
 void TrackBuffersManager::UpdateBufferedRanges() {
@@ -1419,11 +1507,11 @@ void TrackBuffersManager::MaybeDispatchEncryptedEvent(
 void TrackBuffersManager::OnVideoDemuxCompleted(
     RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
   MOZ_ASSERT(OnTaskQueue());
-  MSE_DEBUG("%zu video samples demuxed", aSamples->mSamples.Length());
+  MSE_DEBUG("%zu video samples demuxed", aSamples->GetSamples().Length());
   mVideoTracks.mDemuxRequest.Complete();
-  mVideoTracks.mQueuedSamples.AppendElements(aSamples->mSamples);
+  mVideoTracks.mQueuedSamples.AppendElements(aSamples->GetSamples());
 
-  MaybeDispatchEncryptedEvent(aSamples->mSamples);
+  MaybeDispatchEncryptedEvent(aSamples->GetSamples());
   DoDemuxAudio();
 }
 
@@ -1443,12 +1531,12 @@ void TrackBuffersManager::DoDemuxAudio() {
 void TrackBuffersManager::OnAudioDemuxCompleted(
     RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
   MOZ_ASSERT(OnTaskQueue());
-  MSE_DEBUG("%zu audio samples demuxed", aSamples->mSamples.Length());
+  MSE_DEBUG("%zu audio samples demuxed", aSamples->GetSamples().Length());
   mAudioTracks.mDemuxRequest.Complete();
-  mAudioTracks.mQueuedSamples.AppendElements(aSamples->mSamples);
+  mAudioTracks.mQueuedSamples.AppendElements(aSamples->GetSamples());
   CompleteCodedFrameProcessing();
 
-  MaybeDispatchEncryptedEvent(aSamples->mSamples);
+  MaybeDispatchEncryptedEvent(aSamples->GetSamples());
 }
 
 void TrackBuffersManager::CompleteCodedFrameProcessing() {
@@ -2477,7 +2565,7 @@ uint32_t TrackBuffersManager::SkipToNextRandomAccessPoint(
       aFound = true;
       break;
     }
-    nextSampleTimecode = sample->mTimecode + sample->mDuration;
+    nextSampleTimecode = sample->GetEndTimecode();
     nextSampleTime = sample->GetEndTime();
     parsed++;
   }
@@ -2528,6 +2616,11 @@ const MediaRawData* TrackBuffersManager::GetSample(TrackInfo::TrackType aTrack,
     return nullptr;
   }
 
+  if (!(aExpectedDts + aFuzz).IsValid() || !(aExpectedPts + aFuzz).IsValid()) {
+    // Time overflow, it seems like we also reached the end.
+    return nullptr;
+  }
+
   const RefPtr<MediaRawData>& sample = track[aIndex];
   if (!aIndex || sample->mTimecode <= aExpectedDts + aFuzz ||
       sample->mTime <= aExpectedPts + aFuzz) {
@@ -2570,7 +2663,7 @@ already_AddRefed<MediaRawData> TrackBuffersManager::GetSample(
     }
     trackData.mNextGetSampleIndex.ref()++;
     // Estimate decode timestamp and timestamp of the next sample.
-    TimeUnit nextSampleTimecode = sample->mTimecode + sample->mDuration;
+    TimeUnit nextSampleTimecode = sample->GetEndTimecode();
     TimeUnit nextSampleTime = sample->GetEndTime();
     const MediaRawData* nextSample =
         GetSample(aTrack, trackData.mNextGetSampleIndex.ref(),
@@ -2612,7 +2705,7 @@ already_AddRefed<MediaRawData> TrackBuffersManager::GetSample(
   UpdateEvictionIndex(trackData, i);
 
   trackData.mNextGetSampleIndex.ref()++;
-  trackData.mNextSampleTimecode = sample->mTimecode + sample->mDuration;
+  trackData.mNextSampleTimecode = sample->GetEndTimecode();
   trackData.mNextSampleTime = sample->GetEndTime();
   return p.forget();
 }
@@ -2626,8 +2719,7 @@ int32_t TrackBuffersManager::FindCurrentPosition(TrackInfo::TrackType aTrack,
   // Perform an exact search first.
   for (uint32_t i = 0; i < track.Length(); i++) {
     const RefPtr<MediaRawData>& sample = track[i];
-    TimeInterval sampleInterval{sample->mTimecode,
-                                sample->mTimecode + sample->mDuration};
+    TimeInterval sampleInterval{sample->mTimecode, sample->GetEndTimecode()};
 
     if (sampleInterval.ContainsStrict(trackData.mNextSampleTimecode)) {
       return i;
@@ -2641,8 +2733,8 @@ int32_t TrackBuffersManager::FindCurrentPosition(TrackInfo::TrackType aTrack,
 
   for (uint32_t i = 0; i < track.Length(); i++) {
     const RefPtr<MediaRawData>& sample = track[i];
-    TimeInterval sampleInterval{sample->mTimecode,
-                                sample->mTimecode + sample->mDuration, aFuzz};
+    TimeInterval sampleInterval{sample->mTimecode, sample->GetEndTimecode(),
+                                aFuzz};
 
     if (sampleInterval.ContainsWithStrictEnd(trackData.mNextSampleTimecode)) {
       return i;
@@ -2699,7 +2791,7 @@ TimeUnit TrackBuffersManager::GetNextRandomAccessPoint(
     if (sample->mKeyframe) {
       return sample->mTime;
     }
-    nextSampleTimecode = sample->mTimecode + sample->mDuration;
+    nextSampleTimecode = sample->GetEndTimecode();
     nextSampleTime = sample->GetEndTime();
   }
   return TimeUnit::FromInfinity();
@@ -2726,8 +2818,7 @@ nsresult TrackBuffersManager::SetNextGetSampleIndexIfNeeded(
     return NS_OK;
   }
 
-  if (trackData.mNextSampleTimecode >
-      track.LastElement()->mTimecode + track.LastElement()->mDuration) {
+  if (trackData.mNextSampleTimecode > track.LastElement()->GetEndTimecode()) {
     // The next element is past our last sample. We're done.
     trackData.mNextGetSampleIndex = Some(uint32_t(track.Length()));
     return NS_ERROR_DOM_MEDIA_END_OF_STREAM;

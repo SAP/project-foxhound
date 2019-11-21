@@ -50,12 +50,10 @@ class Input extends Domain {
     const browserWindow = browser.ownerGlobal;
 
     const EventUtils = this._getEventUtils(browserWindow);
-    const onEvent = new Promise(r => {
-      browserWindow.addEventListener(domType, r, {
-        mozSystemGroup: true,
-        once: true,
-      });
-    });
+    const eventId = await this.executeInChild(
+      "addContentEventListener",
+      domType
+    );
 
     if (type == "char") {
       // type == "char" is used when doing `await page.keyboard.type( 'I’m a list' );`
@@ -77,7 +75,8 @@ class Input extends Domain {
         browserWindow
       );
     }
-    await onEvent;
+
+    await this.executeInChild("waitForContentEvent", eventId);
   }
 
   async dispatchMouseEvent({ type, button, x, y, modifiers, clickCount }) {

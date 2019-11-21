@@ -35,16 +35,12 @@ add_task(async function injectJSON() {
 add_task(function losslessDecode() {
   let urlNoScheme = "example.com/\u30a2\u30a4\u30a6\u30a8\u30aa";
   let url = "http://" + urlNoScheme;
-  if (Services.prefs.getBoolPref("browser.urlbar.quantumbar", true)) {
-    const result = new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-      UrlbarUtils.RESULT_SOURCE.TABS,
-      { url }
-    );
-    gURLBar.setValueFromResult(result);
-  } else {
-    gURLBar.textValue = url;
-  }
+  const result = new UrlbarResult(
+    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    UrlbarUtils.RESULT_SOURCE.TABS,
+    { url }
+  );
+  gURLBar.setValueFromResult(result);
   // Since this is directly setting textValue, it is expected to be trimmed.
   Assert.equal(
     gURLBar.inputField.value,
@@ -116,18 +112,6 @@ async function checkInput(inputStr) {
   );
   let expectedVisitURL = fixupInfo.fixedURI.spec;
 
-  if (!UrlbarPrefs.get("quantumbar")) {
-    let type = "visiturl";
-    let params = {
-      url: expectedVisitURL,
-      input: inputStr,
-    };
-    for (let key in params) {
-      params[key] = encodeURIComponent(params[key]);
-    }
-    expectedVisitURL = "moz-action:" + type + "," + JSON.stringify(params);
-  }
-
   Assert.equal(result.url, expectedVisitURL, "Should have the correct URL");
   Assert.equal(
     result.title,
@@ -147,9 +131,7 @@ async function checkInput(inputStr) {
   );
   Assert.equal(
     result.displayed.action,
-    Services.strings
-      .createBundle("chrome://global/locale/autocomplete.properties")
-      .GetStringFromName("visit"),
+    UrlbarUtils.strings.GetStringFromName("visit"),
     "Should be displaying the correct action text"
   );
 }

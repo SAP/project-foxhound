@@ -1,9 +1,78 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac } from "common/Actions.jsm";
 import { DSImage } from "../DSImage/DSImage.jsx";
 import { DSLinkMenu } from "../DSLinkMenu/DSLinkMenu";
 import { ImpressionStats } from "../../DiscoveryStreamImpressionStats/ImpressionStats";
 import React from "react";
 import { SafeAnchor } from "../SafeAnchor/SafeAnchor";
+import { DSContextFooter } from "../DSContextFooter/DSContextFooter.jsx";
+
+// Default Meta that displays CTA as link if cta_variant in layout is set as "link"
+export const DefaultMeta = ({
+  display_engagement_labels,
+  source,
+  title,
+  excerpt,
+  context,
+  context_type,
+  cta,
+  engagement,
+  cta_variant,
+}) => (
+  <div className="meta">
+    <div className="info-wrap">
+      <p className="source clamp">{source}</p>
+      <header className="title clamp">{title}</header>
+      {excerpt && <p className="excerpt clamp">{excerpt}</p>}
+      {cta_variant === "link" && cta && (
+        <div role="link" className="cta-link icon icon-arrow" tabIndex="0">
+          {cta}
+        </div>
+      )}
+    </div>
+    <DSContextFooter
+      context_type={context_type}
+      context={context}
+      display_engagement_labels={display_engagement_labels}
+      engagement={engagement}
+    />
+  </div>
+);
+
+export const CTAButtonMeta = ({
+  display_engagement_labels,
+  source,
+  title,
+  excerpt,
+  context,
+  context_type,
+  cta,
+  engagement,
+  sponsor,
+}) => (
+  <div className="meta">
+    <div className="info-wrap">
+      <p className="source clamp">
+        {sponsor ? sponsor : source}
+        {context && ` · Sponsored`}
+      </p>
+      <header className="title clamp">{title}</header>
+      {excerpt && <p className="excerpt clamp">{excerpt}</p>}
+    </div>
+    {context && cta && <button className="button cta-button">{cta}</button>}
+    {!context && (
+      <DSContextFooter
+        context_type={context_type}
+        context={context}
+        display_engagement_labels={display_engagement_labels}
+        engagement={engagement}
+      />
+    )}
+  </div>
+);
 
 export class DSCard extends React.PureComponent {
   constructor(props) {
@@ -11,7 +80,7 @@ export class DSCard extends React.PureComponent {
 
     this.onLinkClick = this.onLinkClick.bind(this);
     this.setPlaceholderRef = element => {
-      this.placholderElement = element;
+      this.placeholderElement = element;
     };
 
     this.state = {
@@ -52,8 +121,8 @@ export class DSCard extends React.PureComponent {
       const entry = entries.find(e => e.isIntersecting);
 
       if (entry) {
-        if (this.placholderElement) {
-          this.observer.unobserve(this.placholderElement);
+        if (this.placeholderElement) {
+          this.observer.unobserve(this.placeholderElement);
         }
 
         // Stop observing since element has been seen
@@ -64,17 +133,34 @@ export class DSCard extends React.PureComponent {
     }
   }
 
+  onIdleCallback() {
+    if (!this.state.isSeen) {
+      if (this.observer && this.placeholderElement) {
+        this.observer.unobserve(this.placeholderElement);
+      }
+      this.setState({
+        isSeen: true,
+      });
+    }
+  }
+
   componentDidMount() {
-    if (this.placholderElement) {
+    this.idleCallbackId = this.props.windowObj.requestIdleCallback(
+      this.onIdleCallback.bind(this)
+    );
+    if (this.placeholderElement) {
       this.observer = new IntersectionObserver(this.onSeen.bind(this));
-      this.observer.observe(this.placholderElement);
+      this.observer.observe(this.placeholderElement);
     }
   }
 
   componentWillUnmount() {
     // Remove observer on unmount
-    if (this.observer && this.placholderElement) {
-      this.observer.unobserve(this.placholderElement);
+    if (this.observer && this.placeholderElement) {
+      this.observer.unobserve(this.placeholderElement);
+    }
+    if (this.idleCallbackId) {
+      this.props.windowObj.cancelIdleCallback(this.idleCallbackId);
     }
   }
 
@@ -84,6 +170,8 @@ export class DSCard extends React.PureComponent {
         <div className="ds-card placeholder" ref={this.setPlaceholderRef} />
       );
     }
+    const isButtonCTA = this.props.cta_variant === "button";
+
     return (
       <div className="ds-card">
         <SafeAnchor
@@ -99,18 +187,31 @@ export class DSCard extends React.PureComponent {
               rawSource={this.props.raw_image_src}
             />
           </div>
-          <div className="meta">
-            <div className="info-wrap">
-              <p className="source clamp">{this.props.source}</p>
-              <header className="title clamp">{this.props.title}</header>
-              {this.props.excerpt && (
-                <p className="excerpt clamp">{this.props.excerpt}</p>
-              )}
-            </div>
-            {this.props.context && (
-              <p className="context">{this.props.context}</p>
-            )}
-          </div>
+          {isButtonCTA ? (
+            <CTAButtonMeta
+              display_engagement_labels={this.props.display_engagement_labels}
+              source={this.props.source}
+              title={this.props.title}
+              excerpt={this.props.excerpt}
+              context={this.props.context}
+              context_type={this.props.context_type}
+              engagement={this.props.engagement}
+              cta={this.props.cta}
+              sponsor={this.props.sponsor}
+            />
+          ) : (
+            <DefaultMeta
+              display_engagement_labels={this.props.display_engagement_labels}
+              source={this.props.source}
+              title={this.props.title}
+              excerpt={this.props.excerpt}
+              context={this.props.context}
+              engagement={this.props.engagement}
+              context_type={this.props.context_type}
+              cta={this.props.cta}
+              cta_variant={this.props.cta_variant}
+            />
+          )}
           <ImpressionStats
             campaignId={this.props.campaignId}
             rows={[
@@ -142,4 +243,9 @@ export class DSCard extends React.PureComponent {
     );
   }
 }
+
+DSCard.defaultProps = {
+  windowObj: window, // Added to support unit tests
+};
+
 export const PlaceholderDSCard = props => <DSCard placeholder={true} />;

@@ -1164,6 +1164,7 @@ impl YamlFrameReader {
         // TODO(gw): Support other YUV color depth and spaces.
         let color_depth = ColorDepth::Color8;
         let color_space = YuvColorSpace::Rec709;
+        let color_range = ColorRange::Limited;
 
         let yuv_data = match item["format"].as_str().expect("no format supplied") {
             "planar" => {
@@ -1210,6 +1211,7 @@ impl YamlFrameReader {
             yuv_data,
             color_depth,
             color_space,
+            color_range,
             ImageRendering::Auto,
         );
     }
@@ -1536,6 +1538,7 @@ impl YamlFrameReader {
                 "reference-frame" => self.handle_reference_frame(dl, wrench, item),
                 "shadow" => self.handle_push_shadow(dl, item, &mut info),
                 "pop-all-shadows" => self.handle_pop_all_shadows(dl),
+                "backdrop-filter" => self.handle_backdrop_filter(dl, item, &mut info),
                 _ => println!("Skipping unknown item type: {:?}", item),
             }
 
@@ -1871,6 +1874,7 @@ impl YamlFrameReader {
             .as_raster_space()
             .unwrap_or(RasterSpace::Screen);
         let cache_tiles = yaml["cache"].as_bool().unwrap_or(false);
+        let is_backdrop_root = yaml["backdrop-root"].as_bool().unwrap_or(false);
 
         if is_root {
             if let Some(size) = yaml["scroll-offset"].as_point() {
@@ -1881,6 +1885,7 @@ impl YamlFrameReader {
 
         let filters = yaml["filters"].as_vec_filter_op().unwrap_or(vec![]);
         let filter_datas = yaml["filter-datas"].as_vec_filter_data().unwrap_or(vec![]);
+        let filter_primitives = yaml["filter-primitives"].as_vec_filter_primitive().unwrap_or(vec![]);
 
         dl.push_stacking_context(
             bounds.origin,
@@ -1891,8 +1896,10 @@ impl YamlFrameReader {
             mix_blend_mode,
             &filters,
             &filter_datas,
+            &filter_primitives,
             raster_space,
             cache_tiles,
+            is_backdrop_root,
         );
 
         if !yaml["items"].is_badvalue() {
@@ -1905,6 +1912,29 @@ impl YamlFrameReader {
             self.spatial_id_stack.pop().unwrap();
             dl.pop_reference_frame();
         }
+    }
+
+    fn handle_backdrop_filter(
+        &mut self,
+        dl: &mut DisplayListBuilder,
+        item: &Yaml,
+        info: &mut CommonItemProperties,
+    ) {
+        info.clip_rect = try_intersect!(
+            self.resolve_rect(&item["bounds"]),
+            &info.clip_rect
+        );
+
+        let filters = item["filters"].as_vec_filter_op().unwrap_or(vec![]);
+        let filter_datas = item["filter-datas"].as_vec_filter_data().unwrap_or(vec![]);
+        let filter_primitives = item["filter-primitives"].as_vec_filter_primitive().unwrap_or(vec![]);
+
+        dl.push_backdrop_filter(
+            &info,
+            &filters,
+            &filter_datas,
+            &filter_primitives,
+        );
     }
 }
 

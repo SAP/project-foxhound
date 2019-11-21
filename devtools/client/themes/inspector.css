@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -121,6 +120,7 @@ window {
 #inspector-breadcrumbs-toolbar,
 #inspector-breadcrumbs-toolbar * {
   box-sizing: border-box;
+  direction: ltr;
 }
 
 #inspector-breadcrumbs {
@@ -147,7 +147,6 @@ window {
   flex: 1;
   display: flex;
   overflow: hidden;
-  direction: ltr;
 }
 
 #inspector-breadcrumbs .breadcrumbs-widget-item {
@@ -189,12 +188,6 @@ iframe {
 }
 
 #markup-box > iframe {
-  height: 100%;
-  width: 100%;
-}
-
-/* Animation inspector */
-#sidebar-panel-animationinspector {
   height: 100%;
   width: 100%;
 }

@@ -418,6 +418,20 @@ class nsINode : public mozilla::dom::EventTarget {
   }
 
   /**
+   * https://dom.spec.whatwg.org/#concept-tree-inclusive-descendant
+   *
+   * @param aNode must not be nullptr.
+   */
+  bool IsInclusiveDescendantOf(const nsINode* aNode) const;
+
+  /**
+   * https://dom.spec.whatwg.org/#concept-shadow-including-inclusive-descendant
+   *
+   * @param aNode must not be nullptr.
+   */
+  bool IsShadowIncludingInclusiveDescendantOf(const nsINode* aNode) const;
+
+  /**
    * Return this node as a document fragment. Asserts IsDocumentFragment().
    *
    * This is defined inline in DocumentFragment.h.
@@ -557,9 +571,12 @@ class nsINode : public mozilla::dom::EventTarget {
   nsIContent* GetChildAt_Deprecated(uint32_t aIndex) const;
 
   /**
-   * Get the index of a child within this content
+   * Get the index of a child within this content.
+   *
    * @param aPossibleChild the child to get the index of.
-   * @return the index of the child, or -1 if not a child
+   * @return the index of the child, or -1 if not a child. Be aware that
+   *         anonymous children (e.g. a <div> child of an <input> element) will
+   *         result in -1.
    *
    * If the return value is not -1, then calling GetChildAt_Deprecated() with
    * that value will return aPossibleChild.
@@ -877,11 +894,7 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   nsINode* GetParentNode() const { return mParent; }
 
-  /**
-   * This is similar to above, but in case 'this' is ShadowRoot, we return its
-   * host element.
-   */
-  nsINode* GetParentOrHostNode() const;
+  nsINode* GetParentOrShadowHostNode() const;
 
   enum FlattenedParentType { eNotForStyle, eForStyle };
 
@@ -1211,14 +1224,12 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * Get the base URI for any relative URIs within this piece of
    * content. Generally, this is the document's base URI, but certain
-   * content carries a local base for backward compatibility, and XML
-   * supports setting a per-node base URI.
+   * content carries a local base for backward compatibility.
    *
-   * @return the base URI
+   * @return the base URI.  May return null.
    */
-  virtual already_AddRefed<nsIURI> GetBaseURI(
-      bool aTryUseXHRDocBaseURI = false) const = 0;
-  already_AddRefed<nsIURI> GetBaseURIObject() const;
+  virtual nsIURI* GetBaseURI(bool aTryUseXHRDocBaseURI = false) const = 0;
+  nsIURI* GetBaseURIObject() const;
 
   /**
    * Return true if the node may be apz aware. There are two cases. One is that
@@ -1318,10 +1329,9 @@ class nsINode : public mozilla::dom::EventTarget {
 
   nsIContent* GetNextNodeImpl(const nsINode* aRoot,
                               const bool aSkipChildren) const {
-    // Can't use nsContentUtils::ContentIsDescendantOf here, since we
-    // can't include it here.
 #ifdef DEBUG
     if (aRoot) {
+      // TODO: perhaps nsINode::IsInclusiveDescendantOf could be used instead.
       const nsINode* cur = this;
       for (; cur; cur = cur->GetParentNode())
         if (cur == aRoot) break;
@@ -1361,10 +1371,9 @@ class nsINode : public mozilla::dom::EventTarget {
    * null if there are no more nsIContents to traverse.
    */
   nsIContent* GetPreviousContent(const nsINode* aRoot = nullptr) const {
-    // Can't use nsContentUtils::ContentIsDescendantOf here, since we
-    // can't include it here.
 #ifdef DEBUG
     if (aRoot) {
+      // TODO: perhaps nsINode::IsInclusiveDescendantOf could be used instead.
       const nsINode* cur = this;
       for (; cur; cur = cur->GetParentNode())
         if (cur == aRoot) break;
@@ -1465,6 +1474,9 @@ class nsINode : public mozilla::dom::EventTarget {
     ElementMayHaveAnonymousChildren,
     // Set if element has CustomElementData.
     ElementHasCustomElementData,
+    // Set if the element was created from prototype cache and
+    // its l10n attributes haven't been changed.
+    ElementCreatedFromPrototypeAndHasUnmodifiedL10n,
     // Guard value
     BooleanFlagCount
   };
@@ -1600,6 +1612,16 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetHasCustomElementData() { SetBoolFlag(ElementHasCustomElementData); }
   bool HasCustomElementData() const {
     return GetBoolFlag(ElementHasCustomElementData);
+  }
+
+  void SetElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
+    SetBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
+  }
+  bool HasElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
+    return GetBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
+  }
+  void ClearElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
+    ClearBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
   }
 
  protected:

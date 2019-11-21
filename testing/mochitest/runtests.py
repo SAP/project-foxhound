@@ -184,6 +184,11 @@ class MessageLogger(object):
                 'action'] in MessageLogger.VALID_ACTIONS):
             raise ValueError
 
+    def _fix_subtest_name(self, message):
+        """Make sure subtest name is a string"""
+        if 'subtest' in message and not isinstance(message['subtest'], six.string_types):
+            message['subtest'] = str(message['subtest'])
+
     def _fix_test_name(self, message):
         """Normalize a logged test path to match the relative path from the sourcedir.
         """
@@ -232,6 +237,7 @@ class MessageLogger(object):
                         message=fragment,
                     )
 
+            self._fix_subtest_name(message)
             self._fix_test_name(message)
             self._fix_message_format(message)
             messages.append(message)
@@ -2362,7 +2368,7 @@ toolbar#nav-bar {
 
         if marionette_exception is not None:
             exc, value, tb = marionette_exception
-            raise exc, value, tb
+            raise exc(value).with_traceback(tb)
 
         return status, self.lastTestSeen
 
@@ -2590,6 +2596,7 @@ toolbar#nav-bar {
                 'dom.serviceWorkers.parent_intercept', False),
             "socketprocess_e10s": self.extraPrefs.get(
                 'network.process.enabled', False),
+            "verify": options.verify,
             "webrender": options.enable_webrender,
         })
 
@@ -2608,6 +2615,13 @@ toolbar#nav-bar {
 
         tests = self.getActiveTests(options)
         self.logPreamble(tests)
+
+        if mozinfo.info['fission'] and not mozinfo.info['e10s']:
+            # Make sure this is logged *after* suite_start so it gets associated with the
+            # current suite in the summary formatters.
+            self.log.error("Fission is not supported without e10s.")
+            return 1
+
         tests = [t for t in tests if 'disabled' not in t]
 
         # Until we have all green, this does not run on a11y (for perf reasons)

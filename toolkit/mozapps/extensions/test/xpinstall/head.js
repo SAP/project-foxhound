@@ -1,5 +1,9 @@
 /* eslint no-unused-vars: ["error", {vars: "local", args: "none"}] */
 
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
+
 const RELATIVE_DIR = "toolkit/mozapps/extensions/test/xpinstall/";
 
 const TESTROOT = "http://example.com/browser/" + RELATIVE_DIR;
@@ -175,6 +179,7 @@ var Harness = {
     // that which fixes the rest of the tests.  Since no test
     // here cares about this panel, we just need it to close.
     win.PanelUI.notificationPanel.hidePopup();
+    win.AppMenuNotifications.removeNotification("addon-installed");
     delete this._boundWin;
     finish();
   },

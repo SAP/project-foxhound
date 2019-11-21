@@ -58,7 +58,9 @@
 #include "mozilla/Unused.h"
 #include "GeckoProfiler.h"
 #include "LayersLogging.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #include <algorithm>
 #include <functional>
@@ -4010,9 +4012,7 @@ void PaintedLayerData::AccumulateHitTestItem(ContainerState* aState,
                                              nsDisplayItem* aItem,
                                              const DisplayItemClip& aClip,
                                              TransformClipNode* aTransform) {
-  MOZ_ASSERT(aItem->HasHitTestInfo());
   auto* item = static_cast<nsDisplayHitTestInfoItem*>(aItem);
-
   const HitTestInfo& info = item->GetHitTestInfo();
 
   nsRect area = info.mArea;
@@ -4554,6 +4554,7 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
     nsRect itemContent;
 
     if (marker == DisplayItemEntryType::HitTestInfo) {
+      MOZ_ASSERT(item->IsHitTestItem());
       const auto& hitTestInfo =
           static_cast<nsDisplayHitTestInfoItem*>(item)->GetHitTestInfo();
 
@@ -6206,7 +6207,7 @@ static bool ChooseScaleAndSetTransform(
   // tiling, that's not a problem, since we'll automatically choose a tiled
   // layer for layers of that size. If not, we need to apply clamping to
   // prevent this.
-  if (aTransform && !StaticPrefs::layers_enable_tiles()) {
+  if (aTransform && !StaticPrefs::layers_enable_tiles_AtStartup()) {
     RestrictScaleToMaxLayerSize(scale, aVisibleRect, aContainerFrame, aLayer);
   }
 
@@ -7156,7 +7157,7 @@ void FrameLayerBuilder::PaintItems(std::vector<AssignedDisplayItem>& aItems,
  */
 static bool ShouldDrawRectsSeparately(DrawTarget* aDrawTarget,
                                       DrawRegionClip aClip) {
-  if (!StaticPrefs::layout_paint_rects_separately() ||
+  if (!StaticPrefs::layout_paint_rects_separately_AtStartup() ||
       aClip == DrawRegionClip::NONE) {
     return false;
   }

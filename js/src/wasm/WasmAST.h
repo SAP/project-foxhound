@@ -258,13 +258,13 @@ typedef AstVector<AstName> AstNameVector;
 typedef AstVector<AstRef> AstRefVector;
 
 struct AstBase {
-  void* operator new(size_t numBytes, LifoAlloc& astLifo) throw() {
+  void* operator new(size_t numBytes, LifoAlloc& astLifo) noexcept(true) {
     return astLifo.alloc(numBytes);
   }
 };
 
 struct AstNode {
-  void* operator new(size_t numBytes, LifoAlloc& astLifo) throw() {
+  void* operator new(size_t numBytes, LifoAlloc& astLifo) noexcept(true) {
     return astLifo.alloc(numBytes);
   }
 };
@@ -417,6 +417,7 @@ enum class AstExprKind {
   MemorySize,
   Nop,
   Pop,
+  RefFunc,
   RefNull,
   Return,
   SetGlobal,
@@ -440,7 +441,8 @@ enum class AstExprKind {
   UnaryOperator,
   Unreachable,
   Wait,
-  Wake
+  Wake,
+  Fence
 };
 
 class AstExpr : public AstNode {
@@ -815,6 +817,11 @@ class AstWake : public AstExpr {
 
   const AstLoadStoreAddress& address() const { return address_; }
   AstExpr& count() const { return *count_; }
+};
+
+struct AstFence : AstExpr {
+  static const AstExprKind Kind = AstExprKind::Fence;
+  AstFence() : AstExpr(AstExprKind::Fence, ExprType::Void) {}
 };
 
 class AstMemOrTableCopy : public AstExpr {
@@ -1265,21 +1272,29 @@ struct AstNullValue {};
 typedef Variant<AstRef, AstNullValue> AstElem;
 typedef AstVector<AstElem> AstElemVector;
 
+enum class AstElemSegmentKind {
+  Active,
+  Passive,
+  Declared,
+};
+
 class AstElemSegment : public AstNode {
+  AstElemSegmentKind kind_;
   AstRef targetTable_;
   AstExpr* offsetIfActive_;
   AstElemVector elems_;
 
  public:
-  AstElemSegment(AstRef targetTable, AstExpr* offsetIfActive,
-                 AstElemVector&& elems)
-      : targetTable_(targetTable),
+  AstElemSegment(AstElemSegmentKind kind, AstRef targetTable,
+                 AstExpr* offsetIfActive, AstElemVector&& elems)
+      : kind_(kind),
+        targetTable_(targetTable),
         offsetIfActive_(offsetIfActive),
         elems_(std::move(elems)) {}
 
+  AstElemSegmentKind kind() const { return kind_; }
   AstRef targetTable() const { return targetTable_; }
   AstRef& targetTableRef() { return targetTable_; }
-  bool isPassive() const { return offsetIfActive_ == nullptr; }
   AstExpr* offsetIfActive() const { return offsetIfActive_; }
   AstElemVector& elems() { return elems_; }
   const AstElemVector& elems() const { return elems_; }
@@ -1560,6 +1575,17 @@ class AstExtraConversionOperator final : public AstExpr {
 
   MiscOp op() const { return op_; }
   AstExpr* operand() const { return operand_; }
+};
+
+class AstRefFunc final : public AstExpr {
+  AstRef func_;
+
+ public:
+  static const AstExprKind Kind = AstExprKind::RefFunc;
+  explicit AstRefFunc(AstRef func)
+      : AstExpr(Kind, ExprType::FuncRef), func_(func) {}
+
+  AstRef& func() { return func_; }
 };
 
 class AstRefNull final : public AstExpr {

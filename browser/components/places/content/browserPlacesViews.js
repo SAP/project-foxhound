@@ -395,7 +395,9 @@ PlacesViewBase.prototype = {
           }
         }
 
-        let popup = document.createXULElement("menupopup");
+        let popup = document.createXULElement("menupopup", {
+          is: "places-popup",
+        });
         popup._placesNode = PlacesUtils.asContainer(aPlacesNode);
 
         if (!this._nativeView) {
@@ -1062,7 +1064,9 @@ PlacesToolbar.prototype = {
           }
         }
 
-        let popup = document.createXULElement("menupopup");
+        let popup = document.createXULElement("menupopup", {
+          is: "places-popup",
+        });
         popup.setAttribute("placespopup", "true");
         button.appendChild(popup);
         popup._placesNode = PlacesUtils.asContainer(aChild);
@@ -2169,6 +2173,7 @@ this.PlacesPanelview = class extends PlacesViewBase {
         if (event.button != 1) {
           break;
         }
+      // fall through
       case "command":
         this._onCommand(event);
         break;

@@ -7,9 +7,16 @@
   display: contents;
 }
 
+:host * {
+  padding: 1px 0;
+}
+
 label {
   text-align: right;
   margin-inline-end: 0;
+  color: var(--in-content-text-color);
+  font-weight: 700;
+  font-size: 1em;
 }
 
 label:dir(rtl) {
@@ -22,4 +29,27 @@ label:dir(rtl) {
   word-break: break-all;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.long-hex:hover {
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 0px;
+}
+
+.long-hex-open {
+  white-space: normal;
+}
+
+:host(.value) *,
+:host(.method) *,
+:host(.padding) * {
+  padding-bottom: 10px;
+}
+
+:host(.value) *,
+:host(.method) *,
+:host(.padding) * {
+  padding-bottom: 10px;
 }

@@ -4,10 +4,32 @@
 
 /* import-globals-from ../../../../../toolkit/components/satchel/test/satchel_common.js */
 
-const GENERATED_PASSWORD_LENGTH = 15;
-const GENERATED_PASSWORD_REGEX = /^[a-km-np-zA-HJ-NP-Z2-9]{15}$/;
-// Copied from LoginTestUtils.masterPassword.masterPassword to use from the content process.
-const MASTER_PASSWORD = "omgsecret!";
+const { LoginTestUtils } = SpecialPowers.Cu.import(
+  "resource://testing-common/LoginTestUtils.jsm",
+  {}
+);
+
+// Setup LoginTestUtils to report assertions to the mochitest harness.
+LoginTestUtils.setAssertReporter(
+  SpecialPowers.wrapCallback((err, message, stack) => {
+    SimpleTest.record(!err, err ? err.message : message, null, stack);
+  })
+);
+
+const { LoginHelper } = SpecialPowers.Cu.import(
+  "resource://gre/modules/LoginHelper.jsm",
+  {}
+);
+const { Services } = SpecialPowers.Cu.import(
+  "resource://gre/modules/Services.jsm",
+  {}
+);
+
+const {
+  LENGTH: GENERATED_PASSWORD_LENGTH,
+  REGEX: GENERATED_PASSWORD_REGEX,
+} = LoginTestUtils.generation;
+const LOGIN_FIELD_UTILS = LoginTestUtils.loginField;
 const TESTS_DIR = "/tests/toolkit/components/passwordmgr/test/";
 
 /**
@@ -38,6 +60,15 @@ function $_(formNum, name) {
   }
 
   return element;
+}
+
+/**
+ * Recreate a DOM tree using the outerHTML to ensure that any event listeners
+ * and internal state for the elements are removed.
+ */
+function recreateTree(element) {
+  // eslint-disable-next-line no-unsanitized/property, no-self-assign
+  element.outerHTML = element.outerHTML;
 }
 
 /**
@@ -459,14 +490,6 @@ SimpleTest.registerCleanupFunction(() => {
   });
 });
 
-let { LoginHelper } = SpecialPowers.Cu.import(
-  "resource://gre/modules/LoginHelper.jsm",
-  {}
-);
-let { Services } = SpecialPowers.Cu.import(
-  "resource://gre/modules/Services.jsm",
-  {}
-);
 /**
  * Proxy for Services.logins (nsILoginManager).
  * Only supports arguments which support structured clone plus {nsILoginInfo}

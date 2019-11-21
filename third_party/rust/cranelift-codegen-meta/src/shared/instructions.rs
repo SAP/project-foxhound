@@ -2,7 +2,7 @@
 
 use crate::cdsl::formats::FormatRegistry;
 use crate::cdsl::instructions::{
-    InstructionBuilder as Inst, InstructionGroup, InstructionGroupBuilder,
+    AllInstructions, InstructionBuilder as Inst, InstructionGroup, InstructionGroupBuilder,
 };
 use crate::cdsl::operands::{create_operand as operand, create_operand_doc as operand_doc};
 use crate::cdsl::type_inference::Constraint::WiderOrEq;
@@ -11,12 +11,17 @@ use crate::cdsl::typevar::{Interval, TypeSetBuilder, TypeVar};
 use crate::shared::{types, OperandKinds};
 
 pub fn define(
+    all_instructions: &mut AllInstructions,
     format_registry: &FormatRegistry,
     immediates: &OperandKinds,
     entities: &OperandKinds,
 ) -> InstructionGroup {
-    let mut ig =
-        InstructionGroupBuilder::new("base", "Shared base instruction set", format_registry);
+    let mut ig = InstructionGroupBuilder::new(
+        "base",
+        "Shared base instruction set",
+        all_instructions,
+        format_registry,
+    );
 
     // Operand kind shorthands.
     let intcc = immediates.by_name("intcc");
@@ -25,6 +30,7 @@ pub fn define(
     let uimm8 = immediates.by_name("uimm8");
     let uimm32 = immediates.by_name("uimm32");
     let imm64 = immediates.by_name("imm64");
+    let uimm128 = immediates.by_name("uimm128");
     let offset32 = immediates.by_name("offset32");
     let memflags = immediates.by_name("memflags");
     let ieee32 = immediates.by_name("ieee32");
@@ -80,6 +86,12 @@ pub fn define(
         TypeSetBuilder::new().ints(32..64).build(),
     );
 
+    let Ref = &TypeVar::new(
+        "Ref",
+        "A scalar reference type",
+        TypeSetBuilder::new().refs(Interval::All).build(),
+    );
+
     let Testable = &TypeVar::new(
         "Testable",
         "A scalar boolean or integer type",
@@ -101,17 +113,30 @@ pub fn define(
             .build(),
     );
 
+    let Scalar = &TypeVar::new(
+        "scalar",
+        "Any scalar value that can be used as a lane in a vector",
+        TypeSetBuilder::new()
+            .bools(Interval::All)
+            .ints(Interval::All)
+            .floats(Interval::All)
+            .build(),
+    );
+
     let Any = &TypeVar::new(
         "Any",
-        "Any integer, float, or boolean scalar or vector type",
+        "Any integer, float, boolean, or reference scalar or vector type",
         TypeSetBuilder::new()
             .ints(Interval::All)
             .floats(Interval::All)
             .bools(Interval::All)
+            .refs(Interval::All)
             .simd_lanes(Interval::All)
             .includes_scalars(true)
             .build(),
     );
+
+    let AnyTo = &TypeVar::copy_from(Any, "AnyTo".to_string());
 
     let Mem = &TypeVar::new(
         "Mem",
@@ -123,15 +148,7 @@ pub fn define(
             .build(),
     );
 
-    let MemTo = &TypeVar::new(
-        "MemTo",
-        "Any type that can be stored in memory",
-        TypeSetBuilder::new()
-            .ints(Interval::All)
-            .floats(Interval::All)
-            .simd_lanes(Interval::All)
-            .build(),
-    );
+    let MemTo = &TypeVar::copy_from(Mem, "MemTo".to_string());
 
     let addr = &operand("addr", iAddr);
     let c = &operand_doc("c", Testable, "Controlling value to test");
@@ -163,7 +180,7 @@ pub fn define(
             r#"
         Fall through to the next EBB.
 
-        This is the same as :inst:`jump`, except the destination EBB must be
+        This is the same as `jump`, except the destination EBB must be
         the next one in the layout.
 
         Jumps are turned into fall-through instructions by the branch
@@ -182,7 +199,7 @@ pub fn define(
             r#"
         Branch when zero.
 
-        If ``c`` is a :type:`b1` value, take the branch when ``c`` is false. If
+        If ``c`` is a `b1` value, take the branch when ``c`` is false. If
         ``c`` is an integer value, take the branch when ``c = 0``.
         "#,
         )
@@ -196,7 +213,7 @@ pub fn define(
             r#"
         Branch when non-zero.
 
-        If ``c`` is a :type:`b1` value, take the branch when ``c`` is true. If
+        If ``c`` is a `b1` value, take the branch when ``c`` is true. If
         ``c`` is an integer value, take the branch when ``c != 0``.
         "#,
         )
@@ -210,15 +227,19 @@ pub fn define(
             r#"
         Compare scalar integers and branch.
 
-        Compare ``x`` and ``y`` in the same way as the :inst:`icmp` instruction
-        and take the branch if the condition is true::
+        Compare ``x`` and ``y`` in the same way as the `icmp` instruction
+        and take the branch if the condition is true:
 
+        ```text
             br_icmp ugt v1, v2, ebb4(v5, v6)
+        ```
 
-        is semantically equivalent to::
+        is semantically equivalent to:
 
+        ```text
             v10 = icmp ugt, v1, v2
             brnz v10, ebb4(v5, v6)
+        ```
 
         Some RISC architectures like MIPS and RISC-V provide instructions that
         implement all or some of the condition codes. The instruction can also
@@ -256,15 +277,9 @@ pub fn define(
         .is_branch(true),
     );
 
+    // The index into the br_table can be any type; legalizer will convert it to the right type.
     let x = &operand_doc("x", iB, "index into jump table");
-
-    let Entry = &TypeVar::new(
-        "Entry",
-        "A scalar integer type",
-        TypeSetBuilder::new().ints(Interval::All).build(),
-    );
-
-    let entry = &operand_doc("entry", Entry, "entry of jump table");
+    let entry = &operand_doc("entry", iAddr, "entry of jump table");
     let JT = &operand("JT", jump_table);
 
     ig.push(
@@ -292,6 +307,9 @@ pub fn define(
         .is_branch(true),
     );
 
+    // These are the instructions which br_table legalizes to: they perform address computations,
+    // using pointer-sized integers, so their type variables are more constrained.
+    let x = &operand_doc("x", iAddr, "index into jump table");
     let Size = &operand_doc("Size", uimm8, "Size in bytes");
 
     ig.push(
@@ -386,6 +404,19 @@ pub fn define(
 
     ig.push(
         Inst::new(
+            "resumable_trap",
+            r#"
+        A resumable trap.
+        
+        This instruction allows non-conditional traps to be used as non-terminal instructions.
+        "#,
+        )
+        .operands_in(vec![code])
+        .can_trap(true),
+    );
+
+    ig.push(
+        Inst::new(
             "trapnz",
             r#"
         Trap when non-zero.
@@ -459,11 +490,7 @@ pub fn define(
         .is_terminator(true),
     );
 
-    let FN = &operand_doc(
-        "FN",
-        func_ref,
-        "function to call, declared by :inst:`function`",
-    );
+    let FN = &operand_doc("FN", func_ref, "function to call, declared by `function`");
     let args = &operand_doc("args", variable_args, "call arguments");
 
     ig.push(
@@ -495,7 +522,7 @@ pub fn define(
 
         Note that this is different from WebAssembly's ``call_indirect``; the
         callee is a native address, rather than a table index. For WebAssembly,
-        :inst:`table_addr` and :inst:`load` are used to obtain a native address
+        `table_addr` and `load` are used to obtain a native address
         from a table.
         "#,
         )
@@ -512,8 +539,8 @@ pub fn define(
 
         Compute the absolute address of a function declared in the preamble.
         The returned address can be used as a ``callee`` argument to
-        :inst:`call_indirect`. This is also a method for calling functions that
-        are too far away to be addressable by a direct :inst:`call`
+        `call_indirect`. This is also a method for calling functions that
+        are too far away to be addressable by a direct `call`
         instruction.
         "#,
         )
@@ -872,7 +899,7 @@ pub fn define(
 
         The offset is an immediate constant, not an SSA value. The memory
         access cannot go out of bounds, i.e.
-        :math:`sizeof(a) + Offset <= sizeof(SS)`.
+        `sizeof(a) + Offset <= sizeof(SS)`.
         "#,
         )
         .operands_in(vec![SS, Offset])
@@ -891,7 +918,7 @@ pub fn define(
 
         The offset is an immediate constant, not an SSA value. The memory
         access cannot go out of bounds, i.e.
-        :math:`sizeof(a) + Offset <= sizeof(SS)`.
+        `sizeof(a) + Offset <= sizeof(SS)`.
         "#,
         )
         .operands_in(vec![x, SS, Offset])
@@ -906,7 +933,7 @@ pub fn define(
 
         Compute the absolute address of a byte in a stack slot. The offset must
         refer to a byte inside the stack slot:
-        :math:`0 <= Offset < sizeof(SS)`.
+        `0 <= Offset < sizeof(SS)`.
         "#,
         )
         .operands_in(vec![SS, Offset])
@@ -1022,7 +1049,7 @@ pub fn define(
             r#"
         Floating point constant.
 
-        Create a :type:`f32` SSA value with an immediate constant value.
+        Create a `f32` SSA value with an immediate constant value.
         "#,
         )
         .operands_in(vec![N])
@@ -1038,7 +1065,7 @@ pub fn define(
             r#"
         Floating point constant.
 
-        Create a :type:`f64` SSA value with an immediate constant value.
+        Create a `f64` SSA value with an immediate constant value.
         "#,
         )
         .operands_in(vec![N])
@@ -1062,6 +1089,36 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
+    let N = &operand_doc("N", uimm128, "The 16 immediate bytes of a 128-bit vector");
+    let a = &operand_doc("a", TxN, "A constant vector value");
+
+    ig.push(
+        Inst::new(
+            "vconst",
+            r#"
+        SIMD vector constant.
+
+        Construct a vector with the given immediate bytes.
+        "#,
+        )
+        .operands_in(vec![N])
+        .operands_out(vec![a]),
+    );
+
+    let a = &operand_doc("a", Ref, "A constant reference null value");
+
+    ig.push(
+        Inst::new(
+            "null",
+            r#"
+        Null constant value for reference types.
+
+        Create a scalar reference SSA value with a constant null value.
+        "#,
+        )
+        .operands_out(vec![a]),
+    );
+
     ig.push(Inst::new(
         "nop",
         r#"
@@ -1082,7 +1139,7 @@ pub fn define(
             r#"
         Conditional select.
 
-        This instruction selects whole values. Use :inst:`vselect` for
+        This instruction selects whole values. Use `vselect` for
         lane-wise selection.
         "#,
         )
@@ -1130,7 +1187,7 @@ pub fn define(
             r#"
         Spill a register value to a stack slot.
 
-        This instruction behaves exactly like :inst:`copy`, but the result
+        This instruction behaves exactly like `copy`, but the result
         value is assigned to a spill slot.
         "#,
         )
@@ -1145,8 +1202,24 @@ pub fn define(
             r#"
         Load a register value from a stack slot.
 
-        This instruction behaves exactly like :inst:`copy`, but creates a new
+        This instruction behaves exactly like `copy`, but creates a new
         SSA value for the spilled input value.
+        "#,
+        )
+        .operands_in(vec![x])
+        .operands_out(vec![a])
+        .can_load(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "fill_nop",
+            r#"
+        This is identical to `fill`, except it has no encoding, since it is a no-op.
+
+        This instruction is created only during late-stage redundant-reload removal, after all
+        registers and stack slots have been assigned.  It is used to replace `fill`s that have
+        been identified as redundant.
         "#,
         )
         .operands_in(vec![x])
@@ -1190,6 +1263,23 @@ pub fn define(
         "#,
         )
         .operands_in(vec![src, dst])
+        .other_side_effects(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "copy_to_ssa",
+            r#"
+        Copies the contents of ''src'' register to ''a'' SSA name.
+
+        This instruction copies the contents of one register, regardless of its SSA name, to
+        another register, creating a new SSA name.  In that sense it is a one-sided version
+        of ''copy_special''.  This instruction is internal and should not be created by
+        Cranelift users.
+        "#,
+        )
+        .operands_in(vec![src])
+        .operands_out(vec![a])
         .other_side_effects(true),
     );
 
@@ -1265,7 +1355,7 @@ pub fn define(
             r#"
     Compare ``addr`` with the stack pointer and set the CPU flags.
 
-    This is like :inst:`ifcmp` where ``addr`` is the LHS operand and the stack
+    This is like `ifcmp` where ``addr`` is the LHS operand and the stack
     pointer is the RHS.
     "#,
         )
@@ -1284,7 +1374,7 @@ pub fn define(
         allocator to temporarily rearrange register assignments in order to
         satisfy instruction constraints.
 
-        See also :inst:`regmove`.
+        See also `regmove`.
         "#,
         )
         .operands_in(vec![x, src, SS])
@@ -1302,10 +1392,28 @@ pub fn define(
         allocator to temporarily rearrange register assignments in order to
         satisfy instruction constraints.
 
-        See also :inst:`regmove`.
+        See also `regmove`.
         "#,
         )
         .operands_in(vec![x, SS, dst])
+        .other_side_effects(true),
+    );
+
+    let N = &operand_doc(
+        "args",
+        variable_args,
+        "Variable number of args for Stackmap",
+    );
+
+    ig.push(
+        Inst::new(
+            "safepoint",
+            r#"
+        This instruction will provide live reference values at a point in
+        the function. It can only be used by the compiler.
+        "#,
+        )
+        .operands_in(vec![N])
         .other_side_effects(true),
     );
 
@@ -1476,10 +1584,10 @@ pub fn define(
             r#"
         Compare scalar integer to a constant.
 
-        This is the same as the :inst:`icmp` instruction, except one operand is
+        This is the same as the `icmp` instruction, except one operand is
         an immediate constant.
 
-        This instruction can only compare scalars. Use :inst:`icmp` for
+        This instruction can only compare scalars. Use `icmp` for
         lane-wise vector comparisons.
         "#,
         )
@@ -1511,7 +1619,7 @@ pub fn define(
             r#"
         Compare scalar integer to a constant and return flags.
 
-        Like :inst:`icmp_imm`, but returns integer CPU flags instead of testing
+        Like `icmp_imm`, but returns integer CPU flags instead of testing
         a specific condition code.
         "#,
         )
@@ -1527,7 +1635,7 @@ pub fn define(
         Inst::new(
             "iadd",
             r#"
-        Wrapping integer addition: :math:`a := x + y \pmod{2^B}`.
+        Wrapping integer addition: `a := x + y \pmod{2^B}`.
 
         This instruction does not depend on the signed/unsigned interpretation
         of the operands.
@@ -1541,7 +1649,7 @@ pub fn define(
         Inst::new(
             "isub",
             r#"
-        Wrapping integer subtraction: :math:`a := x - y \pmod{2^B}`.
+        Wrapping integer subtraction: `a := x - y \pmod{2^B}`.
 
         This instruction does not depend on the signed/unsigned interpretation
         of the operands.
@@ -1555,7 +1663,7 @@ pub fn define(
         Inst::new(
             "imul",
             r#"
-        Wrapping integer multiplication: :math:`a := x y \pmod{2^B}`.
+        Wrapping integer multiplication: `a := x y \pmod{2^B}`.
 
         This instruction does not depend on the signed/unsigned interpretation
         of the
@@ -1602,7 +1710,7 @@ pub fn define(
         Inst::new(
             "udiv",
             r#"
-        Unsigned integer division: :math:`a := \lfloor {x \over y} \rfloor`.
+        Unsigned integer division: `a := \lfloor {x \over y} \rfloor`.
 
         This operation traps if the divisor is zero.
         "#,
@@ -1616,12 +1724,12 @@ pub fn define(
         Inst::new(
             "sdiv",
             r#"
-        Signed integer division rounded toward zero: :math:`a := sign(xy)
+        Signed integer division rounded toward zero: `a := sign(xy)
         \lfloor {|x| \over |y|}\rfloor`.
 
         This operation traps if the divisor is zero, or if the result is not
-        representable in :math:`B` bits two's complement. This only happens
-        when :math:`x = -2^{B-1}, y = -1`.
+        representable in `B` bits two's complement. This only happens
+        when `x = -2^{B-1}, y = -1`.
         "#,
         )
         .operands_in(vec![x, y])
@@ -1667,7 +1775,7 @@ pub fn define(
             r#"
         Add immediate integer.
 
-        Same as :inst:`iadd`, but one operand is an immediate constant.
+        Same as `iadd`, but one operand is an immediate constant.
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -1711,8 +1819,8 @@ pub fn define(
         Signed integer division by an immediate constant.
 
         This operation traps if the divisor is zero, or if the result is not
-        representable in :math:`B` bits two's complement. This only happens
-        when :math:`x = -2^{B-1}, Y = -1`.
+        representable in `B` bits two's complement. This only happens
+        when `x = -2^{B-1}, Y = -1`.
         "#,
         )
         .operands_in(vec![x, Y])
@@ -1749,9 +1857,9 @@ pub fn define(
         Inst::new(
             "irsub_imm",
             r#"
-        Immediate reverse wrapping subtraction: :math:`a := Y - x \pmod{2^B}`.
+        Immediate reverse wrapping subtraction: `a := Y - x \pmod{2^B}`.
 
-        Also works as integer negation when :math:`Y = 0`. Use :inst:`iadd_imm`
+        Also works as integer negation when `Y = 0`. Use `iadd_imm`
         with a negative immediate operand for the reverse immediate
         subtraction.
 
@@ -1777,11 +1885,11 @@ pub fn define(
             r#"
         Add integers with carry in.
 
-        Same as :inst:`iadd` with an additional carry input. Computes:
+        Same as `iadd` with an additional carry input. Computes:
 
-        .. math::
-
+        ```text
             a = x + y + c_{in} \pmod 2^B
+        ```
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -1797,12 +1905,12 @@ pub fn define(
             r#"
         Add integers with carry out.
 
-        Same as :inst:`iadd` with an additional carry output.
+        Same as `iadd` with an additional carry output.
 
-        .. math::
-
+        ```text
             a &= x + y \pmod 2^B \\
             c_{out} &= x+y >= 2^B
+        ```
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -1818,12 +1926,12 @@ pub fn define(
             r#"
         Add integers with carry in and out.
 
-        Same as :inst:`iadd` with an additional carry input and output.
+        Same as `iadd` with an additional carry input and output.
 
-        .. math::
-
+        ```text
             a &= x + y + c_{in} \pmod 2^B \\
             c_{out} &= x + y + c_{in} >= 2^B
+        ```
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -1839,11 +1947,11 @@ pub fn define(
             r#"
         Subtract integers with borrow in.
 
-        Same as :inst:`isub` with an additional borrow flag input. Computes:
+        Same as `isub` with an additional borrow flag input. Computes:
 
-        .. math::
-
+        ```text
             a = x - (y + b_{in}) \pmod 2^B
+        ```
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -1859,12 +1967,12 @@ pub fn define(
             r#"
         Subtract integers with borrow out.
 
-        Same as :inst:`isub` with an additional borrow flag output.
+        Same as `isub` with an additional borrow flag output.
 
-        .. math::
-
+        ```text
             a &= x - y \pmod 2^B \\
             b_{out} &= x < y
+        ```
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -1880,12 +1988,12 @@ pub fn define(
             r#"
         Subtract integers with borrow in and out.
 
-        Same as :inst:`isub` with an additional borrow flag input and output.
+        Same as `isub` with an additional borrow flag input and output.
 
-        .. math::
-
+        ```text
             a &= x - (y + b_{in}) \pmod 2^B \\
             b_{out} &= x < y + b_{in}
+        ```
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -2003,7 +2111,7 @@ pub fn define(
             r#"
         Bitwise and with immediate.
 
-        Same as :inst:`band`, but one operand is an immediate constant.
+        Same as `band`, but one operand is an immediate constant.
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -2019,7 +2127,7 @@ pub fn define(
             r#"
         Bitwise or with immediate.
 
-        Same as :inst:`bor`, but one operand is an immediate constant.
+        Same as `bor`, but one operand is an immediate constant.
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -2035,7 +2143,7 @@ pub fn define(
             r#"
         Bitwise xor with immediate.
 
-        Same as :inst:`bxor`, but one operand is an immediate constant.
+        Same as `bxor`, but one operand is an immediate constant.
 
         Polymorphic over all scalar integer types, but does not support vector
         types.
@@ -2109,9 +2217,10 @@ pub fn define(
 
         When shifting a B-bits integer type, this instruction computes:
 
-        .. math::
-            s &:= y \pmod B,                \\
+        ```text
+            s &:= y \pmod B,
             a &:= x \cdot 2^s \pmod{2^B}.
+        ```
         "#,
         )
         .operands_in(vec![x, y])
@@ -2130,9 +2239,10 @@ pub fn define(
 
         When shifting a B-bits integer type, this instruction computes:
 
-        .. math::
-            s &:= y \pmod B,                \\
+        ```text
+            s &:= y \pmod B,
             a &:= \lfloor x \cdot 2^{-s} \rfloor.
+        ```
         "#,
         )
         .operands_in(vec![x, y])
@@ -2291,12 +2401,12 @@ pub fn define(
 
         == ==========================================
         UN Unordered when one or both numbers is NaN.
-        EQ When :math:`x = y`. (And :math:`0.0 = -0.0`).
-        LT When :math:`x < y`.
-        GT When :math:`x > y`.
+        EQ When `x = y`. (And `0.0 = -0.0`).
+        LT When `x < y`.
+        GT When `x > y`.
         == ==========================================
 
-        The 14 :type:`floatcc` condition codes each correspond to a subset of
+        The 14 `floatcc` condition codes each correspond to a subset of
         the four relations, except for the empty set which would always be
         false, and the full set which would always be true.
 
@@ -2324,7 +2434,7 @@ pub fn define(
         The standard C comparison operators, `<, <=, >, >=`, are all ordered,
         so they are false if either operand is NaN. The C equality operator,
         `==`, is ordered, and since inequality is defined as the logical
-        inverse it is *unordered*. They map to the :type:`floatcc` condition
+        inverse it is *unordered*. They map to the `floatcc` condition
         codes as follows:
 
         ==== ====== ============
@@ -2357,7 +2467,7 @@ pub fn define(
             r#"
         Floating point comparison returning flags.
 
-        Compares two numbers like :inst:`fcmp`, but returns floating point CPU
+        Compares two numbers like `fcmp`, but returns floating point CPU
         flags instead of testing a specific condition.
         "#,
         )
@@ -2409,8 +2519,8 @@ pub fn define(
             r#"
         Floating point division.
 
-        Unlike the integer division instructions :clif:inst:`sdiv` and
-        :clif:inst:`udiv`, this can't trap. Division by zero is infinity or
+        Unlike the integer division instructions ` and
+        `udiv`, this can't trap. Division by zero is infinity or
         NaN, depending on the dividend.
         "#,
         )
@@ -2435,7 +2545,7 @@ pub fn define(
             r#"
         Floating point fused multiply-and-add.
 
-        Computes :math:`a := xy+z` without any intermediate rounding of the
+        Computes `a := xy+z` without any intermediate rounding of the
         product.
         "#,
         )
@@ -2570,6 +2680,23 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
+    let a = &operand("a", b1);
+    let x = &operand("x", Ref);
+
+    ig.push(
+        Inst::new(
+            "is_null",
+            r#"
+        Reference verification.
+
+        The condition code determines if the reference type in question is
+        null or not.
+        "#,
+        )
+        .operands_in(vec![x])
+        .operands_out(vec![a]),
+    );
+
     let Cond = &operand("Cond", intcc);
     let f = &operand("f", iflags);
     let a = &operand("a", b1);
@@ -2620,6 +2747,44 @@ pub fn define(
         "#,
         )
         .operands_in(vec![x])
+        .operands_out(vec![a]),
+    );
+
+    let x = &operand("x", Any);
+    let a = &operand_doc("a", AnyTo, "Bits of `x` reinterpreted");
+
+    ig.push(
+        Inst::new(
+            "raw_bitcast",
+            r#"
+        Cast the bits in `x` as a different type of the same bit width.
+
+        This instruction does not change the data's representation but allows
+        data in registers to be used as different types, e.g. an i32x4 as a
+        b8x16. The only constraint on the result `a` is that it can be
+        `raw_bitcast` back to the original type. Also, in a raw_bitcast between
+        vector types with the same number of lanes, the value of each result
+        lane is a raw_bitcast of the corresponding operand lane. TODO there is
+        currently no mechanism for enforcing the bit width constraint.
+        "#,
+        )
+        .operands_in(vec![x])
+        .operands_out(vec![a]),
+    );
+
+    let s = &operand_doc("s", Scalar, "A scalar value");
+    let a = &operand_doc("a", TxN, "A vector value (i.e. held in an XMM register)");
+
+    ig.push(
+        Inst::new(
+            "scalar_to_vector",
+            r#"
+    Scalar To Vector -- move a value out of a scalar register and into a vector
+    register; the scalar will be moved to the lowest-order bits of the vector
+    register and any higher bits will be zeroed.
+    "#,
+        )
+        .operands_in(vec![s])
         .operands_out(vec![a]),
     );
 
@@ -2754,7 +2919,7 @@ pub fn define(
 
         Each lane in `x` is converted to a smaller integer type by discarding
         the most significant bits. This is the same as reducing modulo
-        :math:`2^n`.
+        `2^n`.
 
         The result type must have the same number of vector lanes as the input,
         and each lane must not have more bits that the input lanes. If the
@@ -2838,7 +3003,7 @@ pub fn define(
         This is an exact operation.
 
         Cranelift currently only supports two floating point formats
-        - :type:`f32` and :type:`f64`. This may change in the future.
+        - `f32` and `f64`. This may change in the future.
 
         The result type must have the same number of vector lanes as the input,
         and the result lanes must not have fewer bits than the input lanes. If
@@ -2860,7 +3025,7 @@ pub fn define(
         by rounding to nearest, ties to even.
 
         Cranelift currently only supports two floating point formats
-        - :type:`f32` and :type:`f64`. This may change in the future.
+        - `f32` and `f64`. This may change in the future.
 
         The result type must have the same number of vector lanes as the input,
         and the result lanes must not have more bits than the input lanes. If

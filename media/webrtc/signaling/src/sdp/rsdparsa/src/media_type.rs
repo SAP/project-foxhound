@@ -61,7 +61,6 @@ pub enum SdpProtocolValue {
     DtlsSctp,
     UdpDtlsSctp,
     TcpDtlsSctp,
-    TcpTlsRtpSavpf, /* not standardized - to be removed */
 }
 
 impl ToString for SdpProtocolValue {
@@ -78,7 +77,6 @@ impl ToString for SdpProtocolValue {
             SdpProtocolValue::DtlsSctp => "DTLS/SCTP",
             SdpProtocolValue::UdpDtlsSctp => "UDP/DTLS/SCTP",
             SdpProtocolValue::TcpDtlsSctp => "TCP/DTLS/SCTP",
-            SdpProtocolValue::TcpTlsRtpSavpf => "TCP/TLS/RTP/SAVPF",
         }
         .to_string()
     }
@@ -322,8 +320,6 @@ fn parse_protocol_token(value: &str) -> Result<SdpProtocolValue, SdpParserIntern
         "DTLS/SCTP" => SdpProtocolValue::DtlsSctp,
         "UDP/DTLS/SCTP" => SdpProtocolValue::UdpDtlsSctp,
         "TCP/DTLS/SCTP" => SdpProtocolValue::TcpDtlsSctp,
-        /* to be removed */
-        "TCP/TLS/RTP/SAVPF" => SdpProtocolValue::TcpTlsRtpSavpf,
         _ => {
             return Err(SdpParserInternalError::Unsupported(format!(
                 "unsupported protocol value: {}",
@@ -371,7 +367,7 @@ pub fn parse_media(value: &str) -> Result<SdpType, SdpParserInternalError> {
                     8  |  // PCMA
                     9  |  // G722
                     13 |  // Comfort Noise
-                    96 ... 127 => (),  // dynamic range
+                    96 ..= 127 => (),  // dynamic range
                     _ => return Err(SdpParserInternalError::Generic(
                           "format number in media line is out of range".to_string()))
                 };
@@ -490,11 +486,12 @@ pub fn create_dummy_media_section() -> SdpMedia {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use address::{AddressType, ExplicitlyTypedAddress};
     use attribute_type::{
         SdpAttributeFmtp, SdpAttributeFmtpParameters, SdpAttributePayloadType, SdpAttributeRtcpFb,
         SdpAttributeRtcpFbType,
     };
-    use network::parse_unicast_address;
+    use std::convert::TryFrom;
 
     // TODO is this useful outside of tests?
     impl SdpFormatList {
@@ -578,29 +575,24 @@ mod tests {
     }
 
     #[test]
-    fn test_add_codec() {
+    fn test_add_codec() -> Result<(), SdpParserInternalError> {
         let mut msection = create_dummy_media_section();
-        assert!(msection
-            .add_codec(SdpAttributeRtpmap::new(96, "foobar".to_string(), 1000))
-            .is_ok());
+        msection.add_codec(SdpAttributeRtpmap::new(96, "foobar".to_string(), 1000))?;
         assert_eq!(msection.get_formats().len(), 1);
         assert!(msection.get_attribute(SdpAttributeType::Rtpmap).is_some());
 
         let mut msection = create_dummy_media_section();
         msection.media.formats = SdpFormatList::Strings(Vec::new());
-        assert!(msection
-            .add_codec(SdpAttributeRtpmap::new(97, "boofar".to_string(), 1001))
-            .is_ok());
+        msection.add_codec(SdpAttributeRtpmap::new(97, "boofar".to_string(), 1001))?;
         assert_eq!(msection.get_formats().len(), 1);
         assert!(msection.get_attribute(SdpAttributeType::Rtpmap).is_some());
+        Ok(())
     }
 
     #[test]
-    fn test_remove_codecs() {
+    fn test_remove_codecs() -> Result<(), SdpParserInternalError> {
         let mut msection = create_dummy_media_section();
-        assert!(msection
-            .add_codec(SdpAttributeRtpmap::new(96, "foobar".to_string(), 1000))
-            .is_ok());
+        msection.add_codec(SdpAttributeRtpmap::new(96, "foobar".to_string(), 1000))?;
         assert_eq!(msection.get_formats().len(), 1);
         assert!(msection.get_attribute(SdpAttributeType::Rtpmap).is_some());
         msection.remove_codecs();
@@ -609,9 +601,7 @@ mod tests {
 
         let mut msection = create_dummy_media_section();
         msection.media.formats = SdpFormatList::Strings(Vec::new());
-        assert!(msection
-            .add_codec(SdpAttributeRtpmap::new(97, "boofar".to_string(), 1001))
-            .is_ok());
+        msection.add_codec(SdpAttributeRtpmap::new(97, "boofar".to_string(), 1001))?;
         assert_eq!(msection.get_formats().len(), 1);
 
         add_dummy_attributes(&mut msection);
@@ -623,14 +613,13 @@ mod tests {
         assert!(msection.get_attribute(SdpAttributeType::Fmtp).is_none());
         assert!(msection.get_attribute(SdpAttributeType::Sctpmap).is_none());
         assert!(msection.get_attribute(SdpAttributeType::SctpPort).is_none());
+        Ok(())
     }
 
     #[test]
-    fn test_add_datachannel() {
+    fn test_add_datachannel() -> Result<(), SdpParserInternalError> {
         let mut msection = create_dummy_media_section();
-        assert!(msection
-            .add_datachannel("foo".to_string(), 5000, 256, 0)
-            .is_ok());
+        msection.add_datachannel("foo".to_string(), 5000, 256, 0)?;
         assert_eq!(*msection.get_type(), SdpMediaValue::Application);
         assert!(msection.get_attribute(SdpAttributeType::SctpPort).is_none());
         assert!(msection
@@ -646,9 +635,7 @@ mod tests {
         }
 
         let mut msection = create_dummy_media_section();
-        assert!(msection
-            .add_datachannel("foo".to_string(), 5000, 256, 1234)
-            .is_ok());
+        msection.add_datachannel("foo".to_string(), 5000, 256, 1234)?;
         assert_eq!(*msection.get_type(), SdpMediaValue::Application);
         assert!(msection.get_attribute(SdpAttributeType::SctpPort).is_none());
         assert!(msection
@@ -666,9 +653,7 @@ mod tests {
 
         let mut msection = create_dummy_media_section();
         msection.media.proto = SdpProtocolValue::UdpDtlsSctp;
-        assert!(msection
-            .add_datachannel("foo".to_string(), 5000, 256, 5678)
-            .is_ok());
+        msection.add_datachannel("foo".to_string(), 5000, 256, 5678)?;
         assert_eq!(*msection.get_type(), SdpMediaValue::Application);
         assert!(msection.get_attribute(SdpAttributeType::Sctpmap).is_none());
         assert!(msection.get_attribute(SdpAttributeType::SctpPort).is_some());
@@ -690,69 +675,58 @@ mod tests {
             }
             _ => unreachable!(),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_parse_media_token() {
-        let audio = parse_media_token("audio");
-        assert!(audio.is_ok());
-        assert_eq!(audio.unwrap(), SdpMediaValue::Audio);
-        let video = parse_media_token("VIDEO");
-        assert!(video.is_ok());
-        assert_eq!(video.unwrap(), SdpMediaValue::Video);
-        let app = parse_media_token("aPplIcatIOn");
-        assert!(app.is_ok());
-        assert_eq!(app.unwrap(), SdpMediaValue::Application);
+    fn test_parse_media_token() -> Result<(), SdpParserInternalError> {
+        let audio = parse_media_token("audio")?;
+        assert_eq!(audio, SdpMediaValue::Audio);
+        let video = parse_media_token("VIDEO")?;
+        assert_eq!(video, SdpMediaValue::Video);
+        let app = parse_media_token("aPplIcatIOn")?;
+        assert_eq!(app, SdpMediaValue::Application);
 
         assert!(parse_media_token("").is_err());
         assert!(parse_media_token("foobar").is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_parse_protocol_rtp_token() {
-        let rtps = parse_protocol_token("rtp/avp");
-        assert!(rtps.is_ok());
-        assert_eq!(rtps.unwrap(), SdpProtocolValue::RtpAvp);
-        let rtps = parse_protocol_token("rtp/avpf");
-        assert!(rtps.is_ok());
-        assert_eq!(rtps.unwrap(), SdpProtocolValue::RtpAvpf);
-        let rtps = parse_protocol_token("rtp/savp");
-        assert!(rtps.is_ok());
-        assert_eq!(rtps.unwrap(), SdpProtocolValue::RtpSavp);
-        let rtps = parse_protocol_token("rtp/savpf");
-        assert!(rtps.is_ok());
-        assert_eq!(rtps.unwrap(), SdpProtocolValue::RtpSavpf);
-        let udps = parse_protocol_token("udp/tls/rtp/savp");
-        assert!(udps.is_ok());
-        assert_eq!(udps.unwrap(), SdpProtocolValue::UdpTlsRtpSavp);
-        let udps = parse_protocol_token("udp/tls/rtp/savpf");
-        assert!(udps.is_ok());
-        assert_eq!(udps.unwrap(), SdpProtocolValue::UdpTlsRtpSavpf);
-        let tcps = parse_protocol_token("TCP/dtls/rtp/savp");
-        assert!(tcps.is_ok());
-        assert_eq!(tcps.unwrap(), SdpProtocolValue::TcpDtlsRtpSavp);
-        let tcps = parse_protocol_token("TCP/dtls/rtp/savpf");
-        assert!(tcps.is_ok());
-        assert_eq!(tcps.unwrap(), SdpProtocolValue::TcpDtlsRtpSavpf);
-        let tcps = parse_protocol_token("TCP/tls/rtp/savpf");
-        assert!(tcps.is_ok());
-        assert_eq!(tcps.unwrap(), SdpProtocolValue::TcpTlsRtpSavpf);
+    fn test_parse_protocol_rtp_token() -> Result<(), SdpParserInternalError> {
+        let rtps = parse_protocol_token("rtp/avp")?;
+        assert_eq!(rtps, SdpProtocolValue::RtpAvp);
+        let rtps = parse_protocol_token("rtp/avpf")?;
+        assert_eq!(rtps, SdpProtocolValue::RtpAvpf);
+        let rtps = parse_protocol_token("rtp/savp")?;
+        assert_eq!(rtps, SdpProtocolValue::RtpSavp);
+        let rtps = parse_protocol_token("rtp/savpf")?;
+        assert_eq!(rtps, SdpProtocolValue::RtpSavpf);
+        let udps = parse_protocol_token("udp/tls/rtp/savp")?;
+        assert_eq!(udps, SdpProtocolValue::UdpTlsRtpSavp);
+        let udps = parse_protocol_token("udp/tls/rtp/savpf")?;
+        assert_eq!(udps, SdpProtocolValue::UdpTlsRtpSavpf);
+        let tcps = parse_protocol_token("TCP/dtls/rtp/savp")?;
+        assert_eq!(tcps, SdpProtocolValue::TcpDtlsRtpSavp);
+        let tcps = parse_protocol_token("TCP/dtls/rtp/savpf")?;
+        assert_eq!(tcps, SdpProtocolValue::TcpDtlsRtpSavpf);
+        let tcps = parse_protocol_token("TCP/tls/rtp/savpf")?;
+        assert_eq!(tcps, SdpProtocolValue::TcpTlsRtpSavpf);
 
         assert!(parse_protocol_token("").is_err());
         assert!(parse_protocol_token("foobar").is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_parse_protocol_sctp_token() {
-        let dtls = parse_protocol_token("dtLs/ScTP");
-        assert!(dtls.is_ok());
-        assert_eq!(dtls.unwrap(), SdpProtocolValue::DtlsSctp);
-        let usctp = parse_protocol_token("udp/DTLS/sctp");
-        assert!(usctp.is_ok());
-        assert_eq!(usctp.unwrap(), SdpProtocolValue::UdpDtlsSctp);
-        let tsctp = parse_protocol_token("tcp/dtls/SCTP");
-        assert!(tsctp.is_ok());
-        assert_eq!(tsctp.unwrap(), SdpProtocolValue::TcpDtlsSctp);
+    fn test_parse_protocol_sctp_token() -> Result<(), SdpParserInternalError> {
+        let dtls = parse_protocol_token("dtLs/ScTP")?;
+        assert_eq!(dtls, SdpProtocolValue::DtlsSctp);
+        let usctp = parse_protocol_token("udp/DTLS/sctp")?;
+        assert_eq!(usctp, SdpProtocolValue::UdpDtlsSctp);
+        let tsctp = parse_protocol_token("tcp/dtls/SCTP")?;
+        assert_eq!(tsctp, SdpProtocolValue::TcpDtlsSctp);
+        Ok(())
     }
 
     #[test]
@@ -823,9 +797,8 @@ mod tests {
             sdp_type: SdpType::Media(media_line),
         };
         sdp_lines.push(media);
-        let address = parse_unicast_address("127.0.0.1").unwrap();
         let c = SdpConnection {
-            address,
+            address: ExplicitlyTypedAddress::try_from((AddressType::IpV4, "127.0.0.1")).unwrap(),
             ttl: None,
             amount: None,
         };

@@ -83,6 +83,7 @@ const NOT_REMOTE = null;
 
 // These must match any similar ones in ContentParent.h and ProcInfo.h
 const WEB_REMOTE_TYPE = "web";
+const FISSION_WEB_REMOTE_TYPE_PREFIX = "webIsolated=";
 const FILE_REMOTE_TYPE = "file";
 const EXTENSION_REMOTE_TYPE = "extension";
 const PRIVILEGEDABOUT_REMOTE_TYPE = "privilegedabout";
@@ -123,8 +124,8 @@ function validatedWebRemoteType(
   // If we're within a fission window, extract site information from the URI in
   // question, and use it to generate an isolated origin.
   if (aRemoteSubframes) {
-    let targetPrincipal = sm.createCodebasePrincipal(aTargetUri, {});
-    return "webIsolated=" + targetPrincipal.siteOrigin;
+    let targetPrincipal = sm.createContentPrincipal(aTargetUri, {});
+    return FISSION_WEB_REMOTE_TYPE_PREFIX + targetPrincipal.siteOrigin;
   }
 
   if (!aPreferredRemoteType) {
@@ -331,7 +332,8 @@ var E10SUtils = {
         if (flags & Ci.nsIAboutModule.URI_MUST_LOAD_IN_CHILD) {
           if (
             flags & Ci.nsIAboutModule.URI_CAN_LOAD_IN_PRIVILEGEDABOUT_PROCESS &&
-            useSeparatePrivilegedAboutContentProcess
+            (useSeparatePrivilegedAboutContentProcess ||
+              aURI.filePath == "logins")
           ) {
             return PRIVILEGEDABOUT_REMOTE_TYPE;
           }
@@ -436,9 +438,9 @@ var E10SUtils = {
 
     // We might care about the currently loaded URI. Pull it out of our current
     // principal. We never care about the current URI when working with a
-    // non-codebase principal.
+    // non-content principal.
     let currentURI =
-      aCurrentPrincipal && aCurrentPrincipal.isCodebasePrincipal
+      aCurrentPrincipal && aCurrentPrincipal.isContentPrincipal
         ? aCurrentPrincipal.URI
         : null;
     return E10SUtils.getRemoteTypeForURIObject(
@@ -613,7 +615,7 @@ var E10SUtils = {
     );
   },
 
-  shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData) {
+  shouldLoadURI(aDocShell, aURI, aHasPostData) {
     let remoteSubframes = aDocShell.useRemoteSubframes;
 
     // Inner frames should always load in the current process
@@ -698,7 +700,7 @@ var E10SUtils = {
   redirectLoad(
     aDocShell,
     aURI,
-    aReferrer,
+    aReferrerInfo,
     aTriggeringPrincipal,
     aFreshProcess,
     aFlags,
@@ -713,7 +715,7 @@ var E10SUtils = {
       loadOptions: {
         uri: aURI.spec,
         flags: aFlags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
-        referrer: aReferrer ? aReferrer.spec : null,
+        referrerInfo: this.serializeReferrerInfo(aReferrerInfo),
         triggeringPrincipal: this.serializePrincipal(
           aTriggeringPrincipal ||
             Services.scriptSecurityManager.createNullPrincipal({})
@@ -772,6 +774,42 @@ var E10SUtils = {
       }
     }
     return deserialized;
+  },
+
+  /**
+   * Returns the pids for a remote browser and its remote subframes.
+   */
+  getBrowserPids(aBrowser, aRemoteSubframes) {
+    if (!aBrowser.isRemoteBrowser || !aBrowser.frameLoader) {
+      return [];
+    }
+    let tabPid = aBrowser.frameLoader.remoteTab.osPid;
+    let pids = new Set();
+    if (aRemoteSubframes) {
+      let stack = [aBrowser.browsingContext];
+      while (stack.length) {
+        let bc = stack.pop();
+        stack.push(...bc.getChildren());
+        if (bc.currentWindowGlobal) {
+          let pid = bc.currentWindowGlobal.osPid;
+          if (pid != tabPid) {
+            pids.add(pid);
+          }
+        }
+      }
+    }
+    return [tabPid, ...pids];
+  },
+
+  /**
+   * If Fission is enabled, the remote type for a standard content process will
+   * start with webIsolated=.
+   */
+  isWebRemoteType(aBrowser) {
+    if (aBrowser.ownerGlobal.docShell.nsILoadContext.useRemoteSubframes) {
+      return aBrowser.remoteType.startsWith(FISSION_WEB_REMOTE_TYPE_PREFIX);
+    }
+    return aBrowser.remoteType == WEB_REMOTE_TYPE;
   },
 };
 

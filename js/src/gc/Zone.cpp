@@ -6,8 +6,6 @@
 
 #include "gc/Zone-inl.h"
 
-#include "jsutil.h"
-
 #include "gc/FreeOp.h"
 #include "gc/Policy.h"
 #include "gc/PublicIterators.h"
@@ -15,10 +13,10 @@
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
 #include "jit/JitRealm.h"
-#include "vm/Debugger.h"
 #include "vm/Runtime.h"
 #include "wasm/WasmInstance.h"
 
+#include "debugger/DebugAPI-inl.h"
 #include "gc/GC-inl.h"
 #include "gc/Marking-inl.h"
 #include "gc/Nursery-inl.h"
@@ -33,55 +31,52 @@ Zone* const Zone::NotOnList = reinterpret_cast<Zone*>(1);
 
 ZoneAllocator::ZoneAllocator(JSRuntime* rt)
     : JS::shadow::Zone(rt, &rt->gc.marker),
-      zoneSize(&rt->gc.heapSize),
-      gcMallocBytes(nullptr) {
+      gcHeapSize(&rt->gc.heapSize),
+      mallocHeapSize(nullptr),
+      jitHeapSize(nullptr),
+      jitHeapThreshold(jit::MaxCodeBytesPerProcess * 0.8) {
   AutoLockGC lock(rt);
-  updateAllGCThresholds(rt->gc, GC_NORMAL, lock);
-  setGCMaxMallocBytes(rt->gc.tunables.maxMallocBytes(), lock);
-  jitCodeCounter.setMax(jit::MaxCodeBytesPerProcess * 0.8, lock);
+  updateGCThresholds(rt->gc, GC_NORMAL, lock);
 }
 
 ZoneAllocator::~ZoneAllocator() {
 #ifdef DEBUG
-  if (runtimeFromAnyThread()->gc.shutdownCollectedEverything()) {
-    gcMallocTracker.checkEmptyOnDestroy();
-    MOZ_ASSERT(zoneSize.gcBytes() == 0);
-    MOZ_ASSERT(gcMallocBytes.gcBytes() == 0);
-  }
+  mallocTracker.checkEmptyOnDestroy();
+  MOZ_ASSERT(gcHeapSize.bytes() == 0);
+  MOZ_ASSERT(mallocHeapSize.bytes() == 0);
+  MOZ_ASSERT(jitHeapSize.bytes() == 0);
 #endif
 }
 
 void ZoneAllocator::fixupAfterMovingGC() {
 #ifdef DEBUG
-  gcMallocTracker.fixupAfterMovingGC();
+  mallocTracker.fixupAfterMovingGC();
 #endif
 }
 
-void js::ZoneAllocator::updateAllGCMallocCountersOnGCStart() {
-  gcMallocCounter.updateOnGCStart();
-  jitCodeCounter.updateOnGCStart();
+void js::ZoneAllocator::updateMemoryCountersOnGCStart() {
+  gcHeapSize.updateOnGCStart();
+  mallocHeapSize.updateOnGCStart();
 }
 
-void js::ZoneAllocator::updateAllGCMallocCountersOnGCEnd(
-    const js::AutoLockGC& lock) {
-  auto& gc = runtimeFromAnyThread()->gc;
-  gcMallocCounter.updateOnGCEnd(gc.tunables, lock);
-  jitCodeCounter.updateOnGCEnd(gc.tunables, lock);
+void js::ZoneAllocator::updateGCThresholds(GCRuntime& gc,
+                                           JSGCInvocationKind invocationKind,
+                                           const js::AutoLockGC& lock) {
+  // This is called repeatedly during a GC to update thresholds as memory is
+  // freed.
+  gcHeapThreshold.updateAfterGC(gcHeapSize.retainedBytes(), invocationKind,
+                                gc.tunables, gc.schedulingState, lock);
+  mallocHeapThreshold.updateAfterGC(mallocHeapSize.retainedBytes(),
+                                    gc.tunables.mallocThresholdBase(),
+                                    gc.tunables.mallocGrowthFactor(), lock);
 }
 
-void js::ZoneAllocator::updateAllGCThresholds(GCRuntime& gc,
-                                              JSGCInvocationKind invocationKind,
-                                              const js::AutoLockGC& lock) {
-  threshold.updateAfterGC(zoneSize.gcBytes(), invocationKind, gc.tunables,
-                          gc.schedulingState, lock);
-  gcMallocThreshold.updateAfterGC(gcMallocBytes.gcBytes(),
-                                  gc.tunables.maxMallocBytes(), lock);
-}
-
-js::gc::TriggerKind js::ZoneAllocator::shouldTriggerGCForTooMuchMalloc() {
-  auto& gc = runtimeFromAnyThread()->gc;
-  return std::max(gcMallocCounter.shouldTriggerGC(gc.tunables),
-                  jitCodeCounter.shouldTriggerGC(gc.tunables));
+void ZoneAllocPolicy::decMemory(size_t nbytes) {
+  // Unfortunately we don't have enough context here to know whether we're being
+  // called on behalf of the collector so we have to do a TLS lookup to find
+  // out.
+  JSContext* cx = TlsContext.get();
+  zone_->decPolicyMemory(this, nbytes, cx->defaultFreeOp()->isCollecting());
 }
 
 JS::Zone::Zone(JSRuntime* rt)
@@ -90,7 +85,6 @@ JS::Zone::Zone(JSRuntime* rt)
       // ProtectedData checks in CheckZone::check may read this field.
       helperThreadUse_(HelperThreadUse::None),
       helperThreadOwnerContext_(nullptr),
-      debuggers(this, nullptr),
       uniqueIds_(this),
       suppressAllocationMetadataBuilder(this, false),
       arenas(this),
@@ -98,6 +92,7 @@ JS::Zone::Zone(JSRuntime* rt)
       types(this),
       gcWeakMapList_(this),
       compartments_(),
+      crossZoneStringWrappers_(this),
       gcGrayRoots_(this),
       weakCaches_(this),
       gcWeakKeys_(this, SystemAllocPolicy(), rt->randomHashCodeScrambler()),
@@ -126,6 +121,7 @@ JS::Zone::Zone(JSRuntime* rt)
       gcScheduledSaved_(false),
       gcPreserveCode_(false),
       keepShapeCaches_(this, false),
+      wasCollected_(false),
       listNext_(NotOnList) {
   /* Ensure that there are no vtables to mess us up here. */
   MOZ_ASSERT(reinterpret_cast<JS::shadow::Zone*>(this) ==
@@ -134,23 +130,15 @@ JS::Zone::Zone(JSRuntime* rt)
 
 Zone::~Zone() {
   MOZ_ASSERT(helperThreadUse_ == HelperThreadUse::None);
+  MOZ_ASSERT(gcWeakMapList().isEmpty());
+  MOZ_ASSERT_IF(regExps_.ref(), regExps().empty());
 
   JSRuntime* rt = runtimeFromAnyThread();
   if (this == rt->gc.systemZone) {
     rt->gc.systemZone = nullptr;
   }
 
-  js_delete(debuggers.ref());
   js_delete(jitZone_.ref());
-
-#ifdef DEBUG
-  // Avoid assertions failures warning that not everything has been destroyed
-  // if the embedding leaked GC things.
-  if (!rt->gc.shutdownCollectedEverything()) {
-    gcWeakMapList().clear();
-    regExps().clear();
-  }
-#endif
 }
 
 bool Zone::init(bool isSystemArg) {
@@ -166,19 +154,7 @@ void Zone::setNeedsIncrementalBarrier(bool needs) {
 
 void Zone::beginSweepTypes() { types.beginSweep(); }
 
-Zone::DebuggerVector* Zone::getOrCreateDebuggers(JSContext* cx) {
-  if (debuggers) {
-    return debuggers;
-  }
-
-  debuggers = js_new<DebuggerVector>();
-  if (!debuggers) {
-    ReportOutOfMemory(cx);
-  }
-  return debuggers;
-}
-
-void Zone::sweepBreakpoints(FreeOp* fop) {
+void Zone::sweepBreakpoints(JSFreeOp* fop) {
   if (fop->runtime()->debuggerList().isEmpty()) {
     return;
   }
@@ -191,39 +167,7 @@ void Zone::sweepBreakpoints(FreeOp* fop) {
   MOZ_ASSERT(isGCSweepingOrCompacting());
   for (auto iter = cellIterUnsafe<JSScript>(); !iter.done(); iter.next()) {
     JSScript* script = iter;
-    if (!script->hasAnyBreakpointsOrStepMode()) {
-      continue;
-    }
-
-    bool scriptGone = IsAboutToBeFinalizedUnbarriered(&script);
-    MOZ_ASSERT(script == iter);
-    for (unsigned i = 0; i < script->length(); i++) {
-      BreakpointSite* site = script->getBreakpointSite(script->offsetToPC(i));
-      if (!site) {
-        continue;
-      }
-
-      Breakpoint* nextbp;
-      for (Breakpoint* bp = site->firstBreakpoint(); bp; bp = nextbp) {
-        nextbp = bp->nextInSite();
-        GCPtrNativeObject& dbgobj = bp->debugger->toJSObjectRef();
-
-        // If we are sweeping, then we expect the script and the
-        // debugger object to be swept in the same sweep group, except
-        // if the breakpoint was added after we computed the sweep
-        // groups. In this case both script and debugger object must be
-        // live.
-        MOZ_ASSERT_IF(isGCSweeping() && dbgobj->zone()->isCollecting(),
-                      dbgobj->zone()->isGCSweeping() ||
-                          (!scriptGone && dbgobj->asTenured().isMarkedAny()));
-
-        bool dying = scriptGone || IsAboutToBeFinalized(&dbgobj);
-        MOZ_ASSERT_IF(!dying, !IsAboutToBeFinalized(&bp->getHandlerRef()));
-        if (dying) {
-          bp->destroy(fop);
-        }
-      }
-    }
+    DebugAPI::sweepBreakpoints(fop, script);
   }
 
   for (RealmsInZoneIter realms(this); !realms.done(); realms.next()) {
@@ -246,7 +190,12 @@ static void SweepWeakEntryVectorWhileMinorSweeping(
   });
 }
 
-void Zone::sweepAfterMinorGC() {
+void Zone::sweepAfterMinorGC(JSTracer* trc) {
+  sweepWeakKeysAfterMinorGC();
+  crossZoneStringWrappers().sweepAfterMinorGC(trc);
+}
+
+void Zone::sweepWeakKeysAfterMinorGC() {
   for (WeakKeyTable::Range r = gcNurseryWeakKeys().all(); !r.empty();
        r.popFront()) {
     // Sweep gcNurseryWeakKeys to move live (forwarded) keys to gcWeakKeys,
@@ -315,12 +264,63 @@ void Zone::sweepAfterMinorGC() {
   }
 }
 
+void Zone::sweepAllCrossCompartmentWrappers() {
+  crossZoneStringWrappers().sweep();
+  for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
+    comp->sweepCrossCompartmentObjectWrappers();
+  }
+}
+
+/* static */
+void Zone::fixupAllCrossCompartmentWrappersAfterMovingGC(JSTracer* trc) {
+  MOZ_ASSERT(trc->runtime()->gc.isHeapCompacting());
+
+  for (ZonesIter zone(trc->runtime(), WithAtoms); !zone.done(); zone.next()) {
+    // Sweep the wrapper map to update keys (wrapped values) in other
+    // compartments that may have been moved.
+    zone->crossZoneStringWrappers().sweep();
+
+    for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next()) {
+      comp->fixupCrossCompartmentObjectWrappersAfterMovingGC(trc);
+    }
+  }
+}
+
+void Zone::dropStringWrappersOnGC() {
+  MOZ_ASSERT(JS::RuntimeHeapIsCollecting());
+  crossZoneStringWrappers().clear();
+}
+
+#ifdef JSGC_HASH_TABLE_CHECKS
+
+void Zone::checkAllCrossCompartmentWrappersAfterMovingGC() {
+  checkStringWrappersAfterMovingGC();
+  for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
+    comp->checkObjectWrappersAfterMovingGC();
+  }
+}
+
+void Zone::checkStringWrappersAfterMovingGC() {
+  for (StringWrapperMap::Enum e(crossZoneStringWrappers()); !e.empty();
+       e.popFront()) {
+    // Assert that the postbarriers have worked and that nothing is left in the
+    // wrapper map that points into the nursery, and that the hash table entries
+    // are discoverable.
+    auto key = e.front().key();
+    CheckGCThingAfterMovingGC(key);
+
+    auto ptr = crossZoneStringWrappers().lookup(key);
+    MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &e.front());
+  }
+}
+#endif
+
 void Zone::sweepWeakMaps() {
   /* Finalize unreachable (key,value) pairs in all weak maps. */
   WeakMapBase::sweepZone(this);
 }
 
-void Zone::discardJitCode(FreeOp* fop,
+void Zone::discardJitCode(JSFreeOp* fop,
                           ShouldDiscardBaselineCode discardBaselineCode,
                           ShouldDiscardJitScripts discardJitScripts) {
   if (!jitZone()) {
@@ -334,8 +334,9 @@ void Zone::discardJitCode(FreeOp* fop,
   if (discardBaselineCode || discardJitScripts) {
 #ifdef DEBUG
     // Assert no JitScripts are marked as active.
-    for (auto script = cellIter<JSScript>(); !script.done(); script.next()) {
-      if (jit::JitScript* jitScript = script.unbarrieredGet()->jitScript()) {
+    for (auto iter = cellIter<JSScript>(); !iter.done(); iter.next()) {
+      JSScript* script = iter.unbarrieredGet();
+      if (jit::JitScript* jitScript = script->maybeJitScript()) {
         MOZ_ASSERT(!jitScript->active());
       }
     }
@@ -350,15 +351,16 @@ void Zone::discardJitCode(FreeOp* fop,
 
   for (auto script = cellIterUnsafe<JSScript>(); !script.done();
        script.next()) {
+    jit::JitScript* jitScript = script->maybeJitScript();
+    if (!jitScript) {
+      continue;
+    }
+
     jit::FinishInvalidation(fop, script);
 
     // Discard baseline script if it's not marked as active.
-    if (discardBaselineCode && script->hasBaselineScript()) {
-      if (script->jitScript()->active()) {
-        // ICs will be purged so the script will need to warm back up before it
-        // can be inlined during Ion compilation.
-        script->baselineScript()->clearIonCompiledOrInlined();
-      } else {
+    if (discardBaselineCode) {
+      if (jitScript->hasBaselineScript() && !jitScript->active()) {
         jit::FinishDiscardBaselineScript(fop, script);
       }
     }
@@ -368,29 +370,33 @@ void Zone::discardJitCode(FreeOp* fop,
     // opcodes are setting array holes or accessing getter properties.
     script->resetWarmUpCounterForGC();
 
-    // Clear the BaselineScript's control flow graph. The LifoAlloc is purged
-    // below.
-    if (script->hasBaselineScript()) {
-      script->baselineScript()->setControlFlowGraph(nullptr);
-    }
-
     // Try to release the script's JitScript. This should happen after
     // releasing JIT code because we can't do this when the script still has
     // JIT code.
     if (discardJitScripts) {
-      script->maybeReleaseJitScript();
-    }
-
-    if (jit::JitScript* jitScript = script->jitScript()) {
-      // If we did not release the JitScript, we need to purge optimized IC
-      // stubs because the optimizedStubSpace will be purged below.
-      if (discardBaselineCode) {
-        jitScript->purgeOptimizedStubs(script);
+      script->maybeReleaseJitScript(fop);
+      jitScript = script->maybeJitScript();
+      if (!jitScript) {
+        continue;
       }
-
-      // Finally, reset the active flag.
-      jitScript->resetActive();
     }
+
+    // If we did not release the JitScript, we need to purge optimized IC
+    // stubs because the optimizedStubSpace will be purged below.
+    if (discardBaselineCode) {
+      jitScript->purgeOptimizedStubs(script);
+
+      // ICs were purged so the script will need to warm back up before it can
+      // be inlined during Ion compilation.
+      jitScript->clearIonCompiledOrInlined();
+    }
+
+    // Clear the JitScript's control flow graph. The LifoAlloc is purged
+    // below.
+    jitScript->clearControlFlowGraph();
+
+    // Finally, reset the active flag.
+    jitScript->resetActive();
   }
 
   /*
@@ -475,24 +481,7 @@ void Zone::notifyObservingDebuggers() {
       continue;
     }
 
-    GlobalObject::DebuggerVector* dbgs = global->getDebuggers();
-    if (!dbgs) {
-      continue;
-    }
-
-    for (GlobalObject::DebuggerVector::Range r = dbgs->all(); !r.empty();
-         r.popFront()) {
-      if (!r.front().unbarrieredGet()->debuggeeIsBeingCollected(
-              rt->gc.majorGCCount())) {
-#ifdef DEBUG
-        fprintf(stderr,
-                "OOM while notifying observing Debuggers of a GC: The "
-                "onGarbageCollection\n"
-                "hook will not be fired for this GC for some Debuggers!\n");
-#endif
-        return;
-      }
-    }
+    DebugAPI::notifyParticipatesInGC(global, rt->gc.majorGCCount());
   }
 }
 
@@ -530,14 +519,14 @@ bool Zone::addTypeDescrObject(JSContext* cx, HandleObject obj) {
 
 void Zone::deleteEmptyCompartment(JS::Compartment* comp) {
   MOZ_ASSERT(comp->zone() == this);
-  MOZ_ASSERT(arenas.checkEmptyArenaLists());
+  arenas.checkEmptyArenaLists();
 
   MOZ_ASSERT(compartments().length() == 1);
   MOZ_ASSERT(compartments()[0] == comp);
   MOZ_ASSERT(comp->realms().length() == 1);
 
   Realm* realm = comp->realms()[0];
-  FreeOp* fop = runtimeFromMainThread()->defaultFreeOp();
+  JSFreeOp* fop = runtimeFromMainThread()->defaultFreeOp();
   realm->destroy(fop);
   comp->destroy(fop);
 
@@ -597,6 +586,32 @@ void Zone::traceAtomCache(JSTracer* trc) {
   }
 }
 
+void Zone::addSizeOfIncludingThis(
+    mozilla::MallocSizeOf mallocSizeOf, size_t* typePool, size_t* regexpZone,
+    size_t* jitZone, size_t* baselineStubsOptimized, size_t* cachedCFG,
+    size_t* uniqueIdMap, size_t* shapeCaches, size_t* atomsMarkBitmaps,
+    size_t* compartmentObjects, size_t* crossCompartmentWrappersTables,
+    size_t* compartmentsPrivateData) {
+  *typePool += types.typeLifoAlloc().sizeOfExcludingThis(mallocSizeOf);
+  *regexpZone += regExps().sizeOfExcludingThis(mallocSizeOf);
+  if (jitZone_) {
+    jitZone_->addSizeOfIncludingThis(mallocSizeOf, jitZone,
+                                     baselineStubsOptimized, cachedCFG);
+  }
+  *uniqueIdMap += uniqueIds().shallowSizeOfExcludingThis(mallocSizeOf);
+  *shapeCaches += baseShapes().sizeOfExcludingThis(mallocSizeOf) +
+                  initialShapes().sizeOfExcludingThis(mallocSizeOf);
+  *atomsMarkBitmaps += markedAtoms().sizeOfExcludingThis(mallocSizeOf);
+  *crossCompartmentWrappersTables +=
+      crossZoneStringWrappers().sizeOfExcludingThis(mallocSizeOf);
+
+  for (CompartmentsInZoneIter comp(this); !comp.done(); comp.next()) {
+    comp->addSizeOfIncludingThis(mallocSizeOf, compartmentObjects,
+                                 crossCompartmentWrappersTables,
+                                 compartmentsPrivateData);
+  }
+}
+
 void* ZoneAllocator::onOutOfMemory(js::AllocFunction allocFunc,
                                    arena_id_t arena, size_t nbytes,
                                    void* reallocPtr) {
@@ -610,289 +625,6 @@ void* ZoneAllocator::onOutOfMemory(js::AllocFunction allocFunc,
 void ZoneAllocator::reportAllocationOverflow() const {
   js::ReportAllocationOverflow(nullptr);
 }
-
-void ZoneAllocator::maybeTriggerGCForTooMuchMalloc(
-    js::gc::MemoryCounter& counter, TriggerKind trigger) {
-  JSRuntime* rt = runtimeFromAnyThread();
-
-  if (!js::CurrentThreadCanAccessRuntime(rt)) {
-    return;
-  }
-
-  auto zone = JS::Zone::from(this);
-  bool wouldInterruptGC =
-      rt->gc.isIncrementalGCInProgress() && !zone->isCollecting();
-  if (wouldInterruptGC && !counter.shouldResetIncrementalGC(rt->gc.tunables)) {
-    return;
-  }
-
-  if (!rt->gc.triggerZoneGC(zone, JS::GCReason::TOO_MUCH_MALLOC,
-                            counter.bytes(), counter.maxBytes())) {
-    return;
-  }
-
-  counter.recordTrigger(trigger);
-}
-
-#ifdef DEBUG
-
-void MemoryTracker::adopt(MemoryTracker& other) {
-  LockGuard<Mutex> lock(mutex);
-
-  AutoEnterOOMUnsafeRegion oomUnsafe;
-
-  for (auto r = other.map.all(); !r.empty(); r.popFront()) {
-    if (!map.put(r.front().key(), r.front().value())) {
-      oomUnsafe.crash("MemoryTracker::adopt");
-    }
-  }
-  other.map.clear();
-
-  // There may still be ZoneAllocPolicies associated with the old zone since
-  // some are not destroyed until the zone itself dies. Instead check there is
-  // no memory associated with them and clear their zone pointer in debug builds
-  // to catch further memory association.
-  for (auto r = other.policyMap.all(); !r.empty(); r.popFront()) {
-    MOZ_ASSERT(r.front().value() == 0);
-    r.front().key()->zone_ = nullptr;
-  }
-  other.policyMap.clear();
-}
-
-static const char* MemoryUseName(MemoryUse use) {
-  switch (use) {
-#  define DEFINE_CASE(Name) \
-    case MemoryUse::Name:   \
-      return #Name;
-    JS_FOR_EACH_MEMORY_USE(DEFINE_CASE)
-#  undef DEFINE_CASE
-  }
-
-  MOZ_CRASH("Unknown memory use");
-}
-
-MemoryTracker::MemoryTracker() : mutex(mutexid::MemoryTracker) {}
-
-void MemoryTracker::checkEmptyOnDestroy() {
-  bool ok = true;
-
-  if (!map.empty()) {
-    ok = false;
-    fprintf(stderr, "Missing calls to JS::RemoveAssociatedMemory:\n");
-    for (auto r = map.all(); !r.empty(); r.popFront()) {
-      fprintf(stderr, "  %p 0x%zx %s\n", r.front().key().cell(),
-              r.front().value(), MemoryUseName(r.front().key().use()));
-    }
-  }
-
-  if (!policyMap.empty()) {
-    ok = false;
-    fprintf(stderr, "Missing calls to Zone::decPolicyMemory:\n");
-    for (auto r = policyMap.all(); !r.empty(); r.popFront()) {
-      fprintf(stderr, "  %p 0x%zx\n", r.front().key(), r.front().value());
-    }
-  }
-
-  MOZ_ASSERT(ok);
-}
-
-inline bool MemoryTracker::allowMultipleAssociations(MemoryUse use) const {
-  // For most uses only one association is possible for each GC thing. Allow a
-  // one-to-many relationship only where necessary.
-  return use == MemoryUse::RegExpSharedBytecode ||
-         use == MemoryUse::BreakpointSite || use == MemoryUse::ForOfPICStub;
-}
-
-void MemoryTracker::trackMemory(Cell* cell, size_t nbytes, MemoryUse use) {
-  MOZ_ASSERT(cell->isTenured());
-
-  LockGuard<Mutex> lock(mutex);
-
-  Key key{cell, use};
-  AutoEnterOOMUnsafeRegion oomUnsafe;
-  auto ptr = map.lookupForAdd(key);
-  if (ptr) {
-    if (!allowMultipleAssociations(use)) {
-      MOZ_CRASH_UNSAFE_PRINTF("Association already present: %p 0x%zx %s", cell,
-                              nbytes, MemoryUseName(use));
-    }
-    ptr->value() += nbytes;
-    return;
-  }
-
-  if (!map.add(ptr, key, nbytes)) {
-    oomUnsafe.crash("MemoryTracker::noteExternalAlloc");
-  }
-}
-
-void MemoryTracker::untrackMemory(Cell* cell, size_t nbytes, MemoryUse use) {
-  MOZ_ASSERT(cell->isTenured());
-
-  LockGuard<Mutex> lock(mutex);
-
-  Key key{cell, use};
-  auto ptr = map.lookup(key);
-  if (!ptr) {
-    MOZ_CRASH_UNSAFE_PRINTF("Association not found: %p 0x%zx %s", cell, nbytes,
-                            MemoryUseName(use));
-  }
-
-  if (!allowMultipleAssociations(use) && ptr->value() != nbytes) {
-    MOZ_CRASH_UNSAFE_PRINTF(
-        "Association for %p %s has different size: "
-        "expected 0x%zx but got 0x%zx",
-        cell, MemoryUseName(use), ptr->value(), nbytes);
-  }
-
-  if (ptr->value() < nbytes) {
-    MOZ_CRASH_UNSAFE_PRINTF(
-        "Association for %p %s size is too small: "
-        "expected at least 0x%zx but got 0x%zx",
-        cell, MemoryUseName(use), nbytes, ptr->value());
-  }
-
-  ptr->value() -= nbytes;
-
-  if (ptr->value() == 0) {
-    map.remove(ptr);
-  }
-}
-
-void MemoryTracker::swapMemory(Cell* a, Cell* b, MemoryUse use) {
-  MOZ_ASSERT(a->isTenured());
-  MOZ_ASSERT(b->isTenured());
-
-  Key ka{a, use};
-  Key kb{b, use};
-
-  LockGuard<Mutex> lock(mutex);
-
-  size_t sa = getAndRemoveEntry(ka, lock);
-  size_t sb = getAndRemoveEntry(kb, lock);
-
-  AutoEnterOOMUnsafeRegion oomUnsafe;
-
-  if ((sa && !map.put(kb, sa)) || (sb && !map.put(ka, sb))) {
-    oomUnsafe.crash("MemoryTracker::swapTrackedMemory");
-  }
-}
-
-size_t MemoryTracker::getAndRemoveEntry(const Key& key,
-                                        LockGuard<Mutex>& lock) {
-  auto ptr = map.lookup(key);
-  if (!ptr) {
-    return 0;
-  }
-
-  size_t size = ptr->value();
-  map.remove(ptr);
-  return size;
-}
-
-void MemoryTracker::registerPolicy(ZoneAllocPolicy* policy) {
-  LockGuard<Mutex> lock(mutex);
-
-  auto ptr = policyMap.lookupForAdd(policy);
-  if (ptr) {
-    MOZ_CRASH_UNSAFE_PRINTF("ZoneAllocPolicy %p already registeredd", policy);
-  }
-
-  AutoEnterOOMUnsafeRegion oomUnsafe;
-  if (!policyMap.add(ptr, policy, 0)) {
-    oomUnsafe.crash("MemoryTracker::incTrackedPolicyMemory");
-  }
-}
-
-void MemoryTracker::unregisterPolicy(ZoneAllocPolicy* policy) {
-  LockGuard<Mutex> lock(mutex);
-
-  auto ptr = policyMap.lookup(policy);
-  if (!ptr) {
-    MOZ_CRASH_UNSAFE_PRINTF("ZoneAllocPolicy %p not found", policy);
-  }
-  if (ptr->value() != 0) {
-    MOZ_CRASH_UNSAFE_PRINTF(
-        "ZoneAllocPolicy %p still has 0x%zx bytes associated", policy,
-        ptr->value());
-  }
-
-  policyMap.remove(ptr);
-}
-
-void MemoryTracker::incPolicyMemory(ZoneAllocPolicy* policy, size_t nbytes) {
-  LockGuard<Mutex> lock(mutex);
-
-  auto ptr = policyMap.lookup(policy);
-  if (!ptr) {
-    MOZ_CRASH_UNSAFE_PRINTF("ZoneAllocPolicy %p not found", policy);
-  }
-
-  ptr->value() += nbytes;
-}
-
-void MemoryTracker::decPolicyMemory(ZoneAllocPolicy* policy, size_t nbytes) {
-  LockGuard<Mutex> lock(mutex);
-
-  auto ptr = policyMap.lookup(policy);
-  if (!ptr) {
-    MOZ_CRASH_UNSAFE_PRINTF("ZoneAllocPolicy %p not found", policy);
-  }
-
-  size_t& value = ptr->value();
-  if (value < nbytes) {
-    MOZ_CRASH_UNSAFE_PRINTF(
-        "ZoneAllocPolicy %p is too small: "
-        "expected at least 0x%zx but got 0x%zx bytes",
-        policy, nbytes, value);
-  }
-
-  value -= nbytes;
-}
-
-void MemoryTracker::fixupAfterMovingGC() {
-  // Update the table after we move GC things. We don't use MovableCellHasher
-  // because that would create a difference between debug and release builds.
-  for (Map::Enum e(map); !e.empty(); e.popFront()) {
-    const Key& key = e.front().key();
-    Cell* cell = key.cell();
-    if (cell->isForwarded()) {
-      cell = gc::RelocationOverlay::fromCell(cell)->forwardingAddress();
-      e.rekeyFront(Key{cell, key.use()});
-    }
-  }
-}
-
-inline MemoryTracker::Key::Key(Cell* cell, MemoryUse use)
-    : cell_(uint64_t(cell)), use_(uint64_t(use)) {
-#  ifdef JS_64BIT
-  static_assert(sizeof(Key) == 8,
-                "MemoryTracker::Key should be packed into 8 bytes");
-#  endif
-  MOZ_ASSERT(this->cell() == cell);
-  MOZ_ASSERT(this->use() == use);
-}
-
-inline Cell* MemoryTracker::Key::cell() const {
-  return reinterpret_cast<Cell*>(cell_);
-}
-inline MemoryUse MemoryTracker::Key::use() const {
-  return static_cast<MemoryUse>(use_);
-}
-
-inline HashNumber MemoryTracker::Hasher::hash(const Lookup& l) {
-  return mozilla::HashGeneric(DefaultHasher<Cell*>::hash(l.cell()),
-                              DefaultHasher<unsigned>::hash(unsigned(l.use())));
-}
-
-inline bool MemoryTracker::Hasher::match(const Key& k, const Lookup& l) {
-  return k.cell() == l.cell() && k.use() == l.use();
-}
-
-inline void MemoryTracker::Hasher::rekey(Key& k, const Key& newKey) {
-  k = newKey;
-}
-
-#endif  // DEBUG
 
 ZoneList::ZoneList() : head(nullptr), tail(nullptr) {}
 

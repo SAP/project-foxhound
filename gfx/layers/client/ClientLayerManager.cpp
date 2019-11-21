@@ -9,7 +9,9 @@
 #include "gfxEnv.h"              // for gfxEnv
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/Hal.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"  // for BrowserChild
 #include "mozilla/dom/TabGroup.h"      // for TabGroup
 #include "mozilla/hal_sandbox/PHal.h"  // for ScreenConfiguration
@@ -79,6 +81,36 @@ ClientLayerManager::~ClientLayerManager() {
   mRoot = nullptr;
 
   MOZ_COUNT_DTOR(ClientLayerManager);
+}
+
+bool ClientLayerManager::Initialize(
+    PCompositorBridgeChild* aCBChild, bool aShouldAccelerate,
+    TextureFactoryIdentifier* aTextureFactoryIdentifier) {
+  MOZ_ASSERT(mForwarder);
+  MOZ_ASSERT(aTextureFactoryIdentifier);
+
+  nsTArray<LayersBackend> backendHints;
+  gfxPlatform::GetPlatform()->GetCompositorBackends(aShouldAccelerate,
+                                                    backendHints);
+  if (backendHints.IsEmpty()) {
+    gfxCriticalNote << "Failed to get backend hints.";
+    return false;
+  }
+
+  PLayerTransactionChild* shadowManager =
+      aCBChild->SendPLayerTransactionConstructor(backendHints, LayersId{0});
+
+  TextureFactoryIdentifier textureFactoryIdentifier;
+  shadowManager->SendGetTextureFactoryIdentifier(&textureFactoryIdentifier);
+  if (textureFactoryIdentifier.mParentBackend == LayersBackend::LAYERS_NONE) {
+    gfxCriticalNote << "Failed to create an OMT compositor.";
+    return false;
+  }
+
+  mForwarder->SetShadowManager(shadowManager);
+  UpdateTextureFactoryIdentifier(textureFactoryIdentifier);
+  *aTextureFactoryIdentifier = textureFactoryIdentifier;
+  return true;
 }
 
 void ClientLayerManager::Destroy() {

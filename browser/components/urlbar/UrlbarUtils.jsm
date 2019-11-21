@@ -128,6 +128,13 @@ var UrlbarUtils = {
   // much time building text runs.
   MAX_TEXT_LENGTH: 255,
 
+  // Whether a result should be highlighted up to the point the user has typed
+  // or after that point.
+  HIGHLIGHT: {
+    TYPED: 1,
+    SUGGESTED: 2,
+  },
+
   // Search results with keywords and empty queries are called "keyword offers".
   // When the user selects a keyword offer, the keyword followed by a space is
   // put in the input as a hint that the user can search using the keyword.
@@ -146,6 +153,10 @@ var UrlbarUtils = {
   // character that no title would ever have.  We use \x1F, the non-printable
   // unit separator.
   TITLE_TAGS_SEPARATOR: "\x1F",
+
+  // Regex matching single words (no spaces, dots or url-like chars).
+  // We accept a trailing dot though.
+  REGEXP_SINGLE_WORD: /^[^\s.?@:/]+\.?$/,
 
   /**
    * Adds a url to history as long as it isn't in a private browsing window,
@@ -263,6 +274,8 @@ var UrlbarUtils = {
    *
    * @param {array} tokens The tokens to search for.
    * @param {string} str The string to match against.
+   * @param {boolean} highlightType If HIGHLIGHT.SUGGESTED, return a list of all
+   *   the token string non-matches. Otherwise, return matches.
    * @returns {array} An array: [
    *            [matchIndex_0, matchLength_0],
    *            [matchIndex_1, matchLength_1],
@@ -271,19 +284,25 @@ var UrlbarUtils = {
    *          ].
    *          The array is sorted by match indexes ascending.
    */
-  getTokenMatches(tokens, str) {
+  getTokenMatches(tokens, str, highlightType) {
     str = str.toLocaleLowerCase();
     // To generate non-overlapping ranges, we start from a 0-filled array with
     // the same length of the string, and use it as a collision marker, setting
     // 1 where a token matches.
-    let hits = new Array(str.length).fill(0);
+    let hits = new Array(str.length).fill(
+      highlightType == this.HIGHLIGHT.SUGGESTED ? 1 : 0
+    );
     for (let { lowerCaseValue } of tokens) {
       // Ideally we should never hit the empty token case, but just in case
       // the `needle` check protects us from an infinite loop.
       for (let index = 0, needle = lowerCaseValue; index >= 0 && needle; ) {
         index = str.indexOf(needle, index);
         if (index >= 0) {
-          hits.fill(1, index, index + needle.length);
+          hits.fill(
+            highlightType == this.HIGHLIGHT.SUGGESTED ? 0 : 1,
+            index,
+            index + needle.length
+          );
           index += needle.length;
         }
       }
@@ -443,10 +462,29 @@ var UrlbarUtils = {
         event.inputType == "insertFromYank")
     );
   },
+
+  /**
+   * Given a string, checks if it looks like a single word host, not containing
+   * spaces nor dots (apart from a possible trailing one).
+   * @note This matching should stay in sync with the related code in
+   * nsDefaultURIFixup::KeywordURIFixup
+   * @param {string} value
+   * @returns {boolean} Whether the value looks like a single word host.
+   */
+  looksLikeSingleWordHost(value) {
+    let str = value.trim();
+    return this.REGEXP_SINGLE_WORD.test(str);
+  },
 };
 
 XPCOMUtils.defineLazyGetter(UrlbarUtils.ICON, "DEFAULT", () => {
   return PlacesUtils.favicons.defaultFavicon.spec;
+});
+
+XPCOMUtils.defineLazyGetter(UrlbarUtils, "strings", () => {
+  return Services.strings.createBundle(
+    "chrome://global/locale/autocomplete.properties"
+  );
 });
 
 /**

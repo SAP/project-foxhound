@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,6 +10,13 @@ loader.lazyRequireGetter(
   this,
   "escapeCSSComment",
   "devtools/shared/css/parsing-utils",
+  true
+);
+
+loader.lazyRequireGetter(
+  this,
+  "hasCSSVariable",
+  "devtools/client/inspector/rules/utils/utils",
   true
 );
 
@@ -272,6 +277,18 @@ class TextProperty {
     }
 
     return this.rule.domRule.declarations[selfIndex].isNameValid;
+  }
+
+  /**
+   * Returns true if the property value is a CSS variables and contains the given variable
+   * name, and false otherwise.
+   *
+   * @param {String}
+   *        CSS variable name (e.g. "--color")
+   * @return {Boolean}
+   */
+  hasCSSVariable(name) {
+    return hasCSSVariable(this.value, name);
   }
 }
 

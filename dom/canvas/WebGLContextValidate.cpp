@@ -12,7 +12,7 @@
 #include "jsfriendapi.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "nsIObserverService.h"
 #include "nsPrintfCString.h"
 #include "WebGLActiveInfo.h"
@@ -468,7 +468,12 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
 
   ////////////////
 
-  gl->fGetFloatv(LOCAL_GL_ALIASED_LINE_WIDTH_RANGE, mGLAliasedLineWidthRange);
+  if (gl->IsCoreProfile()) {
+    mGLAliasedLineWidthRange[0] = 1.0f;
+    mGLAliasedLineWidthRange[1] = 1.0f;
+  } else {
+    gl->fGetFloatv(LOCAL_GL_ALIASED_LINE_WIDTH_RANGE, mGLAliasedLineWidthRange);
+  }
 
   const GLenum driverPName = gl->IsCoreProfile()
                                  ? LOCAL_GL_POINT_SIZE_RANGE

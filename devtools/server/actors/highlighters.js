@@ -114,8 +114,6 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
     this._highlighterEnv = new HighlighterEnvironment();
     this._highlighterEnv.initFromTargetActor(this._targetActor);
 
-    this._highlighterReady = this._highlighterReady.bind(this);
-    this._highlighterHidden = this._highlighterHidden.bind(this);
     this._onNavigate = this._onNavigate.bind(this);
 
     const doc = this._targetActor.window.document;
@@ -148,8 +146,6 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
         this._highlighterEnv,
         this._inspector
       );
-      this._highlighter.on("ready", this._highlighterReady);
-      this._highlighter.on("hide", this._highlighterHidden);
     } else {
       this._highlighter = new SimpleOutlineHighlighter(this._highlighterEnv);
     }
@@ -157,10 +153,6 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
 
   _destroyHighlighter: function() {
     if (this._highlighter) {
-      if (!this._isPreviousWindowXUL) {
-        this._highlighter.off("ready", this._highlighterReady);
-        this._highlighter.off("hide", this._highlighterHidden);
-      }
       this._highlighter.destroy();
       this._highlighter = null;
     }
@@ -257,6 +249,10 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
   _currentNode: null,
 
   pick: function() {
+    if (this._targetActor.threadActor) {
+      this._targetActor.threadActor.hideOverlay();
+    }
+
     if (this._isPicking) {
       return null;
     }
@@ -372,9 +368,11 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
           this._walker.emit("picker-node-canceled");
           return;
         case event.DOM_VK_C:
+          const { altKey, ctrlKey, metaKey, shiftKey } = event;
+
           if (
-            (IS_OSX && event.metaKey && event.altKey) ||
-            (!IS_OSX && event.ctrlKey && event.shiftKey)
+            (IS_OSX && metaKey && altKey | shiftKey) ||
+            (!IS_OSX && ctrlKey && shiftKey)
           ) {
             this.cancelPick();
             this._walker.emit("picker-node-canceled");
@@ -475,15 +473,11 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
     this._setSuppressedEventListener(null);
   },
 
-  _highlighterReady: function() {
-    this._inspector.walker.emit("highlighter-ready");
-  },
-
-  _highlighterHidden: function() {
-    this._inspector.walker.emit("highlighter-hide");
-  },
-
   cancelPick: function() {
+    if (this._targetActor.threadActor) {
+      this._targetActor.threadActor.showOverlay();
+    }
+
     if (this._isPicking) {
       this._highlighter.hide();
       this._stopPickerListeners();

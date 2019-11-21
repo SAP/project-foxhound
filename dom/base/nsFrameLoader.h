@@ -128,9 +128,20 @@ class nsFrameLoader final : public nsStubMutationObserver,
   GetBrowserChildMessageManager() const {
     return mChildMessageManager;
   }
-  nsresult CreateStaticClone(nsFrameLoader* aDest);
   nsresult UpdatePositionAndSize(nsSubDocumentFrame* aIFrame);
   void SendIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+
+  // When creating a nsFrameLoader which is a static clone, two methods are
+  // called at different stages. The `CreateStaticClone` method is first called
+  // on the source nsFrameLoader, passing in the destination frameLoader as the
+  // `aDest` argument. This is done during the static clone operation on the
+  // original document.
+  //
+  // After the original document's clone is complete, the `FinishStaticClone`
+  // method is called on the target nsFrameLoader, which clones the inner
+  // document of the source nsFrameLoader.
+  nsresult CreateStaticClone(nsFrameLoader* aDest);
+  nsresult FinishStaticClone();
 
   // WebIDL methods
 
@@ -197,13 +208,11 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   bool RequestTabStateFlush(uint32_t aFlushId, bool aIsFinal = false);
 
+  void RequestEpochUpdate(uint32_t aEpoch);
+
   void Print(uint64_t aOuterWindowID, nsIPrintSettings* aPrintSettings,
              nsIWebProgressListener* aProgressListener,
              mozilla::ErrorResult& aRv);
-
-  already_AddRefed<mozilla::dom::Promise> DrawSnapshot(
-      double aX, double aY, double aW, double aH, double aScale,
-      const nsAString& aBackgroundColor, mozilla::ErrorResult& aRv);
 
   void StartPersistence(uint64_t aOuterWindowID,
                         nsIWebBrowserPersistDocumentReceiver* aRecv,
@@ -408,15 +417,6 @@ class nsFrameLoader final : public nsStubMutationObserver,
   bool ShouldUseRemoteProcess();
 
   /**
-   * Is this a frame loader for an isolated <iframe mozbrowser>?
-   *
-   * By default, mozbrowser frames are isolated.  Isolation can be disabled by
-   * setting the frame's noisolation attribute.  Disabling isolation is
-   * only allowed if the containing document is chrome.
-   */
-  bool OwnerIsIsolatedMozBrowserFrame();
-
-  /**
    * Get our owning element's app manifest URL, or return the empty string if
    * our owning element doesn't have an app manifest URL.
    */
@@ -496,6 +496,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // enables us to detect whether the frame has moved documents during
   // a reframe, so that we know not to restore the presentation.
   RefPtr<Document> mContainerDocWhileDetached;
+
+  // When performing a static clone, this holds the other nsFrameLoader which
+  // this object is a static clone of.
+  RefPtr<nsFrameLoader> mStaticCloneOf;
 
   // When performing a process switch, this value is used rather than mURIToLoad
   // to identify the process-switching load which should be resumed in the

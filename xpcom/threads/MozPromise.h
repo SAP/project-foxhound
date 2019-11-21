@@ -20,6 +20,10 @@
 #  include "nsTArray.h"
 #  include "nsThreadUtils.h"
 
+#  ifdef MOZ_WIDGET_ANDROID
+#    include "mozilla/jni/GeckoResultUtils.h"
+#  endif
+
 #  if MOZ_DIAGNOSTIC_ASSERT_ENABLED
 #    define PROMISE_DEBUG
 #  endif
@@ -242,8 +246,8 @@ class MozPromise : public MozPromiseBase {
   class Private;
 
   template <typename ResolveValueType_>
-  static RefPtr<MozPromise> CreateAndResolve(ResolveValueType_&& aResolveValue,
-                                             const char* aResolveSite) {
+  static MOZ_MUST_USE RefPtr<MozPromise> CreateAndResolve(
+      ResolveValueType_&& aResolveValue, const char* aResolveSite) {
     static_assert(IsConvertible<ResolveValueType_, ResolveValueT>::value,
                   "Resolve() argument must be implicitly convertible to "
                   "MozPromise's ResolveValueT");
@@ -254,8 +258,8 @@ class MozPromise : public MozPromiseBase {
   }
 
   template <typename RejectValueType_>
-  static RefPtr<MozPromise> CreateAndReject(RejectValueType_&& aRejectValue,
-                                            const char* aRejectSite) {
+  static MOZ_MUST_USE RefPtr<MozPromise> CreateAndReject(
+      RejectValueType_&& aRejectValue, const char* aRejectSite) {
     static_assert(IsConvertible<RejectValueType_, RejectValueT>::value,
                   "Reject() argument must be implicitly convertible to "
                   "MozPromise's RejectValueT");
@@ -266,7 +270,7 @@ class MozPromise : public MozPromiseBase {
   }
 
   template <typename ResolveOrRejectValueType_>
-  static RefPtr<MozPromise> CreateAndResolveOrReject(
+  static MOZ_MUST_USE RefPtr<MozPromise> CreateAndResolveOrReject(
       ResolveOrRejectValueType_&& aValue, const char* aSite) {
     RefPtr<typename MozPromise::Private> p = new MozPromise::Private(aSite);
     p->ResolveOrReject(std::forward<ResolveOrRejectValueType_>(aValue), aSite);
@@ -326,8 +330,9 @@ class MozPromise : public MozPromiseBase {
   };
 
  public:
-  static RefPtr<AllPromiseType> All(nsISerialEventTarget* aProcessingTarget,
-                                    nsTArray<RefPtr<MozPromise>>& aPromises) {
+  static MOZ_MUST_USE RefPtr<AllPromiseType> All(
+      nsISerialEventTarget* aProcessingTarget,
+      nsTArray<RefPtr<MozPromise>>& aPromises) {
     if (aPromises.Length() == 0) {
       return AllPromiseType::CreateAndResolve(nsTArray<ResolveValueType>(),
                                               __func__);
@@ -933,6 +938,21 @@ class MozPromise : public MozPromiseBase {
       mChainedPromises.AppendElement(chainedPromise);
     }
   }
+
+#  ifdef MOZ_WIDGET_ANDROID
+  // Creates a C++ MozPromise from its Java counterpart, GeckoResult.
+  static MOZ_MUST_USE RefPtr<MozPromise> FromGeckoResult(
+      java::GeckoResult::Param aGeckoResult) {
+    using jni::GeckoResultCallback;
+    RefPtr<Private> p = new Private("GeckoResult Glue", false);
+    auto resolve = GeckoResultCallback::CreateAndAttach<ResolveValueType>(
+        [p](ResolveValueType aArg) { p->Resolve(aArg, __func__); });
+    auto reject = GeckoResultCallback::CreateAndAttach<RejectValueType>(
+        [p](RejectValueType aArg) { p->Reject(aArg, __func__); });
+    aGeckoResult->NativeThen(resolve, reject);
+    return p;
+  }
+#  endif
 
   // Note we expose the function AssertIsDead() instead of IsDead() since
   // checking IsDead() is a data race in the situation where the request is not

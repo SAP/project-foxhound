@@ -4,11 +4,8 @@
 
 "use strict";
 
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-const { BaseAction } = ChromeUtils.import(
-  "resource://normandy/actions/BaseAction.jsm"
+const { BaseStudyAction } = ChromeUtils.import(
+  "resource://normandy/actions/BaseStudyAction.jsm"
 );
 ChromeUtils.defineModuleGetter(
   this,
@@ -30,13 +27,6 @@ ChromeUtils.defineModuleGetter(
   "PreferenceExperiments",
   "resource://normandy/lib/PreferenceExperiments.jsm"
 );
-const SHIELD_OPT_OUT_PREF = "app.shield.optoutstudies.enabled";
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "shieldOptOutPref",
-  SHIELD_OPT_OUT_PREF,
-  false
-);
 
 var EXPORTED_SYMBOLS = ["PreferenceExperimentAction"];
 
@@ -45,23 +35,14 @@ var EXPORTED_SYMBOLS = ["PreferenceExperimentAction"];
  * user to an experiment branch and modify a preference temporarily to
  * measure how it affects Firefox via Telemetry.
  */
-class PreferenceExperimentAction extends BaseAction {
+class PreferenceExperimentAction extends BaseStudyAction {
   get schema() {
-    return ActionSchemas["multiple-preference-experiment"];
+    return ActionSchemas["multi-preference-experiment"];
   }
 
   constructor() {
     super();
-    this.seenExperimentNames = [];
-  }
-
-  _preExecution() {
-    if (!shieldOptOutPref) {
-      this.log.info(
-        "User has opted out of preference experiments. Disabling this action."
-      );
-      this.disable();
-    }
+    this.seenExperimentSlugs = [];
   }
 
   async _run(recipe) {
@@ -74,7 +55,7 @@ class PreferenceExperimentAction extends BaseAction {
       userFacingDescription,
     } = recipe.arguments;
 
-    this.seenExperimentNames.push(slug);
+    this.seenExperimentSlugs.push(slug);
 
     // If we're not in the experiment, enroll!
     const hasSlug = await PreferenceExperiments.has(slug);
@@ -108,7 +89,7 @@ class PreferenceExperimentAction extends BaseAction {
       const branch = await this.chooseBranch(slug, branches);
       const experimentType = isHighPopulation ? "exp-highpop" : "exp";
       await PreferenceExperiments.start({
-        name: slug,
+        slug,
         actionName: this.name,
         branch: branch.slug,
         preferences: branch.preferences,
@@ -159,15 +140,15 @@ class PreferenceExperimentAction extends BaseAction {
           return null;
         }
 
-        if (this.seenExperimentNames.includes(experiment.name)) {
+        if (this.seenExperimentSlugs.includes(experiment.slug)) {
           return null;
         }
 
-        return PreferenceExperiments.stop(experiment.name, {
+        return PreferenceExperiments.stop(experiment.slug, {
           resetValue: true,
           reason: "recipe-not-seen",
         }).catch(e => {
-          this.log.warn(`Stopping experiment ${experiment.name} failed: ${e}`);
+          this.log.warn(`Stopping experiment ${experiment.slug} failed: ${e}`);
         });
       })
     );

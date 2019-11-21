@@ -28,11 +28,6 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/addon/addons",
   },
   {
-    types: ["webExtension"],
-    spec: "devtools/shared/specs/addon/webextension",
-    front: null,
-  },
-  {
     types: ["webExtensionInspectedWindow"],
     spec: "devtools/shared/specs/addon/webextension-inspected-window",
     front: "devtools/shared/fronts/addon/webextension-inspected-window",
@@ -56,6 +51,21 @@ const Types = (exports.__TypesForTests = [
     types: ["cssProperties"],
     spec: "devtools/shared/specs/css-properties",
     front: "devtools/shared/fronts/css-properties",
+  },
+  {
+    types: ["frameDescriptor"],
+    spec: "devtools/shared/specs/descriptors/frame",
+    front: "devtools/shared/fronts/descriptors/frame",
+  },
+  {
+    types: ["processDescriptor"],
+    spec: "devtools/shared/specs/descriptors/process",
+    front: "devtools/shared/fronts/descriptors/process",
+  },
+  {
+    types: ["webExtensionDescriptor"],
+    spec: "devtools/shared/specs/descriptors/webextension",
+    front: "devtools/shared/fronts/descriptors/webextension",
   },
   {
     types: ["device"],
@@ -104,6 +114,11 @@ const Types = (exports.__TypesForTests = [
     types: ["flexbox", "grid", "layout"],
     spec: "devtools/shared/specs/layout",
     front: "devtools/shared/fronts/layout",
+  },
+  {
+    types: ["manifest"],
+    spec: "devtools/shared/specs/manifest",
+    front: "devtools/shared/fronts/manifest",
   },
   {
     types: ["memory"],
@@ -260,9 +275,9 @@ const Types = (exports.__TypesForTests = [
     front: "devtools/shared/fronts/targets/worker",
   },
   {
-    types: ["context"],
+    types: ["thread"],
     spec: "devtools/shared/specs/thread",
-    front: "devtools/shared/client/thread-client",
+    front: "devtools/shared/fronts/thread",
   },
   {
     types: ["console"],

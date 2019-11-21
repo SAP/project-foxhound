@@ -9,8 +9,8 @@
 
 /*
  * Worker debugger script that listens for requests to start a `DebuggerServer` for a
- * worker in a process.  Loaded into a specific worker during
- * `DebuggerServer.connectToWorker` which is called from the same process as the worker.
+ * worker in a process.  Loaded into a specific worker during worker-connector.js'
+ * `connectToWorker` which is called from the same process as the worker.
  */
 
 // This function is used to do remote procedure calls from the worker to the
@@ -37,12 +37,13 @@ this.rpc = function(method, ...params) {
 loadSubScript("resource://devtools/shared/worker/loader.js");
 
 var defer = worker.require("devtools/shared/defer");
+var EventEmitter = worker.require("devtools/shared/event-emitter");
 var { ActorPool } = worker.require("devtools/server/actors/common");
 var { ThreadActor } = worker.require("devtools/server/actors/thread");
 var { WebConsoleActor } = worker.require("devtools/server/actors/webconsole");
 var { TabSources } = worker.require("devtools/server/actors/utils/TabSources");
 var makeDebugger = worker.require("devtools/server/actors/utils/make-debugger");
-var { DebuggerServer } = worker.require("devtools/server/main");
+var { DebuggerServer } = worker.require("devtools/server/debugger-server");
 
 DebuggerServer.init();
 DebuggerServer.createRootActor = function() {
@@ -96,6 +97,8 @@ this.addEventListener("message", function(event) {
           postMessage(JSON.stringify({ type: "attached" }));
         },
       };
+
+      EventEmitter.decorate(parent);
 
       const threadActor = new ThreadActor(parent, global);
       pool.addActor(threadActor);

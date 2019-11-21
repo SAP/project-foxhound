@@ -247,7 +247,9 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuth) {
                       capture_certificate->buffer().data(),
                       capture_cert_req->buffer().len()));
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert1.get());
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert2.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
 }
 
@@ -289,7 +291,9 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthMultiple) {
   server_->ReadBytes(50);
   EXPECT_EQ(1U, called);
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert1.get());
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert2.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
   // Send 2nd CertificateRequest.
   EXPECT_EQ(SECSuccess, SSL_GetClientAuthDataHook(
@@ -302,7 +306,9 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthMultiple) {
   server_->ReadBytes(50);
   EXPECT_EQ(2U, called);
   ScopedCERTCertificate cert3(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert3.get());
   ScopedCERTCertificate cert4(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert4.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert3->derCert, &cert4->derCert));
   EXPECT_FALSE(SECITEM_ItemsAreEqual(&cert3->derCert, &cert1->derCert));
 }
@@ -383,7 +389,9 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterClientAuth) {
   Connect();
   EXPECT_EQ(1U, called);
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert1.get());
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert2.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
   // Send CertificateRequest.
   EXPECT_EQ(SECSuccess, SSL_GetClientAuthDataHook(
@@ -396,7 +404,9 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthAfterClientAuth) {
   server_->ReadBytes(50);
   EXPECT_EQ(2U, called);
   ScopedCERTCertificate cert3(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert3.get());
   ScopedCERTCertificate cert4(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert4.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert3->derCert, &cert4->derCert));
   EXPECT_FALSE(SECITEM_ItemsAreEqual(&cert3->derCert, &cert1->derCert));
 }
@@ -567,18 +577,33 @@ TEST_F(TlsConnectStreamTls13, PostHandshakeAuthWithSessionTicketsEnabled) {
   server_->ReadBytes(50);
   EXPECT_EQ(1U, called);
   ScopedCERTCertificate cert1(SSL_PeerCertificate(server_->ssl_fd()));
+  ASSERT_NE(nullptr, cert1.get());
   ScopedCERTCertificate cert2(SSL_LocalCertificate(client_->ssl_fd()));
+  ASSERT_NE(nullptr, cert2.get());
   EXPECT_TRUE(SECITEM_ItemsAreEqual(&cert1->derCert, &cert2->derCert));
 }
 
-// In TLS 1.3, the client sends its cert rejection on the
-// second flight, and since it has already received the
-// server's Finished, it transitions to complete and
-// then gets an alert from the server. The test harness
-// doesn't handle this right yet.
-TEST_P(TlsConnectStream, DISABLED_ClientAuthRequiredRejected) {
+TEST_P(TlsConnectGenericPre13, ClientAuthRequiredRejected) {
   server_->RequestClientAuth(true);
-  ConnectExpectFail();
+  ConnectExpectAlert(server_, kTlsAlertBadCertificate);
+  client_->CheckErrorCode(SSL_ERROR_BAD_CERT_ALERT);
+  server_->CheckErrorCode(SSL_ERROR_NO_CERTIFICATE);
+}
+
+// In TLS 1.3, the client will claim that the connection is done and then
+// receive the alert afterwards.  So drive the handshake manually.
+TEST_P(TlsConnectTls13, ClientAuthRequiredRejected) {
+  server_->RequestClientAuth(true);
+  StartConnect();
+  client_->Handshake();  // CH
+  server_->Handshake();  // SH.. (no resumption)
+  client_->Handshake();  // Next message
+  ASSERT_EQ(TlsAgent::STATE_CONNECTED, client_->state());
+  ExpectAlert(server_, kTlsAlertCertificateRequired);
+  server_->Handshake();  // Alert
+  server_->CheckErrorCode(SSL_ERROR_NO_CERTIFICATE);
+  client_->Handshake();  // Receive Alert
+  client_->CheckErrorCode(SSL_ERROR_RX_CERTIFICATE_REQUIRED_ALERT);
 }
 
 TEST_P(TlsConnectGeneric, ClientAuthRequestedRejected) {
@@ -614,7 +639,9 @@ static void CheckSigScheme(std::shared_ptr<TlsHandshakeRecorder>& capture,
   EXPECT_EQ(expected_scheme, static_cast<uint16_t>(scheme));
 
   ScopedCERTCertificate remote_cert(SSL_PeerCertificate(peer->ssl_fd()));
+  ASSERT_NE(nullptr, remote_cert.get());
   ScopedSECKEYPublicKey remote_key(CERT_ExtractPublicKey(remote_cert.get()));
+  ASSERT_NE(nullptr, remote_key.get());
   EXPECT_EQ(expected_size, SECKEY_PublicKeyStrengthInBits(remote_key.get()));
 }
 

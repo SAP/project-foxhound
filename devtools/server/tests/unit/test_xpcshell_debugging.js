@@ -7,6 +7,12 @@
 // Test the xpcshell-test debug support.  Ideally we should have this test
 // next to the xpcshell support code, but that's tricky...
 
+// HACK: ServiceWorkerManager requires the "profile-change-teardown" to cleanly
+// shutdown, and setting _profileInitialized to `true` will trigger those
+// notifications (see /testing/xpcshell/head.js).
+// eslint-disable-next-line no-undef
+_profileInitialized = true;
+
 add_task(async function() {
   const testFile = do_get_file("xpcshell_debugging_script.js");
 
@@ -31,30 +37,30 @@ add_task(async function() {
 
   // Even though we have no tabs, getMainProcess gives us the chrome debugger.
   const front = await client.mainRoot.getMainProcess();
-  const [, threadClient] = await front.attachThread();
+  const [, threadFront] = await front.attachThread();
   const onResumed = new Promise(resolve => {
-    threadClient.once("paused", packet => {
+    threadFront.once("paused", packet => {
       equal(
         packet.why.type,
         "breakpoint",
         "yay - hit the breakpoint at the first line in our script"
       );
       // Resume again - next stop should be our "debugger" statement.
-      threadClient.once("paused", packet => {
+      threadFront.once("paused", packet => {
         equal(
           packet.why.type,
           "debuggerStatement",
           "yay - hit the 'debugger' statement in our script"
         );
-        threadClient.resume().then(resolve);
+        threadFront.resume().then(resolve);
       });
-      threadClient.resume();
+      threadFront.resume();
     });
   });
 
   // tell the thread to do the initial resume.  This would cause the
   // xpcshell test harness to resume and load the file under test.
-  threadClient.resume().then(() => {
+  threadFront.resume().then(() => {
     // should have been told to resume the test itself.
     ok(testResumed);
     // Now load our test script.

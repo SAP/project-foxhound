@@ -11,15 +11,12 @@ geckoview-junit:
     e10s: true
     target: geckoview-androidTest.apk
     max-run-time: 3600
-    tier:
-        by-test-platform:
-            android-em-7.*: 3
-            default: default
+    tier: default
     chunks:
         by-test-platform:
-            android-em-4.3-arm7-api-16-ccov/debug: 8
-            android-em-4.3-arm7-api-16.*\/debug: 8
-            android-em-4.*\/(?:opt|pgo)?: 3
+            android-em-4.3-arm7-api-16-ccov/debug: 12
+            android-em-4.3-arm7-api-16.*\/debug: 12
+            android-em-4.*\/(?:opt|pgo)?: 7
             default: 1
     run-on-projects:
         by-test-platform:
@@ -99,6 +96,10 @@ test-verify:
             macosx.*64(?:-qr)?/opt: ['mozilla-central', 'try']
             # do not run on beta or release: usually just confirms earlier results
             default: ['trunk', 'try']
+    target:
+        by-test-platform:
+            android-em-7.*: geckoview-androidTest.apk
+            default: null
     tier: 2
     mozharness:
         script:

@@ -7,7 +7,7 @@
 #include "SimpleVelocityTracker.h"
 
 #include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPtr.h"  // for StaticAutoPtr
 
 #define SVT_LOG(...)
@@ -103,7 +103,8 @@ void SimpleVelocityTracker::Clear() { mVelocityQueue.Clear(); }
 void SimpleVelocityTracker::AddVelocityToQueue(uint32_t aTimestampMs,
                                                float aVelocity) {
   mVelocityQueue.AppendElement(std::make_pair(aTimestampMs, aVelocity));
-  if (mVelocityQueue.Length() > StaticPrefs::apz_max_velocity_queue_size()) {
+  if (mVelocityQueue.Length() >
+      StaticPrefs::apz_max_velocity_queue_size_AtStartup()) {
     mVelocityQueue.RemoveElementAt(0);
   }
 }

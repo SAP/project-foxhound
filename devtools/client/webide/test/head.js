@@ -12,7 +12,7 @@ const { gDevTools } = require("devtools/client/framework/devtools");
 var Services = require("Services");
 const { AppProjects } = require("devtools/client/webide/modules/app-projects");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 
 var TEST_BASE;
 if (window.location === AppConstants.BROWSER_CHROME_URL) {
@@ -47,19 +47,14 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.webide.busyTimeout");
   Services.prefs.clearUserPref("devtools.webide.lastSelectedProject");
   Services.prefs.clearUserPref("devtools.webide.lastConnectedRuntime");
-  Services.prefs.clearUserPref("devtools.aboutdebugging.new-enabled");
 });
 
-var openWebIDE = async function({ autoInstallAddons, newAboutDebugging } = {}) {
+var openWebIDE = async function({ autoInstallAddons } = {}) {
   info("opening WebIDE");
 
   Services.prefs.setBoolPref(
     "devtools.webide.autoinstallADBExtension",
     !!autoInstallAddons
-  );
-  Services.prefs.setBoolPref(
-    "devtools.aboutdebugging.new-enabled",
-    !!newAboutDebugging
   );
 
   const win = Services.ww.openWindow(

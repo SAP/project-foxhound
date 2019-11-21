@@ -12,6 +12,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/Preferences.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/net/TimingStruct.h"
 
@@ -74,17 +75,6 @@ class ProfilerMarkerPayload {
                          const mozilla::TimeStamp& aProcessStartTime,
                          UniqueStacks& aUniqueStacks);
 
-  void SetStack(UniqueProfilerBacktrace aStack) { mStack = std::move(aStack); }
-
-  void SetDocShellHistoryId(
-      const mozilla::Maybe<uint32_t>& aDocShellHistoryId) {
-    mDocShellHistoryId = aDocShellHistoryId;
-  }
-
-  void SetDocShellId(const mozilla::Maybe<nsID>& aDocShellId) {
-    mDocShellId = aDocShellId;
-  }
-
  private:
   mozilla::TimeStamp mStartTime;
   mozilla::TimeStamp mEndTime;
@@ -107,13 +97,10 @@ class TracingMarkerPayload : public ProfilerMarkerPayload {
       const mozilla::Maybe<nsID>& aDocShellId = mozilla::Nothing(),
       const mozilla::Maybe<uint32_t>& aDocShellHistoryId = mozilla::Nothing(),
       UniqueProfilerBacktrace aCause = nullptr)
-      : mCategory(aCategory), mKind(aKind) {
-    if (aCause) {
-      SetStack(std::move(aCause));
-    }
-    SetDocShellId(aDocShellId);
-    SetDocShellHistoryId(aDocShellHistoryId);
-  }
+      : ProfilerMarkerPayload(aDocShellId, aDocShellHistoryId,
+                              std::move(aCause)),
+        mCategory(aCategory),
+        mKind(aKind) {}
 
   DECL_STREAM_PAYLOAD
 
@@ -161,6 +148,35 @@ class DOMEventMarkerPayload : public TracingMarkerPayload {
  private:
   mozilla::TimeStamp mTimeStamp;
   nsString mEventType;
+};
+
+class PrefMarkerPayload : public ProfilerMarkerPayload {
+ public:
+  PrefMarkerPayload(const char* aPrefName,
+                    const mozilla::Maybe<mozilla::PrefValueKind>& aPrefKind,
+                    const mozilla::Maybe<mozilla::PrefType>& aPrefType,
+                    const nsCString& aPrefValue,
+                    const mozilla::TimeStamp& aPrefAccessTime)
+      : ProfilerMarkerPayload(aPrefAccessTime, aPrefAccessTime),
+        mPrefAccessTime(aPrefAccessTime),
+        mPrefName(aPrefName),
+        mPrefKind(aPrefKind),
+        mPrefType(aPrefType),
+        mPrefValue(aPrefValue) {}
+
+  DECL_STREAM_PAYLOAD
+
+ private:
+  mozilla::TimeStamp mPrefAccessTime;
+  nsCString mPrefName;
+  // Nothing means this is a shared preference. Something, on the other hand,
+  // holds an actual PrefValueKind indicating either a Default or User
+  // preference.
+  mozilla::Maybe<mozilla::PrefValueKind> mPrefKind;
+  // Nothing means that the mPrefName preference was not found. Something
+  // contains the type of the preference.
+  mozilla::Maybe<mozilla::PrefType> mPrefType;
+  nsCString mPrefValue;
 };
 
 class UserTimingMarkerPayload : public ProfilerMarkerPayload {
@@ -344,12 +360,8 @@ class StyleMarkerPayload : public ProfilerMarkerPayload {
                      const mozilla::Maybe<nsID>& aDocShellId,
                      const mozilla::Maybe<uint32_t>& aDocShellHistoryId)
       : ProfilerMarkerPayload(aStartTime, aEndTime, aDocShellId,
-                              aDocShellHistoryId),
-        mStats(aStats) {
-    if (aCause) {
-      SetStack(std::move(aCause));
-    }
-  }
+                              aDocShellHistoryId, std::move(aCause)),
+        mStats(aStats) {}
 
   DECL_STREAM_PAYLOAD
 
@@ -429,8 +441,6 @@ class JsAllocationMarkerPayload : public ProfilerMarkerPayload {
         mDescriptiveTypeName(aInfo.descriptiveTypeName
                                  ? NS_xstrdup(aInfo.descriptiveTypeName)
                                  : nullptr),
-        mScriptFilename(aInfo.scriptFilename ? strdup(aInfo.scriptFilename)
-                                             : nullptr),
         // The coarseType points to a string literal, so does not need to be
         // duplicated.
         mCoarseType(aInfo.coarseType),
@@ -443,7 +453,6 @@ class JsAllocationMarkerPayload : public ProfilerMarkerPayload {
   mozilla::UniqueFreePtr<const char16_t> mTypeName;
   mozilla::UniqueFreePtr<const char> mClassName;
   mozilla::UniqueFreePtr<const char16_t> mDescriptiveTypeName;
-  mozilla::UniqueFreePtr<const char> mScriptFilename;
   // Points to a string literal, so does not need to be freed.
   const char* mCoarseType;
 

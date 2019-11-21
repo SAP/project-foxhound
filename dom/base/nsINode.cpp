@@ -37,7 +37,7 @@
 #include "mozilla/dom/SVGUseElement.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/L10nOverlays.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsAttrValueOrString.h"
 #include "nsBindingManager.h"
 #include "nsCCUncollectableMarker.h"
@@ -67,7 +67,6 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIDOMEventListener.h"
 #include "nsIFrameInlines.h"
-#include "nsILinkHandler.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/NodeInfoInlines.h"
 #include "nsIScriptError.h"
@@ -117,6 +116,40 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+
+bool nsINode::IsInclusiveDescendantOf(const nsINode* aNode) const {
+  MOZ_ASSERT(aNode, "The node is nullptr.");
+
+  const nsINode* node = this;
+  do {
+    if (node == aNode) {
+      return true;
+    }
+    node = node->GetParentNode();
+  } while (node);
+
+  return false;
+}
+
+bool nsINode::IsShadowIncludingInclusiveDescendantOf(
+    const nsINode* aNode) const {
+  MOZ_ASSERT(aNode, "The node is nullptr.");
+
+  if (this->GetComposedDoc() == aNode) {
+    return true;
+  }
+
+  const nsINode* node = this;
+  do {
+    if (node == aNode) {
+      return true;
+    }
+
+    node = node->GetParentOrShadowHostNode();
+  } while (node);
+
+  return false;
+}
 
 nsINode::nsSlots::nsSlots() : mWeakReference(nullptr) {}
 
@@ -248,7 +281,7 @@ nsINode* nsINode::GetRootNode(const GetRootNodeOptions& aOptions) {
   return SubtreeRoot();
 }
 
-nsINode* nsINode::GetParentOrHostNode() const {
+nsINode* nsINode::GetParentOrShadowHostNode() const {
   if (mParent) {
     return mParent;
   }
@@ -598,7 +631,7 @@ void nsINode::Normalize() {
 }
 
 nsresult nsINode::GetBaseURI(nsAString& aURI) const {
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
+  nsIURI* baseURI = GetBaseURI();
 
   nsAutoCString spec;
   if (baseURI) {
@@ -612,7 +645,7 @@ nsresult nsINode::GetBaseURI(nsAString& aURI) const {
 
 void nsINode::GetBaseURIFromJS(nsAString& aURI, CallerType aCallerType,
                                ErrorResult& aRv) const {
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI(aCallerType == CallerType::System);
+  nsIURI* baseURI = GetBaseURI(aCallerType == CallerType::System);
   nsAutoCString spec;
   if (baseURI) {
     nsresult res = baseURI->GetSpec(spec);
@@ -627,9 +660,7 @@ void nsINode::GetBaseURIFromJS(nsAString& aURI, CallerType aCallerType,
   MarkTaintSource(aURI, "document.baseURI");
 }
 
-already_AddRefed<nsIURI> nsINode::GetBaseURIObject() const {
-  return GetBaseURI(true);
-}
+nsIURI* nsINode::GetBaseURIObject() const { return GetBaseURI(true); }
 
 void nsINode::LookupPrefix(const nsAString& aNamespaceURI, nsAString& aPrefix) {
   Element* element = GetNameSpaceElement();
@@ -2466,7 +2497,7 @@ bool nsINode::Contains(const nsINode* aOther) const {
     return false;
   }
 
-  return nsContentUtils::ContentIsDescendantOf(other, this);
+  return other->IsInclusiveDescendantOf(this);
 }
 
 uint32_t nsINode::Length() const {
@@ -2544,7 +2575,7 @@ inline static Element* FindMatchingElementWithId(
       continue;
     }
 
-    if (!nsContentUtils::ContentIsDescendantOf(element, &aRoot)) {
+    if (!element->IsInclusiveDescendantOf(&aRoot)) {
       continue;
     }
 

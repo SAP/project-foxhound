@@ -4,8 +4,6 @@ add_task(async function() {
   await SpecialPowers.flushPrefEnv();
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.contentblocking.allowlist.annotations.enabled", true],
-      ["browser.contentblocking.allowlist.storage.enabled", true],
       [
         "network.cookie.cookieBehavior",
         Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
@@ -25,7 +23,7 @@ add_task(async function() {
   let browser = gBrowser.getBrowserForTab(tab);
   await BrowserTestUtils.browserLoaded(browser);
 
-  ContentBlocking.disableForCurrentPage();
+  gProtectionsHandler.disableForCurrentPage();
 
   // The previous function reloads the browser, so wait for it to load again!
   await BrowserTestUtils.browserLoaded(browser);
@@ -112,7 +110,7 @@ add_task(async function() {
     expectTrackerFound(originLog[0]);
   }
 
-  ContentBlocking.enableForCurrentPage();
+  gProtectionsHandler.enableForCurrentPage();
 
   // The previous function reloads the browser, so wait for it to load again!
   await BrowserTestUtils.browserLoaded(browser);

@@ -7,7 +7,7 @@ load 231475-1.html
 load 244933-1.html
 load 275912-1.html
 load 293388-1.html
-load 308120-1.xul
+load chrome://reftest/content/crashtests/dom/base/crashtests/308120-1.xul
 load 325730-1.html
 load 326618-1.html
 load 326646-1.html
@@ -53,7 +53,7 @@ load 395469-2.xhtml
 load 399712-1.html
 load 400763-1.html
 load 401993-1.html
-load 404869-1.xul
+load chrome://reftest/content/crashtests/dom/base/crashtests/404869-1.xul
 load 407818.html
 load 410860-1.xml
 load 411882-1.xhtml
@@ -209,9 +209,9 @@ load 1326194-2.html
 load 1332939.html
 load 1341693.html
 load 1352453.html
-load 1353529.xul
+load chrome://reftest/content/crashtests/dom/base/crashtests/1353529.xul
 load 1368327.html
-load 1369363.xul
+load chrome://reftest/content/crashtests/dom/base/crashtests/1369363.xul
 load 1370072.html
 pref(clipboard.autocopy,true) load 1370737.html
 load 1370968.html
@@ -230,7 +230,7 @@ load 1406109-1.html
 load 1411473.html
 load 1413815.html
 load 1419799.html
-skip-if(!browserIsRemote) skip-if(geckoview&&webrender) pref(dom.disable_open_during_load,false) load 1419902.html # skip on non e10s loads, Bug 1419902. Bug 1563013 for GV+WR
+skip-if(!browserIsRemote) skip-if(geckoview&&webrender) skip-if(geckoview&&isDebugBuild) pref(dom.disable_open_during_load,false) load 1419902.html # skip on non e10s loads, Bug 1419902. Bug 1563013 for GV+WR. Bug 1524493 GV+debug.
 load 1422883.html
 load 1428053.html
 load 1441029.html
@@ -246,8 +246,10 @@ load 1508845.html
 load 1516289.html
 load 1516560.html
 load 1528675.html
+load 1566310.html
 load structured_clone_container_throws.html
 load xhr_empty_datauri.html
 load xhr_html_nullresponse.html
 load xhr-with-pagehide-1.html
 pref(layout.css.resizeobserver.enabled,true) load 1555786.html
+load 1577191.html

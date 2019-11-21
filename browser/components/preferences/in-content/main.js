@@ -195,6 +195,12 @@ Preferences.addAll([
   { id: "browser.search.update", type: "bool" },
 
   { id: "privacy.userContext.enabled", type: "bool" },
+
+  // Picture-in-Picture
+  {
+    id: "media.videocontrols.picture-in-picture.video-toggle.enabled",
+    type: "bool",
+  },
 ]);
 
 if (AppConstants.HAVE_SHELL_SERVICE) {
@@ -381,6 +387,20 @@ var gMainPane = {
     for (const id of ["cfrLearnMore", "cfrFeaturesLearnMore"]) {
       let link = document.getElementById(id);
       link.setAttribute("href", cfrLearnMoreUrl);
+    }
+
+    if (
+      Services.prefs.getBoolPref(
+        "media.videocontrols.picture-in-picture.enabled"
+      )
+    ) {
+      document.getElementById("pictureInPictureBox").hidden = false;
+
+      let pipLearnMoreUrl =
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "picture-in-picture";
+      let link = document.getElementById("pictureInPictureLearnMore");
+      link.setAttribute("href", pipLearnMoreUrl);
     }
 
     if (AppConstants.platform == "win") {
@@ -690,6 +710,43 @@ var gMainPane = {
 
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "main-pane-loaded");
+
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("defaultFont"),
+      element => FontBuilder.readFontSelection(element)
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("translate"),
+      () =>
+        this.updateButtons(
+          "translateButton",
+          "browser.translation.detectLanguage"
+        )
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("checkSpelling"),
+      () => this.readCheckSpelling()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("checkSpelling"),
+      () => this.writeCheckSpelling()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("saveWhere"),
+      () => this.readUseDownloadDir()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("linkTargeting"),
+      () => this.readLinkTarget()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("linkTargeting"),
+      () => this.writeLinkTarget()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("browserContainersCheckbox"),
+      () => this.readBrowserContainersCheckbox()
+    );
 
     this.setInitialized();
   },
@@ -1040,7 +1097,7 @@ var gMainPane = {
     if (value) {
       // We need to restore the blank homepage setting in our other pref
       if (startupPref.value === this.STARTUP_PREF_BLANK) {
-        HomePage.set("about:blank");
+        HomePage.safeSet("about:blank");
       }
       newValue = this.STARTUP_PREF_RESTORE_SESSION;
       let warnOnQuitPref = Preferences.get("browser.sessionstore.warnOnQuit");
@@ -3146,6 +3203,7 @@ class HandlerInfoWrapper {
         if (this instanceof InternalHandlerInfoWrapper) {
           return "ask";
         }
+        break;
 
       case kActionUsePlugin:
         return "plugin";
@@ -3164,10 +3222,10 @@ class HandlerInfoWrapper {
         if (gMainPane.isValidHandlerApp(preferredApp)) {
           return gMainPane._getIconURLForHandlerApp(preferredApp);
         }
-      // Explicit fall-through
 
       // This should never happen, but if preferredAction is set to some weird
       // value, then fall back to the generic application icon.
+      // Explicit fall-through
       default:
         return ICON_URL_APP;
     }

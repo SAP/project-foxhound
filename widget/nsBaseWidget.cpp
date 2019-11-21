@@ -51,7 +51,9 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/MouseEvents.h"
 #include "GLConsts.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Unused.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/VsyncDispatcher.h"
@@ -70,6 +72,7 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/Move.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "nsRefPtrHashtable.h"
 #include "TouchEvents.h"
@@ -85,7 +88,6 @@
 #include "gfxConfig.h"
 #include "nsView.h"
 #include "nsViewManager.h"
-#include "mozilla/StaticPrefs.h"
 
 #ifdef DEBUG
 #  include "nsIObserver.h"
@@ -114,10 +116,6 @@ using namespace mozilla::ipc;
 using namespace mozilla::widget;
 using namespace mozilla;
 using base::Thread;
-
-// Global user preference for disabling native theme. Used
-// in NativeWindowTheme.
-bool gDisableNativeTheme = false;
 
 // Async pump timer during injected long touch taps
 #define TOUCH_INJECT_PUMP_TIMER_MSEC 50
@@ -385,14 +383,6 @@ nsBaseWidget::~nsBaseWidget() {
 //
 //-------------------------------------------------------------------------
 void nsBaseWidget::BaseCreate(nsIWidget* aParent, nsWidgetInitData* aInitData) {
-  static bool gDisableNativeThemeCached = false;
-  if (!gDisableNativeThemeCached) {
-    Preferences::AddBoolVarCache(&gDisableNativeTheme,
-                                 "mozilla.widget.disable-native-theme",
-                                 gDisableNativeTheme);
-    gDisableNativeThemeCached = true;
-  }
-
   // keep a reference to the device context
   if (nullptr != aInitData) {
     mWindowType = aInitData->mWindowType;
@@ -528,30 +518,13 @@ nsIWidget* nsBaseWidget::GetSheetWindowParent(void) { return nullptr; }
 float nsBaseWidget::GetDPI() { return 96.0f; }
 
 CSSToLayoutDeviceScale nsIWidget::GetDefaultScale() {
-  double devPixelsPerCSSPixel = DefaultScaleOverride();
+  double devPixelsPerCSSPixel = StaticPrefs::layout_css_devPixelsPerPx();
 
   if (devPixelsPerCSSPixel <= 0.0) {
     devPixelsPerCSSPixel = GetDefaultScaleInternal();
   }
 
   return CSSToLayoutDeviceScale(devPixelsPerCSSPixel);
-}
-
-/* static */
-double nsIWidget::DefaultScaleOverride() {
-  // The number of device pixels per CSS pixel. A value <= 0 means choose
-  // automatically based on the DPI. A positive value is used as-is. This
-  // effectively controls the size of a CSS "px".
-  static float devPixelsPerCSSPixel = -1.0f;
-
-  static bool valueCached = false;
-  if (!valueCached) {
-    Preferences::AddFloatVarCache(&devPixelsPerCSSPixel,
-                                  "layout.css.devPixelsPerPx", -1.0f);
-    valueCached = true;
-  }
-
-  return devPixelsPerCSSPixel;
 }
 
 //-------------------------------------------------------------------------
@@ -893,7 +866,7 @@ void nsBaseWidget::ConfigureAPZCTreeManager() {
       NewRunnableMethod<float>("layers::IAPZCTreeManager::SetDPI", mAPZC,
                                &IAPZCTreeManager::SetDPI, dpi));
 
-  if (StaticPrefs::apz_keyboard_enabled()) {
+  if (StaticPrefs::apz_keyboard_enabled_AtStartup()) {
     KeyboardMap map = nsXBLWindowKeyHandler::CollectKeyboardShortcuts();
     // On Android the main thread is not the controller thread
     APZThreadUtils::RunOnControllerThread(NewRunnableMethod<KeyboardMap>(
@@ -1009,6 +982,15 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
   if (mAPZC && !InputAPZContext::WasRoutedToChildProcess() && aInputBlockId) {
     // EventStateManager did not route the event into the child process.
     // It's safe to communicate to APZ that the event has been processed.
+    // Note that here aGuid.mLayersId might be different from
+    // mCompositorSession->RootLayerTreeId() because the event might have gotten
+    // hit-tested by APZ to be targeted at a child process, but a parent process
+    // event listener called preventDefault on it. In that case aGuid.mLayersId
+    // would still be the layers id for the child process, but the event would
+    // not have actually gotten routed to the child process. The main-thread
+    // hit-test result therefore needs to use the parent process layers id.
+    LayersId rootLayersId = mCompositorSession->RootLayerTreeId();
+
     UniquePtr<DisplayportSetListener> postLayerization;
     if (WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent()) {
       if (touchEvent->mMessage == eTouchStart) {
@@ -1018,7 +1000,7 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
               mSetAllowedTouchBehaviorCallback);
         }
         postLayerization = APZCCallbackHelper::SendSetTargetAPZCNotification(
-            this, GetDocument(), *(original->AsTouchEvent()), aGuid.mLayersId,
+            this, GetDocument(), *(original->AsTouchEvent()), rootLayersId,
             aInputBlockId);
       }
       mAPZEventState->ProcessTouchEvent(*touchEvent, aGuid, aInputBlockId,
@@ -1026,7 +1008,7 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
     } else if (WidgetWheelEvent* wheelEvent = aEvent->AsWheelEvent()) {
       MOZ_ASSERT(wheelEvent->mFlags.mHandledByAPZ);
       postLayerization = APZCCallbackHelper::SendSetTargetAPZCNotification(
-          this, GetDocument(), *(original->AsWheelEvent()), aGuid.mLayersId,
+          this, GetDocument(), *(original->AsWheelEvent()), rootLayersId,
           aInputBlockId);
       if (wheelEvent->mCanTriggerSwipe) {
         ReportSwipeStarted(aInputBlockId, wheelEvent->TriggersSwipe());
@@ -1035,7 +1017,7 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
     } else if (WidgetMouseEvent* mouseEvent = aEvent->AsMouseEvent()) {
       MOZ_ASSERT(mouseEvent->mFlags.mHandledByAPZ);
       postLayerization = APZCCallbackHelper::SendSetTargetAPZCNotification(
-          this, GetDocument(), *(original->AsMouseEvent()), aGuid.mLayersId,
+          this, GetDocument(), *(original->AsMouseEvent()), rootLayersId,
           aInputBlockId);
       mAPZEventState->ProcessMouseEvent(*mouseEvent, aInputBlockId);
     }
@@ -1195,19 +1177,6 @@ void nsBaseWidget::DispatchEventToAPZOnly(mozilla::WidgetInputEvent* aEvent) {
   }
 }
 
-// static
-bool nsBaseWidget::ShowContextMenuAfterMouseUp() {
-  static bool gContextMenuAfterMouseUp = false;
-  static bool gContextMenuAfterMouseUpCached = false;
-  if (!gContextMenuAfterMouseUpCached) {
-    Preferences::AddBoolVarCache(&gContextMenuAfterMouseUp,
-                                 "ui.context_menus.after_mouseup", false);
-
-    gContextMenuAfterMouseUpCached = true;
-  }
-  return gContextMenuAfterMouseUp;
-}
-
 Document* nsBaseWidget::GetDocument() const {
   if (mWidgetListener) {
     if (PresShell* presShell = mWidgetListener->GetPresShell()) {
@@ -1269,6 +1238,8 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
     if (!GetNativeData(NS_JAVA_SURFACE)) {
       options.SetInitiallyPaused(true);
     }
+#else
+    options.SetInitiallyPaused(CompositorInitiallyPaused());
 #endif
 
     RefPtr<LayerManager> lm;
@@ -1294,6 +1265,17 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
         DestroyCompositor();
         gfx::GPUProcessManager::Get()->DisableWebRender(
             wr::WebRenderError::INITIALIZE);
+      }
+    } else if (lm->AsClientLayerManager() && mCompositorSession) {
+      bool shouldAccelerate = ComputeShouldAccelerate();
+      TextureFactoryIdentifier textureFactoryIdentifier;
+      lm->AsClientLayerManager()->Initialize(
+          mCompositorSession->GetCompositorBridgeChild(), shouldAccelerate,
+          &textureFactoryIdentifier);
+      if (textureFactoryIdentifier.mParentBackend ==
+          LayersBackend::LAYERS_NONE) {
+        DestroyCompositor();
+        lm = nullptr;
       }
     }
 
@@ -1362,39 +1344,9 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight) {
                LayersBackend::LAYERS_WR);
     ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
     gfx::VRManagerChild::IdentifyTextureHost(textureFactoryIdentifier);
-  }
-
-  ShadowLayerForwarder* lf = lm->AsShadowForwarder();
-  if (lf) {
-    // lf is non-null if we are creating a ClientLayerManager above
-    TextureFactoryIdentifier textureFactoryIdentifier;
-    PLayerTransactionChild* shadowManager = nullptr;
-
-    nsTArray<LayersBackend> backendHints;
-    gfxPlatform::GetPlatform()->GetCompositorBackends(ComputeShouldAccelerate(),
-                                                      backendHints);
-
-    bool success = false;
-    if (!backendHints.IsEmpty()) {
-      shadowManager = mCompositorBridgeChild->SendPLayerTransactionConstructor(
-          backendHints, LayersId{0});
-      if (shadowManager->SendGetTextureFactoryIdentifier(
-              &textureFactoryIdentifier) &&
-          textureFactoryIdentifier.mParentBackend !=
-              LayersBackend::LAYERS_NONE) {
-        success = true;
-      }
-    }
-
-    if (!success) {
-      NS_WARNING("Failed to create an OMT compositor.");
-      DestroyCompositor();
-      mLayerManager = nullptr;
-      return;
-    }
-
-    lf->SetShadowManager(shadowManager);
-    lm->UpdateTextureFactoryIdentifier(textureFactoryIdentifier);
+  } else if (lm->AsClientLayerManager()) {
+    TextureFactoryIdentifier textureFactoryIdentifier =
+        lm->GetTextureFactoryIdentifier();
     // Some popup or transparent widgets may use a different backend than the
     // compositors used with ImageBridge and VR (and more generally web
     // content).

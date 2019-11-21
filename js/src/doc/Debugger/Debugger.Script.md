@@ -93,6 +93,10 @@ from its prototype:
 :   True if this instance refers to a `JSScript` for an async function, defined
     with an `async function` expression or statement. False otherwise.
 
+`isFunction`
+:   True if this instance refers to a `JSScript` for a function. False
+    otherwise.
+
 `isModule`
 :   True if this instance refers to a `JSScript` that was parsed and loaded
     as an ECMAScript module. False otherwise.
@@ -150,6 +154,31 @@ from its prototype:
 :   **If the instance refers to a `JSScript`**, the number of the line at
     which this script's code starts, within the file or document named by
     `url`.
+
+`startColumn`
+:   **If the instance refers to a `JSScript`**, the zero-indexed number of the
+    column at which this script's code starts, within the file or document
+    named by `url`.  For functions, this is the start of the function's
+    arguments:
+    ```language-js
+    function f() { ... }
+    //        ^ start (column 10)
+    let g = x => x*x;
+    //      ^ start (column 8)
+    let h = (x) => x*x;
+    //      ^ start (column 8)
+    ```
+    For default class constructors, it is the start of the `class` keyword:
+    ```language-js
+    let MyClass = class { };
+    //            ^ start (column 14)
+    ```
+    For scripts from other sources, such as `eval` or the `Function`
+    constructor, it is typically 0:
+    ```language-js
+    let f = new Function("  console.log('hello world');");
+    //                    ^ start (column 0, from the string's perspective)
+    ```
 
 `lineCount`
 :   **If the instance refers to a `JSScript`**, the number of lines this
@@ -345,6 +374,12 @@ methods of other kinds of objects.
 
     **If the instance refers to WebAssembly code**, throw a `TypeError`.
 
+`setInstrumentationId(id)`:
+:   **If the instance refers to a `JSScript`**, set the value which will be
+    supplied as the script's ID to instrumentation callbacks in the script's
+    realm. See `Debugger.Object.setInstrumentation()`.
+
+    **If the instance refers to WebAssembly code**, throw a `TypeError`.
 
 ### Deprecated Debugger.Script Prototype Functions
 

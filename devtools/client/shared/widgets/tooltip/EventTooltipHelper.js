@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -262,10 +260,7 @@ EventTooltip.prototype = {
       const { editor, handler } = eventEditor;
 
       const iframe = doc.createElementNS(XHTML_NS, "iframe");
-      iframe.setAttribute(
-        "style",
-        "width: 100%; height: 100%; border-style: none;"
-      );
+      iframe.classList.add("event-tooltip-editor-frame");
 
       editor.appendTo(content, iframe).then(() => {
         const tidied = beautify.js(handler, { indent_size: 2 });

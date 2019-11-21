@@ -22,6 +22,7 @@
 #include "jit/MIRGenerator.h"
 #include "jit/MIRGraph.h"
 #include "jit/OptimizationTracking.h"
+#include "jit/TIOracle.h"
 
 namespace js {
 
@@ -671,6 +672,9 @@ class IonBuilder : public MIRGenerator,
   AbortReasonOr<Ok> jsop_implicitthis(PropertyName* name);
   AbortReasonOr<Ok> jsop_importmeta();
   AbortReasonOr<Ok> jsop_dynamic_import();
+  AbortReasonOr<Ok> jsop_instrumentation_active();
+  AbortReasonOr<Ok> jsop_instrumentation_callback();
+  AbortReasonOr<Ok> jsop_instrumentation_scriptid();
 
   /* Inlining. */
 
@@ -818,7 +822,6 @@ class IonBuilder : public MIRGenerator,
   InliningResult inlinePossiblyWrappedTypedArrayLength(CallInfo& callInfo);
   InliningResult inlineTypedArrayByteOffset(CallInfo& callInfo);
   InliningResult inlineTypedArrayElementShift(CallInfo& callInfo);
-  InliningResult inlineSetDisjointTypedElements(CallInfo& callInfo);
 
   // TypedObject intrinsics and natives.
   InliningResult inlineObjectIsTypeDescr(CallInfo& callInfo);
@@ -835,11 +838,11 @@ class IonBuilder : public MIRGenerator,
   InliningResult inlineToInteger(CallInfo& callInfo);
   InliningResult inlineToString(CallInfo& callInfo);
   InliningResult inlineDump(CallInfo& callInfo);
-  InliningResult inlineHasClass(CallInfo& callInfo, const Class* clasp,
-                                const Class* clasp2 = nullptr,
-                                const Class* clasp3 = nullptr,
-                                const Class* clasp4 = nullptr);
-  InliningResult inlineGuardToClass(CallInfo& callInfo, const Class* clasp);
+  InliningResult inlineHasClass(CallInfo& callInfo, const JSClass* clasp,
+                                const JSClass* clasp2 = nullptr,
+                                const JSClass* clasp3 = nullptr,
+                                const JSClass* clasp4 = nullptr);
+  InliningResult inlineGuardToClass(CallInfo& callInfo, const JSClass* clasp);
   InliningResult inlineIsConstructing(CallInfo& callInfo);
   InliningResult inlineSubstringKernel(CallInfo& callInfo);
   InliningResult inlineObjectHasPrototype(CallInfo& callInfo);
@@ -1006,6 +1009,8 @@ class IonBuilder : public MIRGenerator,
     backgroundCodegen_ = codegen;
   }
 
+  TIOracle& tiOracle() { return tiOracle_; }
+
   CompilerConstraintList* constraints() { return constraints_; }
 
   bool isInlineBuilder() const { return callerBuilder_ != nullptr; }
@@ -1037,6 +1042,8 @@ class IonBuilder : public MIRGenerator,
 
   // Constraints for recording dependencies on type information.
   CompilerConstraintList* constraints_;
+
+  TIOracle tiOracle_;
 
   TemporaryTypeSet* thisTypes;
   TemporaryTypeSet* argTypes;

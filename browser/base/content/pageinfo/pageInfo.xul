@@ -66,7 +66,7 @@
 
   <menupopup id="picontext">
     <menuitem id="menu_selectall" data-l10n-id="menu-select-all" command="cmd_selectall"/>
-    <menuitem id="menu_copy"      data-l10n-id="menu-copy"      command="cmd_copy"/>
+    <menuitem id="menu_copy"      data-l10n-id="menu-copy"       command="cmd_copy"/>
   </menupopup>
 
   <vbox id="topBar">

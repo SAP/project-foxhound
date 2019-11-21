@@ -20,6 +20,7 @@ function getExpectedTargets() {
     "help",
     "home",
     "library",
+    "logins",
     "pageActionButton",
     "pageAction-bookmark",
     "pageAction-copyURL",
@@ -30,7 +31,6 @@ function getExpectedTargets() {
     ...(hasQuit ? ["quit"] : []),
     "readerMode-urlBar",
     "screenshots",
-    "trackingProtection",
     "urlbar",
   ];
 }

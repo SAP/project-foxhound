@@ -188,7 +188,7 @@ class AtomsTable {
   void tracePinnedAtoms(JSTracer* trc, const AutoAccessAtomsZone& access);
 
   // Sweep all atoms non-incrementally.
-  void sweepAll(JSRuntime* rt);
+  void traceWeak(JSTracer* trc);
 
   bool startIncrementalSweep();
 

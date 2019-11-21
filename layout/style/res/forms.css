@@ -97,21 +97,14 @@ input {
   color: -moz-FieldText;
   font: -moz-field;
   text-rendering: optimizeLegibility;
-  line-height: normal;
-  text-align: start;
-  text-transform: none;
-  word-spacing: normal;
-  letter-spacing: normal;
   cursor: text;
-  text-indent: 0;
   user-select: text;
-  text-shadow: none;
   overflow-clip-box: padding-box content-box;
 }
 
 input > .anonymous-div,
 input::placeholder {
-  word-wrap: normal !important;
+  word-wrap: normal;
   /* Make the line-height equal to the available height */
   line-height: -moz-block-height;
 }
@@ -135,7 +128,10 @@ textarea {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-clip-box: content-box;
-  /* A few properties that we don't want to inherit by default: */
+}
+
+/* A few properties that we don't want to inherit by default: */
+input, textarea, select, button {
   text-align: initial;
   text-indent: initial;
   text-shadow: initial;
@@ -155,8 +151,8 @@ textarea::placeholder,
 input > .preview-div
 textarea > .preview-div {
   overflow: auto;
-  border: 0px !important;
-  padding: inherit !important;
+  border: 0px;
+  padding: inherit;
   margin: 0px;
   text-decoration: inherit;
   display: inline-block;
@@ -171,6 +167,17 @@ input > .anonymous-div,
 input::placeholder,
 input > .preview-div {
   white-space: pre;
+}
+
+input[type=password] > .anonymous-div,
+input[type=password] > .preview-div {
+  /*
+   * In password fields, any character should be put same direction.  Otherwise,
+   * caret position at typing tells everybody whether the character is an RTL
+   * or an LTR character.  Unfortunately, this makes odd rendering when bidi
+   * text is unmasked.
+   */
+  unicode-bidi: bidi-override;
 }
 
 textarea > .anonymous-div {
@@ -189,20 +196,20 @@ textarea > .preview-div {
   /*
    * Changing display to inline can leads to broken behaviour and will assert.
    */
-  display: inline-block !important;
+  display: inline-block;
 
   /*
    * Changing resize would display a broken behaviour and will assert.
    */
-  resize: none !important;
+  resize: none;
 
-  overflow: hidden !important;
+  overflow: hidden;
 
   /*
    * The placeholder or preview should be ignored by pointer otherwise, we might have some
    * unexpected behavior like the resize handle not being selectable.
    */
-  pointer-events: none !important;
+  pointer-events: none;
 }
 
 input::placeholder,
@@ -226,19 +233,15 @@ select {
   background-color: -moz-Combobox;
   color: -moz-ComboboxText;
   font: -moz-list;
-  line-height: initial;
   white-space: nowrap !important;
   word-wrap: normal !important;
-  text-align: start;
   cursor: default;
   box-sizing: border-box;
   user-select: none;
   -moz-appearance: menulist;
   border-width: 2px;
   border-style: inset;
-  text-indent: 0;
   overflow: -moz-hidden-unscrollable;
-  text-shadow: none;
   /* No text-decoration reaching inside, by default */
   display: inline-block;
   page-break-inside: avoid;
@@ -506,7 +509,6 @@ input[type="file"] > label {
 
 /* button part of file selector */
 input[type="file"] > button {
-  block-size: inherit;
   font-size: unset;
   letter-spacing: unset;
   cursor: unset;
@@ -616,10 +618,8 @@ input[type="button"],
 input[type="submit"] {
   color: ButtonText;
   font: -moz-button;
-  line-height: normal;
   white-space: pre;
   text-align: center;
-  text-shadow: none;
   overflow-clip-box: padding-box;
 }
 
@@ -730,7 +730,7 @@ input[type="color"]:-moz-focusring::-moz-focus-inner,
 input[type="reset"]:-moz-focusring::-moz-focus-inner,
 input[type="button"]:-moz-focusring::-moz-focus-inner,
 input[type="submit"]:-moz-focusring::-moz-focus-inner {
-  border-color: ButtonText;
+  border-color: currentColor;
 }
 
 button:disabled:active, button:disabled,
@@ -917,9 +917,14 @@ input[type=range]::-moz-range-track {
   position: static !important;
   writing-mode: unset !important;
   direction: unset !important;
-  block-size: 0.2em;
+  block-size: 0.2em; /* same as inline-size below */
   /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
+}
+
+input[type=range][orient=vertical]::-moz-range-track {
+  inline-size: 0.2em; /* same as block-size above */
+  block-size: 100%;
 }
 
 /**

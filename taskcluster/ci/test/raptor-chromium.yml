@@ -9,10 +9,7 @@ job-defaults:
             .*-ux/.*: 2400
             default: 1800
     suite: raptor
-    workdir:
-        by-test-platform:
-            android-hw.*: /builds/worker
-            default: /home/cltbld
+    workdir: /home/cltbld
     run-on-projects: ['try', 'mozilla-central']
     tier: 2
     virtualization:
@@ -31,8 +28,6 @@ job-defaults:
                     - raptor/windows_vm_config.py
                 linux64-ccov/opt:
                     - raptor/linux64_config_taskcluster.py
-                android-hw.*:
-                    - raptor/android_hw_config.py
                 default:
                     - raptor/linux_config.py
     fetches:
@@ -313,3 +308,40 @@ raptor-tp6-4-chromium-cold:
         extra-options:
             - --test=raptor-tp6-cold-4
             - --app=chromium
+
+raptor-ares6-chromium:
+    description: "Raptor Ares6 on Chromium"
+    try-name: raptor-ares6-chromium
+    treeherder-symbol: Rap-Cr(ares6)
+    max-run-time: 2500
+    tier: 3
+    mozharness:
+        extra-options:
+            - --test=raptor-ares6
+            - --app=chromium
+
+raptor-jetstream2-chromium:
+    description: "Raptor Jetstream2 on Chromium"
+    try-name: raptor-jetstream2-chromium
+    treeherder-symbol: Rap-Cr(js2)
+    tier: 3
+    max-run-time: 8000
+    mozharness:
+        extra-options:
+            - --test=raptor-jetstream2
+            - --app=chromium
+    fetches:
+        fetch:
+            by-test-platform:
+                win.*64.*:
+                    - win64-chromium
+                    - jetstream2
+                win.*32.*:
+                    - win32-chromium
+                    - jetstream2
+                macosx.*:
+                    - mac-chromium
+                    - jetstream2
+                default:
+                    - linux64-chromium
+                    - jetstream2

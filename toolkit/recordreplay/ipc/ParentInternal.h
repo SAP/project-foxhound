@@ -51,6 +51,11 @@ bool MainThreadIsWaitingForIPDLReply();
 // to block while waiting on an IPDL reply from the child.
 void ResumeBeforeWaitingForIPDLReply();
 
+// Immediately forward any sync child->parent IPDL message. These are sent on
+// the main thread, which might be blocked waiting for a response from the
+// recording child and unable to run an event loop.
+void MaybeHandlePendingSyncMessage();
+
 // Initialize state which handles incoming IPDL messages from the UI and
 // recording child processes.
 void InitializeForwarding();
@@ -66,15 +71,41 @@ static Monitor* gMonitor;
 // Graphics
 ///////////////////////////////////////////////////////////////////////////////
 
+// Painting can happen in two ways:
+//
+// - When the main child runs (the recording child, or a dedicated replaying
+//   child if there is no recording child), it does so on the user's machine and
+//   paints into gGraphicsMemory, a buffer shared with the middleman process.
+//   After the buffer has been updated, a PaintMessage is sent to the middleman.
+//
+// - When the user is within the recording and we want to repaint old graphics,
+//   gGraphicsMemory is not updated (the replaying process could be on a distant
+//   machine and be unable to access the buffer). Instead, the replaying process
+//   does its repaint locally, losslessly compresses it to a PNG image, encodes
+//   it to base64, and sends it to the middleman. The middleman then undoes this
+//   encoding and paints the resulting image.
+//
+// In either case, a canvas in the middleman is filled with the paint data,
+// updating the graphics shown by the UI process. The canvas is managed by
+// devtools/server/actors/replay/graphics.js
 extern void* gGraphicsMemory;
 
 void InitializeGraphicsMemory();
 void SendGraphicsMemoryToChild();
 
-// Update the graphics painted in the UI process, per painting data received
-// from a child process, or null if a repaint was triggered and failed due to
-// an unhandled recording divergence.
-void UpdateGraphicsInUIProcess(const PaintMessage* aMsg);
+// Update the graphics painted in the UI process after a paint happened in the
+// main child.
+void UpdateGraphicsAfterPaint(const PaintMessage& aMsg);
+
+// Update the graphics painted in the UI process after a repaint happened in
+// some replaying child.
+void UpdateGraphicsAfterRepaint(const nsACString& imageData);
+
+// Restore the graphics last painted by the main child.
+void RestoreMainGraphics();
+
+// Clear any graphics painted in the UI process.
+void ClearGraphics();
 
 // ID for the mach message sent from a child process to the middleman to
 // request a port for the graphics shmem.
@@ -120,21 +151,21 @@ struct RecordingProcessData {
 // Information about a recording or replaying child process.
 class ChildProcessInfo {
   // Channel for communicating with the process.
-  Channel* mChannel;
+  Channel* mChannel = nullptr;
 
   // The last time we sent or received a message from this process.
   TimeStamp mLastMessageTime;
 
   // Whether this process is recording.
-  bool mRecording;
+  bool mRecording = false;
 
   // Whether the process is currently paused.
-  bool mPaused;
+  bool mPaused = false;
 
   // Flags for whether we have received messages from the child indicating it
   // is crashing.
-  bool mHasBegunFatalError;
-  bool mHasFatalError;
+  bool mHasBegunFatalError = false;
+  bool mHasFatalError = false;
 
   void OnIncomingMessage(const Message& aMsg);
 
@@ -153,6 +184,7 @@ class ChildProcessInfo {
   size_t GetId() { return mChannel->GetId(); }
   bool IsRecording() { return mRecording; }
   bool IsPaused() { return mPaused; }
+  bool HasCrashed() { return mHasFatalError; }
 
   // Send a message over the underlying channel.
   void SendMessage(Message&& aMessage);

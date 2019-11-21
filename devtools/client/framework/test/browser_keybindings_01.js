@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -104,12 +102,12 @@ add_task(async function() {
   async function inspectorShouldBeOpenAndHighlighting(inspector) {
     is(toolbox.currentToolId, "inspector", "Correct tool has been loaded");
 
-    await toolbox.inspector.nodePicker.once("picker-started");
+    await toolbox.nodePicker.once("picker-started");
 
     ok(true, "picker-started event received, highlighter started");
     inspector.synthesizeKey();
 
-    await toolbox.inspector.nodePicker.once("picker-stopped");
+    await toolbox.nodePicker.once("picker-stopped");
     ok(true, "picker-stopped event received, highlighter stopped");
   }
 

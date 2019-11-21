@@ -22,6 +22,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/SMILAnimationController.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/Unused.h"
 
@@ -1063,8 +1064,8 @@ namespace {
 
 class MOZ_STACK_CLASS MappedAttrParser {
  public:
-  MappedAttrParser(css::Loader* aLoader, nsIURI* aDocURI,
-                   already_AddRefed<nsIURI> aBaseURI, SVGElement* aElement);
+  MappedAttrParser(css::Loader* aLoader, nsIURI* aBaseURI,
+                   SVGElement* aElement);
   ~MappedAttrParser();
 
   // Parses a mapped attribute value.
@@ -1084,8 +1085,6 @@ class MOZ_STACK_CLASS MappedAttrParser {
   // -----------
   css::Loader* mLoader;
 
-  // Arguments for nsCSSParser::ParseProperty
-  nsIURI* mDocURI;
   nsCOMPtr<nsIURI> mBaseURI;
 
   // Declaration for storing parsed values (lazily initialized)
@@ -1095,13 +1094,9 @@ class MOZ_STACK_CLASS MappedAttrParser {
   SVGElement* mElement;
 };
 
-MappedAttrParser::MappedAttrParser(css::Loader* aLoader, nsIURI* aDocURI,
-                                   already_AddRefed<nsIURI> aBaseURI,
+MappedAttrParser::MappedAttrParser(css::Loader* aLoader, nsIURI* aBaseURI,
                                    SVGElement* aElement)
-    : mLoader(aLoader),
-      mDocURI(aDocURI),
-      mBaseURI(aBaseURI),
-      mElement(aElement) {}
+    : mLoader(aLoader), mBaseURI(aBaseURI), mElement(aElement) {}
 
 MappedAttrParser::~MappedAttrParser() {
   MOZ_ASSERT(!mDecl,
@@ -1123,31 +1118,23 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
     NS_ConvertUTF16toUTF8 value(aMappedAttrValue);
     // FIXME (bug 1343964): Figure out a better solution for sending the base
     // uri to servo
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        ReferrerInfo::CreateForSVGResources(mElement->OwnerDoc());
+
     RefPtr<URLExtraData> data =
-        new URLExtraData(mBaseURI, mDocURI, mElement->NodePrincipal(),
-                         mElement->OwnerDoc()->GetReferrerPolicy());
+        new URLExtraData(mBaseURI, referrerInfo, mElement->NodePrincipal());
     changed = Servo_DeclarationBlock_SetPropertyById(
         mDecl->Raw(), propertyID, &value, false, data,
         ParsingMode::AllowUnitlessLength,
         mElement->OwnerDoc()->GetCompatibilityMode(), mLoader, {});
 
-    if (changed) {
-      // The normal reporting of use counters by the nsCSSParser won't happen
-      // since it doesn't have a sheet.
-      if (nsCSSProps::IsShorthand(propertyID)) {
-        CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subprop, propertyID,
-                                             CSSEnabledState::ForAllContent) {
-          UseCounter useCounter = nsCSSProps::UseCounterFor(*subprop);
-          if (useCounter != eUseCounter_UNKNOWN) {
-            mElement->OwnerDoc()->SetDocumentAndPageUseCounter(useCounter);
-          }
-        }
-      } else {
-        UseCounter useCounter = nsCSSProps::UseCounterFor(propertyID);
-        if (useCounter != eUseCounter_UNKNOWN) {
-          mElement->OwnerDoc()->SetDocumentAndPageUseCounter(useCounter);
-        }
-      }
+    // TODO(emilio): If we want to record these from CSSOM more generally, we
+    // can pass the document use counters down the FFI call. For now manually
+    // count them.
+    if (changed && StaticPrefs::layout_css_use_counters_enabled()) {
+      UseCounter useCounter = nsCSSProps::UseCounterFor(propertyID);
+      MOZ_ASSERT(useCounter != eUseCounter_UNKNOWN);
+      mElement->OwnerDoc()->SetUseCounter(useCounter);
     }
     return;
   }
@@ -1193,8 +1180,7 @@ void SVGElement::UpdateContentDeclarationBlock() {
   }
 
   Document* doc = OwnerDoc();
-  MappedAttrParser mappedAttrParser(doc->CSSLoader(), doc->GetDocumentURI(),
-                                    GetBaseURI(), this);
+  MappedAttrParser mappedAttrParser(doc->CSSLoader(), GetBaseURI(), this);
 
   bool lengthAffectsStyle =
       SVGGeometryProperty::ElementMapsLengthsToStyle(this);

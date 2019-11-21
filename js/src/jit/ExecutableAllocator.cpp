@@ -91,8 +91,7 @@ ExecutableAllocator::~ExecutableAllocator() {
   }
 
   // If this asserts we have a pool leak.
-  MOZ_ASSERT_IF(TlsContext.get()->runtime()->gc.shutdownCollectedEverything(),
-                m_pools.empty());
+  MOZ_ASSERT(m_pools.empty());
 }
 
 ExecutablePool* ExecutableAllocator::poolForSize(size_t n) {
@@ -216,8 +215,6 @@ void* ExecutableAllocator::alloc(JSContext* cx, size_t n,
   // (found, or created if necessary) a pool that had enough space.
   void* result = (*poolp)->alloc(n, type);
   MOZ_ASSERT(result);
-
-  cx->zone()->updateJitCodeMallocBytes(n);
 
   return result;
 }

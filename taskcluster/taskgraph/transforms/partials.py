@@ -104,17 +104,6 @@ def make_task_description(config, jobs):
             extra['funsize']['partials'].append(partial_info)
             update_number += 1
 
-        mar_channel_id = None
-        if config.params['project'] == 'mozilla-beta':
-            if 'devedition' in label:
-                mar_channel_id = 'firefox-mozilla-aurora'
-            else:
-                mar_channel_id = 'firefox-mozilla-beta'
-        elif config.params['project'] == 'mozilla-release':
-            mar_channel_id = 'firefox-mozilla-release'
-        elif 'esr' in config.params['project']:
-            mar_channel_id = 'firefox-mozilla-esr'
-
         level = config.params['level']
 
         worker = {
@@ -128,13 +117,10 @@ def make_task_description(config, jobs):
             'env': {
                 'SHA1_SIGNING_CERT': 'nightly_sha1',
                 'SHA384_SIGNING_CERT': 'nightly_sha384',
-                'DATADOG_API_SECRET':
-                    'project/releng/gecko/build/level-{}/datadog-api-key'.format(level),
                 'EXTRA_PARAMS': '--arch={}'.format(architecture(attributes['build_platform'])),
+                'MAR_CHANNEL_ID': attributes['mar-channel-id']
             }
         }
-        if mar_channel_id:
-            worker['env']['ACCEPTED_MAR_CHANNEL_IDS'] = mar_channel_id
         if config.params.release_level() == 'staging':
             worker['env']['FUNSIZE_ALLOW_STAGING_PREFIXES'] = 'true'
 
@@ -144,9 +130,7 @@ def make_task_description(config, jobs):
                 dep_job.task["metadata"]["description"]),
             'worker-type': 'b-linux',
             'dependencies': dependencies,
-            'scopes': [
-                'secrets:get:project/releng/gecko/build/level-%s/datadog-api-key' % level
-            ],
+            'scopes': [],
             'attributes': attributes,
             'run-on-projects': dep_job.attributes.get('run_on_projects'),
             'treeherder': treeherder,

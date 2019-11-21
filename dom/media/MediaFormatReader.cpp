@@ -7,6 +7,7 @@
 #include "MediaFormatReader.h"
 
 #include "AllocationPolicy.h"
+#include "DecoderBenchmark.h"
 #include "GeckoProfiler.h"
 #include "MediaData.h"
 #include "MediaInfo.h"
@@ -18,9 +19,8 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/SharedThreadPool.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
 #include "nsPrintfCString.h"
@@ -46,80 +46,6 @@ mozilla::LazyLogModule gMediaDemuxerLog("MediaDemuxer");
 namespace mozilla {
 
 typedef void* MediaDataDecoderID;
-
-/**
- * This helper class is used to report telemetry of the time used to recover a
- * decoder from GPU crash.
- * It uses MediaDecoderOwnerID to identify which video we're dealing with.
- * It uses MediaDataDecoderID to make sure that the old MediaDataDecoder has
- * been deleted and we're already recovered.
- * It reports two recovery times, one is calculated from GPU crashed (that is,
- * the time when VideoDecoderChild::ActorDestory() is called) and the other is
- * calculated from the MFR is notified with NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER
- * error.
- */
-class GPUProcessCrashTelemetryLogger {
-  struct GPUCrashData {
-    GPUCrashData(MediaDataDecoderID aMediaDataDecoderID,
-                 mozilla::TimeStamp aGPUCrashTime,
-                 mozilla::TimeStamp aErrorNotifiedTime)
-        : mMediaDataDecoderID(aMediaDataDecoderID),
-          mGPUCrashTime(aGPUCrashTime),
-          mErrorNotifiedTime(aErrorNotifiedTime) {
-      MOZ_ASSERT(mMediaDataDecoderID);
-      MOZ_ASSERT(!mGPUCrashTime.IsNull());
-      MOZ_ASSERT(!mErrorNotifiedTime.IsNull());
-    }
-
-    MediaDataDecoderID mMediaDataDecoderID;
-    mozilla::TimeStamp mGPUCrashTime;
-    mozilla::TimeStamp mErrorNotifiedTime;
-  };
-
- public:
-  static void RecordGPUCrashData(MediaDecoderOwnerID aMediaDecoderOwnerID,
-                                 MediaDataDecoderID aMediaDataDecoderID,
-                                 const TimeStamp& aGPUCrashTime,
-                                 const TimeStamp& aErrorNotifiedTime) {
-    MOZ_ASSERT(aMediaDecoderOwnerID);
-    MOZ_ASSERT(aMediaDataDecoderID);
-    MOZ_ASSERT(!aGPUCrashTime.IsNull());
-    MOZ_ASSERT(!aErrorNotifiedTime.IsNull());
-    StaticMutexAutoLock lock(sGPUCrashMapMutex);
-    auto it = sGPUCrashDataMap.find(aMediaDecoderOwnerID);
-    if (it == sGPUCrashDataMap.end()) {
-      sGPUCrashDataMap.insert(std::make_pair(
-          aMediaDecoderOwnerID, GPUCrashData(aMediaDataDecoderID, aGPUCrashTime,
-                                             aErrorNotifiedTime)));
-    }
-  }
-
-  static void ReportTelemetry(MediaDecoderOwnerID aMediaDecoderOwnerID,
-                              MediaDataDecoderID aMediaDataDecoderID) {
-    MOZ_ASSERT(aMediaDecoderOwnerID);
-    MOZ_ASSERT(aMediaDataDecoderID);
-    StaticMutexAutoLock lock(sGPUCrashMapMutex);
-    auto it = sGPUCrashDataMap.find(aMediaDecoderOwnerID);
-    if (it != sGPUCrashDataMap.end() &&
-        it->second.mMediaDataDecoderID != aMediaDataDecoderID) {
-      Telemetry::AccumulateTimeDelta(
-          Telemetry::VIDEO_HW_DECODER_CRASH_RECOVERY_TIME_SINCE_GPU_CRASHED_MS,
-          it->second.mGPUCrashTime);
-      Telemetry::AccumulateTimeDelta(
-          Telemetry::VIDEO_HW_DECODER_CRASH_RECOVERY_TIME_SINCE_MFR_NOTIFIED_MS,
-          it->second.mErrorNotifiedTime);
-      sGPUCrashDataMap.erase(aMediaDecoderOwnerID);
-    }
-  }
-
- private:
-  static std::map<MediaDecoderOwnerID, GPUCrashData> sGPUCrashDataMap;
-  static StaticMutex sGPUCrashMapMutex;
-};
-
-std::map<MediaDecoderOwnerID, GPUProcessCrashTelemetryLogger::GPUCrashData>
-    GPUProcessCrashTelemetryLogger::sGPUCrashDataMap;
-StaticMutex GPUProcessCrashTelemetryLogger::sGPUCrashMapMutex;
 
 /**
  * This class tracks shutdown promises to ensure all decoders are shut down
@@ -491,6 +417,10 @@ void MediaFormatReader::DecoderFactory::DoInitDecoder(Data& aData) {
                 ownerData.mDecoder.get());
             mOwner->SetVideoDecodeThreshold();
             mOwner->ScheduleUpdate(aTrack);
+            if (aTrack == TrackInfo::kVideoTrack) {
+              DecoderBenchmark::CheckVersion(
+                  ownerData.GetCurrentInfo()->mMimeType);
+            }
           },
           [this, &aData, &ownerData](const MediaResult& aError) {
             aData.mInitRequest.Complete();
@@ -969,8 +899,19 @@ void MediaFormatReader::ShutdownDecoder(TrackType aTrack) {
   auto& decoder = GetDecoderData(aTrack);
   // Flush the decoder if necessary.
   decoder.Flush();
+
   // Shut down the decoder if any.
   decoder.ShutdownDecoder();
+}
+
+void MediaFormatReader::NotifyDecoderBenchmarkStore() {
+  MOZ_ASSERT(OnTaskQueue());
+  auto& decoder = GetDecoderData(TrackInfo::kVideoTrack);
+  if (decoder.GetCurrentInfo() && decoder.GetCurrentInfo()->GetAsVideoInfo()) {
+    VideoInfo info = *(decoder.GetCurrentInfo()->GetAsVideoInfo());
+    info.SetFrameRate(static_cast<int32_t>(ceil(decoder.mMeanRate.Mean())));
+    mOnStoreDecoderBenchmark.Notify(std::move(info));
+  }
 }
 
 RefPtr<ShutdownPromise> MediaFormatReader::TearDownDecoders() {
@@ -1472,14 +1413,14 @@ void MediaFormatReader::DoDemuxVideo() {
 
 void MediaFormatReader::OnVideoDemuxCompleted(
     RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
-  LOGV("%zu video samples demuxed (sid:%d)", aSamples->mSamples.Length(),
-       aSamples->mSamples[0]->mTrackInfo
-           ? aSamples->mSamples[0]->mTrackInfo->GetID()
+  LOGV("%zu video samples demuxed (sid:%d)", aSamples->GetSamples().Length(),
+       aSamples->GetSamples()[0]->mTrackInfo
+           ? aSamples->GetSamples()[0]->mTrackInfo->GetID()
            : 0);
   DDLOG(DDLogCategory::Log, "video_demuxed_samples",
-        uint64_t(aSamples->mSamples.Length()));
+        uint64_t(aSamples->GetSamples().Length()));
   mVideo.mDemuxRequest.Complete();
-  mVideo.mQueuedSamples.AppendElements(aSamples->mSamples);
+  mVideo.mQueuedSamples.AppendElements(aSamples->GetSamples());
   ScheduleUpdate(TrackInfo::kVideoTrack);
 }
 
@@ -1550,14 +1491,14 @@ void MediaFormatReader::DoDemuxAudio() {
 
 void MediaFormatReader::OnAudioDemuxCompleted(
     RefPtr<MediaTrackDemuxer::SamplesHolder> aSamples) {
-  LOGV("%zu audio samples demuxed (sid:%d)", aSamples->mSamples.Length(),
-       aSamples->mSamples[0]->mTrackInfo
-           ? aSamples->mSamples[0]->mTrackInfo->GetID()
+  LOGV("%zu audio samples demuxed (sid:%d)", aSamples->GetSamples().Length(),
+       aSamples->GetSamples()[0]->mTrackInfo
+           ? aSamples->GetSamples()[0]->mTrackInfo->GetID()
            : 0);
   DDLOG(DDLogCategory::Log, "audio_demuxed_samples",
-        uint64_t(aSamples->mSamples.Length()));
+        uint64_t(aSamples->GetSamples().Length()));
   mAudio.mDemuxRequest.Complete();
-  mAudio.mQueuedSamples.AppendElements(aSamples->mSamples);
+  mAudio.mQueuedSamples.AppendElements(aSamples->GetSamples());
   ScheduleUpdate(TrackInfo::kAudioTrack);
 }
 
@@ -1658,18 +1599,6 @@ void MediaFormatReader::NotifyError(TrackType aTrack,
   LOGV("%s Decoding error", TrackTypeToStr(aTrack));
   auto& decoder = GetDecoderData(aTrack);
   decoder.mError = decoder.HasFatalError() ? decoder.mError : Some(aError);
-
-  // The GPU process had crashed and we receive a
-  // NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER because we were doing HW decoding.
-  // Now, save the related data and we will report the recovery time when a new
-  // decoder is ready.
-  if (aTrack == TrackType::kVideoTrack &&
-      aError == NS_ERROR_DOM_MEDIA_NEED_NEW_DECODER &&
-      !aError.GPUCrashTimeStamp().IsNull()) {
-    GPUProcessCrashTelemetryLogger::RecordGPUCrashData(
-        mMediaDecoderOwnerID, decoder.mDecoder.get(),
-        aError.GPUCrashTimeStamp(), TimeStamp::Now());
-  }
 
   ScheduleUpdate(aTrack);
 }
@@ -1862,13 +1791,6 @@ void MediaFormatReader::DecodeDemuxedSamples(TrackType aTrack,
           [self, aTrack, &decoder](MediaDataDecoder::DecodedData&& aResults) {
             decoder.mDecodeRequest.Complete();
             self->NotifyNewOutput(aTrack, std::move(aResults));
-
-            // When we recovered from a GPU crash and get the first decoded
-            // frame, report the recovery time telemetry.
-            if (aTrack == TrackType::kVideoTrack) {
-              GPUProcessCrashTelemetryLogger::ReportTelemetry(
-                  self->mMediaDecoderOwnerID, decoder.mDecoder.get());
-            }
           },
           [self, aTrack, &decoder](const MediaResult& aError) {
             decoder.mDecodeRequest.Complete();
@@ -1932,6 +1854,11 @@ void MediaFormatReader::HandleDemuxedSamples(
     LOG("%s stream id has changed from:%d to:%d.", TrackTypeToStr(aTrack),
         decoder.mLastStreamSourceID, info->GetID());
 
+    if (aTrack == TrackInfo::kVideoTrack) {
+      // We are about to create a new decoder thus the benchmark,
+      // up to this point, is stored.
+      NotifyDecoderBenchmarkStore();
+    }
     decoder.mNextStreamSourceID.reset();
     decoder.mLastStreamSourceID = info->GetID();
     decoder.mInfo = info;
@@ -2205,6 +2132,10 @@ void MediaFormatReader::Update(TrackType aTrack) {
     } else if (decoder.HasCompletedDrain()) {
       if (decoder.mDemuxEOS) {
         LOG("Rejecting %s promise: EOS", TrackTypeToStr(aTrack));
+        if (aTrack == TrackInfo::kVideoTrack) {
+          // End of video, store the benchmark of the decoder.
+          NotifyDecoderBenchmarkStore();
+        }
         decoder.RejectPromise(NS_ERROR_DOM_MEDIA_END_OF_STREAM, __func__);
       } else if (decoder.mWaitingForData) {
         if (decoder.mDrainState == DrainState::DrainCompleted &&
@@ -3091,7 +3022,7 @@ void MediaFormatReader::OnFirstDemuxCompleted(
 
   auto& decoder = GetDecoderData(aType);
   MOZ_ASSERT(decoder.mFirstDemuxedSampleTime.isNothing());
-  decoder.mFirstDemuxedSampleTime.emplace(aSamples->mSamples[0]->mTime);
+  decoder.mFirstDemuxedSampleTime.emplace(aSamples->GetSamples()[0]->mTime);
   MaybeResolveMetadataPromise();
 }
 
@@ -3112,3 +3043,5 @@ void MediaFormatReader::OnFirstDemuxFailed(TrackInfo::TrackType aType,
 }  // namespace mozilla
 
 #undef NS_DispatchToMainThread
+#undef LOGV
+#undef LOG

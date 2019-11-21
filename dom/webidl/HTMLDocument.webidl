@@ -9,34 +9,4 @@ interface HTMLDocument : Document {
   // DOM tree accessors
   [Throws]
   getter object (DOMString name);
-
-  void clear();
-
-  readonly attribute HTMLAllCollection all;
-
-  // @deprecated These are old Netscape 4 methods. Do not use,
-  //             the implementation is no-op.
-  // XXXbz do we actually need these anymore?
-  void                      captureEvents();
-  void                      releaseEvents();
-};
-
-partial interface HTMLDocument {
-  /*
-   * Number of nodes that have been blocked by the Safebrowsing API to prevent
-   * tracking, cryptomining and so on. This method is for testing only.
-   */
-  [ChromeOnly, Pure]
-  readonly attribute long blockedNodeByClassifierCount;
-
-  /*
-   * List of nodes that have been blocked by the Safebrowsing API to prevent
-   * tracking, fingerprinting, cryptomining and so on. This method is for
-   * testing only.
-   */
-  [ChromeOnly, Pure]
-  readonly attribute NodeList blockedNodesByClassifier;
-
-  [ChromeOnly]
-  void userInteractionForTesting();
 };

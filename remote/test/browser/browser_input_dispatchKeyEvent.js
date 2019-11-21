@@ -5,8 +5,6 @@
 
 // Basic test for dispatch key event API with input type text
 
-const TEST_URI = "data:text/html;charset=utf-8,<input type=text>";
-
 // Map of key codes used in this test.
 const KEYCODES = {
   a: 65,
@@ -37,7 +35,7 @@ add_task(async function() {
     SpecialPowers.pushPrefEnv(options, resolve);
   });
 
-  const { client, tab } = await setupTestForUri(TEST_URI);
+  const { client, tab } = await setupForURL(toDataURL("<input>"));
   is(gBrowser.selectedTab, tab, "Selected tab is the target tab");
 
   const { Input } = client;
@@ -59,13 +57,11 @@ add_task(async function() {
   await checkInputContent("hH", 2);
 
   info("Send char type event for char [’]");
-  await addInputEventListener("input");
   await Input.dispatchKeyEvent({
     type: "char",
     modifiers: 0,
     key: "’",
   });
-  await waitForInputEvent();
   await checkInputContent("hH’", 3);
 
   info("Send Left");
@@ -107,29 +103,14 @@ add_task(async function() {
   await RemoteAgent.close();
 });
 
-/**
- * Send a text key and wait for the input event to be fired.
- */
 async function sendTextKey(Input, key) {
-  await addInputEventListener("input");
-
   await dispatchKeyEvent(Input, key, "keyDown");
   await dispatchKeyEvent(Input, key, "keyUp");
-
-  await waitForInputEvent();
 }
 
-/**
- * Send an arrow key that will update the position of the cursor in the input and wait
- * for the selectionchange event to be fired.
- */
 async function sendArrowKey(Input, arrowKey, modifiers = 0) {
-  await addInputEventListener("selectionchange");
-
   await dispatchKeyEvent(Input, arrowKey, "rawKeyDown", modifiers);
   await dispatchKeyEvent(Input, arrowKey, "keyUp", modifiers);
-
-  await waitForInputEvent();
 }
 
 function dispatchKeyEvent(Input, key, type, modifiers = 0) {
@@ -166,50 +147,8 @@ async function checkInputContent(expectedValue, expectedCaret) {
 
 async function sendBackspace(Input, expected) {
   info("Send Backspace");
-  await addInputEventListener("input");
-
   await dispatchKeyEvent(Input, "Backspace", "rawKeyDown");
   await dispatchKeyEvent(Input, "Backspace", "keyUp");
 
-  await waitForInputEvent();
-
   await checkInputContent(expected, expected.length);
-}
-
-/**
- * Add an event listener on the content page input. This will resolve when the listener is
- * added.
- *
- * Since ContentTask.spawn is asynchronous make sure to await on this method before
- * executing the code that should fire the event. Otherwise the test will be exposed to
- * race conditions where the listener is added too late and is not triggered.
- *
- * Use `waitForInputEvent` afterwards to wait for the event to be fired.
- *
- *   await addInputEventListener("click");
- *   await someCodeThatWillTriggerClick();
- *   await waitForInputEvent();
- */
-function addInputEventListener(eventName) {
-  return ContentTask.spawn(
-    gBrowser.selectedBrowser,
-    eventName,
-    async _eventName => {
-      const input = content.document.querySelector("input");
-      this.__onInputEvent = new Promise(r =>
-        input.addEventListener(_eventName, r, { once: true })
-      );
-    }
-  );
-}
-
-/**
- * See documentation for addInputEventListener.
- */
-function waitForInputEvent() {
-  return ContentTask.spawn(
-    gBrowser.selectedBrowser,
-    null,
-    () => this.__onInputEvent
-  );
 }

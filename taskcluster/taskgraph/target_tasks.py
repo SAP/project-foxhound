@@ -184,7 +184,8 @@ def target_tasks_default(full_task_graph, parameters, graph_config):
 def target_tasks_ash(full_task_graph, parameters, graph_config):
     """Target tasks that only run on the ash branch."""
     def filter(task):
-        platform = task.attributes.get('build_platform')
+        attr = task.attributes
+        platform = attr.get('build_platform')
         # Early return if platform is None
         if not platform:
             return False
@@ -193,21 +194,28 @@ def target_tasks_ash(full_task_graph, parameters, graph_config):
             return False
         # No random non-build jobs either. This is being purposely done as a
         # blacklist so newly-added jobs aren't missed by default.
-        for p in ('nightly', 'haz', 'artifact', 'cov', 'add-on'):
+        for p in ('shippable', 'haz', 'artifact', 'cov', 'add-on'):
             if p in platform:
                 return False
         for k in ('toolchain', 'l10n'):
-            if k in task.attributes['kind']:
+            if k in attr['kind']:
                 return False
         # and none of this linux64-asan/debug stuff
-        if platform == 'linux64-asan' and task.attributes['build_type'] == 'debug':
+        if platform == 'linux64-asan' and attr['build_type'] == 'debug':
             return False
-        # no non-e10s tests
-        if task.attributes.get('unittest_suite'):
-            if not task.attributes.get('e10s'):
+
+        if attr.get('unittest_suite'):
+            # no non-e10s tests
+            if not attr.get('e10s'):
                 return False
+
+            # filter out by test platform
+            for p in ('-qr',):
+                if p in attr['test_platform']:
+                    return False
+
         # don't upload symbols
-        if task.attributes['kind'] == 'upload-symbols':
+        if attr['kind'] == 'upload-symbols':
             return False
         return True
 
@@ -517,6 +525,10 @@ def target_tasks_android_power(full_task_graph, parameters, graph_config):
         try_name = attributes.get('raptor_try_name')
         if 'geckoview' not in try_name:
             return False
+        if '-cpu' in try_name:
+            return False
+        if '-memory' in try_name:
+            return False
         if '-power' in try_name and 'pgo' in platform:
             if '-speedometer-' in try_name:
                 return True
@@ -759,3 +771,26 @@ def target_tasks_codereview(full_task_graph, parameters, graph_config):
 def target_tasks_nothing(full_task_graph, parameters, graph_config):
     """Select nothing, for DONTBUILD pushes"""
     return []
+
+
+@_target_task('raptor_tp6m')
+def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
+    """
+    Select tasks required for running raptor cold page-load tests on fenix and refbrow
+    """
+    def filter(task):
+        platform = task.attributes.get('build_platform')
+        attributes = task.attributes
+
+        if platform and 'android' not in platform:
+            return False
+        if attributes.get('unittest_suite') != 'raptor':
+            return False
+        try_name = attributes.get('raptor_try_name')
+        if '-cold' in try_name and 'pgo' in platform:
+            if '-1-refbrow-' in try_name:
+                return True
+            if '-1-fenix-' in try_name:
+                return True
+
+    return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]

@@ -973,7 +973,7 @@ nsFocusManager::WindowHidden(mozIDOMWindowProxy* aWindow) {
         mFocusedWindow ? mFocusedWindow->GetDocShell() : nullptr;
     if (dsti) {
       nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-      dsti->GetParent(getter_AddRefs(parentDsti));
+      dsti->GetInProcessParent(getter_AddRefs(parentDsti));
       if (parentDsti) {
         if (nsCOMPtr<nsPIDOMWindowOuter> parentWindow = parentDsti->GetWindow())
           parentWindow->SetFocusedElement(nullptr);
@@ -1188,7 +1188,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
     if (beingDestroyed) return;
 
     nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-    docShell->GetParent(getter_AddRefs(parentDsti));
+    docShell->GetInProcessParent(getter_AddRefs(parentDsti));
     docShell = do_QueryInterface(parentDsti);
   }
 
@@ -1221,7 +1221,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
   nsCOMPtr<nsPIDOMWindowOuter> newRootWindow;
   if (dsti) {
     nsCOMPtr<nsIDocShellTreeItem> root;
-    dsti->GetRootTreeItem(getter_AddRefs(root));
+    dsti->GetInProcessRootTreeItem(getter_AddRefs(root));
     newRootWindow = root ? root->GetWindow() : nullptr;
 
     isElementInActiveWindow = (mActiveWindow && newRootWindow == mActiveWindow);
@@ -1358,7 +1358,7 @@ bool nsFocusManager::IsSameOrAncestor(nsPIDOMWindowOuter* aPossibleAncestor,
   while (dsti) {
     if (dsti == ancestordsti) return true;
     nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-    dsti->GetParent(getter_AddRefs(parentDsti));
+    dsti->GetInProcessParent(getter_AddRefs(parentDsti));
     dsti.swap(parentDsti);
   }
 
@@ -1379,13 +1379,13 @@ already_AddRefed<nsPIDOMWindowOuter> nsFocusManager::GetCommonAncestor(
   do {
     parents1.AppendElement(dsti1);
     nsCOMPtr<nsIDocShellTreeItem> parentDsti1;
-    dsti1->GetParent(getter_AddRefs(parentDsti1));
+    dsti1->GetInProcessParent(getter_AddRefs(parentDsti1));
     dsti1.swap(parentDsti1);
   } while (dsti1);
   do {
     parents2.AppendElement(dsti2);
     nsCOMPtr<nsIDocShellTreeItem> parentDsti2;
-    dsti2->GetParent(getter_AddRefs(parentDsti2));
+    dsti2->GetInProcessParent(getter_AddRefs(parentDsti2));
     dsti2.swap(parentDsti2);
   } while (dsti2);
 
@@ -1419,7 +1419,7 @@ void nsFocusManager::AdjustWindowFocus(nsPIDOMWindowOuter* aWindow,
     nsCOMPtr<nsIDocShellTreeItem> dsti = window->GetDocShell();
     if (!dsti) return;
     nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-    dsti->GetParent(getter_AddRefs(parentDsti));
+    dsti->GetInProcessParent(getter_AddRefs(parentDsti));
     if (!parentDsti) {
       return;
     }
@@ -2713,11 +2713,11 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
       // The common case here is the urlbar where focus is on the anonymous
       // input inside the textbox, but the retargetdocumentfocus attribute
       // refers to the textbox. The Contains check will return false and the
-      // ContentIsDescendantOf check will return true in this case.
-      if (retargetElement && (retargetElement == startContent ||
-                              (!retargetElement->Contains(startContent) &&
-                               nsContentUtils::ContentIsDescendantOf(
-                                   startContent, retargetElement)))) {
+      // IsInclusiveDescendantOf check will return true in this case.
+      if (retargetElement &&
+          (retargetElement == startContent ||
+           (!retargetElement->Contains(startContent) &&
+            startContent->IsInclusiveDescendantOf(retargetElement)))) {
         startContent = rootContent;
       }
     }
@@ -4020,7 +4020,7 @@ void nsFocusManager::SetFocusedWindowInternal(nsPIDOMWindowOuter* aWindow) {
   if (aWindow && aWindow != mFocusedWindow) {
     const TimeStamp now(TimeStamp::Now());
     for (Document* doc = aWindow->GetExtantDoc(); doc;
-         doc = doc->GetParentDocument()) {
+         doc = doc->GetInProcessParentDocument()) {
       doc->SetLastFocusTime(now);
     }
   }
@@ -4076,7 +4076,7 @@ bool nsFocusManager::CanSkipFocus(nsIContent* aContent) {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> root;
-  ds->GetRootTreeItem(getter_AddRefs(root));
+  ds->GetInProcessRootTreeItem(getter_AddRefs(root));
   nsCOMPtr<nsPIDOMWindowOuter> newRootWindow =
       root ? root->GetWindow() : nullptr;
   if (mActiveWindow != newRootWindow) {

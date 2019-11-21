@@ -175,6 +175,22 @@ class UsedNameTracker {
   }
 };
 
+class FunctionTree;
+class FunctionTreeHolder;
+
+// A class used to maintain our function tree as ParseContexts are
+// pushed and popped.
+class MOZ_RAII AutoPushTree {
+  FunctionTreeHolder& holder_;
+  FunctionTree* oldParent_ = nullptr;
+
+ public:
+  explicit AutoPushTree(FunctionTreeHolder& holder);
+  ~AutoPushTree();
+
+  bool init(JSContext* cx, FunctionBox* box);
+};
+
 /*
  * The struct ParseContext stores information about the current parsing context,
  * which is part of the parser state (see the field Parser::pc). The current
@@ -248,6 +264,7 @@ class ParseContext : public Nestable<ParseContext> {
     // FunctionBoxes in this scope that need to be considered for Annex
     // B.3.3 semantics. This is checked on Scope exit, as by then we have
     // all the declared names and would know if Annex B.3.3 is applicable.
+    using FunctionBoxVector = Vector<FunctionBox*, 24, SystemAllocPolicy>;
     PooledVectorPtr<FunctionBoxVector> possibleAnnexBFunctionBoxes_;
 
     // Monotonically increasing id.
@@ -400,6 +417,9 @@ class ParseContext : public Nestable<ParseContext> {
   };
 
  private:
+  // Not all contexts are Function contexts, hence the maybe
+  mozilla::Maybe<AutoPushTree> tree;
+
   // Trace logging of parsing time.
   AutoFrontendTraceLog traceLog_;
 
@@ -443,8 +463,10 @@ class ParseContext : public Nestable<ParseContext> {
   PooledVectorPtr<AtomVector> closedOverBindingsForLazy_;
 
  public:
-  // All inner functions in this context. Only used when syntax parsing.
-  Rooted<GCVector<JSFunction*, 8>> innerFunctionsForLazy;
+  // All inner FunctionBoxes in this context. Only used when syntax parsing.
+  // The FunctionBoxes are traced as part of the TraceList on the parser,
+  // (see TraceListNode::TraceList)
+  FunctionBoxVector innerFunctionBoxesForLazy;
 
   // In a function context, points to a Directive struct that can be updated
   // to reflect new directives encountered in the Directive Prologue that
@@ -478,7 +500,8 @@ class ParseContext : public Nestable<ParseContext> {
  public:
   ParseContext(JSContext* cx, ParseContext*& parent, SharedContext* sc,
                ErrorReporter& errorReporter, UsedNameTracker& usedNames,
-               Directives* newDirectives, bool isFull);
+               FunctionTreeHolder& treeHolder, Directives* newDirectives,
+               bool isFull);
 
   MOZ_MUST_USE bool init();
 

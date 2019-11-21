@@ -14,10 +14,10 @@
 
 #include "jsapi.h"
 
+#include "builtin/Array.h"
 #include "builtin/intl/Collator.h"
 #include "builtin/intl/CommonFunctions.h"
 #include "builtin/intl/DateTimeFormat.h"
-#include "builtin/intl/ICUStubs.h"
 #include "builtin/intl/NumberFormat.h"
 #include "builtin/intl/PluralRules.h"
 #include "builtin/intl/RelativeTimeFormat.h"
@@ -26,12 +26,18 @@
 #include "js/Class.h"
 #include "js/PropertySpec.h"
 #include "js/StableStringChars.h"
+#include "unicode/ucal.h"
+#include "unicode/udat.h"
+#include "unicode/udatpg.h"
+#include "unicode/uloc.h"
+#include "unicode/utypes.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/StringType.h"
 
 #include "vm/JSObject-inl.h"
+#include "vm/NativeObject-inl.h"
 
 using namespace js;
 
@@ -406,10 +412,11 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // 4. Let result be ArrayCreate(0).
-  RootedArrayObject result(cx, NewDenseUnallocatedArray(cx, keys->length()));
+  RootedArrayObject result(cx, NewDenseFullyAllocatedArray(cx, keys->length()));
   if (!result) {
     return false;
   }
+  result->ensureDenseInitializedLength(cx, 0, keys->length());
 
   UErrorCode status = U_ZERO_ERROR;
 
@@ -460,10 +467,7 @@ bool js::intl_ComputeDisplayNames(JSContext* cx, unsigned argc, Value* vp) {
     }
 
     // 5.b. Append the result string to result.
-    v.setString(displayName);
-    if (!DefineDataElement(cx, result, i, v)) {
-      return false;
-    }
+    result->setDenseElement(i, StringValue(displayName));
   }
 
   // 6. Return result.
@@ -501,8 +505,8 @@ bool js::intl_GetLocaleInfo(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-const Class js::IntlClass = {js_Object_str,
-                             JSCLASS_HAS_CACHED_PROTO(JSProto_Intl)};
+const JSClass js::IntlClass = {js_Object_str,
+                               JSCLASS_HAS_CACHED_PROTO(JSProto_Intl)};
 
 static bool intl_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);

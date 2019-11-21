@@ -103,9 +103,8 @@ class JSObject : public js::gc::Cell {
  public:
   bool isNative() const { return getClass()->isNative(); }
 
-  const js::Class* getClass() const { return group_->clasp(); }
-  const JSClass* getJSClass() const { return Jsvalify(getClass()); }
-  bool hasClass(const js::Class* c) const { return getClass() == c; }
+  const JSClass* getClass() const { return group_->clasp(); }
+  bool hasClass(const JSClass* c) const { return getClass() == c; }
 
   js::LookupPropertyOp getOpsLookupProperty() const {
     return getClass()->getOpsLookupProperty();
@@ -270,13 +269,13 @@ class JSObject : public js::gc::Cell {
 
   MOZ_ALWAYS_INLINE JS::Zone* zone() const { return group_->zone(); }
   MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZone() const {
-    return JS::shadow::Zone::asShadowZone(zone());
+    return JS::shadow::Zone::from(zone());
   }
   MOZ_ALWAYS_INLINE JS::Zone* zoneFromAnyThread() const {
     return group_->zoneFromAnyThread();
   }
   MOZ_ALWAYS_INLINE JS::shadow::Zone* shadowZoneFromAnyThread() const {
-    return JS::shadow::Zone::asShadowZone(zoneFromAnyThread());
+    return JS::shadow::Zone::from(zoneFromAnyThread());
   }
   static MOZ_ALWAYS_INLINE void readBarrier(JSObject* obj);
   static MOZ_ALWAYS_INLINE void writeBarrierPre(JSObject* obj);
@@ -394,7 +393,7 @@ class JSObject : public js::gc::Cell {
    */
   inline bool isNewGroupUnknown() const;
   static bool setNewGroupUnknown(JSContext* cx, js::ObjectGroupRealm& realm,
-                                 const js::Class* clasp, JS::HandleObject obj);
+                                 const JSClass* clasp, JS::HandleObject obj);
 
   /* Set a new prototype for an object with a singleton type. */
   static bool splicePrototype(JSContext* cx, js::HandleObject obj,
@@ -462,7 +461,7 @@ class JSObject : public js::gc::Cell {
   MOZ_ALWAYS_INLINE JSNative callHook() const;
   MOZ_ALWAYS_INLINE JSNative constructHook() const;
 
-  MOZ_ALWAYS_INLINE void finalize(js::FreeOp* fop);
+  MOZ_ALWAYS_INLINE void finalize(JSFreeOp* fop);
 
  public:
   static bool nonNativeSetProperty(JSContext* cx, js::HandleObject obj,
@@ -755,6 +754,14 @@ struct JSObject_Slots16 : JSObject {
 
 namespace js {
 
+// Returns true if object may possibly use JSObject::swap. The JITs may better
+// optimize objects that can never swap (and thus change their type).
+//
+// If ObjectMayBeSwapped is false, it is safe to guard on pointer identity to
+// test immutable features of the object. For example, the target of a
+// JSFunction will not change. Note: the object can still be moved by GC.
+extern bool ObjectMayBeSwapped(const JSObject* obj);
+
 /**
  * This enum is used to select whether the defined functions should be marked as
  * builtin native instrinsics for self-hosted code.
@@ -815,7 +822,7 @@ namespace js {
 bool NewObjectWithTaggedProtoIsCachable(JSContext* cx,
                                         Handle<TaggedProto> proto,
                                         NewObjectKind newKind,
-                                        const Class* clasp);
+                                        const JSClass* clasp);
 
 // ES6 9.1.15 GetPrototypeFromConstructor.
 extern bool GetPrototypeFromConstructor(JSContext* cx,
@@ -872,7 +879,7 @@ extern JSObject* CreateThisForFunction(JSContext* cx, js::HandleFunction callee,
                                        NewObjectKind newKind);
 
 // Generic call for constructing |this|.
-extern JSObject* CreateThis(JSContext* cx, const js::Class* clasp,
+extern JSObject* CreateThis(JSContext* cx, const JSClass* clasp,
                             js::HandleObject callee);
 
 extern JSObject* CloneObject(JSContext* cx, HandleObject obj,
@@ -1109,6 +1116,19 @@ inline bool IsObjectValueInCompartment(const Value& v, JS::Compartment* comp) {
   return v.toObject().compartment() == comp;
 }
 #endif
+
+/*
+ * A generic trace hook that calls the object's 'trace' method.
+ *
+ * If you are introducing a new JSObject subclass, MyObject, that needs a custom
+ * JSClassOps::trace function, it's often helpful to write `trace` as a
+ * non-static member function, since `this` will the correct type. In this case,
+ * you can use `CallTraceMethod<MyObject>` as your JSClassOps::trace value.
+ */
+template <typename ObjectSubclass>
+void CallTraceMethod(JSTracer* trc, JSObject* obj) {
+  obj->as<ObjectSubclass>().trace(trc);
+}
 
 } /* namespace js */
 

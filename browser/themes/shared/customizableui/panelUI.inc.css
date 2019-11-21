@@ -143,7 +143,8 @@ panelview {
 #downloadsPanel,
 #widget-overflow,
 #appMenu-popup,
-#customizationui-widget-panel {
+#customizationui-widget-panel,
+#protections-popup {
   margin-top: -6px;
 }
 
@@ -223,15 +224,6 @@ panelview {
   -moz-box-flex: 1;
 }
 
-#appMenu-popup > .panel-arrowcontainer > .panel-arrowcontent,
-panel[photon] > .panel-arrowcontainer > .panel-arrowcontent {
-  overflow: hidden;
-}
-
-.cui-widget-panel > .panel-arrowcontainer > .panel-arrowcontent > .popup-internal-box {
-  padding: 0;
-}
-
 #wrapper-edit-controls:-moz-any([place="palette"],[place="menu-panel"]) > #edit-controls,
 #wrapper-zoom-controls:-moz-any([place="palette"],[place="menu-panel"]) > #zoom-controls {
   margin-inline-start: 0;
@@ -241,23 +233,27 @@ panel[photon] > .panel-arrowcontainer > .panel-arrowcontent {
   max-width: @standaloneSubviewWidth@;
 }
 
+#BMB_bookmarksPopup::part(popupbox) {
+  padding: 0;
+}
+
 #confirmation-hint {
   --arrowpanel-background: #0060df;
   --arrowpanel-border-color: #0060df;
   --arrowpanel-color: #fff;
+  --arrowpanel-padding: 6px 10px;
+  font-weight: 400;
+  font-size: 1.1rem;
+}
+
+#confirmation-hint > .panel-arrowcontainer > .panel-arrowcontent {
+  -moz-box-align: center;
 }
 
 #confirmation-hint[hidearrow] > .panel-arrowcontainer > .panel-arrowbox {
   /* Don't display the arrow but keep the popup at the same vertical
      offset as other arrow panels. */
   visibility: hidden;
-}
-
-#confirmation-hint > .panel-arrowcontainer > .panel-arrowcontent {
-  font-weight: 400;
-  font-size: 1.1rem;
-  -moz-box-align: center;
-  padding: 6px 10px;
 }
 
 #confirmation-hint-checkmark-animation-container {
@@ -332,10 +328,6 @@ panel[photon] > .panel-arrowcontainer > .panel-arrowcontent {
   opacity: 1;
 }
 
-.cui-widget-panel[viewId^=PanelUI-webext-] > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 0;
-}
-
 panelview[id^=PanelUI-webext-] {
   overflow: hidden;
 }
@@ -347,13 +339,9 @@ panelview:not([mainview]) .toolbarbutton-text,
   display: -moz-box;
 }
 
-.cui-widget-panel > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 4px 0;
-}
-
-#appMenu-popup > .panel-arrowcontainer > .panel-arrowcontent,
-panel[photon] > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 0;
+.cui-widget-panel,
+.cui-widget-panel::part(arrowcontent) {
+  --arrowpanel-padding: 4px 0;
 }
 
 #appMenu-popup panelview,
@@ -374,6 +362,7 @@ panel[photon] > .panel-arrowcontainer > .panel-arrowcontent {
   min-width: calc(@menuPanelWidth@ + 32px);
 }
 
+.cui-widget-panel.cui-widget-panelWithFooter::part(arrowcontent),
 .cui-widget-panel.cui-widget-panelWithFooter > .panel-arrowcontainer > .panel-arrowcontent {
   padding-bottom: 0;
 }
@@ -538,7 +527,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 #appMenu-fxa-label {
   -moz-context-properties: fill;
   fill: currentColor;
-  list-style-image: url(chrome://browser/skin/sync.svg);
+  list-style-image: var(--avatar-image-url);
 }
 
 #appMenu-fxa-label {
@@ -591,7 +580,8 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 }
 
 #appMenu-fxa-status[fxastatus="login-failed"],
-#appMenu-fxa-status[fxastatus="unverified"] {
+#appMenu-fxa-status[fxastatus="unverified"],
+:root[fxastatus="unverified"] .fxa-menu-header {
   background-color: @appmenuWarningBackgroundColor@;
   color: @appmenuWarningColor@;
   border-top: 1px solid @appmenuWarningBorderColor@;
@@ -599,18 +589,20 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 }
 
 #appMenu-fxa-status[fxastatus="login-failed"]:hover,
-#appMenu-fxa-status[fxastatus="unverified"]:hover {
+#appMenu-fxa-status[fxastatus="unverified"]:hover,
+:root[fxastatus="unverified"] .fxa-menu-header:hover {
   background-color: @appmenuWarningBackgroundColorHover@;
 }
 
 #appMenu-fxa-status[fxastatus="login-failed"]:hover:active,
-#appMenu-fxa-status[fxastatus="unverified"]:hover:active {
+#appMenu-fxa-status[fxastatus="unverified"]:hover:active,
+:root[fxastatus="unverified"] .fxa-menu-header:hover:active {
   background-color: @appmenuWarningBackgroundColorActive@;
 }
 
 /* Tracking Protection Button & Toggle */
 
-#appMenu-tp-label {
+#appMenu-protection-report-text {
   -moz-context-properties: fill;
   fill: currentColor;
   -moz-box-flex: 1;
@@ -619,16 +611,12 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
   margin: 0;
 }
 
-#appMenu-tp-icon {
-  list-style-image: url(chrome://browser/skin/tracking-protection.svg);
+#appMenu-protection-report-icon {
+  list-style-image: url(chrome://browser/skin/controlcenter/dashboard.svg);
 }
 
-#appMenu-tp-button {
+#appMenu-protection-report-button {
   -moz-box-flex: 1;
-}
-
-#appMenu-tp-category {
-  margin-inline-end: 0;
 }
 
 .addon-banner-item > .toolbarbutton-text,
@@ -667,18 +655,21 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 }
 
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="login-failed"],
-:root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"] {
+:root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"],
+:root[lwt-popup-brighttext][fxastatus="unverified"] .fxa-menu-header {
   background-color: @appmenuWarningBackgroundColorBrightText@;
   color: @appmenuWarningColorBrightText@;
 }
 
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="login-failed"]:hover,
-:root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"]:hover {
+:root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"]:hover,
+:root[lwt-popup-brighttext][fxastatus="unverified"] .fxa-menu-header:hover {
   background-color: @appmenuWarningBackgroundColorHoverBrightText@;
 }
 
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="login-failed"]:hover:active,
-:root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"]:hover:active {
+:root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"]:hover:active,
+:root[lwt-popup-brighttext][fxastatus="unverified"] .fxa-menu-header:hover:active {
   background-color: @appmenuWarningBackgroundColorActiveBrightText@;
 }
 
@@ -720,33 +711,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
   border-radius: 50%;
 }
 
-:root[fxastatus="signedin"] #PanelUI-fxa-signin,
-:root[fxastatus="signedin"] #PanelUI-fxa-unverified,
-:root[fxastatus="unverified"] #PanelUI-fxa-signin,
-:root[fxastatus="unverified"] #PanelUI-fxa-menu,
-:root[fxastatus="not_configured"] #PanelUI-fxa-unverified,
-:root[fxastatus="not_configured"] #PanelUI-fxa-menu {
-  display: none;
-}
-
-:root[fxastatus="not_configured"] #PanelUI-fxa > .panel-subview-body,
-:root[fxastatus="unverified"] #PanelUI-fxa > .panel-subview-body {
-  -moz-box-align: center;
-}
-
-#PanelUI-fxa-signin,
-#PanelUI-fxa-unverified {
-  margin-top: 20px;
-  -moz-box-align: center;
-}
-
-.PanelUI-fxa-signin-instruction-callout {
-  font-size: 1.3em;
-  font-weight: normal;
-  padding: .6em 0 .6em;
-}
-
-.PanelUI-fxa-signin-instruction-label {
+.PanelUI-fxa-service-description-label {
   /* Use 'lighter' font for this to de-emphasize it compared to the title.
    * We use 300 on Linux because 100 is too light (lacks contrast with
    * the background) for some fonts in combination with anti-aliasing. */
@@ -757,22 +722,44 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 %endif
 }
 
-.fxa-avatar-subpanel {
+.fxa-menu-header {
   padding-top: 8px;
   padding-bottom: 4px;
+  /* Important is here to ensure that the proper header height is fixed
+     regardless if opened from browser icon or under app menu.
+  */
+  max-height: 46px !important;
 }
 
-.fxa-avatar-subpanel-description {
+#fxa-menu-header-title {
+  color: var(--arrowpanel-color);
+}
+
+#fxa-menu-header-description {
   color: var(--panel-disabled-color);
 }
 
 #fxa-menu-avatar {
   height: 32px;
   width: 32px;
-  margin-inline-start: 20px;
-  margin-inline-end: 5px;
   -moz-context-properties: fill, fill-opacity;
   fill: var(--arrowpanel-color);
+}
+
+#PanelUI-fxa-menu-send-button {
+  list-style-image: url(chrome://browser/skin/fxa/send.svg);
+}
+
+#PanelUI-fxa-menu-monitor-button {
+  list-style-image: url(chrome://browser/skin/fxa/monitor.svg);
+}
+
+#PanelUI-fxa-menu-connect-device-button {
+  list-style-image: url(chrome://browser/skin/fxa/add-device.svg);
+}
+
+#PanelUI-fxa-menu-connect-device-button[disabled="true"] {
+  color: var(--panel-disabled-color);
 }
 
 /* From the FxA menu -> remote tabs, we don't need to clutter the view with
@@ -794,24 +781,33 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   transform: scaleX(-1);
 }
 
-.fxaChooseWhatToSyncDevices {
-  height: 102px;
-  width: 201px;
-  list-style-image: url(chrome://browser/skin/fxa/sync-devices.svg);
+.fxaSendLogo,
+.fxaMonitorLogo {
+  margin-top: 15px;
+  height: 80px;
+  width: 80px;
 }
 
-.fxaGraphicMail {
-  height: 71px;
-  width: 143px;
-  list-style-image: url(chrome://browser/skin/fxa/graphic-mail.svg);
+.fxaSendToDeviceLogo {
+  margin-top: 15px;
+  height: 119px;
+  width: 164px;
+  list-style-image: url(chrome://browser/skin/fxa/send-to-device.svg);
+}
+
+.fxaSendLogo {
+  list-style-image: url(chrome://browser/content/logos/send.svg);
+}
+
+.fxaMonitorLogo {
+  list-style-image: url(chrome://browser/content/logos/monitor.svg);
 }
 
 #PanelUI-remotetabs {
   --panel-ui-sync-illustration-height: 141px;
 }
 
-.PanelUI-fxa-signin-instruction-label,
-.PanelUI-fxa-signin-instruction-callout,
+.PanelUI-fxa-service-description-label,
 .PanelUI-remotetabs-instruction-label {
   /* If you change the margin here, the min-height of the synced tabs panel
     (e.g. #PanelUI-remotetabs[mainview] #PanelUI-remotetabs-setupsync, etc) may
@@ -820,6 +816,10 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   text-align: center;
   text-shadow: none;
   max-width: 15em;
+}
+
+.PanelUI-fxa-service-description-label {
+  margin-top: 10px;
 }
 
 .PanelUI-remotetabs-instruction-label {
@@ -1107,22 +1107,32 @@ panelview .toolbarbutton-1,
   float: right;
 }
 
-.PanelUI-subView .subviewbutton-nav::after {
+.PanelUI-subView .subviewbutton-nav::after,
+#protections-popup-message button::after {
   -moz-context-properties: fill, fill-opacity;
   content: url(chrome://browser/skin/back-12.svg);
   fill: currentColor;
   fill-opacity: 0.6;
-  float: right;
+  float: inline-end;
   transform: translateY(1px);
+}
+
+#protections-popup-message button::after {
+  transform: scale(1.5) translateY(1px);
 }
 
 .PanelUI-subView .subviewbutton-nav:-moz-locale-dir(ltr)::after {
   transform: scaleX(-1) translateY(1px);
 }
 
+#protections-popup-message button:-moz-locale-dir(ltr)::after {
+  transform: scaleX(-1) translateY(1px) scale(1.5);
+}
+
 .subviewbutton[shortcut]::after,
 .subviewbutton[shortcut]::after,
-.PanelUI-subView .subviewbutton-nav::after {
+.PanelUI-subView .subviewbutton-nav::after,
+#protections-popup-message button::after {
   margin-inline-start: 10px;
 }
 
@@ -1149,6 +1159,20 @@ panelview .toolbarbutton-1,
   -moz-context-properties: fill;
   fill: currentColor;
   color: inherit;
+}
+
+.subviewbutton[type="open-to-new"]::after {
+  content: url(chrome://browser/skin/open-in-new.svg);
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.6;
+  float: right;
+  height: 12px;
+  width: 12px;
+}
+
+.subviewbutton[type="open-to-new"]:-moz-locale-dir(rtl)::after {
+  transform: scaleX(-1);
 }
 
 #appMenu-popup .toolbaritem-combined-buttons {
@@ -1278,31 +1302,9 @@ menuitem.panel-subview-footer@menuStateActive@,
   margin-inline-end: 3px;
 }
 
-#BMB_bookmarksPopup .panel-arrowcontainer > .panel-arrowcontent > .popup-internal-box > .scrollbutton-up,
-#BMB_bookmarksPopup .panel-arrowcontainer > .panel-arrowcontent > .popup-internal-box > .scrollbutton-down {
-  -moz-appearance: none;
-  margin-top: 0;
-  margin-bottom: 0;
-}
-
-/* Remove padding on xul:arrowscrollbox to avoid extra padding on footer */
-#BMB_bookmarksPopup arrowscrollbox {
-  padding-bottom: 0px;
-}
-
 #BMB_bookmarksPopup menupopup > .bookmarks-actions-menuseparator {
   /* Hide bottom separator as the styled footer includes a top border serving the same purpose */
   display: none;
-}
-
-/* Popups with only one item don't have a footer */
-#BMB_bookmarksPopup menupopup[placespopup=true][singleitempopup=true] > hbox > .popup-internal-box > .arrowscrollbox-scrollbox,
-/* These popups never have a footer */
-#BMB_bookmarksToolbarPopup > hbox > .popup-internal-box > .arrowscrollbox-scrollbox,
-#BMB_unsortedBookmarksPopup > hbox > .popup-internal-box > .arrowscrollbox-scrollbox,
-#BMB_mobileBookmarksPopup > hbox > .popup-internal-box > .arrowscrollbox-scrollbox {
-  /* And so they need some bottom padding: */
-  padding-bottom: 4px;
 }
 
 /* Disabled (empty) item is always alone and never has an icon, so fix its left padding */
@@ -1442,10 +1444,6 @@ toolbarpaletteitem[place="menu-panel"] > .toolbaritem-combined-buttons > toolbar
 
 .toolbaritem-combined-buttons@inAnyPanel@:hover > separator {
   margin: 0;
-}
-
-#widget-overflow > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 0;
 }
 
 #widget-overflow-mainView .panel-subview-body {
@@ -1701,14 +1699,13 @@ toolbarpaletteitem[place="menu-panel"] > .subviewbutton-nav::after {
   border-bottom: 1px solid var(--panel-separator-color);
   display: flex;
   flex: 1 auto;
-  height: 40px; /* fixed item height to prevent flex sizing; height + 2*4px padding */
   padding: 4px;
 }
 
 .panel-header > label {
   flex: auto;
   font-weight: 600;
-  margin: 0;
+  margin: 4px 0;
   text-align: center;
 }
 
@@ -1793,8 +1790,40 @@ toolbarpaletteitem[place="menu-panel"] > .subviewbutton-nav::after {
   max-width: @menuPanelWidth@;
 }
 
-#PanelUI-whatsNew-content {
-  padding: 0 10px;
+#protections-popup-main-header-label {
+  margin-inline-start: 30px;
+  text-align: center;
+}
+
+#protections-popup #messaging-system-message-container {
+  height: 260px;
+  overflow: hidden;
+  transition: height .25s;
+  border-top: 1px solid var(--panel-separator-color);
+}
+
+#protections-popup #messaging-system-message-container[disabled] {
+  height: 0;
+}
+
+#protections-popup #messaging-system-message-container[disabled] #protections-popup-message {
+  /* height + margins */
+  transform: translateY(calc(-100% - 10px));
+}
+
+#protections-popup-message {
+  display: flex;
+  align-items: flex-end;
+  transition: transform .25s;
+}
+
+#protections-popup-message.whatsNew-hero-message {
+  background-image: url(chrome://browser/skin/controlcenter/hero-message-background.svg);
+  background-repeat: no-repeat;
+  background-position: top right;
+  height: calc(100% - 20px);
+  margin: 10px;
+  color: white;
 }
 
 #customizationui-widget-multiview #PanelUI-whatsNew-content {
@@ -1805,6 +1834,137 @@ toolbarpaletteitem[place="menu-panel"] > .subviewbutton-nav::after {
   display: none;
 }
 
+/**
+ * The Applications Menu container has some extra padding that does not
+ * exist when the What's New dropdown is shown directly from the toolbar
+ */
+#PanelUI-whatsNew-content {
+  margin-top: -6px;
+}
+
+#customizationui-widget-multiview #PanelUI-whatsNew-content {
+  margin: 0;
+}
+
 #customizationui-widget-multiview #PanelUI-whatsNew-title {
   display: flex;
+}
+
+#PanelUI-whatsNew .whatsNew-message {
+  cursor: pointer;
+  margin: 0;
+  padding: 0 12px;
+}
+
+#PanelUI-whatsNew .whatsNew-message::before {
+  content: "";
+  display: block;
+  height: 1px;
+  background: var(--panel-separator-color);
+}
+
+#PanelUI-whatsNew .whatsNew-message:last-child {
+  border-bottom: none;
+}
+
+#PanelUI-whatsNew .whatsNew-message-date {
+  font-size: 11px;
+  margin: 0 -12px;
+  margin-top: -1px; /* Hide the border separator between messages */
+  padding: 6px 16px;
+  background: var(--toolbar-bgcolor);
+}
+
+#PanelUI-whatsNew .whatsNew-message-body {
+  padding: 6px 6px 18px;
+  text-align: inherit;
+  text-decoration: none;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+#protections-popup-message .whatsNew-message-body {
+  /* -10px to compensate for the margin on the container. We can't get rid of that
+     because it helps position the background image. */
+  margin: 0 calc(-10px + var(--horizontal-padding)) var(--vertical-section-padding);
+}
+
+#PanelUI-whatsNew .whatsNew-message-body.has-icon {
+  padding-inline-end: 46px;
+  position: relative;
+}
+
+#PanelUI-whatsNew .whatsNew-message-icon {
+  inset-inline-end: 6px;
+  height: 32px;
+  position: absolute;
+  top: 10px;
+  width: 32px;
+}
+
+#PanelUI-whatsNew .whatsNew-message-title,
+#protections-popup-message .whatsNew-message-title {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 24px;
+  margin: 2px 0;
+}
+
+#PanelUI-whatsNew .whatsNew-message-title-large {
+  font-size: 28px;
+  margin: 2px 0;
+  font-weight: 300;
+}
+
+#PanelUI-whatsNew .whatsNew-message-subtitle {
+  margin: 2px 0;
+  font-size: 11px;
+  color: #949494;
+  font-weight: normal;
+}
+
+#PanelUI-whatsNew .whatsNew-message-body p,
+#protections-popup-message .whatsNew-message-body p {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+#PanelUI-whatsNew .text-link {
+  background: none;
+  border: 0;
+  color: #45a1ff;
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 16px;
+}
+
+#protections-popup-message .text-link {
+  color: white;
+}
+
+#protections-popup-message .text-link:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#PanelUI-whatsNew .text-link:hover {
+  color: #0a84ff;
+  text-decoration: underline;
+}
+
+#PanelUI-whatsNew .text-link:focus {
+  color: #0a84ff;
+  text-decoration: underline;
+}
+
+#PanelUI-whatsNew .text-link:active {
+  color: #0060df;
+}
+
+#protections-popup-message button {
+  color: white;
+  width: 100%;
+  text-align: end;
 }

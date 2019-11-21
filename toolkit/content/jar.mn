@@ -31,9 +31,9 @@ toolkit.jar:
    content/global/aboutUrlClassifier.js
    content/global/aboutUrlClassifier.xhtml
    content/global/aboutUrlClassifier.css
-   content/global/directionDetector.html
    content/global/plugins.html
    content/global/plugins.css
+   content/global/plugins.js
    content/global/browser-child.js
    content/global/browser-content.js
 *   content/global/buildconfig.html
@@ -68,10 +68,9 @@ toolkit.jar:
    content/global/bindings/datetimebox.css     (widgets/datetimebox.css)
    content/global/bindings/general.xml         (widgets/general.xml)
    content/global/bindings/popup.xml           (widgets/popup.xml)
-   content/global/bindings/richlistbox.xml     (widgets/richlistbox.xml)
    content/global/bindings/scrollbox.xml       (widgets/scrollbox.xml)
    content/global/bindings/spinner.js          (widgets/spinner.js)
-*  content/global/bindings/textbox.xml         (widgets/textbox.xml)
+   content/global/bindings/textbox.xml         (widgets/textbox.xml)
    content/global/bindings/timekeeper.js       (widgets/timekeeper.js)
    content/global/bindings/timepicker.js       (widgets/timepicker.js)
    content/global/elements/autocomplete-popup.js              (widgets/autocomplete-popup.js)

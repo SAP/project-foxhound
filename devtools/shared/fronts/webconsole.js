@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -18,15 +16,12 @@ const { webconsoleSpec } = require("devtools/shared/specs/webconsole");
  * A WebConsoleClient is used as a front end for the WebConsoleActor that is
  * created on the server, hiding implementation details.
  *
- * @param object debuggerClient
+ * @param object client
  *        The DebuggerClient instance we live for.
- * @param object response
- *        The response packet received from the "startListeners" request sent to
- *        the WebConsoleActor.
  */
 class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
-  constructor(client) {
-    super(client);
+  constructor(client, targetFront, parentFront) {
+    super(client, targetFront, parentFront);
     this._client = client;
     this.traits = {};
     this._longStrings = {};
@@ -175,20 +170,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
    * @param object [options={}]
    *        Options for evaluation:
    *
-   *        - bindObjectActor: an ObjectActor ID. The OA holds a reference to
-   *        a Debugger.Object that wraps a content object. This option allows
-   *        you to bind |_self| to the D.O of the given OA, during string
-   *        evaluation.
-   *
-   *        See: Debugger.Object.executeInGlobalWithBindings() for information
-   *        about bindings.
-   *
-   *        Use case: the variable view needs to update objects and it does so
-   *        by knowing the ObjectActor it inspects and binding |_self| to the
-   *        D.O of the OA. As such, variable view sends strings like these for
-   *        eval:
-   *          _self["prop"] = value;
-   *
    *        - frameActor: a FrameActor ID. The FA holds a reference to
    *        a Debugger.Frame. This option allows you to evaluate the string in
    *        the frame of the given FA.
@@ -207,7 +188,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   evaluateJS(string, opts = {}) {
     const options = {
       text: string,
-      bindObjectActor: opts.bindObjectActor,
       frameActor: opts.frameActor,
       url: opts.url,
       selectedNodeActor: opts.selectedNodeActor,
@@ -223,7 +203,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   evaluateJSAsync(string, opts = {}) {
     const options = {
       text: string,
-      bindObjectActor: opts.bindObjectActor,
       frameActor: opts.frameActor,
       url: opts.url,
       selectedNodeActor: opts.selectedNodeActor,
@@ -232,11 +211,11 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
     };
 
     return new Promise(async (resolve, reject) => {
-      const response = await super.evaluateJSAsync(options);
-      // Null check this in case the client has been detached while waiting
-      // for a response.
+      const { resultID } = await super.evaluateJSAsync(options);
+      // Null check this in case the client has been detached while sending
+      // the one way request
       if (this.pendingEvaluationResults) {
-        this.pendingEvaluationResults.set(response.resultID, resp => {
+        this.pendingEvaluationResults.set(resultID, resp => {
           if (resp.error) {
             reject(resp);
           } else {

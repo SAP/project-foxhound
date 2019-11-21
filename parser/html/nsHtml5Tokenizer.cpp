@@ -1205,9 +1205,6 @@ stateloop:
           }
           c = checkChar(buf, pos);
           switch (c) {
-            case '\0': {
-              NS_HTML5_BREAK(stateloop);
-            }
             case '-': {
               clearStrBufAfterOneHyphen();
               state = P::transition(
@@ -1670,9 +1667,6 @@ stateloop:
           NS_HTML5_BREAK(stateloop);
         }
         c = checkChar(buf, pos);
-        if (c == '\0') {
-          NS_HTML5_BREAK(stateloop);
-        }
         switch (c) {
           case ' ':
           case '\t':
@@ -1680,7 +1674,8 @@ stateloop:
           case '\r':
           case '\f':
           case '<':
-          case '&': {
+          case '&':
+          case '\0': {
             emitOrAppendCharRefBuf(returnState);
             if (!(returnState & DATA_AND_RCDATA_MASK)) {
               cstart = pos;
@@ -1731,9 +1726,6 @@ stateloop:
             NS_HTML5_BREAK(stateloop);
           }
           c = checkChar(buf, pos);
-          if (c == '\0') {
-            NS_HTML5_BREAK(stateloop);
-          }
           int32_t hilo = 0;
           if (c <= 'z') {
             const int32_t* row = nsHtml5NamedCharactersAccel::HILO_ACCEL[c];
@@ -1771,9 +1763,6 @@ stateloop:
             NS_HTML5_BREAK(stateloop);
           }
           c = checkChar(buf, pos);
-          if (c == '\0') {
-            NS_HTML5_BREAK(stateloop);
-          }
           entCol++;
           for (;;) {
             if (hi < lo) {

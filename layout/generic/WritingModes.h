@@ -450,7 +450,7 @@ class WritingMode {
   /**
    * Construct writing mode based on a ComputedStyle.
    */
-  explicit WritingMode(ComputedStyle* aComputedStyle) {
+  explicit WritingMode(const ComputedStyle* aComputedStyle) {
     NS_ASSERTION(aComputedStyle, "we need an ComputedStyle here");
     InitFromStyleVisibility(aComputedStyle->StyleVisibility());
   }
@@ -1918,7 +1918,6 @@ const T& StyleRect<T>::GetBEnd(mozilla::WritingMode aWM) const {
 }
 
 }  // namespace mozilla
-
 
 // Definitions of inline methods for nsStylePosition, declared in
 // nsStyleStruct.h but not defined there because they need WritingMode.

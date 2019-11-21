@@ -121,8 +121,8 @@ JS_FRIEND_API JSObject* JS_NewObjectWithUniqueType(JSContext* cx,
    * ObjectGroup attached to our proto with information about our object, since
    * we're not going to be using that ObjectGroup anyway.
    */
-  RootedObject obj(cx, NewObjectWithGivenProto(cx, Valueify(clasp), nullptr,
-                                               SingletonObject));
+  RootedObject obj(
+      cx, NewObjectWithGivenProto(cx, clasp, nullptr, SingletonObject));
   if (!obj) {
     return nullptr;
   }
@@ -536,12 +536,12 @@ JS_FRIEND_API void js::VisitGrayWrapperTargets(Zone* zone,
                                                GCThingCallback callback,
                                                void* closure) {
   for (CompartmentsInZoneIter comp(zone); !comp.done(); comp.next()) {
-    for (Compartment::WrapperEnum e(comp); !e.empty(); e.popFront()) {
-      e.front().mutableKey().applyToWrapped([callback, closure](auto tp) {
-        if ((*tp)->isMarkedGray()) {
-          callback(closure, JS::GCCellPtr(*tp));
-        }
-      });
+    for (Compartment::ObjectWrapperEnum e(comp); !e.empty(); e.popFront()) {
+      JSObject* target = e.front().key();
+      if (target->isMarkedGray()) {
+        JS::AutoSuppressGCAnalysis nogc;
+        callback(closure, JS::GCCellPtr(target));
+      }
     }
   }
 }
@@ -1019,7 +1019,7 @@ struct DumpHeapTracer final : public JS::CallbackTracer, public WeakMapTracer {
             key.asCell(), kdelegate, value.asCell());
   }
 
-  void onChild(const JS::GCCellPtr& thing) override;
+  bool onChild(const JS::GCCellPtr& thing) override;
 };
 
 static char MarkDescriptor(void* thing) {
@@ -1081,15 +1081,16 @@ static void DumpHeapVisitCell(JSRuntime* rt, void* data, void* thing,
   js::TraceChildren(dtrc, thing, traceKind);
 }
 
-void DumpHeapTracer::onChild(const JS::GCCellPtr& thing) {
+bool DumpHeapTracer::onChild(const JS::GCCellPtr& thing) {
   if (gc::IsInsideNursery(thing.asCell())) {
-    return;
+    return true;
   }
 
   char buffer[1024];
   getTracingEdgeName(buffer, sizeof(buffer));
   fprintf(output, "%s%p %c %s\n", prefix, thing.asCell(),
           MarkDescriptor(thing.asCell()), buffer);
+  return true;
 }
 
 void js::DumpHeap(JSContext* cx, FILE* fp,
@@ -1179,18 +1180,30 @@ JS_FRIEND_API const DOMCallbacks* js::GetDOMCallbacks(JSContext* cx) {
 
 static const void* gDOMProxyHandlerFamily = nullptr;
 static DOMProxyShadowsCheck gDOMProxyShadowsCheck;
+static const void* gDOMRemoteProxyHandlerFamily = nullptr;
 
 JS_FRIEND_API void js::SetDOMProxyInformation(
     const void* domProxyHandlerFamily,
-    DOMProxyShadowsCheck domProxyShadowsCheck) {
+    DOMProxyShadowsCheck domProxyShadowsCheck,
+    const void* domRemoteProxyHandlerFamily) {
   gDOMProxyHandlerFamily = domProxyHandlerFamily;
   gDOMProxyShadowsCheck = domProxyShadowsCheck;
+  gDOMRemoteProxyHandlerFamily = domRemoteProxyHandlerFamily;
 }
 
 const void* js::GetDOMProxyHandlerFamily() { return gDOMProxyHandlerFamily; }
 
 DOMProxyShadowsCheck js::GetDOMProxyShadowsCheck() {
   return gDOMProxyShadowsCheck;
+}
+
+const void* js::GetDOMRemoteProxyHandlerFamily() {
+  return gDOMRemoteProxyHandlerFamily;
+}
+
+JS_FRIEND_API bool js::IsDOMRemoteProxyObject(JSObject* object) {
+  return js::IsProxy(object) && js::GetProxyHandler(object)->family() ==
+                                    js::GetDOMRemoteProxyHandlerFamily();
 }
 
 static XrayJitInfo* gXrayJitInfo = nullptr;
@@ -1290,7 +1303,7 @@ JS_FRIEND_API JSAtom* js::GetPropertyNameFromPC(JSScript* script,
 }
 
 JS_FRIEND_API void js::SetWindowProxyClass(JSContext* cx,
-                                           const js::Class* clasp) {
+                                           const JSClass* clasp) {
   MOZ_ASSERT(!cx->runtime()->maybeWindowProxyClass());
   cx->runtime()->setWindowProxyClass(clasp);
 }
@@ -1388,5 +1401,13 @@ JS_FRIEND_API JS::Value js::MaybeGetScriptPrivate(JSObject* object) {
 }
 
 JS_FRIEND_API uint64_t js::GetGCHeapUsageForObjectZone(JSObject* obj) {
-  return obj->zone()->zoneSize.gcBytes();
+  return obj->zone()->gcHeapSize.bytes();
 }
+
+#ifdef DEBUG
+JS_FRIEND_API bool js::RuntimeIsBeingDestroyed() {
+  JSRuntime* runtime = TlsContext.get()->runtime();
+  MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(runtime));
+  return runtime->isBeingDestroyed();
+}
+#endif

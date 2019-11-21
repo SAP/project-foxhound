@@ -103,6 +103,19 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { DefaultMap } = ExtensionUtils;
 
 let ACTORS = {
+  AudioPlayback: {
+    parent: {
+      moduleURI: "resource://gre/actors/AudioPlaybackParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AudioPlaybackChild.jsm",
+      observers: ["audio-playback"],
+    },
+
+    allFrames: true,
+  },
+
   Autoplay: {
     parent: {
       moduleURI: "resource://gre/actors/AutoplayParent.jsm",
@@ -179,16 +192,25 @@ let ACTORS = {
     allFrames: true,
   },
 
-  // UAWidgetsDateTimeBox is a _duplicate_ of UAWidgetsChild
-  // that handles only the datetime box widget. The original
-  // intention to port all all UAWidgets to JSWindowActor
-  // at once is blocked by some jUnit tests related to
-  // the video element failing in
-  // mobile/android/geckoview/src/androidTest/java/org/mozilla/geckoview/test/MediaElementTest.kt
-  // when running on android API 16 (debug & pgo) platforms.
-  UAWidgetsDateTimeBox: {
+  Zoom: {
+    parent: {
+      moduleURI: "resource://gre/actors/ZoomParent.jsm",
+    },
     child: {
-      moduleURI: "resource://gre/actors/UAWidgetsDateTimeBoxChild.jsm",
+      moduleURI: "resource://gre/actors/ZoomChild.jsm",
+      events: {
+        FullZoomChange: {},
+        TextZoomChange: {},
+        ZoomChangeUsingMouseWheel: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  UAWidgets: {
+    child: {
+      moduleURI: "resource://gre/actors/UAWidgetsChild.jsm",
       events: {
         UAWidgetSetupOrChange: {},
         UAWidgetTeardown: {},
@@ -200,14 +222,6 @@ let ACTORS = {
 };
 
 let LEGACY_ACTORS = {
-  AudioPlayback: {
-    child: {
-      module: "resource://gre/actors/AudioPlaybackChild.jsm",
-      messages: ["AudioPlayback"],
-      observers: ["audio-playback"],
-    },
-  },
-
   Controllers: {
     child: {
       module: "resource://gre/actors/ControllersChild.jsm",
@@ -294,7 +308,7 @@ let LEGACY_ACTORS = {
       module: "resource://gre/actors/PictureInPictureChild.jsm",
       events: {
         canplay: { capture: true, mozSystemGroup: true },
-        pagehide: { capture: true },
+        contextmenu: { capture: true },
       },
     },
   },
@@ -350,16 +364,6 @@ let LEGACY_ACTORS = {
     },
   },
 
-  UAWidgets: {
-    child: {
-      module: "resource://gre/actors/UAWidgetsChild.jsm",
-      events: {
-        UAWidgetSetupOrChange: {},
-        UAWidgetTeardown: {},
-      },
-    },
-  },
-
   UnselectedTabHover: {
     child: {
       module: "resource://gre/actors/UnselectedTabHoverChild.jsm",
@@ -393,18 +397,6 @@ let LEGACY_ACTORS = {
         "WebNavigation:SetOriginAttributes",
         "WebNavigation:Stop",
       ],
-    },
-  },
-
-  Zoom: {
-    child: {
-      module: "resource://gre/actors/ZoomChild.jsm",
-      events: {
-        FullZoomChange: {},
-        TextZoomChange: {},
-        ZoomChangeUsingMouseWheel: {},
-      },
-      messages: ["FullZoom", "TextZoom"],
     },
   },
 };

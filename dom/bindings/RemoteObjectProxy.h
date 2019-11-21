@@ -15,6 +15,8 @@
 namespace mozilla {
 namespace dom {
 
+class BrowsingContext;
+
 /**
  * Base class for RemoteObjectProxy. Implements the pieces of the handler that
  * don't depend on properties/methods of the specific WebIDL interface that this
@@ -114,12 +116,14 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
    * failed after creating the object.
    */
   void GetOrCreateProxyObject(JSContext* aCx, void* aNative,
-                              const js::Class* aClasp,
+                              const JSClass* aClasp,
+                              JS::Handle<JSObject*> aTransplantTo,
                               JS::MutableHandle<JSObject*> aProxy,
                               bool& aNewObjectCreated) const;
 
   const prototypes::ID mPrototypeID;
 
+  friend struct SetDOMProxyInformation;
   static const char sCrossOriginProxyFamily;
 };
 
@@ -146,9 +150,11 @@ class RemoteObjectProxy : public RemoteObjectProxyBase {
   }
 
   void GetProxyObject(JSContext* aCx, Native* aNative,
+                      JS::Handle<JSObject*> aTransplantTo,
                       JS::MutableHandle<JSObject*> aProxy) const {
     bool objectCreated = false;
-    GetOrCreateProxyObject(aCx, aNative, &sClass, aProxy, objectCreated);
+    GetOrCreateProxyObject(aCx, aNative, &sClass, aTransplantTo, aProxy,
+                           objectCreated);
     if (objectCreated) {
       NS_ADDREF(aNative);
     }
@@ -164,7 +170,7 @@ class RemoteObjectProxy : public RemoteObjectProxyBase {
         aCx, aProxy, /* slot = */ 0, P, F, aHolder);
   }
 
-  static const js::Class sClass;
+  static const JSClass sClass;
 };
 
 /**
@@ -189,6 +195,12 @@ inline bool IsRemoteObjectProxy(JSObject* aObj) {
   }
   return RemoteObjectProxyBase::IsRemoteObjectProxy(aObj);
 }
+
+/**
+ * Return the browsing context for this remote outer window proxy.
+ * Only call this function on remote outer window proxies.
+ */
+BrowsingContext* GetBrowsingContext(JSObject* aProxy);
 
 }  // namespace dom
 }  // namespace mozilla

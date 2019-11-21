@@ -17,13 +17,12 @@ using namespace mozilla;
 
 void nsSplittableFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                              nsIFrame* aPrevInFlow) {
-  nsFrame::Init(aContent, aParent, aPrevInFlow);
-
   if (aPrevInFlow) {
     // Hook the frame into the flow
     SetPrevInFlow(aPrevInFlow);
     aPrevInFlow->SetNextInFlow(this);
   }
+  nsFrame::Init(aContent, aParent, aPrevInFlow);
 }
 
 void nsSplittableFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -186,7 +185,8 @@ void nsSplittableFrame::RemoveFromFlow(nsIFrame* aFrame) {
 
 nscoord nsSplittableFrame::ConsumedBSize(WritingMode aWM) const {
   nscoord bSize = 0;
-  for (nsIFrame* prev = GetPrevInFlow(); prev; prev = prev->GetPrevInFlow()) {
+  for (nsIFrame* prev = GetPrevContinuation(); prev;
+       prev = prev->GetPrevContinuation()) {
     bSize += prev->ContentBSize(aWM);
   }
   return bSize;

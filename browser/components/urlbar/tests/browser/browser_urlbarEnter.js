@@ -16,7 +16,7 @@ add_task(async function returnKeypress() {
 
   // Check url bar and selected tab.
   is(
-    gURLBar.textValue,
+    gURLBar.value,
     TEST_VALUE,
     "Urlbar should preserve the value on return keypress"
   );
@@ -42,7 +42,34 @@ add_task(async function altReturnKeypress() {
 
   // Check url bar and selected tab.
   is(
-    gURLBar.textValue,
+    gURLBar.value,
+    TEST_VALUE,
+    "Urlbar should preserve the value on return keypress"
+  );
+  isnot(gBrowser.selectedTab, tab, "New URL was loaded in a new tab");
+
+  // Cleanup.
+  BrowserTestUtils.removeTab(tab);
+  BrowserTestUtils.removeTab(gBrowser.selectedTab);
+});
+
+add_task(async function altGrReturnKeypress() {
+  info("AltGr+Return keypress");
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, START_VALUE);
+
+  let tabOpenPromise = BrowserTestUtils.waitForEvent(
+    gBrowser.tabContainer,
+    "TabOpen"
+  );
+  gURLBar.focus();
+  EventUtils.synthesizeKey("KEY_Enter", { altGraphKey: true });
+
+  // wait for the new tab to appear.
+  await tabOpenPromise;
+
+  // Check url bar and selected tab.
+  is(
+    gURLBar.value,
     TEST_VALUE,
     "Urlbar should preserve the value on return keypress"
   );

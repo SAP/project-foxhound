@@ -29,7 +29,6 @@
 #include "js/SavedFrameAPI.h"
 #include "js/Vector.h"
 #include "util/StringBuffer.h"
-#include "vm/Debugger.h"
 #include "vm/GeckoProfiler.h"
 #include "vm/JSScript.h"
 #include "vm/Realm.h"
@@ -37,6 +36,7 @@
 #include "vm/Time.h"
 #include "vm/WrapperObject.h"
 
+#include "debugger/DebugAPI-inl.h"
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -347,7 +347,7 @@ bool SavedFrame::finishSavedFrameInit(JSContext* cx, HandleObject ctor,
   return FreezeObject(cx, proto);
 }
 
-static const ClassOps SavedFrameClassOps = {
+static const JSClassOps SavedFrameClassOps = {
     nullptr,               // addProperty
     nullptr,               // delProperty
     nullptr,               // enumerate
@@ -371,14 +371,14 @@ const ClassSpec SavedFrame::classSpec_ = {
     SavedFrame::finishSavedFrameInit,
     ClassSpec::DontDefineConstructor};
 
-/* static */ const Class SavedFrame::class_ = {
+/* static */ const JSClass SavedFrame::class_ = {
     "SavedFrame",
     JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(SavedFrame::JSSLOT_COUNT) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame) |
         JSCLASS_FOREGROUND_FINALIZE,
     &SavedFrameClassOps, &SavedFrame::classSpec_};
 
-const Class SavedFrame::protoClass_ = {
+const JSClass SavedFrame::protoClass_ = {
     js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_SavedFrame),
     JS_NULL_CLASS_OPS, &SavedFrame::classSpec_};
 
@@ -400,7 +400,7 @@ const Class SavedFrame::protoClass_ = {
     JS_PS_END};
 
 /* static */
-void SavedFrame::finalize(FreeOp* fop, JSObject* obj) {
+void SavedFrame::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   JSPrincipals* p = obj->as<SavedFrame>().getPrincipals();
   if (p) {
@@ -1815,31 +1815,12 @@ void SavedStacks::chooseSamplingProbability(Realm* realm) {
     return;
   }
 
-  GlobalObject::DebuggerVector* dbgs = global->getDebuggers();
-  if (!dbgs || dbgs->empty()) {
+  Maybe<double> probability = DebugAPI::allocationSamplingProbability(global);
+  if (probability.isNothing()) {
     return;
   }
 
-  mozilla::DebugOnly<WeakHeapPtr<Debugger*>*> begin = dbgs->begin();
-  mozilla::DebugOnly<bool> foundAnyDebuggers = false;
-
-  double probability = 0;
-  for (auto p = dbgs->begin(); p < dbgs->end(); p++) {
-    // The set of debuggers had better not change while we're iterating,
-    // such that the vector gets reallocated.
-    MOZ_ASSERT(dbgs->begin() == begin);
-    // Use unbarrieredGet() to prevent triggering read barrier while collecting,
-    // this is safe as long as dbgp does not escape.
-    Debugger* dbgp = p->unbarrieredGet();
-
-    if (dbgp->trackingAllocationSites && dbgp->enabled) {
-      foundAnyDebuggers = true;
-      probability = std::max(dbgp->allocationSamplingProbability, probability);
-    }
-  }
-  MOZ_ASSERT(foundAnyDebuggers);
-
-  this->setSamplingProbability(probability);
+  this->setSamplingProbability(*probability);
 }
 
 void SavedStacks::setSamplingProbability(double probability) {
@@ -1868,7 +1849,7 @@ JSObject* SavedStacks::MetadataBuilder::build(
     oomUnsafe.crash("SavedStacksMetadataBuilder");
   }
 
-  if (!Debugger::onLogAllocationSite(cx, obj, frame,
+  if (!DebugAPI::onLogAllocationSite(cx, obj, frame,
                                      mozilla::TimeStamp::Now())) {
     oomUnsafe.crash("SavedStacksMetadataBuilder");
   }
@@ -1885,7 +1866,7 @@ JSObject* SavedStacks::MetadataBuilder::build(
     // callback to get it out of the JS engine.
     recordAllocationCallback(JS::RecordAllocationInfo{
         node.typeName(), node.jsObjectClassName(), node.descriptiveTypeName(),
-        node.scriptFilename(), JS::ubi::CoarseTypeToString(node.coarseType()),
+        JS::ubi::CoarseTypeToString(node.coarseType()),
         node.size(cx->runtime()->debuggerMallocSizeOf),
         gc::IsInsideNursery(obj)});
   }

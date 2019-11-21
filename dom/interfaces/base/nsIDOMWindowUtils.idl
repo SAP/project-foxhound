@@ -96,14 +96,6 @@ interface nsIDOMWindowUtils : nsISupports {
   AString getDocumentMetadata(in AString aName);
 
   /**
-   * Force an immediate redraw of this window.  The parameter specifies
-   * the number of times to redraw, and the return value is the length,
-   * in milliseconds, that the redraws took.  If aCount is not specified
-   * or is 0, it is taken to be 1.
-   */
-  unsigned long redraw([optional] in unsigned long aCount);
-
-  /**
    * Force a synchronous layer transaction for this window if necessary.
    */
   [can_run_script]
@@ -1761,19 +1753,6 @@ interface nsIDOMWindowUtils : nsISupports {
   attribute uint32_t mediaSuspend;
 
   /**
-   * With this it's possible to mute all the MediaElements in this window.
-   * We have audioMuted and audioVolume to preserve the volume across
-   * mute/umute.
-   */
-  attribute boolean audioMuted;
-
-  /**
-   * range: greater or equal to 0. The real volume level is affected by the
-   * volume of all ancestor windows.
-   */
-  attribute float audioVolume;
-
-  /**
    * This method doesn't do anything useful.  It was solely added for the
    * purpose of the test for bug 503926.
    */
@@ -1856,17 +1835,6 @@ interface nsIDOMWindowUtils : nsISupports {
    * @param aSheetType One of the nsIStyleSheetService.*_SHEET constants.
    */
   bool hasRuleProcessorUsedByMultipleStyleSets(in unsigned long aSheetType);
-
-  /*
-   * Force the use counters for the node's associated document(s) to be
-   * flushed to telemetry.  For example, a document node will flush its own
-   * counters and an image node with an SVG source will flush the SVG
-   * document's counters.  Normally, use counters are flushed to telemetry
-   * upon document destruction, but as document destruction is somewhat
-   * non-deterministic, we have this method here for more determinism when
-   * running tests.
-   */
-  void forceUseCounterFlush(in Node aNode);
 
   /**
    * Enable or disable displayport suppression. This is intended to be used by
@@ -2007,6 +1975,9 @@ interface nsIDOMWindowUtils : nsISupports {
   void syncFlushCompositor();
 
   unsigned long long getLayersId();
+
+  // Returns true if we are using overlay scrollbars.
+  readonly attribute bool usesOverlayScrollbars;
 };
 
 [scriptable, uuid(c694e359-7227-4392-a138-33c0cc1f15a6)]

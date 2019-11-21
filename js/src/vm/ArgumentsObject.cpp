@@ -214,8 +214,8 @@ struct CopyScriptFrameIterArgs {
 
 ArgumentsObject* ArgumentsObject::createTemplateObject(JSContext* cx,
                                                        bool mapped) {
-  const Class* clasp = mapped ? &MappedArgumentsObject::class_
-                              : &UnmappedArgumentsObject::class_;
+  const JSClass* clasp = mapped ? &MappedArgumentsObject::class_
+                                : &UnmappedArgumentsObject::class_;
 
   RootedObject proto(
       cx, GlobalObject::getOrCreateObjectPrototype(cx, cx->global()));
@@ -901,7 +901,7 @@ bool UnmappedArgumentsObject::obj_enumerate(JSContext* cx, HandleObject obj) {
   return true;
 }
 
-void ArgumentsObject::finalize(FreeOp* fop, JSObject* obj) {
+void ArgumentsObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(!IsInsideNursery(obj));
   ArgumentsObject& argsobj = obj->as<ArgumentsObject>();
   if (argsobj.data()) {
@@ -984,7 +984,7 @@ size_t ArgumentsObject::objectMoved(JSObject* dst, JSObject* src) {
  * stack frame with their corresponding property values in the frame's
  * arguments object.
  */
-const ClassOps MappedArgumentsObject::classOps_ = {
+const JSClassOps MappedArgumentsObject::classOps_ = {
     nullptr, /* addProperty */
     ArgumentsObject::obj_delProperty,
     MappedArgumentsObject::obj_enumerate,
@@ -1005,7 +1005,7 @@ const ObjectOps MappedArgumentsObject::objectOps_ = {
     nullptr, /* lookupProperty */
     MappedArgumentsObject::obj_defineProperty};
 
-const Class MappedArgumentsObject::class_ = {
+const JSClass MappedArgumentsObject::class_ = {
     "Arguments",
     JSCLASS_DELAY_METADATA_BUILDER |
         JSCLASS_HAS_RESERVED_SLOTS(MappedArgumentsObject::RESERVED_SLOTS) |
@@ -1020,7 +1020,7 @@ const Class MappedArgumentsObject::class_ = {
  * Unmapped arguments is significantly less magical than mapped arguments, so
  * it is represented by a different class while sharing some functionality.
  */
-const ClassOps UnmappedArgumentsObject::classOps_ = {
+const JSClassOps UnmappedArgumentsObject::classOps_ = {
     nullptr, /* addProperty */
     ArgumentsObject::obj_delProperty,
     UnmappedArgumentsObject::obj_enumerate,
@@ -1037,7 +1037,7 @@ const js::ClassExtension UnmappedArgumentsObject::classExt_ = {
     ArgumentsObject::objectMoved /* objectMovedOp */
 };
 
-const Class UnmappedArgumentsObject::class_ = {
+const JSClass UnmappedArgumentsObject::class_ = {
     "Arguments",
     JSCLASS_DELAY_METADATA_BUILDER |
         JSCLASS_HAS_RESERVED_SLOTS(UnmappedArgumentsObject::RESERVED_SLOTS) |

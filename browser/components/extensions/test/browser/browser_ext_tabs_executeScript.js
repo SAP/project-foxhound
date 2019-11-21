@@ -2,13 +2,6 @@
 /* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "useRemoteWebExtensions",
-  "extensions.webextensions.remote",
-  false
-);
-
 add_task(async function testExecuteScript() {
   let { MessageChannel } = ChromeUtils.import(
     "resource://gre/modules/MessageChannel.jsm"
@@ -29,7 +22,6 @@ add_task(async function testExecuteScript() {
   }
 
   let messageManagersSize = countMM(MessageChannel.messageManagers);
-  let responseManagersSize = countMM(MessageChannel.responseManagers);
 
   const BASE =
     "http://mochi.test:8888/browser/browser/components/extensions/test/browser/";
@@ -391,19 +383,6 @@ add_task(async function testExecuteScript() {
           await browser.tabs.remove(tab.id);
         }),
 
-        browser.tabs.create({ url: "about:blank" }).then(async tab => {
-          const result = await browser.tabs.executeScript(tab.id, {
-            code: "location.href",
-            matchAboutBlank: true,
-          });
-          browser.test.assertEq(
-            "about:blank",
-            result[0],
-            "Script executed correctly in new tab"
-          );
-          await browser.tabs.remove(tab.id);
-        }),
-
         new Promise(resolve => {
           browser.runtime.onMessage.addListener(message => {
             browser.test.assertEq(
@@ -460,12 +439,5 @@ add_task(async function testExecuteScript() {
     messageManagersSize,
     "Message manager count"
   );
-  if (!useRemoteWebExtensions) {
-    is(
-      countMM(MessageChannel.responseManagers),
-      responseManagersSize,
-      "Response manager count"
-    );
-  }
   is(MessageChannel.pendingResponses.size, 0, "Pending response count");
 });

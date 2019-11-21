@@ -11,7 +11,9 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_channelclassifier.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -388,16 +390,10 @@ void LowerPriorityHelper(nsIChannel* aChannel) {
 }  // namespace
 
 // static
-void UrlClassifierCommon::AnnotateChannel(
-    nsIChannel* aChannel,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose,
-    uint32_t aClassificationFlags, uint32_t aLoadingState) {
+void UrlClassifierCommon::AnnotateChannel(nsIChannel* aChannel,
+                                          uint32_t aClassificationFlags,
+                                          uint32_t aLoadingState) {
   MOZ_ASSERT(aChannel);
-  MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
-             aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
-             aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining ||
-             aPurpose == AntiTrackingCommon::eSocialTracking);
 
   nsCOMPtr<nsIURI> chanURI;
   nsresult rv = aChannel->GetURI(getter_AddRefs(chanURI));
@@ -423,8 +419,7 @@ void UrlClassifierCommon::AnnotateChannel(
       IsTrackingClassificationFlag(aClassificationFlags) ||
       IsCryptominingClassificationFlag(aClassificationFlags);
 
-  if (validClassificationFlags &&
-      (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel, aPurpose))) {
+  if (validClassificationFlags && isThirdPartyWithTopLevelWinURI) {
     UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
         aChannel, aLoadingState);
   }
@@ -436,44 +431,44 @@ void UrlClassifierCommon::AnnotateChannel(
 }
 
 // static
-bool UrlClassifierCommon::IsAllowListed(
-    nsIChannel* aChannel,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose) {
-  MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
-             aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
-             aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining ||
-             aPurpose == AntiTrackingCommon::eSocialTracking);
-
+bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
   nsCOMPtr<nsIHttpChannelInternal> channel = do_QueryInterface(aChannel);
   if (!channel) {
     UC_LOG(("nsChannelClassifier: Not an HTTP channel"));
     return false;
   }
 
-  nsCOMPtr<nsIURI> topWinURI;
-  nsresult rv = channel->GetTopWindowURI(getter_AddRefs(topWinURI));
+  nsCOMPtr<nsIPrincipal> cbAllowListPrincipal;
+  nsresult rv = channel->GetContentBlockingAllowListPrincipal(
+      getter_AddRefs(cbAllowListPrincipal));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
 
-  if (!topWinURI && StaticPrefs::channelclassifier_allowlist_example()) {
+  if (!cbAllowListPrincipal &&
+      StaticPrefs::channelclassifier_allowlist_example()) {
     UC_LOG(("nsChannelClassifier: Allowlisting test domain"));
     nsCOMPtr<nsIIOService> ios = services::GetIOService();
     if (NS_WARN_IF(!ios)) {
       return false;
     }
 
+    nsCOMPtr<nsIURI> uri;
     rv = ios->NewURI(NS_LITERAL_CSTRING("http://allowlisted.example.com"),
-                     nullptr, nullptr, getter_AddRefs(topWinURI));
+                     nullptr, nullptr, getter_AddRefs(uri));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return false;
     }
+
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    RefPtr<BasePrincipal> bp = BasePrincipal::CreateContentPrincipal(
+        uri, loadInfo->GetOriginAttributes());
+    cbAllowListPrincipal = bp.forget();
   }
 
   bool isAllowListed = false;
   rv = AntiTrackingCommon::IsOnContentBlockingAllowList(
-      topWinURI, NS_UsePrivateBrowsing(aChannel), aPurpose, isAllowListed);
+      cbAllowListPrincipal, NS_UsePrivateBrowsing(aChannel), isAllowListed);
   if (NS_FAILED(rv)) {  // normal for some loads, no need to print a warning
     return false;
   }
@@ -499,11 +494,18 @@ bool UrlClassifierCommon::IsAllowListed(
 
 // static
 bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag) {
-  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled()) {
-    return (
-        aFlag &
-        nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_STRICT_TRACKING);
+  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled() &&
+      (aFlag &
+       nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_STRICT_TRACKING)) {
+    return true;
   }
+
+  if (StaticPrefs::privacy_socialtracking_block_cookies_enabled() &&
+      (aFlag &
+       nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_SOCIAL_TRACKING)) {
+    return true;
+  }
+
   return (aFlag &
           nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_BASIC_TRACKING);
 }

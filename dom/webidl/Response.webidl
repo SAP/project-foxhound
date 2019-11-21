@@ -23,7 +23,7 @@ interface Response {
   readonly attribute unsigned short status;
   readonly attribute boolean ok;
   readonly attribute ByteString statusText;
-  [SameObject] readonly attribute Headers headers;
+  [SameObject, BinaryName="headers_"] readonly attribute Headers headers;
 
   [Throws,
    NewObject] Response clone();
@@ -33,7 +33,7 @@ interface Response {
   // For testing only.
   [ChromeOnly] readonly attribute boolean hasCacheInfoChannel;
 };
-Response implements Body;
+Response includes Body;
 
 // This should be part of Body but we don't want to expose body to request yet.
 // See bug 1387483.

@@ -33,7 +33,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
 #include "mozilla/SystemGroup.h"
 #include "nsXPCOMPrivate.h"
 #include "mozilla/ChaosMode.h"
@@ -565,7 +564,8 @@ void nsThread::InitCommon() {
 
     pthread_attr_destroy(&attr);
 #elif defined(XP_WIN)
-    static const DynamicallyLinkedFunctionPtr<GetCurrentThreadStackLimitsFn>
+    static const StaticDynamicallyLinkedFunctionPtr<
+        GetCurrentThreadStackLimitsFn>
         sGetStackLimits(L"kernel32.dll", "GetCurrentThreadStackLimits");
 
     if (sGetStackLimits) {

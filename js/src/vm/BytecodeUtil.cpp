@@ -27,7 +27,6 @@
 #include "jstypes.h"
 #include "jsutil.h"
 
-#include "builtin/String.h"
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/SourceNotes.h"
 #include "gc/FreeOp.h"
@@ -2573,7 +2572,7 @@ JS_FRIEND_API void js::StopPCCountProfiling(JSContext* cx) {
   for (ZonesIter zone(rt, SkipAtoms); !zone.done(); zone.next()) {
     for (auto script = zone->cellIter<JSScript>(); !script.done();
          script.next()) {
-      if (script->hasScriptCounts() && script->jitScript()) {
+      if (script->hasScriptCounts() && script->hasJitScript()) {
         if (!vec->append(script)) {
           return;
         }

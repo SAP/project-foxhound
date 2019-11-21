@@ -1484,28 +1484,6 @@ nsresult internal_GetScalarByEnum(const StaticMutexAutoLock& lock,
 void internal_ApplyPendingOperations(const StaticMutexAutoLock& lock);
 
 /**
- * Record that the high-water mark for the pending operations list was reached
- * once.
- *
- * Important:
- * This appends one additional operation.
- * This needs to happen while still in deserialization mode.
- */
-void internal_RecordHighwatermarkReached(const StaticMutexAutoLock& lock) {
-  MOZ_ASSERT(gIsDeserializing);
-  MOZ_ASSERT(gScalarsActions);
-
-  // We can't call `internal_RecordScalarAction` here, because we are already
-  // getting called from there after the high-water mark check.
-  // But we know that `gScalarsActions` is a valid array and can append
-  // directly.
-  ScalarID id = ScalarID::TELEMETRY_PENDING_OPERATIONS_HIGHWATERMARK_REACHED;
-  ScalarAction action{static_cast<uint32_t>(id), false, ScalarActionType::eAdd,
-                      Some(ScalarVariant(1u)), ProcessID::Parent};
-  gScalarsActions->AppendElement(action);
-}
-
-/**
  * Record the given action on a scalar into the pending actions list.
  *
  * If the pending actions list overflows the high water mark length
@@ -1528,7 +1506,6 @@ void internal_RecordScalarAction(const StaticMutexAutoLock& lock,
   // afterwards, some scalar values might be overwritten and inconsistent, but
   // we won't lose operations on otherwise untouched probes.
   if (gScalarsActions->Length() > kScalarActionsArrayHighWaterMark) {
-    internal_RecordHighwatermarkReached(lock);
     internal_ApplyPendingOperations(lock);
     return;
   }
@@ -1577,7 +1554,6 @@ void internal_RecordKeyedScalarAction(const StaticMutexAutoLock& lock,
   // afterwards, some scalar values might be overwritten and inconsistent, but
   // we won't lose operations on otherwise untouched probes.
   if (gKeyedScalarsActions->Length() > kScalarActionsArrayHighWaterMark) {
-    internal_RecordHighwatermarkReached(lock);
     internal_ApplyPendingOperations(lock);
     return;
   }
@@ -1870,7 +1846,7 @@ void internal_DynamicScalarToIPC(
     const StaticMutexAutoLock& lock,
     const nsTArray<DynamicScalarInfo>& aDynamicScalarInfos,
     nsTArray<DynamicScalarDefinition>& aIPCDefs) {
-  for (auto info : aDynamicScalarInfos) {
+  for (auto& info : aDynamicScalarInfos) {
     DynamicScalarDefinition stubDefinition;
     stubDefinition.type = info.kind;
     stubDefinition.dataset = info.dataset;
@@ -1915,7 +1891,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
     gDynamicStoreNames = new nsTArray<RefPtr<nsAtom>>();
   }
 
-  for (auto scalarInfo : scalarInfos) {
+  for (auto& scalarInfo : scalarInfos) {
     // Allow expiring scalars that were already registered.
     CharPtrEntryType* existingKey =
         gScalarNameIDMap.GetEntry(scalarInfo.name());
@@ -3684,7 +3660,7 @@ void TelemetryScalar::AddDynamicScalarDefinitions(
   nsTArray<DynamicScalarInfo> dynamicStubs;
 
   // Populate the definitions array before acquiring the lock.
-  for (auto def : aDefs) {
+  for (auto& def : aDefs) {
     bool recordOnRelease = def.dataset == nsITelemetry::DATASET_ALL_CHANNELS;
     dynamicStubs.AppendElement(DynamicScalarInfo{def.type,
                                                  recordOnRelease,

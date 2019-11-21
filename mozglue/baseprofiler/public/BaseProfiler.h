@@ -78,6 +78,8 @@
 #  define AUTO_BASE_PROFILER_TEXT_MARKER_DOCSHELL_CAUSE( \
       markerName, text, categoryPair, docShell, cause)
 
+#  define AUTO_PROFILER_STATS(name)
+
 #else  // !MOZ_BASE_PROFILER
 
 #  include "BaseProfilingStack.h"
@@ -134,32 +136,30 @@ class SpliceableJSONWriter;
     MACRO(3, "mainthreadio", MainThreadIO,                                    \
           "Add main thread I/O to the profile")                               \
                                                                               \
-    MACRO(4, "memory", Memory, "Add memory measurements")                     \
-                                                                              \
-    MACRO(5, "privacy", Privacy,                                              \
+    MACRO(4, "privacy", Privacy,                                              \
           "Do not include user-identifiable information")                     \
                                                                               \
-    MACRO(6, "responsiveness", Responsiveness,                                \
+    MACRO(5, "responsiveness", Responsiveness,                                \
           "Collect thread responsiveness information")                        \
                                                                               \
-    MACRO(7, "screenshots", Screenshots,                                      \
+    MACRO(6, "screenshots", Screenshots,                                      \
           "Take a snapshot of the window on every composition")               \
                                                                               \
-    MACRO(8, "seqstyle", SequentialStyle,                                     \
+    MACRO(7, "seqstyle", SequentialStyle,                                     \
           "Disable parallel traversal in styling")                            \
                                                                               \
-    MACRO(9, "stackwalk", StackWalk,                                          \
+    MACRO(8, "stackwalk", StackWalk,                                          \
           "Walk the C++ stack, not available on all platforms")               \
                                                                               \
-    MACRO(10, "tasktracer", TaskTracer,                                       \
+    MACRO(9, "tasktracer", TaskTracer,                                        \
           "Start profiling with feature TaskTracer")                          \
                                                                               \
-    MACRO(11, "threads", Threads, "Profile the registered secondary threads") \
+    MACRO(10, "threads", Threads, "Profile the registered secondary threads") \
                                                                               \
-    MACRO(12, "trackopts", TrackOptimizations,                                \
+    MACRO(11, "trackopts", TrackOptimizations,                                \
           "Have the JavaScript engine track JIT optimizations")               \
                                                                               \
-    MACRO(13, "jstracer", JSTracer, "Enable tracing of the JavaScript engine")
+    MACRO(12, "jstracer", JSTracer, "Enable tracing of the JavaScript engine")
 
 struct ProfilerFeature {
 #  define DECLARE(n_, str_, Name_, desc_)                     \
@@ -484,10 +484,42 @@ using UniqueProfilerBacktrace =
 // if the profiler is inactive or in privacy mode.
 MFBT_API UniqueProfilerBacktrace profiler_get_backtrace();
 
+struct ProfilerStats {
+  unsigned n = 0;
+  double sum = 0;
+  double min = std::numeric_limits<double>::max();
+  double max = 0;
+  void Count(double v) {
+    ++n;
+    sum += v;
+    if (v < min) {
+      min = v;
+    }
+    if (v > max) {
+      max = v;
+    }
+  }
+};
+
 struct ProfilerBufferInfo {
+  // Index of the oldest entry.
   uint64_t mRangeStart;
+  // Index of the newest entry.
   uint64_t mRangeEnd;
+  // Buffer capacity in number of entries.
   uint32_t mEntryCount;
+  // Sampling stats: Interval (ns) between successive samplings.
+  ProfilerStats mIntervalsNs;
+  // Sampling stats: Total duration (ns) of each sampling. (Split detail below.)
+  ProfilerStats mOverheadsNs;
+  // Sampling stats: Time (ns) to acquire the lock before sampling.
+  ProfilerStats mLockingsNs;
+  // Sampling stats: Time (ns) to discard expired data.
+  ProfilerStats mCleaningsNs;
+  // Sampling stats: Time (ns) to collect counter data.
+  ProfilerStats mCountersNs;
+  // Sampling stats: Time (ns) to sample thread stacks.
+  ProfilerStats mThreadsNs;
 };
 
 // Get information about the current buffer status.
@@ -497,6 +529,62 @@ struct ProfilerBufferInfo {
 // status of the profiler, allowing the user to get a sense for how fast the
 // buffer is being written to, and how much data is visible.
 MFBT_API Maybe<ProfilerBufferInfo> profiler_get_buffer_info();
+
+// Uncomment the following line to display profiler runtime statistics at
+// shutdown.
+// #  define PROFILER_RUNTIME_STATS
+
+#  ifdef PROFILER_RUNTIME_STATS
+struct StaticBaseProfilerStats {
+  explicit StaticBaseProfilerStats(const char* aName) : mName(aName) {}
+  ~StaticBaseProfilerStats() {
+    long long n = static_cast<long long>(mNumberDurations);
+    if (n != 0) {
+      long long sumNs = static_cast<long long>(mSumDurationsNs);
+      printf("Profiler stats `%s`: %lld ns / %lld = %lld ns\n", mName, sumNs, n,
+             sumNs / n);
+    } else {
+      printf("Profiler stats `%s`: (nothing)\n", mName);
+    }
+  }
+  Atomic<long long> mSumDurationsNs{0};
+  Atomic<long long> mNumberDurations{0};
+
+ private:
+  const char* mName;
+};
+
+class MOZ_RAII AutoProfilerStats {
+ public:
+  explicit AutoProfilerStats(
+      StaticBaseProfilerStats& aStats MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : mStats(aStats), mStart(TimeStamp::NowUnfuzzed()) {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
+  }
+
+  ~AutoProfilerStats() {
+    mStats.mSumDurationsNs += int64_t(
+        (TimeStamp::NowUnfuzzed() - mStart).ToMicroseconds() * 1000 + 0.5);
+    ++mStats.mNumberDurations;
+  }
+
+ private:
+  MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
+
+  StaticBaseProfilerStats& mStats;
+  TimeStamp mStart;
+};
+
+#    define AUTO_PROFILER_STATS(name)                                      \
+      static ::mozilla::baseprofiler::StaticBaseProfilerStats sStat##name( \
+          #name);                                                          \
+      ::mozilla::baseprofiler::AutoProfilerStats autoStat##name(sStat##name);
+
+#  else  // PROFILER_RUNTIME_STATS
+
+#    define AUTO_PROFILER_STATS(name)
+
+#  endif  // PROFILER_RUNTIME_STATS else
 
 //---------------------------------------------------------------------------
 // Put profiling data into the profiler (labels and markers)

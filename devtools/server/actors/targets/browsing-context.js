@@ -33,10 +33,6 @@ const InspectorUtils = require("InspectorUtils");
 
 const EXTENSION_CONTENT_JSM = "resource://gre/modules/ExtensionContent.jsm";
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
-const STRINGS_URI = "devtools/shared/locales/browsing-context.properties";
-const L10N = new LocalizationHelper(STRINGS_URI);
-
 const { ActorClassWithSpec, Actor, Pool } = require("devtools/shared/protocol");
 const {
   LazyPool,
@@ -45,6 +41,12 @@ const {
 const {
   browsingContextTargetSpec,
 } = require("devtools/shared/specs/targets/browsing-context");
+loader.lazyRequireGetter(
+  this,
+  "FrameDescriptorActor",
+  "devtools/server/actors/descriptors/frame",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
@@ -284,6 +286,7 @@ const browsingContextTargetPrototype = {
 
     this._workerTargetActorList = null;
     this._workerTargetActorPool = null;
+    this._frameDescriptorActorPool = null;
     this._onWorkerTargetActorListChanged = this._onWorkerTargetActorListChanged.bind(
       this
     );
@@ -355,6 +358,10 @@ const browsingContextTargetPrototype = {
       "`docShell` getter should be overridden by a subclass of " +
         "`BrowsingContextTargetActor`"
     );
+  },
+
+  get childBrowsingContexts() {
+    return this.docShell.browsingContext.getChildren();
   },
 
   /**
@@ -664,6 +671,49 @@ const browsingContextTargetPrototype = {
     return { frames: windows };
   },
 
+  listRemoteFrames() {
+    const frames = [];
+    const contextsToWalk = this.childBrowsingContexts;
+
+    if (contextsToWalk == 0) {
+      return { frames };
+    }
+
+    const pool = new Pool(this.conn);
+    while (contextsToWalk.length) {
+      const currentContext = contextsToWalk.pop();
+      let frameDescriptor = this._getKnownFrameDescriptor(currentContext.id);
+      if (!frameDescriptor) {
+        frameDescriptor = new FrameDescriptorActor(this.conn, currentContext);
+      }
+      pool.manage(frameDescriptor);
+      frames.push(frameDescriptor);
+      contextsToWalk.push(...currentContext.getChildren());
+    }
+    // Do not destroy the pool before transfering ownership to the newly created
+    // pool, so that we do not accidently destroy actors that are still in use.
+    if (this._frameDescriptorActorPool) {
+      this._frameDescriptorActorPool.destroy();
+    }
+
+    this._frameDescriptorActorPool = pool;
+
+    return { frames };
+  },
+
+  _getKnownFrameDescriptor(id) {
+    // if there is no pool, then we do not have any descriptors
+    if (!this._frameDescriptorActorPool) {
+      return null;
+    }
+    for (const descriptor of this._frameDescriptorActorPool.poolChildren()) {
+      if (descriptor.id === id) {
+        return descriptor;
+      }
+    }
+    return null;
+  },
+
   ensureWorkerTargetActorList() {
     if (this._workerTargetActorList === null) {
       this._workerTargetActorList = new WorkerTargetActorList(this.conn, {
@@ -905,7 +955,11 @@ const browsingContextTargetPrototype = {
   _destroyThreadActor() {
     this.threadActor.exit();
     this.threadActor = null;
-    this._sources = null;
+
+    if (this._sources) {
+      this._sources.destroy();
+      this._sources = null;
+    }
   },
 
   /**
@@ -955,6 +1009,11 @@ const browsingContextTargetPrototype = {
     if (this._workerTargetActorPool !== null) {
       this._workerTargetActorPool.destroy();
       this._workerTargetActorPool = null;
+    }
+
+    if (this._frameDescriptorActorPool !== null) {
+      this._frameDescriptorActorPool.destroy();
+      this._frameDescriptorActorPool = null;
     }
 
     this._attached = false;
@@ -1086,14 +1145,6 @@ const browsingContextTargetPrototype = {
           })
         );
       }
-
-      Promise.all(promises).then(() => {
-        this.logInPage({
-          text: L10N.getStr("cssSheetsReparsedWarning"),
-          category: "CSS Parser",
-          flags: Ci.nsIScriptError.warningFlag,
-        });
-      });
     }
 
     return {};
@@ -1135,6 +1186,9 @@ const browsingContextTargetPrototype = {
         options.serviceWorkersTestingEnabled
       );
     }
+    if (typeof options.restoreFocus == "boolean") {
+      this._restoreFocus = options.restoreFocus;
+    }
 
     // Reload if:
     //  - there's an explicit `performReload` flag and it's true
@@ -1157,6 +1211,9 @@ const browsingContextTargetPrototype = {
     this._setCacheDisabled(false);
     this._setServiceWorkersTestingEnabled(false);
     this._setPaintFlashingEnabled(false);
+    if (this._restoreFocus) {
+      this.window.focus();
+    }
   },
 
   /**
@@ -1277,7 +1334,7 @@ const browsingContextTargetPrototype = {
       }
 
       // Then fake window-ready and navigate on the given document
-      this._windowReady(window, true);
+      this._windowReady(window, { isFrameSwitching: true });
       DevToolsUtils.executeSoon(() => {
         this._navigate(window, true);
       });
@@ -1305,7 +1362,7 @@ const browsingContextTargetPrototype = {
    * debugging, which may have been disabled temporarily by the
    * DebuggerProgressListener.
    */
-  _windowReady(window, isFrameSwitching = false) {
+  _windowReady(window, { isFrameSwitching, isBFCache } = {}) {
     const isTopLevel = window == this.window;
 
     // We just reset iframe list on WillNavigate, so we now list all existing
@@ -1317,27 +1374,9 @@ const browsingContextTargetPrototype = {
     this.emit("window-ready", {
       window: window,
       isTopLevel: isTopLevel,
+      isBFCache,
       id: getWindowID(window),
     });
-
-    // TODO bug 997119: move that code to ThreadActor by listening to
-    // window-ready
-    const threadActor = this.threadActor;
-    if (isTopLevel && threadActor.state != "detached") {
-      this.sources.reset();
-      threadActor.clearDebuggees();
-      threadActor.dbg.enabled = true;
-      threadActor.maybePauseOnExceptions();
-      // Update the global no matter if the debugger is on or off,
-      // otherwise the global will be wrong when enabled later.
-      threadActor.global = window;
-    }
-
-    // Refresh the debuggee list when a new window object appears (top window or
-    // iframe).
-    if (threadActor.attached) {
-      threadActor.dbg.addDebuggees();
-    }
   },
 
   _windowDestroyed(window, id = null, isFrozen = false) {
@@ -1390,16 +1429,6 @@ const browsingContextTargetPrototype = {
       return;
     }
 
-    // Proceed normally only if the debuggee is not paused.
-    // TODO bug 997119: move that code to ThreadActor by listening to
-    // will-navigate
-    const threadActor = this.threadActor;
-    if (threadActor.state == "paused") {
-      threadActor.unsafeSynchronize(Promise.resolve(threadActor.doResume()));
-      threadActor.dbg.enabled = false;
-    }
-    threadActor.disableAllBreakpoints();
-
     this.emit("tabNavigated", {
       url: newURI,
       nativeConsoleAPI: true,
@@ -1432,12 +1461,6 @@ const browsingContextTargetPrototype = {
     // (we will only update thread actor on window-ready)
     if (!isTopLevel) {
       return;
-    }
-
-    // TODO bug 997119: move that code to ThreadActor by listening to navigate
-    const threadActor = this.threadActor;
-    if (threadActor.state == "running") {
-      threadActor.dbg.enabled = true;
     }
 
     this.emit("tabNavigated", {
@@ -1631,20 +1654,22 @@ DebuggerProgressListener.prototype = {
     const window = evt.target.defaultView;
     const innerID = getWindowID(window);
 
-    // This method is alled on DOMWindowCreated and pageshow
-    // The common scenario is DOMWindowCreated, which is fired when the document
-    // loads. But we are to listen for pageshow in order to handle BFCache.
-    // When a page does into the BFCache, a pagehide event is fired with persisted=true
-    // but it doesn't necessarely mean persisted will be true for the pageshow
-    // event fired when the page is reloaded from the BFCache (see bug 1378133)
-    // So just check if we already know this window and accept any that isn't known yet
+    // This handler is called for two events: "DOMWindowCreated" and "pageshow".
+    // Bail out if we already processed this window.
     if (this._knownWindowIDs.has(innerID)) {
       return;
     }
-
-    this._targetActor._windowReady(window);
-
     this._knownWindowIDs.set(innerID, window);
+
+    // For a regular page navigation, "DOMWindowCreated" is fired before
+    // "pageshow". If the current event is "pageshow" but we have not processed
+    // the window yet, it means this is a BF cache navigation. In theory,
+    // `event.persisted` should be set for BF cache navigation events, but it is
+    // not always available, so we fallback on checking if "pageshow" is the
+    // first event received for a given window (see Bug 1378133).
+    const isBFCache = evt.type == "pageshow";
+
+    this._targetActor._windowReady(window, { isBFCache });
   }, "DebuggerProgressListener.prototype.onWindowCreated"),
 
   onWindowHidden: DevToolsUtils.makeInfallible(function(evt) {

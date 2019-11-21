@@ -6,11 +6,8 @@
 
 import { clearDocuments } from "../utils/editor";
 import sourceQueue from "../utils/source-queue";
-import { getSourceList } from "../reducers/sources";
-import { waitForMs } from "../utils/utils";
 
-import { newGeneratedSources } from "./sources";
-import { updateWorkers } from "./debuggee";
+import { updateThreads } from "./threads";
 
 import { clearWasmStates } from "../utils/wasm";
 import { getMainThread } from "../selectors";
@@ -55,11 +52,16 @@ export function connect(
   isWebExtension: boolean
 ) {
   return async function({ dispatch }: ThunkArgs) {
-    await dispatch(updateWorkers());
+    await dispatch(updateThreads());
     dispatch(
       ({
         type: "CONNECT",
-        mainThread: { url, actor, type: -1, name: "" },
+        mainThread: {
+          url,
+          actor,
+          type: "mainThread",
+          name: L10N.getStr("mainThread"),
+        },
         canRewind,
         isWebExtension,
       }: Action)
@@ -72,15 +74,7 @@ export function connect(
  * @static
  */
 export function navigated() {
-  return async function({ dispatch, getState, client, panel }: ThunkArgs) {
-    // this time out is used to wait for sources. If we have 0 sources,
-    // it is likely that the sources are being loaded from the bfcache,
-    // and we should make an explicit request to the server to load them.
-    await waitForMs(100);
-    if (getSourceList(getState()).length == 0) {
-      const sources = await client.fetchSources();
-      dispatch(newGeneratedSources(sources));
-    }
+  return async function({ panel }: ThunkArgs) {
     panel.emit("reloaded");
   };
 }

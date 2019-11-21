@@ -92,6 +92,16 @@ this.VideoControlsWidget = class {
     delete this.impl;
   }
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+
+    if (!this.impl) {
+      return;
+    }
+
+    this.impl.onPrefChange(prefName, prefValue);
+  }
+
   static isPictureInPictureVideo(someVideo) {
     return someVideo.isCloningElementVisually;
   }
@@ -211,12 +221,7 @@ this.VideoControlsImplWidget = class {
       set isAudioOnly(val) {
         this._isAudioOnly = val;
         this.setFullscreenButtonState();
-
-        if (val) {
-          this.pictureInPictureToggleButton.setAttribute("hidden", true);
-        } else {
-          this.pictureInPictureToggleButton.removeAttribute("hidden");
-        }
+        this.updatePictureInPictureToggleDisplay();
 
         if (!this.isTopLevelSyntheticDocument) {
           return;
@@ -499,6 +504,7 @@ this.VideoControlsImplWidget = class {
 
       updatePictureInPictureToggleDisplay() {
         if (this.isAudioOnly) {
+          this.pictureInPictureToggleButton.setAttribute("hidden", true);
           return;
         }
 
@@ -824,9 +830,6 @@ this.VideoControlsImplWidget = class {
               case this.videocontrols:
                 // Prevent any click event within media controls from dispatching through to video.
                 aEvent.stopPropagation();
-                break;
-              case this.pictureInPictureToggleButton:
-                this.video.togglePictureInPicture();
                 break;
             }
             break;
@@ -2362,8 +2365,6 @@ this.VideoControlsImplWidget = class {
           { el: this.video.textTracks, type: "change" },
 
           { el: this.video, type: "media-videoCasting", touchOnly: true },
-
-          { el: this.pictureInPictureToggleButton, type: "click" },
         ];
 
         for (let {
@@ -2546,6 +2547,7 @@ this.VideoControlsImplWidget = class {
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2640,6 +2642,11 @@ this.VideoControlsImplWidget = class {
     this.Utils.terminate();
     this.TouchUtils.terminate();
     this.Utils.updateOrientationState(false);
+  }
+
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+    this.Utils.updatePictureInPictureToggleDisplay();
   }
 
   _setupEventListeners() {
@@ -2787,12 +2794,17 @@ this.NoControlsMobileImplWidget = class {
     this.Utils.terminate();
   }
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+  }
+
   generateContent() {
     /*
      * Pass the markup through XML parser purely for the reason of loading the localization DTD.
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2837,12 +2849,17 @@ this.NoControlsPictureInPictureImplWidget = class {
 
   destructor() {}
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+  }
+
   generateContent() {
     /*
      * Pass the markup through XML parser purely for the reason of loading the localization DTD.
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2974,12 +2991,18 @@ this.NoControlsDesktopImplWidget = class {
     this.Utils.terminate();
   }
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+    this.Utils.updatePictureInPictureToggleDisplay();
+  }
+
   generateContent() {
     /*
      * Pass the markup through XML parser purely for the reason of loading the localization DTD.
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">

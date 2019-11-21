@@ -7,8 +7,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct ActionSequence {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
+    pub id: String,
     #[serde(flatten)]
     pub actions: ActionsType,
 }
@@ -96,7 +95,7 @@ where
     })?
 }
 
-#[derive(Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PointerType {
     Mouse,
@@ -173,7 +172,8 @@ pub struct PointerUpAction {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub enum PointerOrigin {
     #[serde(
-        rename = "element-6066-11e4-a52e-4f735466cecf", serialize_with = "serialize_webelement_id"
+        rename = "element-6066-11e4-a52e-4f735466cecf",
+        serialize_with = "serialize_webelement_id"
     )]
     Element(WebElement),
     #[serde(rename = "pointer")]
@@ -239,21 +239,21 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::test::{check_deserialize, check_serialize_deserialize};
     use super::*;
+    use crate::test::{check_deserialize, check_serialize_deserialize};
     use serde_json;
 
     #[test]
     fn test_json_action_sequence_null() {
         let json = r#"{
-            "id":"none",
+            "id":"some_key",
             "type":"none",
             "actions":[{
                 "type":"pause","duration":1
             }]
         }"#;
         let data = ActionSequence {
-            id: Some("none".into()),
+            id: "some_key".into(),
             actions: ActionsType::Null {
                 actions: vec![NullActionItem::General(GeneralAction::Pause(PauseAction {
                     duration: Some(1),
@@ -274,7 +274,7 @@ mod test {
             ]
         }"#;
         let data = ActionSequence {
-            id: Some("some_key".into()),
+            id: "some_key".into(),
             actions: ActionsType::Key {
                 actions: vec![KeyActionItem::Key(KeyAction::Down(KeyDownAction {
                     value: String::from("f"),
@@ -300,7 +300,7 @@ mod test {
             ]
         }"#;
         let data = ActionSequence {
-            id: Some("some_pointer".into()),
+            id: "some_pointer".into(),
             actions: ActionsType::Pointer {
                 parameters: PointerActionParameters {
                     pointer_type: PointerType::Mouse,
@@ -321,6 +321,27 @@ mod test {
         };
 
         check_serialize_deserialize(&json, &data);
+    }
+
+    #[test]
+    fn test_json_action_sequence_id_missing() {
+        let json = r#"{
+            "type": "key",
+            "actions": []
+        }"#;
+
+        assert!(serde_json::from_str::<ActionSequence>(&json).is_err());
+    }
+
+    #[test]
+    fn test_json_action_sequence_id_null() {
+        let json = r#"{
+            "id": null,
+            "type": "key",
+            "actions": []
+        }"#;
+
+        assert!(serde_json::from_str::<ActionSequence>(&json).is_err());
     }
 
     #[test]
@@ -653,7 +674,8 @@ mod test {
     #[test]
     fn test_json_pointer_action_item_general() {
         let json = r#"{"type":"pause","duration":1}"#;
-        let data = PointerActionItem::General(GeneralAction::Pause(PauseAction { duration: Some(1) }));
+        let data =
+            PointerActionItem::General(GeneralAction::Pause(PauseAction { duration: Some(1) }));
 
         check_serialize_deserialize(&json, &data);
     }

@@ -7,7 +7,7 @@
 #include "mozilla/layers/MultiTiledContentClient.h"
 
 #include "ClientTiledPaintedLayer.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/layers/LayerMetricsWrapper.h"
 
 namespace mozilla {
@@ -62,7 +62,7 @@ void ClientMultiTiledLayerBuffer::DiscardBuffers() {
 
 SurfaceDescriptorTiles
 ClientMultiTiledLayerBuffer::GetSurfaceDescriptorTiles() {
-  InfallibleTArray<TileDescriptor> tiles;
+  nsTArray<TileDescriptor> tiles;
 
   for (TileClient& tile : mRetainedTiles) {
     TileDescriptor tileDesc = tile.GetTileDescriptor();
@@ -266,7 +266,8 @@ void ClientMultiTiledLayerBuffer::Update(const nsIntRegion& newValidRegion,
       ctx = nullptr;
 
       // Edge padding allows us to avoid resampling artifacts
-      if (StaticPrefs::layers_tiles_edge_padding() && mResolution == 1) {
+      if (StaticPrefs::layers_tiles_edge_padding_AtStartup() &&
+          mResolution == 1) {
         drawTarget->PadEdges(newValidRegion.MovedBy(-mTilingOrigin));
       }
 

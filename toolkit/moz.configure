@@ -8,6 +8,8 @@
 # were passed somehow (environment, command line, mozconfig)
 @dependable
 @imports(_from='mozbuild.shellutil', _import='quote')
+@imports(_from='mozbuild.util', _import='ensure_unicode')
+@imports(_from='mozbuild.util', _import='system_encoding')
 @imports('__sandbox__')
 def all_configure_options():
     result = []
@@ -27,13 +29,15 @@ def all_configure_options():
         # defaults.
         if (value is not None and value.origin not in ('default', 'implied') and
                 value != option.default):
-            result.append(__sandbox__._raw_options[option])
+            result.append(ensure_unicode(__sandbox__._raw_options[option],
+                                         system_encoding))
         # We however always include options that are sent to old configure
         # because we don't know their actual defaults. (Keep the conditions
         # separate for ease of understanding and ease of removal)
         elif (option.help == 'Help missing for old configure options' and
                 option in __sandbox__._raw_options):
-            result.append(__sandbox__._raw_options[option])
+            result.append(ensure_unicode(__sandbox__._raw_options[option],
+                                         system_encoding))
 
     return quote(*result)
 
@@ -78,10 +82,16 @@ set_define('MOZ_GECKO_PROFILER', gecko_profiler_define)
 # (for symbol table dumping).
 @depends(gecko_profiler, target)
 def gecko_profiler_parse_elf(value, target):
-    # Currently we only want to build this code on Android, in order to dump
-    # symbols from Android system libraries on the device. For other platforms
-    # there exist alternatives that don't require bloating up our binary size.
-    if value and target.os == 'Android':
+    # Currently we only want to build this code on Linux (including Android).
+    # For Android, this is in order to dump symbols from Android system, where
+    # on other platforms there exist alternatives that don't require bloating
+    # up our binary size. For Linux more generally, we use this in profile
+    # pre-symbolication support, since MozDescribeCodeAddress doesn't do
+    # anything useful on that platform. (Ideally, we would update
+    # MozDescribeCodeAddress to call into some Rust crates that parse ELF and
+    # DWARF data, but build system issues currently prevent Rust from being
+    # used in mozglue.)
+    if value and target.kernel == 'Linux':
         return True
 
 set_config('MOZ_GECKO_PROFILER_PARSE_ELF', gecko_profiler_parse_elf)
@@ -153,6 +163,15 @@ pulseaudio = pkg_check_modules('MOZ_PULSEAUDIO', 'libpulse', when='--enable-puls
 set_config('MOZ_PULSEAUDIO', depends_if(pulseaudio)(lambda _: True))
 set_define('MOZ_PULSEAUDIO', depends_if(pulseaudio)(lambda _: True))
 
+# AudioUnit cubeb Rust backend
+# ==============================================================
+@depends(target)
+def enable_audiounit_rust(target):
+    return target.os == 'OSX' and target.kernel == 'Darwin'
+
+set_config('MOZ_AUDIOUNIT_RUST', True, when=enable_audiounit_rust)
+set_define('MOZ_AUDIOUNIT_RUST', True, when=enable_audiounit_rust)
+
 # Javascript engine
 # ==============================================================
 include('../js/moz.configure')
@@ -221,8 +240,8 @@ def full_toolkit(value):
 
 @depends(full_toolkit)
 def toolkit(toolkit):
-    if toolkit == 'cairo-gtk3-wayland':
-        widget_toolkit = 'gtk3'
+    if toolkit.startswith('cairo-gtk3'):
+        widget_toolkit = 'gtk'
     else:
         widget_toolkit = toolkit.replace('cairo-', '')
     return widget_toolkit
@@ -232,8 +251,6 @@ add_old_configure_assignment('MOZ_WIDGET_TOOLKIT', toolkit)
 
 @depends(toolkit)
 def toolkit_define(toolkit):
-    if toolkit == 'gtk3':
-        toolkit = 'gtk'
     if toolkit != 'windows':
         return 'MOZ_WIDGET_%s' % toolkit.upper()
 
@@ -241,7 +258,7 @@ set_define(toolkit_define, True)
 
 @depends(toolkit)
 def toolkit_gtk(toolkit):
-    return toolkit == 'gtk3'
+    return toolkit == 'gtk'
 
 set_config('MOZ_X11', True, when=toolkit_gtk)
 set_define('MOZ_X11', True, when=toolkit_gtk)
@@ -305,7 +322,7 @@ set_define(gl_provider_define, True)
 # ==============================================================
 @depends(toolkit)
 def pdf_printing(toolkit):
-    if toolkit in ('windows', 'gtk3', 'android'):
+    if toolkit in ('windows', 'gtk', 'android'):
         return True
 
 @depends(pdf_printing)
@@ -327,7 +344,7 @@ option(env='MOZ_INSTRUMENT_EVENT_LOOP',
 
 @depends('MOZ_INSTRUMENT_EVENT_LOOP', toolkit)
 def instrument_event_loop(value, toolkit):
-    if value or (toolkit in ('windows', 'gtk3', 'cocoa', 'android') and
+    if value or (toolkit in ('windows', 'gtk', 'cocoa', 'android') and
                  value.origin == 'default'):
         return True
 
@@ -342,7 +359,7 @@ option(env='USE_FC_FREETYPE',
 
 @depends('USE_FC_FREETYPE', toolkit)
 def fc_freetype(value, toolkit):
-    if value or (toolkit == 'gtk3' and
+    if value or (toolkit == 'gtk' and
                  value.origin == 'default'):
         return True
 
@@ -608,6 +625,11 @@ project_flag('MOZ_SERVICES_HEALTHREPORT',
              set_for_old_configure=True,
              set_as_define=True)
 
+project_flag('MOZ_NORMANDY',
+             help='Enable Normandy recipe runner',
+             set_for_old_configure=True,
+             set_as_define=True)
+
 project_flag('MOZ_SERVICES_SYNC',
              help='Build Sync Services if required')
 
@@ -747,7 +769,7 @@ set_define('NS_PRINT_PREVIEW', printing)
 # ==============================================================
 @depends(toolkit)
 def no_speechd_on_non_gtk(toolkit):
-    if toolkit != 'gtk3':
+    if toolkit != 'gtk':
         return False
 
 imply_option('--enable-synth-speechd', no_speechd_on_non_gtk,
@@ -1247,6 +1269,35 @@ def launcher(value, target):
 set_config('MOZ_LAUNCHER_PROCESS', launcher)
 set_define('MOZ_LAUNCHER_PROCESS', launcher)
 
+# llvm-dlltool (Windows only)
+# ==============================================================
+
+@depends(build_project, target, '--enable-compile-environment')
+def check_for_llvm_dlltool(build_project, target, compile_environment):
+    if build_project != 'browser':
+        return
+
+    if target.os != 'WINNT':
+        return
+
+    return compile_environment
+
+llvm_dlltool = check_prog('LLVM_DLLTOOL', ('llvm-dlltool',),
+                          what='llvm-dlltool', when=check_for_llvm_dlltool,
+                          paths=toolchain_search_path)
+
+@depends(target, when=llvm_dlltool)
+def llvm_dlltool_flags(target):
+    arch = {
+        'x86': 'i386',
+        'x86_64': 'i386:x86-64',
+        'aarch64': 'arm64',
+    }[target.cpu]
+
+    return ['-m', arch]
+
+set_config('LLVM_DLLTOOL_FLAGS', llvm_dlltool_flags)
+
 # Maintenance service (Windows only)
 # ==============================================================
 
@@ -1708,7 +1759,7 @@ with only_when(compile_environment & target_is_windows):
 
 @depends(toolkit)
 def has_remote(toolkit):
-    if 'gtk' in toolkit or toolkit == 'windows':
+    if toolkit in ('gtk', 'windows'):
         return True
 
 set_config('MOZ_HAS_REMOTE', has_remote)

@@ -201,7 +201,7 @@ class HTMLImageElement final : public nsGenericHTMLElement,
 
   already_AddRefed<Promise> Decode(ErrorResult& aRv);
 
-  net::ReferrerPolicy GetImageReferrerPolicy() override {
+  ReferrerPolicy GetImageReferrerPolicy() override {
     return GetReferrerPolicyAsEnum();
   }
 
@@ -262,12 +262,6 @@ class HTMLImageElement final : public nsGenericHTMLElement,
       const nsAString& aSrcsetAttr, const nsAString& aSizesAttr,
       const nsAString& aTypeAttr, const nsAString& aMediaAttr,
       nsAString& aResult);
-
-  /**
-   * If this image's src pointers to an SVG document, flush the SVG document's
-   * use counters to telemetry.  Only used for testing purposes.
-   */
-  void FlushUseCounters();
 
  protected:
   virtual ~HTMLImageElement();

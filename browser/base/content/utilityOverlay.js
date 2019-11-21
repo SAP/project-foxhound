@@ -366,7 +366,7 @@ function openLinkIn(url, where, params) {
   var aCharset = params.charset;
   var aReferrerInfo = params.referrerInfo
     ? params.referrerInfo
-    : new ReferrerInfo(Ci.nsIHttpChannel.REFERRER_POLICY_UNSET, true, null);
+    : new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, null);
   var aRelatedToCurrent = params.relatedToCurrent;
   var aAllowInheritPrincipal = !!params.allowInheritPrincipal;
   var aAllowMixedContent = params.allowMixedContent;
@@ -400,7 +400,7 @@ function openLinkIn(url, where, params) {
         null,
         true,
         true,
-        aReferrerInfo.sendReferrer ? aReferrerInfo.originalReferrer : null,
+        aReferrerInfo,
         null,
         params.isContentWindowPrivate,
         aPrincipal
@@ -413,15 +413,7 @@ function openLinkIn(url, where, params) {
         );
         return;
       }
-      saveURL(
-        url,
-        null,
-        null,
-        true,
-        true,
-        aReferrerInfo.sendReferrer ? aReferrerInfo.originalReferrer : null,
-        aInitiatingDoc
-      );
+      saveURL(url, null, null, true, true, aReferrerInfo, aInitiatingDoc);
     }
     return;
   }
@@ -446,7 +438,7 @@ function openLinkIn(url, where, params) {
   // can not do it for NullPrincipals since NullPrincipals are only
   // identical if they actually are the same object (See Bug: 1346759)
   function useOAForPrincipal(principal) {
-    if (principal && principal.isCodebasePrincipal) {
+    if (principal && principal.isContentPrincipal) {
       let attrs = {
         userContextId: aUserContextId,
         privateBrowsingId:

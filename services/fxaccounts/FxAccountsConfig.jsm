@@ -34,6 +34,16 @@ XPCOMUtils.defineLazyPreferenceGetter(
 );
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
+  "TERMS_URL",
+  "services.sync.fxa.termsURL"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "PRIVACY_URL",
+  "services.sync.fxa.privacyURL"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
   "CONTEXT_PARAM",
   "identity.fxaccounts.contextParam"
 );
@@ -57,75 +67,95 @@ const CONFIG_PREFS = [
 ];
 
 var FxAccountsConfig = {
-  async promiseSignUpURI(entrypoint) {
+  async promiseSignUpURI(entrypoint, extraParams = {}) {
     return this._buildURL("signup", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
     });
   },
 
-  async promiseSignInURI(entrypoint) {
+  async promiseSignInURI(entrypoint, extraParams = {}) {
     return this._buildURL("signin", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
     });
   },
 
-  async promiseEmailURI(email, entrypoint) {
+  async promiseEmailURI(email, entrypoint, extraParams = {}) {
     return this._buildURL("", {
-      extraParams: { entrypoint, email },
+      extraParams: { entrypoint, email, ...extraParams },
     });
   },
 
-  async promiseEmailFirstURI(entrypoint) {
+  async promiseEmailFirstURI(entrypoint, extraParams = {}) {
     return this._buildURL("", {
-      extraParams: { entrypoint, action: "email" },
+      extraParams: { entrypoint, action: "email", ...extraParams },
     });
   },
 
-  async promiseForceSigninURI(entrypoint) {
+  async promiseForceSigninURI(entrypoint, extraParams = {}) {
     return this._buildURL("force_auth", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
       addAccountIdentifiers: true,
     });
   },
 
-  async promiseManageURI(entrypoint) {
+  async promiseManageURI(entrypoint, extraParams = {}) {
     return this._buildURL("settings", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
       addAccountIdentifiers: true,
     });
   },
 
-  async promiseChangeAvatarURI(entrypoint) {
+  async promiseChangeAvatarURI(entrypoint, extraParams = {}) {
     return this._buildURL("settings/avatar/change", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
       addAccountIdentifiers: true,
     });
   },
 
-  async promiseManageDevicesURI(entrypoint) {
+  async promiseManageDevicesURI(entrypoint, extraParams = {}) {
     return this._buildURL("settings/clients", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
       addAccountIdentifiers: true,
     });
   },
 
-  async promiseConnectDeviceURI(entrypoint) {
+  async promiseConnectDeviceURI(entrypoint, extraParams = {}) {
     return this._buildURL("connect_another_device", {
-      extraParams: { entrypoint },
+      extraParams: { entrypoint, ...extraParams },
       addAccountIdentifiers: true,
     });
   },
 
-  async promisePairingURI() {
+  async promisePairingURI(extraParams = {}) {
     return this._buildURL("pair", {
+      extraParams,
       includeDefaultParams: false,
     });
   },
 
-  async promiseOAuthURI() {
+  async promiseOAuthURI(extraParams = {}) {
     return this._buildURL("oauth", {
+      extraParams,
       includeDefaultParams: false,
     });
+  },
+
+  async promiseMetricsFlowURI(entrypoint, extraParams = {}) {
+    return this._buildURL("metrics-flow", {
+      extraParams: { entrypoint, ...extraParams },
+      includeDefaultParams: false,
+    });
+  },
+
+  // Terms and Privacy URLs are special:
+  // For Reasons, we want them to always point
+  // to our servers even if a custom server is used.
+  async promiseLegalTermsURI(extraParams = {}) {
+    return this._buildURLFromString(TERMS_URL, extraParams);
+  },
+
+  async promiseLegalPrivacyURI(extraParams = {}) {
+    return this._buildURLFromString(PRIVACY_URL, extraParams);
   },
 
   get defaultParams() {
@@ -169,6 +199,14 @@ var FxAccountsConfig = {
     return url.href;
   },
 
+  async _buildURLFromString(href, extraParams = {}) {
+    const url = new URL(href);
+    for (let [k, v] of Object.entries(extraParams)) {
+      url.searchParams.append(k, v);
+    }
+    return url.href;
+  },
+
   resetConfigURLs() {
     let autoconfigURL = this.getAutoConfigURL();
     if (!autoconfigURL) {
@@ -200,51 +238,9 @@ var FxAccountsConfig = {
   },
 
   async ensureConfigured() {
-    await this.tryPrefsMigration();
     let isSignedIn = !!(await this.getSignedInUser());
     if (!isSignedIn) {
       await this.fetchConfigURLs();
-    }
-  },
-
-  // In bug 1427674 we migrated a set of preferences with a shared origin
-  // to a single preference (identity.fxaccounts.remote.root).
-  // This whole function should be removed in version 65 or later once
-  // everyone had a chance to migrate.
-  async tryPrefsMigration() {
-    // If this pref is set, there is a very good chance the user is running
-    // a custom FxA content server.
-    if (
-      !Services.prefs.prefHasUserValue("identity.fxaccounts.remote.signin.uri")
-    ) {
-      return;
-    }
-
-    if (Services.prefs.prefHasUserValue("identity.fxaccounts.autoconfig.uri")) {
-      await this.fetchConfigURLs();
-    } else {
-      // Best effort.
-      const signinURI = Services.prefs.getCharPref(
-        "identity.fxaccounts.remote.signin.uri"
-      );
-      Services.prefs.setCharPref(
-        "identity.fxaccounts.remote.root",
-        signinURI.slice(0, signinURI.lastIndexOf("/signin")) + "/"
-      );
-    }
-
-    const migratedPrefs = [
-      "identity.fxaccounts.remote.webchannel.uri",
-      "identity.fxaccounts.settings.uri",
-      "identity.fxaccounts.settings.devices.uri",
-      "identity.fxaccounts.remote.signup.uri",
-      "identity.fxaccounts.remote.signin.uri",
-      "identity.fxaccounts.remote.email.uri",
-      "identity.fxaccounts.remote.connectdevice.uri",
-      "identity.fxaccounts.remote.force_auth.uri",
-    ];
-    for (const pref of migratedPrefs) {
-      Services.prefs.clearUserPref(pref);
     }
   },
 

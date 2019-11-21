@@ -10,7 +10,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIContentViewer.h"
 #include "mozilla/dom/Document.h"
-#include "XULDocument.h"
 #include "InProcessBrowserChildMessageManager.h"
 #include "nsIWindowMediator.h"
 #include "nsPIDOMWindow.h"
@@ -257,10 +256,10 @@ void MarkDocShell(nsIDocShellTreeItem* aNode, bool aCleanupJS) {
   }
 
   int32_t i, childCount;
-  aNode->GetChildCount(&childCount);
+  aNode->GetInProcessChildCount(&childCount);
   for (i = 0; i < childCount; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> child;
-    aNode->GetChildAt(i, getter_AddRefs(child));
+    aNode->GetInProcessChildAt(i, getter_AddRefs(child));
     MarkDocShell(child, aCleanupJS);
   }
 }

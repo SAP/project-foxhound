@@ -8,6 +8,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/PromiseUtils.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "GeckoViewTabBridge",
+  "resource://gre/modules/GeckoViewTab.jsm"
+);
+
 const getBrowserWindow = window => {
   return window.docShell.rootTreeItem.domWindow;
 };
@@ -29,6 +35,11 @@ let tabListener = {
     if (webProgress.isTopLevel) {
       let { BrowserApp } = browser.ownerGlobal;
       let nativeTab = BrowserApp.getTabForBrowser(browser);
+
+      // Ignore initial about:blank
+      if (!request && this.initializingTabs.has(nativeTab)) {
+        return;
+      }
 
       // Now we are certain that the first page in the tab was loaded.
       this.initializingTabs.delete(nativeTab);
@@ -333,7 +344,15 @@ this.tabs = class extends ExtensionAPI {
 
           tabListener.initTabReady();
           options.triggeringPrincipal = principal;
-          let nativeTab = BrowserApp.addTab(url, options);
+
+          let nativeTab;
+          if (Services.androidBridge.isFennec) {
+            nativeTab = BrowserApp.addTab(url, options);
+          } else {
+            options.extensionId = context.extension.id;
+            options.url = url;
+            nativeTab = await GeckoViewTabBridge.createNewTab(options);
+          }
 
           if (createProperties.url) {
             tabListener.initializingTabs.add(nativeTab);
@@ -345,6 +364,27 @@ this.tabs = class extends ExtensionAPI {
         async remove(tabs) {
           if (!Array.isArray(tabs)) {
             tabs = [tabs];
+          }
+
+          if (!Services.androidBridge.isFennec) {
+            await Promise.all(
+              tabs.map(async tabId => {
+                const windowId = GeckoViewTabBridge.tabIdToWindowId(tabId);
+                const window = windowTracker.getWindow(
+                  windowId,
+                  context,
+                  false
+                );
+                if (!window) {
+                  throw new ExtensionError(`Invalid tab ID ${tabId}`);
+                }
+                await GeckoViewTabBridge.closeTab({
+                  window,
+                  extensionId: context.extension.id,
+                });
+              })
+            );
+            return;
           }
 
           for (let tabId of tabs) {
@@ -416,7 +456,9 @@ this.tabs = class extends ExtensionAPI {
           queryInfo = Object.assign({}, queryInfo);
 
           if (queryInfo.url !== null) {
-            queryInfo.url = new MatchPatternSet([].concat(queryInfo.url));
+            queryInfo.url = new MatchPatternSet([].concat(queryInfo.url), {
+              restrictSchemes: false,
+            });
           }
           if (queryInfo.title !== null) {
             queryInfo.title = new MatchGlob(queryInfo.title);

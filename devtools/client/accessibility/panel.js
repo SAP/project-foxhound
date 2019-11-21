@@ -94,6 +94,10 @@ AccessibilityPanel.prototype = {
       this.picker = new Picker(this);
     }
 
+    if (this.supports.simulation) {
+      this.simulator = await this.front.getSimulator();
+    }
+
     this.fluentBundles = await this.createFluentBundles();
 
     this.updateA11YServiceDurationTimer();
@@ -168,13 +172,13 @@ AccessibilityPanel.prototype = {
     }
     // Alright reset the flag we are about to refresh the panel.
     this.shouldRefresh = false;
-    this.postContentMessage(
-      "initialize",
-      this.front,
-      this.walker,
-      this.supports,
-      this.fluentBundles
-    );
+    this.postContentMessage("initialize", {
+      front: this.front,
+      walker: this.walker,
+      supports: this.supports,
+      fluentBundles: this.fluentBundles,
+      simulator: this.simulator,
+    });
   },
 
   updateA11YServiceDurationTimer() {
@@ -274,16 +278,11 @@ AccessibilityPanel.prototype = {
     return this._toolbox.target;
   },
 
-  async destroy() {
-    if (this._destroying) {
-      await this._destroying;
+  destroy() {
+    if (this._destroyed) {
       return;
     }
-
-    let resolver;
-    this._destroying = new Promise(resolve => {
-      resolver = resolve;
-    });
+    this._destroyed = true;
 
     this.target.off("navigate", this.onTabNavigated);
     this._toolbox.off("select", this.onPanelVisibilityChange);
@@ -316,8 +315,6 @@ AccessibilityPanel.prototype = {
     this.panelWin.gTelemetry = null;
 
     this.emit("destroyed");
-
-    resolver();
   },
 };
 

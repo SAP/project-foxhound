@@ -17,6 +17,7 @@
 #include "mozilla/StackWalk.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
+#include "ProfilerCodeAddressService.h"
 
 #include <ostream>
 
@@ -704,8 +705,6 @@ struct ProfileSample {
   uint32_t mStack;
   double mTime;
   Maybe<double> mResponsiveness;
-  Maybe<double> mRSS;
-  Maybe<double> mUSS;
 };
 
 static void WriteSample(SpliceableJSONWriter& aWriter,
@@ -715,8 +714,6 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
     STACK = 0,
     TIME = 1,
     RESPONSIVENESS = 2,
-    RSS = 3,
-    USS = 4
   };
 
   AutoArraySchemaWriter writer(aWriter, aUniqueStrings);
@@ -727,14 +724,6 @@ static void WriteSample(SpliceableJSONWriter& aWriter,
 
   if (aSample.mResponsiveness.isSome()) {
     writer.DoubleElement(RESPONSIVENESS, *aSample.mResponsiveness);
-  }
-
-  if (aSample.mRSS.isSome()) {
-    writer.DoubleElement(RSS, *aSample.mRSS);
-  }
-
-  if (aSample.mUSS.isSome()) {
-    writer.DoubleElement(USS, *aSample.mUSS);
   }
 }
 
@@ -773,10 +762,7 @@ class EntryGetter {
 //     )+
 //     Marker*
 //     Responsiveness?
-//     ResidentMemory?
-//     UnsharedMemory?
 //   )
-//   | ( ResidentMemory UnsharedMemory? Time)  /* Memory */
 //   | ( /* Counters */
 //       CounterId
 //       Time
@@ -972,37 +958,19 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
         void* pc = e.Get().GetPtr();
         e.Next();
 
-        static const uint32_t BUF_SIZE = 256;
-        char buf[BUF_SIZE];
+        nsCString buf;
 
-        // Bug 753041: We need a double cast here to tell GCC that we don't
-        // want to sign extend 32-bit addresses starting with 0xFXXXXXX.
-        unsigned long long pcULL = (unsigned long long)(uintptr_t)pc;
-        SprintfLiteral(buf, "%#llx", pcULL);
-
-        // If the "MOZ_PROFILER_SYMBOLICATE" env-var is set, we add a local
-        // symbolication description to the PC address. This is off by default,
-        // and mainly intended for local development.
-        static const bool preSymbolicate = []() {
-          const char* symbolicate = getenv("MOZ_PROFILER_SYMBOLICATE");
-          return symbolicate && symbolicate[0] != '\0';
-        }();
-        if (preSymbolicate) {
-          MozCodeAddressDetails details;
-          if (MozDescribeCodeAddress(pc, &details)) {
-            // Replace \0 terminator with space.
-            const uint32_t pcLen = strlen(buf);
-            buf[pcLen] = ' ';
-            // Add description after space. Note: Using a frame number of 0,
-            // as using `numFrames` wouldn't help here, and would prevent
-            // combining same function calls that happen at different depths.
-            // TODO: Remove unsightly "#00: " if too annoying. :-)
-            MozFormatCodeAddressDetails(buf + pcLen + 1, BUF_SIZE - (pcLen + 1),
-                                        0, pc, &details);
-          }
+        if (!aUniqueStacks.mCodeAddressService ||
+            !aUniqueStacks.mCodeAddressService->GetFunction(pc, buf) ||
+            buf.IsEmpty()) {
+          // Bug 753041: We need a double cast here to tell GCC that we don't
+          // want to sign extend 32-bit addresses starting with 0xFXXXXXX.
+          unsigned long long pcULL = (unsigned long long)(uintptr_t)pc;
+          buf.AppendPrintf("0x%llx", pcULL);
         }
 
-        stack = aUniqueStacks.AppendFrame(stack, UniqueStacks::FrameKey(buf));
+        stack =
+            aUniqueStacks.AppendFrame(stack, UniqueStacks::FrameKey(buf.get()));
 
       } else if (e.Get().IsLabel()) {
         numFrames++;
@@ -1128,16 +1096,6 @@ void ProfileBuffer::StreamSamplesToJSON(SpliceableJSONWriter& aWriter,
       e.Next();
     }
 
-    if (e.Has() && e.Get().IsResidentMemory()) {
-      sample.mRSS = Some(e.Get().GetDouble());
-      e.Next();
-    }
-
-    if (e.Has() && e.Get().IsUnsharedMemory()) {
-      sample.mUSS = Some(e.Get().GetDouble());
-      e.Next();
-    }
-
     WriteSample(aWriter, *aUniqueStacks.mUniqueStrings, sample);
   }
 }
@@ -1222,7 +1180,8 @@ void ProfileBuffer::StreamProfilerOverheadToJSON(
 
   EntryGetter e(*this);
 
-  aWriter.StartObjectProperty("profilerOverhead_UNSTABLE");
+  aWriter.StartObjectProperty("profilerOverhead");
+  aWriter.StartObjectProperty("samples");
   // Stream all sampling overhead data. We skip other entries, because we
   // process them in StreamSamplesToJSON()/etc.
   {
@@ -1237,23 +1196,7 @@ void ProfileBuffer::StreamProfilerOverheadToJSON(
   aWriter.StartArrayProperty("data");
   double firstTime = 0.0;
   double lastTime = 0.0;
-  struct Stats {
-    unsigned n = 0;
-    double sum = 0;
-    double min = std::numeric_limits<double>::max();
-    double max = 0;
-    void Count(double v) {
-      ++n;
-      sum += v;
-      if (v < min) {
-        min = v;
-      }
-      if (v > max) {
-        max = v;
-      }
-    }
-  };
-  Stats intervals, overheads, lockings, cleanings, counters, threads;
+  ProfilerStats intervals, overheads, lockings, cleanings, counters, threads;
   while (e.Has()) {
     // valid sequence: ProfilerOverheadTime, ProfilerOverheadDuration * 4
     if (e.Get().IsProfilerOverheadTime()) {
@@ -1315,6 +1258,7 @@ void ProfileBuffer::StreamProfilerOverheadToJSON(
     e.Next();
   }
   aWriter.EndArray();  // data
+  aWriter.EndObject();  // samples
 
   // Only output statistics if there is at least one full interval (and
   // therefore at least two samplings.)
@@ -1520,66 +1464,6 @@ void ProfileBuffer::StreamCountersToJSON(SpliceableJSONWriter& aWriter,
   aWriter.EndArray();  // counters
 }
 
-void ProfileBuffer::StreamMemoryToJSON(SpliceableJSONWriter& aWriter,
-                                       const TimeStamp& aProcessStartTime,
-                                       double aSinceTime) const {
-  enum Schema : uint32_t { TIME = 0, RSS = 1, USS = 2 };
-
-  EntryGetter e(*this);
-
-  aWriter.StartObjectProperty("memory");
-  // Stream all memory (rss/uss) data. We skip other entries, because we
-  // process them in StreamSamplesToJSON()/etc.
-  aWriter.IntProperty("initial_heap", 0);  // XXX FIX
-  aWriter.StartObjectProperty("samples");
-  {
-    JSONSchemaWriter schema(aWriter);
-    schema.WriteField("time");
-    schema.WriteField("rss");
-    schema.WriteField("uss");
-  }
-
-  aWriter.StartArrayProperty("data");
-  int64_t previous_rss = 0;
-  int64_t previous_uss = 0;
-  while (e.Has()) {
-    // valid sequence: Resident, Unshared?, Time
-    if (e.Get().IsResidentMemory()) {
-      int64_t rss = e.Get().GetInt64();
-      int64_t uss = 0;
-      e.Next();
-      if (e.Has()) {
-        if (e.Get().IsUnsharedMemory()) {
-          uss = e.Get().GetDouble();
-          e.Next();
-          if (!e.Has()) {
-            break;
-          }
-        }
-        if (e.Get().IsTime()) {
-          double time = e.Get().GetDouble();
-          if (time >= aSinceTime &&
-              (previous_rss != rss || previous_uss != uss)) {
-            AutoArraySchemaWriter writer(aWriter);
-            writer.DoubleElement(TIME, time);
-            writer.IntElement(RSS, rss);
-            if (uss != 0) {
-              writer.IntElement(USS, uss);
-            }
-            previous_rss = rss;
-            previous_uss = uss;
-          }
-        } else {
-          ERROR_AND_CONTINUE("expected a Time entry");
-        }
-      }
-    }
-    e.Next();
-  }
-  aWriter.EndArray();   // data
-  aWriter.EndObject();  // samples
-  aWriter.EndObject();  // memory
-}
 #undef ERROR_AND_CONTINUE
 
 static void AddPausedRange(SpliceableJSONWriter& aWriter, const char* aReason,
@@ -1672,8 +1556,6 @@ bool ProfileBuffer::DuplicateLastSample(int aThreadId,
             (TimeStamp::NowUnfuzzed() - aProcessStartTime).ToMilliseconds()));
         break;
       case ProfileBufferEntry::Kind::Marker:
-      case ProfileBufferEntry::Kind::ResidentMemory:
-      case ProfileBufferEntry::Kind::UnsharedMemory:
       case ProfileBufferEntry::Kind::CounterKey:
       case ProfileBufferEntry::Kind::Number:
       case ProfileBufferEntry::Kind::Count:

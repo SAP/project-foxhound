@@ -90,15 +90,25 @@ class CompositorD3D11 : public Compositor {
                 const gfx::Rect& aVisibleRect) override;
 
   /**
-   * Start a new frame. If aClipRectIn is null, sets *aClipRectOut to the
-   * screen dimensions.
+   * Start a new frame.
    */
-  void BeginFrame(const nsIntRegion& aInvalidRegion,
-                  const gfx::IntRect* aClipRectIn,
-                  const gfx::IntRect& aRenderBounds,
-                  const nsIntRegion& aOpaqueRegion,
-                  gfx::IntRect* aClipRectOut = nullptr,
-                  gfx::IntRect* aRenderBoundsOut = nullptr) override;
+  Maybe<gfx::IntRect> BeginFrameForWindow(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds,
+      const nsIntRegion& aOpaqueRegion) override;
+
+  Maybe<gfx::IntRect> BeginFrameForTarget(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const gfx::IntRect& aRenderBounds, const nsIntRegion& aOpaqueRegion,
+      gfx::DrawTarget* aTarget, const gfx::IntRect& aTargetBounds) override;
+
+  void BeginFrameForNativeLayers() override;
+
+  Maybe<gfx::IntRect> BeginRenderingToNativeLayer(
+      const nsIntRegion& aInvalidRegion, const Maybe<gfx::IntRect>& aClipRect,
+      const nsIntRegion& aOpaqueRegion, NativeLayer* aNativeLayer) override;
+
+  void EndRenderingToNativeLayer() override;
 
   void NormalDrawingDone() override;
 
@@ -165,6 +175,10 @@ class CompositorD3D11 : public Compositor {
 
   ID3D11PixelShader* GetPSForEffect(Effect* aEffect, const bool aUseBlendShader,
                                     const MaskType aMaskType);
+  Maybe<gfx::IntRect> BeginFrame(const nsIntRegion& aInvalidRegion,
+                                 const Maybe<gfx::IntRect>& aClipRect,
+                                 const gfx::IntRect& aRenderBounds,
+                                 const nsIntRegion& aOpaqueRegion);
   void PaintToTarget();
   RefPtr<ID3D11Texture2D> CreateTexture(const gfx::IntRect& aRect,
                                         const CompositingRenderTarget* aSource,
@@ -225,6 +239,12 @@ class CompositorD3D11 : public Compositor {
    * for the |CompositionRecorder|.
    */
   bool ShouldAllowFrameRecording() const;
+
+  // The DrawTarget from BeginFrameForTarget, which EndFrame needs to copy the
+  // window contents into.
+  // Only non-null between BeginFrameForTarget and EndFrame.
+  RefPtr<gfx::DrawTarget> mTarget;
+  gfx::IntRect mTargetBounds;
 
   RefPtr<ID3D11DeviceContext> mContext;
   RefPtr<ID3D11Device> mDevice;

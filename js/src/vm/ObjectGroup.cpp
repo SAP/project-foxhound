@@ -37,7 +37,7 @@ using namespace js;
 // ObjectGroup
 /////////////////////////////////////////////////////////////////////
 
-ObjectGroup::ObjectGroup(const Class* clasp, TaggedProto proto,
+ObjectGroup::ObjectGroup(const JSClass* clasp, TaggedProto proto,
                          JS::Realm* realm, ObjectGroupFlags initialFlags)
     : clasp_(clasp), proto_(proto), realm_(realm), flags_(initialFlags) {
   /* Windows may not appear on prototype chains. */
@@ -47,7 +47,7 @@ ObjectGroup::ObjectGroup(const Class* clasp, TaggedProto proto,
   setGeneration(zone()->types.generation);
 }
 
-void ObjectGroup::finalize(FreeOp* fop) {
+void ObjectGroup::finalize(JSFreeOp* fop) {
   if (auto newScript = newScriptDontCheckGeneration()) {
     newScript->clear();
     fop->delete_(this, newScript, newScript->gcMallocBytes(),
@@ -94,16 +94,16 @@ static inline size_t AddendumAllocSize(ObjectGroup::AddendumKind kind,
 }
 
 void ObjectGroup::setAddendum(AddendumKind kind, void* addendum,
-                              bool writeBarrier /* = true */) {
+                              bool isSweeping /* = flase */) {
   MOZ_ASSERT(!needsSweep());
   MOZ_ASSERT(kind <= (OBJECT_FLAG_ADDENDUM_MASK >> OBJECT_FLAG_ADDENDUM_SHIFT));
 
   RemoveCellMemory(this, AddendumAllocSize(addendumKind(), addendum_),
-                   MemoryUse::ObjectGroupAddendum);
+                   MemoryUse::ObjectGroupAddendum, isSweeping);
 
-  if (writeBarrier) {
-    // Manually trigger barriers if we are clearing new script or
-    // preliminary object information. Other addendums are immutable.
+  if (!isSweeping) {
+    // Trigger a write barrier if we are clearing new script or preliminary
+    // object information outside of sweeping. Other addendums are immutable.
     AutoSweepObjectGroup sweep(this);
     switch (addendumKind()) {
       case Addendum_PreliminaryObjects:
@@ -239,10 +239,6 @@ bool ObjectGroup::useSingletonForAllocationSite(JSScript* script,
 
   // All loops in the script will have a try note indicating their boundary.
 
-  if (!script->hasTrynotes()) {
-    return true;
-  }
-
   uint32_t offset = script->pcToOffset(pc);
 
   for (const JSTryNote& tn : script->trynotes()) {
@@ -286,7 +282,7 @@ bool JSObject::splicePrototype(JSContext* cx, HandleObject obj,
   MOZ_ASSERT_IF(proto.isObject(), !IsWindow(proto.toObject()));
 
 #ifdef DEBUG
-  const Class* oldClass = obj->getClass();
+  const JSClass* oldClass = obj->getClass();
 #endif
 
   if (proto.isObject()) {
@@ -360,8 +356,7 @@ ObjectGroup* JSObject::makeLazyGroup(JSContext* cx, HandleObject obj) {
 
 /* static */
 bool JSObject::setNewGroupUnknown(JSContext* cx, ObjectGroupRealm& realm,
-                                  const js::Class* clasp,
-                                  JS::HandleObject obj) {
+                                  const JSClass* clasp, JS::HandleObject obj) {
   ObjectGroup::setDefaultNewGroupUnknown(cx, realm, clasp, obj);
   return JSObject::setFlags(cx, obj, BaseShape::NEW_GROUP_UNKNOWN);
 }
@@ -390,11 +385,11 @@ struct ObjectGroupRealm::NewEntry {
       : group(group), associated(associated) {}
 
   struct Lookup {
-    const Class* clasp;
+    const JSClass* clasp;
     TaggedProto proto;
     JSObject* associated;
 
-    Lookup(const Class* clasp, TaggedProto proto, JSObject* associated)
+    Lookup(const JSClass* clasp, TaggedProto proto, JSObject* associated)
         : clasp(clasp), proto(proto), associated(associated) {
       MOZ_ASSERT((associated && associated->is<JSFunction>()) == !clasp);
     }
@@ -479,7 +474,7 @@ class ObjectGroupRealm::NewTable
 }
 
 MOZ_ALWAYS_INLINE ObjectGroup* ObjectGroupRealm::DefaultNewGroupCache::lookup(
-    const Class* clasp, TaggedProto proto, JSObject* associated) {
+    const JSClass* clasp, TaggedProto proto, JSObject* associated) {
   if (group_ && associated_ == associated && group_->proto() == proto &&
       (!clasp || group_->clasp() == clasp)) {
     return group_;
@@ -488,7 +483,7 @@ MOZ_ALWAYS_INLINE ObjectGroup* ObjectGroupRealm::DefaultNewGroupCache::lookup(
 }
 
 /* static */
-ObjectGroup* ObjectGroup::defaultNewGroup(JSContext* cx, const Class* clasp,
+ObjectGroup* ObjectGroup::defaultNewGroup(JSContext* cx, const JSClass* clasp,
                                           TaggedProto proto,
                                           JSObject* associated) {
   MOZ_ASSERT_IF(associated, proto.isObject());
@@ -645,7 +640,7 @@ ObjectGroup* ObjectGroup::defaultNewGroup(JSContext* cx, const Class* clasp,
 /* static */
 ObjectGroup* ObjectGroup::lazySingletonGroup(JSContext* cx,
                                              ObjectGroup* oldGroup,
-                                             const Class* clasp,
+                                             const JSClass* clasp,
                                              TaggedProto proto) {
   ObjectGroupRealm& realm = oldGroup ? ObjectGroupRealm::get(oldGroup)
                                      : ObjectGroupRealm::getForNewObject(cx);
@@ -692,7 +687,7 @@ ObjectGroup* ObjectGroup::lazySingletonGroup(JSContext* cx,
 /* static */
 void ObjectGroup::setDefaultNewGroupUnknown(JSContext* cx,
                                             ObjectGroupRealm& realm,
-                                            const Class* clasp,
+                                            const JSClass* clasp,
                                             HandleObject obj) {
   // If the object already has a new group, mark that group as unknown.
   ObjectGroupRealm::NewTable* table = realm.defaultNewTable;
@@ -709,7 +704,7 @@ void ObjectGroup::setDefaultNewGroupUnknown(JSContext* cx,
 
 #ifdef DEBUG
 /* static */
-bool ObjectGroup::hasDefaultNewGroup(JSObject* proto, const Class* clasp,
+bool ObjectGroup::hasDefaultNewGroup(JSObject* proto, const JSClass* clasp,
                                      ObjectGroup* group) {
   ObjectGroupRealm::NewTable* table =
       ObjectGroupRealm::get(group).defaultNewTable;
@@ -724,7 +719,7 @@ bool ObjectGroup::hasDefaultNewGroup(JSObject* proto, const Class* clasp,
 }
 #endif /* DEBUG */
 
-inline const Class* GetClassForProtoKey(JSProtoKey key) {
+inline const JSClass* GetClassForProtoKey(JSProtoKey key) {
   switch (key) {
     case JSProto_Null:
     case JSProto_Object:
@@ -1652,7 +1647,7 @@ ObjectGroupRealm::~ObjectGroupRealm() {
   stringSplitStringGroup = nullptr;
 }
 
-void ObjectGroupRealm::removeDefaultNewGroup(const Class* clasp,
+void ObjectGroupRealm::removeDefaultNewGroup(const JSClass* clasp,
                                              TaggedProto proto,
                                              JSObject* associated) {
   auto p = defaultNewTable->lookup(NewEntry::Lookup(clasp, proto, associated));
@@ -1662,7 +1657,7 @@ void ObjectGroupRealm::removeDefaultNewGroup(const Class* clasp,
   defaultNewGroupCache.purge();
 }
 
-void ObjectGroupRealm::replaceDefaultNewGroup(const Class* clasp,
+void ObjectGroupRealm::replaceDefaultNewGroup(const JSClass* clasp,
                                               TaggedProto proto,
                                               JSObject* associated,
                                               ObjectGroup* group) {
@@ -1682,8 +1677,8 @@ void ObjectGroupRealm::replaceDefaultNewGroup(const Class* clasp,
 
 /* static */
 ObjectGroup* ObjectGroupRealm::makeGroup(
-    JSContext* cx, Realm* realm, const Class* clasp, Handle<TaggedProto> proto,
-    ObjectGroupFlags initialFlags /* = 0 */) {
+    JSContext* cx, Realm* realm, const JSClass* clasp,
+    Handle<TaggedProto> proto, ObjectGroupFlags initialFlags /* = 0 */) {
   MOZ_ASSERT_IF(proto.isObject(),
                 cx->isInsideCurrentCompartment(proto.toObject()));
 

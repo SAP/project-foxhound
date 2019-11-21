@@ -22,7 +22,6 @@ function check_channel(subject) {
 // ----------------------------------------------------------------------------
 // Tests we send the right cookies when installing through an InstallTrigger call
 let gPrivateWin;
-let gPopupShown;
 async function test() {
   waitForExplicitFinish(); // have to call this ourselves because we're async.
   Harness.installConfirmCallback = confirm_install;
@@ -32,8 +31,11 @@ async function test() {
   gPrivateWin = await BrowserTestUtils.openNewBrowserWindow({ private: true });
   Harness.setup(gPrivateWin);
 
-  var pm = Services.perms;
-  pm.add(makeURI("http://example.com/"), "install", pm.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    "http://example.com/",
+    "install",
+    Services.perms.ALLOW_ACTION
+  );
 
   var triggers = encodeURIComponent(
     JSON.stringify({
@@ -53,10 +55,6 @@ async function test() {
   BrowserTestUtils.loadURI(
     gPrivateWin.gBrowser,
     TESTROOT + "installtrigger.html?" + triggers
-  );
-  gPopupShown = BrowserTestUtils.waitForEvent(
-    gPrivateWin.PanelUI.notificationPanel,
-    "popupshown"
   );
 }
 
@@ -83,7 +81,7 @@ const finish_test = async function(count) {
 
   Services.obs.removeObserver(check_channel, "http-on-before-connect");
 
-  Services.perms.remove(makeURI("http://example.com"), "install");
+  PermissionTestUtils.remove("http://example.com", "install");
 
   const results = await ContentTask.spawn(
     gPrivateWin.gBrowser.selectedBrowser,
@@ -99,16 +97,17 @@ const finish_test = async function(count) {
   is(results.return, "true", "installTrigger should have claimed success");
   is(results.status, "0", "Callback should have seen a success");
 
-  // Explicitly click the "OK" button to avoid the panel reopening in the other window once this
-  // window closes (see also bug 1535069):
-  await gPopupShown;
-  gPrivateWin.PanelUI.notificationPanel
-    .querySelector("popupnotification[popupid=addon-installed]")
-    .button.click();
+  await TestUtils.waitForCondition(() =>
+    gPrivateWin.AppMenuNotifications._notifications.some(
+      n => n.id == "addon-installed"
+    )
+  );
+  // Explicitly remove the notification to avoid the panel reopening in the
+  // other window once this window closes (see also bug 1535069):
+  gPrivateWin.AppMenuNotifications.removeNotification("addon-installed");
 
   // Now finish the test:
   await BrowserTestUtils.closeWindow(gPrivateWin);
   Harness.finish(gPrivateWin);
   gPrivateWin = null;
-  gPopupShown = null;
 };

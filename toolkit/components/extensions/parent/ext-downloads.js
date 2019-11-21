@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 ChromeUtils.defineModuleGetter(
@@ -60,6 +64,7 @@ const DOWNLOAD_ITEM_CHANGE_FIELDS = [
 ];
 
 // From https://fetch.spec.whatwg.org/#forbidden-header-name
+// Since bug 1367626 we allow extensions to set REFERER.
 const FORBIDDEN_HEADERS = [
   "ACCEPT-CHARSET",
   "ACCEPT-ENCODING",
@@ -75,7 +80,6 @@ const FORBIDDEN_HEADERS = [
   "HOST",
   "KEEP-ALIVE",
   "ORIGIN",
-  "REFERER",
   "TE",
   "TRAILER",
   "TRANSFER-ENCODING",
@@ -99,7 +103,11 @@ class DownloadItem {
     return this.download.source.url;
   }
   get referrer() {
-    return this.download.source.referrer;
+    const uri = this.download.source.referrerInfo
+      ? this.download.source.referrerInfo.originalReferrer
+      : null;
+
+    return uri && uri.spec;
   }
   get filename() {
     return this.download.target.path;

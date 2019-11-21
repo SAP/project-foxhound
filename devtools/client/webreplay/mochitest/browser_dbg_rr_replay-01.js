@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint-disable no-undef */
@@ -27,19 +25,16 @@ add_task(async function() {
   gBrowser.selectedTab = replayingTab;
   await once(Services.ppmm, "HitRecordingEndpoint");
 
-  const { target, toolbox } = await attachDebugger(replayingTab);
-  const client = toolbox.threadClient;
-  await client.interrupt();
-  const bp = await setBreakpoint(client, "doc_rr_basic.html", 21);
-  await rewindToLine(client, 21);
-  await checkEvaluateInTopFrame(target, "number", 10);
-  await rewindToLine(client, 21);
-  await checkEvaluateInTopFrame(target, "number", 9);
-  await resumeToLine(client, 21);
-  await checkEvaluateInTopFrame(target, "number", 10);
+  const dbg = await attachDebugger(replayingTab);
 
-  await client.removeBreakpoint(bp);
-  await toolbox.destroy();
+  await addBreakpoint(dbg, "doc_rr_basic.html", 21);
+  await rewindToLine(dbg, 21);
+  await checkEvaluateInTopFrame(dbg, "number", 10);
+  await rewindToLine(dbg, 21);
+  await checkEvaluateInTopFrame(dbg, "number", 9);
+  await resumeToLine(dbg, 21);
+  await checkEvaluateInTopFrame(dbg, "number", 10);
+
   await gBrowser.removeTab(recordingTab);
-  await gBrowser.removeTab(replayingTab);
+  await shutdownDebugger(dbg);
 });

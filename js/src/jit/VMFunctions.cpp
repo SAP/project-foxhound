@@ -7,6 +7,7 @@
 #include "jit/VMFunctions.h"
 
 #include "builtin/Promise.h"
+#include "builtin/String.h"
 #include "builtin/TypedObject.h"
 #include "frontend/BytecodeCompiler.h"
 #include "jit/arm/Simulator-arm.h"
@@ -16,16 +17,15 @@
 #include "jit/mips32/Simulator-mips32.h"
 #include "jit/mips64/Simulator-mips64.h"
 #include "vm/ArrayObject.h"
-#include "vm/Debugger.h"
 #include "vm/EqualityOperations.h"  // js::StrictlyEqual
 #include "vm/Interpreter.h"
 #include "vm/SelfHosting.h"
 #include "vm/TraceLogging.h"
 
+#include "debugger/DebugAPI-inl.h"
 #include "jit/BaselineFrame-inl.h"
 #include "jit/JitFrames-inl.h"
 #include "jit/VMFunctionList-inl.h"
-#include "vm/Debugger-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -297,7 +297,7 @@ bool InvokeFromInterpreterStub(JSContext* cx,
   return true;
 }
 
-bool CheckOverRecursed(JSContext* cx) {
+static bool CheckOverRecursedImpl(JSContext* cx, size_t extra) {
   // We just failed the jitStackLimit check. There are two possible reasons:
   //  1) jitStackLimit was the real stack limit and we're over-recursed
   //  2) jitStackLimit was set to UINTPTR_MAX by JSContext::requestInterrupt
@@ -305,12 +305,12 @@ bool CheckOverRecursed(JSContext* cx) {
 
   // This handles 1).
 #ifdef JS_SIMULATOR
-  if (cx->simulator()->overRecursedWithExtra(0)) {
+  if (cx->simulator()->overRecursedWithExtra(extra)) {
     ReportOverRecursed(cx);
     return false;
   }
 #else
-  if (!CheckRecursionLimit(cx)) {
+  if (!CheckRecursionLimitWithExtra(cx, extra)) {
     return false;
   }
 #endif
@@ -320,19 +320,13 @@ bool CheckOverRecursed(JSContext* cx) {
   return cx->handleInterrupt();
 }
 
-// This function gets called when the overrecursion check fails for a Baseline
-// frame. This is just like CheckOverRecursed, with an extra check to handle
-// early stack check failures.
-bool CheckOverRecursedBaseline(JSContext* cx, BaselineFrame* frame) {
-  // The OVERRECURSED flag may have already been set on the frame by an
-  // early over-recursed check (before pushing the locals).  If so, throw
-  // immediately.
-  if (frame->overRecursed()) {
-    ReportOverRecursed(cx);
-    return false;
-  }
+bool CheckOverRecursed(JSContext* cx) { return CheckOverRecursedImpl(cx, 0); }
 
-  return CheckOverRecursed(cx);
+bool CheckOverRecursedBaseline(JSContext* cx, BaselineFrame* frame) {
+  // The stack check in Baseline happens before pushing locals so we have to
+  // account for that by including script->nslots() in the C++ recursion check.
+  size_t extra = frame->script()->nslots() * sizeof(Value);
+  return CheckOverRecursedImpl(cx, extra);
 }
 
 bool MutatePrototype(JSContext* cx, HandlePlainObject obj, HandleValue value) {
@@ -850,8 +844,8 @@ JSObject* WrapObjectPure(JSContext* cx, JSObject* obj) {
 
   // Try to Lookup an existing wrapper for this object. We assume that
   // if we can find such a wrapper, not calling preWrap is correct.
-  if (WrapperMap::Ptr p = cx->compartment()->lookupWrapper(obj)) {
-    JSObject* wrapped = &p->value().get().toObject();
+  if (ObjectWrapperMap::Ptr p = cx->compartment()->lookupWrapper(obj)) {
+    JSObject* wrapped = p->value().get();
 
     // Ensure the wrapper is still exposed.
     JS::ExposeObjectToActiveJS(wrapped);
@@ -881,13 +875,13 @@ static bool HandlePrologueResumeMode(JSContext* cx, BaselineFrame* frame,
       return false;
 
     default:
-      MOZ_CRASH("bad Debugger::onEnterFrame resume mode");
+      MOZ_CRASH("bad DebugAPI::onEnterFrame resume mode");
   }
 }
 
 bool DebugPrologue(JSContext* cx, BaselineFrame* frame, jsbytecode* pc,
                    bool* mustReturn) {
-  ResumeMode resumeMode = Debugger::onEnterFrame(cx, frame);
+  ResumeMode resumeMode = DebugAPI::onEnterFrame(cx, frame);
   return HandlePrologueResumeMode(cx, frame, pc, mustReturn, resumeMode);
 }
 
@@ -907,31 +901,23 @@ bool DebugEpilogueOnBaselineReturn(JSContext* cx, BaselineFrame* frame,
 
 bool DebugEpilogue(JSContext* cx, BaselineFrame* frame, jsbytecode* pc,
                    bool ok) {
-  // If Debugger::onLeaveFrame returns |true| we have to return the frame's
+  // If DebugAPI::onLeaveFrame returns |true| we have to return the frame's
   // return value. If it returns |false|, the debugger threw an exception.
   // In both cases we have to pop debug scopes.
-  ok = Debugger::onLeaveFrame(cx, frame, pc, ok);
+  ok = DebugAPI::onLeaveFrame(cx, frame, pc, ok);
 
-  // Unwind to the outermost environment and set pc to the end of the
-  // script, regardless of error.
+  // Unwind to the outermost environment.
   EnvironmentIter ei(cx, frame, pc);
   UnwindAllEnvironmentsInFrame(cx, ei);
-  JSScript* script = frame->script();
-  frame->setOverridePc(script->offsetToPC(0));
 
   if (!ok) {
     // Pop this frame by updating packedExitFP, so that the exception
     // handling code will start at the previous frame.
-    frame->deleteDebugModeOSRInfo();
     JitFrameLayout* prefix = frame->framePrefix();
     EnsureBareExitFrame(cx->activation()->asJit(), prefix);
     return false;
   }
 
-  // Clear the override pc. This is not necessary for correctness: the frame
-  // will return immediately, but this simplifies the check we emit in debug
-  // builds after each callVM, to ensure this flag is not set.
-  frame->clearOverridePc();
   return true;
 }
 
@@ -1004,7 +990,7 @@ bool DebugAfterYield(JSContext* cx, BaselineFrame* frame, jsbytecode* pc,
   // we may already have done this work. Don't fire onEnterFrame again.
   if (frame->script()->isDebuggee() && !frame->isDebuggee()) {
     frame->setIsDebuggee();
-    ResumeMode resumeMode = Debugger::onResumeFrame(cx, frame);
+    ResumeMode resumeMode = DebugAPI::onResumeFrame(cx, frame);
     return HandlePrologueResumeMode(cx, frame, pc, mustReturn, resumeMode);
   }
 
@@ -1015,13 +1001,15 @@ bool DebugAfterYield(JSContext* cx, BaselineFrame* frame, jsbytecode* pc,
 bool GeneratorThrowOrReturn(JSContext* cx, BaselineFrame* frame,
                             Handle<AbstractGeneratorObject*> genObj,
                             HandleValue arg, uint32_t resumeKindArg) {
-  // Set the frame's pc to the current resume pc, so that frame iterators
-  // work. This function always returns false, so we're guaranteed to enter
-  // the exception handler where we will clear the pc.
   JSScript* script = frame->script();
   uint32_t offset = script->resumeOffsets()[genObj->resumeIndex()];
   jsbytecode* pc = script->offsetToPC(offset);
-  frame->setOverridePc(pc);
+
+  // Always use an interpreter frame so frame iteration can easily recover the
+  // generator's bytecode pc (we don't have a matching RetAddrEntry in the
+  // BaselineScript).
+  MOZ_ASSERT(!frame->runningInInterpreter());
+  frame->initInterpFieldsForGeneratorThrowOrReturn(script, pc);
 
   // In the interpreter, AbstractGeneratorObject::resume marks the generator as
   // running, so we do the same.
@@ -1125,9 +1113,10 @@ bool HandleDebugTrap(JSContext* cx, BaselineFrame* frame, uint8_t* retAddr,
   // is in step mode or has breakpoints. The Baseline Compiler can toggle
   // breakpoints more granularly for specific bytecode PCs.
   if (frame->runningInInterpreter()) {
-    MOZ_ASSERT(script->hasAnyBreakpointsOrStepMode());
+    MOZ_ASSERT(DebugAPI::hasAnyBreakpointsOrStepMode(script));
   } else {
-    MOZ_ASSERT(script->stepModeEnabled() || script->hasBreakpointsAt(pc));
+    MOZ_ASSERT(DebugAPI::stepModeEnabled(script) ||
+               DebugAPI::hasBreakpointsAt(script, pc));
   }
 
   if (*pc == JSOP_AFTERYIELD) {
@@ -1155,12 +1144,13 @@ bool HandleDebugTrap(JSContext* cx, BaselineFrame* frame, uint8_t* retAddr,
   RootedValue rval(cx);
   ResumeMode resumeMode = ResumeMode::Continue;
 
-  if (script->stepModeEnabled()) {
-    resumeMode = Debugger::onSingleStep(cx, &rval);
+  if (DebugAPI::stepModeEnabled(script)) {
+    resumeMode = DebugAPI::onSingleStep(cx, &rval);
   }
 
-  if (resumeMode == ResumeMode::Continue && script->hasBreakpointsAt(pc)) {
-    resumeMode = Debugger::onTrap(cx, &rval);
+  if (resumeMode == ResumeMode::Continue &&
+      DebugAPI::hasBreakpointsAt(script, pc)) {
+    resumeMode = DebugAPI::onTrap(cx, &rval);
   }
 
   switch (resumeMode) {
@@ -1190,7 +1180,7 @@ bool OnDebuggerStatement(JSContext* cx, BaselineFrame* frame, jsbytecode* pc,
                          bool* mustReturn) {
   *mustReturn = false;
 
-  switch (Debugger::onDebuggerStatement(cx, frame)) {
+  switch (DebugAPI::onDebuggerStatement(cx, frame)) {
     case ResumeMode::Continue:
       return true;
 
@@ -1210,7 +1200,7 @@ bool OnDebuggerStatement(JSContext* cx, BaselineFrame* frame, jsbytecode* pc,
 bool GlobalHasLiveOnDebuggerStatement(JSContext* cx) {
   AutoUnsafeCallWithABI unsafe;
   return cx->realm()->isDebuggee() &&
-         Debugger::hasLiveHook(cx->global(), Debugger::OnDebuggerStatement);
+         DebugAPI::hasDebuggerStatementHook(cx->global());
 }
 
 bool PushLexicalEnv(JSContext* cx, BaselineFrame* frame,
@@ -1316,7 +1306,7 @@ bool RecompileImpl(JSContext* cx, bool force) {
   RootedScript script(cx, frame.script());
   MOZ_ASSERT(script->hasIonScript());
 
-  if (!IsIonEnabled(cx)) {
+  if (!IsIonEnabled()) {
     return true;
   }
 

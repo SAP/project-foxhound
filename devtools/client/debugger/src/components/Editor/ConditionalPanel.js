@@ -12,7 +12,7 @@ import { toEditorLine } from "../../utils/editor";
 import actions from "../../actions";
 
 import {
-  getBreakpointForLocation,
+  getBreakpoint,
   getConditionalPanelLocation,
   getLogPointStatus,
   getContext,
@@ -229,12 +229,11 @@ export class ConditionalPanel extends PureComponent<Props> {
 
 const mapStateToProps = state => {
   const location = getConditionalPanelLocation(state);
-  const log = getLogPointStatus(state);
   return {
     cx: getContext(state),
-    breakpoint: getBreakpointForLocation(state, location),
+    breakpoint: getBreakpoint(state, location),
     location,
-    log,
+    log: getLogPointStatus(state),
   };
 };
 

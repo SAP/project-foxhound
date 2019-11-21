@@ -42,7 +42,8 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "nsWindow.h"
 
 #ifdef MOZ_X11
@@ -67,15 +68,12 @@ NS_IMPL_ISUPPORTS_INHERITED(nsNativeThemeGTK, nsNativeTheme, nsITheme,
 
 static int gLastGdkError;
 
-// from nsWindow.cpp
-extern bool gDisableNativeTheme;
-
 // Return scale factor of the monitor where the window is located
 // by the most part or layout.css.devPixelsPerPx pref if set to > 0.
 static inline gint GetMonitorScaleFactor(nsIFrame* aFrame) {
   // When the layout.css.devPixelsPerPx is set the scale can be < 1,
   // the real monitor scale cannot go under 1.
-  double scale = nsIWidget::DefaultScaleOverride();
+  double scale = StaticPrefs::layout_css_devPixelsPerPx();
   if (scale <= 0) {
     nsIWidget* rootWidget = aFrame->PresContext()->GetRootWidget();
     if (rootWidget) {
@@ -802,6 +800,9 @@ class SystemCairoClipper : public ClipExporter {
   void BeginClip(const Matrix& aTransform) override {
     cairo_matrix_t mat;
     GfxMatrixToCairoMatrix(aTransform, mat);
+    // We also need to remove the scale factor effect from the matrix
+    mat.y0 = mat.y0 / mScaleFactor;
+    mat.x0 = mat.x0 / mScaleFactor;
     cairo_set_matrix(mContext, &mat);
 
     cairo_new_path(mContext);
@@ -867,9 +868,8 @@ static void DrawThemeWithCairo(gfxContext* aContext, DrawTarget* aDrawTarget,
   static auto sCairoSurfaceSetDeviceScalePtr =
       (void (*)(cairo_surface_t*, double, double))dlsym(
           RTLD_DEFAULT, "cairo_surface_set_device_scale");
-  // Support HiDPI widget styles on Wayland only for now.
-  bool useHiDPIWidgets = !isX11Display && (aScaleFactor != 1) &&
-                         (sCairoSurfaceSetDeviceScalePtr != nullptr);
+  bool useHiDPIWidgets =
+      (aScaleFactor != 1) && (sCairoSurfaceSetDeviceScalePtr != nullptr);
 
   Point drawOffsetScaled;
   Point drawOffsetOriginal;
@@ -2042,7 +2042,7 @@ bool nsNativeThemeGTK::WidgetAppearanceDependsOnWindowFocus(
 }
 
 already_AddRefed<nsITheme> do_GetNativeTheme() {
-  if (gDisableNativeTheme) {
+  if (StaticPrefs::widget_disable_native_theme()) {
     return nullptr;
   }
 

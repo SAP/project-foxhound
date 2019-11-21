@@ -37,6 +37,29 @@ const actionTypes = {
   WS_ADD_FRAME: "WS_ADD_FRAME",
   WS_SELECT_FRAME: "WS_SELECT_FRAME",
   WS_OPEN_FRAME_DETAILS: "WS_OPEN_FRAME_DETAILS",
+  WS_CLEAR_FRAMES: "WS_CLEAR_FRAMES",
+  WS_TOGGLE_FRAME_FILTER_TYPE: "WS_TOGGLE_FRAME_FILTER_TYPE",
+  WS_SET_REQUEST_FILTER_TEXT: "WS_SET_REQUEST_FILTER_TEXT",
+  WS_TOGGLE_COLUMN: "WS_TOGGLE_COLUMN",
+  WS_RESET_COLUMNS: "WS_RESET_COLUMNS",
+
+  // Search
+  ADD_SEARCH_QUERY: "ADD_SEARCH_QUERY",
+  ADD_SEARCH_RESULT: "ADD_SEARCH_RESULT",
+  CLEAR_SEARCH_RESULTS: "CLEAR_SEARCH_RESULTS",
+  ADD_ONGOING_SEARCH: "ADD_ONGOING_SEARCH",
+  OPEN_SEARCH: "OPEN_SEARCH",
+  CLOSE_SEARCH: "CLOSE_SEARCH",
+  UPDATE_SEARCH_STATUS: "UPDATE_SEARCH_STATUS",
+};
+
+// Search status types
+const SEARCH_STATUS = {
+  INITIAL: "INITIAL",
+  FETCHING: "FETCHING",
+  CANCELLED: "CANCELLED",
+  DONE: "DONE",
+  ERROR: "ERROR",
 };
 
 // Descriptions for what this frontend is currently doing.
@@ -115,6 +138,9 @@ const EVENTS = {
 
   // When throttling is set on the backend.
   THROTTLING_CHANGED: "NetMonitor:ThrottlingChanged",
+
+  // When a long string is resolved
+  LONGSTRING_RESOLVED: "NetMonitor:LongStringResolved",
 };
 
 const UPDATE_PROPS = [
@@ -163,7 +189,7 @@ const UPDATE_PROPS = [
 const PANELS = {
   COOKIES: "cookies",
   HEADERS: "headers",
-  WEBSOCKETS: "webSockets",
+  MESSAGES: "messages",
   PARAMS: "params",
   RESPONSE: "response",
   CACHE: "cache",
@@ -319,25 +345,28 @@ const FILTER_TAGS = [
 
 const WS_FRAMES_HEADERS = [
   {
-    name: "frameType",
+    name: "data",
+    width: "40%",
   },
   {
     name: "size",
-  },
-  {
-    name: "payload",
+    width: "12%",
   },
   {
     name: "opCode",
+    width: "9%",
   },
   {
     name: "maskBit",
+    width: "9%",
   },
   {
     name: "finBit",
+    width: "9%",
   },
   {
     name: "time",
+    width: "22%",
   },
 ];
 
@@ -480,6 +509,7 @@ const general = {
   DEFAULT_COLUMN_WIDTH,
   SUPPORTED_HTTP_CODES,
   BLOCKED_REASON_MESSAGES,
+  SEARCH_STATUS,
 };
 
 // flatten constants

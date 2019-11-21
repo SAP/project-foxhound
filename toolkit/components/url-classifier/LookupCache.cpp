@@ -33,7 +33,6 @@
 // returned from the gethash server. They are not serialized,
 // only cached until the next update.
 
-
 // MOZ_LOG=UrlClassifierDbService:5
 extern mozilla::LazyLogModule gUrlClassifierDbServiceLog;
 #define LOG(args) \
@@ -234,13 +233,20 @@ nsresult LookupCache::WriteFile() {
 
   nsCOMPtr<nsIFile> psFile;
   nsresult rv = mStoreDirectory->Clone(getter_AddRefs(psFile));
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   rv = psFile->AppendNative(mTableName + GetPrefixSetSuffix());
-  NS_ENSURE_SUCCESS(rv, rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
 
   rv = StoreToFile(psFile);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "failed to store the prefixset");
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    LOG(("Failed to store the prefixset for table %s", mTableName.get()));
+    return rv;
+  }
 
   return NS_OK;
 }
@@ -678,7 +684,8 @@ nsresult LookupCache::LoadFromFile(nsCOMPtr<nsIFile>& aFile) {
   Header header;
   rv = ReadValue(in, header);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    LOG(("Failed to read header for %s", mTableName.get()));
+    return NS_ERROR_FILE_CORRUPTED;
   }
 
   rv = SanityCheck(header);
@@ -875,6 +882,12 @@ nsresult LookupCacheV2::LoadLegacyFile() {
   // Support loading version 3 HashStore.
   nsresult rv = store.Open(3);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  if (store.AddChunks().Length() == 0 &&
+      store.SubChunks().Length() == 0) {
+    // Return when file doesn't exist
+    return NS_OK;
+  }
 
   AddPrefixArray prefix;
   AddCompleteArray addComplete;

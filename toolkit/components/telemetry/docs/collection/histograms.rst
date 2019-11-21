@@ -59,7 +59,13 @@ Categorical histograms are similar to enumerated histograms. However, instead of
 
 .. note::
 
-    Categorical histograms by default support up to 50 labels, but you can set it higher using the `n_values` property. If you need to add more labels later, you need to use a new histogram name. The current Telemetry server does not support changing histogram declarations after the histogram has already been released. See `Changing a histogram`_ if you need to add more labels later.
+    You can add new labels to a categorical histogram later on,
+    up to the configured maximum.
+    Categorical histograms by default support up to 50 labels,
+    but you can set it higher using the ``n_values`` property.
+    If you need to add labels beyond the maximum later,
+    you need to use a new histogram name.
+    See `Changing a Histogram`_ for details.
 
 ``enumerated``
 --------------
@@ -226,14 +232,11 @@ Optional. This is one of:
 
 ``products``
 -------------
-Optional. This field is a list of products this histogram can be recorded on. Currently-supported values are:
+Required. This field is a list of products this histogram can be recorded on. Currently-supported values are:
 
-- ``firefox``
-- ``fennec``
-- ``geckoview``
-- ``all`` (record on all products)
-
-If this field is left out it defaults to ``all``.
+- ``firefox`` - Collected in Firefox Desktop for submission via Firefox Telemetry.
+- ``fennec`` - Collected in Firefox for Android for submission via Firefox Mobile Telemetry.
+- ``geckoview`` - Collected in GeckoView-based Android products and surfaced via `GeckoViewTelemetryController.jsm <https://hg.mozilla.org/mozilla-central/raw-file/tip/toolkit/components/telemetry/geckoview/GeckoViewTelemetryController.jsm>`__.
 
 ``record_into_store``
 ---------------------
@@ -243,12 +246,21 @@ If this field is left out it defaults to ``[main]``.
 
 Changing a histogram
 ====================
-Changing histogram declarations after the histogram has been released is tricky. Many tools (like `the aggregator <https://github.com/mozilla/python_mozaggregator>`_) assume histograms don't change. The current recommended procedure is to change the name of the histogram.
+
+Changing a histogram declaration after the histogram has been released is tricky.
+Many tools
+(like `the aggregator <https://github.com/mozilla/python_mozaggregator>`_)
+assume histograms don't change.
+The current recommended procedure is to change the name of the histogram.
 
 * When changing existing histograms, the recommended pattern is to use a versioned name (``PROBE``, ``PROBE_2``, ``PROBE_3``, ...).
 * For enum histograms, it's recommended to set "n_buckets" to a slightly larger value than needed since new elements may be added to the enum in the future.
 
-The one exception is categorical histograms which can only be changed by adding labels, and only until it reaches 50 labels.
+The one exception is `Categorical`_ histograms.
+They can be changed by adding labels until it reaches the configured maximum
+(default of 50, or the value of ``n_values``).
+If you need to change the configured maximum,
+then you must change the histogram name as mentioned above.
 
 Histogram values
 ================

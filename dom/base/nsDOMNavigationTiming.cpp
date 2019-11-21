@@ -87,6 +87,10 @@ void nsDOMNavigationTiming::NotifyFetchStart(nsIURI* aURI,
   mLoadedURI = aURI;
 }
 
+void nsDOMNavigationTiming::NotifyRestoreStart() {
+  mNavigationType = TYPE_BACK_FORWARD;
+}
+
 void nsDOMNavigationTiming::NotifyBeforeUnload() {
   mBeforeUnloadStart = TimeStamp::Now();
 }
@@ -535,7 +539,8 @@ bool nsDOMNavigationTiming::IsTopLevelContentDocumentInContentProcess() const {
     return false;
   }
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  Unused << mDocShell->GetSameTypeRootTreeItem(getter_AddRefs(rootItem));
+  Unused << mDocShell->GetInProcessSameTypeRootTreeItem(
+      getter_AddRefs(rootItem));
   if (rootItem.get() != static_cast<nsIDocShellTreeItem*>(mDocShell.get())) {
     return false;
   }

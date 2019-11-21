@@ -11,7 +11,7 @@
 #include <math.h>
 #include <d3d11.h>
 
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/GamepadEventTypes.h"
 #include "mozilla/dom/GamepadBinding.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
@@ -206,7 +206,8 @@ OculusSession::OculusSession()
 OculusSession::~OculusSession() { Shutdown(); }
 
 bool OculusSession::Initialize(mozilla::gfx::VRSystemState& aSystemState) {
-  if (!StaticPrefs::dom_vr_enabled() || !StaticPrefs::dom_vr_oculus_enabled()) {
+  if (!StaticPrefs::dom_vr_enabled() ||
+      !StaticPrefs::dom_vr_oculus_enabled_AtStartup()) {
     return false;
   }
 
@@ -1011,6 +1012,8 @@ bool OculusSession::InitState(VRSystemState& aSystemState) {
   state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_External;
   state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_MountDetection;
   state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_Present;
+  state.capabilityFlags |= VRDisplayCapabilityFlags::Cap_ImmersiveVR;
+  state.blendMode = VRDisplayBlendMode::Opaque;
   state.reportsDroppedFrames = true;
 
   mFOVPort[VRDisplayState::Eye_Left] = desc.DefaultEyeFov[ovrEye_Left];

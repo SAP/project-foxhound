@@ -295,7 +295,7 @@ void Gecko_nsFont_Destroy(nsFont* dst);
 // The gfxFontFeatureValueSet returned from this function has zero reference.
 gfxFontFeatureValueSet* Gecko_ConstructFontFeatureValueSet();
 
-nsTArray<unsigned int>* Gecko_AppendFeatureValueHashEntry(
+nsTArray<uint32_t>* Gecko_AppendFeatureValueHashEntry(
     gfxFontFeatureValueSet* value_set, nsAtom* family, uint32_t alternate,
     nsAtom* name);
 
@@ -418,17 +418,6 @@ void Gecko_ClearPODTArray(void* array, size_t elem_size, size_t elem_align);
 void Gecko_ResizeTArrayForStrings(nsTArray<nsString>* array, uint32_t length);
 void Gecko_ResizeAtomArray(nsTArray<RefPtr<nsAtom>>* array, uint32_t length);
 
-void Gecko_SetStyleGridTemplate(
-    mozilla::UniquePtr<nsStyleGridTemplate>* grid_template,
-    nsStyleGridTemplate* value);
-
-nsStyleGridTemplate* Gecko_CreateStyleGridTemplate(uint32_t track_sizes,
-                                                   uint32_t name_size);
-
-void Gecko_CopyStyleGridTemplateValues(
-    mozilla::UniquePtr<nsStyleGridTemplate>* grid_template,
-    const nsStyleGridTemplate* other);
-
 // Clear the mContents, mCounterIncrements, mCounterResets, or mCounterSets
 // field in nsStyleContent. This is needed to run the destructors, otherwise
 // we'd leak the images, strings, and whatnot.
@@ -537,7 +526,11 @@ void Gecko_GetComputedImageURLSpec(const mozilla::StyleComputedUrl* url,
 
 void Gecko_nsIURI_Debug(nsIURI*, nsCString* spec);
 
+void Gecko_nsIReferrerInfo_Debug(nsIReferrerInfo* aReferrerInfo,
+                                 nsCString* aOut);
+
 NS_DECL_THREADSAFE_FFI_REFCOUNTING(mozilla::URLExtraData, URLExtraData);
+NS_DECL_THREADSAFE_FFI_REFCOUNTING(nsIReferrerInfo, nsIReferrerInfo);
 
 void Gecko_FillAllImageLayers(nsStyleImageLayers* layers, uint32_t max_len);
 

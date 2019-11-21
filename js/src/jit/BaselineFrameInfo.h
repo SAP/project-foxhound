@@ -210,6 +210,14 @@ class FrameInfo {
     return Address(BaselineFrameReg,
                    BaselineFrame::reverseOffsetOfScratchValue());
   }
+  Address addressOfScratchValueLow32() const {
+    return Address(BaselineFrameReg,
+                   BaselineFrame::reverseOffsetOfScratchValueLow32());
+  }
+  Address addressOfScratchValueHigh32() const {
+    return Address(BaselineFrameReg,
+                   BaselineFrame::reverseOffsetOfScratchValueHigh32());
+  }
 };
 
 class CompilerFrameInfo : public FrameInfo {
@@ -328,8 +336,6 @@ class CompilerFrameInfo : public FrameInfo {
 
   void storeStackValue(int32_t depth, const Address& dest,
                        const ValueOperand& scratch);
-
-  PCMappingSlotInfo::SlotLocation stackValueSlotLocation(int32_t depth);
 
 #ifdef DEBUG
   // Assert the state is valid before excuting "pc".

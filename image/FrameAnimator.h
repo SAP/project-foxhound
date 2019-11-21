@@ -8,7 +8,7 @@
 #define mozilla_image_FrameAnimator_h
 
 #include "mozilla/Maybe.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/TimeStamp.h"
 #include "gfxTypes.h"
 #include "imgFrame.h"
@@ -80,7 +80,8 @@ class AnimationState {
    * Sets the composited frame as valid or invalid.
    */
   void SetCompositedFrameInvalid(bool aInvalid) {
-    MOZ_ASSERT(!aInvalid || StaticPrefs::image_mem_animated_discardable());
+    MOZ_ASSERT(!aInvalid ||
+               StaticPrefs::image_mem_animated_discardable_AtStartup());
     mCompositedFrameInvalid = aInvalid;
   }
 

@@ -79,6 +79,10 @@ class StaticAnalysisMonitor(object):
         self._warnings_database = WarningsDatabase()
 
         def on_warning(warning):
+
+            # Output paths relative to repository root
+            warning['filename'] = os.path.relpath(warning['filename'], srcdir)
+
             self._warnings_database.insert(warning)
 
         self._warnings_collector = WarningsCollector(on_warning, objdir=objdir)
@@ -151,8 +155,13 @@ class StaticAnalysis(MachCommandBase):
     @Command('static-analysis', category='testing',
              description='Run C++ static analysis checks')
     def static_analysis(self):
-        # If not arguments are provided, just print a help message.
+        # If no arguments are provided, just print a help message.
         mach = Mach(os.getcwd())
+
+        def populate_context(context, key=None):
+            context.topdir = self.topsrcdir
+
+        mach.populate_context_handler = populate_context
         mach.run(['static-analysis', '--help'])
 
     @StaticAnalysisSubCommand('static-analysis', 'check',
@@ -401,6 +410,13 @@ class StaticAnalysis(MachCommandBase):
 
     def dump_cov_artifact(self, cov_results, source, output):
         # Parse Coverity json into structured issues
+
+        def relpath(path):
+            '''Build path relative to repository root'''
+            if path.startswith(self.topsrcdir):
+                return os.path.relpath(path, self.topsrcdir)
+            return path
+
         with open(cov_results) as f:
             result = json.load(f)
 
@@ -417,6 +433,7 @@ class StaticAnalysis(MachCommandBase):
                 dict_issue = {
                     'line': issue['mainEventLineNumber'],
                     'flag': issue['checkerName'],
+                    'build_error': issue['checkerName'].startswith('RW.CLANG'),
                     'message': event_path['eventDescription'],
                     'reliability': self.get_reliability_index_for_cov_checker(
                         issue['checkerName']
@@ -431,7 +448,7 @@ class StaticAnalysis(MachCommandBase):
                 # Embed all events into extra message
                 for event in issue['events']:
                     dict_issue['extra']['stack'].append(
-                        {'file_path': event['strippedFilePathname'],
+                        {'file_path': relpath(event['strippedFilePathname']),
                          'line_number': event['lineNumber'],
                          'path_type': event['eventTag'],
                          'description': event['eventDescription']})
@@ -449,6 +466,7 @@ class StaticAnalysis(MachCommandBase):
                                 issue['strippedMainEventFilePathname'])
                              )
                     continue
+                path = relpath(path)
                 if path in files_list:
                     files_list[path]['warnings'].append(build_element(issue))
                 else:
@@ -917,7 +935,7 @@ class StaticAnalysis(MachCommandBase):
         # Configure the tree or download clang-tidy package, depending on the option that we choose
         if intree_tool:
             _, config, _ = self._get_config_environment()
-            clang_tools_path = self.topsrcdir
+            clang_tools_path = os.environ['MOZ_FETCHES_DIR']
             self._clang_tidy_path = mozpath.join(
                 clang_tools_path, "clang-tidy", "bin",
                 "clang-tidy" + config.substs.get('BIN_SUFFIX', ''))
@@ -1343,10 +1361,15 @@ class StaticAnalysis(MachCommandBase):
         prettier = os.path.join(self.topsrcdir, "node_modules", "prettier", "bin-prettier.js")
         path = os.path.join(self.topsrcdir, path[0])
 
+        # Bug 1564824. Prettier fails on patches with moved files where the
+        # original directory also does not exist.
+        assume_dir = os.path.dirname(os.path.join(self.topsrcdir, assume_filename[0]))
+        assume_filename = assume_filename[0] if os.path.isdir(assume_dir) else path
+
         # We use --stdin-filepath in order to better determine the path for
         # the prettier formatter when it is ran outside of the repo, for example
         # by the extension hg-formatsource.
-        args = [binary, prettier, '--stdin-filepath', assume_filename[0]]
+        args = [binary, prettier, '--stdin-filepath', assume_filename]
 
         process = subprocess.Popen(args, stdin=subprocess.PIPE)
         with open(path, 'r') as fin:
@@ -1795,7 +1818,7 @@ class StaticAnalysis(MachCommandBase):
         rc, config, _ = self._get_config_environment()
         if rc != 0:
             return rc
-        infer_path = self.topsrcdir if intree_tool else \
+        infer_path = os.environ['MOZ_FETCHES_DIR'] if intree_tool else \
             mozpath.join(self._mach_context.state_dir, 'infer')
         self._infer_path = mozpath.join(infer_path, 'infer', 'bin', 'infer' +
                                         config.substs.get('BIN_SUFFIX', ''))
@@ -1966,7 +1989,9 @@ class StaticAnalysis(MachCommandBase):
                 try:
                     output = check_output(args + l)
                     if output and output_format == 'json':
-                        patches[original_path] = self._parse_xml_output(original_path, output)
+                        # Output a relative path in json patch list
+                        relative_path = os.path.relpath(original_path, self.topsrcdir)
+                        patches[relative_path] = self._parse_xml_output(original_path, output)
                 except CalledProcessError as e:
                     # Something wrong happend
                     print("clang-format: An error occured while running clang-format.")

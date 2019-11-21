@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft= javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,13 +79,19 @@ StackTraceCollector.prototype = {
     try {
       channel = subject.QueryInterface(Ci.nsIHttpChannel);
       id = channel.channelId;
-    } catch (e) {
+    } catch (e1) {
       // WebSocketChannels do not have IDs, so use the URL. When a WebSocket is
       // opened in a content process, a channel is created locally but the HTTP
       // channel for the connection lives entirely in the parent process. When
       // the server code running in the parent sees that HTTP channel, it will
       // look for the creation stack using the websocket's URL.
-      channel = subject.QueryInterface(Ci.nsIWebSocketChannel);
+      try {
+        channel = subject.QueryInterface(Ci.nsIWebSocketChannel);
+      } catch (e2) {
+        // Channels which don't implement the above interfaces can appear here,
+        // such as nsIFileChannel. Ignore these channels.
+        return;
+      }
       id = channel.URI.spec;
     }
 

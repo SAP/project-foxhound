@@ -19,6 +19,10 @@ a11y:
     notification_emails:
       - accessibility@mozilla.com
       - jteh@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     release_channel_collection: opt-out
@@ -35,6 +39,10 @@ a11y:
     notification_emails:
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -52,6 +60,10 @@ a11y:
       - accessibility@mozilla.com
       - eisaacson@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -69,6 +81,10 @@ browser.engagement:
     notification_emails:
       - rweiss@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -84,6 +100,10 @@ browser.engagement:
     notification_emails:
       - rweiss@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -98,6 +118,10 @@ browser.engagement:
     notification_emails:
       - rweiss@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -113,6 +137,10 @@ browser.engagement:
     notification_emails:
       - rweiss@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -128,6 +156,10 @@ browser.engagement:
       - bmiroglio@mozilla.com
       - aoprea@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -143,6 +175,10 @@ browser.engagement:
       - bmiroglio@mozilla.com
       - aoprea@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -160,6 +196,10 @@ browser.engagement:
       - rweiss@mozilla.com
       - loines@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -179,6 +219,10 @@ browser.engagement:
     notification_emails:
       - bcolloran@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -196,6 +240,10 @@ browser.engagement:
     notification_emails:
       - rweiss@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -211,6 +259,10 @@ browser.engagement:
       - chutten@mozilla.com
       - jrediger@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -229,6 +281,10 @@ browser.engagement:
       - bcolloran@mozilla.com
       - loines@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -249,6 +305,10 @@ browser.engagement.navigation:
     notification_emails:
       - bcolloran@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -264,6 +324,10 @@ browser.engagement.navigation:
     notification_emails:
       - bcolloran@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -279,6 +343,10 @@ browser.engagement.navigation:
     notification_emails:
       - bcolloran@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -294,6 +362,10 @@ browser.engagement.navigation:
     notification_emails:
       - bcolloran@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -309,6 +381,10 @@ browser.engagement.navigation:
     notification_emails:
       - bcolloran@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -323,6 +399,10 @@ browser.engagement.navigation:
     notification_emails:
       - mkaply@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -338,6 +418,10 @@ browser.usage:
     notification_emails:
       - tom@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all'
 
@@ -346,11 +430,15 @@ browser.usage:
       - 1381591
     description: >-
       The number of plugin instances that were created.
-    expires: never # Jan-2021 but we don't have a version number for that
+    expires: never  # Jan-2021 but we don't have a version number for that
     kind: uint
     notification_emails:
       - bsmedberg@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -366,6 +454,10 @@ extensions.updates:
     keyed: true
     notification_emails:
       - addons-dev-internal@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -385,6 +477,10 @@ storage.sync.api.usage:
     notification_emails:
       - eglassercamp@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   items_stored:
@@ -401,6 +497,10 @@ storage.sync.api.usage:
     notification_emails:
       - eglassercamp@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   storage_consumed:
@@ -417,6 +517,10 @@ storage.sync.api.usage:
     notification_emails:
       - eglassercamp@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -434,6 +538,10 @@ services.sync:
     notification_emails:
       - sync-staff@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -449,6 +557,10 @@ identity.fxaccounts:
     notification_emails:
       - fxa-staff@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -468,6 +580,10 @@ security:
       - seceng-telemetry@mozilla.com
       - jjones@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   client_cert:
@@ -484,6 +600,28 @@ security:
       - seceng-telemetry@mozilla.com
       - dkeeler@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
+    record_in_processes:
+      - main
+
+pwmgr:
+  potentially_breached_passwords:
+    bug_numbers:
+      - 1577808
+    description: >
+      The number of potentially breached passwords, as determined by
+      LoginBreaches.getPotentialBreachesByLoginGUID.
+    expires: never
+    kind: uint
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - passwords-dev@mozilla.org
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
     record_in_processes:
       - main
 
@@ -491,17 +629,20 @@ contentblocking:
   exceptions:
     bug_numbers:
       - 1484251
+      - 1564248
     description: >
       How many tracking protection/content blocking exceptions a user has at startup.
-    expires: "70"
+    expires: "75"
     kind: uint
     notification_emails:
       - jhofmann@mozilla.com
-      - pdol@mozilla.com
+      - chsiang@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
     record_in_processes:
       - main
+    products:
+      - 'firefox'
   cryptomining_blocking_enabled:
     bug_numbers:
       - 1522919
@@ -513,6 +654,10 @@ contentblocking:
       - aedelstein@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   fingerprinting_blocking_enabled:
@@ -526,6 +671,10 @@ contentblocking:
       - aedelstein@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   category:
@@ -539,6 +688,25 @@ contentblocking:
       - aedelstein@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
+    record_in_processes:
+      - main
+  trackers_blocked_count:
+    bug_numbers:
+      - 1577030
+    description: >
+      A count of the number of tracking events blocked.
+    expires: "75"
+    kind: uint
+    notification_emails:
+      - chsiang@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
     record_in_processes:
       - main
 
@@ -555,6 +723,29 @@ sandbox:
     notification_emails:
       - bowen@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
+    record_in_processes:
+      - main
+    operating_systems:
+      - "windows"
+
+os.environment:
+  is_admin_without_uac:
+    bug_numbers:
+      - 1567219
+    description: >
+      Indicates that the process is lauched with Admin privileges but without
+      UAC.
+    expires: never
+    kind: boolean
+    notification_emails:
+      - tkikuchi@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
     record_in_processes:
       - main
     operating_systems:
@@ -574,6 +765,10 @@ pictureinpicture:
       - mconley@mozilla.com
       - astevenson@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - content
     operating_systems:
@@ -592,6 +787,10 @@ pictureinpicture:
       - mconley@mozilla.com
       - astevenson@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -609,6 +808,10 @@ preferences:
     notification_emails:
       - bsmedberg@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   prefs_file_was_invalid:
@@ -621,6 +824,10 @@ preferences:
     notification_emails:
       - bsmedberg@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   read_user_js:
@@ -633,6 +840,10 @@ preferences:
     notification_emails:
       - bsmedberg@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   search_query:
@@ -648,6 +859,10 @@ preferences:
     notification_emails:
       - chsiang@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   browser_home_page_change:
@@ -662,6 +877,10 @@ preferences:
     notification_emails:
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   browser_home_page_count:
@@ -678,6 +897,10 @@ preferences:
     notification_emails:
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   use_current_page:
@@ -692,6 +915,10 @@ preferences:
     notification_emails:
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   use_bookmark:
@@ -706,6 +933,10 @@ preferences:
     notification_emails:
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
   prevent_accessibility_services:
@@ -720,8 +951,89 @@ preferences:
     notification_emails:
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
+
+webrtc.hostnameobfuscation:
+  disabled_failed:
+    bug_numbers:
+      - 1569250
+    description: >
+      The number of times the connection failed with hostname obfuscation
+      disabled. Hostname obfuscation uses mDNS addresses to prevent browser
+      fingerprinting by using WebRTC to collect local IP addresses.
+    expires: "77"
+    kind: uint
+    notification_emails:
+      - dminor@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'geckoview'
+    record_in_processes:
+      - 'main'
+      - 'content'
+
+  disabled_succeeded:
+    bug_numbers:
+      - 1569250
+    description: >
+      The number of times the connection succeeded with hostname obfuscation
+      disabled. Hostname obfuscation uses mDNS addresses to prevent browser
+      fingerprinting by using WebRTC to collect local IP addresses.
+    expires: "77"
+    kind: uint
+    notification_emails:
+      - dminor@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'geckoview'
+    record_in_processes:
+      - 'main'
+      - 'content'
+
+  enabled_failed:
+    bug_numbers:
+      - 1569250
+    description: >
+      The number of times the connection failed with hostname obfuscation
+      enabled. Hostname obfuscation uses mDNS addresses to prevent browser
+      fingerprinting by using WebRTC to collect local IP addresses.
+    expires: "77"
+    kind: uint
+    notification_emails:
+      - dminor@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'geckoview'
+    record_in_processes:
+      - 'main'
+      - 'content'
+
+  enabled_succeeded:
+    bug_numbers:
+      - 1569250
+    description: >
+      The number of times the connection succeeded with hostname obfuscation
+      enabled. Hostname obfuscation uses mDNS addresses to prevent browser
+      fingerprinting by using WebRTC to collect local IP addresses.
+    expires: "77"
+    kind: uint
+    notification_emails:
+      - dminor@mozilla.com
+    release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'geckoview'
+    record_in_processes:
+      - 'main'
+      - 'content'
 
 # The following section contains WebRTC JS API scalars
 # For more information on WebRTC, see https://www.w3.org/TR/webrtc/
@@ -740,6 +1052,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -757,6 +1073,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -774,6 +1094,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -792,6 +1116,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -807,6 +1135,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -824,6 +1156,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -841,6 +1177,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -859,6 +1199,10 @@ webrtc.peerconnection:
     notification_emails:
       - ngrunbaum@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -886,6 +1230,10 @@ webrtc.nicer:
       - webrtc-ice-telemetry-alerts@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -908,6 +1256,10 @@ webrtc.nicer:
       - webrtc-ice-telemetry-alerts@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -929,6 +1281,10 @@ webrtc.nicer:
       - webrtc-ice-telemetry-alerts@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -949,8 +1305,11 @@ webrtc.nicer:
       - webrtc-ice-telemetry-alerts@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
-      - 'main'
       - 'content'
 
 webrtc.video:
@@ -966,6 +1325,10 @@ webrtc.video:
       - dminor@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -981,6 +1344,10 @@ webrtc.video:
       - dminor@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -1003,6 +1370,10 @@ webrtc.sdp:
     notification_emails:
       - nohlmeier@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -1020,6 +1391,10 @@ mathml:
       - fredw@igalia.com
       - dev-tech-layout@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -1038,6 +1413,10 @@ mediarecorder:
       - bvandyk@mozilla.com
       - nohlmeier@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
       - content
@@ -1083,23 +1462,6 @@ media:
     record_in_processes:
       - content
 
-  page_had_play_revoked_count:
-    bug_numbers:
-      - 1476456
-      - 1499803
-    description: >
-      The number of times a document hierarchy contained at least one muted playing HTMLMediaElement that was paused due to becoming unmuted while not being allowed to autoplay.
-    expires: "68"
-    kind: uint
-    notification_emails:
-      - cpearce@mozilla.com
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
-      - content
-
   autoplay_would_not_be_allowed_count:
     bug_numbers:
       - 1476456
@@ -1118,23 +1480,6 @@ media:
       - 'firefox'
       - 'geckoview'
     record_in_processes:
-      - content
-
-  allowed_autoplay_no_audio_track_count:
-    bug_numbers:
-      - 1480484
-      - 1499803
-    description: >
-      The number of HTMLMediaElement autoplays on HTMLMediaElements without an audio track which would be allowed to play.
-    expires: "68"
-    kind: uint
-    notification_emails:
-      - cpearce@mozilla.com
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
       - content
 
   autoplay_would_be_allowed_count:
@@ -1157,56 +1502,6 @@ media:
     record_in_processes:
       - content
 
-  blocked_no_metadata:
-    bug_numbers:
-      - 1483703
-      - 1499803
-    description: >
-      The number of HTMLMediaElements which we blocked because they hadn't loaded metadata yet.
-    expires: "68"
-    kind: uint
-    notification_emails:
-      - cpearce@mozilla.com
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
-      - content
-
-  blocked_no_metadata_endup_no_audio_track:
-    bug_numbers:
-      - 1483703
-      - 1499803
-    description: >
-      The number of HTMLMediaElements which were blocked because they hadn't loaded metadata yet, but ended up having no audio track.
-    expires: "68"
-    kind: uint
-    notification_emails:
-      - cpearce@mozilla.com
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
-      - content
-
-  autoplay_default_blocked:
-    bug_numbers:
-      - 1521947
-    description: >
-      Whether the user blocked autoplay by default. Recorded when the preference is toggled.
-    expires: "72"
-    kind: boolean
-    notification_emails:
-      - cpearce@mozilla.com
-      - alwu@mozilla.com
-      - nohlmeier@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
-      - content
-
 # The following section contains content process base counters.
 dom.contentprocess:
   buildID_mismatch:
@@ -1220,6 +1515,10 @@ dom.contentprocess:
     notification_emails:
       - spohl@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   os_priority_lowered:
@@ -1234,6 +1533,10 @@ dom.contentprocess:
       - mconley@mozilla.com
       - gsvelto@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   os_priority_raised:
@@ -1249,6 +1552,10 @@ dom.contentprocess:
       - mconley@mozilla.com
       - gsvelto@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   os_priority_change_considered:
@@ -1263,6 +1570,10 @@ dom.contentprocess:
       - mconley@mozilla.com
       - gsvelto@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1279,6 +1590,10 @@ dom.parentprocess:
       - seceng-telemetry@mozilla.com
       - ehsan+telemetry@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1293,6 +1608,10 @@ devtools.toolbar.eyedropper:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1301,12 +1620,18 @@ devtools.copy.unique.css.selector:
     bug_numbers:
       - 1323700
       - 1352115
+      - 1566395
     description: Number of times the DevTools copy unique CSS selector has been used.
-    expires: "59"
+    expires: never
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1315,12 +1640,18 @@ devtools.copy.full.css.selector:
     bug_numbers:
       - 1323700
       - 1352115
+      - 1566395
     description: Number of times the DevTools copy full CSS selector has been used.
-    expires: "59"
+    expires: never
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1328,12 +1659,18 @@ devtools.copy.xpath:
   opened:
     bug_numbers:
       - 987877
+      - 1566395
     description: Number of times the DevTools copy XPath has been used.
-    expires: "59"
+    expires: never
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
+      - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1348,6 +1685,10 @@ devtools.layout.flexboxhighlighter:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1362,6 +1703,10 @@ devtools.markup.flexboxhighlighter:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1376,6 +1721,10 @@ devtools.rules.flexboxhighlighter:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1390,6 +1739,10 @@ devtools.markup.gridinspector:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1404,6 +1757,10 @@ devtools.rules.gridinspector:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1418,6 +1775,10 @@ devtools.grid.gridinspector:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1432,6 +1793,10 @@ devtools.grid.showGridAreasOverlay:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1446,6 +1811,10 @@ devtools.grid.showGridLineNumbers:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1460,6 +1829,10 @@ devtools.grid.showInfiniteLines:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1467,16 +1840,22 @@ devtools.inspector:
   three_pane_enabled:
     bug_numbers:
       - 1437881
+      - 1566395
     description: >
       Number of times the DevTools inspector was opened with the 3 pane inspector enabled,
       keyed by true/false.
-    expires: "65"
+    expires: never
     kind: uint
     keyed: true
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - gl@mozilla.com
+      - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1491,6 +1870,10 @@ devtools.inspector:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1506,6 +1889,10 @@ devtools.inspector:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1513,43 +1900,58 @@ devtools.shadowdom:
   shadow_root_displayed:
     bug_numbers:
       - 1470128
+      - 1566393
     description: >
       Whether the markup view displayed any #shadow-root element in the UI.
-    expires: "66"
+    expires: "never"
     kind: boolean
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - jdescottes@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
   shadow_root_expanded:
     bug_numbers:
       - 1470128
+      - 1566393
     description: >
       Whether the user expanded any #shadow-root element.
-    expires: "66"
+    expires: "never"
     kind: boolean
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - jdescottes@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
   reveal_link_clicked:
     bug_numbers:
       - 1470128
+      - 1566393
     description: >
       Whether the user clicked on any "reveal" link. "reveal" links are displayed in
       shadow dom trees in the markup view.
-    expires: "66"
+    expires: "never"
     kind: boolean
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - jdescottes@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1565,6 +1967,10 @@ devtools:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1580,61 +1986,12 @@ devtools.tooltip:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
-
-devtools.aboutdevtools:
-  opened:
-    bug_numbers:
-      - 1412029
-    description: >
-      Number of times about:devtools was opened.
-    expires: "63"
-    kind: uint
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - jdescottes@mozilla.com
-    record_in_processes:
-      - 'main'
-  installed:
-    bug_numbers:
-      - 1412029
-    description: >
-      Number of times devtools were enabled/installed in about:devtools.
-    expires: "63"
-    kind: uint
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - jdescottes@mozilla.com
-    record_in_processes:
-      - 'main'
-  noinstall_exits:
-    bug_numbers:
-      - 1412029
-    description: >
-      Number of times the user left about:devtools without enabling devtools.
-    expires: "63"
-    kind: uint
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - jdescottes@mozilla.com
-    record_in_processes:
-      - 'main'
-
-devtools.onboarding:
-  is_devtools_user:
-    bug_numbers:
-      - 1408339
-    description: >
-      How many users are flagged as existing devtools users.
-    expires: "66"
-    kind: boolean
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - jdescottes@mozilla.com
-    record_in_processes:
-      - 'main'
-    release_channel_collection: opt-out
 
 devtools.responsive:
   toolbox_opened_first:
@@ -1647,6 +2004,10 @@ devtools.responsive:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - jryans@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     release_channel_collection: opt-out
@@ -1661,6 +2022,10 @@ devtools.responsive:
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - jryans@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     release_channel_collection: opt-out
@@ -1682,6 +2047,10 @@ devtools.tool:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1699,6 +2068,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1714,6 +2087,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1730,6 +2107,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1748,6 +2129,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1764,6 +2149,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1779,6 +2168,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1796,6 +2189,10 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1813,6 +2210,32 @@ devtools.accessibility:
       - dev-developer-tools@lists.mozilla.org
       - yzenevich@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
+    record_in_processes:
+      - 'main'
+
+  simulation_activated:
+    bug_numbers:
+      - 1567200
+    description: >
+      Number of times accessibility simulation was activated (with mouse or keyboard)
+      from the accessibility panel's toolbar. Keyed by the simulation type
+      (e.g. "DEUTERANOMALY").
+    expires: "74"
+    kind: uint
+    keyed: true
+    notification_emails:
+      - dev-developer-tools@lists.mozilla.org
+      - yzenevich@mozilla.com
+      - mislam@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1828,6 +2251,10 @@ devtools.application:
       - dev-developer-tools@lists.mozilla.org
       - jdescottes@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1835,79 +2262,105 @@ devtools.toolbox:
   tabs_reordered:
     bug_numbers:
       - 1456551
+      - 1566362
     description: >
       Number of times the DevTools tab was reordered.
       Keyed by tab's id.
-    expires: "65"
+    expires: never
     kind: uint
     keyed: true
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - daisuke@mozilla.com
+      - hkirschner@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
 devtools.webreplay:
   new_recording:
     bug_numbers:
-     - 1495910
+      - 1495910
     description: >
       Number of times a blank recording tab was created.
     expires: never
     kind: uint
     notification_emails:
-     - bhackett@mozilla.com
+      - bhackett@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
-     - 'main'
+      - 'main'
 
   reload_recording:
     bug_numbers:
-     - 1495910
+      - 1495910
     description: >
       Number of times a non-recording tab was reloaded to create a recording tab.
     expires: never
     kind: uint
     notification_emails:
-     - bhackett@mozilla.com
+      - bhackett@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
-     - 'main'
+      - 'main'
 
   stop_recording:
     bug_numbers:
-     - 1495910
+      - 1495910
     description: >
       Number of times a recording tab was reloaded to create a non-recording tab.
     expires: never
     kind: uint
     notification_emails:
-     - bhackett@mozilla.com
+      - bhackett@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
-     - 'main'
+      - 'main'
 
   save_recording:
     bug_numbers:
-     - 1495910
+      - 1495910
     description: >
       Number of times a recording was saved.
     expires: never
     kind: uint
     notification_emails:
-     - bhackett@mozilla.com
+      - bhackett@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
-     - 'main'
+      - 'main'
 
   load_recording:
     bug_numbers:
-     - 1495910
+      - 1495910
     description: >
       Number of times a recording was loaded.
     expires: never
     kind: uint
     notification_emails:
-     - bhackett@mozilla.com
+      - bhackett@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
-     - 'main'
+      - 'main'
 
 devtools.changesview:
   opened_count:
@@ -1921,20 +2374,10 @@ devtools.changesview:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  copy:
-    bug_numbers:
-      - 1522843
-    description: >
-      Number of times any text content from the Changes panel is copied to the clipboard.
-    expires: "69"
-    kind: uint
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - mbalfanz@mozilla.com
-    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1943,12 +2386,16 @@ devtools.changesview:
       - 1532583
     description: >
       Number of times the Copy All Changes button is used in the Changes panel.
-    expires: "70"
+    expires: "73"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -1957,40 +2404,16 @@ devtools.changesview:
       - 1532583
     description: >
       Number of times the Copy Rule button is used in the Changes panel.
-    expires: "70"
+    expires: "73"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  contextmenu:
-    bug_numbers:
-      - 1522843
-    description: >
-      Number of times the Changes panel context menu is shown.
-    expires: "69"
-    kind: uint
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - mbalfanz@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  contextmenu_copy:
-    bug_numbers:
-      - 1522843
-    description: >
-      Number of times the Copy option is picked from the Changes panel context menu.
-    expires: "69"
-    kind: uint
-    notification_emails:
-      - dev-developer-tools@lists.mozilla.org
-      - mbalfanz@mozilla.com
-    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2000,12 +2423,16 @@ devtools.changesview:
     description: >
       Number of times the Copy Declaration option is picked from the Changes panel
       context menu.
-    expires: "70"
+    expires: "73"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2015,12 +2442,16 @@ devtools.changesview:
     description: >
       Number of times the Copy Rule option is picked from the Changes panel
       context menu.
-    expires: "70"
+    expires: "73"
     kind: uint
     notification_emails:
       - dev-developer-tools@lists.mozilla.org
       - mbalfanz@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2039,6 +2470,10 @@ dom.event:
     notification_emails:
       - mnakano@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -2056,6 +2491,10 @@ dom.event:
     notification_emails:
       - mnakano@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -2071,6 +2510,10 @@ navigator.storage:
       - shuang@mozilla.com
       - ttung@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -2086,6 +2529,10 @@ navigator.storage:
       - shuang@mozilla.com
       - ttung@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -2104,6 +2551,10 @@ telemetry:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - all
 
@@ -2120,6 +2571,10 @@ telemetry:
       - telemetry-client-dev@mozilla.com
       - chutten@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2137,6 +2592,10 @@ telemetry:
       - telemetry-client-dev@mozilla.com
       - chutten@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all'
 
@@ -2151,6 +2610,10 @@ telemetry:
       - jrediger@mozilla.com
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all'
 
@@ -2165,40 +2628,10 @@ telemetry:
       - jrediger@mozilla.com
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  # While the following probe could be restricted to GeckoView, we can't
-  # turn the product filter on as we don't run GeckoView test coverage on
-  # GeckoView.
-  persistence_timer_hit_count:
-    bug_numbers:
-      - 1463152
-    description: >
-      How many times the GeckoView Telemetry persistence timer was hit during
-      the current subsession.
-    expires: "70"
-    kind: uint
-    notification_emails:
-      - telemetry-client-dev@mozilla.com
-      - aplacitelli@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - 'main'
-
-  pending_operations_highwatermark_reached:
-    bug_numbers:
-      - 1465052
-    description: >
-      The number of times the pending operations list reached the
-      high-water mark, leading to operations being applied immediately.
-    expires: "70"
-    kind: uint
-    keyed: false
-    notification_emails:
-      - jrediger@mozilla.com
-      - telemetry-client-dev@mozilla.com
-    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2213,6 +2646,10 @@ telemetry:
       - jrediger@mozilla.com
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2227,6 +2664,10 @@ telemetry:
     notification_emails:
       - chutten@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2240,6 +2681,10 @@ telemetry:
     notification_emails:
       - chutten@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2253,6 +2698,10 @@ telemetry:
     notification_emails:
       - jrediger@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -2267,6 +2716,10 @@ telemetry:
     notification_emails:
       - jrediger@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -2282,6 +2735,10 @@ telemetry:
     notification_emails:
       - jrediger@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -2298,6 +2755,10 @@ telemetry.discarded:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all_childs'
   keyed_accumulations:
@@ -2310,6 +2771,10 @@ telemetry.discarded:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all_childs'
   scalar_actions:
@@ -2322,6 +2787,10 @@ telemetry.discarded:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all_childs'
   keyed_scalar_actions:
@@ -2334,6 +2803,10 @@ telemetry.discarded:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all_childs'
   child_events:
@@ -2346,6 +2819,10 @@ telemetry.discarded:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all_childs'
 
@@ -2361,6 +2838,10 @@ normandy:
     notification_emails:
       - product-delivery@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2380,6 +2861,10 @@ gfx.advanced.layers:
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
       - rhunt@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2397,6 +2882,10 @@ gfx.omtp:
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
       - rhunt@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -2415,6 +2904,10 @@ gfx.hdr:
     notification_emails:
       - gfx-telemetry-alerts@mozilla.com
       - rhunt@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2431,6 +2924,10 @@ formautofill:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2446,6 +2943,10 @@ formautofill.addresses:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   fill_type_autofill:
@@ -2459,6 +2960,10 @@ formautofill.addresses:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   fill_type_autofill_update:
@@ -2474,6 +2979,10 @@ formautofill.addresses:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2489,6 +2998,10 @@ formautofill.creditCards:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   fill_type_autofill:
@@ -2502,6 +3015,10 @@ formautofill.creditCards:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
   fill_type_autofill_modified:
@@ -2517,6 +3034,10 @@ formautofill.creditCards:
       - jcheng@mozilla.com
       - chsiang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2536,6 +3057,10 @@ screenshots:
       - ibicking@mozilla.com
       - clouserw@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2553,6 +3078,10 @@ screenshots:
       - ibicking@mozilla.com
       - clouserw@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2569,37 +3098,12 @@ screenshots:
       - ibicking@mozilla.com
       - clouserw@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
-
-idb.type:
-  persistent_count:
-    bug_numbers:
-      - 1360567
-    description: >
-      Number of times indexeddb.open(name, {storage: "persistent"}) has been used.
-    expires: "62"
-    kind: uint
-    notification_emails:
-      - shuang@mozilla.com
-    release_channel_collection: opt-in
-    record_in_processes:
-      - 'main'
-      - 'content'
-
-  temporary_count:
-    bug_numbers:
-      - 1360567
-    description: >
-      Number of times indexeddb.open(name, {storage: "temporary"}) has been used.
-    expires: "62"
-    kind: uint
-    notification_emails:
-      - shuang@mozilla.com
-    release_channel_collection: opt-in
-    record_in_processes:
-      - 'main'
-      - 'content'
 
 # The following section is for tracking the number of failure for indexedDB.
 idb.failure:
@@ -2614,8 +3118,57 @@ idb.failure:
     notification_emails:
       - ttung@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
+
+# The following section contains scalars for the PDF viewer.
+pdf.viewer:
+  used:
+    bug_numbers:
+      - 1566882
+    description: >
+      How many times PDF Viewer was used.
+    expires: never
+    notification_emails:
+      - bdahl@mozilla.com
+    kind: uint
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+      - 'content'
+  fallback_shown:
+    bug_numbers:
+      - 1566882
+    description: >
+      How many times PDF Viewer fallback bar was shown.
+    expires: "75"
+    notification_emails:
+      - bdahl@mozilla.com
+    kind: uint
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+      - 'content'
+  print:
+    bug_numbers:
+      - 1566882
+    description: >
+      How many times PDF Viewer print functionality was used.
+    expires: "75"
+    notification_emails:
+      - bdahl@mozilla.com
+    kind: uint
+    products:
+      - 'firefox'
+    record_in_processes:
+      - 'main'
+      - 'content'
 
 # The following section contains probes that record timestamps.
 timestamps:
@@ -2629,6 +3182,10 @@ timestamps:
     notification_emails:
       - hkirschner@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2643,6 +3200,10 @@ timestamps:
     notification_emails:
       - mconley@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2659,6 +3220,10 @@ browser.timings:
     notification_emails:
       - florian@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2676,6 +3241,10 @@ sw:
       - sw-telemetry@mozilla.com
       - ttung@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -2692,6 +3261,10 @@ sw:
       - sw-telemetry@mozilla.com
       - ttung@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -2708,6 +3281,10 @@ sw:
       - sw-telemetry@mozilla.com
       - echuang@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -2728,6 +3305,10 @@ widget:
     notification_emails:
       - mnakano@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2745,6 +3326,10 @@ widget:
     notification_emails:
       - mnakano@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2762,6 +3347,10 @@ widget:
     notification_emails:
       - mnakano@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2777,6 +3366,10 @@ memoryreporter:
     notification_emails:
       - memshrink-telemetry-alerts@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -2796,6 +3389,10 @@ update:
       - seceng-telemetry@mozilla.com
       - dkeeler@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2818,6 +3415,28 @@ update:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
+    record_in_processes:
+      - main
+    operating_systems:
+      - windows
+
+  fix_permissions_attempted:
+    bug_numbers:
+      - 1577317
+    description: Set when we attempt to fix update directory permissions.
+    expires: "76"
+    kind: boolean
+    notification_emails:
+      - application-update-telemetry-alerts@mozilla.com
+      - agashlin@mozilla.com
+      - rstrong@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
     record_in_processes:
       - main
     operating_systems:
@@ -2838,6 +3457,10 @@ update.startup:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -2855,6 +3478,10 @@ update.startup:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2872,6 +3499,10 @@ update.startup:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2890,6 +3521,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2908,6 +3543,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -2928,6 +3567,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -2948,6 +3591,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2966,6 +3613,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -2983,6 +3634,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3000,6 +3655,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3017,6 +3676,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3034,6 +3697,10 @@ update.startup.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3055,6 +3722,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3077,6 +3748,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3099,6 +3774,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3121,6 +3800,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3143,6 +3826,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3163,6 +3850,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3183,6 +3874,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3203,6 +3898,10 @@ update.startup.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3221,6 +3920,10 @@ update.session:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3238,6 +3941,10 @@ update.session:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3255,6 +3962,10 @@ update.session:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3273,6 +3984,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3291,6 +4006,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3311,6 +4030,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3331,6 +4054,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3349,6 +4076,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3366,6 +4097,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3383,6 +4118,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3400,6 +4139,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3417,6 +4160,10 @@ update.session.intervals:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3438,6 +4185,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3460,6 +4211,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3482,6 +4237,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3504,6 +4263,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     operating_systems:
@@ -3526,6 +4289,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3546,6 +4313,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3566,6 +4337,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3586,6 +4361,10 @@ update.session.downloads:
       - application-update-telemetry-alerts@mozilla.com
       - rstrong@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3604,6 +4383,10 @@ browser.search:
       - fx-search@mozilla.com
       - adw@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -3620,6 +4403,27 @@ browser.search:
       - fx-search@mozilla.com
       - adw@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
+    record_in_processes:
+      - main
+
+browser.searchinit:
+  engines_cache_corrupted:
+    bug_numbers:
+      - 1578807
+    description: >-
+          Whether the list of engines in the search cache was found to be corrupt during initialization.
+    expires: "77"
+    kind: boolean
+    notification_emails:
+      - fx-search@mozilla.com
+      - mbanner@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
     record_in_processes:
       - main
 
@@ -3636,6 +4440,10 @@ encoding:
     notification_emails:
       - hsivonen@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
       - content
@@ -3684,6 +4492,10 @@ startup:
       - dtownsend@mozilla.com
       - rtestard@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
     record_into_store:
@@ -3701,6 +4513,10 @@ startup:
     notification_emails:
       - dothayer@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3717,6 +4533,10 @@ script.preloader:
     notification_emails:
       - dothayer@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -3769,6 +4589,10 @@ networking:
     kind: uint
     notification_emails:
       - gachen@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     release_channel_collection: opt-out
@@ -3783,6 +4607,10 @@ networking:
     kind: uint
     notification_emails:
       - ddamjanovic@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3796,6 +4624,10 @@ networking:
     kind: uint
     notification_emails:
       - ddamjanovic@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3809,6 +4641,10 @@ networking:
     kind: uint
     notification_emails:
       - ddamjanovic@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3824,8 +4660,108 @@ qm:
     kind: uint
     notification_emails:
       - ttung@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
+
+blocklist:
+  lastModified_xml:
+    bug_numbers:
+      - 1572711
+    description: >
+      Keep track of the lastupdate datetime from a successfully loaded xml blocklist,
+      set to "Invalid Date" or "Missing Date" when the timestamp is invalid or missing.
+      (based on the lastupdate attribute set on the XML document element,
+      converted from a milliseconds timestamp into a datetime string in UTC format).
+    expires: "75"
+    kind: string
+    release_channel_collection: opt-out
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+      - awagner@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+    record_in_processes:
+      - main
+
+  lastModified_rs_addons:
+    bug_numbers:
+      - 1572711
+    description: >
+      Keep track of the last time the "addons" remotesetting blocklist has been successfully
+      updated (as a datetime string in UTC format), set to "Missing Date" when the timestamp
+      couldn't be retrieved.
+    expires: "75"
+    kind: string
+    release_channel_collection: opt-out
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+      - awagner@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+    record_in_processes:
+      - main
+
+  lastModified_rs_plugins:
+    bug_numbers:
+      - 1572711
+    description: >
+      Keep track of the last time the "plugins" remotesetting blocklist has been successfully
+      updated (as a datetime string in UTC format), set to "Missing Date" when the timestamp
+      couldn't be retrieved.
+    expires: "75"
+    kind: string
+    release_channel_collection: opt-out
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+      - awagner@mozilla.com
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
+
+  useXML:
+    bug_numbers:
+      - 1572711
+    description: >
+      Keep track of the currently enabled blocklist engine (set to false if the
+      remote settings blocklist is the one enabled).
+    expires: "75"
+    kind: boolean
+    release_channel_collection: opt-out
+    notification_emails:
+      - addons-dev-internal@mozilla.com
+      - lgreco@mozilla.com
+      - awagner@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+    record_in_processes:
+      - main
+
+firstStartup:
+  statusCode:
+    bug_numbers:
+      - 1515712
+    description: >-
+      Status of the FirstRun service, which runs post-install/early-startup in Firefox.
+    expires: "75"
+    kind: uint
+    notification_emails:
+      - rhelmer@mozilla.com
+    release_channel_collection: opt-out
+    products:
+      - 'firefox'
+    record_in_processes:
+      - main
 
 # The following section is for probes testing the Telemetry system. They will not be
 # submitted in pings and are only used for testing.
@@ -3840,6 +4776,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3851,6 +4791,10 @@ telemetry.test:
     kind: string
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3862,6 +4806,10 @@ telemetry.test:
     kind: boolean
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3873,6 +4821,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3884,6 +4836,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3896,6 +4852,10 @@ telemetry.test:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3908,6 +4868,10 @@ telemetry.test:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3921,6 +4885,10 @@ telemetry.test:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-in
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3934,6 +4902,10 @@ telemetry.test:
     notification_emails:
       - telemetry-client-dev@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3946,6 +4918,10 @@ telemetry.test:
     keyed: true
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3958,6 +4934,10 @@ telemetry.test:
     keyed: true
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
 
@@ -3970,6 +4950,10 @@ telemetry.test:
     keyed: true
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -3982,6 +4966,10 @@ telemetry.test:
     keyed: true
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
       - 'content'
@@ -3994,6 +4982,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'content'
 
@@ -4005,6 +4997,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'socket'
 
@@ -4016,6 +5012,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all'
 
@@ -4027,6 +5027,10 @@ telemetry.test:
     kind: string
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all_childs'
 
@@ -4038,6 +5042,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'all'
 
@@ -4134,6 +5142,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -4148,6 +5160,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -4162,6 +5178,10 @@ telemetry.test:
     kind: uint
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -4177,6 +5197,10 @@ telemetry.test:
     kind: string
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -4192,6 +5216,10 @@ telemetry.test:
     kind: boolean
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -4208,6 +5236,10 @@ telemetry.test:
     keyed: true
     notification_emails:
       - telemetry-client-dev@mozilla.com
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - 'main'
     record_into_store:
@@ -4226,6 +5258,10 @@ corroborate:
     notification_emails:
       - rhelmer@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 
@@ -4239,6 +5275,10 @@ corroborate:
     notification_emails:
       - rhelmer@mozilla.com
     release_channel_collection: opt-out
+    products:
+      - 'firefox'
+      - 'fennec'
+      - 'geckoview'
     record_in_processes:
       - main
 

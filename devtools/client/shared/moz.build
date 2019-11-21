@@ -23,6 +23,7 @@ DIRS += [
 ]
 
 DevToolsModules(
+    'async-store-helper.js',
     'autocomplete-popup.js',
     'browser-loader-mocks.js',
     'browser-loader.js',
@@ -39,7 +40,6 @@ DevToolsModules(
     'key-shortcuts.js',
     'keycodes.js',
     'link.js',
-    'natural-sort.js',
     'node-attribute-parser.js',
     'options-view.js',
     'output-parser.js',

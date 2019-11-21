@@ -25,8 +25,6 @@
 #include "mozilla/dom/SRICheck.h"
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/net/ReferrerPolicy.h"
-#include "mozilla/StaticPrefs.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Vector.h"
 
@@ -274,8 +272,20 @@ class ScriptLoader final : public nsISupports {
    */
   void BeginDeferringScripts() {
     mDeferEnabled = true;
-    if (mDocument) {
-      mDocument->BlockOnload();
+    if (mDocumentParsingDone) {
+      // We already completed a parse and were just waiting for some async
+      // scripts to load (and were already blocking the load event waiting for
+      // that to happen), when document.open() happened and now we're doing a
+      // new parse.  We shouldn't block the load event again, but _should_ reset
+      // mDocumentParsingDone to false.  It'll get set to true again when the
+      // ParsingComplete call that corresponds to this BeginDeferringScripts
+      // call happens (on document.close()), since we just set mDeferEnabled to
+      // true.
+      mDocumentParsingDone = false;
+    } else {
+      if (mDocument) {
+        mDocument->BlockOnload();
+      }
     }
   }
 
@@ -312,7 +322,7 @@ class ScriptLoader final : public nsISupports {
                           const nsAString& aType, const nsAString& aCrossOrigin,
                           const nsAString& aIntegrity, bool aScriptFromHead,
                           bool aAsync, bool aDefer, bool aNoModule,
-                          const mozilla::net::ReferrerPolicy aReferrerPolicy);
+                          const ReferrerPolicy aReferrerPolicy);
 
   /**
    * Process a request that was deferred so that the script could be compiled
@@ -377,11 +387,12 @@ class ScriptLoader final : public nsISupports {
 
   void EnsureModuleHooksInitialized();
 
-  ScriptLoadRequest* CreateLoadRequest(
-      ScriptKind aKind, nsIURI* aURI, nsIScriptElement* aElement,
-      nsIPrincipal* aTriggeringPrincipal, mozilla::CORSMode aCORSMode,
-      const SRIMetadata& aIntegrity,
-      mozilla::net::ReferrerPolicy aReferrerPolicy);
+  ScriptLoadRequest* CreateLoadRequest(ScriptKind aKind, nsIURI* aURI,
+                                       nsIScriptElement* aElement,
+                                       nsIPrincipal* aTriggeringPrincipal,
+                                       mozilla::CORSMode aCORSMode,
+                                       const SRIMetadata& aIntegrity,
+                                       ReferrerPolicy aReferrerPolicy);
 
   /**
    * Unblocks the creator parser of the parser-blocking scripts.
@@ -409,7 +420,7 @@ class ScriptLoader final : public nsISupports {
    * Given a script element, get the referrer policy should be applied to load
    * requests.
    */
-  mozilla::net::ReferrerPolicy GetReferrerPolicy(nsIScriptElement* aElement);
+  ReferrerPolicy GetReferrerPolicy(nsIScriptElement* aElement);
 
   /**
    * Helper function to check the content policy for a given request.
@@ -421,7 +432,7 @@ class ScriptLoader final : public nsISupports {
   /**
    * Helper function to determine whether an about: page loads a chrome: URI.
    * Please note that this function only returns true if:
-   *   * the about: page uses a CodeBasePrincipal with scheme about:
+   *   * the about: page uses a ContentPrincipal with scheme about:
    *   * the about: page is not linkable from content
    *     (e.g. the function will return false for about:blank or about:srcdoc)
    */

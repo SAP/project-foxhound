@@ -8,6 +8,9 @@
 // inet_ntop() doesn't exist on Windows XP.
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
+#include <algorithm>
+#include <vector>
+
 #include <stdarg.h>
 #include <windef.h>
 #include <winbase.h>
@@ -34,7 +37,7 @@
 #include "nsAutoPtr.h"
 #include "mozilla/Services.h"
 #include "nsCRT.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/Base64.h"
 #include "mozilla/ScopeExit.h"
@@ -115,8 +118,6 @@ nsNotifyAddrListener::nsNotifyAddrListener()
       mCheckEvent(nullptr),
       mShutdown(false),
       mIPInterfaceChecksum(0),
-      mAllowChangedEvent(true),
-      mIPv6Changes(false),
       mCoalescingActive(false) {
   InitIphlpapi();
 }
@@ -165,6 +166,11 @@ nsNotifyAddrListener::GetNetworkID(nsACString& aNetworkID) {
 void nsNotifyAddrListener::calculateNetworkId(void) {
   MOZ_ASSERT(!NS_IsMainThread(), "Must not be called on the main thread");
 
+  // No need to recompute the networkId if we're shutting down.
+  if (mShutdown) {
+    return;
+  }
+
   if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) {
     return;
   }
@@ -186,8 +192,18 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
     return;
   }
 
+  // We will hash the found network ids
+  // for privacy reasons
   SHA1Sum sha1;
   uint32_t networkCount = 0;
+
+  // The networks stored in enumNetworks
+  // are not ordered. We will sort them
+  // To keep a consistent hash
+  // regardless of the found networks order.
+  std::vector<GUID> nwGUIDS;
+
+  // Consume the found networks iterator
   while (true) {
     RefPtr<INetwork> network;
     hr = enumNetworks->Next(1, getter_AddRefs(network), nullptr);
@@ -200,6 +216,15 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
     if (hr != S_OK) {
       continue;
     }
+    nwGUIDS.push_back(nwGUID);
+  }
+
+  std::sort(nwGUIDS.begin(), nwGUIDS.end(), [](const GUID& a, const GUID& b) {
+    return memcmp(&a, &b, sizeof(GUID)) < 0;
+  });
+
+  // Hash the sorted network ids
+  for (const GUID& nwGUID : nwGUIDS) {
     networkCount++;
     sha1.update(&nwGUID, sizeof(nwGUID));
 
@@ -259,6 +284,13 @@ nsNotifyAddrListener::nextCoalesceWaitTime() {
   // check if coalescing period should continue
   double period = (TimeStamp::Now() - mChangeTime).ToMilliseconds();
   if (period >= kNetworkChangeCoalescingPeriod) {
+    if (!mNetworkChangeTime.IsNull()) {
+      Telemetry::AccumulateTimeDelta(
+          Telemetry::NETWORK_TIME_BETWEEN_NETWORK_CHANGE_EVENTS,
+          mNetworkChangeTime);
+    }
+    mNetworkChangeTime = TimeStamp::Now();
+
     SendEvent(NS_NETWORK_LINK_DATA_CHANGED);
     mCoalescingActive = false;
     return INFINITE;  // return default
@@ -276,7 +308,8 @@ nsNotifyAddrListener::Run() {
 
   DWORD waitTime = INFINITE;
 
-  if (!sNotifyIpInterfaceChange || !sCancelMibChangeNotify2 || !mIPv6Changes) {
+  if (!sNotifyIpInterfaceChange || !sCancelMibChangeNotify2 ||
+      !StaticPrefs::network_notify_IPv6()) {
     // For Windows versions which are older than Vista which lack
     // NotifyIpInterfaceChange. Note this means no IPv6 support.
     HANDLE ev = CreateEvent(nullptr, FALSE, FALSE, nullptr);
@@ -350,17 +383,17 @@ nsresult nsNotifyAddrListener::Init(void) {
       observerService->AddObserver(this, "xpcom-shutdown-threads", false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  Preferences::AddBoolVarCache(&mAllowChangedEvent, NETWORK_NOTIFY_CHANGED_PREF,
-                               true);
-  Preferences::AddBoolVarCache(&mIPv6Changes, NETWORK_NOTIFY_IPV6_PREF, false);
-
   mCheckEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
   NS_ENSURE_TRUE(mCheckEvent, NS_ERROR_OUT_OF_MEMORY);
 
-  rv = NS_NewNamedThread("Link Monitor", getter_AddRefs(mThread), this);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIThreadPool> threadPool = new nsThreadPool();
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetThreadLimit(1));
+  MOZ_ALWAYS_SUCCEEDS(
+      threadPool->SetThreadStackSize(nsIThreadManager::kThreadPoolStackSize));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetName(NS_LITERAL_CSTRING("Link Monitor")));
+  mThread = threadPool.forget();
 
-  return NS_OK;
+  return mThread->Dispatch(this, NS_DISPATCH_NORMAL);
 }
 
 nsresult nsNotifyAddrListener::Shutdown(void) {
@@ -375,7 +408,7 @@ nsresult nsNotifyAddrListener::Shutdown(void) {
   mShutdown = true;
   SetEvent(mCheckEvent);
 
-  nsresult rv = mThread ? mThread->Shutdown() : NS_OK;
+  nsresult rv = mThread ? mThread->ShutdownWithTimeout(2000) : NS_OK;
 
   // Have to break the cycle here, otherwise nsNotifyAddrListener holds
   // onto the thread and the thread holds onto the nsNotifyAddrListener
@@ -649,7 +682,8 @@ void nsNotifyAddrListener::CheckLinkStatus(void) {
 
       // Network is online. Topology has changed. Always send CHANGED
       // before UP - if allowed to and having cooled down.
-      if (mAllowChangedEvent && (since.ToMilliseconds() > 2000)) {
+      if (StaticPrefs::network_notify_changed() &&
+          (since.ToMilliseconds() > 2000)) {
         NetworkChanged();
       }
     }

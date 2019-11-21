@@ -193,6 +193,7 @@ EXPORTS.mozilla.dom += [
     'IntlUtils.h',
     'Link.h',
     'Location.h',
+    'LocationBase.h',
     'MaybeCrossOriginObject.h',
     'MessageBroadcaster.h',
     'MessageListenerManager.h',
@@ -244,6 +245,7 @@ EXPORTS.mozilla.dom += [
     'TreeOrderedArrayInlines.h',
     'TreeWalker.h',
     'UIDirectionManager.h',
+    'ViewportMetaData.h',
     'VisualViewport.h',
     'WindowOrientationObserver.h',
     'WindowProxyHolder.h',
@@ -307,6 +309,7 @@ UNIFIED_SOURCES += [
     'IntlUtils.cpp',
     'Link.cpp',
     'Location.cpp',
+    'LocationBase.cpp',
     'MaybeCrossOriginObject.cpp',
     'MessageBroadcaster.cpp',
     'MessageListenerManager.cpp',
@@ -413,6 +416,7 @@ UNIFIED_SOURCES += [
     'TimeoutManager.cpp',
     'TreeWalker.cpp',
     'UIDirectionManager.cpp',
+    'ViewportMetaData.cpp',
     'VisualViewport.cpp',
     'WindowDestroyedEvent.cpp',
     'WindowNamedPropertiesHandler.cpp',
@@ -464,6 +468,12 @@ if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES += ['nsTextFragmentSSE2.cpp']
     SOURCES['nsTextFragmentSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
 
+# Are we targeting PowerPC? If so, we can enable a SIMD version for
+# nsTextFragment.cpp as well.
+if CONFIG['CPU_ARCH'].startswith('ppc'):
+    SOURCES += ['nsTextFragmentVMX.cpp']
+    SOURCES['nsTextFragmentVMX.cpp'].flags += CONFIG['PPC_VMX_FLAGS']
+
 EXTRA_JS_MODULES += [
     'ContentAreaDropListener.jsm',
     'DOMRequestHelper.jsm',
@@ -495,6 +505,7 @@ LOCAL_INCLUDES += [
     '/dom/xml',
     '/dom/xslt/xpath',
     '/dom/xul',
+    '/extensions/permissions',
     '/gfx/2d',
     '/image',
     '/js/xpconnect/loader',
@@ -529,13 +540,8 @@ if CONFIG['MOZ_X11']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
 
 GENERATED_FILES += [
-    'PropertyUseCounterMap.inc',
     'UseCounterList.h',
 ]
-
-countermap = GENERATED_FILES['PropertyUseCounterMap.inc']
-countermap.script = 'gen-usecounters.py:property_map'
-countermap.inputs = ['UseCounters.conf']
 
 counterlist = GENERATED_FILES['UseCounterList.h']
 counterlist.script = 'gen-usecounters.py:use_counter_list'

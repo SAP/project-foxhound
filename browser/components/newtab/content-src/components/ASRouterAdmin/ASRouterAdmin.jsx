@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import { ASRouterUtils } from "../../asrouter/asrouter-content";
 import { connect } from "react-redux";
@@ -31,6 +35,7 @@ function relativeTime(timestamp) {
 
 const LAYOUT_VARIANTS = {
   basic: "Basic default layout (on by default in nightly)",
+  staging_spocs: "A layout with all spocs shown",
   "dev-test-all":
     "A little bit of everything. Good layout for testing all components",
   "dev-test-feeds": "Stress testing for slow feeds",
@@ -51,10 +56,36 @@ export class ToggleStoryButton extends React.PureComponent {
   }
 }
 
+export class TogglePrefCheckbox extends React.PureComponent {
+  constructor(props) {
+    super(props);
+    this.onChange = this.onChange.bind(this);
+  }
+
+  onChange(event) {
+    this.props.onChange(this.props.pref, event.target.checked);
+  }
+
+  render() {
+    return (
+      <>
+        <input
+          type="checkbox"
+          checked={this.props.checked}
+          onChange={this.onChange}
+        />{" "}
+        {this.props.pref}{" "}
+      </>
+    );
+  }
+}
+
 export class DiscoveryStreamAdmin extends React.PureComponent {
   constructor(props) {
     super(props);
-    this.onEnableToggle = this.onEnableToggle.bind(this);
+    this.restorePrefDefaults = this.restorePrefDefaults.bind(this);
+    this.setConfigValue = this.setConfigValue.bind(this);
+    this.expireCache = this.expireCache.bind(this);
     this.changeEndpointVariant = this.changeEndpointVariant.bind(this);
     this.onStoryToggle = this.onStoryToggle.bind(this);
     this.state = {
@@ -71,8 +102,22 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
     );
   }
 
-  onEnableToggle(event) {
-    this.setConfigValue("enabled", event.target.checked);
+  restorePrefDefaults(event) {
+    this.props.dispatch(
+      ac.OnlyToMain({
+        type: at.DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS,
+      })
+    );
+  }
+
+  expireCache() {
+    const { config } = this.props.state;
+    this.props.dispatch(
+      ac.OnlyToMain({
+        type: at.DISCOVERY_STREAM_CONFIG_CHANGE,
+        data: config,
+      })
+    );
   }
 
   changeEndpointVariant(event) {
@@ -225,23 +270,43 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
   }
 
   render() {
+    const prefToggles = "enabled hardcoded_layout show_spocs personalized collapsible".split(
+      " "
+    );
     const { config, lastUpdated, layout } = this.props.state;
     return (
       <div>
-        <div className="dsEnabled">
-          <input
-            type="checkbox"
-            checked={config.enabled}
-            onChange={this.onEnableToggle}
-          />{" "}
-          enabled{" "}
-        </div>
+        <button className="button" onClick={this.restorePrefDefaults}>
+          Restore Pref Defaults
+        </button>{" "}
+        <button className="button" onClick={this.expireCache}>
+          Expire Cache
+        </button>
+        <table>
+          <tbody>
+            {prefToggles.map(pref => (
+              <Row key={pref}>
+                <td>
+                  <TogglePrefCheckbox
+                    checked={config[pref]}
+                    pref={pref}
+                    onChange={this.setConfigValue}
+                  />
+                </td>
+              </Row>
+            ))}
+          </tbody>
+        </table>
         <h3>Endpoint variant</h3>
         <p>
           You can also change this manually by changing this pref:{" "}
           <code>browser.newtabpage.activity-stream.discoverystream.config</code>
         </p>
-        <table style={config.enabled ? null : { opacity: 0.5 }}>
+        <table
+          style={
+            config.enabled && !config.hardcoded_layout ? null : { opacity: 0.5 }
+          }
+        >
           <tbody>
             {Object.keys(LAYOUT_VARIANTS).map(id => (
               <Row key={id}>
@@ -259,7 +324,6 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
             ))}
           </tbody>
         </table>
-
         <h3>Caching info</h3>
         <table style={config.enabled ? null : { opacity: 0.5 }}>
           <tbody>
@@ -269,9 +333,7 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
             </Row>
           </tbody>
         </table>
-
         <h3>Layout</h3>
-
         {layout.map((row, rowIndex) => (
           <div key={`row-${rowIndex}`}>
             {row.components.map((component, componentIndex) => (
@@ -281,10 +343,8 @@ export class DiscoveryStreamAdmin extends React.PureComponent {
             ))}
           </div>
         ))}
-
         <h3>Feeds Data</h3>
         {this.renderFeedsData()}
-
         <h3>Spocs</h3>
         {this.renderSpocs()}
       </div>

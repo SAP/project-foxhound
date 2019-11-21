@@ -37,7 +37,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Unused.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
@@ -544,24 +544,13 @@ static nsresult OfflineAppPermForPrincipal(nsIPrincipal* aPrincipal,
   if (!innerURI) return NS_OK;
 
   // only http and https applications can use offline APIs.
-  bool match;
-  nsresult rv = innerURI->SchemeIs("http", &match);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!match) {
-    rv = innerURI->SchemeIs("https", &match);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!match) {
-      return NS_OK;
-    }
-  } else {
-    if (!sAllowInsecureOfflineCache) {
-      return NS_OK;
-    }
+  if (!(innerURI->SchemeIs("http") && sAllowInsecureOfflineCache) &&
+      !innerURI->SchemeIs("https")) {
+    return NS_OK;
   }
 
   nsAutoCString domain;
-  rv = innerURI->GetAsciiHost(domain);
+  nsresult rv = innerURI->GetAsciiHost(domain);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (nsOfflineCacheUpdateService::AllowedDomains()->Contains(domain)) {
@@ -605,7 +594,7 @@ nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI* aURI,
                                                      bool* aAllowed) {
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(aURI, attrs);
+      BasePrincipal::CreateContentPrincipal(aURI, attrs);
   return OfflineAppPermForPrincipal(principal, aPrefBranch, false, aAllowed);
 }
 
@@ -613,7 +602,7 @@ nsresult nsOfflineCacheUpdateService::OfflineAppPinnedForURI(
     nsIURI* aDocumentURI, nsIPrefBranch* aPrefBranch, bool* aPinned) {
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
-      BasePrincipal::CreateCodebasePrincipal(aDocumentURI, attrs);
+      BasePrincipal::CreateContentPrincipal(aDocumentURI, attrs);
   return OfflineAppPermForPrincipal(principal, aPrefBranch, true, aPinned);
 }
 
@@ -639,11 +628,7 @@ nsOfflineCacheUpdateService::AllowOfflineApp(nsIPrincipal* aPrincipal) {
     }
 
     // if http then we should prevent this cache
-    bool match;
-    rv = innerURI->SchemeIs("http", &match);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (match) {
+    if (innerURI->SchemeIs("http")) {
       return NS_ERROR_NOT_AVAILABLE;
     }
   }

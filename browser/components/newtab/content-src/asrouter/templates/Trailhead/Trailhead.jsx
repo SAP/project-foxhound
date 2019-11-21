@@ -138,6 +138,7 @@ export class Trailhead extends React.PureComponent {
         onClose={this.closeModal}
         id="trailheadDialog"
         headerId="trailheadHeader"
+        hasDismissIcon={true}
       >
         <div className="trailheadInner">
           <div className="trailheadContent">
@@ -148,7 +149,7 @@ export class Trailhead extends React.PureComponent {
             <ul className="trailheadBenefits">
               {content.benefits.map(item => (
                 <li key={item.id} className={item.id}>
-                  <h3 data-l10n-id={item.title.string_id} />
+                  <h2 data-l10n-id={item.title.string_id} />
                   <p data-l10n-id={item.text.string_id} />
                 </li>
               ))}

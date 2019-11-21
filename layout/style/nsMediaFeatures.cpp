@@ -66,19 +66,18 @@ static nsSize GetSize(const Document* aDocument) {
   return pc->GetVisibleArea().Size();
 }
 
-static bool IsDeviceSizePageSize(const Document* aDocument) {
-  nsIDocShell* docShell = aDocument->GetDocShell();
-  if (!docShell) {
-    return false;
-  }
-  return docShell->GetDeviceSizeIsPageSize();
-}
-
 // A helper for three features below.
 static nsSize GetDeviceSize(const Document* aDocument) {
-  if (nsContentUtils::ShouldResistFingerprinting(aDocument) ||
-      IsDeviceSizePageSize(aDocument)) {
+  if (nsContentUtils::ShouldResistFingerprinting(aDocument)) {
     return GetSize(aDocument);
+  }
+
+  // Media queries in documents in an RDM pane should use the simulated
+  // device size.
+  Maybe<CSSIntSize> deviceSize =
+      nsGlobalWindowOuter::GetRDMDeviceSize(*aDocument);
+  if (deviceSize.isSome()) {
+    return CSSPixel::ToAppUnits(deviceSize.value());
   }
 
   nsPresContext* pc = aDocument->GetPresContext();
@@ -166,7 +165,7 @@ float Gecko_MediaFeatures_GetResolution(const Document* aDocument) {
 
 static const Document* TopDocument(const Document* aDocument) {
   const Document* current = aDocument;
-  while (const Document* parent = current->GetParentDocument()) {
+  while (const Document* parent = current->GetInProcessParentDocument()) {
     current = parent;
   }
   return current;
@@ -248,6 +247,10 @@ StylePrefersColorScheme Gecko_MediaFeatures_PrefersColorScheme(
     return StylePrefersColorScheme::Light;
   }
   if (nsPresContext* pc = aDocument->GetPresContext()) {
+    if (auto devtoolsOverride = pc->GetOverridePrefersColorScheme()) {
+      return *devtoolsOverride;
+    }
+
     if (pc->IsPrintingOrPrintPreview()) {
       return StylePrefersColorScheme::Light;
     }

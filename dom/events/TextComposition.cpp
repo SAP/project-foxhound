@@ -18,7 +18,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RangeBoundary.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/Unused.h"
@@ -930,7 +930,7 @@ TextComposition* TextCompositionArray::GetCompositionInContent(
   // There should be only one composition per content object.
   for (index_type i = Length(); i > 0; --i) {
     nsINode* node = ElementAt(i - 1)->GetEventTargetNode();
-    if (node && nsContentUtils::ContentIsDescendantOf(node, aContent)) {
+    if (node && node->IsInclusiveDescendantOf(aContent)) {
       return ElementAt(i - 1);
     }
   }

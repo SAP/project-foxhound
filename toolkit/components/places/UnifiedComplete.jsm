@@ -159,9 +159,9 @@ const SQL_AUTOFILL_WITH = `
   WITH
   frecency_stats(count, sum, squares) AS (
     SELECT
-      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = "origin_frecency_count") AS REAL),
-      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = "origin_frecency_sum") AS REAL),
-      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = "origin_frecency_sum_of_squares") AS REAL)
+      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = 'origin_frecency_count') AS REAL),
+      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = 'origin_frecency_sum') AS REAL),
+      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = 'origin_frecency_sum_of_squares') AS REAL)
   ),
   autofill_frecency_threshold(value) AS (
     SELECT
@@ -1033,7 +1033,9 @@ Search.prototype = {
           if (this._searchEngineAliasMatch) {
             engine = this._searchEngineAliasMatch.engine;
           } else {
-            engine = await PlacesSearchAutocompleteProvider.currentEngine();
+            engine = await PlacesSearchAutocompleteProvider.currentEngine(
+              this._inPrivateWindow
+            );
             if (!this.pending) {
               return;
             }
@@ -1727,7 +1729,9 @@ Search.prototype = {
   },
 
   async _matchCurrentSearchEngine() {
-    let engine = await PlacesSearchAutocompleteProvider.currentEngine();
+    let engine = await PlacesSearchAutocompleteProvider.currentEngine(
+      this._inPrivateWindow
+    );
     if (!engine || !this.pending) {
       return false;
     }
@@ -2827,20 +2831,14 @@ UnifiedComplete.prototype = {
       this._promiseDatabase = (async () => {
         let conn = await PlacesUtils.promiseLargeCacheDBConnection();
 
-        try {
-          Sqlite.shutdown.addBlocker(
-            "Places UnifiedComplete.js closing",
-            () => {
-              // Break a possible cycle through the
-              // previous result, the controller and
-              // ourselves.
-              this._currentSearch = null;
-            }
-          );
-        } catch (ex) {
-          // It's too late to block shutdown.
-          throw ex;
-        }
+        // We don't catch exceptions here as it is too late to block shutdown.
+        Sqlite.shutdown.addBlocker("Places UnifiedComplete.js closing", () => {
+          // Break a possible cycle through the
+          // previous result, the controller and
+          // ourselves.
+          this._currentSearch = null;
+        });
+
         await UrlbarProviderOpenTabs.promiseDb();
         return conn;
       })().catch(ex => {

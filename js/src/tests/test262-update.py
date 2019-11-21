@@ -30,30 +30,26 @@ UNSUPPORTED_FEATURES = set([
     "regexp-lookbehind",
     "regexp-named-groups",
     "regexp-unicode-property-escapes",
-    "Intl.Locale",
-    "global",
     "export-star-as-namespace-from-module",
     "Intl.DateTimeFormat-quarter",
-    "Intl.DateTimeFormat-fractionalSecondDigits",
     "Intl.DateTimeFormat-datetimestyle",
     "Intl.DateTimeFormat-dayPeriod",
     "Intl.DateTimeFormat-formatRange",
     "Intl.ListFormat",
     "Intl.Segmenter",
-    "Intl.NumberFormat-unified",
-    "Promise.allSettled",
+    "WeakRef",
+    "FinalizationGroup",
+    "optional-chaining",
+    "top-level-await",
 ])
 FEATURE_CHECK_NEEDED = {
     "Atomics": "!this.hasOwnProperty('Atomics')",
-    "BigInt": "!this.hasOwnProperty('BigInt')",
     "SharedArrayBuffer": "!this.hasOwnProperty('SharedArrayBuffer')",
-    # Syntax is a bit weird, because this string cannot have spaces in it
-    "class-fields-public":
-        "(function(){try{eval('c=class{x;}');return(false);}catch{return(true);}})()",
-    "dynamic-import": "!xulRuntime.shell",
 }
 RELEASE_OR_BETA = set([
-    "numeric-separator-literal",
+    "Intl.NumberFormat-unified",
+    "Intl.DateTimeFormat-fractionalSecondDigits",
+    "Promise.allSettled",
 ])
 
 
@@ -99,7 +95,7 @@ def tryParseTestFile(test262parser, source, testName):
         return None
 
 
-def createRefTestEntry(skip, skipIf, error, isModule):
+def createRefTestEntry(skip, skipIf, error, isModule, isAsync):
     """
     Returns the |reftest| tuple (terms, comments) from the input arguments. Or a
     tuple of empty strings if no reftest entry is required.
@@ -121,6 +117,9 @@ def createRefTestEntry(skip, skipIf, error, isModule):
 
     if isModule:
         terms.append("module")
+
+    if isAsync:
+        terms.append("async")
 
     return (" ".join(terms), ", ".join(comments))
 
@@ -276,6 +275,11 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
     assert not isNegative or type(testRec["negative"]) == dict
     errorType = testRec["negative"]["type"] if isNegative else None
 
+    # Test262 contains tests both marked "negative" and "async". In this case
+    # "negative" is expected to overrule the "async" attribute.
+    if isNegative and isAsync:
+        isAsync = False
+
     # CanBlockIsFalse is set when the test expects that the implementation
     # cannot block on the main thread.
     if "CanBlockIsFalse" in testRec:
@@ -322,7 +326,8 @@ def convertTestFile(test262parser, testSource, testName, includeSet, strictTests
     else:
         testEpilogue = ""
 
-    (terms, comments) = createRefTestEntry(refTestSkip, refTestSkipIf, errorType, isModule)
+    (terms, comments) = createRefTestEntry(refTestSkip, refTestSkipIf, errorType, isModule,
+                                           isAsync)
     if raw:
         refTest = ""
         externRefTest = (terms, comments)
@@ -362,8 +367,10 @@ def convertFixtureFile(fixtureSource, fixtureName):
     refTestSkipIf = []
     errorType = None
     isModule = False
+    isAsync = False
 
-    (terms, comments) = createRefTestEntry(refTestSkip, refTestSkipIf, errorType, isModule)
+    (terms, comments) = createRefTestEntry(refTestSkip, refTestSkipIf, errorType, isModule,
+                                           isAsync)
     refTest = createRefTestLine(terms, comments)
 
     source = createSource(fixtureSource, refTest, "", "")
@@ -411,6 +418,9 @@ def process_test262(test262Dir, test262OutDir, strictTests, externManifests):
     explicitIncludes[os.path.join("built-ins", "TypedArray")] = ["byteConversionValues.js",
                                                                  "detachArrayBuffer.js", "nans.js"]
     explicitIncludes[os.path.join("built-ins", "TypedArrays")] = ["detachArrayBuffer.js"]
+
+    # Intl.Locale isn't yet enabled by default.
+    localIncludesMap[os.path.join("intl402")] = ["test262-intl-locale.js"]
 
     # Process all test directories recursively.
     for (dirPath, dirNames, fileNames) in os.walk(testDir):

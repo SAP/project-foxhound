@@ -73,11 +73,11 @@ callback interface MozObserverCallback {
 };
 
 /**
- * WebIDL callback interface calling the `willDestroy` and `didDestroy`
- * method on JSWindowActors.
+ * WebIDL callback interface calling the `willDestroy`, `didDestroy`, and
+ * `actorCreated` methods on JSWindowActors.
  */
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
-callback MozActorDestroyCallback = void();
+callback MozJSWindowActorCallback = void();
 
 /**
  * The willDestroy method, if present, will be called at the last opportunity
@@ -85,13 +85,16 @@ callback MozActorDestroyCallback = void();
  * up and send final messages.
  * The didDestroy method, if present, will be called after the actor is no
  * longer able to receive any more messages.
+ * The actorCreated method, if present, will be called immediately after the
+ * actor has been created and initialized.
  *
  * NOTE: Messages may be received between willDestroy and didDestroy, but they
  * may not be sent.
  */
-dictionary MozActorDestroyCallbacks {
-  [ChromeOnly] MozActorDestroyCallback willDestroy;
-  [ChromeOnly] MozActorDestroyCallback didDestroy;
+dictionary MozJSWindowActorCallbacks {
+  [ChromeOnly] MozJSWindowActorCallback willDestroy;
+  [ChromeOnly] MozJSWindowActorCallback didDestroy;
+  [ChromeOnly] MozJSWindowActorCallback actorCreated;
 };
 
 /**
@@ -155,10 +158,10 @@ dictionary WindowActorChildOptions : WindowActorSidedOptions {
   * An array of observer topics to listen to. An observer will be added for each
   * topic in the list.
   *
-  * Observer notifications in the list use nsGlobalWindowInner object as their
-  * subject, and the events will only be dispatched to the corresponding window
-  * actor. If additional observer notification's subjects are needed, please
-  * file a bug for that.
+  * Observer notifications in the list use nsGlobalWindowInner or
+  * nsGlobalWindowOuter object as their subject, and the events will only be
+  * dispatched to the corresponding window actor. If additional observer
+  * notification's subjects are needed, please file a bug for that.
   **/
   sequence<ByteString> observers;
 };

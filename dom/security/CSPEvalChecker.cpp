@@ -31,10 +31,10 @@ nsresult CheckInternal(nsIContentSecurityPolicy* aCSP,
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aAllowed);
 
-#if defined(DEBUG) && !defined(ANDROID)
+#if !defined(ANDROID)
   JSContext* cx = nsContentUtils::GetCurrentJSContext();
-  nsContentSecurityManager::AssertEvalNotUsingSystemPrincipal(aSubjectPrincipal,
-                                                              cx);
+  nsContentSecurityManager::AssertEvalNotRestricted(cx, aSubjectPrincipal,
+                                                    aExpression);
 #endif
 
   // The value is set at any "return", but better to have a default value here.

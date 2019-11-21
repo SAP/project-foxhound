@@ -25,7 +25,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -39,7 +39,6 @@
 #include "mozilla/Unused.h"
 
 #include "base/eintr_wrapper.h"
-#include "base/file_util.h"
 
 #include <locale.h>
 
@@ -315,16 +314,24 @@ void gfxPlatformFontList::ApplyWhitelist() {
     ToLowerCase(list[i], key);
     familyNamesWhitelist.PutEntry(key);
   }
+  AutoTArray<RefPtr<gfxFontFamily>, 128> accepted;
   for (auto iter = mFontFamilies.Iter(); !iter.Done(); iter.Next()) {
-    // Don't continue if we only have one font left.
-    if (mFontFamilies.Count() == 1) {
-      break;
-    }
     nsAutoCString fontFamilyName(iter.Key());
     ToLowerCase(fontFamilyName);
-    if (!familyNamesWhitelist.Contains(fontFamilyName)) {
-      iter.Remove();
+    if (familyNamesWhitelist.Contains(fontFamilyName)) {
+      accepted.AppendElement(iter.Data());
     }
+  }
+  if (accepted.IsEmpty()) {
+    // No whitelisted fonts found! Ignore the whitelist.
+    return;
+  }
+  // Replace the original full list with the accepted subset.
+  mFontFamilies.Clear();
+  for (auto& f : accepted) {
+    nsAutoCString fontFamilyName(f->Name());
+    ToLowerCase(fontFamilyName);
+    mFontFamilies.Put(fontFamilyName, f);
   }
 }
 
@@ -342,24 +349,22 @@ void gfxPlatformFontList::ApplyWhitelist(
     ToLowerCase(item, key);
     familyNamesWhitelist.PutEntry(key);
   }
-  int count = int(aFamilies.Length());
-  // Find the first non-hidden family; we won't delete this, if no other
-  // non-hidden family has been kept.
-  int firstNonHidden = 0;
-  while (firstNonHidden < count && aFamilies[firstNonHidden].mHidden) {
-    ++firstNonHidden;
-  }
+  AutoTArray<fontlist::Family::InitData, 128> accepted;
   bool keptNonHidden = false;
-  for (int i = count - 1; i >= firstNonHidden; --i) {
-    if (aFamilies[i].mHidden) {
-      continue;
-    }
-    if (familyNamesWhitelist.Contains(aFamilies[i].mKey)) {
-      keptNonHidden = true;
-    } else if (keptNonHidden || i > firstNonHidden) {
-      aFamilies.RemoveElementAt(i);
+  for (auto& f : aFamilies) {
+    if (f.mHidden || familyNamesWhitelist.Contains(f.mKey)) {
+      accepted.AppendElement(f);
+      if (!f.mHidden) {
+        keptNonHidden = true;
+      }
     }
   }
+  if (!keptNonHidden) {
+    // No (visible) families were whitelisted: ignore the whitelist
+    // and just leave the fontlist unchanged.
+    return;
+  }
+  aFamilies = accepted;
 }
 
 bool gfxPlatformFontList::AddWithLegacyFamilyName(const nsACString& aLegacyName,
@@ -395,6 +400,9 @@ nsresult gfxPlatformFontList::InitFontList() {
 
   gfxPlatform::PurgeSkiaFontCache();
 
+  mAliasTable.Clear();
+  mLocalNameTable.Clear();
+
   CancelInitOtherFamilyNamesTask();
   MutexAutoLock lock(mFontFamiliesMutex);
   mFontFamilies.Clear();
@@ -412,14 +420,23 @@ nsresult gfxPlatformFontList::InitFontList() {
   // initialize ranges of characters for which system-wide font search should be
   // skipped
   mCodepointsWithNoFonts.reset();
-  mCodepointsWithNoFonts.SetRange(0, 0x1f);     // C0 controls
-  mCodepointsWithNoFonts.SetRange(0x7f, 0x9f);  // C1 controls
+  mCodepointsWithNoFonts.SetRange(0, 0x1f);            // C0 controls
+  mCodepointsWithNoFonts.SetRange(0x7f, 0x9f);         // C1 controls
+  mCodepointsWithNoFonts.SetRange(0xE000, 0xF8FF);     // PUA
+  mCodepointsWithNoFonts.SetRange(0xF0000, 0x10FFFD);  // Supplementary PUA
+  mCodepointsWithNoFonts.SetRange(0xfdd0, 0xfdef);     // noncharacters
+  for (unsigned i = 0; i <= 0x100000; i += 0x10000) {
+    mCodepointsWithNoFonts.SetRange(i + 0xfffe, i + 0xffff);  // noncharacters
+  }
+  // Forget any font family we previously chose for U+FFFD.
+  mReplacementCharFallbackFamily = FontFamily();
 
   sPlatformFontList = this;
 
   // Try to initialize the cross-process shared font list if enabled by prefs,
   // but not if we're running in Safe Mode.
-  if (StaticPrefs::gfx_e10s_font_list_shared() && !gfxPlatform::InSafeMode()) {
+  if (StaticPrefs::gfx_e10s_font_list_shared_AtStartup() &&
+      !gfxPlatform::InSafeMode()) {
     for (auto i = mFontEntries.Iter(); !i.Done(); i.Next()) {
       i.Data()->mShmemCharacterMap = nullptr;
       i.Data()->mShmemFace = nullptr;
@@ -703,12 +720,10 @@ void gfxPlatformFontList::GetFontFamilyList(
 gfxFontEntry* gfxPlatformFontList::SystemFindFontForChar(
     uint32_t aCh, uint32_t aNextCh, Script aRunScript,
     const gfxFontStyle* aStyle) {
-  gfxFontEntry* fontEntry = nullptr;
+  MOZ_ASSERT(!mCodepointsWithNoFonts.test(aCh),
+             "don't call for codepoints already known to be unsupported");
 
-  // is codepoint with no matching font? return null immediately
-  if (mCodepointsWithNoFonts.test(aCh)) {
-    return nullptr;
-  }
+  gfxFontEntry* fontEntry = nullptr;
 
   // Try to short-circuit font fallback for U+FFFD, used to represent
   // encoding errors: just use cached family from last time U+FFFD was seen.
@@ -1033,14 +1048,43 @@ fontlist::Family* gfxPlatformFontList::FindSharedFamily(
   return family;
 }
 
+class InitializeFamilyRunnable : public mozilla::Runnable {
+ public:
+  explicit InitializeFamilyRunnable(uint32_t aFamilyIndex)
+      : Runnable("gfxPlatformFontList::InitializeFamilyRunnable"),
+        mIndex(aFamilyIndex) {}
+
+  NS_IMETHOD Run() override {
+    auto list = gfxPlatformFontList::PlatformFontList()->SharedFontList();
+    if (!list) {
+      return NS_OK;
+    }
+    if (mIndex >= list->NumFamilies()) {
+      // Out of range? Maybe the list got reinitialized since this request
+      // was posted - just ignore it.
+      return NS_OK;
+    }
+    dom::ContentChild::GetSingleton()->SendInitializeFamily(
+        list->GetGeneration(), mIndex);
+    return NS_OK;
+  }
+
+ private:
+  uint32_t mIndex;
+};
+
 bool gfxPlatformFontList::InitializeFamily(fontlist::Family* aFamily) {
   MOZ_ASSERT(SharedFontList());
   auto list = SharedFontList();
   if (!XRE_IsParentProcess()) {
     uint32_t index = aFamily - list->Families();
     MOZ_ASSERT(index < list->NumFamilies());
-    dom::ContentChild::GetSingleton()->SendInitializeFamily(
-        list->GetGeneration(), index);
+    if (NS_IsMainThread()) {
+      dom::ContentChild::GetSingleton()->SendInitializeFamily(
+          list->GetGeneration(), index);
+    } else {
+      NS_DispatchToMainThread(new InitializeFamilyRunnable(index));
+    }
     return aFamily->IsInitialized();
   }
   AutoTArray<fontlist::Face::InitData, 16> faceList;
@@ -2078,7 +2122,7 @@ void gfxPlatformFontList::CancelInitOtherFamilyNamesTask() {
     mPendingOtherFamilyNameTask = nullptr;
   }
   auto list = SharedFontList();
-  if (list) {
+  if (list && XRE_IsParentProcess()) {
     bool forceReflow = false;
     if (!mAliasTable.IsEmpty()) {
       list->SetAliases(mAliasTable);

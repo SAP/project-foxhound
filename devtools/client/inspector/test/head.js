@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -76,7 +75,7 @@ var navigateTo = async function(inspector, url) {
 var startPicker = async function(toolbox, skipFocus) {
   info("Start the element picker");
   toolbox.win.focus();
-  await toolbox.inspector.nodePicker.start();
+  await toolbox.nodePicker.start();
   if (!skipFocus) {
     // By default make sure the content window is focused since the picker may not focus
     // the content window by default.
@@ -129,7 +128,7 @@ function pickElement(inspector, testActor, selector, x, y) {
  */
 function hoverElement(inspector, testActor, selector, x, y) {
   info("Waiting for element " + selector + " to be hovered");
-  const onHovered = inspector.inspector.nodePicker.once("picker-node-hovered");
+  const onHovered = inspector.toolbox.nodePicker.once("picker-node-hovered");
   testActor.synthesizeMouse({ selector, x, y, options: { type: "mousemove" } });
   return onHovered;
 }
@@ -176,24 +175,6 @@ function clearCurrentNodeSelection(inspector) {
   const updated = inspector.once("inspector-updated");
   inspector.selection.setNodeFront(null);
   return updated;
-}
-
-/**
- * Open the inspector in a tab with given URL.
- * @param {string} url  The URL to open.
- * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
- * @return A promise that is resolved once the tab and inspector have loaded
- *         with an object: { tab, toolbox, inspector }.
- */
-var openInspectorForURL = async function(url, hostType) {
-  const tab = await addTab(url);
-  const { inspector, toolbox, testActor } = await openInspector(hostType);
-  return { tab, inspector, toolbox, testActor };
-};
-
-async function getActiveInspector() {
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  return gDevTools.getToolbox(target).getPanel("inspector");
 }
 
 /**
@@ -504,7 +485,7 @@ async function poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
  */
 const getHighlighterHelperFor = type =>
   async function({ inspector, testActor }) {
-    const front = inspector.inspector;
+    const front = inspector.inspectorFront;
     const highlighter = await front.getHighlighterByType(type);
 
     let prefix = "";

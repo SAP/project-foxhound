@@ -123,8 +123,8 @@ return /******/ (function(modules) { // webpackBootstrap
 "use strict";
 
 
-const pdfjsVersion = '2.2.214';
-const pdfjsBuild = '969b1623';
+const pdfjsVersion = '2.3.101';
+const pdfjsBuild = '31f31930';
 
 const pdfjsCoreWorker = __w_pdfjs_require__(1);
 
@@ -240,7 +240,7 @@ var WorkerMessageHandler = {
     var WorkerTasks = [];
     const verbosity = (0, _util.getVerbosityLevel)();
     let apiVersion = docParams.apiVersion;
-    let workerVersion = '2.2.214';
+    let workerVersion = '2.3.101';
 
     if (apiVersion !== workerVersion) {
       throw new Error(`The API version "${apiVersion}" does not match ` + `the Worker version "${workerVersion}".`);
@@ -398,8 +398,8 @@ var WorkerMessageHandler = {
         cancelXHRs = null;
       });
 
-      cancelXHRs = function () {
-        pdfStream.cancelAllRequests('abort');
+      cancelXHRs = function (reason) {
+        pdfStream.cancelAllRequests(reason);
       };
 
       return pdfManagerCapability.promise;
@@ -467,7 +467,7 @@ var WorkerMessageHandler = {
       };
       getPdfManager(data, evaluatorOptions).then(function (newPdfManager) {
         if (terminated) {
-          newPdfManager.terminate();
+          newPdfManager.terminate(new _util.AbortException('Worker was terminated.'));
           throw new Error('Worker was terminated');
         }
 
@@ -653,12 +653,12 @@ var WorkerMessageHandler = {
       terminated = true;
 
       if (pdfManager) {
-        pdfManager.terminate();
+        pdfManager.terminate(new _util.AbortException('Worker was terminated.'));
         pdfManager = null;
       }
 
       if (cancelXHRs) {
-        cancelXHRs();
+        cancelXHRs(new _util.AbortException('Worker was terminated.'));
       }
 
       (0, _primitives.clearPrimitiveCaches)();
@@ -750,7 +750,7 @@ Object.defineProperty(exports, "URL", {
     return _url_polyfill.URL;
   }
 });
-exports.createObjectURL = exports.FormatError = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.StreamType = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.NativeImageDecoding = exports.MissingPDFException = exports.InvalidPDFException = exports.AbortException = exports.CMapCompressionType = exports.ImageKind = exports.FontType = exports.AnnotationType = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationBorderStyleType = exports.UNSUPPORTED_FEATURES = exports.VerbosityLevel = exports.OPS = exports.IDENTITY_MATRIX = exports.FONT_IDENTITY_MATRIX = void 0;
+exports.createObjectURL = exports.FormatError = exports.Util = exports.UnknownErrorException = exports.UnexpectedResponseException = exports.TextRenderingMode = exports.StreamType = exports.PermissionFlag = exports.PasswordResponses = exports.PasswordException = exports.NativeImageDecoding = exports.MissingPDFException = exports.InvalidPDFException = exports.AbortException = exports.CMapCompressionType = exports.ImageKind = exports.FontType = exports.AnnotationType = exports.AnnotationStateModelType = exports.AnnotationReviewState = exports.AnnotationReplyType = exports.AnnotationMarkedState = exports.AnnotationFlag = exports.AnnotationFieldFlag = exports.AnnotationBorderStyleType = exports.UNSUPPORTED_FEATURES = exports.VerbosityLevel = exports.OPS = exports.IDENTITY_MATRIX = exports.FONT_IDENTITY_MATRIX = void 0;
 
 __w_pdfjs_require__(3);
 
@@ -827,6 +827,29 @@ const AnnotationType = {
   REDACT: 26
 };
 exports.AnnotationType = AnnotationType;
+const AnnotationStateModelType = {
+  MARKED: 'Marked',
+  REVIEW: 'Review'
+};
+exports.AnnotationStateModelType = AnnotationStateModelType;
+const AnnotationMarkedState = {
+  MARKED: 'Marked',
+  UNMARKED: 'Unmarked'
+};
+exports.AnnotationMarkedState = AnnotationMarkedState;
+const AnnotationReviewState = {
+  ACCEPTED: 'Accepted',
+  REJECTED: 'Rejected',
+  CANCELLED: 'Cancelled',
+  COMPLETED: 'Completed',
+  NONE: 'None'
+};
+exports.AnnotationReviewState = AnnotationReviewState;
+const AnnotationReplyType = {
+  GROUP: 'Group',
+  REPLY: 'R'
+};
+exports.AnnotationReplyType = AnnotationReplyType;
 const AnnotationFlag = {
   INVISIBLE: 0x01,
   HIDDEN: 0x02,
@@ -871,30 +894,30 @@ const AnnotationBorderStyleType = {
 };
 exports.AnnotationBorderStyleType = AnnotationBorderStyleType;
 const StreamType = {
-  UNKNOWN: 0,
-  FLATE: 1,
-  LZW: 2,
-  DCT: 3,
-  JPX: 4,
-  JBIG: 5,
-  A85: 6,
-  AHX: 7,
-  CCF: 8,
-  RL: 9
+  UNKNOWN: 'UNKNOWN',
+  FLATE: 'FLATE',
+  LZW: 'LZW',
+  DCT: 'DCT',
+  JPX: 'JPX',
+  JBIG: 'JBIG',
+  A85: 'A85',
+  AHX: 'AHX',
+  CCF: 'CCF',
+  RLX: 'RLX'
 };
 exports.StreamType = StreamType;
 const FontType = {
-  UNKNOWN: 0,
-  TYPE1: 1,
-  TYPE1C: 2,
-  CIDFONTTYPE0: 3,
-  CIDFONTTYPE0C: 4,
-  TRUETYPE: 5,
-  CIDFONTTYPE2: 6,
-  TYPE3: 7,
-  OPENTYPE: 8,
-  TYPE0: 9,
-  MMTYPE1: 10
+  UNKNOWN: 'UNKNOWN',
+  TYPE1: 'TYPE1',
+  TYPE1C: 'TYPE1C',
+  CIDFONTTYPE0: 'CIDFONTTYPE0',
+  CIDFONTTYPE0C: 'CIDFONTTYPE0C',
+  TRUETYPE: 'TRUETYPE',
+  CIDFONTTYPE2: 'CIDFONTTYPE2',
+  TYPE3: 'TYPE3',
+  OPENTYPE: 'OPENTYPE',
+  TYPE0: 'TYPE0',
+  MMTYPE1: 'MMTYPE1'
 };
 exports.FontType = FontType;
 const VerbosityLevel = {
@@ -1031,13 +1054,13 @@ function getVerbosityLevel() {
 
 function info(msg) {
   if (verbosity >= VerbosityLevel.INFOS) {
-    console.log('Info: ' + msg);
+    console.log(`Info: ${msg}`);
   }
 }
 
 function warn(msg) {
   if (verbosity >= VerbosityLevel.WARNINGS) {
-    console.log('Warning: ' + msg);
+    console.log(`Warning: ${msg}`);
   }
 }
 
@@ -1052,8 +1075,10 @@ function assert(cond, msg) {
 }
 
 function isSameOrigin(baseUrl, otherUrl) {
+  let base;
+
   try {
-    var base = new _url_polyfill.URL(baseUrl);
+    base = new _url_polyfill.URL(baseUrl);
 
     if (!base.origin || base.origin === 'null') {
       return false;
@@ -1062,7 +1087,7 @@ function isSameOrigin(baseUrl, otherUrl) {
     return false;
   }
 
-  var other = new _url_polyfill.URL(otherUrl, base);
+  const other = new _url_polyfill.URL(otherUrl, base);
   return base.origin === other.origin;
 }
 
@@ -1090,7 +1115,7 @@ function createValidAbsoluteUrl(url, baseUrl) {
   }
 
   try {
-    var absoluteUrl = baseUrl ? new _url_polyfill.URL(url, baseUrl) : new _url_polyfill.URL(url);
+    const absoluteUrl = baseUrl ? new _url_polyfill.URL(url, baseUrl) : new _url_polyfill.URL(url);
 
     if (_isValidProtocol(absoluteUrl)) {
       return absoluteUrl;
@@ -1110,7 +1135,7 @@ function shadow(obj, prop, value) {
   return value;
 }
 
-var PasswordException = function PasswordExceptionClosure() {
+const PasswordException = function PasswordExceptionClosure() {
   function PasswordException(msg, code) {
     this.name = 'PasswordException';
     this.message = msg;
@@ -1124,7 +1149,7 @@ var PasswordException = function PasswordExceptionClosure() {
 
 exports.PasswordException = PasswordException;
 
-var UnknownErrorException = function UnknownErrorExceptionClosure() {
+const UnknownErrorException = function UnknownErrorExceptionClosure() {
   function UnknownErrorException(msg, details) {
     this.name = 'UnknownErrorException';
     this.message = msg;
@@ -1138,7 +1163,7 @@ var UnknownErrorException = function UnknownErrorExceptionClosure() {
 
 exports.UnknownErrorException = UnknownErrorException;
 
-var InvalidPDFException = function InvalidPDFExceptionClosure() {
+const InvalidPDFException = function InvalidPDFExceptionClosure() {
   function InvalidPDFException(msg) {
     this.name = 'InvalidPDFException';
     this.message = msg;
@@ -1151,7 +1176,7 @@ var InvalidPDFException = function InvalidPDFExceptionClosure() {
 
 exports.InvalidPDFException = InvalidPDFException;
 
-var MissingPDFException = function MissingPDFExceptionClosure() {
+const MissingPDFException = function MissingPDFExceptionClosure() {
   function MissingPDFException(msg) {
     this.name = 'MissingPDFException';
     this.message = msg;
@@ -1164,7 +1189,7 @@ var MissingPDFException = function MissingPDFExceptionClosure() {
 
 exports.MissingPDFException = MissingPDFException;
 
-var UnexpectedResponseException = function UnexpectedResponseExceptionClosure() {
+const UnexpectedResponseException = function UnexpectedResponseExceptionClosure() {
   function UnexpectedResponseException(msg, status) {
     this.name = 'UnexpectedResponseException';
     this.message = msg;
@@ -1178,7 +1203,7 @@ var UnexpectedResponseException = function UnexpectedResponseExceptionClosure() 
 
 exports.UnexpectedResponseException = UnexpectedResponseException;
 
-let FormatError = function FormatErrorClosure() {
+const FormatError = function FormatErrorClosure() {
   function FormatError(msg) {
     this.message = msg;
   }
@@ -1191,7 +1216,7 @@ let FormatError = function FormatErrorClosure() {
 
 exports.FormatError = FormatError;
 
-let AbortException = function AbortExceptionClosure() {
+const AbortException = function AbortExceptionClosure() {
   function AbortException(msg) {
     this.name = 'AbortException';
     this.message = msg;
@@ -1203,7 +1228,7 @@ let AbortException = function AbortExceptionClosure() {
 }();
 
 exports.AbortException = AbortException;
-var NullCharactersRegExp = /\x00/g;
+const NullCharactersRegExp = /\x00/g;
 
 function removeNullCharacters(str) {
   if (typeof str !== 'string') {
@@ -1216,18 +1241,18 @@ function removeNullCharacters(str) {
 
 function bytesToString(bytes) {
   assert(bytes !== null && typeof bytes === 'object' && bytes.length !== undefined, 'Invalid argument for bytesToString');
-  var length = bytes.length;
-  var MAX_ARGUMENT_COUNT = 8192;
+  const length = bytes.length;
+  const MAX_ARGUMENT_COUNT = 8192;
 
   if (length < MAX_ARGUMENT_COUNT) {
     return String.fromCharCode.apply(null, bytes);
   }
 
-  var strBuf = [];
+  const strBuf = [];
 
-  for (var i = 0; i < length; i += MAX_ARGUMENT_COUNT) {
-    var chunkEnd = Math.min(i + MAX_ARGUMENT_COUNT, length);
-    var chunk = bytes.subarray(i, chunkEnd);
+  for (let i = 0; i < length; i += MAX_ARGUMENT_COUNT) {
+    const chunkEnd = Math.min(i + MAX_ARGUMENT_COUNT, length);
+    const chunk = bytes.subarray(i, chunkEnd);
     strBuf.push(String.fromCharCode.apply(null, chunk));
   }
 
@@ -1236,10 +1261,10 @@ function bytesToString(bytes) {
 
 function stringToBytes(str) {
   assert(typeof str === 'string', 'Invalid argument for stringToBytes');
-  var length = str.length;
-  var bytes = new Uint8Array(length);
+  const length = str.length;
+  const bytes = new Uint8Array(length);
 
-  for (var i = 0; i < length; ++i) {
+  for (let i = 0; i < length; ++i) {
     bytes[i] = str.charCodeAt(i) & 0xFF;
   }
 
@@ -1256,26 +1281,23 @@ function arrayByteLength(arr) {
 }
 
 function arraysToBytes(arr) {
-  if (arr.length === 1 && arr[0] instanceof Uint8Array) {
+  const length = arr.length;
+
+  if (length === 1 && arr[0] instanceof Uint8Array) {
     return arr[0];
   }
 
-  var resultLength = 0;
-  var i,
-      ii = arr.length;
-  var item, itemLength;
+  let resultLength = 0;
 
-  for (i = 0; i < ii; i++) {
-    item = arr[i];
-    itemLength = arrayByteLength(item);
-    resultLength += itemLength;
+  for (let i = 0; i < length; i++) {
+    resultLength += arrayByteLength(arr[i]);
   }
 
-  var pos = 0;
-  var data = new Uint8Array(resultLength);
+  let pos = 0;
+  const data = new Uint8Array(resultLength);
 
-  for (i = 0; i < ii; i++) {
-    item = arr[i];
+  for (let i = 0; i < length; i++) {
+    let item = arr[i];
 
     if (!(item instanceof Uint8Array)) {
       if (typeof item === 'string') {
@@ -1285,7 +1307,7 @@ function arraysToBytes(arr) {
       }
     }
 
-    itemLength = item.byteLength;
+    const itemLength = item.byteLength;
     data.set(item, pos);
     pos += itemLength;
   }
@@ -1318,9 +1340,9 @@ function readUint32(data, offset) {
 }
 
 function isLittleEndian() {
-  var buffer8 = new Uint8Array(4);
+  const buffer8 = new Uint8Array(4);
   buffer8[0] = 1;
-  var view32 = new Uint32Array(buffer8.buffer, 0, 1);
+  const view32 = new Uint32Array(buffer8.buffer, 0, 1);
   return view32[0] === 1;
 }
 
@@ -1333,67 +1355,65 @@ function isEvalSupported() {
   }
 }
 
-var Util = function UtilClosure() {
-  function Util() {}
+const rgbBuf = ['rgb(', 0, ',', 0, ',', 0, ')'];
 
-  var rgbBuf = ['rgb(', 0, ',', 0, ',', 0, ')'];
-
-  Util.makeCssRgb = function Util_makeCssRgb(r, g, b) {
+class Util {
+  static makeCssRgb(r, g, b) {
     rgbBuf[1] = r;
     rgbBuf[3] = g;
     rgbBuf[5] = b;
     return rgbBuf.join('');
-  };
+  }
 
-  Util.transform = function Util_transform(m1, m2) {
+  static transform(m1, m2) {
     return [m1[0] * m2[0] + m1[2] * m2[1], m1[1] * m2[0] + m1[3] * m2[1], m1[0] * m2[2] + m1[2] * m2[3], m1[1] * m2[2] + m1[3] * m2[3], m1[0] * m2[4] + m1[2] * m2[5] + m1[4], m1[1] * m2[4] + m1[3] * m2[5] + m1[5]];
-  };
+  }
 
-  Util.applyTransform = function Util_applyTransform(p, m) {
-    var xt = p[0] * m[0] + p[1] * m[2] + m[4];
-    var yt = p[0] * m[1] + p[1] * m[3] + m[5];
+  static applyTransform(p, m) {
+    const xt = p[0] * m[0] + p[1] * m[2] + m[4];
+    const yt = p[0] * m[1] + p[1] * m[3] + m[5];
     return [xt, yt];
-  };
+  }
 
-  Util.applyInverseTransform = function Util_applyInverseTransform(p, m) {
-    var d = m[0] * m[3] - m[1] * m[2];
-    var xt = (p[0] * m[3] - p[1] * m[2] + m[2] * m[5] - m[4] * m[3]) / d;
-    var yt = (-p[0] * m[1] + p[1] * m[0] + m[4] * m[1] - m[5] * m[0]) / d;
+  static applyInverseTransform(p, m) {
+    const d = m[0] * m[3] - m[1] * m[2];
+    const xt = (p[0] * m[3] - p[1] * m[2] + m[2] * m[5] - m[4] * m[3]) / d;
+    const yt = (-p[0] * m[1] + p[1] * m[0] + m[4] * m[1] - m[5] * m[0]) / d;
     return [xt, yt];
-  };
+  }
 
-  Util.getAxialAlignedBoundingBox = function Util_getAxialAlignedBoundingBox(r, m) {
-    var p1 = Util.applyTransform(r, m);
-    var p2 = Util.applyTransform(r.slice(2, 4), m);
-    var p3 = Util.applyTransform([r[0], r[3]], m);
-    var p4 = Util.applyTransform([r[2], r[1]], m);
+  static getAxialAlignedBoundingBox(r, m) {
+    const p1 = Util.applyTransform(r, m);
+    const p2 = Util.applyTransform(r.slice(2, 4), m);
+    const p3 = Util.applyTransform([r[0], r[3]], m);
+    const p4 = Util.applyTransform([r[2], r[1]], m);
     return [Math.min(p1[0], p2[0], p3[0], p4[0]), Math.min(p1[1], p2[1], p3[1], p4[1]), Math.max(p1[0], p2[0], p3[0], p4[0]), Math.max(p1[1], p2[1], p3[1], p4[1])];
-  };
+  }
 
-  Util.inverseTransform = function Util_inverseTransform(m) {
-    var d = m[0] * m[3] - m[1] * m[2];
+  static inverseTransform(m) {
+    const d = m[0] * m[3] - m[1] * m[2];
     return [m[3] / d, -m[1] / d, -m[2] / d, m[0] / d, (m[2] * m[5] - m[4] * m[3]) / d, (m[4] * m[1] - m[5] * m[0]) / d];
-  };
+  }
 
-  Util.apply3dTransform = function Util_apply3dTransform(m, v) {
+  static apply3dTransform(m, v) {
     return [m[0] * v[0] + m[1] * v[1] + m[2] * v[2], m[3] * v[0] + m[4] * v[1] + m[5] * v[2], m[6] * v[0] + m[7] * v[1] + m[8] * v[2]];
-  };
+  }
 
-  Util.singularValueDecompose2dScale = function Util_singularValueDecompose2dScale(m) {
-    var transpose = [m[0], m[2], m[1], m[3]];
-    var a = m[0] * transpose[0] + m[1] * transpose[2];
-    var b = m[0] * transpose[1] + m[1] * transpose[3];
-    var c = m[2] * transpose[0] + m[3] * transpose[2];
-    var d = m[2] * transpose[1] + m[3] * transpose[3];
-    var first = (a + d) / 2;
-    var second = Math.sqrt((a + d) * (a + d) - 4 * (a * d - c * b)) / 2;
-    var sx = first + second || 1;
-    var sy = first - second || 1;
+  static singularValueDecompose2dScale(m) {
+    const transpose = [m[0], m[2], m[1], m[3]];
+    const a = m[0] * transpose[0] + m[1] * transpose[2];
+    const b = m[0] * transpose[1] + m[1] * transpose[3];
+    const c = m[2] * transpose[0] + m[3] * transpose[2];
+    const d = m[2] * transpose[1] + m[3] * transpose[3];
+    const first = (a + d) / 2;
+    const second = Math.sqrt((a + d) * (a + d) - 4 * (a * d - c * b)) / 2;
+    const sx = first + second || 1;
+    const sy = first - second || 1;
     return [Math.sqrt(sx), Math.sqrt(sy)];
-  };
+  }
 
-  Util.normalizeRect = function Util_normalizeRect(rect) {
-    var r = rect.slice(0);
+  static normalizeRect(rect) {
+    const r = rect.slice(0);
 
     if (rect[0] > rect[2]) {
       r[0] = rect[2];
@@ -1406,16 +1426,16 @@ var Util = function UtilClosure() {
     }
 
     return r;
-  };
+  }
 
-  Util.intersect = function Util_intersect(rect1, rect2) {
+  static intersect(rect1, rect2) {
     function compare(a, b) {
       return a - b;
     }
 
-    var orderedX = [rect1[0], rect1[2], rect2[0], rect2[2]].sort(compare),
-        orderedY = [rect1[1], rect1[3], rect2[1], rect2[3]].sort(compare),
-        result = [];
+    const orderedX = [rect1[0], rect1[2], rect2[0], rect2[2]].sort(compare);
+    const orderedY = [rect1[1], rect1[3], rect2[1], rect2[3]].sort(compare);
+    const result = [];
     rect1 = Util.normalizeRect(rect1);
     rect2 = Util.normalizeRect(rect2);
 
@@ -1423,37 +1443,35 @@ var Util = function UtilClosure() {
       result[0] = orderedX[1];
       result[2] = orderedX[2];
     } else {
-      return false;
+      return null;
     }
 
     if (orderedY[0] === rect1[1] && orderedY[1] === rect2[1] || orderedY[0] === rect2[1] && orderedY[1] === rect1[1]) {
       result[1] = orderedY[1];
       result[3] = orderedY[2];
     } else {
-      return false;
+      return null;
     }
 
     return result;
-  };
+  }
 
-  return Util;
-}();
+}
 
 exports.Util = Util;
 const PDFStringTranslateTable = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2D8, 0x2C7, 0x2C6, 0x2D9, 0x2DD, 0x2DB, 0x2DA, 0x2DC, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2022, 0x2020, 0x2021, 0x2026, 0x2014, 0x2013, 0x192, 0x2044, 0x2039, 0x203A, 0x2212, 0x2030, 0x201E, 0x201C, 0x201D, 0x2018, 0x2019, 0x201A, 0x2122, 0xFB01, 0xFB02, 0x141, 0x152, 0x160, 0x178, 0x17D, 0x131, 0x142, 0x153, 0x161, 0x17E, 0, 0x20AC];
 
 function stringToPDFString(str) {
-  var i,
-      n = str.length,
-      strBuf = [];
+  const length = str.length,
+        strBuf = [];
 
   if (str[0] === '\xFE' && str[1] === '\xFF') {
-    for (i = 2; i < n; i += 2) {
+    for (let i = 2; i < length; i += 2) {
       strBuf.push(String.fromCharCode(str.charCodeAt(i) << 8 | str.charCodeAt(i + 1)));
     }
   } else {
-    for (i = 0; i < n; ++i) {
-      var code = PDFStringTranslateTable[str.charCodeAt(i)];
+    for (let i = 0; i < length; ++i) {
+      const code = PDFStringTranslateTable[str.charCodeAt(i)];
       strBuf.push(code ? String.fromCharCode(code) : str.charAt(i));
     }
   }
@@ -1470,7 +1488,7 @@ function utf8StringToString(str) {
 }
 
 function isEmptyObj(obj) {
-  for (var key in obj) {
+  for (let key in obj) {
     return false;
   }
 
@@ -1530,8 +1548,8 @@ function createPromiseCapability() {
   return capability;
 }
 
-var createObjectURL = function createObjectURLClosure() {
-  var digits = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+const createObjectURL = function createObjectURLClosure() {
+  const digits = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
   return function createObjectURL(data, contentType, forceDataSchema = false) {
     if (!forceDataSchema && _url_polyfill.URL.createObjectURL) {
       const blob = new Blob([data], {
@@ -1540,16 +1558,16 @@ var createObjectURL = function createObjectURLClosure() {
       return _url_polyfill.URL.createObjectURL(blob);
     }
 
-    var buffer = 'data:' + contentType + ';base64,';
+    let buffer = `data:${contentType};base64,`;
 
-    for (var i = 0, ii = data.length; i < ii; i += 3) {
-      var b1 = data[i] & 0xFF;
-      var b2 = data[i + 1] & 0xFF;
-      var b3 = data[i + 2] & 0xFF;
-      var d1 = b1 >> 2,
-          d2 = (b1 & 3) << 4 | b2 >> 4;
-      var d3 = i + 1 < ii ? (b2 & 0xF) << 2 | b3 >> 6 : 64;
-      var d4 = i + 2 < ii ? b3 & 0x3F : 64;
+    for (let i = 0, ii = data.length; i < ii; i += 3) {
+      const b1 = data[i] & 0xFF;
+      const b2 = data[i + 1] & 0xFF;
+      const b3 = data[i + 2] & 0xFF;
+      const d1 = b1 >> 2,
+            d2 = (b1 & 3) << 4 | b2 >> 4;
+      const d3 = i + 1 < ii ? (b2 & 0xF) << 2 | b3 >> 6 : 64;
+      const d4 = i + 2 < ii ? b3 & 0x3F : 64;
       buffer += digits[d1] + digits[d2] + digits[d3] + digits[d4];
     }
 
@@ -2029,7 +2047,7 @@ class BasePdfManager {
     this._password = password;
   }
 
-  terminate() {
+  terminate(reason) {
     (0, _util.unreachable)('Abstract method `terminate` called');
   }
 
@@ -2067,7 +2085,7 @@ class LocalPdfManager extends BasePdfManager {
     return this._loadedStreamPromise;
   }
 
-  terminate() {}
+  terminate(reason) {}
 
 }
 
@@ -2127,8 +2145,8 @@ class NetworkPdfManager extends BasePdfManager {
     return this.streamManager.onLoadedStream();
   }
 
-  terminate() {
-    this.streamManager.abort();
+  terminate(reason) {
+    this.streamManager.abort(reason);
   }
 
 }
@@ -2298,7 +2316,10 @@ class ChunkedStream {
       return -1;
     }
 
-    this.ensureByte(pos);
+    if (pos >= this.progressiveDataLength) {
+      this.ensureByte(pos);
+    }
+
     return this.bytes[this.pos++];
   }
 
@@ -2327,7 +2348,10 @@ class ChunkedStream {
     const strEnd = this.end;
 
     if (!length) {
-      this.ensureRange(pos, strEnd);
+      if (strEnd > this.progressiveDataLength) {
+        this.ensureRange(pos, strEnd);
+      }
+
       const subarray = bytes.subarray(pos, strEnd);
       return forceClamped ? new Uint8ClampedArray(subarray) : subarray;
     }
@@ -2338,7 +2362,10 @@ class ChunkedStream {
       end = strEnd;
     }
 
-    this.ensureRange(pos, end);
+    if (end > this.progressiveDataLength) {
+      this.ensureRange(pos, end);
+    }
+
     this.pos = end;
     const subarray = bytes.subarray(pos, end);
     return forceClamped ? new Uint8ClampedArray(subarray) : subarray;
@@ -2357,7 +2384,18 @@ class ChunkedStream {
   }
 
   getByteRange(begin, end) {
-    this.ensureRange(begin, end);
+    if (begin < 0) {
+      begin = 0;
+    }
+
+    if (end > this.end) {
+      end = this.end;
+    }
+
+    if (end > this.progressiveDataLength) {
+      this.ensureRange(begin, end);
+    }
+
     return this.bytes.subarray(begin, end);
   }
 
@@ -2379,9 +2417,13 @@ class ChunkedStream {
 
   makeSubStream(start, length, dict) {
     if (length) {
-      this.ensureRange(start, start + length);
+      if (start + length > this.progressiveDataLength) {
+        this.ensureRange(start, start + length);
+      }
     } else {
-      this.ensureByte(start);
+      if (start >= this.progressiveDataLength) {
+        this.ensureByte(start);
+      }
     }
 
     function ChunkedStreamSubstream() {}
@@ -2696,15 +2738,15 @@ class ChunkedStreamManager {
     return Math.floor((end - 1) / this.chunkSize) + 1;
   }
 
-  abort() {
+  abort(reason) {
     this.aborted = true;
 
     if (this.pdfNetworkStream) {
-      this.pdfNetworkStream.cancelAllRequests('abort');
+      this.pdfNetworkStream.cancelAllRequests(reason);
     }
 
     for (const requestId in this.promisesByRequest) {
-      this.promisesByRequest[requestId].reject(new Error('Request was aborted'));
+      this.promisesByRequest[requestId].reject(reason);
     }
   }
 
@@ -2946,24 +2988,26 @@ class Page {
     return (0, _util.shadow)(this, 'resources', this._getInheritableProperty('Resources') || _primitives.Dict.empty);
   }
 
-  get mediaBox() {
-    const mediaBox = this._getInheritableProperty('MediaBox', true);
+  _getBoundingBox(name) {
+    const box = this._getInheritableProperty(name, true);
 
-    if (!Array.isArray(mediaBox) || mediaBox.length !== 4) {
-      return (0, _util.shadow)(this, 'mediaBox', LETTER_SIZE_MEDIABOX);
+    if (Array.isArray(box) && box.length === 4) {
+      if (box[2] - box[0] !== 0 && box[3] - box[1] !== 0) {
+        return box;
+      }
+
+      (0, _util.warn)(`Empty /${name} entry.`);
     }
 
-    return (0, _util.shadow)(this, 'mediaBox', mediaBox);
+    return null;
+  }
+
+  get mediaBox() {
+    return (0, _util.shadow)(this, 'mediaBox', this._getBoundingBox('MediaBox') || LETTER_SIZE_MEDIABOX);
   }
 
   get cropBox() {
-    const cropBox = this._getInheritableProperty('CropBox', true);
-
-    if (!Array.isArray(cropBox) || cropBox.length !== 4) {
-      return (0, _util.shadow)(this, 'cropBox', this.mediaBox);
-    }
-
-    return (0, _util.shadow)(this, 'cropBox', cropBox);
+    return (0, _util.shadow)(this, 'cropBox', this._getBoundingBox('CropBox') || this.mediaBox);
   }
 
   get userUnit() {
@@ -2977,16 +3021,25 @@ class Page {
   }
 
   get view() {
-    const mediaBox = this.mediaBox,
-          cropBox = this.cropBox;
+    const {
+      cropBox,
+      mediaBox
+    } = this;
+    let view;
 
-    if (mediaBox === cropBox) {
-      return (0, _util.shadow)(this, 'view', mediaBox);
+    if (cropBox === mediaBox || (0, _util.isArrayEqual)(cropBox, mediaBox)) {
+      view = mediaBox;
+    } else {
+      const box = _util.Util.intersect(cropBox, mediaBox);
+
+      if (box && box[2] - box[0] !== 0 && box[3] - box[1] !== 0) {
+        view = box;
+      } else {
+        (0, _util.warn)('Empty /CropBox and /MediaBox intersection.');
+      }
     }
 
-    const intersection = _util.Util.intersect(cropBox, mediaBox);
-
-    return (0, _util.shadow)(this, 'view', intersection || mediaBox);
+    return (0, _util.shadow)(this, 'view', view || mediaBox);
   }
 
   get rotate() {
@@ -3176,22 +3229,9 @@ exports.Page = Page;
 const FINGERPRINT_FIRST_BYTES = 1024;
 const EMPTY_FINGERPRINT = '\x00\x00\x00\x00\x00\x00\x00' + '\x00\x00\x00\x00\x00\x00\x00\x00\x00';
 
-function find(stream, needle, limit, backwards) {
-  const pos = stream.pos;
-  const end = stream.end;
-
-  if (pos + limit > end) {
-    limit = end - pos;
-  }
-
-  const strBuf = [];
-
-  for (let i = 0; i < limit; ++i) {
-    strBuf.push(String.fromCharCode(stream.getByte()));
-  }
-
-  const str = strBuf.join('');
-  stream.pos = pos;
+function find(stream, needle, limit, backwards = false) {
+  (0, _util.assert)(limit > 0, 'The "limit" must be a positive integer.');
+  const str = (0, _util.bytesToString)(stream.peekBytes(limit));
   const index = backwards ? str.lastIndexOf(needle) : str.indexOf(needle);
 
   if (index === -1) {
@@ -3453,21 +3493,17 @@ class PDFDocument {
     if (Array.isArray(idArray) && idArray[0] && (0, _util.isString)(idArray[0]) && idArray[0] !== EMPTY_FINGERPRINT) {
       hash = (0, _util.stringToBytes)(idArray[0]);
     } else {
-      if (this.stream.ensureRange) {
-        this.stream.ensureRange(0, Math.min(FINGERPRINT_FIRST_BYTES, this.stream.end));
-      }
-
-      hash = (0, _crypto.calculateMD5)(this.stream.bytes.subarray(0, FINGERPRINT_FIRST_BYTES), 0, FINGERPRINT_FIRST_BYTES);
+      hash = (0, _crypto.calculateMD5)(this.stream.getByteRange(0, FINGERPRINT_FIRST_BYTES), 0, FINGERPRINT_FIRST_BYTES);
     }
 
-    let fingerprint = '';
+    const fingerprintBuf = [];
 
     for (let i = 0, ii = hash.length; i < ii; i++) {
       const hex = hash[i].toString(16);
-      fingerprint += hex.length === 1 ? '0' + hex : hex;
+      fingerprintBuf.push(hex.padStart(2, '0'));
     }
 
-    return (0, _util.shadow)(this, 'fingerprint', fingerprint);
+    return (0, _util.shadow)(this, 'fingerprint', fingerprintBuf.join(''));
   }
 
   _getLinearizationPage(pageIndex) {
@@ -4643,10 +4679,10 @@ var XRef = function XRefClosure() {
     this.pdfManager = pdfManager;
     this.entries = [];
     this.xrefstms = Object.create(null);
-    this.cache = [];
+    this._cacheMap = new Map();
     this.stats = {
-      streamTypes: [],
-      fontTypes: []
+      streamTypes: Object.create(null),
+      fontTypes: Object.create(null)
     };
   }
 
@@ -4771,10 +4807,16 @@ var XRef = function XRefClosure() {
           entry.gen = parser.getObj();
           var type = parser.getObj();
 
-          if ((0, _primitives.isCmd)(type, 'f')) {
-            entry.free = true;
-          } else if ((0, _primitives.isCmd)(type, 'n')) {
-            entry.uncompressed = true;
+          if (type instanceof _primitives.Cmd) {
+            switch (type.cmd) {
+              case 'f':
+                entry.free = true;
+                break;
+
+              case 'n':
+                entry.uncompressed = true;
+                break;
+            }
           }
 
           if (!Number.isInteger(entry.offset) || !Number.isInteger(entry.gen) || !(entry.free || entry.uncompressed)) {
@@ -5200,21 +5242,21 @@ var XRef = function XRefClosure() {
       return null;
     },
     fetchIfRef: function XRef_fetchIfRef(obj, suppressEncryption) {
-      if (!(0, _primitives.isRef)(obj)) {
-        return obj;
+      if (obj instanceof _primitives.Ref) {
+        return this.fetch(obj, suppressEncryption);
       }
 
-      return this.fetch(obj, suppressEncryption);
+      return obj;
     },
     fetch: function XRef_fetch(ref, suppressEncryption) {
-      if (!(0, _primitives.isRef)(ref)) {
+      if (!(ref instanceof _primitives.Ref)) {
         throw new Error('ref object is not a reference');
       }
 
-      var num = ref.num;
+      const num = ref.num;
 
-      if (num in this.cache) {
-        var cacheEntry = this.cache[num];
+      if (this._cacheMap.has(num)) {
+        const cacheEntry = this._cacheMap.get(num);
 
         if (cacheEntry instanceof _primitives.Dict && !cacheEntry.objId) {
           cacheEntry.objId = ref.toString();
@@ -5223,10 +5265,12 @@ var XRef = function XRefClosure() {
         return cacheEntry;
       }
 
-      var xrefEntry = this.getEntry(num);
+      let xrefEntry = this.getEntry(num);
 
       if (xrefEntry === null) {
-        return this.cache[num] = null;
+        this._cacheMap.set(num, xrefEntry);
+
+        return xrefEntry;
       }
 
       if (xrefEntry.uncompressed) {
@@ -5270,7 +5314,7 @@ var XRef = function XRefClosure() {
         obj2 = parseInt(obj2, 10);
       }
 
-      if (obj1 !== num || obj2 !== gen || !(0, _primitives.isCmd)(obj3)) {
+      if (obj1 !== num || obj2 !== gen || !(obj3 instanceof _primitives.Cmd)) {
         throw new _core_utils.XRefEntryException(`Bad (uncompressed) XRef entry: ${ref}`);
       }
 
@@ -5293,7 +5337,7 @@ var XRef = function XRefClosure() {
       }
 
       if (!(0, _primitives.isStream)(xrefEntry)) {
-        this.cache[num] = xrefEntry;
+        this._cacheMap.set(num, xrefEntry);
       }
 
       return xrefEntry;
@@ -5350,7 +5394,7 @@ var XRef = function XRefClosure() {
         var entry = this.entries[num];
 
         if (entry && entry.offset === tableOffset && entry.gen === i) {
-          this.cache[num] = entries[i];
+          this._cacheMap.set(num, entries[i]);
         }
       }
 
@@ -5364,11 +5408,11 @@ var XRef = function XRefClosure() {
     },
 
     async fetchIfRefAsync(obj, suppressEncryption) {
-      if (!(0, _primitives.isRef)(obj)) {
-        return obj;
+      if (obj instanceof _primitives.Ref) {
+        return this.fetchAsync(obj, suppressEncryption);
       }
 
-      return this.fetchAsync(obj, suppressEncryption);
+      return obj;
     },
 
     async fetchAsync(ref, suppressEncryption) {
@@ -5848,7 +5892,7 @@ class Parser {
   }
 
   shift() {
-    if ((0, _primitives.isCmd)(this.buf2, 'ID')) {
+    if (this.buf2 instanceof _primitives.Cmd && this.buf2.cmd === 'ID') {
       this.buf1 = this.buf2;
       this.buf2 = null;
     } else {
@@ -5870,7 +5914,7 @@ class Parser {
     }
   }
 
-  getObj(cipherTransform) {
+  getObj(cipherTransform = null) {
     const buf1 = this.buf1;
     this.shift();
 
@@ -5938,27 +5982,23 @@ class Parser {
     }
 
     if (Number.isInteger(buf1)) {
-      const num = buf1;
-
       if (Number.isInteger(this.buf1) && (0, _primitives.isCmd)(this.buf2, 'R')) {
-        const ref = _primitives.Ref.get(num, this.buf1);
+        const ref = _primitives.Ref.get(buf1, this.buf1);
 
         this.shift();
         this.shift();
         return ref;
       }
 
-      return num;
+      return buf1;
     }
 
-    if ((0, _util.isString)(buf1)) {
-      let str = buf1;
-
+    if (typeof buf1 === 'string') {
       if (cipherTransform) {
-        str = cipherTransform.decryptString(str);
+        return cipherTransform.decryptString(buf1);
       }
 
-      return str;
+      return buf1;
     }
 
     return buf1;
@@ -6492,7 +6532,7 @@ class Parser {
       }
 
       if (name === 'RunLengthDecode' || name === 'RL') {
-        xrefStreamStats[_util.StreamType.RL] = true;
+        xrefStreamStats[_util.StreamType.RLX] = true;
         return new _stream.RunLengthStream(stream, maybeLength);
       }
 
@@ -7161,6 +7201,18 @@ var Stream = function StreamClosure() {
       return bytes;
     },
 
+    getByteRange(begin, end) {
+      if (begin < 0) {
+        begin = 0;
+      }
+
+      if (end > this.end) {
+        end = this.end;
+      }
+
+      return this.bytes.subarray(begin, end);
+    },
+
     skip: function Stream_skip(n) {
       if (!n) {
         n = 1;
@@ -7321,6 +7373,11 @@ var DecodeStream = function DecodeStreamClosure() {
 
       return new Stream(this.buffer, start, length, dict);
     },
+
+    getByteRange(begin, end) {
+      (0, _util.unreachable)('Should not call DecodeStream.getByteRange');
+    },
+
     skip: function DecodeStream_skip(n) {
       if (!n) {
         n = 1;
@@ -12317,7 +12374,9 @@ var JpegImage = function JpegImageClosure() {
       bitsCount = 0;
       fileMarker = findNextFileMarker(data, offset);
 
-      if (fileMarker && fileMarker.invalid) {
+      if (!fileMarker) {
+        break;
+      } else if (fileMarker.invalid) {
         (0, _util.warn)('decodeScan - unexpected MCU data, current marker is: ' + fileMarker.invalid);
         offset = fileMarker.offset;
       }
@@ -12325,7 +12384,7 @@ var JpegImage = function JpegImageClosure() {
       var marker = fileMarker && fileMarker.marker;
 
       if (!marker || marker <= 0xFF00) {
-        throw new JpegError('marker was not found');
+        throw new JpegError('decodeScan - a valid marker was not found.');
       }
 
       if (marker >= 0xFFD0 && marker <= 0xFFD7) {
@@ -12842,7 +12901,12 @@ var JpegImage = function JpegImageClosure() {
               break;
             }
 
-            throw new JpegError('unknown marker ' + fileMarker.toString(16));
+            if (offset > data.length - 2) {
+              (0, _util.warn)('JpegImage.parse - reached the end of the image data ' + 'without finding an EOI marker (0xFFD9).');
+              break markerLoop;
+            }
+
+            throw new JpegError('JpegImage.parse - unknown marker: ' + fileMarker.toString(16));
         }
 
         fileMarker = readUint16();
@@ -18101,6 +18165,7 @@ const LabCS = function LabCSClosure() {
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
+exports.getQuadPoints = getQuadPoints;
 exports.MarkupAnnotation = exports.AnnotationFactory = exports.AnnotationBorderStyle = exports.Annotation = void 0;
 
 var _util = __w_pdfjs_require__(2);
@@ -18227,6 +18292,40 @@ class AnnotationFactory {
 }
 
 exports.AnnotationFactory = AnnotationFactory;
+
+function getQuadPoints(dict, rect) {
+  if (!dict.has('QuadPoints')) {
+    return null;
+  }
+
+  const quadPoints = dict.getArray('QuadPoints');
+
+  if (!Array.isArray(quadPoints) || quadPoints.length % 8 > 0) {
+    return null;
+  }
+
+  const quadPointsLists = [];
+
+  for (let i = 0, ii = quadPoints.length / 8; i < ii; i++) {
+    quadPointsLists.push([]);
+
+    for (let j = i * 8, jj = i * 8 + 8; j < jj; j += 2) {
+      const x = quadPoints[j];
+      const y = quadPoints[j + 1];
+
+      if (x < rect[0] || x > rect[2] || y < rect[1] || y > rect[3]) {
+        return null;
+      }
+
+      quadPointsLists[i].push({
+        x,
+        y
+      });
+    }
+  }
+
+  return quadPointsLists;
+}
 
 function getTransformMatrix(rect, bbox, matrix) {
   let bounds = _util.Util.getAxialAlignedBoundingBox(bbox, matrix);
@@ -18571,14 +18670,51 @@ class MarkupAnnotation extends Annotation {
     super(parameters);
     const dict = parameters.dict;
 
-    if (!dict.has('C')) {
-      this.data.color = null;
+    if (dict.has('IRT')) {
+      const rawIRT = dict.getRaw('IRT');
+      this.data.inReplyTo = (0, _primitives.isRef)(rawIRT) ? rawIRT.toString() : null;
+      const rt = dict.get('RT');
+      this.data.replyType = (0, _primitives.isName)(rt) ? rt.name : _util.AnnotationReplyType.REPLY;
     }
 
-    this.setCreationDate(dict.get('CreationDate'));
-    this.data.creationDate = this.creationDate;
-    this.data.hasPopup = dict.has('Popup');
-    this.data.title = (0, _util.stringToPDFString)(dict.get('T') || '');
+    if (this.data.replyType === _util.AnnotationReplyType.GROUP) {
+      const parent = dict.get('IRT');
+      this.data.title = (0, _util.stringToPDFString)(parent.get('T') || '');
+      this.setContents(parent.get('Contents'));
+      this.data.contents = this.contents;
+
+      if (!parent.has('CreationDate')) {
+        this.data.creationDate = null;
+      } else {
+        this.setCreationDate(parent.get('CreationDate'));
+        this.data.creationDate = this.creationDate;
+      }
+
+      if (!parent.has('M')) {
+        this.data.modificationDate = null;
+      } else {
+        this.setModificationDate(parent.get('M'));
+        this.data.modificationDate = this.modificationDate;
+      }
+
+      this.data.hasPopup = parent.has('Popup');
+
+      if (!parent.has('C')) {
+        this.data.color = null;
+      } else {
+        this.setColor(parent.getArray('C'));
+        this.data.color = this.color;
+      }
+    } else {
+      this.data.title = (0, _util.stringToPDFString)(dict.get('T') || '');
+      this.setCreationDate(dict.get('CreationDate'));
+      this.data.creationDate = this.creationDate;
+      this.data.hasPopup = dict.has('Popup');
+
+      if (!dict.has('C')) {
+        this.data.color = null;
+      }
+    }
   }
 
   setCreationDate(creationDate) {
@@ -18862,6 +18998,7 @@ class TextAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     const DEFAULT_ICON_SIZE = 22;
     super(parameters);
+    const dict = parameters.dict;
     this.data.annotationType = _util.AnnotationType.TEXT;
 
     if (this.data.hasAppearance) {
@@ -18869,7 +19006,15 @@ class TextAnnotation extends MarkupAnnotation {
     } else {
       this.data.rect[1] = this.data.rect[3] - DEFAULT_ICON_SIZE;
       this.data.rect[2] = this.data.rect[0] + DEFAULT_ICON_SIZE;
-      this.data.name = parameters.dict.has('Name') ? parameters.dict.get('Name').name : 'Note';
+      this.data.name = dict.has('Name') ? dict.get('Name').name : 'Note';
+    }
+
+    if (dict.has('State')) {
+      this.data.state = dict.get('State') || null;
+      this.data.stateModel = dict.get('StateModel') || null;
+    } else {
+      this.data.state = null;
+      this.data.stateModel = null;
     }
   }
 
@@ -18879,6 +19024,11 @@ class LinkAnnotation extends Annotation {
   constructor(params) {
     super(params);
     this.data.annotationType = _util.AnnotationType.LINK;
+    const quadPoints = getQuadPoints(params.dict, this.rectangle);
+
+    if (quadPoints) {
+      this.data.quadPoints = quadPoints;
+    }
 
     _obj.Catalog.parseDestDictionary({
       destDict: params.dict,
@@ -18903,9 +19053,13 @@ class PopupAnnotation extends Annotation {
 
     let parentSubtype = parentItem.get('Subtype');
     this.data.parentType = (0, _primitives.isName)(parentSubtype) ? parentSubtype.name : null;
-    this.data.parentId = dict.getRaw('Parent').toString();
-    this.data.title = (0, _util.stringToPDFString)(parentItem.get('T') || '');
-    this.data.contents = (0, _util.stringToPDFString)(parentItem.get('Contents') || '');
+    const rawParent = dict.getRaw('Parent');
+    this.data.parentId = (0, _primitives.isRef)(rawParent) ? rawParent.toString() : null;
+    const rt = parentItem.get('RT');
+
+    if ((0, _primitives.isName)(rt, _util.AnnotationReplyType.GROUP)) {
+      parentItem = parentItem.get('IRT');
+    }
 
     if (!parentItem.has('M')) {
       this.data.modificationDate = null;
@@ -18928,6 +19082,9 @@ class PopupAnnotation extends Annotation {
         this.setFlags(parentFlags);
       }
     }
+
+    this.data.title = (0, _util.stringToPDFString)(parentItem.get('T') || '');
+    this.data.contents = (0, _util.stringToPDFString)(parentItem.get('Contents') || '');
   }
 
 }
@@ -19027,6 +19184,11 @@ class HighlightAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
     this.data.annotationType = _util.AnnotationType.HIGHLIGHT;
+    const quadPoints = getQuadPoints(parameters.dict, this.rectangle);
+
+    if (quadPoints) {
+      this.data.quadPoints = quadPoints;
+    }
   }
 
 }
@@ -19035,6 +19197,11 @@ class UnderlineAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
     this.data.annotationType = _util.AnnotationType.UNDERLINE;
+    const quadPoints = getQuadPoints(parameters.dict, this.rectangle);
+
+    if (quadPoints) {
+      this.data.quadPoints = quadPoints;
+    }
   }
 
 }
@@ -19043,6 +19210,11 @@ class SquigglyAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
     this.data.annotationType = _util.AnnotationType.SQUIGGLY;
+    const quadPoints = getQuadPoints(parameters.dict, this.rectangle);
+
+    if (quadPoints) {
+      this.data.quadPoints = quadPoints;
+    }
   }
 
 }
@@ -19051,6 +19223,11 @@ class StrikeOutAnnotation extends MarkupAnnotation {
   constructor(parameters) {
     super(parameters);
     this.data.annotationType = _util.AnnotationType.STRIKEOUT;
+    const quadPoints = getQuadPoints(parameters.dict, this.rectangle);
+
+    if (quadPoints) {
+      this.data.quadPoints = quadPoints;
+    }
   }
 
 }
@@ -20028,7 +20205,13 @@ var PartialEvaluator = function PartialEvaluatorClosure() {
           groupOptions.knockout = group.get('K') || false;
 
           if (group.has('CS')) {
-            colorSpace = _colorspace.ColorSpace.parse(group.get('CS'), this.xref, resources, this.pdfFunctionFactory);
+            colorSpace = group.get('CS');
+
+            if (colorSpace) {
+              colorSpace = _colorspace.ColorSpace.parse(colorSpace, this.xref, resources, this.pdfFunctionFactory);
+            } else {
+              (0, _util.warn)('buildFormXObject - invalid/non-existent Group /CS entry: ' + group.getRaw('CS'));
+            }
           }
         }
 
@@ -22921,7 +23104,7 @@ var EvaluatorPreprocessor = function EvaluatorPreprocessorClosure() {
       while (true) {
         var obj = this.parser.getObj();
 
-        if ((0, _primitives.isCmd)(obj)) {
+        if (obj instanceof _primitives.Cmd) {
           var cmd = obj.cmd;
           var opSpec = this.opMap[cmd];
 
@@ -22978,7 +23161,7 @@ var EvaluatorPreprocessor = function EvaluatorPreprocessorClosure() {
           return true;
         }
 
-        if ((0, _primitives.isEOF)(obj)) {
+        if (obj === _primitives.EOF) {
           return false;
         }
 
@@ -30770,6 +30953,7 @@ var getGlyphsUnicode = getLookupTableFactory(function (t) {
  t['feicoptic'] = 0x03E5;
  t['female'] = 0x2640;
  t['ff'] = 0xFB00;
+ t['f_f'] = 0xFB00;
  t['ffi'] = 0xFB03;
  t['ffl'] = 0xFB04;
  t['fi'] = 0xFB01;
@@ -37950,6 +38134,14 @@ Shadings.RadialAxial = function RadialAxialClosure() {
     var cs = dict.get('ColorSpace', 'CS');
     cs = _colorspace.ColorSpace.parse(cs, xref, res, pdfFunctionFactory);
     this.cs = cs;
+    const bbox = dict.getArray('BBox');
+
+    if (Array.isArray(bbox) && bbox.length === 4) {
+      this.bbox = _util.Util.normalizeRect(bbox);
+    } else {
+      this.bbox = null;
+    }
+
     var t0 = 0.0,
         t1 = 1.0;
 
@@ -38065,7 +38257,7 @@ Shadings.RadialAxial = function RadialAxialClosure() {
         }
       }
 
-      return ['RadialAxial', type, this.colorStops, p0, p1, r0, r1];
+      return ['RadialAxial', type, this.bbox, this.colorStops, p0, p1, r0, r1];
     }
   };
   return RadialAxial;
@@ -38682,7 +38874,14 @@ Shadings.Mesh = function MeshClosure() {
     this.matrix = matrix;
     this.shadingType = dict.get('ShadingType');
     this.type = 'Pattern';
-    this.bbox = dict.getArray('BBox');
+    const bbox = dict.getArray('BBox');
+
+    if (Array.isArray(bbox) && bbox.length === 4) {
+      this.bbox = _util.Util.normalizeRect(bbox);
+    } else {
+      this.bbox = null;
+    }
+
     var cs = dict.get('ColorSpace', 'CS');
     cs = _colorspace.ColorSpace.parse(cs, xref, res, pdfFunctionFactory);
     this.cs = cs;
@@ -44578,16 +44777,12 @@ function makeReasonSerializable(reason) {
   return new _util.UnknownErrorException(reason.message, reason.toString());
 }
 
-function resolveOrReject(capability, success, reason) {
-  if (success) {
+function resolveOrReject(capability, data) {
+  if (data.success) {
     capability.resolve();
   } else {
-    capability.reject(reason);
+    capability.reject(wrapReason(data.reason));
   }
-}
-
-function finalize(promise) {
-  return Promise.resolve(promise).catch(() => {});
 }
 
 function MessageHandler(sourceName, targetName, comObj) {
@@ -44874,7 +45069,7 @@ MessageHandler.prototype = {
 
     let deleteStreamController = () => {
       Promise.all([this.streamControllers[data.streamId].startCall, this.streamControllers[data.streamId].pullCall, this.streamControllers[data.streamId].cancelCall].map(function (capability) {
-        return capability && finalize(capability.promise);
+        return capability && capability.promise.catch(function () {});
       })).then(() => {
         delete this.streamControllers[data.streamId];
       });
@@ -44882,11 +45077,11 @@ MessageHandler.prototype = {
 
     switch (data.stream) {
       case 'start_complete':
-        resolveOrReject(this.streamControllers[data.streamId].startCall, data.success, wrapReason(data.reason));
+        resolveOrReject(this.streamControllers[data.streamId].startCall, data);
         break;
 
       case 'pull_complete':
-        resolveOrReject(this.streamControllers[data.streamId].pullCall, data.success, wrapReason(data.reason));
+        resolveOrReject(this.streamControllers[data.streamId].pullCall, data);
         break;
 
       case 'pull':
@@ -44945,7 +45140,7 @@ MessageHandler.prototype = {
         break;
 
       case 'cancel_complete':
-        resolveOrReject(this.streamControllers[data.streamId].cancelCall, data.success, wrapReason(data.reason));
+        resolveOrReject(this.streamControllers[data.streamId].cancelCall, data);
         deleteStreamController();
         break;
 

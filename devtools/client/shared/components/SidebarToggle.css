@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -8,12 +7,12 @@
 }
 
 .sidebar-toggle::before,
-.sidebar-toggle.pane-collapsed:dir(rtl)::before {
+.sidebar-toggle.pane-collapsed:-moz-locale-dir(rtl)::before {
   background-image: url(chrome://devtools/skin/images/pane-collapse.svg);
 }
 
 .sidebar-toggle.pane-collapsed::before,
-.sidebar-toggle:dir(rtl)::before {
+.sidebar-toggle:-moz-locale-dir(rtl)::before {
   background-image: url(chrome://devtools/skin/images/pane-expand.svg);
 }
 

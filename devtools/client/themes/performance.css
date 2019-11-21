@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -365,7 +364,7 @@
 
 .call-tree-item .call-tree-cell,
 .call-tree-item .call-tree-cell[type=function] description {
-  -moz-user-select: text;
+  user-select: text;
   /* so that optimizations view doesn't break the lines in call tree */
   white-space: nowrap;
 }

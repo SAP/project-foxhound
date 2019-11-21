@@ -161,6 +161,29 @@ impl From<FilterOp> for Filter {
     }
 }
 
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+pub enum Swizzle {
+    Rgba,
+    Bgra,
+}
+
+impl Default for Swizzle {
+    fn default() -> Self {
+        Swizzle::Rgba
+    }
+}
+
+/// Swizzle settings of the texture cache.
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+pub struct SwizzleSettings {
+    /// Swizzle required on sampling a texture with BGRA8 format.
+    pub bgra8_sampling_swizzle: Swizzle,
+}
+
 /// An ID for a texture that is owned by the `texture_cache` module.
 ///
 /// This can include atlases or standalone textures allocated via the texture
@@ -210,7 +233,7 @@ pub enum TextureSource {
     /// Equivalent to `None`, allowing us to avoid using `Option`s everywhere.
     Invalid,
     /// An entry in the texture cache.
-    TextureCache(CacheTextureId),
+    TextureCache(CacheTextureId, Swizzle),
     /// An external image texture, mananged by the embedding.
     External(ExternalImageData),
     /// The alpha target of the immediately-preceding pass.
@@ -220,7 +243,7 @@ pub enum TextureSource {
     /// A render target from an earlier pass. Unlike the immediately-preceding
     /// passes, these are not made available automatically, but are instead
     /// opt-in by the `RenderTask` (see `mark_for_saving()`).
-    RenderTaskCache(SavedTargetIndex),
+    RenderTaskCache(SavedTargetIndex, Swizzle),
 }
 
 // See gpu_types.rs where we declare the number of possible documents and
@@ -293,6 +316,7 @@ pub struct TextureCacheUpdate {
     pub stride: Option<i32>,
     pub offset: i32,
     pub layer_index: i32,
+    pub format_override: Option<ImageFormat>,
     pub source: TextureUpdateSource,
 }
 
@@ -350,10 +374,11 @@ impl TextureUpdateList {
         self.push_update(TextureCacheUpdate {
             id,
             rect,
-            source: TextureUpdateSource::DebugClear,
             stride: None,
             offset: 0,
             layer_index: layer_index as i32,
+            format_override: None,
+            source: TextureUpdateSource::DebugClear,
         });
     }
 

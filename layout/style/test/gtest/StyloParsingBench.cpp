@@ -12,8 +12,9 @@
 #include "mozilla/Encoding.h"
 #include "mozilla/NullPrincipalURI.h"
 #include "mozilla/css/SheetParsingMode.h"
-#include "mozilla/net/ReferrerPolicy.h"
+#include "ReferrerInfo.h"
 #include "nsCSSValue.h"
+#include "ReferrerInfo.h"
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -33,9 +34,10 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
   cssStr.Append(css);
   ASSERT_EQ(Encoding::UTF8ValidUpTo(css), css.Length());
 
-  RefPtr<URLExtraData> data = new URLExtraData(
-      NullPrincipalURI::Create(), nullptr,
-      NullPrincipal::CreateWithoutOriginAttributes(), mozilla::net::RP_Unset);
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
+  RefPtr<URLExtraData> data =
+      new URLExtraData(NullPrincipalURI::Create(), referrerInfo.forget(),
+                       NullPrincipal::CreateWithoutOriginAttributes());
   for (int i = 0; i < PARSING_REPETITIONS; i++) {
     RefPtr<RawServoStyleSheetContents> stylesheet =
         Servo_StyleSheet_FromUTF8Bytes(
@@ -48,9 +50,10 @@ static void ServoParsingBench(const StyleUseCounters* aCounters) {
 static void ServoSetPropertyByIdBench(const nsACString& css) {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
-  RefPtr<URLExtraData> data = new URLExtraData(
-      NullPrincipalURI::Create(), nullptr,
-      NullPrincipal::CreateWithoutOriginAttributes(), mozilla::net::RP_Unset);
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
+  RefPtr<URLExtraData> data =
+      new URLExtraData(NullPrincipalURI::Create(), referrerInfo.forget(),
+                       NullPrincipal::CreateWithoutOriginAttributes());
   ASSERT_TRUE(IsUTF8(css));
 
   for (int i = 0; i < SETPROPERTY_REPETITIONS; i++) {
@@ -64,9 +67,11 @@ static void ServoSetPropertyByIdBench(const nsACString& css) {
 static void ServoGetPropertyValueById() {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
-  RefPtr<URLExtraData> data = new URLExtraData(
-      NullPrincipalURI::Create(), nullptr,
-      NullPrincipal::CreateWithoutOriginAttributes(), mozilla::net::RP_Unset);
+
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
+  RefPtr<URLExtraData> data =
+      new URLExtraData(NullPrincipalURI::Create(), referrerInfo.forget(),
+                       NullPrincipal::CreateWithoutOriginAttributes());
   NS_NAMED_LITERAL_CSTRING(css_, "10px");
   const nsACString& css = css_;
   Servo_DeclarationBlock_SetPropertyById(

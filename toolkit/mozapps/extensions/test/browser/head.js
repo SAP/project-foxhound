@@ -248,63 +248,22 @@ function run_next_test() {
 }
 
 var get_tooltip_info = async function(addonEl, managerWindow) {
-  if (managerWindow && managerWindow.useHtmlViews) {
-    // Extract from title attribute.
-    const { addon } = addonEl;
-    const name = addon.name;
-    const nameEl = addonEl.querySelector(".addon-name");
+  // Extract from title attribute.
+  const { addon } = addonEl;
+  const name = addon.name;
 
-    let nameWithVersion = nameEl.title;
-    if (addonEl.addon.userDisabled) {
-      // TODO - Bug 1558077: Currently Fluent is clearing the addon title
-      // when the addon is disabled, fixing it requires changes to the
-      // HTML about:addons localized strings, and then remove this
-      // workaround.
-      nameWithVersion = `${name} ${addon.version}`;
-    }
-
-    return {
-      name,
-      version: nameWithVersion.substring(name.length + 1),
-    };
+  let nameWithVersion = addonEl.addonNameEl.title;
+  if (addonEl.addon.userDisabled) {
+    // TODO - Bug 1558077: Currently Fluent is clearing the addon title
+    // when the addon is disabled, fixing it requires changes to the
+    // HTML about:addons localized strings, and then remove this
+    // workaround.
+    nameWithVersion = `${name} ${addon.version}`;
   }
 
-  // Retrieve the tooltip from the XUL about:addons view,
-  // the popup code uses a triggering event's target to set the
-  // document.tooltipNode property.
-  let doc = addonEl.ownerDocument;
-  let nameNode = doc.getAnonymousElementByAttribute(addonEl, "anonid", "name");
-  let event = new doc.ownerGlobal.CustomEvent("TriggerEvent");
-  nameNode.dispatchEvent(event);
-
-  let tooltip = doc.getElementById("addonitem-tooltip");
-
-  let promise = BrowserTestUtils.waitForEvent(tooltip, "popupshown");
-  tooltip.openPopup(nameNode, "after_start", 0, 0, false, false, event);
-  await promise;
-
-  let tiptext = tooltip.label;
-
-  promise = BrowserTestUtils.waitForEvent(tooltip, "popuphidden");
-  tooltip.hidePopup();
-  await promise;
-
-  let expectedName = addonEl.getAttribute("name");
-  is(
-    tiptext.substring(0, expectedName.length),
-    expectedName,
-    "Tooltip should always start with the expected name"
-  );
-
-  if (expectedName.length == tiptext.length) {
-    return {
-      name: tiptext,
-      version: undefined,
-    };
-  }
   return {
-    name: tiptext.substring(0, expectedName.length),
-    version: tiptext.substring(expectedName.length + 1),
+    name,
+    version: nameWithVersion.substring(name.length + 1),
   };
 };
 
@@ -371,28 +330,8 @@ function check_all_in_list(aManager, aIds, aIgnoreExtras) {
 }
 
 function get_addon_element(aManager, aId) {
-  if (aManager.useHtmlViews) {
-    const doc = aManager.getHtmlBrowser().contentDocument;
-    return doc.querySelector(`addon-card[addon-id="${aId}"]`);
-  }
-
-  const doc = aManager.document;
-  const view = get_current_view(aManager);
-  let listid = "addon-list";
-  if (view.id == "updates-view") {
-    listid = "updates-list";
-  }
-  const list = doc.getElementById(listid);
-
-  let node = list.firstChild;
-  while (node) {
-    if (node.value == aId) {
-      return node;
-    }
-    node = node.nextSibling;
-  }
-
-  return null;
+  const doc = aManager.getHtmlBrowser().contentDocument;
+  return doc.querySelector(`addon-card[addon-id="${aId}"]`);
 }
 
 function wait_for_view_load(
@@ -1470,7 +1409,7 @@ MockInstall.prototype = {
 
         this.state = AddonManager.STATE_DOWNLOADED;
         this.callListeners("onDownloadEnded");
-
+      // fall through
       case AddonManager.STATE_DOWNLOADED:
         this.state = AddonManager.STATE_INSTALLING;
         if (!this.callListeners("onInstallStarted")) {
@@ -1721,41 +1660,6 @@ function assertAboutAddonsTelemetryEvents(events, filters = {}) {
         : ABOUT_ADDONS_METHODS.has(actual),
     object: "aboutAddons",
   });
-}
-
-function assertTelemetryMatches(events, { filterMethods } = {}) {
-  let snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-
-  if (events.length == 0) {
-    ok(
-      !snapshot.parent || snapshot.parent.length == 0,
-      "There are no telemetry events"
-    );
-    return;
-  }
-
-  // Make sure we got some data.
-  ok(
-    snapshot.parent && snapshot.parent.length > 0,
-    "Got parent telemetry events in the snapshot"
-  );
-
-  // Only look at the related events after stripping the timestamp and category (and optionally filter
-  // out the events related to methods that we are not interested in).
-  let relatedEvents = snapshot.parent
-    .filter(([timestamp, category, method]) => {
-      return (
-        category == "addonsManager" &&
-        (filterMethods ? filterMethods.includes(method) : true)
-      );
-    })
-    .map(relatedEvent => relatedEvent.slice(2, 6));
-
-  // Events are now [method, object, value, extra] as expected.
-  Assert.deepEqual(relatedEvents, events, "The events are recorded correctly");
 }
 
 /* HTML view helpers */

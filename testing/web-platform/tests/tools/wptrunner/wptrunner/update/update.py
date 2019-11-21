@@ -11,8 +11,7 @@ from .state import SavedState, UnsavedState
 
 def setup_paths(sync_path):
     sys.path.insert(0, os.path.abspath(sync_path))
-    from tools import localpaths  # noqa: flake8
-
+    from tools import localpaths  # noqa: F401
 
 class LoadConfig(Step):
     """Step for loading configuration from the ini file and kwargs."""
@@ -87,7 +86,9 @@ class UpdateMetadata(Step):
         kwargs = state.kwargs
         with state.push(["local_tree", "sync_tree", "paths", "serve_root"]):
             state.run_log = kwargs["run_log"]
-            state.stability = kwargs["stability"]
+            state.disable_intermittent = kwargs["disable_intermittent"]
+            state.update_intermittent = kwargs["update_intermittent"]
+            state.remove_intermittent = kwargs["remove_intermittent"]
             state.patch = kwargs["patch"]
             state.suite_name = kwargs["suite_name"]
             state.product = kwargs["product"]

@@ -45,6 +45,7 @@
 #include "SVGTextFrame.h"
 #include "nsTextFrame.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_svg.h"
 #include "mozilla/SVGContextPaint.h"
 #include "mozilla/Unused.h"
 #include "mozilla/gfx/2D.h"
@@ -62,19 +63,17 @@ using namespace mozilla::dom::SVGUnitTypes_Binding;
 using namespace mozilla::gfx;
 using namespace mozilla::image;
 
-static bool sSVGDisplayListHitTestingEnabled;
-static bool sSVGDisplayListPaintingEnabled;
-static bool sSVGNewGetBBoxEnabled;
-
 bool NS_SVGDisplayListHitTestingEnabled() {
-  return sSVGDisplayListHitTestingEnabled;
+  return StaticPrefs::svg_display_lists_hit_testing_enabled();
 }
 
 bool NS_SVGDisplayListPaintingEnabled() {
-  return sSVGDisplayListPaintingEnabled;
+  return StaticPrefs::svg_display_lists_painting_enabled();
 }
 
-bool NS_SVGNewGetBBoxEnabled() { return sSVGNewGetBBoxEnabled; }
+bool NS_SVGNewGetBBoxEnabled() {
+  return StaticPrefs::svg_new_getBBox_enabled();
+}
 
 // we only take the address of this:
 static mozilla::gfx::UserDataKey sSVGAutoRenderStateKey;
@@ -110,17 +109,6 @@ bool SVGAutoRenderState::IsPaintingToWindow(DrawTarget* aDrawTarget) {
     return static_cast<SVGAutoRenderState*>(state)->mPaintingToWindow;
   }
   return false;
-}
-
-void nsSVGUtils::Init() {
-  Preferences::AddBoolVarCache(&sSVGDisplayListHitTestingEnabled,
-                               "svg.display-lists.hit-testing.enabled");
-
-  Preferences::AddBoolVarCache(&sSVGDisplayListPaintingEnabled,
-                               "svg.display-lists.painting.enabled");
-
-  Preferences::AddBoolVarCache(&sSVGNewGetBBoxEnabled,
-                               "svg.new-getBBox.enabled");
 }
 
 nsRect nsSVGUtils::GetPostFilterVisualOverflowRect(
@@ -939,38 +927,35 @@ gfxRect nsSVGUtils::GetClipRectForFrame(nsIFrame* aFrame, float aX, float aY,
   const nsStyleDisplay* disp = aFrame->StyleDisplay();
   const nsStyleEffects* effects = aFrame->StyleEffects();
 
-  if (!(effects->mClipFlags & NS_STYLE_CLIP_RECT)) {
-    NS_ASSERTION(effects->mClipFlags == NS_STYLE_CLIP_AUTO,
-                 "We don't know about this type of clip.");
+  bool clipApplies =
+      disp->mOverflowX == StyleOverflow::Hidden ||
+      disp->mOverflowY == StyleOverflow::Hidden;
+
+  if (!clipApplies || effects->mClip.IsAuto()) {
     return gfxRect(aX, aY, aWidth, aHeight);
   }
 
-  if (disp->mOverflowX == StyleOverflow::Hidden ||
-      disp->mOverflowY == StyleOverflow::Hidden) {
-    nsIntRect clipPxRect = effects->mClip.ToOutsidePixels(
-        aFrame->PresContext()->AppUnitsPerDevPixel());
-    gfxRect clipRect = gfxRect(clipPxRect.x, clipPxRect.y, clipPxRect.width,
-                               clipPxRect.height);
-
-    if (NS_STYLE_CLIP_RIGHT_AUTO & effects->mClipFlags) {
-      clipRect.width = aWidth - clipRect.X();
-    }
-    if (NS_STYLE_CLIP_BOTTOM_AUTO & effects->mClipFlags) {
-      clipRect.height = aHeight - clipRect.Y();
-    }
-
-    if (disp->mOverflowX != StyleOverflow::Hidden) {
-      clipRect.x = aX;
-      clipRect.width = aWidth;
-    }
-    if (disp->mOverflowY != StyleOverflow::Hidden) {
-      clipRect.y = aY;
-      clipRect.height = aHeight;
-    }
-
-    return clipRect;
+  auto& rect = effects->mClip.AsRect();
+  nsRect coordClipRect = rect.ToLayoutRect();
+  nsIntRect clipPxRect = coordClipRect.ToOutsidePixels(
+      aFrame->PresContext()->AppUnitsPerDevPixel());
+  gfxRect clipRect = gfxRect(clipPxRect.x, clipPxRect.y, clipPxRect.width,
+                             clipPxRect.height);
+  if (rect.right.IsAuto()) {
+    clipRect.width = aWidth - clipRect.X();
   }
-  return gfxRect(aX, aY, aWidth, aHeight);
+  if (rect.bottom.IsAuto()) {
+    clipRect.height = aHeight - clipRect.Y();
+  }
+  if (disp->mOverflowX != StyleOverflow::Hidden) {
+    clipRect.x = aX;
+    clipRect.width = aWidth;
+  }
+  if (disp->mOverflowY != StyleOverflow::Hidden) {
+    clipRect.y = aY;
+    clipRect.height = aHeight;
+  }
+  return clipRect;
 }
 
 void nsSVGUtils::SetClipRect(gfxContext* aContext, const gfxMatrix& aCTM,
@@ -1517,18 +1502,11 @@ float nsSVGUtils::GetOpacity(nsStyleSVGOpacitySource aOpacityType,
     case eStyleSVGOpacitySource_ContextFillOpacity:
       if (aContextPaint) {
         opacity = aContextPaint->GetFillOpacity();
-      } else {
-        NS_WARNING(
-            "Content used context-fill-opacity when not in a context element");
       }
       break;
     case eStyleSVGOpacitySource_ContextStrokeOpacity:
       if (aContextPaint) {
         opacity = aContextPaint->GetStrokeOpacity();
-      } else {
-        NS_WARNING(
-            "Content used context-stroke-opacity when not in a context "
-            "element");
       }
       break;
     default:

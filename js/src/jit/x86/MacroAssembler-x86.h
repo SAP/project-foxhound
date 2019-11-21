@@ -812,11 +812,6 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
   inline void unboxValue(const ValueOperand& src, AnyRegister dest,
                          JSValueType type);
-  void unboxPrivate(const ValueOperand& src, Register dest) {
-    if (src.payloadReg() != dest) {
-      movl(src.payloadReg(), dest);
-    }
-  }
 
   // See comment in MacroAssembler-x64.h.
   void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
@@ -889,8 +884,7 @@ class MacroAssemblerX86 : public MacroAssemblerX86Shared {
   }
   Condition testBigIntTruthy(bool truthy, const ValueOperand& value) {
     Register bi = value.payloadReg();
-    cmpPtr(Operand(bi, BigInt::offsetOfLengthSignAndReservedBits()),
-           ImmWord(0));
+    cmp32(Operand(bi, BigInt::offsetOfDigitLength()), Imm32(0));
     return truthy ? Assembler::NotEqual : Assembler::Equal;
   }
 

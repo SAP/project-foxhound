@@ -242,6 +242,9 @@ ifeq ($(CPU_ARCH),arm)
     DEFINES += -DSHA_NO_LONG_LONG # avoid 64-bit arithmetic in SHA512
     MPI_SRCS += mpi_arm.c
 endif
+ifeq ($(CPU_ARCH),aarch64)
+    EXTRA_SRCS += gcm-aarch64.c
+endif
 ifeq ($(CPU_ARCH),ppc)
 ifdef USE_64
     DEFINES += -DNSS_NO_INIT_SUPPORT
@@ -495,7 +498,7 @@ endif # target == SunO
 ifdef USE_64
 # no __int128 at least up to lcc 1.23 (pretending to be gcc5)
 # NB: CC_NAME is not defined here
-ifneq ($(shell $(CC) -? 2>&1 >/dev/null | sed -e 's/:.*//;1q'),lcc)
+ifneq ($(shell $(CC) -? 2>&1 >/dev/null </dev/null | sed -e 's/:.*//;1q'),lcc)
     ifdef CC_IS_CLANG
             HAVE_INT128_SUPPORT = 1
             DEFINES += -DHAVE_INT128_SUPPORT
@@ -756,4 +759,8 @@ ifdef INTEL_GCM_CLANG_CL
 # clang-cl needs -mssse3
 #
 $(OBJDIR)/$(PROG_PREFIX)intel-gcm-wrap$(OBJ_SUFFIX): CFLAGS += -mssse3
+endif
+
+ifeq ($(CPU_ARCH),aarch64)
+$(OBJDIR)/$(PROG_PREFIX)gcm-aarch64$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
 endif

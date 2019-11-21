@@ -63,7 +63,8 @@ RenderCompositorEGL::~RenderCompositorEGL() {
   DestroyEGLSurface();
 }
 
-bool RenderCompositorEGL::BeginFrame() {
+bool RenderCompositorEGL::BeginFrame(layers::NativeLayer* aNativeLayer) {
+  MOZ_RELEASE_ASSERT(!aNativeLayer, "Unexpected native layer on this platform");
 #ifdef MOZ_WAYLAND
   bool newSurface =
       mWidget->AsX11() && mWidget->AsX11()->WaylandRequestsUpdatingEGLSurface();
@@ -72,6 +73,14 @@ bool RenderCompositorEGL::BeginFrame() {
     // swap interval after MakeCurrent() has been called.
     DestroyEGLSurface();
     mEGLSurface = CreateEGLSurface();
+    if (mEGLSurface == EGL_NO_SURFACE) {
+      RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
+    }
+  }
+  if (mEGLSurface == EGL_NO_SURFACE) {
+    gfxCriticalNote
+        << "We don't have EGLSurface to draw into. Called too early?";
+    return false;
   }
 #endif
   if (!MakeCurrent()) {
@@ -105,8 +114,6 @@ void RenderCompositorEGL::EndFrame() {
     gl()->SwapBuffers();
   }
 }
-
-void RenderCompositorEGL::WaitForGPU() {}
 
 void RenderCompositorEGL::Pause() {
 #ifdef MOZ_WIDGET_ANDROID

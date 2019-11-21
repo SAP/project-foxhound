@@ -230,6 +230,10 @@ already_AddRefed<TextureHost> TextureHost::Create(
       MOZ_CRASH("GFX: Unsupported Surface type host");
   }
 
+  if (!result) {
+    gfxCriticalNote << "TextureHost creation failure type=" << aDesc.type();
+  }
+
   if (result && WrapWithWebRenderTextureHost(aDeallocator, aBackend, aFlags)) {
     MOZ_ASSERT(aExternalImageId.isSome());
     result =
@@ -624,7 +628,8 @@ void BufferTextureHost::PushDisplayItems(
     aBuilder.PushYCbCrPlanarImage(
         aBounds, aClip, true, aImageKeys[0], aImageKeys[1], aImageKeys[2],
         wr::ToWrColorDepth(desc.colorDepth()),
-        wr::ToWrYuvColorSpace(desc.yUVColorSpace()), aFilter);
+        wr::ToWrYuvColorSpace(desc.yUVColorSpace()),
+        wr::ToWrColorRange(desc.colorRange()), aFilter);
   }
 }
 
@@ -889,6 +894,14 @@ gfx::ColorDepth BufferTextureHost::GetColorDepth() const {
     return desc.colorDepth();
   }
   return gfx::ColorDepth::COLOR_8;
+}
+
+gfx::ColorRange BufferTextureHost::GetColorRange() const {
+  if (mFormat == gfx::SurfaceFormat::YUV) {
+    const YCbCrDescriptor& desc = mDescriptor.get_YCbCrDescriptor();
+    return desc.colorRange();
+  }
+  return TextureHost::GetColorRange();
 }
 
 bool BufferTextureHost::UploadIfNeeded() {

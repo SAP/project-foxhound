@@ -901,6 +901,16 @@ class Accessible : public nsISupports {
   }
 
   /**
+   * Return true if native markup has a numeric value.
+   */
+  bool NativeHasNumericValue() const;
+
+  /**
+   * Return true if ARIA specifies support for a numeric value.
+   */
+  bool ARIAHasNumericValue() const;
+
+  /**
    * Return true if the accessible has a numeric value.
    */
   bool HasNumericValue() const;
@@ -925,12 +935,6 @@ class Accessible : public nsISupports {
     else
       mStateFlags &= ~eRelocated;
   }
-
-  /**
-   * Return true if the accessible doesn't allow accessible children from XBL
-   * anonymous subtree.
-   */
-  bool NoXBLKids() const { return mStateFlags & eNoXBLKids; }
 
   /**
    * Return true if the accessible allows accessible children from subtree of
@@ -1037,11 +1041,10 @@ class Accessible : public nsISupports {
     eKidsMutating = 1 << 6,      // subtree is being mutated
     eIgnoreDOMUIEvent = 1 << 7,  // don't process DOM UI events for a11y events
     eRelocated = 1 << 8,         // accessible was moved in tree
-    eNoXBLKids = 1 << 9,         // accessible don't allows XBL children
-    eNoKidsFromDOM = 1 << 10,    // accessible doesn't allow children from DOM
-    eHasTextKids = 1 << 11,      // accessible have a text leaf in children
+    eNoKidsFromDOM = 1 << 9,    // accessible doesn't allow children from DOM
+    eHasTextKids = 1 << 10,      // accessible have a text leaf in children
 
-    eLastStateFlag = eNoKidsFromDOM
+    eLastStateFlag = eHasTextKids
   };
 
   /**
@@ -1145,7 +1148,7 @@ class Accessible : public nsISupports {
   nsTArray<Accessible*> mChildren;
   int32_t mIndexInParent;
 
-  static const uint8_t kStateFlagsBits = 12;
+  static const uint8_t kStateFlagsBits = 11;
   static const uint8_t kContextFlagsBits = 2;
   static const uint8_t kTypeBits = 6;
   static const uint8_t kGenericTypesBits = 16;

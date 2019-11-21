@@ -47,8 +47,11 @@ class GeckoMVMContext : public MVMContext {
       const override;
   Maybe<LayoutDeviceIntSize> GetContentViewerSize() const override;
   bool AllowZoomingForDocument() const override;
+  bool IsInReaderMode() const override;
+  bool IsDocumentLoading() const override;
 
-  void SetResolutionAndScaleTo(float aResolution) override;
+  void SetResolutionAndScaleTo(float aResolution,
+                               ResolutionChangeOrigin aOrigin) override;
   void SetVisualViewportSize(const CSSSize& aSize) override;
   void UpdateDisplayPortMargins() override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY

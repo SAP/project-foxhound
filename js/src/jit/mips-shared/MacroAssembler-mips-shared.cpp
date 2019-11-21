@@ -1482,8 +1482,7 @@ void MacroAssembler::call(JitCode* c) {
   callJitNoProfiler(ScratchRegister);
 }
 
-CodeOffset MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
-  CodeOffset offset(currentOffset());
+CodeOffset MacroAssembler::nopPatchableToCall() {
   // MIPS32   //MIPS64
   as_nop();  // lui      // lui
   as_nop();  // ori      // ori
@@ -1493,8 +1492,7 @@ CodeOffset MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
   as_nop();  // jalr
   as_nop();
 #endif
-  append(desc, CodeOffset(currentOffset()));
-  return offset;
+  return CodeOffset(currentOffset());
 }
 
 void MacroAssembler::patchNopToCall(uint8_t* call, uint8_t* target) {
@@ -1502,11 +1500,13 @@ void MacroAssembler::patchNopToCall(uint8_t* call, uint8_t* target) {
   Instruction* inst = (Instruction*)call - 6 /* six nops */;
   Assembler::WriteLoad64Instructions(inst, ScratchRegister, (uint64_t)target);
   inst[4] = InstReg(op_special, ScratchRegister, zero, ra, ff_jalr);
+  AutoFlushICache::flush(uintptr_t(inst), 6 * 4);
 #else
   Instruction* inst = (Instruction*)call - 4 /* four nops */;
   Assembler::WriteLuiOriInstructions(inst, &inst[1], ScratchRegister,
                                      (uint32_t)target);
   inst[2] = InstReg(op_special, ScratchRegister, zero, ra, ff_jalr);
+  AutoFlushICache::flush(uintptr_t(inst), 4 * 4);
 #endif
 }
 
@@ -1524,6 +1524,9 @@ void MacroAssembler::patchCallToNop(uint8_t* call) {
 #ifdef JS_CODEGEN_MIPS64
   inst[4].makeNop();
   inst[5].makeNop();
+  AutoFlushICache::flush(uintptr_t(inst), 6 * 4);
+#else
+  AutoFlushICache::flush(uintptr_t(inst), 4 * 4);
 #endif
 }
 
@@ -1838,7 +1841,7 @@ void MacroAssemblerMIPSShared::wasmLoadImpl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, AnyRegister output, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -1917,7 +1920,7 @@ void MacroAssemblerMIPSShared::wasmStoreImpl(
     const wasm::MemoryAccessDesc& access, AnyRegister value,
     Register memoryBase, Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2767,6 +2770,15 @@ void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
   }
   as_mfhi(remOutput);
   as_mflo(srcDest);
+}
+
+CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {
+  return movWithPatch(ImmPtr(nullptr), dest);
+}
+
+void MacroAssembler::patchNearAddressMove(CodeLocationLabel loc,
+                                          CodeLocationLabel target) {
+  PatchDataWithValueCheck(loc, ImmPtr(target.raw()), ImmPtr(nullptr));
 }
 
 // ========================================================================

@@ -7,8 +7,9 @@
 import type { SettledValue, FulfilledValue } from "./utils/async-value";
 import type { SourcePayload } from "./client/firefox/types";
 import type { SourceActorId, SourceActor } from "./reducers/source-actors";
+import type { SourceBase } from "./reducers/sources";
 
-export type { SourceActorId, SourceActor };
+export type { SourceActorId, SourceActor, SourceBase };
 
 export type SearchModifiers = {
   caseSensitive: boolean,
@@ -252,12 +253,11 @@ export type ChromeFrame = {
   location: ?SourceLocation,
 };
 
-export type OriginalFrame = {
+export type OriginalFrame = {|
   displayName: string,
   variables?: Object,
   location?: SourceLocation,
-  thread: string,
-};
+|};
 
 /**
  * ContextMenuItem
@@ -381,14 +381,14 @@ export type WasmSourceContent = {|
 |};
 export type SourceContent = TextSourceContent | WasmSourceContent;
 
-export type SourceWithContent = {|
-  source: Source,
+export type SourceWithContent = $ReadOnly<{
+  ...SourceBase,
   +content: SettledValue<SourceContent> | null,
-|};
-export type SourceWithContentAndType<+Content: SourceContent> = {|
-  source: Source,
+}>;
+export type SourceWithContentAndType<+Content: SourceContent> = $ReadOnly<{
+  ...SourceBase,
   +content: FulfilledValue<Content>,
-|};
+}>;
 
 /**
  * Source
@@ -397,10 +397,9 @@ export type SourceWithContentAndType<+Content: SourceContent> = {|
  * @static
  */
 
-export type Source = {|
+export type Source = {
   +id: SourceId,
   +url: string,
-  +sourceMapURL?: string,
   +isBlackBoxed: boolean,
   +isPrettyPrinted: boolean,
   +relativeUrl: string,
@@ -409,7 +408,7 @@ export type Source = {|
   +extensionName: ?string,
   +isExtension: boolean,
   +isWasm: boolean,
-|};
+};
 
 /**
  * Script
@@ -457,25 +456,19 @@ export type Scope = {|
     parameterNames: string[],
   },
   type: string,
+  scopeKind: string,
 |};
 
-export type MainThread = {
+export type ThreadType = "mainThread" | "worker" | "contentProcess";
+export type Thread = {
   +actor: ThreadId,
   +url: string,
-  +type: number,
+  +type: ThreadType,
   +name: string,
 };
 
-export type Worker = {
-  +actor: ThreadId,
-  +url: string,
-  +type: number,
-  +name: string,
-};
-
-export type Thread = MainThread & Worker;
+export type Worker = Thread;
 export type ThreadList = Array<Thread>;
-export type WorkerList = Array<Worker>;
 
 export type Cancellable = {
   cancel: () => void,
@@ -488,4 +481,21 @@ export type SourceDocuments = { [string]: Object };
 export type BreakpointPosition = MappedLocation;
 export type BreakpointPositions = { [number]: BreakpointPosition[] };
 
+export type DOMMutationBreakpoint = {
+  id: number,
+  nodeFront: Object,
+  mutationType: "subtree" | "attribute" | "removal",
+  enabled: boolean,
+};
+
 export type { Context, ThreadContext } from "./utils/context";
+
+export type Previews = {
+  [line: string]: Array<Preview>,
+};
+
+export type Preview = {
+  name: string,
+  value: any,
+  column: number,
+};

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint-disable no-undef */
@@ -24,13 +22,19 @@ const EXAMPLE_URL =
 async function attachDebugger(tab) {
   const target = await TargetFactory.forTab(tab);
   const toolbox = await gDevTools.showToolbox(target, "jsdebugger");
-  return { toolbox, target };
+  const dbg = createDebuggerContext(toolbox);
+  const threadFront = dbg.toolbox.threadFront;
+  return { ...dbg, tab, threadFront };
 }
 
 async function attachRecordingDebugger(
   url,
-  { waitForRecording } = { waitForRecording: false }
+  { waitForRecording, disableLogging, skipInterrupt } = {}
 ) {
+  if (!disableLogging) {
+    await pushPref("devtools.recordreplay.logging", true);
+  }
+
   const tab = BrowserTestUtils.addTab(gBrowser, null, { recordExecution: "*" });
   gBrowser.selectedTab = tab;
   openTrustedLinkIn(EXAMPLE_URL + url, "current");
@@ -38,35 +42,41 @@ async function attachRecordingDebugger(
   if (waitForRecording) {
     await once(Services.ppmm, "RecordingFinished");
   }
-  const { target, toolbox } = await attachDebugger(tab);
-  const dbg = createDebuggerContext(toolbox);
-  const threadClient = dbg.toolbox.threadClient;
+  const dbg = await attachDebugger(tab);
 
-  await threadClient.interrupt();
-  return { ...dbg, tab, threadClient, target };
+  if (!skipInterrupt) {
+    await interrupt(dbg);
+  }
+
+  return dbg;
 }
 
-// Return a promise that resolves when a breakpoint has been set.
-async function setBreakpoint(threadClient, expectedFile, lineno, options = {}) {
-  const { sources } = await threadClient.getSources();
-  ok(sources.length == 1, "Got one source");
-  ok(RegExp(expectedFile).test(sources[0].url), "Source is " + expectedFile);
-  const location = { sourceUrl: sources[0].url, line: lineno };
-  await threadClient.setBreakpoint(location, options);
-  return location;
+async function waitForPausedNoSource(dbg) {
+  await waitForState(dbg, state => isPaused(dbg), "paused");
+}
+
+async function shutdownDebugger(dbg) {
+  await dbg.actions.removeAllBreakpoints(getContext(dbg));
+  await waitForRequestsToSettle(dbg);
+  await dbg.toolbox.destroy();
+  await gBrowser.removeTab(dbg.tab);
+}
+
+async function interrupt(dbg) {
+  await dbg.actions.breakOnNext(getThreadContext(dbg));
+  await waitForPausedNoSource(dbg);
 }
 
 function resumeThenPauseAtLineFunctionFactory(method) {
-  return async function(threadClient, lineno) {
-    threadClient[method]();
-    await threadClient.once("paused", async function(packet) {
-      const { frames } = await threadClient.getFrames(0, 1);
-      const frameLine = frames[0] ? frames[0].where.line : undefined;
-      ok(
-        frameLine == lineno,
-        "Paused at line " + frameLine + " expected " + lineno
-      );
-    });
+  return async function(dbg, lineno) {
+    await dbg.actions[method](getThreadContext(dbg));
+    if (lineno !== undefined) {
+      await waitForPaused(dbg);
+    } else {
+      await waitForPausedNoSource(dbg);
+    }
+    const pauseLine = getVisibleSelectedFrameLine(dbg);
+    ok(pauseLine == lineno, `Paused at line ${pauseLine} expected ${lineno}`);
   };
 }
 
@@ -83,19 +93,19 @@ var stepOutToLine = resumeThenPauseAtLineFunctionFactory("stepOut");
 
 // Return a promise that resolves when a thread evaluates a string in the
 // topmost frame, with the result throwing an exception.
-async function checkEvaluateInTopFrameThrows(target, text) {
-  const threadClient = target.threadClient;
-  const consoleFront = await target.getFront("console");
-  const { frames } = await threadClient.getFrames(0, 1);
+async function checkEvaluateInTopFrameThrows(dbg, text) {
+  const threadFront = dbg.toolbox.target.threadFront;
+  const consoleFront = await dbg.toolbox.target.getFront("console");
+  const { frames } = await threadFront.getFrames(0, 1);
   ok(frames.length == 1, "Got one frame");
-  const options = { thread: threadClient.actor, frameActor: frames[0].actor };
+  const options = { thread: threadFront.actor, frameActor: frames[0].actor };
   const response = await consoleFront.evaluateJS(text, options);
   ok(response.exception, "Eval threw an exception");
 }
 
 // Return a pathname that can be used for a new recording file.
 function newRecordingFile() {
-  ChromeUtils.import("resource://gre/modules/osfile.jsm", this);
+  const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
   return OS.Path.join(
     OS.Constants.Path.tmpDir,
     "MochitestRecording" + Math.round(Math.random() * 1000000000)
@@ -103,7 +113,8 @@ function newRecordingFile() {
 }
 
 function findMessage(hud, text, selector = ".message") {
-  return findMessages(hud, text, selector)[0];
+  const messages = findMessages(hud, text, selector);
+  return messages ? messages[0] : null;
 }
 
 function findMessages(hud, text, selector = ".message") {
@@ -117,6 +128,10 @@ function findMessages(hud, text, selector = ".message") {
   }
 
   return elements;
+}
+
+function waitForMessage(hud, text, selector = ".message") {
+  return waitUntilPredicate(() => findMessage(hud, text, selector));
 }
 
 function waitForMessages(hud, text, selector = ".message") {
@@ -138,7 +153,7 @@ async function warpToMessage(hud, dbg, text) {
   ok(messages.length == 1, "Found one message");
   const message = messages.pop();
 
-  const menuPopup = await openConsoleContextMenu(hud, message);
+  const menuPopup = await openConsoleContextMenu(message);
   console.log(`.>> menu`, menuPopup);
 
   const timeWarpItem = menuPopup.querySelector("#console-menu-time-warp");
@@ -146,7 +161,7 @@ async function warpToMessage(hud, dbg, text) {
 
   timeWarpItem.click();
 
-  await hideConsoleContextMenu(hud);
+  await hideConsoleContextMenu();
   await once(Services.ppmm, "TimeWarpFinished");
   await waitForPaused(dbg);
 
@@ -154,6 +169,24 @@ async function warpToMessage(hud, dbg, text) {
   ok(messages.length == 1, "Found one paused message");
 
   return message;
+
+  async function openConsoleContextMenu(element) {
+    const onConsoleMenuOpened = hud.ui.wrapper.once("menu-open");
+    synthesizeContextMenuEvent(element);
+    await onConsoleMenuOpened;
+    return dbg.toolbox.topDoc.getElementById("webconsole-menu");
+  }
+
+  function hideConsoleContextMenu() {
+    const popup = dbg.toolbox.topDoc.getElementById("webconsole-menu");
+    if (!popup) {
+      return Promise.resolve();
+    }
+
+    const onPopupHidden = once(popup, "popuphidden");
+    popup.hidePopup();
+    return onPopupHidden;
+  }
 }
 
 const { PromiseTestUtils } = ChromeUtils.import(
@@ -166,3 +199,8 @@ PromiseTestUtils.whitelistRejectionsGlobally(/NS_ERROR_NOT_INITIALIZED/);
 PromiseTestUtils.whitelistRejectionsGlobally(
   /Current thread has paused or resumed/
 );
+
+// When running the full test suite, long delays can occur early on in tests,
+// before child processes have even been spawned. Allow a longer timeout to
+// avoid failures from this.
+requestLongerTimeout(4);

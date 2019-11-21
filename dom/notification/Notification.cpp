@@ -14,7 +14,7 @@
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 
@@ -27,6 +27,7 @@
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/ServiceWorkerGlobalScopeBinding.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
@@ -300,7 +301,7 @@ nsresult CheckScope(nsIPrincipal* aPrincipal, const nsACString& aScope) {
   MOZ_ASSERT(aPrincipal);
 
   nsCOMPtr<nsIURI> scopeURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScope, nullptr, nullptr);
+  nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScope);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -470,24 +471,21 @@ NS_IMPL_QUERY_INTERFACE_CYCLE_COLLECTION_INHERITED(
 
 NS_IMETHODIMP
 NotificationPermissionRequest::Run() {
-  if (nsContentUtils::IsSystemPrincipal(mPrincipal)) {
+  bool isSystem = nsContentUtils::IsSystemPrincipal(mPrincipal);
+  bool blocked = false;
+  if (isSystem) {
     mPermission = NotificationPermission::Granted;
   } else {
     // File are automatically granted permission.
     nsCOMPtr<nsIURI> uri;
     mPrincipal->GetURI(getter_AddRefs(uri));
 
-    bool isFile = false;
-    if (uri) {
-      uri->SchemeIs("file", &isFile);
-      if (isFile) {
-        mPermission = NotificationPermission::Granted;
-      }
-    }
-
-    if (!isFile && !StaticPrefs::dom_webnotifications_allowinsecure() &&
-        !mWindow->IsSecureContext()) {
+    if (uri && uri->SchemeIs("file")) {
+      mPermission = NotificationPermission::Granted;
+    } else if (!StaticPrefs::dom_webnotifications_allowinsecure() &&
+               !mWindow->IsSecureContext()) {
       mPermission = NotificationPermission::Denied;
+      blocked = true;
       nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
       if (doc) {
         nsContentUtils::ReportToConsole(
@@ -513,6 +511,22 @@ NotificationPermissionRequest::Run() {
     default:
       // ignore
       break;
+  }
+
+  // Check this after checking the prompt prefs to make sure this pref overrides
+  // those.  We rely on this for testing purposes.
+  if (!isSystem && !blocked &&
+      !StaticPrefs::dom_webnotifications_allowcrossoriginiframe() &&
+      !mPrincipal->Subsumes(mTopLevelPrincipal)) {
+    mPermission = NotificationPermission::Denied;
+    blocked = true;
+    nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+    if (doc) {
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::errorFlag, NS_LITERAL_CSTRING("DOM"), doc,
+          nsContentUtils::eDOM_PROPERTIES,
+          "NotificationsCrossOriginIframeRequestIsForbidden");
+    }
   }
 
   if (mPermission != NotificationPermission::Default) {
@@ -997,7 +1011,7 @@ Notification::~Notification() {
   mData.setUndefined();
   mozilla::DropJSObjects(this);
   AssertIsOnTargetThread();
-  MOZ_ASSERT(!mWorkerHolder);
+  MOZ_ASSERT(!mWorkerRef);
   MOZ_ASSERT(!mTempRef);
 }
 
@@ -1623,12 +1637,8 @@ NotificationPermission Notification::GetPermissionInternal(
     // Allow files to show notifications by default.
     nsCOMPtr<nsIURI> uri;
     aPrincipal->GetURI(getter_AddRefs(uri));
-    if (uri) {
-      bool isFile;
-      uri->SchemeIs("file", &isFile);
-      if (isFile) {
-        return NotificationPermission::Granted;
-      }
+    if (uri && uri->SchemeIs("file")) {
+      return NotificationPermission::Granted;
     }
   }
 
@@ -1675,7 +1685,7 @@ nsresult Notification::ResolveIconAndSoundURL(nsString& iconUrl,
   AssertIsOnMainThread();
   nsresult rv = NS_OK;
 
-  nsCOMPtr<nsIURI> baseUri;
+  nsIURI* baseUri = nullptr;
 
   // XXXnsm If I understand correctly, the character encoding for resolving
   // URIs in new specs is dictated by the URL spec, which states that unless
@@ -2054,10 +2064,10 @@ void Notification::InitFromBase64(const nsAString& aData, ErrorResult& aRv) {
 
 bool Notification::AddRefObject() {
   AssertIsOnTargetThread();
-  MOZ_ASSERT_IF(mWorkerPrivate && !mWorkerHolder, mTaskCount == 0);
-  MOZ_ASSERT_IF(mWorkerPrivate && mWorkerHolder, mTaskCount > 0);
-  if (mWorkerPrivate && !mWorkerHolder) {
-    if (!RegisterWorkerHolder()) {
+  MOZ_ASSERT_IF(mWorkerPrivate && !mWorkerRef, mTaskCount == 0);
+  MOZ_ASSERT_IF(mWorkerPrivate && mWorkerRef, mTaskCount > 0);
+  if (mWorkerPrivate && !mWorkerRef) {
+    if (!CreateWorkerRef()) {
       return false;
     }
   }
@@ -2069,19 +2079,14 @@ bool Notification::AddRefObject() {
 void Notification::ReleaseObject() {
   AssertIsOnTargetThread();
   MOZ_ASSERT(mTaskCount > 0);
-  MOZ_ASSERT_IF(mWorkerPrivate, mWorkerHolder);
+  MOZ_ASSERT_IF(mWorkerPrivate, mWorkerRef);
 
   --mTaskCount;
   if (mWorkerPrivate && mTaskCount == 0) {
-    UnregisterWorkerHolder();
+    MOZ_ASSERT(mWorkerRef);
+    mWorkerRef = nullptr;
   }
   Release();
-}
-
-NotificationWorkerHolder::NotificationWorkerHolder(Notification* aNotification)
-    : WorkerHolder("NotificationWorkerHolder"), mNotification(aNotification) {
-  MOZ_ASSERT(mNotification->mWorkerPrivate);
-  mNotification->mWorkerPrivate->AssertIsOnWorkerThread();
 }
 
 /*
@@ -2116,64 +2121,55 @@ class CloseNotificationRunnable final : public WorkerMainThreadRunnable {
   bool HadObserver() { return mHadObserver; }
 };
 
-bool NotificationWorkerHolder::Notify(WorkerStatus aStatus) {
-  if (aStatus >= Canceling) {
-    // CloseNotificationRunnable blocks the worker by pushing a sync event loop
-    // on the stack. Meanwhile, WorkerControlRunnables dispatched to the worker
-    // can still continue running. One of these is
-    // ReleaseNotificationControlRunnable that releases the notification,
-    // invalidating the notification and this feature. We hold this reference to
-    // keep the notification valid until we are done with it.
-    //
-    // An example of when the control runnable could get dispatched to the
-    // worker is if a Notification is created and the worker is immediately
-    // closed, but there is no permission to show it so that the main thread
-    // immediately drops the NotificationRef. In this case, this function blocks
-    // on the main thread, but the main thread dispatches the control runnable,
-    // invalidating mNotification.
-    RefPtr<Notification> kungFuDeathGrip = mNotification;
-
-    // Dispatched to main thread, blocks on closing the Notification.
-    RefPtr<CloseNotificationRunnable> r =
-        new CloseNotificationRunnable(kungFuDeathGrip);
-    ErrorResult rv;
-    r->Dispatch(Killing, rv);
-    // XXXbz I'm told throwing and returning false from here is pointless (and
-    // also that doing sync stuff from here is really weird), so I guess we just
-    // suppress the exception on rv, if any.
-    rv.SuppressException();
-
-    // Only call ReleaseObject() to match the observer's NotificationRef
-    // ownership (since CloseNotificationRunnable asked the observer to drop the
-    // reference to the notification).
-    if (r->HadObserver()) {
-      kungFuDeathGrip->ReleaseObject();
-    }
-
-    // From this point we cannot touch properties of this feature because
-    // ReleaseObject() may have led to the notification going away and the
-    // notification owns this feature!
-  }
-  return true;
-}
-
-bool Notification::RegisterWorkerHolder() {
+bool Notification::CreateWorkerRef() {
   MOZ_ASSERT(mWorkerPrivate);
   mWorkerPrivate->AssertIsOnWorkerThread();
-  MOZ_ASSERT(!mWorkerHolder);
-  mWorkerHolder = MakeUnique<NotificationWorkerHolder>(this);
-  if (NS_WARN_IF(!mWorkerHolder->HoldWorker(mWorkerPrivate, Canceling))) {
+  MOZ_ASSERT(!mWorkerRef);
+
+  RefPtr<Notification> self = this;
+  mWorkerRef =
+      StrongWorkerRef::Create(mWorkerPrivate, "Notification", [self]() {
+        // CloseNotificationRunnable blocks the worker by pushing a sync event
+        // loop on the stack. Meanwhile, WorkerControlRunnables dispatched to
+        // the worker can still continue running. One of these is
+        // ReleaseNotificationControlRunnable that releases the notification,
+        // invalidating the notification and this feature. We hold this
+        // reference to keep the notification valid until we are done with it.
+        //
+        // An example of when the control runnable could get dispatched to the
+        // worker is if a Notification is created and the worker is immediately
+        // closed, but there is no permission to show it so that the main thread
+        // immediately drops the NotificationRef. In this case, this function
+        // blocks on the main thread, but the main thread dispatches the control
+        // runnable, invalidating mNotification.
+
+        // Dispatched to main thread, blocks on closing the Notification.
+        RefPtr<CloseNotificationRunnable> r =
+            new CloseNotificationRunnable(self);
+        ErrorResult rv;
+        r->Dispatch(Killing, rv);
+        // XXXbz I'm told throwing and returning false from here is pointless
+        // (and also that doing sync stuff from here is really weird), so I
+        // guess we just suppress the exception on rv, if any.
+        rv.SuppressException();
+
+        // Only call ReleaseObject() to match the observer's NotificationRef
+        // ownership (since CloseNotificationRunnable asked the observer to drop
+        // the reference to the notification).
+        if (r->HadObserver()) {
+          self->ReleaseObject();
+        }
+
+        // From this point we cannot touch properties of this feature because
+        // ReleaseObject() may have led to the notification going away and the
+        // notification owns this feature!
+      });
+
+  if (NS_WARN_IF(!mWorkerRef)) {
     return false;
   }
 
   return true;
-}
-
-void Notification::UnregisterWorkerHolder() {
-  MOZ_ASSERT(mWorkerPrivate);
-  mWorkerPrivate->AssertIsOnWorkerThread();
-  MOZ_ASSERT(mWorkerHolder);
-  mWorkerHolder = nullptr;
 }
 
 /*
@@ -2186,13 +2182,17 @@ void Notification::UnregisterWorkerHolder() {
 class CheckLoadRunnable final : public WorkerMainThreadRunnable {
   nsresult mRv;
   nsCString mScope;
+  ServiceWorkerRegistrationDescriptor mDescriptor;
 
  public:
-  explicit CheckLoadRunnable(WorkerPrivate* aWorker, const nsACString& aScope)
+  explicit CheckLoadRunnable(
+      WorkerPrivate* aWorker, const nsACString& aScope,
+      const ServiceWorkerRegistrationDescriptor& aDescriptor)
       : WorkerMainThreadRunnable(
             aWorker, NS_LITERAL_CSTRING("Notification :: Check Load")),
         mRv(NS_ERROR_DOM_SECURITY_ERR),
-        mScope(aScope) {}
+        mScope(aScope),
+        mDescriptor(aDescriptor) {}
 
   bool MainThreadRun() override {
     nsIPrincipal* principal = mWorkerPrivate->GetPrincipal();
@@ -2202,21 +2202,10 @@ class CheckLoadRunnable final : public WorkerMainThreadRunnable {
       return true;
     }
 
-    RefPtr<ServiceWorkerManager> swm = ServiceWorkerManager::GetInstance();
-    if (!swm) {
-      // browser shutdown began
-      mRv = NS_ERROR_FAILURE;
-      return true;
-    }
+    auto activeWorker = mDescriptor.GetActive();
 
-    RefPtr<ServiceWorkerRegistrationInfo> registration =
-        swm->GetRegistration(principal, mScope);
-
-    // This is coming from a ServiceWorkerRegistration.
-    MOZ_ASSERT(registration);
-
-    if (!registration->GetActive() ||
-        registration->GetActive()->ID() != mWorkerPrivate->ServiceWorkerID()) {
+    if (!activeWorker ||
+        activeWorker.ref().Id() != mWorkerPrivate->ServiceWorkerID()) {
       mRv = NS_ERROR_NOT_AVAILABLE;
     }
 
@@ -2230,7 +2219,7 @@ class CheckLoadRunnable final : public WorkerMainThreadRunnable {
 already_AddRefed<Promise> Notification::ShowPersistentNotification(
     JSContext* aCx, nsIGlobalObject* aGlobal, const nsAString& aScope,
     const nsAString& aTitle, const NotificationOptions& aOptions,
-    ErrorResult& aRv) {
+    const ServiceWorkerRegistrationDescriptor& aDescriptor, ErrorResult& aRv) {
   MOZ_ASSERT(aGlobal);
 
   // Validate scope.
@@ -2261,8 +2250,9 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(worker);
     worker->AssertIsOnWorkerThread();
-    RefPtr<CheckLoadRunnable> loadChecker =
-        new CheckLoadRunnable(worker, NS_ConvertUTF16toUTF8(aScope));
+
+    RefPtr<CheckLoadRunnable> loadChecker = new CheckLoadRunnable(
+        worker, NS_ConvertUTF16toUTF8(aScope), aDescriptor);
     loadChecker->Dispatch(Canceling, aRv);
     if (aRv.Failed()) {
       return nullptr;

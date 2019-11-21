@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import print_function
+from __future__ import absolute_import, print_function
 
-import buildconfig
+from contextlib import contextmanager
 import os
 import subprocess
 import sys
@@ -16,14 +16,25 @@ from mozbuild.util import (
 import mozpack.path as mozpath
 
 
-def android(verb, *args):
+@contextmanager
+def gradle_lock(topobjdir, max_wait_seconds=600):
     # Building the same Gradle root project with multiple concurrent processes
     # is not well supported, so we use a simple lock file to serialize build
     # steps.
-    lock_path = '{}/gradle/mach_android.lockfile'.format(buildconfig.topobjdir)
+    lock_path = '{}/gradle/mach_android.lockfile'.format(topobjdir)
     ensureParentDir(lock_path)
-    lock_instance = lock_file(lock_path)
+    lock_instance = lock_file(lock_path, max_wait=max_wait_seconds)
+
     try:
+        yield
+    finally:
+        del lock_instance
+
+
+def android(verb, *args):
+    import buildconfig
+
+    with gradle_lock(buildconfig.topobjdir):
         cmd = [
             sys.executable,
             mozpath.join(buildconfig.topsrcdir, 'mach'),
@@ -38,8 +49,6 @@ def android(verb, *args):
         subprocess.check_call(cmd, env=env)
 
         return 0
-    finally:
-        del lock_instance
 
 
 def assemble_app(dummy_output_file, *inputs):

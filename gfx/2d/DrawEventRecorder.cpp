@@ -12,8 +12,6 @@
 namespace mozilla {
 namespace gfx {
 
-using namespace std;
-
 DrawEventRecorderPrivate::DrawEventRecorderPrivate() : mExternalFonts(false) {}
 
 void DrawEventRecorderPrivate::StoreExternalSurfaceRecording(
@@ -64,7 +62,7 @@ DrawEventRecorderMemory::TakeDependentSurfaces() {
 }
 
 DrawEventRecorderFile::DrawEventRecorderFile(const char_type* aFilename)
-    : mOutputStream(aFilename, ofstream::binary) {
+    : mOutputStream(aFilename, std::ofstream::binary) {
   WriteHeader(mOutputStream);
 }
 
@@ -77,7 +75,7 @@ bool DrawEventRecorderFile::IsOpen() { return mOutputStream.is_open(); }
 void DrawEventRecorderFile::OpenNew(const char_type* aFilename) {
   MOZ_ASSERT(!mOutputStream.is_open());
 
-  mOutputStream.open(aFilename, ofstream::binary);
+  mOutputStream.open(aFilename, std::ofstream::binary);
   WriteHeader(mOutputStream);
 }
 
@@ -92,8 +90,8 @@ DrawEventRecorderMemory::DrawEventRecorderMemory() {
 }
 
 DrawEventRecorderMemory::DrawEventRecorderMemory(
-    const SerializeResourcesFn& aFn)
-    : mSerializeCallback(aFn) {
+    const SerializeResourcesFn& aFn, IntPoint aOrigin)
+    : mSerializeCallback(aFn), mOrigin(aOrigin) {
   mExternalFonts = !!mSerializeCallback;
   WriteHeader(mOutputStream);
 }
@@ -134,6 +132,7 @@ bool DrawEventRecorderMemory::Finish() {
   mIndex = MemStream();
   // write out the offset of the Index to the end of the output stream
   WriteElement(mOutputStream, indexOffset);
+  WriteElement(mOutputStream, mOrigin);
   ClearResources();
   return hasItems;
 }

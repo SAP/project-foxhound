@@ -25,7 +25,6 @@ const features = [
   "js",
   "leaf",
   "mainthreadio",
-  "memory",
   "privacy",
   "responsiveness",
   "screenshots",
@@ -34,6 +33,7 @@ const features = [
   "tasktracer",
   "jstracer",
   "jsallocations",
+  "preferencereads",
   "trackopts",
 ];
 const threadPrefix = "perf-settings-thread-checkbox-";

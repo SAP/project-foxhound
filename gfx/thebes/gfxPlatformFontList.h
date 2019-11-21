@@ -27,6 +27,12 @@
 #include "mozilla/RangedArray.h"
 #include "nsLanguageAtomService.h"
 
+namespace mozilla {
+namespace fontlist {
+struct AliasData;
+}
+}  // namespace mozilla
+
 class CharMapHashKey : public PLDHashEntryHdr {
  public:
   typedef gfxCharacterMap* KeyType;
@@ -200,7 +206,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
   virtual void ClearLangGroupPrefFonts();
 
-  virtual void GetFontFamilyList(nsTArray<RefPtr<gfxFontFamily>>& aFamilyArray);
+  void GetFontFamilyList(nsTArray<RefPtr<gfxFontFamily>>& aFamilyArray);
 
   gfxFontEntry* SystemFindFontForChar(uint32_t aCh, uint32_t aNextCh,
                                       Script aRunScript,
@@ -430,7 +436,13 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
   static const char* GetGenericName(
       mozilla::StyleGenericFontFamily aGenericType);
 
+  bool SkipFontFallbackForChar(uint32_t aCh) const {
+    return mCodepointsWithNoFonts.test(aCh);
+  }
+
  protected:
+  friend class mozilla::fontlist::FontList;
+
   class InitOtherFamilyNamesRunnable : public mozilla::CancelableRunnable {
    public:
     InitOtherFamilyNamesRunnable()
@@ -778,8 +790,7 @@ class gfxPlatformFontList : public gfxFontInfoLoader {
 
   mozilla::UniquePtr<mozilla::fontlist::FontList> mSharedFontList;
 
-  nsClassHashtable<nsCStringHashKey, nsTArray<mozilla::fontlist::Pointer>>
-      mAliasTable;
+  nsClassHashtable<nsCStringHashKey, mozilla::fontlist::AliasData> mAliasTable;
   nsDataHashtable<nsCStringHashKey, mozilla::fontlist::LocalFaceRec::InitData>
       mLocalNameTable;
 

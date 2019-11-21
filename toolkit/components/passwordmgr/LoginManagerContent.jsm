@@ -178,7 +178,8 @@ const observer = {
           );
           LoginManagerContent.onFieldAutoComplete(focusedInput, details.guid);
         } else if (style == "generatedPassword") {
-          LoginManagerContent._generatedPasswordFilled(focusedInput);
+          LoginManagerContent._highlightFilledField(focusedInput);
+          LoginManagerContent._generatedPasswordFilledOrEdited(focusedInput);
         }
         break;
       }
@@ -196,6 +197,25 @@ const observer = {
     }
 
     switch (aEvent.type) {
+      // Used to mask fields with filled generated passwords when blurred.
+      case "blur": {
+        let unmask = false;
+        LoginManagerContent._togglePasswordFieldMasking(aEvent.target, unmask);
+        break;
+      }
+
+      // Used to watch for changes to fields filled with generated passwords.
+      case "change": {
+        LoginManagerContent._generatedPasswordFilledOrEdited(aEvent.target);
+        break;
+      }
+
+      // Used to watch for changes to fields filled with generated passwords.
+      case "input": {
+        LoginManagerContent._maybeStopTreatingAsGeneratedPasswordField(aEvent);
+        break;
+      }
+
       case "keydown": {
         if (
           aEvent.keyCode == aEvent.DOM_VK_TAB ||
@@ -206,8 +226,18 @@ const observer = {
         break;
       }
 
-      // Only used for username fields.
       case "focus": {
+        if (aEvent.target.type == "password") {
+          // Used to unmask fields with filled generated passwords when focused.
+          let unmask = true;
+          LoginManagerContent._togglePasswordFieldMasking(
+            aEvent.target,
+            unmask
+          );
+          break;
+        }
+
+        // Only used for username fields.
         LoginManagerContent._onUsernameFocus(aEvent);
         break;
       }
@@ -330,6 +360,46 @@ this.LoginManagerContent = {
     return deferred.promise;
   },
 
+  _compareAndUpdatePreviouslySentValues(
+    formLikeRoot,
+    usernameValue,
+    passwordValue,
+    dismissed = false
+  ) {
+    let state = this.stateForDocument(formLikeRoot.ownerDocument);
+    const lastSentValues = state.lastSubmittedValuesByRootElement.get(
+      formLikeRoot
+    );
+    if (lastSentValues) {
+      if (dismissed && !lastSentValues.dismissed) {
+        // preserve previous dismissed value if it was false (i.e. shown/open)
+        dismissed = false;
+      }
+      if (
+        lastSentValues.username == usernameValue &&
+        lastSentValues.password == passwordValue &&
+        lastSentValues.dismissed == dismissed
+      ) {
+        log(
+          "_compareAndUpdatePreviouslySentValues: values are equivalent, returning true"
+        );
+        return true;
+      }
+    }
+
+    // Save the last submitted values so we don't prompt twice for the same values using
+    // different capture methods e.g. a form submit event and upon navigation.
+    state.lastSubmittedValuesByRootElement.set(formLikeRoot, {
+      username: usernameValue,
+      password: passwordValue,
+      dismissed,
+    });
+    log(
+      "_compareAndUpdatePreviouslySentValues: values not equivalent, returning false"
+    );
+    return false;
+  },
+
   _onKeyDown(event) {
     let focusedElement = LoginManagerContent._formFillService.focusedInput;
     if (
@@ -415,6 +485,14 @@ this.LoginManagerContent = {
           recipes: msg.data.recipes,
           inputElementIdentifier: msg.data.inputElementIdentifier,
         });
+        let inputElement = ContentDOMReference.resolve(
+          msg.data.inputElementIdentifier
+        );
+        if (inputElement) {
+          this._generatedPasswordFilledOrEdited(inputElement);
+        } else {
+          log("Could not resolve inputElementIdentifier to a living element.");
+        }
         break;
       }
 
@@ -968,6 +1046,9 @@ this.LoginManagerContent = {
     if (LoginHelper.isUsernameFieldType(acInputField)) {
       this.onUsernameAutocompleted(acInputField, loginGUID);
     } else if (acInputField.hasBeenTypePassword) {
+      // Ensure the field gets re-masked and edits don't overwrite the generated
+      // password in case a generated password was filled into it previously.
+      this._stopTreatingAsGeneratedPasswordField(acInputField);
       this._highlightFilledField(acInputField);
     }
   },
@@ -1207,7 +1288,7 @@ this.LoginManagerContent = {
       return [usernameField, passwordField, null];
     }
 
-    // Try to figure out WTF is in the form based on the password values.
+    // Try to figure out what is in the form based on the password values.
     let oldPasswordField, newPasswordField;
     let pw1 = pwFields[0].element.value;
     let pw2 = pwFields[1].element.value;
@@ -1428,35 +1509,6 @@ this.LoginManagerContent = {
 
     let usernameValue = usernameField ? usernameField.value : null;
     let formLikeRoot = FormLikeFactory.findRootForField(newPasswordField);
-    let state = this.stateForDocument(doc);
-    let lastSubmittedValues = state.lastSubmittedValuesByRootElement.get(
-      formLikeRoot
-    );
-    if (lastSubmittedValues) {
-      if (
-        lastSubmittedValues.username == usernameValue &&
-        lastSubmittedValues.password == newPasswordField.value
-      ) {
-        log(
-          "(form submission ignored -- already submitted with the same username and password)"
-        );
-        return;
-      }
-    }
-
-    // Save the last submitted values so we don't prompt twice for the same values using
-    // different capture methods e.g. a form submit event and upon navigation.
-    state.lastSubmittedValuesByRootElement.set(formLikeRoot, {
-      username: usernameValue,
-      password: newPasswordField.value,
-    });
-
-    // Make sure to pass the opener's top ID in case it was in a frame.
-    let openerTopWindowID = null;
-    if (win.opener) {
-      openerTopWindowID = win.opener.top.windowUtils.outerWindowID;
-    }
-
     // Dismiss prompt if the username field is a credit card number AND
     // if the password field is a three digit number. Also dismiss prompt if
     // the password is a credit card number and the password field has attribute
@@ -1470,6 +1522,26 @@ this.LoginManagerContent = {
         newPasswordField.getAutocompleteInfo().fieldName == "cc-number")
     ) {
       dismissedPrompt = true;
+    }
+
+    if (
+      this._compareAndUpdatePreviouslySentValues(
+        formLikeRoot,
+        usernameValue,
+        newPasswordField.value,
+        dismissedPrompt
+      )
+    ) {
+      log(
+        "(form submission ignored -- already submitted with the same username and password)"
+      );
+      return;
+    }
+
+    // Make sure to pass the opener's top ID in case it was in a frame.
+    let openerTopWindowID = null;
+    if (win.opener) {
+      openerTopWindowID = win.opener.top.windowUtils.outerWindowID;
     }
 
     let autoFilledLogin = this.stateForDocument(doc).fillsByRootElement.get(
@@ -1487,22 +1559,39 @@ this.LoginManagerContent = {
     });
   },
 
-  /**
-   * Notify the parent that a generated password was filled into a field so that it can potentially
-   * be saved.
-   * @param {HTMLInputElement} input
-   */
-  _generatedPasswordFilled(input) {
-    log("_generatedPasswordFilled", input);
-    let loginForm = LoginFormFactory.createFromField(input);
-    let win = input.ownerGlobal;
+  _maybeStopTreatingAsGeneratedPasswordField(event) {
+    let passwordField = event.target;
+    let { value } = passwordField;
 
-    if (PrivateBrowsingUtils.isContentWindowPrivate(win)) {
-      log(
-        "_generatedPasswordFilled: not automatically saving the password in private browsing mode"
-      );
-      return;
+    // If the field is now empty or the inserted text replaced the whole value
+    // then stop treating it as a generated password field.
+    if (!value || (event.data && event.data == value)) {
+      this._stopTreatingAsGeneratedPasswordField(passwordField);
     }
+  },
+
+  _stopTreatingAsGeneratedPasswordField(passwordField) {
+    log("_stopTreatingAsGeneratedPasswordField");
+
+    // Remove all the event listeners added in _generatedPasswordFilledOrEdited
+    for (let eventType of ["blur", "change", "focus", "input"]) {
+      passwordField.removeEventListener(eventType, observer, {
+        capture: true,
+        mozSystemGroup: true,
+      });
+    }
+
+    // Mask the password field
+    this._togglePasswordFieldMasking(passwordField, false);
+  },
+
+  /**
+   * Notify the parent that a generated password was filled into a field or
+   * edited so that it can potentially be saved.
+   * @param {HTMLInputElement} passwordField
+   */
+  _generatedPasswordFilledOrEdited(passwordField) {
+    log("_generatedPasswordFilledOrEdited", passwordField);
 
     if (!LoginHelper.enabled) {
       throw new Error(
@@ -1510,15 +1599,93 @@ this.LoginManagerContent = {
       );
     }
 
+    let win = passwordField.ownerGlobal;
+    let formLikeRoot = FormLikeFactory.findRootForField(passwordField);
+
+    this._highlightFilledField(passwordField);
+
+    // change: Listen for changes to the field filled with the generated password so we can preserve edits.
+    // input: Listen for the field getting blanked (without blurring) or a paste
+    for (let eventType of ["blur", "change", "focus", "input"]) {
+      passwordField.addEventListener(eventType, observer, {
+        capture: true,
+        mozSystemGroup: true,
+      });
+    }
+    // Unmask the password field
+    this._togglePasswordFieldMasking(passwordField, true);
+
+    if (PrivateBrowsingUtils.isContentWindowPrivate(win)) {
+      log(
+        "_generatedPasswordFilledOrEdited: not automatically saving the password in private browsing mode"
+      );
+      return;
+    }
+
+    let loginForm = LoginFormFactory.createFromField(passwordField);
     let formActionOrigin = LoginHelper.getFormActionOrigin(loginForm);
+    let origin = LoginHelper.getLoginOrigin(
+      passwordField.ownerDocument.documentURI
+    );
+    let recipes = LoginRecipesContent.getRecipes(origin, win);
+    let [usernameField] = this._getFormFields(loginForm, false, recipes);
+    let username = (usernameField && usernameField.value) || "";
+    // Avoid prompting twice for the same value,
+    // e.g. context menu fill followed by change (blur) event
+    if (
+      this._compareAndUpdatePreviouslySentValues(
+        formLikeRoot,
+        username,
+        passwordField.value,
+        true // dismissed
+      )
+    ) {
+      log(
+        "(generatedPasswordFilledOrEdited ignored -- already messaged with the same password value)"
+      );
+      return;
+    }
+
+    let openerTopWindowID = null;
+    if (win.opener) {
+      openerTopWindowID = win.opener.top.windowUtils.outerWindowID;
+    }
     let messageManager = win.docShell.messageManager;
     messageManager.sendAsyncMessage(
-      "PasswordManager:onGeneratedPasswordFilled",
+      "PasswordManager:onGeneratedPasswordFilledOrEdited",
       {
         browsingContextId: win.docShell.browsingContext.id,
         formActionOrigin,
+        openerTopWindowID,
+        password: passwordField.value,
+        username,
       }
     );
+  },
+
+  _togglePasswordFieldMasking(passwordField, unmask) {
+    let { editor } = passwordField;
+
+    if (passwordField.type != "password") {
+      // The type may have been changed by the website.
+      log("_togglePasswordFieldMasking: Field isn't type=password");
+      return;
+    }
+
+    if (!unmask && !editor) {
+      // It hasn't been created yet but the default is to be masked anyways.
+      return;
+    }
+
+    if (unmask) {
+      editor.unmask(0);
+      return;
+    }
+
+    if (editor.autoMaskingEnabled) {
+      return;
+    }
+    editor.mask();
   },
 
   /** Remove login field highlight when its value is cleared or overwritten.
@@ -1886,6 +2053,9 @@ this.LoginManagerContent = {
 
       let doc = form.ownerDocument;
       if (passwordField.value != selectedLogin.password) {
+        // Ensure the field gets re-masked in case a generated password was
+        // filled into it previously.
+        this._stopTreatingAsGeneratedPasswordField(passwordField);
         passwordField.setUserInput(selectedLogin.password);
         let autoFilledLogin = {
           guid: selectedLogin.QueryInterface(Ci.nsILoginMetaInfo).guid,
@@ -1916,6 +2086,9 @@ this.LoginManagerContent = {
       let win = doc.defaultView;
       let messageManager = win.docShell.messageManager;
       messageManager.sendAsyncMessage("LoginStats:LoginFillSuccessful");
+    } catch (ex) {
+      Cu.reportError(ex);
+      throw ex;
     } finally {
       if (autofillResult == -1) {
         // eslint-disable-next-line no-unsafe-finally

@@ -109,7 +109,6 @@ BufferOffset MacroAssemblerCompat::movePatchablePtr(ImmWord ptr,
 
 void MacroAssemblerCompat::loadPrivate(const Address& src, Register dest) {
   loadPtr(src, dest);
-  asMasm().lshiftPtr(Imm32(1), dest);
 }
 
 void MacroAssemblerCompat::handleFailureWithHandlerTail(
@@ -296,7 +295,7 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                         Register ptrScratch_,
                                         AnyRegister outany, Register64 out64) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   MOZ_ASSERT(ptr_ == ptrScratch_);
 
@@ -365,7 +364,7 @@ void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                          Register memoryBase_, Register ptr_,
                                          Register ptrScratch_) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   MOZ_ASSERT(ptr_ == ptrScratch_);
 
@@ -728,13 +727,11 @@ void MacroAssembler::patchFarJump(CodeOffset farJump, uint32_t targetOffset) {
   inst2->SetInstructionBits((uint32_t)(distance >> 32));
 }
 
-CodeOffset MacroAssembler::nopPatchableToCall(const wasm::CallSiteDesc& desc) {
+CodeOffset MacroAssembler::nopPatchableToCall() {
   AutoForbidPoolsAndNops afp(this,
                              /* max number of instructions in scope = */ 1);
-  CodeOffset offset(currentOffset());
   Nop();
-  append(desc, CodeOffset(currentOffset()));
-  return offset;
+  return CodeOffset(currentOffset());
 }
 
 void MacroAssembler::patchNopToCall(uint8_t* call, uint8_t* target) {
@@ -1094,14 +1091,21 @@ CodeOffset MacroAssembler::wasmTrapInstruction() {
 
 void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
                                      Register boundsCheckLimit, Label* label) {
-  // Not used on ARM64, we rely on signal handling instead
-  MOZ_CRASH("NYI - wasmBoundsCheck");
+  branch32(cond, index, boundsCheckLimit, label);
+  if (JitOptions.spectreIndexMasking) {
+    csel(ARMRegister(index, 32), vixl::wzr, ARMRegister(index, 32), cond);
+  }
 }
 
 void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
                                      Address boundsCheckLimit, Label* label) {
-  // Not used on ARM64, we rely on signal handling instead
-  MOZ_CRASH("NYI - wasmBoundsCheck");
+  MOZ_ASSERT(boundsCheckLimit.offset ==
+             offsetof(wasm::TlsData, boundsCheckLimit));
+
+  branch32(cond, index, boundsCheckLimit, label);
+  if (JitOptions.spectreIndexMasking) {
+    csel(ARMRegister(index, 32), vixl::wzr, ARMRegister(index, 32), cond);
+  }
 }
 
 // FCVTZU behaves as follows:
@@ -2022,6 +2026,26 @@ void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
   // Compute remainder
   Mul(scratch, ARMRegister(srcDest, 32), ARMRegister(rhs, 32));
   Sub(ARMRegister(remOutput, 32), src, scratch);
+}
+
+CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {
+  AutoForbidPoolsAndNops afp(this,
+                             /* max number of instructions in scope = */ 1);
+  CodeOffset offset(currentOffset());
+  adr(ARMRegister(dest, 64), 0, LabelDoc());
+  return offset;
+}
+
+void MacroAssembler::patchNearAddressMove(CodeLocationLabel loc,
+                                          CodeLocationLabel target) {
+  ptrdiff_t off = target - loc;
+  MOZ_RELEASE_ASSERT(vixl::IsInt21(off));
+
+  Instruction* cur = reinterpret_cast<Instruction*>(loc.raw());
+  MOZ_ASSERT(cur->IsADR());
+
+  vixl::Register rd = vixl::Register::XRegFromCode(cur->Rd());
+  adr(cur, rd, off);
 }
 
 // ========================================================================

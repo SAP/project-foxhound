@@ -14,7 +14,8 @@
 
 #include "AnimationCommon.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/BindContext.h"
@@ -30,7 +31,6 @@
 #include "mozilla/dom/DocumentTimeline.h"
 #include "nsFlexContainerFrame.h"
 #include "nsFocusManager.h"
-#include "nsILinkHandler.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIURL.h"
 #include "nsContainerFrame.h"
@@ -167,6 +167,10 @@
 #include "nsBlockFrame.h"
 
 #include "DOMMatrix.h"
+
+#if defined(ACCESSIBILITY) && defined(DEBUG)
+#  include "nsAccessibilityService.h"
+#endif
 
 using mozilla::gfx::Matrix4x4;
 
@@ -1693,8 +1697,15 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
     }
   }
 
-  // Now recurse into our kids
+  // Call BindToTree on shadow root children.
   nsresult rv;
+  if (ShadowRoot* shadowRoot = GetShadowRoot()) {
+    rv = shadowRoot->Bind();
+    NS_ENSURE_SUCCESS(rv, rv);
+  }
+
+  // Now recurse into our kids. Ensure this happens after binding the shadow
+  // root so that directionality of slots is updated.
   {
     BindContext::NestingLevel level(aContext, *this);
     for (nsIContent* child = GetFirstChild(); child;
@@ -1719,6 +1730,7 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
     if (HasID()) {
       AddToIdTable(DoGetID());
     }
+    HandleShadowDOMRelatedInsertionSteps(hadParent);
   }
 
   if (MayHaveStyle() && !IsXULElement()) {
@@ -1726,12 +1738,6 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
     // anything... need to fix that.
     // If MayHaveStyle() is true, we must be an nsStyledElement
     static_cast<nsStyledElement*>(this)->ReparseStyleAttribute(false, false);
-  }
-
-  // Call BindToTree on shadow root children.
-  if (ShadowRoot* shadowRoot = GetShadowRoot()) {
-    rv = shadowRoot->Bind();
-    NS_ENSURE_SUCCESS(rv, rv);
   }
 
   // FIXME(emilio): Why is this needed? The element shouldn't even be styled in
@@ -1805,6 +1811,8 @@ bool WillDetachFromShadowOnUnbind(const Element& aElement, bool aNullParent) {
 }
 
 void Element::UnbindFromTree(bool aNullParent) {
+  HandleShadowDOMRelatedRemovalSteps(aNullParent);
+
   const bool detachingFromShadow =
       WillDetachFromShadowOnUnbind(*this, aNullParent);
   // Make sure to only remove from the ID table if our subtree root is actually
@@ -1870,6 +1878,11 @@ void Element::UnbindFromTree(bool aNullParent) {
                  "propagated scrollbar styles) - that's dangerous...");
     }
   }
+
+#  ifdef ACCESSIBILITY
+  MOZ_ASSERT(!GetAccService() || !GetAccService()->HasAccessible(this),
+             "An accessible for this element still exists!");
+#  endif
 #endif
 
   // Ensure that CSS transitions don't continue on an element at a
@@ -1903,6 +1916,12 @@ void Element::UnbindFromTree(bool aNullParent) {
 
   ClearInDocument();
   SetIsConnected(false);
+  if (HasElementCreatedFromPrototypeAndHasUnmodifiedL10n()) {
+    if (document) {
+      document->mL10nProtoElements.Remove(this);
+    }
+    ClearElementCreatedFromPrototypeAndHasUnmodifiedL10n();
+  }
 
   if (aNullParent || !mParent->IsInShadowTree()) {
     UnsetFlags(NODE_IS_IN_SHADOW_TREE);
@@ -1915,7 +1934,6 @@ void Element::UnbindFromTree(bool aNullParent) {
 
 #ifdef MOZ_XUL
   if (nsXULElement* xulElem = nsXULElement::FromNode(this)) {
-    ;
     xulElem->SetXULBindingParent(nullptr);
     clearBindingParent = false;
   }
@@ -2181,12 +2199,14 @@ nsresult Element::DispatchClickEvent(nsPresContext* aPresContext,
 
 //----------------------------------------------------------------------
 nsresult Element::LeaveLink(nsPresContext* aPresContext) {
-  nsILinkHandler* handler = aPresContext->GetLinkHandler();
-  if (!handler) {
+  if (!aPresContext || !aPresContext->Document()->LinkHandlingEnabled()) {
     return NS_OK;
   }
-
-  return handler->OnLeaveLink();
+  nsIDocShell* shell = aPresContext->Document()->GetDocShell();
+  if (!shell) {
+    return NS_OK;
+  }
+  return nsDocShell::Cast(shell)->OnLeaveLink();
 }
 
 nsresult Element::SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
@@ -2483,6 +2503,15 @@ nsresult Element::SetAttrAndNotify(
     }
   }
 
+  if (HasElementCreatedFromPrototypeAndHasUnmodifiedL10n() &&
+      aNamespaceID == kNameSpaceID_None &&
+      (aName == nsGkAtoms::datal10nid || aName == nsGkAtoms::datal10nargs)) {
+    ClearElementCreatedFromPrototypeAndHasUnmodifiedL10n();
+    if (aComposedDocument) {
+      aComposedDocument->mL10nProtoElements.Remove(this);
+    }
+  }
+
   CustomElementDefinition* definition = GetCustomElementDefinition();
   // Only custom element which is in `custom` state could get the
   // CustomElementDefinition.
@@ -2619,19 +2648,25 @@ nsresult Element::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                const nsAttrValue* aOldValue,
                                nsIPrincipal* aMaybeScriptedPrincipal,
                                bool aNotify) {
-  if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::part) {
-    bool isPart = !!aValue;
-    if (HasPartAttribute() != isPart) {
-      SetHasPartAttribute(isPart);
-      if (ShadowRoot* shadow = GetContainingShadow()) {
-        if (isPart) {
-          shadow->PartAdded(*this);
-        } else {
-          shadow->PartRemoved(*this);
+  if (aNamespaceID == kNameSpaceID_None) {
+    if (aName == nsGkAtoms::part) {
+      bool isPart = !!aValue;
+      if (HasPartAttribute() != isPart) {
+        SetHasPartAttribute(isPart);
+        if (ShadowRoot* shadow = GetContainingShadow()) {
+          if (isPart) {
+            shadow->PartAdded(*this);
+          } else {
+            shadow->PartRemoved(*this);
+          }
         }
       }
+      MOZ_ASSERT(HasPartAttribute() == isPart);
+    } else if (aName == nsGkAtoms::slot && GetParent()) {
+      if (ShadowRoot* shadow = GetParent()->GetShadowRoot()) {
+        shadow->MaybeReassignElement(*this);
+      }
     }
-    MOZ_ASSERT(HasPartAttribute() == isPart);
   }
   return NS_OK;
 }
@@ -2992,7 +3027,6 @@ bool Element::CheckHandleEventForLinksPrecondition(EventChainVisitor& aVisitor,
        (aVisitor.mEvent->mMessage != eMouseClick) &&
        (aVisitor.mEvent->mMessage != eKeyPress) &&
        (aVisitor.mEvent->mMessage != eLegacyDOMActivate)) ||
-      !aVisitor.mPresContext ||
       aVisitor.mEvent->mFlags.mMultipleActionsPrevented) {
     return false;
   }
@@ -3033,7 +3067,7 @@ void Element::GetEventTargetParentForLinks(EventChainPreVisitor& aVisitor) {
       if (!focusEvent || !focusEvent->mIsRefocus) {
         nsAutoString target;
         GetLinkTarget(target);
-        nsContentUtils::TriggerLink(this, aVisitor.mPresContext, absURI, target,
+        nsContentUtils::TriggerLink(this, absURI, target,
                                     /* click */ false, /* isTrusted */ true);
         // Make sure any ancestor links don't also TriggerLink
         aVisitor.mEvent->mFlags.mMultipleActionsPrevented = true;
@@ -3081,27 +3115,29 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
 
   switch (aVisitor.mEvent->mMessage) {
     case eMouseDown: {
-      if (aVisitor.mEvent->AsMouseEvent()->mButton == MouseButton::eLeft) {
-        // don't make the link grab the focus if there is no link handler
-        nsILinkHandler* handler = aVisitor.mPresContext->GetLinkHandler();
-        Document* document = GetComposedDoc();
-        if (handler && document) {
-          nsIFocusManager* fm = nsFocusManager::GetFocusManager();
-          if (fm) {
-            aVisitor.mEvent->mFlags.mMultipleActionsPrevented = true;
+      if (aVisitor.mEvent->AsMouseEvent()->mButton == MouseButton::eLeft &&
+          OwnerDoc()->LinkHandlingEnabled()) {
+        aVisitor.mEvent->mFlags.mMultipleActionsPrevented = true;
+
+        if (IsInComposedDoc()) {
+          if (nsIFocusManager* fm = nsFocusManager::GetFocusManager()) {
             RefPtr<Element> kungFuDeathGrip(this);
             fm->SetFocus(kungFuDeathGrip, nsIFocusManager::FLAG_BYMOUSE |
                                               nsIFocusManager::FLAG_NOSCROLL);
           }
+        }
 
+        if (aVisitor.mPresContext) {
           EventStateManager::SetActiveManager(
               aVisitor.mPresContext->EventStateManager(), this);
+        }
 
-          // OK, we're pretty sure we're going to load, so warm up a speculative
-          // connection to be sure we have one ready when we open the channel.
+        // OK, we're pretty sure we're going to load, so warm up a speculative
+        // connection to be sure we have one ready when we open the channel.
+        if (nsIDocShell* shell = OwnerDoc()->GetDocShell()) {
           nsCOMPtr<nsISpeculativeConnect> sc =
               do_QueryInterface(nsContentUtils::GetIOService());
-          nsCOMPtr<nsIInterfaceRequestor> ir = do_QueryInterface(handler);
+          nsCOMPtr<nsIInterfaceRequestor> ir = do_QueryInterface(shell);
           sc->SpeculativeConnect(absURI, NodePrincipal(), ir);
         }
       }
@@ -3116,19 +3152,16 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
         }
 
         // The default action is simply to dispatch DOMActivate
-        if (RefPtr<PresShell> presShell =
-                aVisitor.mPresContext->GetPresShell()) {
-          // single-click
-          nsEventStatus status = nsEventStatus_eIgnore;
-          // DOMActive event should be trusted since the activation is actually
-          // occurred even if the cause is an untrusted click event.
-          InternalUIEvent actEvent(true, eLegacyDOMActivate, mouseEvent);
-          actEvent.mDetail = 1;
+        nsEventStatus status = nsEventStatus_eIgnore;
+        // DOMActive event should be trusted since the activation is actually
+        // occurred even if the cause is an untrusted click event.
+        InternalUIEvent actEvent(true, eLegacyDOMActivate, mouseEvent);
+        actEvent.mDetail = 1;
 
-          rv = presShell->HandleDOMEventWithTarget(this, &actEvent, &status);
-          if (NS_SUCCEEDED(rv)) {
-            aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
-          }
+        rv = EventDispatcher::Dispatch(this, aVisitor.mPresContext, &actEvent,
+                                       nullptr, &status);
+        if (NS_SUCCEEDED(rv)) {
+          aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
         }
       }
       break;
@@ -3139,8 +3172,7 @@ nsresult Element::PostHandleEventForLinks(EventChainPostVisitor& aVisitor) {
         GetLinkTarget(target);
         const InternalUIEvent* activeEvent = aVisitor.mEvent->AsUIEvent();
         MOZ_ASSERT(activeEvent);
-        nsContentUtils::TriggerLink(this, aVisitor.mPresContext, absURI, target,
-                                    /* click */ true,
+        nsContentUtils::TriggerLink(this, absURI, target, /* click */ true,
                                     activeEvent->IsTrustable());
         aVisitor.mEventStatus = nsEventStatus_eConsumeNoDefault;
       }
@@ -3841,19 +3873,19 @@ float Element::FontSizeInflation() {
   return 1.0;
 }
 
-net::ReferrerPolicy Element::GetReferrerPolicyAsEnum() {
+ReferrerPolicy Element::GetReferrerPolicyAsEnum() {
   if (IsHTMLElement()) {
     const nsAttrValue* referrerValue = GetParsedAttr(nsGkAtoms::referrerpolicy);
     return ReferrerPolicyFromAttr(referrerValue);
   }
-  return net::RP_Unset;
+  return ReferrerPolicy::_empty;
 }
 
-net::ReferrerPolicy Element::ReferrerPolicyFromAttr(const nsAttrValue* aValue) {
+ReferrerPolicy Element::ReferrerPolicyFromAttr(const nsAttrValue* aValue) {
   if (aValue && aValue->Type() == nsAttrValue::eEnum) {
-    return net::ReferrerPolicy(aValue->GetEnumValue());
+    return ReferrerPolicy(aValue->GetEnumValue());
   }
-  return net::RP_Unset;
+  return ReferrerPolicy::_empty;
 }
 
 already_AddRefed<nsDOMStringMap> Element::Dataset() {
@@ -4136,19 +4168,16 @@ void Element::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
 
     // Now measure just the ComputedValues (and style structs) under
     // mServoData. This counts towards the relevant fields in |aSizes|.
-    RefPtr<ComputedStyle> sc;
-    if (Servo_Element_HasPrimaryComputedValues(this)) {
-      sc = Servo_Element_GetPrimaryComputedValues(this).Consume();
-      if (!aSizes.mState.HaveSeenPtr(sc.get())) {
-        sc->AddSizeOfIncludingThis(aSizes, &aSizes.mLayoutComputedValuesDom);
+    if (auto* style = Servo_Element_GetMaybeOutOfDateStyle(this)) {
+      if (!aSizes.mState.HaveSeenPtr(style)) {
+        style->AddSizeOfIncludingThis(aSizes, &aSizes.mLayoutComputedValuesDom);
       }
 
       for (size_t i = 0; i < PseudoStyle::kEagerPseudoCount; i++) {
-        if (Servo_Element_HasPseudoComputedValues(this, i)) {
-          sc = Servo_Element_GetPseudoComputedValues(this, i).Consume();
-          if (!aSizes.mState.HaveSeenPtr(sc.get())) {
-            sc->AddSizeOfIncludingThis(aSizes,
-                                       &aSizes.mLayoutComputedValuesDom);
+        if (auto* style = Servo_Element_GetMaybeOutOfDatePseudoStyle(this, i)) {
+          if (!aSizes.mState.HaveSeenPtr(style)) {
+            style->AddSizeOfIncludingThis(aSizes,
+                                          &aSizes.mLayoutComputedValuesDom);
           }
         }
       }

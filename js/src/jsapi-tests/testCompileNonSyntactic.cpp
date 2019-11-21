@@ -8,6 +8,7 @@
 #include "js/CompilationAndEvaluation.h"  // JS::Compile{,ForNonSyntacticScope}{,DontInflate}
 #include "js/SourceText.h"                // JS::Source{Ownership,Text}
 #include "jsapi-tests/tests.h"
+#include "vm/HelperThreads.h"
 #include "vm/Monitor.h"
 #include "vm/MutexIDs.h"
 
@@ -18,7 +19,7 @@ struct OffThreadTask {
   OffThreadTask() : monitor(js::mutexid::ShellOffThreadState), token(nullptr) {}
 
   OffThreadToken* waitUntilDone(JSContext* cx) {
-    if (OffThreadParsingMustWaitForGC(cx->runtime())) {
+    if (js::OffThreadParsingMustWaitForGC(cx->runtime())) {
       js::gc::FinishGC(cx);
     }
 

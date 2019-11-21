@@ -346,7 +346,7 @@ Accessible* nsAccessibilityService::GetRootDocumentAccessible(
     nsCOMPtr<nsIDocShellTreeItem> treeItem(documentNode->GetDocShell());
     if (treeItem) {
       nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
-      treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
+      treeItem->GetInProcessRootTreeItem(getter_AddRefs(rootTreeItem));
       if (treeItem != rootTreeItem) {
         nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(rootTreeItem));
         presShell = docShell->GetPresShell();
@@ -919,7 +919,7 @@ Accessible* nsAccessibilityService::CreateAccessible(nsINode* aNode,
   if (!frame || !frame->StyleVisibility()->IsVisible()) {
     // display:contents element doesn't have a frame, but retains the semantics.
     // All its children are unaffected.
-    if (content->IsElement() && content->AsElement()->IsDisplayContents()) {
+    if (nsCoreUtils::IsDisplayContents(content)) {
       const HTMLMarkupMapInfo* markupMap =
           mHTMLMarkupMap.Get(content->NodeInfo()->NameAtom());
       if (markupMap && markupMap->new_func) {
@@ -1396,12 +1396,13 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
 
       if (table) {
         nsIContent* parentContent =
-            aContent->GetParentOrHostNode()->AsContent();
+            aContent->GetParentOrShadowHostNode()->AsContent();
         nsIFrame* parentFrame = nullptr;
         if (parentContent) {
           parentFrame = parentContent->GetPrimaryFrame();
           if (!parentFrame || !parentFrame->IsTableWrapperFrame()) {
-            parentContent = parentContent->GetParentOrHostNode()->AsContent();
+            parentContent =
+                parentContent->GetParentOrShadowHostNode()->AsContent();
             if (parentContent) {
               parentFrame = parentContent->GetPrimaryFrame();
             }
@@ -1511,10 +1512,13 @@ void nsAccessibilityService::RemoveNativeRootAccessible(
 bool nsAccessibilityService::HasAccessible(nsINode* aDOMNode) {
   if (!aDOMNode) return false;
 
-  DocAccessible* document = GetDocAccessible(aDOMNode->OwnerDoc());
+  Document* document = aDOMNode->OwnerDoc();
   if (!document) return false;
 
-  return document->HasAccessible(aDOMNode);
+  DocAccessible* docAcc = GetExistingDocAccessible(aDOMNode->OwnerDoc());
+  if (!docAcc) return false;
+
+  return docAcc->HasAccessible(aDOMNode);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -25,7 +25,7 @@ pub struct Type(u8);
 /// Not a valid type. Can't be loaded or stored. Can't be part of a SIMD vector.
 pub const INVALID: Type = Type(0);
 
-/// Start of the lane types. See also `meta-python/cdsl/types.py`.
+/// Start of the lane types. See also `meta/src/cdsl/types.rs`.
 const LANE_BASE: u8 = 0x70;
 
 /// Start of the 2-lane vector types.
@@ -44,8 +44,15 @@ impl Type {
         if self.0 < VECTOR_BASE {
             self
         } else {
-            Type(LANE_BASE | (self.0 & 0x0f))
+            Self(LANE_BASE | (self.0 & 0x0f))
         }
+    }
+
+    /// The type transformation that returns the lane type of a type variable; it is just a
+    /// renaming of lane_type() to be used in context where we think in terms of type variable
+    /// transformations.
+    pub fn lane_of(self) -> Self {
+        self.lane_type()
     }
 
     /// Get log_2 of the number of bits in a lane.
@@ -54,8 +61,8 @@ impl Type {
             B1 => 0,
             B8 | I8 => 3,
             B16 | I16 => 4,
-            B32 | I32 | F32 => 5,
-            B64 | I64 | F64 => 6,
+            B32 | I32 | F32 | R32 => 5,
+            B64 | I64 | F64 | R64 => 6,
             _ => 0,
         }
     }
@@ -66,8 +73,8 @@ impl Type {
             B1 => 1,
             B8 | I8 => 8,
             B16 | I16 => 16,
-            B32 | I32 | F32 => 32,
-            B64 | I64 | F64 => 64,
+            B32 | I32 | F32 | R32 => 32,
+            B64 | I64 | F64 | R64 => 64,
             _ => 0,
         }
     }
@@ -92,7 +99,7 @@ impl Type {
     /// Get a type with the same number of lanes as this type, but with the lanes replaced by
     /// booleans of the same size.
     ///
-    /// Scalar types are treated as vectors with one lane, so they are converted to the multi-bit
+    /// Lane types are treated as vectors with one lane, so they are converted to the multi-bit
     /// boolean types.
     pub fn as_bool_pedantic(self) -> Self {
         // Replace the low 4 bits with the boolean version, preserve the high 4 bits.
@@ -101,6 +108,7 @@ impl Type {
             B16 | I16 => B16,
             B32 | I32 | F32 => B32,
             B64 | I64 | F64 => B64,
+            R32 | R64 => panic!("Reference types should not convert to bool"),
             _ => B1,
         })
     }
@@ -203,6 +211,14 @@ impl Type {
         }
     }
 
+    /// Is this a ref type?
+    pub fn is_ref(self) -> bool {
+        match self {
+            R32 | R64 => true,
+            _ => false,
+        }
+    }
+
     /// Get log_2 of the number of lanes in this SIMD vector type.
     ///
     /// All SIMD types have a lane count that is a power of two and no larger than 256, so this
@@ -294,6 +310,8 @@ impl Display for Type {
             write!(f, "f{}", self.lane_bits())
         } else if self.is_vector() {
             write!(f, "{}x{}", self.lane_type(), self.lane_count())
+        } else if self.is_ref() {
+            write!(f, "r{}", self.lane_bits())
         } else {
             f.write_str(match *self {
                 IFLAGS => "iflags",
@@ -315,6 +333,8 @@ impl Debug for Type {
             write!(f, "types::F{}", self.lane_bits())
         } else if self.is_vector() {
             write!(f, "{:?}X{}", self.lane_type(), self.lane_count())
+        } else if self.is_ref() {
+            write!(f, "types::R{}", self.lane_bits())
         } else {
             match *self {
                 INVALID => write!(f, "types::INVALID"),
@@ -356,6 +376,11 @@ mod tests {
         assert_eq!(I64, I64.lane_type());
         assert_eq!(F32, F32.lane_type());
         assert_eq!(F64, F64.lane_type());
+        assert_eq!(B1, B1.by(8).unwrap().lane_type());
+        assert_eq!(I32, I32X4.lane_type());
+        assert_eq!(F64, F64X2.lane_type());
+        assert_eq!(R32, R32.lane_type());
+        assert_eq!(R64, R64.lane_type());
 
         assert_eq!(INVALID.lane_bits(), 0);
         assert_eq!(IFLAGS.lane_bits(), 0);
@@ -371,6 +396,8 @@ mod tests {
         assert_eq!(I64.lane_bits(), 64);
         assert_eq!(F32.lane_bits(), 32);
         assert_eq!(F64.lane_bits(), 64);
+        assert_eq!(R32.lane_bits(), 32);
+        assert_eq!(R64.lane_bits(), 64);
     }
 
     #[test]
@@ -440,6 +467,8 @@ mod tests {
         assert_eq!(I64.to_string(), "i64");
         assert_eq!(F32.to_string(), "f32");
         assert_eq!(F64.to_string(), "f64");
+        assert_eq!(R32.to_string(), "r32");
+        assert_eq!(R64.to_string(), "r64");
     }
 
     #[test]

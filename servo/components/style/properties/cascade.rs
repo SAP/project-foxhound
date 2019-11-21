@@ -153,7 +153,7 @@ where
                         // longhands are only allowed if they have our
                         // restriction flag set.
                         if let PropertyDeclarationId::Longhand(id) = declaration.id() {
-                            if !id.flags().contains(restriction) {
+                            if !id.flags().contains(restriction) && cascade_level.origin() != Origin::UserAgent {
                                 return None;
                             }
                         }
@@ -639,13 +639,8 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         #[cfg(feature = "servo")]
         {
-            // TODO(emilio): Use get_font_if_mutated instead.
-            if self.seen.contains(LonghandId::FontStyle) ||
-                self.seen.contains(LonghandId::FontWeight) ||
-                self.seen.contains(LonghandId::FontStretch) ||
-                self.seen.contains(LonghandId::FontFamily)
-            {
-                builder.mutate_font().compute_font_hash();
+            if let Some(font) = builder.get_font_if_mutated() {
+                font.compute_font_hash();
             }
         }
     }
@@ -678,7 +673,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
     #[inline]
     #[cfg(feature = "gecko")]
     fn recompute_default_font_family_type_if_needed(&mut self) {
-        use crate::gecko_bindings::{bindings, structs};
+        use crate::gecko_bindings::bindings;
         use crate::values::computed::font::GenericFontFamily;
 
         if !self.seen.contains(LonghandId::XLang) &&
@@ -686,7 +681,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             return;
         }
 
-        let use_document_fonts = unsafe { structs::StaticPrefs::sVarCache_browser_display_use_document_fonts != 0 };
+        let use_document_fonts = static_prefs::pref!("browser.display.use_document_fonts") != 0;
         let builder = &mut self.context.builder;
         let (default_font_type, prioritize_user_fonts) = {
             let font = builder.get_font().gecko();
