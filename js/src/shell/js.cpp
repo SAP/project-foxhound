@@ -70,6 +70,7 @@
 #include "builtin/ModuleObject.h"
 #include "builtin/Promise.h"
 #include "builtin/RegExp.h"
+#include "builtin/String.h"
 #include "builtin/TestingFunctions.h"
 #include "debugger/DebugAPI.h"
 #if defined(JS_BUILD_BINAST)
