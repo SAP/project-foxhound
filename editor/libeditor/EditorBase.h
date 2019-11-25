@@ -58,6 +58,7 @@ class nsIWidget;
 class nsRange;
 
 namespace mozilla {
+class AlignStateAtSelection;
 class AutoSelectionRestorer;
 class AutoTopLevelEditSubActionNotifier;
 class AutoTransactionBatch;
@@ -70,6 +71,7 @@ class CSSEditUtils;
 class DeleteNodeTransaction;
 class DeleteRangeTransaction;
 class DeleteTextTransaction;
+class EditActionResult;
 class EditAggregateTransaction;
 class EditorEventListener;
 class EditTransactionBase;
@@ -80,13 +82,15 @@ class IMEContentObserver;
 class InsertNodeTransaction;
 class InsertTextTransaction;
 class JoinNodeTransaction;
+class ListElementSelectionState;
+class ListItemElementSelectionState;
+class ParagraphStateAtSelection;
 class PlaceholderTransaction;
 class PresShell;
 class SplitNodeResult;
 class SplitNodeTransaction;
 class TextComposition;
 class TextEditor;
-class TextEditRules;
 class TextInputListener;
 class TextServicesDocument;
 class TypeInState;
@@ -506,10 +510,6 @@ class EditorBase : public nsIEditor,
     return (mFlags & nsIPlaintextEditor::eEditorAllowInteraction) != 0;
   }
 
-  bool DontEchoPassword() const {
-    return (mFlags & nsIPlaintextEditor::eEditorDontEchoPassword) != 0;
-  }
-
   bool ShouldSkipSpellCheck() const {
     return (mFlags & nsIPlaintextEditor::eEditorSkipSpellCheck) != 0;
   }
@@ -656,23 +656,33 @@ class EditorBase : public nsIEditor,
     bool mRestoreContentEditableCount;
 
     /**
-     * Extend mChangedRange to include `aNode`.
+     * The following methods modifies some data of this struct and
+     * `EditSubActionData` struct.  Currently, these are required only
+     * by `HTMLEditor`.  Therefore, for cutting the runtime cost of
+     * `TextEditor`, these methods should be called only by `HTMLEditor`.
+     * But it's fine to use these methods in `TextEditor` if necessary.
+     * If so, you need to call `DidDeleteText()` and `DidInsertText()`
+     * from `SetTextNodeWithoutTransaction()`.
      */
-    nsresult AddNodeToChangedRange(const HTMLEditor& aHTMLEditor,
-                                   nsINode& aNode);
-
-    /**
-     * Extend mChangedRange to include `aPoint`.
-     */
-    nsresult AddPointToChangedRange(const HTMLEditor& aHTMLEditor,
-                                    const EditorRawDOMPoint& aPoint);
-
-    /**
-     * Extend mChangedRange to include `aStart` and `aEnd`.
-     */
-    nsresult AddRangeToChangedRange(const HTMLEditor& aHTMLEditor,
-                                    const EditorRawDOMPoint& aStart,
-                                    const EditorRawDOMPoint& aEnd);
+    void DidCreateElement(EditorBase& aEditorBase, Element& aNewElement);
+    void DidInsertContent(EditorBase& aEditorBase, nsIContent& aNewContent);
+    void WillDeleteContent(EditorBase& aEditorBase,
+                           nsIContent& aRemovingContent);
+    void DidSplitContent(EditorBase& aEditorBase,
+                         nsIContent& aExistingRightContent,
+                         nsIContent& aNewLeftContent);
+    void WillJoinContents(EditorBase& aEditorBase, nsIContent& aLeftContent,
+                          nsIContent& aRightContent);
+    void DidJoinContents(EditorBase& aEditorBase, nsIContent& aLeftContent,
+                         nsIContent& aRightContent);
+    void DidInsertText(EditorBase& aEditorBase,
+                       const EditorRawDOMPoint& aInsertionPoint,
+                       const nsAString& aString);
+    void DidDeleteText(EditorBase& aEditorBase,
+                       const EditorRawDOMPoint& aStartInTextNode);
+    void WillDeleteRange(EditorBase& aEditorBase,
+                         const EditorRawDOMPoint& aStart,
+                         const EditorRawDOMPoint& aEnd);
 
    private:
     void Clear() {
@@ -692,6 +702,25 @@ class EditorBase : public nsIEditor,
       mDidDeleteEmptyParentBlocks = false;
       mRestoreContentEditableCount = false;
     }
+
+    /**
+     * Extend mChangedRange to include `aNode`.
+     */
+    nsresult AddNodeToChangedRange(const HTMLEditor& aHTMLEditor,
+                                   nsINode& aNode);
+
+    /**
+     * Extend mChangedRange to include `aPoint`.
+     */
+    nsresult AddPointToChangedRange(const HTMLEditor& aHTMLEditor,
+                                    const EditorRawDOMPoint& aPoint);
+
+    /**
+     * Extend mChangedRange to include `aStart` and `aEnd`.
+     */
+    nsresult AddRangeToChangedRange(const HTMLEditor& aHTMLEditor,
+                                    const EditorRawDOMPoint& aStart,
+                                    const EditorRawDOMPoint& aEnd);
 
     TopLevelEditSubActionData() = default;
     TopLevelEditSubActionData(const TopLevelEditSubActionData& aOther) = delete;
@@ -820,7 +849,7 @@ class EditorBase : public nsIEditor,
         case EditSubAction::eCreateOrRemoveBlock:
         case EditSubAction::eMergeBlockContents:
         case EditSubAction::eRemoveList:
-        case EditSubAction::eCreateOrChangeDefinitionList:
+        case EditSubAction::eCreateOrChangeDefinitionListItem:
         case EditSubAction::eInsertElement:
         case EditSubAction::eInsertQuotation:
         case EditSubAction::eInsertQuotedText:
@@ -960,12 +989,10 @@ class EditorBase : public nsIEditor,
 
  protected:  // May be called by friends.
   /****************************************************************************
-   * Some classes like TextEditRules, HTMLEditRules, WSRunObject which are
-   * part of handling edit actions are allowed to call the following protected
-   * methods.  However, those methods won't prepare caches of some objects
-   * which are necessary for them.  So, if you want some following methods
-   * to do that for you, you need to create a wrapper method in public scope
-   * and call it.
+   * Some friend classes are allowed to call the following protected methods.
+   * However, those methods won't prepare caches of some objects which are
+   * necessary for them.  So, if you call them from friend classes, you need
+   * to make sure that AutoEditActionDataSetter is created.
    ****************************************************************************/
 
   bool IsEditActionDataAvailable() const {
@@ -1147,8 +1174,13 @@ class EditorBase : public nsIEditor,
       const nsAString& aStringToInsert, Text& aTextNode, int32_t aOffset,
       bool aSuppressIME = false);
 
-  MOZ_CAN_RUN_SCRIPT nsresult SetTextImpl(const nsAString& aString,
-                                          Text& aTextNode);
+  /**
+   * SetTextNodeWithoutTransaction() is optimized path to set new value to
+   * the text node directly and without transaction.  This is used when
+   * setting `<input>.value` and `<textarea>.value`.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult
+  SetTextNodeWithoutTransaction(const nsAString& aString, Text& aTextNode);
 
   /**
    * DeleteNodeWithTransaction() removes aNode from the DOM tree.
@@ -1669,15 +1701,6 @@ class EditorBase : public nsIEditor,
                                               nsIContent& aRightNode);
 
   /**
-   * HasPaddingBRElementForEmptyEditor() returns true if there is a padding
-   * <br> element for empty editor.  When this returns true, it means that
-   * we're empty.
-   */
-  bool HasPaddingBRElementForEmptyEditor() const {
-    return !!mPaddingBRElementForEmptyEditor;
-  }
-
-  /**
    * EnsureNoPaddingBRElementForEmptyEditor() removes padding <br> element
    * for empty editor if there is.
    */
@@ -2035,25 +2058,47 @@ class EditorBase : public nsIEditor,
    */
   void HideCaret(bool aHide);
 
+ protected:  // Edit sub-action handler
+  /**
+   * SetCaretBidiLevelForDeletion() sets caret bidi level if necessary.
+   * If current point is bidi boundary and caller shouldn't handle the
+   * deletion, returns as "canceled".  Note that even if this sets caret
+   * bidi level, this won't mark the result as "handled" so that you can
+   * use the result as edit sub-action handler's result.
+   *
+   * @param aPointAtCaret       Collapsed `Selection` point.
+   * @param aDirectionAndAmount The direction and amount to delete.
+   */
+  template <typename PT, typename CT>
+  EditActionResult SetCaretBidiLevelForDeletion(
+      const EditorDOMPointBase<PT, CT>& aPointAtCaret,
+      nsIEditor::EDirection aDirectionAndAmount) const;
+
+  /**
+   * UndefineCaretBidiLevel() resets bidi level of the caret.
+   */
+  void UndefineCaretBidiLevel() const;
+
  protected:  // Called by helper classes.
   /**
    * OnStartToHandleTopLevelEditSubAction() is called when
    * GetTopLevelEditSubAction() is EditSubAction::eNone and somebody starts to
    * handle aEditSubAction.
    *
-   * @param aEditSubAction      Top level edit sub action which will be
-   *                            handled soon.
-   * @param aDirection          Direction of aEditSubAction.
+   * @param aTopLevelEditSubAction              Top level edit sub action which
+   *                                            will be handled soon.
+   * @param aDirectionOfTopLevelEditSubAction   Direction of aEditSubAction.
    */
-  virtual void OnStartToHandleTopLevelEditSubAction(
-      EditSubAction aEditSubAction, nsIEditor::EDirection aDirection);
+  MOZ_CAN_RUN_SCRIPT virtual void OnStartToHandleTopLevelEditSubAction(
+      EditSubAction aTopLevelEditSubAction,
+      nsIEditor::EDirection aDirectionOfTopLevelEditSubAction,
+      ErrorResult& aRv);
 
   /**
    * OnEndHandlingTopLevelEditSubAction() is called after
    * SetTopLevelEditSubAction() is handled.
    */
-  MOZ_CAN_RUN_SCRIPT
-  virtual void OnEndHandlingTopLevelEditSubAction();
+  MOZ_CAN_RUN_SCRIPT virtual nsresult OnEndHandlingTopLevelEditSubAction();
 
   /**
    * OnStartToHandleEditSubAction() and OnEndHandlingEditSubAction() are called
@@ -2443,9 +2488,10 @@ class EditorBase : public nsIEditor,
    */
   class MOZ_RAII AutoEditSubActionNotifier final {
    public:
-    AutoEditSubActionNotifier(
+    MOZ_CAN_RUN_SCRIPT AutoEditSubActionNotifier(
         EditorBase& aEditorBase, EditSubAction aEditSubAction,
-        nsIEditor::EDirection aDirection MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+        nsIEditor::EDirection aDirection,
+        ErrorResult& aRv MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
         : mEditorBase(aEditorBase), mIsTopLevel(true) {
       MOZ_GUARD_OBJECT_NOTIFIER_INIT;
       // The top level edit sub action has already be set if this is nested call
@@ -2453,16 +2499,16 @@ class EditorBase : public nsIEditor,
       //     handling via selectionchange event listener or mutation event
       //     listener.
       if (!mEditorBase.GetTopLevelEditSubAction()) {
-        mEditorBase.OnStartToHandleTopLevelEditSubAction(aEditSubAction,
-                                                         aDirection);
+        MOZ_KnownLive(mEditorBase)
+            .OnStartToHandleTopLevelEditSubAction(aEditSubAction, aDirection,
+                                                  aRv);
       } else {
         mIsTopLevel = false;
       }
       mEditorBase.OnStartToHandleEditSubAction();
     }
 
-    MOZ_CAN_RUN_SCRIPT_BOUNDARY
-    ~AutoEditSubActionNotifier() {
+    MOZ_CAN_RUN_SCRIPT ~AutoEditSubActionNotifier() {
       mEditorBase.OnEndHandlingEditSubAction();
       if (mIsTopLevel) {
         MOZ_KnownLive(mEditorBase).OnEndHandlingTopLevelEditSubAction();
@@ -2553,8 +2599,6 @@ class EditorBase : public nsIEditor,
   // compositionend.
   RefPtr<TextComposition> mComposition;
 
-  RefPtr<TextEditRules> mRules;
-
   RefPtr<TextInputListener> mTextInputListener;
 
   RefPtr<IMEContentObserver> mIMEContentObserver;
@@ -2594,6 +2638,8 @@ class EditorBase : public nsIEditor,
   // A Tristate value.
   uint8_t mSpellcheckCheckboxState;
 
+  // If true, initialization was succeeded.
+  bool mInitSucceeded;
   // If false, transactions should not change Selection even after modifying
   // the DOM tree.
   bool mAllowsTransactionsToChangeSelection;
@@ -2611,19 +2657,21 @@ class EditorBase : public nsIEditor,
   // Whether we are an HTML editor class.
   bool mIsHTMLEditorClass;
 
+  friend class AlignStateAtSelection;
   friend class CompositionTransaction;
   friend class CreateElementTransaction;
   friend class CSSEditUtils;
   friend class DeleteNodeTransaction;
   friend class DeleteRangeTransaction;
   friend class DeleteTextTransaction;
-  friend class HTMLEditRules;
   friend class HTMLEditUtils;
   friend class InsertNodeTransaction;
   friend class InsertTextTransaction;
   friend class JoinNodeTransaction;
+  friend class ListElementSelectionState;
+  friend class ListItemElementSelectionState;
+  friend class ParagraphStateAtSelection;
   friend class SplitNodeTransaction;
-  friend class TextEditRules;
   friend class TypeInState;
   friend class WSRunObject;
   friend class WSRunScanner;

@@ -1278,7 +1278,7 @@ class Layer {
    *     combining appropriate values from mozilla::SideBits.
    */
   void SetFixedPositionData(ScrollableLayerGuid::ViewID aScrollId,
-                            const LayerPoint& aAnchor, int32_t aSides) {
+                            const LayerPoint& aAnchor, SideBits aSides) {
     if (mSimpleAttrs.SetFixedPositionData(aScrollId, aAnchor, aSides)) {
       MOZ_LAYERS_LOG_IF_SHADOWABLE(
           this, ("Layer::Mutated(%p) FixedPositionData", this));
@@ -1346,7 +1346,6 @@ class Layer {
     return mScrollMetadata;
   }
   bool HasScrollableFrameMetrics() const;
-  bool HasRootScrollableFrameMetrics() const;
   bool IsScrollableWithoutContent() const;
   const EventRegions& GetEventRegions() const { return mEventRegions; }
   ContainerLayer* GetParent() { return mParent; }
@@ -1390,7 +1389,7 @@ class Layer {
   LayerPoint GetFixedPositionAnchor() {
     return mSimpleAttrs.GetFixedPositionAnchor();
   }
-  int32_t GetFixedPositionSides() {
+  SideBits GetFixedPositionSides() {
     return mSimpleAttrs.GetFixedPositionSides();
   }
   ScrollableLayerGuid::ViewID GetStickyScrollContainerId() {
@@ -2676,6 +2675,22 @@ class RefLayer : public ContainerLayer {
   }
 
   /**
+   * CONSTRUCTION PHASE ONLY
+   * Set remote subdocument iframe size.
+   */
+  void SetRemoteDocumentRect(const LayerIntRect& aRemoteDocumentRect) {
+    if (mRemoteDocumentRect.IsEqualEdges(aRemoteDocumentRect)) {
+      return;
+    }
+    mRemoteDocumentRect = aRemoteDocumentRect;
+    Mutated();
+  }
+
+  const LayerIntRect& GetRemoteDocumentRect() const {
+    return mRemoteDocumentRect;
+  }
+
+  /**
    * DRAWING PHASE ONLY
    * |aLayer| is the same as the argument to ConnectReferentLayer().
    */
@@ -2710,6 +2725,7 @@ class RefLayer : public ContainerLayer {
   // 0 is a special value that means "no ID".
   LayersId mId;
   EventRegionsOverride mEventRegionsOverride;
+  LayerIntRect mRemoteDocumentRect;
 };
 
 void SetAntialiasingFlags(Layer* aLayer, gfx::DrawTarget* aTarget);

@@ -222,7 +222,9 @@ function nodeHasSize(node) {
     return false;
   }
 
-  const quads = node.getBoxQuads();
+  const quads = node.getBoxQuads({
+    createFramesForSuppressedWhitespace: false,
+  });
   return quads.some(quad => {
     const bounds = quad.getBounds();
     return bounds.width && bounds.height;
@@ -464,7 +466,11 @@ async function getBackgroundColor({ rawNode: node, walker }) {
   // - not element node
   // - more than one child
   // Avoid calculating bounds and creating doc walker by returning early.
-  if (node.nodeType != Node.ELEMENT_NODE || node.children.length > 0) {
+  if (
+    node.nodeType != Node.ELEMENT_NODE ||
+    node.childNodes.length > 1 ||
+    !node.firstChild
+  ) {
     return {
       value: colorUtils.colorToRGBA(
         getClosestBackgroundColor(node),

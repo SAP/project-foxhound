@@ -5,7 +5,6 @@
 <!-- Privacy panel -->
 
 <script src="chrome://browser/content/preferences/in-content/privacy.js"/>
-<stringbundle id="bundlePreferences" src="chrome://browser/locale/preferences/preferences.properties"/>
 <stringbundle id="signonBundle" src="chrome://passwordmgr/locale/passwordmgr.properties"/>
 <html:template id="template-panePrivacy">
 <hbox id="browserPrivacyCategory"
@@ -504,6 +503,12 @@
               data-l10n-id="forms-master-pw-change"/>
     </hbox>
   </hbox>
+  <!--
+    Those two strings are meant to be invisible and will be used exclusively to provide
+    localization for an alert window.
+  -->
+  <label id="fips-title" hidden="true" data-l10n-id="forms-master-pw-fips-title"></label>
+  <label id="fips-desc" hidden="true" data-l10n-id="forms-master-pw-fips-desc"></label>
 </groupbox>
 
 <!-- The form autofill section is inserted in to this box
@@ -616,7 +621,8 @@
 <!-- Address Bar -->
 <groupbox id="locationBarGroup"
           data-category="panePrivacy"
-          hidden="true">
+          hidden="true"
+          data-subcategory="locationBar">
   <label><html:h2 data-l10n-id="addressbar-header"/></label>
   <label id="locationBarSuggestionLabel" data-l10n-id="addressbar-suggest"/>
   <checkbox id="historySuggestion" data-l10n-id="addressbar-locbar-history-option"
@@ -821,8 +827,7 @@
   <vbox id="a11yPermissionsBox">
     <hbox flex="1" align="center">
       <checkbox id="a11yPrivacyCheckbox" class="tail-with-learn-more"
-                data-l10n-id="permissions-a11y-privacy-checkbox"
-                oncommand="return gPrivacyPane.updateA11yPrefs(this.checked)"/>
+                data-l10n-id="permissions-a11y-privacy-checkbox"/>
       <label id="a11yLearnMoreLink" class="learnMore" is="text-link"
              data-l10n-id="permissions-a11y-privacy-link"/>
     </hbox>

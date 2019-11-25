@@ -7,7 +7,6 @@
 #ifndef mozilla_ShellHeaderOnlyUtils_h
 #define mozilla_ShellHeaderOnlyUtils_h
 
-#include "mozilla/LauncherResult.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 
 #include <objbase.h>
@@ -140,7 +139,7 @@ inline LauncherVoidResult ShellExecuteByExplorer(const _bstr_t& aPath,
 #endif  // defined(ShellExecute)
 
   // 4. Now call IShellDispatch2::ShellExecute to ask Explorer to execute.
-  hr = shellDisp->ShellExecute(aPath, aArgs, aVerb, aWorkingDir, aShowCmd);
+  hr = shellDisp->ShellExecute(aPath, aArgs, aWorkingDir, aVerb, aShowCmd);
   if (FAILED(hr)) {
     return LAUNCHER_ERROR_FROM_HRESULT(hr);
   }

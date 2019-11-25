@@ -6,6 +6,10 @@ import sys
 ABS_WORK_DIR = os.path.join(os.getcwd(), "build")
 BINARY_PATH = os.path.join(ABS_WORK_DIR, "firefox", "firefox.exe")
 INSTALLER_PATH = os.path.join(ABS_WORK_DIR, "installer.zip")
+NODEJS_PATH = None
+if 'MOZ_FETCHES_DIR' in os.environ:
+    NODEJS_PATH = os.path.join(os.environ["MOZ_FETCHES_DIR"], "node/node.exe")
+
 XPCSHELL_NAME = 'xpcshell.exe'
 EXE_SUFFIX = '.exe'
 DISABLE_SCREEN_SAVER = False
@@ -98,7 +102,7 @@ config = {
         "mozmill": {
             "options": [
                 "--binary=%(binary_path)s",
-                "--testing-modules-dir=test/modules",
+                "--testing-modules-dir=tests/modules",
                 "--plugins-path=%(test_plugin_path)s",
                 "--symbols-path=%(symbols_path)s"
             ],
@@ -155,7 +159,6 @@ config = {
         "mochitest-browser-chrome": ["--flavor=browser"],
         "mochitest-browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
         "mochitest-browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
-        "mochitest-browser-chrome-instrumentation": ["--flavor=browser"],
         "mochitest-webgl1-core": ["--subsuite=webgl1-core"],
         "mochitest-webgl1-ext": ["--subsuite=webgl1-ext"],
         "mochitest-webgl2-core": ["--subsuite=webgl2-core"],
@@ -236,7 +239,7 @@ config = {
             'name': 'disable windows security and maintenance notifications',
             'cmd': [
                 'powershell', '-command',
-                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'
+                '"&{$p=\'HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Windows.SystemToast.SecurityAndMaintenance\';if(!(Test-Path -Path $p)){&New-Item -Path $p -Force}&Set-ItemProperty -Path $p -Name Enabled -Value 0}"'  # noqa
             ],
             'architectures': ['32bit', '64bit'],
             'halt_on_failure': True,
@@ -283,7 +286,5 @@ config = {
                              },
     "minidump_stackwalk_path": "win32-minidump_stackwalk.exe",
     "minidump_tooltool_manifest_path": "config/tooltool-manifests/win32/releng.manifest",
-    "download_nodejs": True,
-    "nodejs_path": "node-win32.exe",
-    "nodejs_tooltool_manifest_path": "config/tooltool-manifests/win32/nodejs.manifest",
+    "nodejs_path": NODEJS_PATH,
 }

@@ -98,6 +98,12 @@ class ObjOperandId : public OperandId {
   bool operator!=(const ObjOperandId& other) const { return id_ != other.id_; }
 };
 
+class NumberOperandId : public ValOperandId {
+ public:
+  NumberOperandId() = default;
+  explicit NumberOperandId(uint16_t id) : ValOperandId(id) {}
+};
+
 class StringOperandId : public OperandId {
  public:
   StringOperandId() = default;
@@ -212,6 +218,8 @@ extern const uint32_t ArgLengths[];
   _(GuardIsNumber, Id)                                                         \
   _(GuardToInt32, Id, Id)                                                      \
   _(GuardToInt32Index, Id, Id)                                                 \
+  _(GuardToInt32ModUint32, Id, Id)                                             \
+  _(GuardToUint8Clamped, Id, Id)                                               \
   _(GuardType, Id, Byte)                                                       \
   _(GuardShape, Id, Field)                                                     \
   _(GuardGroup, Id, Field)                                                     \
@@ -286,7 +294,7 @@ extern const uint32_t ArgLengths[];
   _(StoreDenseElementHole, Id, Id, Id, Byte)                                   \
   _(ArrayPush, Id, Id)                                                         \
   _(ArrayJoinResult, Id)                                                       \
-  _(StoreTypedElement, Id, Id, Id, Byte, Byte, Byte)                           \
+  _(StoreTypedElement, Id, Byte, Byte, Id, Id, Byte)                           \
   _(CallNativeSetter, Id, Id, Field)                                           \
   _(CallScriptedSetter, Id, Field, Id, Byte)                                   \
   _(CallSetArrayLength, Id, Byte, Id)                                          \
@@ -844,8 +852,23 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     return res;
   }
 
-  void guardIsNumber(ValOperandId val) {
+  Int32OperandId guardToInt32ModUint32(ValOperandId val) {
+    Int32OperandId res(nextOperandId_++);
+    writeOpWithOperandId(CacheOp::GuardToInt32ModUint32, val);
+    writeOperandId(res);
+    return res;
+  }
+
+  Int32OperandId guardToUint8Clamped(ValOperandId val) {
+    Int32OperandId res(nextOperandId_++);
+    writeOpWithOperandId(CacheOp::GuardToUint8Clamped, val);
+    writeOperandId(res);
+    return res;
+  }
+
+  NumberOperandId guardIsNumber(ValOperandId val) {
     writeOpWithOperandId(CacheOp::GuardIsNumber, val);
+    return NumberOperandId(val.id());
   }
 
   void guardType(ValOperandId val, ValueType type) {
@@ -1067,8 +1090,8 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     return res;
   }
 
-  ValOperandId guardAndGetNumberFromString(StringOperandId str) {
-    ValOperandId res(nextOperandId_++);
+  NumberOperandId guardAndGetNumberFromString(StringOperandId str) {
+    NumberOperandId res(nextOperandId_++);
     writeOpWithOperandId(CacheOp::GuardAndGetNumberFromString, str);
     writeOperandId(res);
     return res;
@@ -1312,7 +1335,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
 
   void storeTypedObjectScalarProperty(ObjOperandId obj, uint32_t offset,
                                       TypedThingLayout layout,
-                                      Scalar::Type type, ValOperandId rhs) {
+                                      Scalar::Type type, OperandId rhs) {
     writeOpWithOperandId(CacheOp::StoreTypedObjectScalarProperty, obj);
     addStubField(offset, StubField::Type::RawWord);
     buffer_.writeByte(uint32_t(layout));
@@ -1327,14 +1350,14 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     writeOperandId(rhs);
   }
 
-  void storeTypedElement(ObjOperandId obj, Int32OperandId index,
-                         ValOperandId rhs, TypedThingLayout layout,
-                         Scalar::Type elementType, bool handleOOB) {
+  void storeTypedElement(ObjOperandId obj, TypedThingLayout layout,
+                         Scalar::Type elementType, Int32OperandId index,
+                         OperandId rhs, bool handleOOB) {
     writeOpWithOperandId(CacheOp::StoreTypedElement, obj);
-    writeOperandId(index);
-    writeOperandId(rhs);
     buffer_.writeByte(uint32_t(layout));
     buffer_.writeByte(uint32_t(elementType));
+    writeOperandId(index);
+    writeOperandId(rhs);
     buffer_.writeByte(uint32_t(handleOOB));
   }
 
@@ -1406,7 +1429,7 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     return res;
   }
 
-  StringOperandId callNumberToString(ValOperandId id) {
+  StringOperandId callNumberToString(NumberOperandId id) {
     StringOperandId res(nextOperandId_++);
     writeOpWithOperandId(CacheOp::CallNumberToString, id);
     writeOperandId(res);
@@ -1561,27 +1584,27 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     buffer_.writeByte(uint32_t(hasOwn));
   }
 
-  void doubleAddResult(ValOperandId lhsId, ValOperandId rhsId) {
+  void doubleAddResult(NumberOperandId lhsId, NumberOperandId rhsId) {
     writeOpWithOperandId(CacheOp::DoubleAddResult, lhsId);
     writeOperandId(rhsId);
   }
 
-  void doubleSubResult(ValOperandId lhsId, ValOperandId rhsId) {
+  void doubleSubResult(NumberOperandId lhsId, NumberOperandId rhsId) {
     writeOpWithOperandId(CacheOp::DoubleSubResult, lhsId);
     writeOperandId(rhsId);
   }
 
-  void doubleMulResult(ValOperandId lhsId, ValOperandId rhsId) {
+  void doubleMulResult(NumberOperandId lhsId, NumberOperandId rhsId) {
     writeOpWithOperandId(CacheOp::DoubleMulResult, lhsId);
     writeOperandId(rhsId);
   }
 
-  void doubleDivResult(ValOperandId lhsId, ValOperandId rhsId) {
+  void doubleDivResult(NumberOperandId lhsId, NumberOperandId rhsId) {
     writeOpWithOperandId(CacheOp::DoubleDivResult, lhsId);
     writeOperandId(rhsId);
   }
 
-  void doubleModResult(ValOperandId lhsId, ValOperandId rhsId) {
+  void doubleModResult(NumberOperandId lhsId, NumberOperandId rhsId) {
     writeOpWithOperandId(CacheOp::DoubleModResult, lhsId);
     writeOperandId(rhsId);
   }
@@ -1659,15 +1682,15 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     writeOpWithOperandId(CacheOp::Int32DecResult, id);
   }
 
-  void doubleNegationResult(ValOperandId val) {
+  void doubleNegationResult(NumberOperandId val) {
     writeOpWithOperandId(CacheOp::DoubleNegationResult, val);
   }
 
-  void doubleIncResult(ValOperandId val) {
+  void doubleIncResult(NumberOperandId val) {
     writeOpWithOperandId(CacheOp::DoubleIncResult, val);
   }
 
-  void doubleDecResult(ValOperandId val) {
+  void doubleDecResult(NumberOperandId val) {
     writeOpWithOperandId(CacheOp::DoubleDecResult, val);
   }
 
@@ -1921,7 +1944,8 @@ class MOZ_RAII CacheIRWriter : public JS::CustomAutoRooter {
     buffer_.writeByte(uint32_t(op));
   }
 
-  void compareDoubleResult(uint32_t op, ValOperandId lhs, ValOperandId rhs) {
+  void compareDoubleResult(uint32_t op, NumberOperandId lhs,
+                           NumberOperandId rhs) {
     writeOpWithOperandId(CacheOp::CompareDoubleResult, lhs);
     writeOperandId(rhs);
     buffer_.writeByte(uint32_t(op));
@@ -1972,6 +1996,9 @@ class MOZ_RAII CacheIRReader {
   }
 
   ObjOperandId objOperandId() { return ObjOperandId(buffer_.readByte()); }
+  NumberOperandId numberOperandId() {
+    return NumberOperandId(buffer_.readByte());
+  }
   StringOperandId stringOperandId() {
     return StringOperandId(buffer_.readByte());
   }

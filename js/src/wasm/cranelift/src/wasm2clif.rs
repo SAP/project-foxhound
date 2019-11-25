@@ -64,11 +64,6 @@ fn imm64(offset: usize) -> ir::immediates::Imm64 {
     (offset as i64).into()
 }
 
-/// Convert a usize offset into a `Uimm64`.
-fn uimm64(offset: usize) -> ir::immediates::Uimm64 {
-    (offset as u64).into()
-}
-
 /// Initialize a `Signature` from a wasm signature.
 fn init_sig_from_wsig(
     call_conv: CallConv,
@@ -253,7 +248,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         };
         let ga = pos.ins().global_value(native_pointer_type(), gv);
         pos.ins()
-            .load(native_pointer_type(), ir::MemFlags::new(), ga, 0)
+            .load(native_pointer_type(), ir::MemFlags::trusted(), ga, 0)
     }
 
     /// Generate code that loads the current instance pointer.
@@ -273,7 +268,8 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
             }
         };
         let ga = pos.ins().global_value(native_pointer_type(), gv);
-        pos.ins().load(ir::types::I32, ir::MemFlags::new(), ga, 0)
+        pos.ins()
+            .load(ir::types::I32, ir::MemFlags::trusted(), ga, 0)
     }
 
     /// Get a `FuncRef` for the given symbolic address.
@@ -315,6 +311,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
                 })
                 .into();
         }
+
         if self.realm_addr.is_none() {
             let vmctx = self.get_vmctx_gv(&mut pos.func);
             self.realm_addr = pos
@@ -328,10 +325,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         }
 
         let ptr = native_pointer_type();
-        let mut flags = ir::MemFlags::new();
-        flags.set_aligned();
-        flags.set_notrap();
-
+        let flags = ir::MemFlags::trusted();
         let cx_addr_val = pos.ins().global_value(ptr, self.cx_addr.unwrap());
         let cx = pos.ins().load(ptr, flags, cx_addr_val, 0);
         let realm_addr_val = pos.ins().global_value(ptr, self.realm_addr.unwrap());
@@ -344,10 +338,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
     /// an external table.
     fn switch_to_indirect_callee_realm(&mut self, pos: &mut FuncCursor, vmctx: ir::Value) {
         let ptr = native_pointer_type();
-        let mut flags = ir::MemFlags::new();
-        flags.set_aligned();
-        flags.set_notrap();
-
+        let flags = ir::MemFlags::trusted();
         let cx = pos
             .ins()
             .load(ptr, flags, vmctx, offset32(self.static_env.cxTlsOffset));
@@ -367,10 +358,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         gv_addr: ir::Value,
     ) {
         let ptr = native_pointer_type();
-        let mut flags = ir::MemFlags::new();
-        flags.set_aligned();
-        flags.set_notrap();
-
+        let flags = ir::MemFlags::trusted();
         let cx = pos
             .ins()
             .load(ptr, flags, vmctx, offset32(self.static_env.cxTlsOffset));
@@ -382,6 +370,24 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         );
         pos.ins()
             .store(flags, realm, cx, offset32(self.static_env.realmCxOffset));
+    }
+
+    fn load_pinned_reg(&self, pos: &mut FuncCursor, vmctx: ir::Value) {
+        if cfg!(feature = "cranelift_x86") && cfg!(target_pointer_width = "64") {
+            let heap_base = pos.ins().load(
+                native_pointer_type(),
+                ir::MemFlags::trusted(),
+                vmctx,
+                self.static_env.memoryBaseTlsOffset as i32,
+            );
+            pos.ins().set_pinned_reg(heap_base);
+        }
+    }
+
+    fn reload_tls_and_pinned_regs(&mut self, pos: &mut FuncCursor) {
+        let vmctx_gv = self.get_vmctx_gv(&mut pos.func);
+        let vmctx = pos.ins().global_value(native_pointer_type(), vmctx_gv);
+        self.load_pinned_reg(pos, vmctx);
     }
 }
 
@@ -446,28 +452,27 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             ));
         }
 
-        // Get the address of the `TlsData::memoryBase` field.
-        let base_addr = self.get_vmctx_gv(func);
-        // Get the `TlsData::memoryBase` field. We assume this is never modified during execution
-        // of the function.
+        let vcmtx = self.get_vmctx_gv(func);
+
+        let bound = self.static_env.staticMemoryBound as u64;
+        let is_static = bound > 0;
+
+        // Get the `TlsData::memoryBase` field.
         let base = func.create_global_value(ir::GlobalValueData::Load {
-            base: base_addr,
+            base: vcmtx,
             offset: offset32(0),
             global_type: native_pointer_type(),
-            readonly: true,
+            readonly: is_static,
         });
-        let min_size = ir::immediates::Uimm64::new(self.env.min_memory_length() as u64);
-        let guard_size = uimm64(self.static_env.memoryGuardSize);
 
-        let bound = self.static_env.staticMemoryBound;
-        let style = if bound > 0 {
+        let style = if is_static {
             // We have a static heap.
-            let bound = (bound as u64).into();
+            let bound = bound.into();
             ir::HeapStyle::Static { bound }
         } else {
             // Get the `TlsData::boundsCheckLimit` field.
             let bound_gv = func.create_global_value(ir::GlobalValueData::Load {
-                base: base_addr,
+                base: vcmtx,
                 offset: native_pointer_size().into(),
                 global_type: ir::types::I32,
                 readonly: false,
@@ -475,10 +480,13 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             ir::HeapStyle::Dynamic { bound_gv }
         };
 
+        let min_size = (self.env.min_memory_length() as u64).into();
+        let offset_guard_size = (self.static_env.memoryGuardSize as u64).into();
+
         Ok(func.create_heap(ir::HeapData {
             base,
             min_size,
-            offset_guard_size: guard_size,
+            offset_guard_size,
             style,
             index_type: ir::types::I32,
         }))
@@ -524,9 +532,9 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
         Ok(func.create_table(ir::TableData {
             base_gv,
-            min_size: ir::immediates::Uimm64::new(0),
+            min_size: 0.into(),
             bound_gv,
-            element_size: ir::immediates::Uimm64::new(u64::from(self.pointer_bytes()) * 2),
+            element_size: (u64::from(self.pointer_bytes()) * 2).into(),
             index_type: ir::types::I32,
         }))
     }
@@ -582,7 +590,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
                 let addr = pos.ins().global_value(native_pointer_type(), gv);
                 Some(
                     pos.ins()
-                        .load(native_pointer_type(), ir::MemFlags::new(), addr, 0),
+                        .load(native_pointer_type(), ir::MemFlags::trusted(), addr, 0),
                 )
             }
         };
@@ -614,7 +622,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         let entry = pos.ins().iadd(tbase, callee_scaled);
         let callee_func = pos
             .ins()
-            .load(native_pointer_type(), ir::MemFlags::new(), entry, 0);
+            .load(native_pointer_type(), ir::MemFlags::trusted(), entry, 0);
 
         // Check for a null callee.
         pos.ins()
@@ -623,19 +631,20 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         // Handle external tables, set up environment.
         // A function table call could redirect execution to another module with a different realm,
         // so switch to this realm just in case.
-        let vmctx = pos.ins().load(
+        let callee_vmctx = pos.ins().load(
             native_pointer_type(),
-            ir::MemFlags::new(),
+            ir::MemFlags::trusted(),
             entry,
             native_pointer_size(),
         );
-        self.switch_to_indirect_callee_realm(&mut pos, vmctx);
+        self.switch_to_indirect_callee_realm(&mut pos, callee_vmctx);
+        self.load_pinned_reg(&mut pos, callee_vmctx);
 
         // First the wasm args.
         let mut args = ir::ValueList::default();
         args.push(callee_func, &mut pos.func.dfg.value_lists);
         args.extend(call_args.iter().cloned(), &mut pos.func.dfg.value_lists);
-        args.push(vmctx, &mut pos.func.dfg.value_lists);
+        args.push(callee_vmctx, &mut pos.func.dfg.value_lists);
         if let Some(sigid) = sigid_value {
             args.push(sigid, &mut pos.func.dfg.value_lists);
         }
@@ -644,7 +653,10 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             .ins()
             .CallIndirect(ir::Opcode::CallIndirect, ir::types::INVALID, sig_ref, args)
             .0;
+
         self.switch_to_wasm_tls_realm(&mut pos);
+        self.reload_tls_and_pinned_regs(&mut pos);
+
         Ok(call)
     }
 
@@ -668,18 +680,19 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
             // We need the first two pointer-sized fields from the `FuncImportTls` struct: `code`
             // and `tls`.
-            let fit_code = pos
-                .ins()
-                .load(native_pointer_type(), ir::MemFlags::new(), gv_addr, 0);
+            let fit_code =
+                pos.ins()
+                    .load(native_pointer_type(), ir::MemFlags::trusted(), gv_addr, 0);
             let fit_tls = pos.ins().load(
                 native_pointer_type(),
-                ir::MemFlags::new(),
+                ir::MemFlags::trusted(),
                 gv_addr,
                 native_pointer_size(),
             );
 
             // Switch to the callee's realm.
             self.switch_to_import_realm(&mut pos, fit_tls, gv_addr);
+            self.load_pinned_reg(&mut pos, fit_tls);
 
             // The `tls` field is the VM context pointer for the callee.
             args.push(fit_tls, &mut pos.func.dfg.value_lists);
@@ -695,6 +708,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
                 .CallIndirect(ir::Opcode::CallIndirect, ir::types::INVALID, sig, args)
                 .0;
             self.switch_to_wasm_tls_realm(&mut pos);
+            self.reload_tls_and_pinned_regs(&mut pos);
             Ok(call)
         } else {
             // This is a call to a local function.
@@ -749,6 +763,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             .ins()
             .call_indirect(sigref, addr, &[instance, val, vmctx]);
         self.switch_to_wasm_tls_realm(&mut pos);
+        self.reload_tls_and_pinned_regs(&mut pos);
         Ok(pos.func.dfg.first_result(call))
     }
 
@@ -781,6 +796,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         let addr = pos.ins().func_addr(native_pointer_type(), fnref);
         let call = pos.ins().call_indirect(sigref, addr, &[instance, vmctx]);
         self.switch_to_wasm_tls_realm(&mut pos);
+        self.reload_tls_and_pinned_regs(&mut pos);
         Ok(pos.func.dfg.first_result(call))
     }
 

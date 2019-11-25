@@ -42,8 +42,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive/manager",
-  true
+  "devtools/client/responsive/manager"
 );
 loader.lazyRequireGetter(
   this,
@@ -65,7 +64,12 @@ loader.lazyImporter(
 loader.lazyImporter(
   this,
   "ProfilerMenuButton",
-  "resource://devtools/client/performance-new/popup/menu-button.jsm"
+  "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
+);
+loader.lazyRequireGetter(
+  this,
+  "ResponsiveUIManager",
+  "devtools/client/responsive/manager"
 );
 
 exports.menuitems = [
@@ -91,14 +95,6 @@ exports.menuitems = [
       const window = event.target.ownerDocument.defaultView;
       gDevToolsBrowser.openAboutDebugging(window.gBrowser);
     },
-  },
-  {
-    id: "menu_webide",
-    l10nKey: "webide",
-    oncommand() {
-      gDevToolsBrowser.openWebIDE();
-    },
-    keyId: "webide",
   },
   {
     id: "menu_browserToolbox",
@@ -155,6 +151,25 @@ exports.menuitems = [
       const target = await TargetFactory.forTab(window.gBrowser.selectedTab);
       await target.attach();
       const inspectorFront = await target.getFront("inspector");
+
+      // If RDM is active, disable touch simulation events if they're enabled.
+      // Similarly, enable them when the color picker is done picking.
+      if (
+        ResponsiveUIManager.isActiveForTab(target.tab) &&
+        target.actorHasMethod("emulation", "setElementPickerState")
+      ) {
+        const ui = ResponsiveUIManager.getResponsiveUIForTab(target.tab);
+        await ui.emulationFront.setElementPickerState(true);
+
+        inspectorFront.once("color-picked", async () => {
+          await ui.emulationFront.setElementPickerState(false);
+        });
+
+        inspectorFront.once("color-pick-canceled", async () => {
+          await ui.emulationFront.setElementPickerState(false);
+        });
+      }
+
       inspectorFront.pickColorFromPage({ copyOnSelect: true, fromMenu: true });
     },
     checkbox: true,
@@ -166,14 +181,6 @@ exports.menuitems = [
       ScratchpadManager.openScratchpad();
     },
     keyId: "scratchpad",
-  },
-  {
-    id: "menu_devtools_connect",
-    l10nKey: "devtoolsConnect",
-    oncommand(event) {
-      const window = event.target.ownerDocument.defaultView;
-      gDevToolsBrowser.openConnectScreen(window.gBrowser);
-    },
   },
   { separator: true, id: "devToolsEndSeparator" },
   {

@@ -35,8 +35,8 @@ loader.lazyRequireGetter(this, "getFront", "devtools/shared/protocol", true);
  */
 function TargetMixin(parentClass) {
   class Target extends parentClass {
-    constructor(client, form) {
-      super(client, form);
+    constructor(client, targetFront, parentFront) {
+      super(client, targetFront, parentFront);
 
       this._forceChrome = false;
 
@@ -46,6 +46,12 @@ function TargetMixin(parentClass) {
       this.activeConsole = null;
       this.threadFront = null;
 
+      // By default, we close the DebuggerClient of local tabs which
+      // are instanciated from TargetFactory module.
+      // This flag will also be set on local targets opened from about:debugging,
+      // for which a dedicated DebuggerClient is also created.
+      this.shouldCloseClient = this.isLocalTab;
+
       this._client = client;
 
       // Cache of already created targed-scoped fronts
@@ -53,6 +59,10 @@ function TargetMixin(parentClass) {
       this.fronts = new Map();
 
       this._setupRemoteListeners();
+    }
+
+    get descriptorFront() {
+      return this.parentFront;
     }
 
     /**
@@ -323,7 +333,7 @@ function TargetMixin(parentClass) {
     }
 
     get canRewind() {
-      return this.traits.canRewind;
+      return this.traits && this.traits.canRewind;
     }
 
     isReplayEnabled() {
@@ -441,21 +451,24 @@ function TargetMixin(parentClass) {
         this.emit("close");
 
         for (let [, front] of this.fronts) {
-          front = await front;
-          await front.destroy();
+          // If a Front with an async initialize method is still being instantiated,
+          // we should wait for completion before trying to destroy it.
+          if (front instanceof Promise) {
+            front = await front;
+          }
+          front.destroy();
         }
 
         this._teardownRemoteListeners();
 
         this.threadFront = null;
 
-        if (this.isLocalTab) {
-          // We started with a local tab and created the client ourselves, so we
-          // should close it. Ignore any errors while closing, since there is
-          // not much that can be done at this point.
+        if (this.shouldCloseClient) {
           try {
             await this._client.close();
           } catch (e) {
+            // Ignore any errors while closing, since there is not much that can be done
+            // at this point.
             console.warn(`Error while closing client: ${e.message}`);
           }
 

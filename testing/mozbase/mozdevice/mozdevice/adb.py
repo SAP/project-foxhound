@@ -686,13 +686,13 @@ class ADBDevice(ADBCommand):
         boot_completed = False
         while not boot_completed and (time.time() - start_time) <= float(timeout):
             try:
-                self.shell_output("/system/bin/ls", timeout=timeout)
+                self.shell_output("/system/bin/ls /system/bin/ls", timeout=timeout)
                 boot_completed = True
                 self._ls = "/system/bin/ls"
             except ADBError as e1:
                 self._logger.info("detect /system/bin/ls {}".format(e1))
                 try:
-                    self.shell_output("/system/xbin/ls", timeout=timeout)
+                    self.shell_output("/system/xbin/ls /system/xbin/ls", timeout=timeout)
                     boot_completed = True
                     self._ls = "/system/xbin/ls"
                 except ADBError as e2:
@@ -2572,7 +2572,7 @@ class ADBDevice(ADBCommand):
             self._logger.debug('get_process_list: %s' % ret)
             return ret
         finally:
-            if adb_process and isinstance(adb_process.stdout_file, file):
+            if adb_process and isinstance(adb_process.stdout_file, io.IOBase):
                 adb_process.stdout_file.close()
 
     def kill(self, pids, sig=None, attempts=3, wait=5,
@@ -2823,6 +2823,26 @@ class ADBDevice(ADBCommand):
         self.command_output(["reboot"], timeout=timeout)
         self._initialize_boot_state(timeout=timeout)
         return self.is_device_ready(timeout=timeout)
+
+    def get_sysinfo(self, timeout=None):
+        """
+        Returns a detailed dictionary of information strings about the device.
+
+        :param timeout: optional integer specifying the maximum time in
+            seconds for any spawned adb process to complete before
+            throwing an ADBTimeoutError.
+            This timeout is per adb call. The total time spent
+            may exceed this value. If it is not specified, the value
+            set in the ADB constructor is used.
+
+        :raises: * ADBTimeoutError
+        """
+        results = {"info": self.get_info(timeout=timeout)}
+        for service in ("meminfo", "cpuinfo", "dbinfo", "procstats", "usagestats",
+                        "battery", "batterystats", "diskstats"):
+            results[service] = self.shell_output("dumpsys %s" % service,
+                                                 timeout=timeout)
+        return results
 
     def get_info(self, directive=None, timeout=None):
         """

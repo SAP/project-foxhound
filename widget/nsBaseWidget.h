@@ -60,6 +60,7 @@ class CompositorBridgeParent;
 class IAPZCTreeManager;
 class GeckoContentController;
 class APZEventState;
+struct APZEventResult;
 class CompositorSession;
 class ImageContainer;
 struct ScrollableLayerGuid;
@@ -167,6 +168,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual nsSizeMode SizeMode() override { return mSizeMode; }
+  virtual bool IsTiled() const override { return mIsTiled; }
 
   virtual bool IsFullyOccluded() const override { return mIsFullyOccluded; }
 
@@ -482,10 +484,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   CreateRootContentController();
 
   // Dispatch an event that has already been routed through APZ.
-  nsEventStatus ProcessUntransformedAPZEvent(mozilla::WidgetInputEvent* aEvent,
-                                             const ScrollableLayerGuid& aGuid,
-                                             uint64_t aInputBlockId,
-                                             nsEventStatus aApzResponse);
+  nsEventStatus ProcessUntransformedAPZEvent(
+      mozilla::WidgetInputEvent* aEvent,
+      const mozilla::layers::APZEventResult& aApzResult);
 
   const LayoutDeviceIntRegion RegionFromArray(
       const nsTArray<LayoutDeviceIntRect>& aRects);
@@ -691,6 +692,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   mozilla::UniquePtr<LayoutDeviceIntRect[]> mClipRects;
   uint32_t mClipRectCount;
   nsSizeMode mSizeMode;
+  bool mIsTiled;
   nsPopupLevel mPopupLevel;
   nsPopupType mPopupType;
   SizeConstraints mSizeConstraints;

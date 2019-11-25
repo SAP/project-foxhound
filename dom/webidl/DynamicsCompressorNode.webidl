@@ -19,8 +19,11 @@ dictionary DynamicsCompressorOptions : AudioNodeOptions {
 };
 
 [Pref="dom.webaudio.enabled",
- Constructor(BaseAudioContext context, optional DynamicsCompressorOptions options = {})]
+ Exposed=Window]
 interface DynamicsCompressorNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context,
+                optional DynamicsCompressorOptions options = {});
 
     readonly attribute AudioParam threshold; // in Decibels
     readonly attribute AudioParam knee; // in Decibels
@@ -33,5 +36,5 @@ interface DynamicsCompressorNode : AudioNode {
 };
 
 // Mozilla extension
-DynamicsCompressorNode implements AudioNodePassThrough;
+DynamicsCompressorNode includes AudioNodePassThrough;
 

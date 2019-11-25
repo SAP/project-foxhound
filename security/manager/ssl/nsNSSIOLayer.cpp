@@ -7,6 +7,7 @@
 #include "nsNSSIOLayer.h"
 
 #include <algorithm>
+#include <vector>
 
 #include "NSSCertDBTrustDomain.h"
 #include "NSSErrorsService.h"
@@ -111,33 +112,25 @@ extern LazyLogModule gPIPNSSLog;
 
 nsNSSSocketInfo::nsNSSSocketInfo(SharedSSLState& aState, uint32_t providerFlags,
                                  uint32_t providerTlsFlags)
-    : mFd(nullptr),
+    : CommonSocketControl(providerFlags),
+      mFd(nullptr),
       mCertVerificationState(before_cert_verification),
       mSharedState(aState),
       mForSTARTTLS(false),
       mHandshakePending(true),
       mPreliminaryHandshakeDone(false),
-      mNPNCompleted(false),
       mEarlyDataAccepted(false),
       mDenyClientCert(false),
       mFalseStartCallbackCalled(false),
       mFalseStarted(false),
       mIsFullHandshake(false),
-      mHandshakeCompleted(false),
-      mJoined(false),
-      mSentClientCert(false),
       mNotedTimeUntilReady(false),
-      mFailedVerification(false),
-      mResumed(false),
       mIsShortWritePending(false),
       mShortWritePendingByte(0),
       mShortWriteOriginalAmount(-1),
       mKEAUsed(nsISSLSocketControl::KEY_EXCHANGE_UNKNOWN),
       mKEAKeyBits(0),
-      mSSLVersionUsed(nsISSLSocketControl::SSL_VERSION_UNKNOWN),
       mMACAlgorithmUsed(nsISSLSocketControl::SSL_MAC_UNKNOWN),
-      mBypassAuthentication(false),
-      mProviderFlags(providerFlags),
       mProviderTlsFlags(providerTlsFlags),
       mSocketCreationTimestamp(TimeStamp::Now()),
       mPlaintextBytesRead(0),
@@ -150,12 +143,6 @@ nsNSSSocketInfo::~nsNSSSocketInfo() {}
 
 NS_IMPL_ISUPPORTS_INHERITED(nsNSSSocketInfo, TransportSecurityInfo,
                             nsISSLSocketControl)
-
-NS_IMETHODIMP
-nsNSSSocketInfo::GetProviderFlags(uint32_t* aProviderFlags) {
-  *aProviderFlags = mProviderFlags;
-  return NS_OK;
-}
 
 NS_IMETHODIMP
 nsNSSSocketInfo::GetProviderTlsFlags(uint32_t* aProviderTlsFlags) {
@@ -172,12 +159,6 @@ nsNSSSocketInfo::GetKEAUsed(int16_t* aKea) {
 NS_IMETHODIMP
 nsNSSSocketInfo::GetKEAKeyBits(uint32_t* aKeyBits) {
   *aKeyBits = mKEAKeyBits;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::GetSSLVersionUsed(int16_t* aSSLVersionUsed) {
-  *aSSLVersionUsed = mSSLVersionUsed;
   return NS_OK;
 }
 
@@ -207,37 +188,6 @@ nsNSSSocketInfo::SetClientCert(nsIX509Cert* aClientCert) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsNSSSocketInfo::GetClientCertSent(bool* arg) {
-  *arg = mSentClientCert;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::GetBypassAuthentication(bool* arg) {
-  *arg = mBypassAuthentication;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::GetFailedVerification(bool* arg) {
-  *arg = mFailedVerification;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::GetNotificationCallbacks(nsIInterfaceRequestor** aCallbacks) {
-  nsCOMPtr<nsIInterfaceRequestor> ir(mCallbacks);
-  ir.forget(aCallbacks);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::SetNotificationCallbacks(nsIInterfaceRequestor* aCallbacks) {
-  mCallbacks = aCallbacks;
-  return NS_OK;
-}
-
 void nsNSSSocketInfo::NoteTimeUntilReady() {
   if (mNotedTimeUntilReady) return;
 
@@ -246,6 +196,11 @@ void nsNSSSocketInfo::NoteTimeUntilReady() {
   // This will include TCP and proxy tunnel wait time
   Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY,
                                  mSocketCreationTimestamp, TimeStamp::Now());
+  if (mIsDelegatedCredential) {
+    Telemetry::AccumulateTimeDelta(
+        Telemetry::TLS_DELEGATED_CREDENTIALS_TIME_UNTIL_READY_MS,
+        mSocketCreationTimestamp, TimeStamp::Now());
+  }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("[%p] nsNSSSocketInfo::NoteTimeUntilReady\n", mFd));
 }
@@ -310,14 +265,6 @@ void nsNSSSocketInfo::SetNegotiatedNPN(const char* value, uint32_t length) {
 }
 
 NS_IMETHODIMP
-nsNSSSocketInfo::GetNegotiatedNPN(nsACString& aNegotiatedNPN) {
-  if (!mNPNCompleted) return NS_ERROR_NOT_CONNECTED;
-
-  aNegotiatedNPN = mNegotiatedNPN;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsNSSSocketInfo::GetAlpnEarlySelection(nsACString& aAlpnSelected) {
   aAlpnSelected.Truncate();
 
@@ -355,14 +302,6 @@ void nsNSSSocketInfo::SetEarlyDataAccepted(bool aAccepted) {
   mEarlyDataAccepted = aAccepted;
 }
 
-NS_IMETHODIMP
-nsNSSSocketInfo::GetResumed(bool* aResumed) {
-  *aResumed = mResumed;
-  return NS_OK;
-}
-
-void nsNSSSocketInfo::SetResumed(bool aResumed) { mResumed = aResumed; }
-
 bool nsNSSSocketInfo::GetDenyClientCert() { return mDenyClientCert; }
 
 void nsNSSSocketInfo::SetDenyClientCert(bool aDenyClientCert) {
@@ -391,129 +330,6 @@ nsNSSSocketInfo::DriveHandshake() {
     return GetXPCOMFromNSSError(errorCode);
   }
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::IsAcceptableForHost(const nsACString& hostname,
-                                     bool* _retval) {
-  NS_ENSURE_ARG(_retval);
-
-  *_retval = false;
-
-  // If this is the same hostname then the certicate status does not
-  // need to be considered. They are joinable.
-  if (hostname.Equals(GetHostName())) {
-    *_retval = true;
-    return NS_OK;
-  }
-
-  // Before checking the server certificate we need to make sure the
-  // handshake has completed.
-  if (!mHandshakeCompleted || !HasServerCert()) {
-    return NS_OK;
-  }
-
-  // If the cert has error bits (e.g. it is untrusted) then do not join.
-  // The value of mHaveCertErrorBits is only reliable because we know that
-  // the handshake completed.
-  if (mHaveCertErrorBits) {
-    return NS_OK;
-  }
-
-  // If the connection is using client certificates then do not join
-  // because the user decides on whether to send client certs to hosts on a
-  // per-domain basis.
-  if (mSentClientCert) return NS_OK;
-
-  // Ensure that the server certificate covers the hostname that would
-  // like to join this connection
-
-  UniqueCERTCertificate nssCert;
-
-  nsCOMPtr<nsIX509Cert> cert;
-  if (NS_FAILED(GetServerCert(getter_AddRefs(cert)))) {
-    return NS_OK;
-  }
-  if (cert) {
-    nssCert.reset(cert->GetCert());
-  }
-
-  if (!nssCert) {
-    return NS_OK;
-  }
-
-  // Attempt to verify the joinee's certificate using the joining hostname.
-  // This ensures that any hostname-specific verification logic (e.g. key
-  // pinning) is satisfied by the joinee's certificate chain.
-  // This verification only uses local information; since we're on the network
-  // thread, we would be blocking on ourselves if we attempted any network i/o.
-  // TODO(bug 1056935): The certificate chain built by this verification may be
-  // different than the certificate chain originally built during the joined
-  // connection's TLS handshake. Consequently, we may report a wrong and/or
-  // misleading certificate chain for HTTP transactions coalesced onto this
-  // connection. This may become problematic in the future. For example,
-  // if/when we begin relying on intermediate certificates being stored in the
-  // securityInfo of a cached HTTPS response, that cached certificate chain may
-  // actually be the wrong chain. We should consider having JoinConnection
-  // return the certificate chain built here, so that the calling Necko code
-  // can associate the correct certificate chain with the HTTP transactions it
-  // is trying to join onto this connection.
-  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
-  if (!certVerifier) {
-    return NS_OK;
-  }
-  CertVerifier::Flags flags = CertVerifier::FLAG_LOCAL_ONLY;
-  UniqueCERTCertList unusedBuiltChain;
-  mozilla::pkix::Result result =
-      certVerifier->VerifySSLServerCert(nssCert,
-                                        nullptr,  // stapledOCSPResponse
-                                        nullptr,  // sctsFromTLSExtension
-                                        mozilla::pkix::Now(),
-                                        nullptr,  // pinarg
-                                        hostname, unusedBuiltChain,
-                                        false,  // save intermediates
-                                        flags);
-  if (result != mozilla::pkix::Success) {
-    return NS_OK;
-  }
-
-  // All tests pass
-  *_retval = true;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::TestJoinConnection(const nsACString& npnProtocol,
-                                    const nsACString& hostname, int32_t port,
-                                    bool* _retval) {
-  *_retval = false;
-
-  // Different ports may not be joined together
-  if (port != GetPort()) return NS_OK;
-
-  // Make sure NPN has been completed and matches requested npnProtocol
-  if (!mNPNCompleted || !mNegotiatedNPN.Equals(npnProtocol)) return NS_OK;
-
-  if (mBypassAuthentication) {
-    // An unauthenticated connection does not know whether or not it
-    // is acceptable for a particular hostname
-    return NS_OK;
-  }
-
-  IsAcceptableForHost(hostname, _retval);  // sets _retval
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsNSSSocketInfo::JoinConnection(const nsACString& npnProtocol,
-                                const nsACString& hostname, int32_t port,
-                                bool* _retval) {
-  nsresult rv = TestJoinConnection(npnProtocol, hostname, port, _retval);
-  if (NS_SUCCEEDED(rv) && *_retval) {
-    // All tests pass - this is joinable
-    mJoined = true;
-  }
-  return rv;
 }
 
 bool nsNSSSocketInfo::GetForSTARTTLS() { return mForSTARTTLS; }
@@ -901,30 +717,34 @@ nsNSSSocketInfo::SetEsniTxt(const nsACString& aEsniTxt) {
 }
 
 NS_IMETHODIMP
-nsNSSSocketInfo::GetServerRootCertIsBuiltInRoot(bool* aIsBuiltInRoot) {
-  *aIsBuiltInRoot = false;
-
-  if (!HasServerCert()) {
-    return NS_ERROR_NOT_AVAILABLE;
+nsNSSSocketInfo::GetPeerId(nsACString& aResult) {
+  if (!mPeerId.IsEmpty()) {
+    aResult.Assign(mPeerId);
+    return NS_OK;
   }
 
-  nsCOMPtr<nsIX509CertList> certList;
-  nsresult rv = GetSucceededCertChain(getter_AddRefs(certList));
-  if (NS_SUCCEEDED(rv)) {
-    if (!certList) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
-    RefPtr<nsNSSCertList> nssCertList = certList->GetCertList();
-    nsCOMPtr<nsIX509Cert> cert;
-    rv = nssCertList->GetRootCertificate(cert);
-    if (NS_SUCCEEDED(rv)) {
-      if (!cert) {
-        return NS_ERROR_NOT_AVAILABLE;
-      }
-      rv = cert->GetIsBuiltInRoot(aIsBuiltInRoot);
-    }
+  if (mProviderFlags &
+      nsISocketProvider::ANONYMOUS_CONNECT) {  // See bug 466080
+    mPeerId.AppendLiteral("anon:");
   }
-  return rv;
+  if (mProviderFlags & nsISocketProvider::NO_PERMANENT_STORAGE) {
+    mPeerId.AppendLiteral("private:");
+  }
+  if (mProviderFlags & nsISocketProvider::BE_CONSERVATIVE) {
+    mPeerId.AppendLiteral("beConservative:");
+  }
+
+  mPeerId.AppendPrintf("tlsflags0x%08x:", mProviderTlsFlags);
+
+  mPeerId.Append(GetHostName());
+  mPeerId.Append(':');
+  mPeerId.AppendInt(GetPort());
+  nsAutoCString suffix;
+  GetOriginAttributes().CreateSuffix(suffix);
+  mPeerId.Append(suffix);
+
+  aResult.Assign(mPeerId);
+  return NS_OK;
 }
 
 #if defined(DEBUG_SSL_VERBOSE) && defined(DUMP_BUFFER)
@@ -1836,13 +1656,15 @@ class ClientAuthDataRunnable : public SyncRunnableBase {
  public:
   ClientAuthDataRunnable(CERTCertificate** pRetCert, SECKEYPrivateKey** pRetKey,
                          nsNSSSocketInfo* info,
-                         const UniqueCERTCertificate& serverCert)
+                         const UniqueCERTCertificate& serverCert,
+                         nsTArray<nsCString>& caNamesStrings)
       : mRV(SECFailure),
         mErrorCodeToReport(SEC_ERROR_NO_MEMORY),
         mPRetCert(pRetCert),
         mPRetKey(pRetKey),
         mSocketInfo(info),
-        mServerCert(serverCert.get()) {}
+        mServerCert(serverCert.get()),
+        mCANamesStrings(std::move(caNamesStrings)) {}
 
   SECStatus mRV;                      // out
   PRErrorCode mErrorCodeToReport;     // out
@@ -1852,16 +1674,49 @@ class ClientAuthDataRunnable : public SyncRunnableBase {
   virtual void RunOnTargetThread() override;
 
  private:
-  nsNSSSocketInfo* const mSocketInfo;  // in
-  CERTCertificate* const mServerCert;  // in
+  nsNSSSocketInfo* const mSocketInfo;   // in
+  CERTCertificate* const mServerCert;   // in
+  nsTArray<nsCString> mCANamesStrings;  // in
 };
+
+nsTArray<nsCString> DecodeCANames(CERTDistNames* caNames) {
+  MOZ_ASSERT(caNames);
+
+  nsTArray<nsCString> caNamesStrings;
+  if (!caNames) {
+    return caNamesStrings;
+  }
+
+  for (int i = 0; i < caNames->nnames; i++) {
+    char* caName = CERT_DerNameToAscii(&caNames->names[i]);
+    // Ignore failures
+    if (caName) {
+      caNamesStrings.AppendElement(nsCString(caName));
+      PORT_Free(caName);  // CERT_DerNameToAscii uses PORT_Alloc
+    }
+  }
+  return caNamesStrings;
+}
+
+nsTArray<char*> GetDependentStringPointers(nsTArray<nsCString>& strings) {
+  nsTArray<char*> pointers;
+  for (auto& string : strings) {
+    // We're not actually writing to the string. The API we're going to use this
+    // data with takes an array of non-const char pointers. To avoid the
+    // undefined behavior of reinterpreting a const pointer as a non-const
+    // pointer, everything we do here has to be non-const.
+    pointers.AppendElement(string.BeginWriting());
+  }
+  return pointers;
+}
 
 // This callback function is used to pull client certificate
 // information upon server request
 //
 // - arg: SSL data connection
 // - socket: SSL socket we're dealing with
-// - caNames: list of CA names, we ignore this argument in this function
+// - caNames: list of CA names to use as a hint for selecting potential client
+//            certificates (may be empty)
 // - pRetCert: returns a pointer to a pointer to a valid certificate if
 //             successful; otherwise nullptr
 // - pRetKey: returns a pointer to a pointer to the corresponding key if
@@ -1870,7 +1725,7 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
                                      CERTDistNames* caNames,
                                      CERTCertificate** pRetCert,
                                      SECKEYPrivateKey** pRetKey) {
-  if (!socket || !pRetCert || !pRetKey) {
+  if (!socket || !caNames || !pRetCert || !pRetKey) {
     PR_SetError(PR_INVALID_ARGUMENT_ERROR, 0);
     return SECFailure;
   }
@@ -1911,9 +1766,10 @@ SECStatus nsNSS_SSLGetClientAuthData(void* arg, PRFileDesc* socket,
     return SECSuccess;
   }
 
+  nsTArray<nsCString> caNamesStrings(DecodeCANames(caNames));
   // XXX: This should be done asynchronously; see bug 696976
-  RefPtr<ClientAuthDataRunnable> runnable(
-      new ClientAuthDataRunnable(pRetCert, pRetKey, info, serverCert));
+  RefPtr<ClientAuthDataRunnable> runnable(new ClientAuthDataRunnable(
+      pRetCert, pRetKey, info, serverCert, caNamesStrings));
   nsresult rv = runnable->DispatchToMainThreadAndWait();
   if (NS_FAILED(rv)) {
     PR_SetError(SEC_ERROR_NO_MEMORY, 0);
@@ -1940,13 +1796,13 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
   UniqueCERTCertificate cert;
   UniqueSECKEYPrivateKey privKey;
   void* wincx = mSocketInfo;
-  nsresult rv;
+
+  mRV = SECFailure;
+  *mPRetCert = nullptr;
+  *mPRetKey = nullptr;
+  mErrorCodeToReport = SEC_ERROR_LIBRARY_FAILURE;
 
   if (NS_FAILED(CheckForSmartCardChanges())) {
-    mRV = SECFailure;
-    *mPRetCert = nullptr;
-    *mPRetKey = nullptr;
-    mErrorCodeToReport = SEC_ERROR_LIBRARY_FAILURE;
     return;
   }
 
@@ -1958,13 +1814,13 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
   if (socketClientCert) {
     cert.reset(socketClientCert->GetCert());
     if (!cert) {
-      goto loser;
+      return;
     }
 
     // Get the private key
     privKey.reset(PK11_FindKeyByAnyCert(cert.get(), wincx));
     if (!privKey) {
-      goto loser;
+      return;
     }
 
     *mPRetCert = cert.release();
@@ -1973,26 +1829,31 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     return;
   }
 
-  mRV = SECSuccess;
+  UniqueCERTCertList certList(FindNonCACertificatesWithPrivateKeys());
+  if (!certList) {
+    return;
+  }
+
+  nsTArray<char*> caNamesStringPointers(
+      GetDependentStringPointers(mCANamesStrings));
+  mRV = CERT_FilterCertListByCANames(
+      certList.get(), caNamesStringPointers.Length(),
+      caNamesStringPointers.Elements(), certUsageSSLClient);
+  if (mRV != SECSuccess) {
+    return;
+  }
+  mRV = CERT_FilterCertListByUsage(certList.get(), certUsageSSLClient, false);
+  if (mRV != SECSuccess) {
+    return;
+  }
+  if (CERT_LIST_EMPTY(certList)) {
+    return;
+  }
 
   // find valid user cert and key pair
   if (nsGetUserCertChoice() == UserCertChoice::Auto) {
     // automatically find the right cert
-
-    // find all user certs that are valid and for SSL
-    UniqueCERTCertList certList(CERT_FindUserCertsByUsage(
-        CERT_GetDefaultCertDB(), certUsageSSLClient, false, true, wincx));
-    if (!certList) {
-      goto loser;
-    }
-
-    // make sure the list is not empty
-    if (CERT_LIST_END(CERT_LIST_HEAD(certList), certList)) {
-      goto loser;
-    }
-
     UniqueCERTCertificate lowPrioNonrepCert;
-
     // loop through the list until we find a cert with a key
     for (CERTCertListNode* node = CERT_LIST_HEAD(certList);
          !CERT_LIST_END(node, certList); node = CERT_LIST_NEXT(node)) {
@@ -2038,9 +1899,9 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     nsCString rememberedDBKey;
     if (cars) {
       bool found;
-      rv = cars->HasRememberedDecision(hostname,
-                                       mSocketInfo->GetOriginAttributes(),
-                                       mServerCert, rememberedDBKey, &found);
+      nsresult rv = cars->HasRememberedDecision(
+          hostname, mSocketInfo->GetOriginAttributes(), mServerCert,
+          rememberedDBKey, &found);
       if (NS_SUCCEEDED(rv) && found) {
         hasRemembered = true;
       }
@@ -2050,7 +1911,7 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
       nsCOMPtr<nsIX509CertDB> certdb = do_GetService(NS_X509CERTDB_CONTRACTID);
       if (certdb) {
         nsCOMPtr<nsIX509Cert> foundCert;
-        rv =
+        nsresult rv =
             certdb->FindCertByDBKey(rememberedDBKey, getter_AddRefs(foundCert));
         if (NS_SUCCEEDED(rv) && foundCert) {
           nsNSSCertificate* objCert =
@@ -2069,20 +1930,6 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
     if (!hasRemembered) {
       // user selects a cert to present
       nsCOMPtr<nsIClientAuthDialogs> dialogs;
-
-      // find all user certs that are for SSL
-      // note that we are allowing expired certs in this list
-      UniqueCERTCertList certList(CERT_FindUserCertsByUsage(
-          CERT_GetDefaultCertDB(), certUsageSSLClient, false, false, wincx));
-      if (!certList) {
-        goto loser;
-      }
-
-      if (CERT_LIST_END(CERT_LIST_HEAD(certList), certList)) {
-        // list is empty - no matching certs
-        goto loser;
-      }
-
       UniquePORTString corg(CERT_GetOrgName(&mServerCert->subject));
       nsAutoCString org(corg.get());
 
@@ -2101,7 +1948,7 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
           goto loser;
         }
 
-        rv = certArray->AppendElement(tempCert);
+        nsresult rv = certArray->AppendElement(tempCert);
         if (NS_FAILED(rv)) {
           goto loser;
         }
@@ -2109,9 +1956,9 @@ void ClientAuthDataRunnable::RunOnTargetThread() {
 
       // Throw up the client auth dialog and get back the index of the selected
       // cert
-      rv = getNSSDialogs(getter_AddRefs(dialogs),
-                         NS_GET_IID(nsIClientAuthDialogs),
-                         NS_CLIENTAUTHDIALOGS_CONTRACTID);
+      nsresult rv = getNSSDialogs(getter_AddRefs(dialogs),
+                                  NS_GET_IID(nsIClientAuthDialogs),
+                                  NS_CLIENTAUTHDIALOGS_CONTRACTID);
 
       if (NS_FAILED(rv)) {
         goto loser;
@@ -2194,11 +2041,7 @@ static PRFileDesc* nsSSLIOLayerImportFD(PRFileDesc* fd,
     SSL_GetClientAuthDataHook(
         sslSock, (SSLGetClientAuthData)nsNSS_SSLGetClientAuthData, infoObject);
   }
-  if (flags & nsISocketProvider::MITM_OK) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("[%p] nsSSLIOLayerImportFD: bypass authentication flag\n", fd));
-    infoObject->SetBypassAuthentication(true);
-  }
+
   if (SECSuccess !=
       SSL_AuthCertificateHook(sslSock, AuthCertificateHook, infoObject)) {
     MOZ_ASSERT_UNREACHABLE("Failed to configure AuthCertificateHook");
@@ -2358,35 +2201,44 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
     return NS_ERROR_FAILURE;
   }
 
+#ifdef __arm__
+  unsigned int enabledCiphers = 0;
+  std::vector<uint16_t> ciphers(SSL_GetNumImplementedCiphers());
+
+  // Returns only the enabled (reflecting prefs) ciphers, ordered
+  // by their occurence in
+  // https://hg.mozilla.org/projects/nss/file/a75ea4cdacd95282c6c245ebb849c25e84ccd908/lib/ssl/ssl3con.c#l87
+  if (SSL_CipherSuiteOrderGet(fd, ciphers.data(), &enabledCiphers) !=
+      SECSuccess) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // On ARM, prefer (TLS_CHACHA20_POLY1305_SHA256) over AES. However,
+  // it may be disabled. If enabled, it will either be element [0] or [1]*.
+  // If [0], we're done. If [1], swap it with [0] (TLS_AES_128_GCM_SHA256).
+  // * (assuming the compile-time order remains unchanged)
+  if (enabledCiphers > 1) {
+    if (ciphers[0] != TLS_CHACHA20_POLY1305_SHA256 &&
+        ciphers[1] == TLS_CHACHA20_POLY1305_SHA256) {
+      std::swap(ciphers[0], ciphers[1]);
+
+      if (SSL_CipherSuiteOrderSet(fd, ciphers.data(), enabledCiphers) !=
+          SECSuccess) {
+        return NS_ERROR_FAILURE;
+      }
+    }
+  }
+#endif
+
   // Set the Peer ID so that SSL proxy connections work properly and to
   // separate anonymous and/or private browsing connections.
-  uint32_t flags = infoObject->GetProviderFlags();
   nsAutoCString peerId;
-  if (flags & nsISocketProvider::ANONYMOUS_CONNECT) {  // See bug 466080
-    peerId.AppendLiteral("anon:");
-  }
-  if (flags & nsISocketProvider::NO_PERMANENT_STORAGE) {
-    peerId.AppendLiteral("private:");
-  }
-  if (flags & nsISocketProvider::MITM_OK) {
-    peerId.AppendLiteral("bypassAuth:");
-  }
-  if (flags & nsISocketProvider::BE_CONSERVATIVE) {
-    peerId.AppendLiteral("beConservative:");
-  }
-
-  peerId.AppendPrintf("tlsflags0x%08x:", infoObject->GetProviderTlsFlags());
-
-  peerId.Append(host);
-  peerId.Append(':');
-  peerId.AppendInt(port);
-  nsAutoCString suffix;
-  infoObject->GetOriginAttributes().CreateSuffix(suffix);
-  peerId.Append(suffix);
+  infoObject->GetPeerId(peerId);
   if (SECSuccess != SSL_SetSockPeerID(fd, peerId.get())) {
     return NS_ERROR_FAILURE;
   }
 
+  uint32_t flags = infoObject->GetProviderFlags();
   if (flags & nsISocketProvider::NO_PERMANENT_STORAGE) {
     if (SECSuccess != SSL_OptionSet(fd, SSL_ENABLE_SESSION_TICKETS, false) ||
         SECSuccess != SSL_OptionSet(fd, SSL_NO_CACHE, true)) {

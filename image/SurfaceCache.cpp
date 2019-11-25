@@ -231,9 +231,9 @@ static int64_t AreaOfIntSize(const IntSize& aSize) {
  * mode, the cache will strongly favour sizes which are a factor of 2 of the
  * largest native size. It accomplishes this by suggesting a factor of 2 size
  * when lookups fail and substituting the nearest factor of 2 surface to the
- * ideal size as the "best" available (as opposed to subsitution but not found).
- * This allows us to minimize memory consumption and CPU time spent decoding
- * when a website requires many variants of the same surface.
+ * ideal size as the "best" available (as opposed to substitution but not
+ * found). This allows us to minimize memory consumption and CPU time spent
+ * decoding when a website requires many variants of the same surface.
  */
 class ImageSurfaceCache {
   ~ImageSurfaceCache() {}
@@ -1391,6 +1391,11 @@ void SurfaceCache::Initialize() {
   uint64_t surfaceCacheMaxSizeKB =
       StaticPrefs::image_mem_surfacecache_max_size_kb_AtStartup();
 
+  if (sizeof(uintptr_t) <= 4) {
+    // Limit surface cache to 1 GB if our address space is 32 bit.
+    surfaceCacheMaxSizeKB = 1024 * 1024;
+  }
+
   // A knob determining the actual size of the surface cache. Currently the
   // cache is (size of main memory) / (surface cache size factor) KB
   // or (surface cache max size) KB, whichever is smaller. The formula
@@ -1644,7 +1649,7 @@ IntSize SurfaceCache::ClampVectorSize(const IntSize& aSize) {
     return aSize;
   }
 
-  int32_t proposedKB = int32_t(int64_t(aSize.width) * aSize.height / 256);
+  int64_t proposedKB = int64_t(aSize.width) * aSize.height / 256;
   if (maxSizeKB >= proposedKB) {
     return aSize;
   }

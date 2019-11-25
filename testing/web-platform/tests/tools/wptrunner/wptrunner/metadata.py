@@ -4,6 +4,7 @@ import os
 from collections import defaultdict, namedtuple
 
 from mozlog import structuredlog
+from six.moves import intern
 
 from . import manifestupdate
 from . import testloader
@@ -60,7 +61,7 @@ def update_expected(test_paths, serve_root, log_file_names,
     test jobs, disable tests that don't behave as expected on all runs
 
     If `update_intermittent` is True, intermittent statuses will be recorded as `expected` in
-    the metadata. 
+    the metadata.
 
     If `remove_intermittent` is True and used in conjunction with `update_intermittent`, any
     intermittent statuses which are not present in the current run will be removed from the
@@ -220,8 +221,10 @@ def pack_result(data):
     if not data.get("known_intermittent"):
         return status_intern.store(data.get("status"))
     result = array.array("B")
-    result_parts = ([data["status"], data.get("expected", data["status"])] +
-                    data["known_intermittent"])
+    expected = data.get("expected")
+    if expected is None:
+        expected = data["status"]
+    result_parts = [data["status"], expected] + data["known_intermittent"]
     for i, part in enumerate(result_parts):
         value = status_intern.store(part)
         if i % 2 == 0:
@@ -350,18 +353,41 @@ class ExpectedUpdater(object):
         self.tests_visited = {}
 
     def update_from_log(self, log_file):
+        # We support three possible formats:
+        # * wptreport format; one json object in the file, possibly pretty-printed
+        # * wptreport format; one run per line
+        # * raw log format
+
+        # Try reading a single json object in wptreport format
         self.run_info = None
+        success = self.get_wptreport_data(log_file.read())
+
+        if success:
+            return
+
+        # Try line-separated json objects in wptreport format
+        log_file.seek(0)
+        for line in log_file:
+            success = self.get_wptreport_data(line)
+            if not success:
+                break
+        else:
+            return
+
+        # Assume the file is a raw log
+        log_file.seek(0)
+        self.update_from_raw_log(log_file)
+
+    def get_wptreport_data(self, input_str):
         try:
-            data = json.load(log_file)
+            data = json.loads(input_str)
         except Exception:
             pass
         else:
             if "action" not in data and "results" in data:
                 self.update_from_wptreport_log(data)
-                return
-
-        log_file.seek(0)
-        self.update_from_raw_log(log_file)
+                return True
+        return False
 
     def update_from_raw_log(self, log_file):
         action_map = self.action_map
@@ -498,7 +524,7 @@ def create_test_tree(metadata_path, test_manifest):
     """
     do_delayed_imports()
     id_test_map = {}
-    exclude_types = frozenset(["stub", "manual", "support", "conformancechecker"])
+    exclude_types = frozenset(["manual", "support", "conformancechecker"])
     all_types = set(manifestitem.item_types.keys())
     assert all_types > exclude_types
     include_types = all_types - exclude_types
@@ -554,7 +580,7 @@ class PackedResultList(object):
     def append(self, prop, run_info, value):
         out_val = (prop << 12) + run_info
         if prop == prop_intern.store("status") and isinstance(value, int):
-             out_val += value << 8
+            out_val += value << 8
         else:
             if not hasattr(self, "raw_data"):
                 self.raw_data = {}
@@ -638,6 +664,11 @@ class TestFileData(object):
                 expected_subtest = test.get_subtest(item)
                 if not self.is_disabled(expected_subtest):
                     rv.append(expected_subtest)
+            for name in seen_subtests:
+                subtest = test.get_subtest(name)
+                # If any of the items have children (ie subsubtests) we want to prune thes
+                if subtest.children:
+                    rv.extend(subtest.children)
 
         return rv
 
@@ -686,14 +717,6 @@ class TestFileData(object):
                             expected.set_leak_threshold(run_info, value)
                         continue
 
-                    if prop == "status":
-                        status, known_intermittent = unpack_result(value)
-                        value = Result(status,
-                                       known_intermittent,
-                                       default_expected_by_type[self.item_type,
-                                                                subtest_id is not None],
-                        )
-
                     test_expected = expected_by_test[test_id]
                     if subtest_id is None:
                         item_expected = test_expected
@@ -701,7 +724,13 @@ class TestFileData(object):
                         if isinstance(subtest_id, str):
                             subtest_id = subtest_id.decode("utf8")
                         item_expected = test_expected.get_subtest(subtest_id)
+
                     if prop == "status":
+                        status, known_intermittent = unpack_result(value)
+                        value = Result(status,
+                                       known_intermittent,
+                                       default_expected_by_type[self.item_type,
+                                                                subtest_id is not None])
                         item_expected.set_result(run_info, value)
                     elif prop == "asserts":
                         item_expected.set_asserts(run_info, value)
@@ -721,7 +750,7 @@ class TestFileData(object):
 Result = namedtuple("Result", ["status", "known_intermittent", "default_expected"])
 
 
-def create_expected(url_base, test_path,  run_info_properties, update_intermittent, remove_intermittent):
+def create_expected(url_base, test_path, run_info_properties, update_intermittent, remove_intermittent):
     expected = manifestupdate.ExpectedManifest(None,
                                                test_path,
                                                url_base,

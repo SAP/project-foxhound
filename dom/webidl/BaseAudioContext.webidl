@@ -19,6 +19,7 @@ enum AudioContextState {
     "closed"
 };
 
+[Exposed=Window]
 interface BaseAudioContext : EventTarget {
     readonly        attribute AudioDestinationNode destination;
     readonly        attribute float                sampleRate;
@@ -44,10 +45,10 @@ interface BaseAudioContext : EventTarget {
                                          optional DecodeErrorCallback errorCallback);
 
     // AudioNode creation
-    [NewObject, Throws]
+    [NewObject]
     AudioBufferSourceNode createBufferSource();
 
-    [NewObject, Throws]
+    [NewObject]
     ConstantSourceNode createConstantSource();
 
     [NewObject, Throws]

@@ -10,8 +10,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.jsm",
   Preferences: "resource://gre/modules/Preferences.jsm",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.jsm",
+  UrlbarProvider: "resource:///modules/UrlbarUtils.jsm",
+  UrlbarProvidersManager: "resource:///modules/UrlbarProvidersManager.jsm",
+  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
   UrlbarTestUtils: "resource://testing-common/UrlbarTestUtils.jsm",
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.jsm",
+  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
 });
 
 XPCOMUtils.defineLazyGetter(this, "TEST_BASE_URL", () =>
@@ -87,8 +91,4 @@ function promiseAutocompleteResultPopup(
 
 async function waitForAutocompleteResultAt(index) {
   return UrlbarTestUtils.waitForAutocompleteResultAt(window, index);
-}
-
-function promiseSuggestionsPresent(msg = "") {
-  return UrlbarTestUtils.promiseSuggestionsPresent(window, msg);
 }

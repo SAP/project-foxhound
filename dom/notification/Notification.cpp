@@ -477,10 +477,8 @@ NotificationPermissionRequest::Run() {
     mPermission = NotificationPermission::Granted;
   } else {
     // File are automatically granted permission.
-    nsCOMPtr<nsIURI> uri;
-    mPrincipal->GetURI(getter_AddRefs(uri));
 
-    if (uri && uri->SchemeIs("file")) {
+    if (mPrincipal->SchemeIs("file")) {
       mPermission = NotificationPermission::Granted;
     } else if (!StaticPrefs::dom_webnotifications_allowinsecure() &&
                !mWindow->IsSecureContext()) {
@@ -511,6 +509,14 @@ NotificationPermissionRequest::Run() {
     default:
       // ignore
       break;
+  }
+
+  if (!mIsHandlingUserInput &&
+      !StaticPrefs::dom_webnotifications_requireuserinteraction()) {
+    nsCOMPtr<Document> doc = mWindow->GetExtantDoc();
+    if (doc) {
+      doc->WarnOnceAbout(Document::eNotificationsRequireUserGestureDeprecation);
+    }
   }
 
   // Check this after checking the prompt prefs to make sure this pref overrides
@@ -880,7 +886,9 @@ already_AddRefed<Notification> Notification::Constructor(
   RefPtr<ServiceWorkerGlobalScope> scope;
   UNWRAP_OBJECT(ServiceWorkerGlobalScope, aGlobal.Get(), scope);
   if (scope) {
-    aRv.ThrowTypeError<MSG_NOTIFICATION_NO_CONSTRUCTOR_IN_SERVICEWORKER>();
+    aRv.ThrowTypeError(
+        u"Notification constructor cannot be used in ServiceWorkerGlobalScope. "
+        u"Use registration.showNotification() instead.");
     return nullptr;
   }
 
@@ -1635,9 +1643,7 @@ NotificationPermission Notification::GetPermissionInternal(
     return NotificationPermission::Granted;
   } else {
     // Allow files to show notifications by default.
-    nsCOMPtr<nsIURI> uri;
-    aPrincipal->GetURI(getter_AddRefs(uri));
-    if (uri && uri->SchemeIs("file")) {
+    if (aPrincipal->SchemeIs("file")) {
       return NotificationPermission::Granted;
     }
   }
@@ -2281,9 +2287,7 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
   // with a TypeError exception, and terminate these substeps."
   if (NS_WARN_IF(aRv.Failed()) ||
       permission == NotificationPermission::Denied) {
-    ErrorResult result;
-    result.ThrowTypeError<MSG_NOTIFICATION_PERMISSION_DENIED>();
-    p->MaybeReject(result);
+    p->MaybeRejectWithTypeError(u"Permission to show Notification denied.");
     return p.forget();
   }
 

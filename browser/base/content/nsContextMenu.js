@@ -4,40 +4,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-var { BrowserUtils } = ChromeUtils.import(
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 XPCOMUtils.defineLazyModuleGetters(this, {
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  SpellCheckHelper: "resource://gre/modules/InlineSpellChecker.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   LoginManagerContextMenu: "resource://gre/modules/LoginManagerContextMenu.jsm",
-  WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
-  ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.jsm",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
 });
-
-XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
-  Components.Constructor(
-    "@mozilla.org/referrer-info;1",
-    "nsIReferrerInfo",
-    "init"
-  )
-);
 
 var gContextMenuContentData = null;
 
 function openContextMenu(aMessage, aBrowser, aActor) {
+  if (BrowserHandler.kiosk) {
+    // Don't display context menus in kiosk mode
+    return;
+  }
   let data = aMessage.data;
   let browser = aBrowser;
   let actor = aActor;
@@ -273,6 +252,7 @@ nsContextMenu.prototype = {
     this.onCTPPlugin = context.onCTPPlugin;
     this.onDRMMedia = context.onDRMMedia;
     this.onPiPVideo = context.onPiPVideo;
+    this.onMediaStreamVideo = context.onMediaStreamVideo;
     this.onEditable = context.onEditable;
     this.onImage = context.onImage;
     this.onKeywordField = context.onKeywordField;
@@ -325,7 +305,7 @@ nsContextMenu.prototype = {
     const { gBrowser } = this.browser.ownerGlobal;
 
     this.textSelected = this.selectionInfo.text;
-    this.isTextSelected = this.textSelected.length != 0;
+    this.isTextSelected = !!this.textSelected.length;
     this.webExtBrowserType = this.browser.getAttribute(
       "webextension-view-type"
     );
@@ -700,14 +680,7 @@ nsContextMenu.prototype = {
       this.setItemAttr("context-frameOsPid", "label", "PID: " + frameOsPid);
     }
 
-    let showSearchSelect =
-      !this.inAboutDevtoolsToolbox &&
-      (this.isTextSelected || this.onLink) &&
-      !this.onImage;
-    this.showItem("context-searchselect", showSearchSelect);
-    if (showSearchSelect) {
-      this.formatSearchContextItem();
-    }
+    this.showAndFormatSearchContextItem();
 
     // srcdoc cannot be opened separately due to concerns about web
     // content with about:srcdoc in location bar masquerading as trusted
@@ -898,6 +871,7 @@ nsContextMenu.prototype = {
           "media.videocontrols.picture-in-picture.enabled"
         ) &&
         this.onVideo &&
+        !this.onMediaStreamVideo &&
         !this.target.ownerDocument.fullscreen;
       this.showItem("context-video-pictureinpicture", shouldDisplay);
     }
@@ -1282,7 +1256,7 @@ nsContextMenu.prototype = {
       gContextMenuContentData.docLocation,
       null,
       null,
-      this.frameOuterWindowID,
+      this.actor.browsingContext,
       this.browser
     );
   },
@@ -1962,16 +1936,39 @@ nsContextMenu.prototype = {
   },
 
   // Formats the 'Search <engine> for "<selection or link text>"' context menu.
-  formatSearchContextItem() {
-    var menuItem = document.getElementById("context-searchselect");
+  showAndFormatSearchContextItem() {
+    const docIsPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
+    const privatePref = "browser.search.separatePrivateDefault.ui.enabled";
+    let showSearchSelect =
+      !this.inAboutDevtoolsToolbox &&
+      (this.isTextSelected || this.onLink) &&
+      !this.onImage;
+    // Don't show the private search item when we're already in a private
+    // browsing window.
+    let showPrivateSearchSelect =
+      showSearchSelect &&
+      !docIsPrivate &&
+      Services.prefs.getBoolPref(privatePref);
+
+    let menuItem = document.getElementById("context-searchselect");
+    let menuItemPrivate = document.getElementById(
+      "context-searchselect-private"
+    );
+    menuItem.hidden = !showSearchSelect;
+    menuItemPrivate.hidden = !showPrivateSearchSelect;
+    // If we're not showing the menu items, we can skip formatting the labels.
+    if (!showSearchSelect) {
+      return;
+    }
+
     let selectedText = this.isTextSelected
       ? this.textSelected
       : this.linkTextStr;
 
     // Store searchTerms in context menu item so we know what to search onclick
-    menuItem.searchTerms = selectedText;
-    menuItem.principal = this.principal;
-    menuItem.csp = this.csp;
+    menuItem.searchTerms = menuItemPrivate.searchTerms = selectedText;
+    menuItem.principal = menuItemPrivate.principal = this.principal;
+    menuItem.csp = menuItemPrivate.csp = this.csp;
 
     // Copied to alert.js' prefillAlertInfo().
     // If the JS character after our truncation point is a trail surrogate,
@@ -1986,19 +1983,34 @@ nsContextMenu.prototype = {
     }
 
     // format "Search <engine> for <selection>" string to show in menu
-    const docIsPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
-    let engineName =
-      Services.search[docIsPrivate ? "defaultPrivateEngine" : "defaultEngine"]
-        .name;
+    let engineName = Services.search.defaultEngine.name;
+    let privateEngineName = Services.search.defaultPrivateEngine.name;
     menuItem.usePrivate = docIsPrivate;
-    var menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearch", [
-      engineName,
+    let menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearch", [
+      docIsPrivate ? privateEngineName : engineName,
       selectedText,
     ]);
     menuItem.label = menuLabel;
     menuItem.accessKey = gNavigatorBundle.getString(
       "contextMenuSearch.accesskey"
     );
+
+    if (showPrivateSearchSelect) {
+      let otherEngine = engineName != privateEngineName;
+      let accessKey = "contextMenuPrivateSearch.accesskey";
+      if (otherEngine) {
+        menuItemPrivate.label = gNavigatorBundle.getFormattedString(
+          "contextMenuPrivateSearchOtherEngine",
+          [privateEngineName]
+        );
+        accessKey = "contextMenuPrivateSearchOtherEngine.accesskey";
+      } else {
+        menuItemPrivate.label = gNavigatorBundle.getString(
+          "contextMenuPrivateSearch"
+        );
+      }
+      menuItemPrivate.accessKey = gNavigatorBundle.getString(accessKey);
+    }
   },
 
   createContainerMenu(aEvent) {

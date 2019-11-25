@@ -4,6 +4,7 @@
 
 "use strict";
 
+const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   createFactory,
   PureComponent,
@@ -12,63 +13,56 @@ const {
   section,
 } = require("devtools/client/shared/vendor/react-dom-factories");
 
-const ManifestLoader = createFactory(require("../manifest/ManifestLoader"));
+const { connect } = require("devtools/client/shared/vendor/react-redux");
 
+const Types = require("../../types/index");
+
+const ManifestLoader = createFactory(require("../manifest/ManifestLoader"));
 const Manifest = createFactory(require("./Manifest"));
 const ManifestEmpty = createFactory(require("./ManifestEmpty"));
 
 class ManifestPage extends PureComponent {
-  render() {
-    // TODO: needs to be replaced with data from Redux
-    const data = {
-      validation: [
-        { level: "warning", message: "Icons item at index 0 is invalid." },
-        { level: "error", message: "Random JSON error" },
-        {
-          level: "warning",
-          message:
-            "Icons item at index 2 is invalid. Icons item at index 2 is invalid. Icons item at index 2 is invalid. Icons item at index 2 is invalid.",
-        },
-      ],
-      icons: [],
-      identity: [
-        {
-          key: "name",
-          value:
-            "Name is a verrry long name and the name is longer tha you thinnk because it is loooooooooooooooooooooooooooooooooooooooooooooooong",
-        },
-        {
-          key: "short_name",
-          value: "Na",
-        },
-      ],
-      presentation: [
-        { key: "display", value: "browser" },
-        { key: "orientation", value: "landscape" },
-        { key: "start_url", value: "root" },
-        { key: "theme_color", value: "#345" },
-        { key: "background_color", value: "#F9D" },
-      ],
+  static get propTypes() {
+    return {
+      // these props are automatically injected via connect
+      hasLoadingFailed: PropTypes.bool.isRequired,
+      isManifestLoading: PropTypes.bool.isRequired,
+      manifest: PropTypes.shape(Types.manifest),
     };
+  }
 
-    const isManifestEmpty = !data;
+  get shouldShowLoader() {
+    const { isManifestLoading, hasLoadingFailed } = this.props;
+    const mustLoadManifest = typeof this.props.manifest === "undefined";
+    return isManifestLoading || mustLoadManifest || hasLoadingFailed;
+  }
+
+  renderManifest() {
+    const { manifest } = this.props;
+    return manifest ? Manifest({ ...manifest }) : ManifestEmpty({});
+  }
+
+  render() {
+    const { manifest } = this.props;
 
     return section(
       {
-        className: `app-page ${isManifestEmpty ? "app-page--empty" : ""}`,
+        className: `app-page js-manifest-page ${
+          !manifest ? "app-page--empty" : ""
+        }`,
       },
-      ManifestLoader({}),
-      isManifestEmpty
-        ? ManifestEmpty({})
-        : Manifest({
-            icons: data.icons,
-            identity: data.identity,
-            presentation: data.presentation,
-            validation: data.validation,
-          })
+      this.shouldShowLoader ? ManifestLoader({}) : this.renderManifest()
     );
   }
 }
 
+function mapStateToProps(state) {
+  return {
+    hasLoadingFailed: !!state.manifest.errorMessage,
+    isManifestLoading: state.manifest.isLoading,
+    manifest: state.manifest.manifest,
+  };
+}
+
 // Exports
-module.exports = ManifestPage;
+module.exports = connect(mapStateToProps)(ManifestPage);

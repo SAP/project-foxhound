@@ -731,10 +731,12 @@ static bool CreateSpecificWasmBuffer(
   Maybe<uint32_t> clampedMaxSize = maxSize;
   if (clampedMaxSize) {
 #ifdef JS_64BIT
-    // On 64-bit platforms when we aren't using huge memory, clamp clampedMaxSize to
-    // a smaller value that satisfies the 32-bit invariants
-    // clampedMaxSize + wasm::PageSize < UINT32_MAX and clampedMaxSize % wasm::PageSize == 0
-    if (!useHugeMemory && clampedMaxSize.value() >= (UINT32_MAX - wasm::PageSize)) {
+    // On 64-bit platforms when we aren't using huge memory, clamp
+    // clampedMaxSize to a smaller value that satisfies the 32-bit invariants
+    // clampedMaxSize + wasm::PageSize < UINT32_MAX and clampedMaxSize %
+    // wasm::PageSize == 0
+    if (!useHugeMemory &&
+        clampedMaxSize.value() >= (UINT32_MAX - wasm::PageSize)) {
       uint32_t clamp = (wasm::MaxMemoryMaximumPages - 2) * wasm::PageSize;
       MOZ_ASSERT(clamp < UINT32_MAX);
       MOZ_ASSERT(initialSize <= clamp);
@@ -764,13 +766,18 @@ static bool CreateSpecificWasmBuffer(
   RawbufT* buffer = RawbufT::Allocate(initialSize, clampedMaxSize, mappedSize);
   if (!buffer) {
     if (useHugeMemory) {
-      wasm::Log(cx, "huge Memory allocation failed");
+      JS_ReportErrorFlagsAndNumberASCII(cx, JSREPORT_WARNING, GetErrorMessage,
+                                        nullptr, JSMSG_WASM_HUGE_MEMORY_FAILED);
+      if (cx->isExceptionPending()) {
+        cx->clearPendingException();
+      }
+
       ReportOutOfMemory(cx);
       return false;
     }
 
-    // If we fail, and have a clampedMaxSize, try to reserve the biggest chunk in
-    // the range [initialSize, clampedMaxSize) using log backoff.
+    // If we fail, and have a clampedMaxSize, try to reserve the biggest chunk
+    // in the range [initialSize, clampedMaxSize) using log backoff.
     if (!clampedMaxSize) {
       wasm::Log(cx, "new Memory({initial=%u bytes}) failed", initialSize);
       ReportOutOfMemory(cx);
@@ -803,7 +810,8 @@ static bool CreateSpecificWasmBuffer(
 
   // ObjT::createFromNewRawBuffer assumes ownership of |buffer| even in case
   // of failure.
-  RootedArrayBufferObjectMaybeShared object(cx, ObjT::createFromNewRawBuffer(cx, buffer, initialSize));
+  RootedArrayBufferObjectMaybeShared object(
+      cx, ObjT::createFromNewRawBuffer(cx, buffer, initialSize));
   if (!object) {
     return false;
   }
@@ -1153,6 +1161,19 @@ static MOZ_MUST_USE bool CheckArrayBufferTooLarge(JSContext* cx,
   return true;
 }
 
+static inline js::gc::AllocKind GetArrayBufferGCObjectKind(size_t numSlots) {
+  if (numSlots <= 4) {
+    return js::gc::AllocKind::ARRAYBUFFER4;
+  }
+  if (numSlots <= 8) {
+    return js::gc::AllocKind::ARRAYBUFFER8;
+  }
+  if (numSlots <= 12) {
+    return js::gc::AllocKind::ARRAYBUFFER12;
+  }
+  return js::gc::AllocKind::ARRAYBUFFER16;
+}
+
 ArrayBufferObject* ArrayBufferObject::createForContents(
     JSContext* cx, uint32_t nbytes, BufferContents contents) {
   MOZ_ASSERT(contents);
@@ -1193,7 +1214,7 @@ ArrayBufferObject* ArrayBufferObject::createForContents(
   }
 
   MOZ_ASSERT(!(class_.flags & JSCLASS_HAS_PRIVATE));
-  gc::AllocKind allocKind = gc::GetGCObjectKind(nslots);
+  gc::AllocKind allocKind = GetArrayBufferGCObjectKind(nslots);
 
   AutoSetNewObjectMetadata metadata(cx);
   Rooted<ArrayBufferObject*> buffer(
@@ -1242,7 +1263,7 @@ ArrayBufferObject* ArrayBufferObject::createZeroed(
   }
 
   MOZ_ASSERT(!(class_.flags & JSCLASS_HAS_PRIVATE));
-  gc::AllocKind allocKind = gc::GetGCObjectKind(nslots);
+  gc::AllocKind allocKind = GetArrayBufferGCObjectKind(nslots);
 
   AutoSetNewObjectMetadata metadata(cx);
   Rooted<ArrayBufferObject*> buffer(

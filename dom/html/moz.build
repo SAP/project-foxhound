@@ -243,7 +243,6 @@ LOCAL_INCLUDES += [
     '/dom/html/input',
     '/dom/media',
     '/dom/security',
-    '/dom/xbl',
     '/dom/xul',
     '/image',
     '/layout/forms',
@@ -253,6 +252,9 @@ LOCAL_INCLUDES += [
     '/layout/xul',
     '/netwerk/base',
 ]
+
+if CONFIG['MOZ_XBL']:
+    LOCAL_INCLUDES += ['/dom/xbl']
 
 FINAL_LIBRARY = 'xul'
 

@@ -24,13 +24,13 @@
 #include "mozilla/dom/MutableBlobStorage.h"
 #include "mozilla/dom/XMLDocument.h"
 #include "mozilla/dom/URLSearchParams.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "mozilla/dom/WorkerError.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventListenerManager.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MemoryReporting.h"
@@ -178,12 +178,12 @@ static void AddLoadFlags(nsIRequest* request, nsLoadFlags newFlags) {
 
 // We are in a sync event loop.
 #define NOT_CALLABLE_IN_SYNC_SEND                              \
-  if (mFlagSyncLooping) {                                      \
+  if (mFlagSyncLooping || mEventDispatchingSuspended) {        \
     return NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT; \
   }
 
 #define NOT_CALLABLE_IN_SYNC_SEND_RV                               \
-  if (mFlagSyncLooping) {                                          \
+  if (mFlagSyncLooping || mEventDispatchingSuspended) {            \
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT); \
     return;                                                        \
   }
@@ -1709,7 +1709,7 @@ XMLHttpRequestMainThread::OnDataAvailable(nsIRequest* request,
       rv = NS_GetBlobForBlobURI(blobURI, getter_AddRefs(blobImpl));
       if (NS_SUCCEEDED(rv)) {
         if (blobImpl) {
-          mResponseBlob = Blob::Create(GetOwner(), blobImpl);
+          mResponseBlob = Blob::Create(GetOwnerGlobal(), blobImpl);
         }
         if (!mResponseBlob) {
           rv = NS_ERROR_FILE_NOT_FOUND;
@@ -2151,7 +2151,7 @@ XMLHttpRequestMainThread::OnStopRequest(nsIRequest* request, nsresult status) {
     // mBlobStorage can be null if the channel is non-file non-cacheable
     // and if the response length is zero.
     MaybeCreateBlobStorage();
-    mBlobStorage->GetBlobWhenReady(GetOwner(), contentType, this);
+    mBlobStorage->GetBlobImplWhenReady(contentType, this);
     waitingForBlobCreation = true;
 
     NS_ASSERTION(mResponseBody.IsEmpty(), "mResponseBody should be empty");
@@ -2412,6 +2412,8 @@ nsresult XMLHttpRequestMainThread::CreateChannel() {
     rv = httpChannel->SetRequestMethod(mRequestMethod);
     NS_ENSURE_SUCCESS(rv, rv);
 
+    httpChannel->SetSource(profiler_get_backtrace());
+
     // Set the initiator type
     nsCOMPtr<nsITimedChannel> timedChannel(do_QueryInterface(httpChannel));
     if (timedChannel) {
@@ -2565,7 +2567,7 @@ nsresult XMLHttpRequestMainThread::InitiateFetch(
 
     // Mark channel as urgent-start if the XHR is triggered by user input
     // events.
-    if (EventStateManager::IsHandlingUserInput()) {
+    if (UserActivation::IsHandlingUserInput()) {
       cos->AddClassFlags(nsIClassOfService::UrgentStart);
     }
   }
@@ -3130,6 +3132,17 @@ void XMLHttpRequestMainThread::SetOriginStack(
   mOriginStack = std::move(aOriginStack);
 }
 
+void XMLHttpRequestMainThread::SetSource(UniqueProfilerBacktrace aSource) {
+  if (!mChannel) {
+    return;
+  }
+  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(mChannel);
+
+  if (httpChannel) {
+    httpChannel->SetSource(std::move(aSource));
+  }
+}
+
 bool XMLHttpRequestMainThread::WithCredentials() const {
   return mFlagACwithCredentials;
 }
@@ -3580,7 +3593,7 @@ void XMLHttpRequestMainThread::MaybeCreateBlobStorage() {
 }
 
 void XMLHttpRequestMainThread::BlobStoreCompleted(
-    MutableBlobStorage* aBlobStorage, Blob* aBlob, nsresult aRv) {
+    MutableBlobStorage* aBlobStorage, BlobImpl* aBlobImpl, nsresult aRv) {
   // Ok, the state is changed...
   if (mBlobStorage != aBlobStorage || NS_FAILED(aRv)) {
     return;
@@ -3588,7 +3601,7 @@ void XMLHttpRequestMainThread::BlobStoreCompleted(
 
   MOZ_ASSERT(mState != XMLHttpRequest_Binding::DONE);
 
-  mResponseBlob = aBlob;
+  mResponseBlob = Blob::Create(GetOwnerGlobal(), aBlobImpl);
   mBlobStorage = nullptr;
 
   ChangeStateToDone(mFlagSyncLooping);

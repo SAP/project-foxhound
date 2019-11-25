@@ -17,11 +17,12 @@
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsIContentInlines.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMWindow.h"
-#include "nsXBLBinding.h"
-#include "nsXBLPrototypeBinding.h"
+#ifdef MOZ_XBL
+#  include "nsXBLBinding.h"
+#  include "nsBindingManager.h"
+#  include "nsXBLPrototypeBinding.h"
+#endif
 #include "nsIMutableArray.h"
-#include "nsBindingManager.h"
 #include "ChildIterator.h"
 #include "nsComputedDOMStyle.h"
 #include "mozilla/EventStateManager.h"
@@ -156,7 +157,7 @@ already_AddRefed<nsINodeList> InspectorUtils::GetChildrenForNode(
 /* static */
 void InspectorUtils::GetCSSStyleRules(
     GlobalObject& aGlobalObject, Element& aElement, const nsAString& aPseudo,
-    nsTArray<RefPtr<BindingStyleRule>>& aResult) {
+    bool aIncludeVisitedStyle, nsTArray<RefPtr<BindingStyleRule>>& aResult) {
   RefPtr<nsAtom> pseudoElt;
   if (!aPseudo.IsEmpty()) {
     pseudoElt = NS_Atomize(aPseudo);
@@ -168,6 +169,12 @@ void InspectorUtils::GetCSSStyleRules(
     // This can fail for elements that are not in the document or
     // if the document they're in doesn't have a presshell.  Bail out.
     return;
+  }
+
+  if (aIncludeVisitedStyle) {
+    if (ComputedStyle* styleIfVisited = computedStyle->GetStyleIfVisited()) {
+      computedStyle = styleIfVisited;
+    }
   }
 
   Document* doc = aElement.OwnerDoc();
@@ -319,10 +326,11 @@ uint64_t InspectorUtils::GetSpecificity(GlobalObject& aGlobal,
 /* static */
 bool InspectorUtils::SelectorMatchesElement(
     GlobalObject& aGlobalObject, Element& aElement, BindingStyleRule& aRule,
-    uint32_t aSelectorIndex, const nsAString& aPseudo, ErrorResult& aRv) {
+    uint32_t aSelectorIndex, const nsAString& aPseudo,
+    bool aRelevantLinkVisited, ErrorResult& aRv) {
   bool result = false;
-  aRv =
-      aRule.SelectorMatchesElement(&aElement, aSelectorIndex, aPseudo, &result);
+  aRv = aRule.SelectorMatchesElement(&aElement, aSelectorIndex, aPseudo,
+                                     aRelevantLinkVisited, &result);
   return result;
 }
 
@@ -516,6 +524,7 @@ bool InspectorUtils::IsValidCSSColor(GlobalObject& aGlobalObject,
 void InspectorUtils::GetBindingURLs(GlobalObject& aGlobalObject,
                                     Element& aElement,
                                     nsTArray<nsString>& aResult) {
+#ifdef MOZ_XBL
   nsXBLBinding* binding = aElement.GetXBLBinding();
 
   while (binding) {
@@ -526,6 +535,7 @@ void InspectorUtils::GetBindingURLs(GlobalObject& aGlobalObject,
     CopyASCIItoUTF16(spec, *resultURI);
     binding = binding->GetBaseBinding();
   }
+#endif
 }
 
 /* static */

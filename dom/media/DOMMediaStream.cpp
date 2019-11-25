@@ -5,13 +5,13 @@
 
 #include "DOMMediaStream.h"
 
-#include "AudioCaptureStream.h"
+#include "AudioCaptureTrack.h"
 #include "AudioChannelAgent.h"
 #include "AudioStreamTrack.h"
 #include "Layers.h"
-#include "MediaStreamGraph.h"
-#include "MediaStreamGraphImpl.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraph.h"
+#include "MediaTrackGraphImpl.h"
+#include "MediaTrackListener.h"
 #include "VideoStreamTrack.h"
 #include "mozilla/dom/AudioTrack.h"
 #include "mozilla/dom/AudioTrackList.h"
@@ -44,12 +44,22 @@ using namespace mozilla::media;
 static LazyLogModule gMediaStreamLog("MediaStream");
 #define LOG(type, msg) MOZ_LOG(gMediaStreamLog, type, msg)
 
-const TrackID TRACK_VIDEO_PRIMARY = 1;
-
 static bool ContainsLiveTracks(
     const nsTArray<RefPtr<MediaStreamTrack>>& aTracks) {
   for (const auto& track : aTracks) {
     if (track->ReadyState() == MediaStreamTrackState::Live) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+static bool ContainsLiveAudioTracks(
+    const nsTArray<RefPtr<MediaStreamTrack>>& aTracks) {
+  for (const auto& track : aTracks) {
+    if (track->AsAudioStreamTrack() &&
+        track->ReadyState() == MediaStreamTrackState::Live) {
       return true;
     }
   }
@@ -119,9 +129,7 @@ NS_INTERFACE_MAP_END_INHERITING(DOMEventTargetHelper)
 
 DOMMediaStream::DOMMediaStream(nsPIDOMWindowInner* aWindow)
     : mWindow(aWindow),
-      mPlaybackTrackListener(MakeAndAddRef<PlaybackTrackListener>(this)),
-      mActive(false),
-      mFinishedOnInactive(true) {
+      mPlaybackTrackListener(MakeAndAddRef<PlaybackTrackListener>(this)) {
   nsresult rv;
   nsCOMPtr<nsIUUIDGenerator> uuidgen =
       do_GetService("@mozilla.org/uuid-generator;1", &rv);
@@ -224,25 +232,25 @@ already_AddRefed<Promise> DOMMediaStream::CountUnderlyingStreams(
     return nullptr;
   }
 
-  MediaStreamGraph* graph = MediaStreamGraph::GetInstanceIfExists(
-      window, MediaStreamGraph::REQUEST_DEFAULT_SAMPLE_RATE);
+  MediaTrackGraph* graph = MediaTrackGraph::GetInstanceIfExists(
+      window, MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE);
   if (!graph) {
     p->MaybeResolve(0);
     return p.forget();
   }
 
-  auto* graphImpl = static_cast<MediaStreamGraphImpl*>(graph);
+  auto* graphImpl = static_cast<MediaTrackGraphImpl*>(graph);
 
   class Counter : public ControlMessage {
    public:
-    Counter(MediaStreamGraphImpl* aGraph, const RefPtr<Promise>& aPromise)
+    Counter(MediaTrackGraphImpl* aGraph, const RefPtr<Promise>& aPromise)
         : ControlMessage(nullptr), mGraph(aGraph), mPromise(aPromise) {
       MOZ_ASSERT(NS_IsMainThread());
     }
 
     void Run() override {
       uint32_t streams =
-          mGraph->mStreams.Length() + mGraph->mSuspendedStreams.Length();
+          mGraph->mTracks.Length() + mGraph->mSuspendedTracks.Length();
       mGraph->DispatchToMainThreadStableState(NS_NewRunnableFunction(
           "DOMMediaStream::CountUnderlyingStreams (stable state)",
           [promise = std::move(mPromise), streams]() mutable {
@@ -265,7 +273,7 @@ already_AddRefed<Promise> DOMMediaStream::CountUnderlyingStreams(
 
    private:
     // mGraph owns this Counter instance and decides its lifetime.
-    MediaStreamGraphImpl* mGraph;
+    MediaTrackGraphImpl* mGraph;
     RefPtr<Promise> mPromise;
   };
   graphImpl->AppendMessage(MakeUnique<Counter>(graphImpl, p));
@@ -319,9 +327,8 @@ void DOMMediaStream::GetTracks(
 }
 
 void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
-  LOG(LogLevel::Info,
-      ("DOMMediaStream %p Adding track %p (from stream %p with ID %d)", this,
-       &aTrack, aTrack.GetStream(), aTrack.GetTrackID()));
+  LOG(LogLevel::Info, ("DOMMediaStream %p Adding track %p (from track %p)",
+                       this, &aTrack, aTrack.GetTrack()));
 
   if (HasTrack(aTrack)) {
     LOG(LogLevel::Debug,
@@ -334,9 +341,8 @@ void DOMMediaStream::AddTrack(MediaStreamTrack& aTrack) {
 }
 
 void DOMMediaStream::RemoveTrack(MediaStreamTrack& aTrack) {
-  LOG(LogLevel::Info,
-      ("DOMMediaStream %p Removing track %p (from stream %p with ID %d)", this,
-       &aTrack, aTrack.GetStream(), aTrack.GetTrackID()));
+  LOG(LogLevel::Info, ("DOMMediaStream %p Removing track %p (from track %p)",
+                       this, &aTrack, aTrack.GetTrack()));
 
   if (!mTracks.RemoveElement(&aTrack)) {
     LOG(LogLevel::Debug,
@@ -420,6 +426,24 @@ void DOMMediaStream::NotifyInactive() {
   }
 }
 
+void DOMMediaStream::NotifyAudible() {
+  LOG(LogLevel::Info, ("DOMMediaStream %p NotifyAudible(). ", this));
+
+  MOZ_ASSERT(mAudible);
+  for (int32_t i = mTrackListeners.Length() - 1; i >= 0; --i) {
+    mTrackListeners[i]->NotifyAudible();
+  }
+}
+
+void DOMMediaStream::NotifyInaudible() {
+  LOG(LogLevel::Info, ("DOMMediaStream %p NotifyInaudible(). ", this));
+
+  MOZ_ASSERT(!mAudible);
+  for (int32_t i = mTrackListeners.Length() - 1; i >= 0; --i) {
+    mTrackListeners[i]->NotifyInaudible();
+  }
+}
+
 void DOMMediaStream::RegisterTrackListener(TrackListener* aListener) {
   MOZ_ASSERT(NS_IsMainThread());
 
@@ -454,14 +478,20 @@ void DOMMediaStream::NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack) {
     mTrackListeners[i]->NotifyTrackAdded(aTrack);
   }
 
-  if (mActive) {
-    return;
+  if (!mActive) {
+    // Check if we became active.
+    if (ContainsLiveTracks(mTracks)) {
+      mActive = true;
+      NotifyActive();
+    }
   }
 
-  // Check if we became active.
-  if (ContainsLiveTracks(mTracks)) {
-    mActive = true;
-    NotifyActive();
+  if (!mAudible) {
+    // Check if we became audible.
+    if (ContainsLiveAudioTracks(mTracks)) {
+      mAudible = true;
+      NotifyAudible();
+    }
   }
 }
 
@@ -489,6 +519,14 @@ void DOMMediaStream::NotifyTrackRemoved(
 
   if (!mFinishedOnInactive) {
     return;
+  }
+
+  if (mAudible) {
+    // Check if we became inaudible.
+    if (!ContainsLiveAudioTracks(mTracks)) {
+      mAudible = false;
+      NotifyInaudible();
+    }
   }
 
   // Check if we became inactive.

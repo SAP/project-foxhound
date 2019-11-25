@@ -23,7 +23,6 @@ class nsISelectionController;
 class nsITransferable;
 
 namespace mozilla {
-class AutoEditInitRulesTrigger;
 class DeleteNodeTransaction;
 class InsertNodeTransaction;
 enum class EditSubAction : int32_t;
@@ -171,14 +170,7 @@ class TextEditor : public EditorBase,
    * <br> element for empty editor, returns true.  If editor's root element has
    * non-empty text nodes or other nodes like <br>, returns false.
    */
-  nsresult IsEmpty(bool* aIsEmpty) const;
-  bool IsEmpty() const {
-    bool isEmpty = false;
-    nsresult rv = IsEmpty(&isEmpty);
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "Checking whether the editor is empty failed");
-    return NS_SUCCEEDED(rv) && isEmpty;
-  }
+  virtual bool IsEmpty() const;
 
   MOZ_CAN_RUN_SCRIPT
   virtual nsresult HandleKeyPressEvent(
@@ -214,8 +206,8 @@ class TextEditor : public EditorBase,
    *                            JS.  If set to nullptr, will be treated as
    *                            called by system.
    */
-  nsresult InsertTextAsAction(const nsAString& aStringToInsert,
-                              nsIPrincipal* aPrincipal = nullptr);
+  MOZ_CAN_RUN_SCRIPT nsresult InsertTextAsAction(
+      const nsAString& aStringToInsert, nsIPrincipal* aPrincipal = nullptr);
 
   /**
    * PasteAsQuotationAsAction() pastes content in clipboard as quotation.
@@ -396,12 +388,10 @@ class TextEditor : public EditorBase,
 
  protected:  // May be called by friends.
   /****************************************************************************
-   * Some classes like TextEditRules, HTMLEditRules, WSRunObject which are
-   * part of handling edit actions are allowed to call the following protected
-   * methods.  However, those methods won't prepare caches of some objects
-   * which are necessary for them.  So, if you want some following methods
-   * to do that for you, you need to create a wrapper method in public scope
-   * and call it.
+   * Some friend classes are allowed to call the following protected methods.
+   * However, those methods won't prepare caches of some objects which are
+   * necessary for them.  So, if you call them from friend classes, you need
+   * to make sure that AutoEditActionDataSetter is created.
    ****************************************************************************/
 
   // Overrides of EditorBase
@@ -423,7 +413,8 @@ class TextEditor : public EditorBase,
    *
    * @param aStringToInsert     The string to insert.
    */
-  nsresult InsertTextAsSubAction(const nsAString& aStringToInsert);
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult
+  InsertTextAsSubAction(const nsAString& aStringToInsert);
 
   /**
    * DeleteSelectionAsSubAction() removes selection content or content around
@@ -456,7 +447,8 @@ class TextEditor : public EditorBase,
    *
    * @ param aString   The string to be set.
    */
-  MOZ_CAN_RUN_SCRIPT nsresult SetTextAsSubAction(const nsAString& aString);
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult
+  SetTextAsSubAction(const nsAString& aString);
 
   /**
    * ReplaceSelectionAsSubAction() replaces selection with aString.
@@ -574,15 +566,120 @@ class TextEditor : public EditorBase,
   MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult DidInsertText(
       uint32_t aNewLength, uint32_t aInsertedOffset, uint32_t aInsertedLength);
 
- protected:  // Called by helper classes.
-  virtual void OnStartToHandleTopLevelEditSubAction(
-      EditSubAction aEditSubAction, nsIEditor::EDirection aDirection) override;
-  MOZ_CAN_RUN_SCRIPT
-  virtual void OnEndHandlingTopLevelEditSubAction() override;
+ protected:  // edit sub-action handler
+  /**
+   * TruncateInsertionStringForMaxLength() truncates aInsertionString for
+   * making handling insertion not cause overflow from `maxlength` value.
+   *
+   * @param aInsertionString    [in/out] New insertion string.  This is
+   *                            truncated if there is no enough space to
+   *                            insert the new string.
+   * @return                    If aInsertionString is truncated one or
+   *                            more characters, returns "as handled".
+   */
+  EditActionResult TruncateInsertionStringForMaxLength(
+      nsAString& aInsertionString);
 
-  void BeginEditorInit();
-  MOZ_CAN_RUN_SCRIPT
-  nsresult EndEditorInit();
+  /**
+   * InsertLineFeedCharacterAtSelection() inserts a linefeed character at
+   * selection.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE EditActionResult
+  InsertLineFeedCharacterAtSelection();
+
+  /**
+   * Handles the newline characters according to the default system prefs
+   * (editor.singleLine.pasteNewlines).
+   * Each value means:
+   *   nsIPlaintextEditor::eNewlinesReplaceWithSpaces (2, Firefox default):
+   *     replace newlines with spaces.
+   *   nsIPlaintextEditor::eNewlinesStrip (3):
+   *     remove newlines from the string.
+   *   nsIPlaintextEditor::eNewlinesReplaceWithCommas (4, Thunderbird default):
+   *     replace newlines with commas.
+   *   nsIPlaintextEditor::eNewlinesStripSurroundingWhitespace (5):
+   *     collapse newlines and surrounding whitespace characters and
+   *     remove them from the string.
+   *   nsIPlaintextEditor::eNewlinesPasteIntact (0):
+   *     only remove the leading and trailing newlines.
+   *   nsIPlaintextEditor::eNewlinesPasteToFirst (1) or any other value:
+   *     remove the first newline and all characters following it.
+   *
+   * @param aString the string to be modified in place.
+   */
+  void HandleNewLinesInStringForSingleLineEditor(nsString& aString) const;
+
+  /**
+   * HandleInsertText() handles inserting text at selection.
+   *
+   * @param aEditSubAction      Must be EditSubAction::eInsertText or
+   *                            EditSubAction::eInsertTextComingFromIME.
+   * @param aInsertionString    String to be inserted at selection.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE virtual EditActionResult HandleInsertText(
+      EditSubAction aEditSubAction, const nsAString& aInsertionString);
+
+  /**
+   * HandleDeleteSelectionInternal() is a helper method of
+   * HandleDeleteSelection().  Must be called only when the instance is
+   * TextEditor.
+   * NOTE: This method creates SelectionBatcher.  Therefore, each caller
+   *       needs to check if the editor is still available even if this returns
+   *       NS_OK.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE EditActionResult
+  HandleDeleteSelectionInternal(nsIEditor::EDirection aDirectionAndAmount,
+                                nsIEditor::EStripWrappers aStripWrappers);
+
+  /**
+   * This method handles "delete selection" commands.
+   *
+   * @param aDirectionAndAmount Direction of the deletion.
+   * @param aStripWrappers      Always ignored in TextEditor.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE virtual EditActionResult
+  HandleDeleteSelection(nsIEditor::EDirection aDirectionAndAmount,
+                        nsIEditor::EStripWrappers aStripWrappers);
+
+  /**
+   * ComputeValueFromTextNodeAndPaddingBRElement() tries to compute "value" of
+   * this editor content only with text node and padding `<br>` element.
+   * If this succeeds to compute the value, it's returned with aValue and
+   * the result is marked as "handled".  Otherwise, the caller needs to
+   * compute it with another way.
+   */
+  EditActionResult ComputeValueFromTextNodeAndPaddingBRElement(
+      nsAString& aValue) const;
+
+  /**
+   * SetTextWithoutTransaction() is optimized method to set `<input>.value`
+   * and `<textarea>.value` to aValue without transaction.  This must be
+   * called only when it's not `HTMLEditor` and undo/redo is disabled.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE EditActionResult
+  SetTextWithoutTransaction(const nsAString& aValue);
+
+  /**
+   * EnsurePaddingBRElementInMultilineEditor() creates a padding `<br>` element
+   * at end of multiline text editor.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult
+  EnsurePaddingBRElementInMultilineEditor();
+
+  /**
+   * EnsureCaretNotAtEndOfTextNode() collapses selection at the padding `<br>`
+   * element (i.e., container becomes the anonymous `<div>` element) if
+   * `Selection` is at end of the text node.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult EnsureCaretNotAtEndOfTextNode();
+
+ protected:  // Called by helper classes.
+  MOZ_CAN_RUN_SCRIPT virtual void OnStartToHandleTopLevelEditSubAction(
+      EditSubAction aTopLevelEditSubAction,
+      nsIEditor::EDirection aDirectionOfTopLevelEditSubAction,
+      ErrorResult& aRv) override;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult OnEndHandlingTopLevelEditSubAction()
+      override;
 
   /**
    * EnsurePaddingBRElementForEmptyEditor() creates padding <br> element for
@@ -609,7 +706,21 @@ class TextEditor : public EditorBase,
  protected:  // Shouldn't be used by friend classes
   virtual ~TextEditor();
 
+  /**
+   * InitEditorContentAndSelection() may insert a padding `<br>` element for
+   * if it's required in the anonymous `<div>` element and collapse selection
+   * at the end if there is no selection ranges.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult InitEditorContentAndSelection();
+
   int32_t WrapWidth() const { return mWrapColumn; }
+
+  /**
+   * CanEchoPasswordNow() returns true if currently we can echo password.
+   * If it's direct user input such as pasting or dropping text, this
+   * returns false even if we may echo password.
+   */
+  bool CanEchoPasswordNow() const;
 
   /**
    * Make the given selection span the entire document.
@@ -622,13 +733,14 @@ class TextEditor : public EditorBase,
    *
    * @param aStringToInsert     The string to insert.
    */
-  nsresult OnInputText(const nsAString& aStringToInsert);
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult
+  OnInputText(const nsAString& aStringToInsert);
 
   /**
    * InsertLineBreakAsSubAction() inserts a line break, i.e., \n if it's
    * TextEditor or <br> if it's HTMLEditor.
    */
-  nsresult InsertLineBreakAsSubAction();
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult InsertLineBreakAsSubAction();
 
   /**
    * PrepareInsertContent() is a helper method of InsertTextAt(),
@@ -666,7 +778,8 @@ class TextEditor : public EditorBase,
    * @param aQuotedText         String to insert.  This will be quoted by ">"
    *                            automatically.
    */
-  nsresult InsertWithQuotationsAsSubAction(const nsAString& aQuotedText);
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE virtual nsresult
+  InsertWithQuotationsAsSubAction(const nsAString& aQuotedText);
 
   /**
    * Return true if the data is safe to insert as the source and destination
@@ -674,9 +787,6 @@ class TextEditor : public EditorBase,
    * Otherwise, the data must be sanitized first.
    */
   bool IsSafeToInsertData(Document* aSourceDoc);
-
-  MOZ_CAN_RUN_SCRIPT
-  virtual nsresult InitRules();
 
   /**
    * GetAndInitDocEncoder() returns a document encoder instance for aFormatType
@@ -709,7 +819,8 @@ class TextEditor : public EditorBase,
    */
   virtual nsresult PrepareTransferable(nsITransferable** transferable);
 
-  nsresult InsertTextFromTransferable(nsITransferable* transferable);
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE nsresult
+  InsertTextFromTransferable(nsITransferable* transferable);
 
   /**
    * DeleteSelectionAndCreateElement() creates a element whose name is aTag.
@@ -735,7 +846,7 @@ class TextEditor : public EditorBase,
    * string.
    */
   nsresult SharedOutputString(uint32_t aFlags, bool* aIsCollapsed,
-                              nsAString& aResult);
+                              nsAString& aResult) const;
 
   /**
    * See comment of IsCopyToClipboardAllowed() for the detail.
@@ -785,7 +896,6 @@ class TextEditor : public EditorBase,
 
   int32_t mWrapColumn;
   int32_t mMaxTextLength;
-  int32_t mInitTriggerCounter;
   int32_t mNewlineHandling;
   int32_t mCaretStyle;
 
@@ -799,11 +909,9 @@ class TextEditor : public EditorBase,
   // without setting `mMaskTimer`, set to false.
   bool mIsMaskingPassword;
 
-  friend class AutoEditInitRulesTrigger;
   friend class DeleteNodeTransaction;
   friend class EditorBase;
   friend class InsertNodeTransaction;
-  friend class TextEditRules;
 };
 
 }  // namespace mozilla

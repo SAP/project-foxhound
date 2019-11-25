@@ -12,21 +12,21 @@
 
 namespace js {
 
-inline Thread::Id::PlatformData* Thread::Id::platformData() {
+inline ThreadId::PlatformData* ThreadId::platformData() {
   static_assert(sizeof platformData_ >= sizeof(PlatformData),
                 "platformData_ is too small");
   return reinterpret_cast<PlatformData*>(platformData_);
 }
 
-inline const Thread::Id::PlatformData* Thread::Id::platformData() const {
+inline const ThreadId::PlatformData* ThreadId::platformData() const {
   static_assert(sizeof platformData_ >= sizeof(PlatformData),
                 "platformData_ is too small");
   return reinterpret_cast<const PlatformData*>(platformData_);
 }
 
-Thread::Id::Id() { platformData()->hasThread = false; }
+ThreadId::ThreadId() { platformData()->hasThread = false; }
 
-bool Thread::Id::operator==(const Id& aOther) const {
+bool ThreadId::operator==(const ThreadId& aOther) const {
   const PlatformData& self = *platformData();
   const PlatformData& other = *aOther.platformData();
   return (!self.hasThread && !other.hasThread) ||
@@ -36,6 +36,10 @@ bool Thread::Id::operator==(const Id& aOther) const {
 
 bool Thread::create(void* (*aMain)(void*), void* aArg) {
   MOZ_RELEASE_ASSERT(!joinable());
+
+  if (oom::ShouldFailWithOOM()) {
+    return false;
+  }
 
   pthread_attr_t attrs;
   int r = pthread_attr_init(&attrs);
@@ -49,7 +53,7 @@ bool Thread::create(void* (*aMain)(void*), void* aArg) {
   if (r) {
     // On either Windows or POSIX we can't be sure if id_ was initialised. So
     // reset it manually.
-    id_ = Id();
+    id_ = ThreadId();
     return false;
   }
   id_.platformData()->hasThread = true;
@@ -60,21 +64,21 @@ void Thread::join() {
   MOZ_RELEASE_ASSERT(joinable());
   int r = pthread_join(id_.platformData()->ptThread, nullptr);
   MOZ_RELEASE_ASSERT(!r);
-  id_ = Id();
+  id_ = ThreadId();
 }
 
 void Thread::detach() {
   MOZ_RELEASE_ASSERT(joinable());
   int r = pthread_detach(id_.platformData()->ptThread);
   MOZ_RELEASE_ASSERT(!r);
-  id_ = Id();
+  id_ = ThreadId();
 }
 
-Thread::Id ThisThread::GetId() {
-  Thread::Id id;
+ThreadId ThreadId::ThisThreadId() {
+  ThreadId id;
   id.platformData()->ptThread = pthread_self();
   id.platformData()->hasThread = true;
-  MOZ_RELEASE_ASSERT(id != Thread::Id());
+  MOZ_RELEASE_ASSERT(id != ThreadId());
   return id;
 }
 

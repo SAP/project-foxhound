@@ -372,14 +372,26 @@ function denyRequestNoPermission(aBrowser, aRequest) {
 }
 
 //
-// Check if we have permission to access the camera and or microphone at the
-// OS level. Triggers a request to access the device if access is needed and
-// the permission state has not yet been determined.
+// Check if we have permission to access the camera or screen-sharing and/or
+// microphone at the OS level. Triggers a request to access the device if access
+// is needed and the permission state has not yet been determined.
 //
-async function checkOSPermission(camNeeded, micNeeded) {
+async function checkOSPermission(camNeeded, micNeeded, scrNeeded) {
+  // Don't trigger OS permission requests for fake devices. Fake devices don't
+  // require OS permission and the dialogs are problematic in automated testing
+  // (where fake devices are used) because they require user interaction.
+  if (
+    !scrNeeded &&
+    Services.prefs.getBoolPref("media.navigator.streams.fake", false)
+  ) {
+    return true;
+  }
+
   let camStatus = {},
     micStatus = {};
-  OSPermissions.getMediaCapturePermissionState(camStatus, micStatus);
+  if (camNeeded || micNeeded) {
+    OSPermissions.getMediaCapturePermissionState(camStatus, micStatus);
+  }
   if (camNeeded) {
     let camPermission = camStatus.value;
     let camAccessible = await checkAndGetOSPermission(
@@ -397,6 +409,14 @@ async function checkOSPermission(camNeeded, micNeeded) {
       OSPermissions.requestAudioCapturePermission
     );
     if (!micAccessible) {
+      return false;
+    }
+  }
+  let scrStatus = {};
+  if (scrNeeded) {
+    OSPermissions.getScreenCapturePermissionState(scrStatus);
+    if (scrStatus.value == OSPermissions.PERMISSION_STATE_DENIED) {
+      OSPermissions.maybeRequestScreenCapturePermission();
       return false;
     }
   }
@@ -468,6 +488,115 @@ function stopRecording(aBrowser, aRequest) {
   }
 }
 
+/**
+ * Checks if the principal has sufficient permissions
+ * to fulfill the given request. If the request can be
+ * fulfilled, a message is sent to the child
+ * signaling that WebRTC permissions were given and
+ * this function will return true.
+ */
+function checkRequestAllowed(aRequest, aPrincipal, aBrowser) {
+  if (!aRequest.secure) {
+    return false;
+  }
+
+  let { audioDevices, videoDevices, sharingScreen } = aRequest;
+
+  let micAllowed =
+    SitePermissions.getForPrincipal(aPrincipal, "microphone").state ==
+    SitePermissions.ALLOW;
+  let camAllowed =
+    SitePermissions.getForPrincipal(aPrincipal, "camera").state ==
+    SitePermissions.ALLOW;
+
+  let perms = Services.perms;
+  let mediaManagerPerm = perms.testExactPermissionFromPrincipal(
+    aPrincipal,
+    "MediaManagerVideo"
+  );
+  if (mediaManagerPerm) {
+    perms.removeFromPrincipal(aPrincipal, "MediaManagerVideo");
+  }
+
+  // Screen sharing shouldn't follow the camera permissions.
+  if (videoDevices.length && sharingScreen) {
+    camAllowed = false;
+  }
+  if (aRequest.isThirdPartyOrigin) {
+    camAllowed = false;
+    micAllowed = false;
+  }
+
+  let activeCamera;
+  let activeMic;
+
+  // Always prompt for screen sharing
+  if (!sharingScreen) {
+    for (let device of videoDevices) {
+      let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
+      if (set && set.has(aRequest.windowID + device.mediaSource + device.id)) {
+        activeCamera = device;
+        break;
+      }
+    }
+
+    for (let device of audioDevices) {
+      let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
+      if (set && set.has(aRequest.windowID + device.mediaSource + device.id)) {
+        activeMic = device;
+        break;
+      }
+    }
+  }
+
+  if (
+    (!audioDevices.length || micAllowed || activeMic) &&
+    (!videoDevices.length || camAllowed || activeCamera)
+  ) {
+    let allowedDevices = [];
+    if (videoDevices.length) {
+      allowedDevices.push((activeCamera || videoDevices[0]).deviceIndex);
+      Services.perms.addFromPrincipal(
+        aPrincipal,
+        "MediaManagerVideo",
+        Services.perms.ALLOW_ACTION,
+        Services.perms.EXPIRE_SESSION
+      );
+    }
+    if (audioDevices.length) {
+      allowedDevices.push((activeMic || audioDevices[0]).deviceIndex);
+    }
+
+    // Remember on which URIs we found persistent permissions so that we
+    // can remove them if the user clicks 'Stop Sharing'. There's no
+    // other way for the stop sharing code to know the hostnames of frames
+    // using devices until bug 1066082 is fixed.
+    let browser = aBrowser;
+    browser.getDevicePermissionOrigins("webrtc").add(aPrincipal.origin);
+
+    // If sharingScreen, we're requesting screen-sharing, otherwise camera
+    let camNeeded = !!videoDevices.length && !sharingScreen;
+    let scrNeeded = !!videoDevices.length && sharingScreen;
+    let micNeeded = !!audioDevices.length;
+    checkOSPermission(camNeeded, micNeeded, scrNeeded).then(havePermission => {
+      if (havePermission) {
+        let mm = browser.messageManager;
+        mm.sendAsyncMessage("webrtc:Allow", {
+          callID: aRequest.callID,
+          windowID: aRequest.windowID,
+          devices: allowedDevices,
+        });
+      } else {
+        denyRequestNoPermission(browser, aRequest);
+      }
+    });
+
+    return true;
+  }
+
+  return false;
+}
+
 function prompt(aBrowser, aRequest) {
   let {
     audioDevices,
@@ -480,6 +609,39 @@ function prompt(aBrowser, aRequest) {
   let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     aRequest.origin
   );
+
+  // For add-on principals, we immediately check for permission instead
+  // of waiting for the notification to focus. This allows for supporting
+  // cases such as browserAction popups where no prompt is shown.
+  if (principal.addonPolicy) {
+    let isPopup = false;
+    let isBackground = false;
+
+    for (let view of principal.addonPolicy.extension.views) {
+      if (view.viewType == "popup" && view.xulBrowser == aBrowser) {
+        isPopup = true;
+      }
+      if (view.viewType == "background" && view.xulBrowser == aBrowser) {
+        isBackground = true;
+      }
+    }
+
+    // Recording from background pages is considered too sensitive and will
+    // always be denied.
+    if (isBackground) {
+      denyRequest(aBrowser, aRequest);
+      return;
+    }
+
+    // If the request comes from a popup, we don't want to show the prompt,
+    // but we do want to allow the request if the user previously gave permission.
+    if (isPopup) {
+      if (!checkRequestAllowed(aRequest, principal, aBrowser)) {
+        denyRequest(aBrowser, aRequest);
+      }
+      return;
+    }
+  }
 
   // If the user has already denied access once in this tab,
   // deny again without even showing the notification icon.
@@ -618,105 +780,9 @@ function prompt(aBrowser, aRequest) {
       // it is handled synchronously before we add the notification.
       // Handling of ALLOW is delayed until the popupshowing event,
       // to avoid granting permissions automatically to background tabs.
-      if (aRequest.secure) {
-        let micAllowed =
-          SitePermissions.getForPrincipal(principal, "microphone").state ==
-          SitePermissions.ALLOW;
-        let camAllowed =
-          SitePermissions.getForPrincipal(principal, "camera").state ==
-          SitePermissions.ALLOW;
-
-        let perms = Services.perms;
-        let mediaManagerPerm = perms.testExactPermissionFromPrincipal(
-          principal,
-          "MediaManagerVideo"
-        );
-        if (mediaManagerPerm) {
-          perms.removeFromPrincipal(principal, "MediaManagerVideo");
-        }
-
-        // Screen sharing shouldn't follow the camera permissions.
-        if (videoDevices.length && sharingScreen) {
-          camAllowed = false;
-        }
-        if (aRequest.isThirdPartyOrigin) {
-          camAllowed = false;
-          micAllowed = false;
-        }
-
-        let activeCamera;
-        let activeMic;
-
-        // Always prompt for screen sharing
-        if (!sharingScreen) {
-          for (let device of videoDevices) {
-            let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
-            if (
-              set &&
-              set.has(aRequest.windowID + device.mediaSource + device.id)
-            ) {
-              activeCamera = device;
-              break;
-            }
-          }
-
-          for (let device of audioDevices) {
-            let set = webrtcUI.activePerms.get(aBrowser.outerWindowID);
-            if (
-              set &&
-              set.has(aRequest.windowID + device.mediaSource + device.id)
-            ) {
-              activeMic = device;
-              break;
-            }
-          }
-        }
-
-        if (
-          (!audioDevices.length || micAllowed || activeMic) &&
-          (!videoDevices.length || camAllowed || activeCamera)
-        ) {
-          let allowedDevices = [];
-          if (videoDevices.length) {
-            allowedDevices.push((activeCamera || videoDevices[0]).deviceIndex);
-            Services.perms.addFromPrincipal(
-              principal,
-              "MediaManagerVideo",
-              Services.perms.ALLOW_ACTION,
-              Services.perms.EXPIRE_SESSION
-            );
-          }
-          if (audioDevices.length) {
-            allowedDevices.push((activeMic || audioDevices[0]).deviceIndex);
-          }
-
-          // Remember on which URIs we found persistent permissions so that we
-          // can remove them if the user clicks 'Stop Sharing'. There's no
-          // other way for the stop sharing code to know the hostnames of frames
-          // using devices until bug 1066082 is fixed.
-          let browser = this.browser;
-          browser._devicePermissionPrincipals =
-            browser._devicePermissionPrincipals || [];
-          browser._devicePermissionPrincipals.push(principal);
-
-          let camNeeded = videoDevices.length > 0;
-          let micNeeded = audioDevices.length > 0;
-          checkOSPermission(camNeeded, micNeeded).then(havePermission => {
-            if (havePermission) {
-              let mm = browser.messageManager;
-              mm.sendAsyncMessage("webrtc:Allow", {
-                callID: aRequest.callID,
-                windowID: aRequest.windowID,
-                devices: allowedDevices,
-              });
-            } else {
-              denyRequestNoPermission(browser, aRequest);
-            }
-          });
-
-          this.remove();
-          return true;
-        }
+      if (checkRequestAllowed(aRequest, principal, aBrowser)) {
+        this.remove();
+        return true;
       }
 
       function listDevices(menupopup, devices) {
@@ -887,6 +953,23 @@ function prompt(aBrowser, aRequest) {
             warning.textContent = pre;
             warning.appendChild(learnMore);
             warning.appendChild(chromeWin.document.createTextNode(post));
+
+            // On Catalina, we don't want to blow our chance to show the
+            // OS-level helper prompt to enable screen recording if the user
+            // intends to reject anyway. OTOH showing it when they click Allow
+            // is too late. A happy middle is to show it when the user makes a
+            // choice in the picker. This already happens implicitly if the
+            // user chooses "Entire desktop", as a side-effect of our preview,
+            // we just need to also do it if they choose "Firefox". These are
+            // the lone two options when permission is absent on Catalina.
+            // Ironically, these are the two sources marked "scary" from a
+            // web-sharing perspective, which is why this code resides here.
+            // A restart doesn't appear to be necessary in spite of OS wording.
+            let scrStatus = {};
+            OSPermissions.getScreenCapturePermissionState(scrStatus);
+            if (scrStatus.value == OSPermissions.PERMISSION_STATE_DENIED) {
+              OSPermissions.maybeRequestScreenCapturePermission();
+            }
           }
 
           let perms = Services.perms;
@@ -1062,14 +1145,17 @@ function prompt(aBrowser, aRequest) {
         if (remember) {
           // Remember on which URIs we set persistent permissions so that we
           // can remove them if the user clicks 'Stop Sharing'.
-          aBrowser._devicePermissionPrincipals =
-            aBrowser._devicePermissionPrincipals || [];
-          aBrowser._devicePermissionPrincipals.push(principal);
+          aBrowser.getDevicePermissionOrigins("webrtc").add(principal.origin);
         }
 
-        let camNeeded = videoDevices.length > 0;
-        let micNeeded = audioDevices.length > 0;
-        let havePermission = await checkOSPermission(camNeeded, micNeeded);
+        let camNeeded = !!videoDevices.length && !sharingScreen;
+        let scrNeeded = !!videoDevices.length && sharingScreen;
+        let micNeeded = !!audioDevices.length;
+        let havePermission = await checkOSPermission(
+          camNeeded,
+          micNeeded,
+          scrNeeded
+        );
         if (!havePermission) {
           denyRequestNoPermission(notification.browser, aRequest);
           return;
@@ -1082,6 +1168,8 @@ function prompt(aBrowser, aRequest) {
           devices: allowedDevices,
         });
       };
+
+      // If we haven't handled the permission yet, we want to show the doorhanger.
       return false;
     },
   };
@@ -1108,6 +1196,7 @@ function prompt(aBrowser, aRequest) {
 
     options.checkbox = {
       label: stringBundle.getString("getUserMedia.remember"),
+      checked: principal.isAddonOrExpandedAddonPrincipal,
       checkedState: reasonForNoPermanentAllow
         ? {
             disableMainAction: true,

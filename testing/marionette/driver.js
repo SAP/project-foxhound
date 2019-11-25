@@ -25,10 +25,9 @@ const { Capabilities, Timeouts, UnhandledPromptBehavior } = ChromeUtils.import(
 const { capture } = ChromeUtils.import(
   "chrome://marionette/content/capture.js"
 );
-const {
-  CertificateOverrideManager,
-  InsecureSweepingOverride,
-} = ChromeUtils.import("chrome://marionette/content/cert.js");
+const { allowAllCerts } = ChromeUtils.import(
+  "chrome://marionette/content/cert.js"
+);
 const { cookie } = ChromeUtils.import("chrome://marionette/content/cookie.js");
 const { WebElementEventTarget } = ChromeUtils.import(
   "chrome://marionette/content/dom.js"
@@ -733,8 +732,7 @@ GeckoDriver.prototype.newSession = async function(cmd) {
 
     if (!this.secureTLS) {
       logger.warn("TLS certificate errors will be ignored for this session");
-      let acceptAllCerts = new InsecureSweepingOverride();
-      CertificateOverrideManager.install(acceptAllCerts);
+      allowAllCerts.enable();
     }
 
     if (this.proxy.init()) {
@@ -2662,7 +2660,7 @@ GeckoDriver.prototype.clearElement = async function(cmd) {
     case Context.Chrome:
       // the selenium atom doesn't work here
       let el = this.curBrowser.seenEls.get(webEl);
-      if (el.nodeName == "textbox") {
+      if (el.nodeName == "input" && el.type == "text") {
         el.value = "";
       } else if (el.nodeName == "checkbox") {
         el.checked = false;
@@ -2983,7 +2981,7 @@ GeckoDriver.prototype.deleteSession = function() {
   }
 
   this.sandboxes.clear();
-  CertificateOverrideManager.uninstall();
+  allowAllCerts.disable();
 
   this.sessionID = null;
   this.capabilities = new Capabilities();
@@ -3021,6 +3019,7 @@ GeckoDriver.prototype.deleteSession = function() {
  */
 GeckoDriver.prototype.takeScreenshot = async function(cmd) {
   let win = assert.open(this.getCurrentWindow());
+  await this._handleUserPrompts();
 
   let { id, full, hash, scroll } = cmd.parameters;
   let format = hash ? capture.Format.Hash : capture.Format.Base64;
@@ -3475,9 +3474,6 @@ GeckoDriver.prototype.quit = async function(cmd) {
   if (typeof cmd.parameters.flags != "undefined") {
     flags = assert.array(cmd.parameters.flags);
   }
-
-  // bug 1298921
-  assert.firefox();
 
   let quitSeen;
   let mode = 0;

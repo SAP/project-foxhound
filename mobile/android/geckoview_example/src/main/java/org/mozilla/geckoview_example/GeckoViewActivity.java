@@ -44,7 +44,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.os.SystemClock;
+import android.security.keystore.KeyProperties;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.ActivityCompat;
@@ -65,6 +67,11 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.NoSuchAlgorithmException;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECGenParameterSpec;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -175,7 +182,8 @@ public class GeckoViewActivity extends AppCompatActivity {
                         .enhancedTrackingProtectionLevel(ContentBlocking.EtpLevel.DEFAULT)
                         .build())
                     .crashHandler(ExampleCrashHandler.class)
-                    .telemetryDelegate(new ExampleTelemetryDelegate());
+                    .telemetryDelegate(new ExampleTelemetryDelegate())
+                    .aboutConfigEnabled(true);
 
             sGeckoRuntime = GeckoRuntime.create(this, runtimeSettingsBuilder.build());
 
@@ -245,6 +253,11 @@ public class GeckoViewActivity extends AppCompatActivity {
 
 
             }
+
+            sGeckoRuntime.setDelegate(() -> {
+                mKillProcessOnDestroy = true;
+                finish();
+            });
         }
 
         if(savedInstanceState == null) {
@@ -289,7 +302,7 @@ public class GeckoViewActivity extends AppCompatActivity {
             notificationManager.createNotificationChannel(channel);
         }
     }
-    
+
     private TabSession createSession() {
         TabSession session = mTabSessionManager.newSession(new GeckoSessionSettings.Builder()
                 .useMultiprocess(mUseMultiprocess)
@@ -1316,8 +1329,20 @@ public class GeckoViewActivity extends AppCompatActivity {
     private final class ExampleTelemetryDelegate
             implements RuntimeTelemetry.Delegate {
         @Override
-        public void onTelemetryReceived(final @NonNull RuntimeTelemetry.Metric metric) {
-            Log.d(LOGTAG, "onTelemetryReceived " + metric);
+        public void onHistogram(final @NonNull RuntimeTelemetry.Histogram histogram) {
+            Log.d(LOGTAG, "onHistogram " + histogram);
+        }
+        @Override
+        public void onBooleanScalar(final @NonNull RuntimeTelemetry.Metric<Boolean> scalar) {
+            Log.d(LOGTAG, "onBooleanScalar " + scalar);
+        }
+        @Override
+        public void onLongScalar(final @NonNull RuntimeTelemetry.Metric<Long> scalar) {
+            Log.d(LOGTAG, "onLongScalar " + scalar);
+        }
+        @Override
+        public void onStringScalar(final @NonNull RuntimeTelemetry.Metric<String> scalar) {
+            Log.d(LOGTAG, "onStringScalar " + scalar);
         }
     }
 }

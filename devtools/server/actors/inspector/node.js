@@ -6,15 +6,10 @@
 
 const { Cu } = require("chrome");
 const Services = require("Services");
-const ChromeUtils = require("ChromeUtils");
 const InspectorUtils = require("InspectorUtils");
 const protocol = require("devtools/shared/protocol");
 const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const { nodeSpec, nodeListSpec } = require("devtools/shared/specs/node");
-const {
-  connectToFrame,
-} = require("devtools/server/connectors/frame-connector");
-
 loader.lazyRequireGetter(
   this,
   "getCssPath",
@@ -97,6 +92,12 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "isXBLAnonymous",
+  "devtools/shared/layout/utils",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "isRemoteFrame",
   "devtools/shared/layout/utils",
   true
 );
@@ -272,6 +273,7 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
     if (this.isRemoteFrame) {
       form.remoteFrame = true;
       form.numChildren = 1;
+      form.browsingContextID = this.rawNode.browsingContext.id;
     }
 
     return form;
@@ -308,14 +310,13 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
 
   /**
    * Check if the current node is representing a remote frame.
-   * EXPERIMENTAL: Only works if fission is enabled in the toolbox.
+   * In the context of the browser toolbox, a remote frame can be the <browser remote>
+   * element found inside each tab.
+   * In the context of the content toolbox, a remote frame can be a <iframe> that contains
+   * a different origin document.
    */
   get isRemoteFrame() {
-    return (
-      this.numChildren == 0 &&
-      ChromeUtils.getClassName(this.rawNode) == "XULFrameElement" &&
-      this.rawNode.getAttribute("remote") == "true"
-    );
+    return isRemoteFrame(this.rawNode);
   },
 
   // Estimate the number of children that the walker will return without making
@@ -392,8 +393,8 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
     if (
       SUBGRID_ENABLED &&
       (display === "grid" || display === "inline-grid") &&
-      (style.gridTemplateRows === "subgrid" ||
-        style.gridTemplateColumns === "subgrid")
+      (style.gridTemplateRows.startsWith("subgrid") ||
+        style.gridTemplateColumns.startsWith("subgrid"))
     ) {
       display = "subgrid";
     }
@@ -706,21 +707,6 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
       innerWidth: win.innerWidth,
       innerHeight: win.innerHeight,
     };
-  },
-
-  /**
-   * Fetch the target actor's form for the current remote frame.
-   *
-   * (to be called only if form.remoteFrame is true)
-   */
-  connectToRemoteFrame() {
-    if (!this.isRemoteFrame) {
-      return {
-        error: "ErrorRemoteFrame",
-        message: "Tried to call `connectToRemoteFrame` on a local frame",
-      };
-    }
-    return connectToFrame(this.conn, this.rawNode);
   },
 });
 

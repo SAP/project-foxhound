@@ -10,10 +10,12 @@ use crate::cdsl::regs::IsaRegs;
 use crate::cdsl::settings::SettingGroup;
 use crate::shared::Definitions as SharedDefinitions;
 
+use crate::isa::x86::opcodes;
+
 /// Helper data structure to create recipes and template recipes.
 /// It contains all the recipes and recipe templates that might be used in the encodings crate of
 /// this same directory.
-pub struct RecipeGroup<'builder> {
+pub(crate) struct RecipeGroup<'builder> {
     /// Memoized format pointer, to pass it to builders later.
     formats: &'builder FormatRegistry,
 
@@ -186,7 +188,7 @@ pub struct Template<'builder> {
     /// Value of the RRR bits (between 0 and 0b111).
     rrr_bits: u16,
     /// Opcode bytes.
-    op_bytes: Vec<u8>,
+    op_bytes: &'static [u8],
 }
 
 impl<'builder> Template<'builder> {
@@ -204,7 +206,7 @@ impl<'builder> Template<'builder> {
             rex: false,
             w_bit: 0,
             rrr_bits: 0,
-            op_bytes: Vec::new(),
+            op_bytes: &opcodes::EMPTY,
         }
     }
 
@@ -226,7 +228,7 @@ impl<'builder> Template<'builder> {
     }
 
     // Copy setters.
-    pub fn opcodes(&self, op_bytes: Vec<u8>) -> Self {
+    pub fn opcodes(&self, op_bytes: &'static [u8]) -> Self {
         assert!(!op_bytes.is_empty());
         let mut copy = self.clone();
         copy.op_bytes = op_bytes;
@@ -325,14 +327,14 @@ fn valid_scale(format: &InstructionFormat) -> InstructionPredicate {
         })
 }
 
-pub fn define<'shared>(
+pub(crate) fn define<'shared>(
     shared_defs: &'shared SharedDefinitions,
     settings: &'shared SettingGroup,
     regs: &'shared IsaRegs,
 ) -> RecipeGroup<'shared> {
     // The set of floating point condition codes that are directly supported.
     // Other condition codes need to be reversed or expressed as two tests.
-    let floatcc = shared_defs.operand_kinds.by_name("floatcc");
+    let floatcc = &shared_defs.imm.floatcc;
     let supported_floatccs: Vec<Literal> = ["ord", "uno", "one", "ueq", "gt", "ge", "ult", "ule"]
         .iter()
         .map(|name| Literal::enumerator_for(floatcc, name))
@@ -351,6 +353,7 @@ pub fn define<'shared>(
     let reg_rax = Register::new(gpr, regs.regunit_by_name(gpr, "rax"));
     let reg_rcx = Register::new(gpr, regs.regunit_by_name(gpr, "rcx"));
     let reg_rdx = Register::new(gpr, regs.regunit_by_name(gpr, "rdx"));
+    let reg_r15 = Register::new(gpr, regs.regunit_by_name(gpr, "r15"));
 
     // Stack operand with a 32-bit signed displacement from either RBP or RSP.
     let stack_gpr32 = Stack::new(gpr);
@@ -395,11 +398,11 @@ pub fn define<'shared>(
     let f_trap = formats.by_name("Trap");
     let f_unary = formats.by_name("Unary");
     let f_unary_bool = formats.by_name("UnaryBool");
+    let f_unary_const = formats.by_name("UnaryConst");
     let f_unary_global_value = formats.by_name("UnaryGlobalValue");
     let f_unary_ieee32 = formats.by_name("UnaryIeee32");
     let f_unary_ieee64 = formats.by_name("UnaryIeee64");
     let f_unary_imm = formats.by_name("UnaryImm");
-    let f_unary_imm128 = formats.by_name("UnaryImm128");
 
     // Predicates shorthands.
     let use_sse41 = settings.predicate_by_name("use_sse41");
@@ -426,6 +429,25 @@ pub fn define<'shared>(
             .operands_in(vec![stack_gpr32])
             .operands_out(vec![stack_gpr32])
             .emit(""),
+    );
+
+    recipes.add_recipe(
+        EncodingRecipeBuilder::new("get_pinned_reg", f_nullary, 0)
+            .operands_out(vec![reg_r15])
+            .emit(""),
+    );
+    // umr with a fixed register output that's r15.
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("set_pinned_reg", f_unary, 1)
+            .operands_in(vec![gpr])
+            .clobbers_flags(false)
+            .emit(
+                r#"
+                    let r15 = RU::r15.into();
+                    {{PUT_OP}}(bits, rex2(r15, in_reg0), sink);
+                    modrm_rr(r15, in_reg0, sink);
+                "#,
+            ),
     );
 
     // No-op fills, created by late-stage redundant-fill removal.
@@ -545,6 +567,27 @@ pub fn define<'shared>(
                 "#,
             ),
     );
+
+    // XX /r with FPR ins and outs. A form with a byte immediate.
+    {
+        let format = formats.get(f_insert_lane);
+        recipes.add_template_recipe(
+            EncodingRecipeBuilder::new("fa_ib", f_insert_lane, 2)
+                .operands_in(vec![fpr, fpr])
+                .operands_out(vec![0])
+                .inst_predicate(InstructionPredicate::new_is_unsigned_int(
+                    format, "lane", 8, 0,
+                ))
+                .emit(
+                    r#"
+                    {{PUT_OP}}(bits, rex2(in_reg1, in_reg0), sink);
+                    modrm_rr(in_reg1, in_reg0, sink);
+                    let imm:i64 = lane.into();
+                    sink.put1(imm as u8);
+                "#,
+                ),
+        );
+    }
 
     // XX /n for a unary operation with extension bits.
     recipes.add_template_recipe(
@@ -978,6 +1021,18 @@ pub fn define<'shared>(
                     {{PUT_OP}}(bits | (out_reg0 & 7), rex1(out_reg0), sink);
                     let imm: i64 = imm.into();
                     sink.put8(imm as u64);
+                "#,
+            ),
+    );
+
+    // XX+rd id unary with zero immediate.
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("u_id_z", f_unary_imm, 1)
+            .operands_out(vec![gpr])
+            .emit(
+                r#"
+                    {{PUT_OP}}(bits, rex2(out_reg0, out_reg0), sink);
+                    modrm_rr(out_reg0, out_reg0, sink);
                 "#,
             ),
     );
@@ -2384,14 +2439,26 @@ pub fn define<'shared>(
     );
 
     recipes.add_template_recipe(
-        EncodingRecipeBuilder::new("vconst", f_unary_imm128, 5)
+        EncodingRecipeBuilder::new("vconst", f_unary_const, 5)
             .operands_out(vec![fpr])
             .clobbers_flags(false)
             .emit(
                 r#"
                     {{PUT_OP}}(bits, rex2(0, out_reg0), sink);
                     modrm_riprel(out_reg0, sink);
-                    const_disp4(imm, func, sink);
+                    const_disp4(constant_handle, func, sink);
+                "#,
+            ),
+    );
+
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("vconst_optimized", f_unary_const, 1)
+            .operands_out(vec![fpr])
+            .clobbers_flags(false)
+            .emit(
+                r#"
+                    {{PUT_OP}}(bits, rex2(out_reg0, out_reg0), sink);
+                    modrm_rr(out_reg0, out_reg0, sink);
                 "#,
             ),
     );
@@ -2524,6 +2591,64 @@ pub fn define<'shared>(
                 r#"
                     {{PUT_OP}}(bits, rex2(in_reg0, out_reg0), sink);
                     modrm_rr(in_reg0, out_reg0, sink);
+                "#,
+            ),
+    );
+
+    // Arithematic with flag I/O.
+
+    // XX /r, MR form. Add two GPR registers and set carry flag.
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("rout", f_binary, 1)
+            .operands_in(vec![gpr, gpr])
+            .operands_out(vec![
+                OperandConstraint::TiedInput(0),
+                OperandConstraint::FixedReg(reg_rflags),
+            ])
+            .clobbers_flags(true)
+            .emit(
+                r#"
+                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                    modrm_rr(in_reg0, in_reg1, sink);
+                "#,
+            ),
+    );
+
+    // XX /r, MR form. Add two GPR registers and get carry flag.
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("rin", f_ternary, 1)
+            .operands_in(vec![
+                OperandConstraint::RegClass(gpr),
+                OperandConstraint::RegClass(gpr),
+                OperandConstraint::FixedReg(reg_rflags),
+            ])
+            .operands_out(vec![0])
+            .clobbers_flags(true)
+            .emit(
+                r#"
+                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                    modrm_rr(in_reg0, in_reg1, sink);
+                "#,
+            ),
+    );
+
+    // XX /r, MR form. Add two GPR registers with carry flag.
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("rio", f_ternary, 1)
+            .operands_in(vec![
+                OperandConstraint::RegClass(gpr),
+                OperandConstraint::RegClass(gpr),
+                OperandConstraint::FixedReg(reg_rflags),
+            ])
+            .operands_out(vec![
+                OperandConstraint::TiedInput(0),
+                OperandConstraint::FixedReg(reg_rflags),
+            ])
+            .clobbers_flags(true)
+            .emit(
+                r#"
+                    {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
+                    modrm_rr(in_reg0, in_reg1, sink);
                 "#,
             ),
     );
@@ -2797,22 +2922,23 @@ pub fn define<'shared>(
                     {{PUT_OP}}(bits, rex2(in_reg0, in_reg1), sink);
                     modrm_rr(in_reg0, in_reg1, sink);
                     // `setCC` instruction, no REX.
-                    use crate::ir::condcodes::IntCC::*;
-                    let setcc = match cond {
-                        Equal => 0x94,
-                        NotEqual => 0x95,
-                        SignedLessThan => 0x9c,
-                        SignedGreaterThanOrEqual => 0x9d,
-                        SignedGreaterThan => 0x9f,
-                        SignedLessThanOrEqual => 0x9e,
-                        UnsignedLessThan => 0x92,
-                        UnsignedGreaterThanOrEqual => 0x93,
-                        UnsignedGreaterThan => 0x97,
-                        UnsignedLessThanOrEqual => 0x96,
-                    };
+                    let setcc = 0x90 | icc2opc(cond);
                     sink.put1(0x0f);
-                    sink.put1(setcc);
+                    sink.put1(setcc as u8);
                     modrm_rr(out_reg0, 0, sink);
+                "#,
+            ),
+    );
+
+    recipes.add_template_recipe(
+        EncodingRecipeBuilder::new("icscc_fpr", f_int_compare, 1)
+            .operands_in(vec![fpr, fpr])
+            .operands_out(vec![0])
+            .emit(
+                r#"
+                    // Comparison instruction.
+                    {{PUT_OP}}(bits, rex2(in_reg1, in_reg0), sink);
+                    modrm_rr(in_reg1, in_reg0, sink);
                 "#,
             ),
     );
@@ -2835,21 +2961,9 @@ pub fn define<'shared>(
                         let imm: i64 = imm.into();
                         sink.put1(imm as u8);
                         // `setCC` instruction, no REX.
-                        use crate::ir::condcodes::IntCC::*;
-                        let setcc = match cond {
-                            Equal => 0x94,
-                            NotEqual => 0x95,
-                            SignedLessThan => 0x9c,
-                            SignedGreaterThanOrEqual => 0x9d,
-                            SignedGreaterThan => 0x9f,
-                            SignedLessThanOrEqual => 0x9e,
-                            UnsignedLessThan => 0x92,
-                            UnsignedGreaterThanOrEqual => 0x93,
-                            UnsignedGreaterThan => 0x97,
-                            UnsignedLessThanOrEqual => 0x96,
-                        };
+                        let setcc = 0x90 | icc2opc(cond);
                         sink.put1(0x0f);
-                        sink.put1(setcc);
+                        sink.put1(setcc as u8);
                         modrm_rr(out_reg0, 0, sink);
                     "#,
                 ),
@@ -2870,21 +2984,9 @@ pub fn define<'shared>(
                         let imm: i64 = imm.into();
                         sink.put4(imm as u32);
                         // `setCC` instruction, no REX.
-                        use crate::ir::condcodes::IntCC::*;
-                        let setcc = match cond {
-                            Equal => 0x94,
-                            NotEqual => 0x95,
-                            SignedLessThan => 0x9c,
-                            SignedGreaterThanOrEqual => 0x9d,
-                            SignedGreaterThan => 0x9f,
-                            SignedLessThanOrEqual => 0x9e,
-                            UnsignedLessThan => 0x92,
-                            UnsignedGreaterThanOrEqual => 0x93,
-                            UnsignedGreaterThan => 0x97,
-                            UnsignedLessThanOrEqual => 0x96,
-                        };
+                        let setcc = 0x90 | icc2opc(cond);
                         sink.put1(0x0f);
-                        sink.put1(setcc);
+                        sink.put1(setcc as u8);
                         modrm_rr(out_reg0, 0, sink);
                     "#,
                 ),

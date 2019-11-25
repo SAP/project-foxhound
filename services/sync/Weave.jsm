@@ -76,11 +76,14 @@ WeaveService.prototype = {
     Ci.nsISupportsWeakReference,
   ]),
 
-  ensureLoaded() {
+  get Weave() {
     const { Weave } = ChromeUtils.import("resource://services-sync/main.js");
+    return Weave;
+  },
 
+  ensureLoaded() {
     // Side-effect of accessing the service is that it is instantiated.
-    Weave.Service;
+    this.Weave.Service;
   },
 
   whenLoaded() {
@@ -117,8 +120,6 @@ WeaveService.prototype = {
             isConfigured =
               Weave.Status.checkSetup() != Weave.CLIENT_NOT_CONFIGURED;
           }
-          let getHistogramById = Services.telemetry.getHistogramById;
-          getHistogramById("WEAVE_CONFIGURED").add(isConfigured);
           if (isConfigured) {
             this.ensureLoaded();
           }

@@ -177,11 +177,11 @@ class ScrollFrameHelper : public nsIReflowCallback {
   nsPoint GetVisualViewportOffset() const;
 
   /**
-   * Return the 'optimal viewing region' [1] as a rect suitable for use by
+   * Return the 'optimal viewing region' as a rect suitable for use by
    * scroll anchoring. This rect is in the same coordinate space as
-   * 'GetScrollPortRect'.
+   * 'GetScrollPortRect', and accounts for 'scroll-padding' as defined by:
    *
-   * [1] https://drafts.csswg.org/css-scroll-snap-1/#optimal-viewing-region
+   * https://drafts.csswg.org/css-scroll-snap-1/#optimal-viewing-region
    */
   nsRect GetVisualOptimalViewingRect() const;
 
@@ -430,8 +430,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   void SetZoomableByAPZ(bool aZoomable);
   void SetHasOutOfFlowContentInsideFilter();
 
-  bool UsesContainerScrolling() const;
-
   bool UsesOverlayScrollbars() const;
 
   // In the case where |aDestination| is given, elements which are entirely out
@@ -661,12 +659,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // we shouldn't expire the displayport on this scrollframe unless those
   // descendant scrollframes also have their displayports removed.
   bool mIsScrollParent : 1;
-
-  // Whether we are the root scroll frame that is used for containerful
-  // scrolling with a display port. If true, the scrollable frame
-  // shouldn't attach frame metrics to its layers because the container
-  // will already have the necessary frame metrics.
-  bool mIsScrollableLayerInRootContainer : 1;
 
   // If true, add clipping in ScrollFrameHelper::ClipLayerToDisplayPort.
   bool mAddClipRectToLayer : 1;
@@ -1072,9 +1064,6 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   }
   virtual void MarkScrollbarsDirtyForReflow() const override {
     mHelper.MarkScrollbarsDirtyForReflow();
-  }
-  virtual bool UsesContainerScrolling() const override {
-    return mHelper.UsesContainerScrolling();
   }
   virtual bool DecideScrollableLayer(nsDisplayListBuilder* aBuilder,
                                      nsRect* aVisibleRect, nsRect* aDirtyRect,
@@ -1621,9 +1610,6 @@ class nsXULScrollFrame final : public nsBoxFrame,
 
   virtual void SetTransformingByAPZ(bool aTransforming) override {
     mHelper.SetTransformingByAPZ(aTransforming);
-  }
-  virtual bool UsesContainerScrolling() const override {
-    return mHelper.UsesContainerScrolling();
   }
   bool IsTransformingByAPZ() const override {
     return mHelper.IsTransformingByAPZ();

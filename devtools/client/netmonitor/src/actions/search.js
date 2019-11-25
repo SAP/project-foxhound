@@ -13,6 +13,10 @@ const {
   CLOSE_SEARCH,
   UPDATE_SEARCH_STATUS,
   SEARCH_STATUS,
+  SET_TARGET_SEARCH_RESULT,
+  SELECT_ACTION_BAR_TAB,
+  TOGGLE_SEARCH_CASE_SENSITIVE_SEARCH,
+  PANELS,
 } = require("../constants");
 
 const {
@@ -22,8 +26,9 @@ const {
   getRequestById,
 } = require("../selectors/index");
 
+const { selectRequest } = require("./selection");
+const { selectDetailsPanelTab } = require("./ui");
 const { fetchNetworkUpdatePacket } = require("../utils/request-utils");
-
 const { searchInResource } = require("../workers/search/index");
 
 /**
@@ -31,7 +36,7 @@ const { searchInResource } = require("../workers/search/index");
  * from this module and consumed by Network panel UI.
  */
 function search(connector, query) {
-  let cancelled = false;
+  let canceled = false;
 
   // Instantiate an `ongoingSearch` function/object. It's responsible
   // for triggering set of asynchronous steps like fetching
@@ -54,12 +59,15 @@ function search(connector, query) {
     // search through the resource structure.
     const requests = getDisplayedRequests(state);
     for (const request of requests) {
-      if (cancelled) {
+      if (canceled) {
         return;
       }
 
       // Fetch all data for the resource.
       await loadResource(connector, request);
+      if (canceled) {
+        return;
+      }
 
       // The state changed, so make sure to get fresh new reference
       // to the updated resource object.
@@ -73,7 +81,11 @@ function search(connector, query) {
   // Implement support for canceling (used e.g. when a new search
   // is executed or the user stops the searching manually).
   newOngoingSearch.cancel = () => {
-    cancelled = true;
+    canceled = true;
+  };
+
+  newOngoingSearch.isCanceled = () => {
+    return canceled;
   };
 
   return newOngoingSearch;
@@ -103,11 +115,18 @@ async function loadResource(connector, resource) {
  */
 function searchResource(resource, query) {
   return async (dispatch, getState) => {
+    const state = getState();
+    const ongoingSearch = getOngoingSearch(state);
+
+    const modifiers = {
+      caseSensitive: state.search.caseSensitive,
+    };
+
     // Run search in a worker and wait for the results. The return
     // value is an array with search occurrences.
-    const result = await searchInResource(resource, query);
+    const result = await searchInResource(resource, query, modifiers);
 
-    if (!result.length) {
+    if (!result.length || ongoingSearch.isCanceled()) {
       return;
     }
 
@@ -146,6 +165,17 @@ function clearSearchResults() {
 }
 
 /**
+ * Used to clear and cancel an ongoing search.
+ * @returns {Function}
+ */
+function clearSearchResultAndCancel() {
+  return (dispatch, getState) => {
+    dispatch(stopOngoingSearch());
+    dispatch(clearSearchResults());
+  };
+}
+
+/**
  * Update status of the current search.
  */
 function updateSearchStatus(status) {
@@ -165,9 +195,23 @@ function closeSearch() {
   };
 }
 
+/**
+ * Open the entire search panel
+ * @returns {Function}
+ */
 function openSearch() {
   return (dispatch, getState) => {
     dispatch({ type: OPEN_SEARCH });
+  };
+}
+
+/**
+ * Toggles case sensitive search
+ * @returns {Function}
+ */
+function toggleCaseSensitiveSearch() {
+  return (dispatch, getState) => {
+    dispatch({ type: TOGGLE_SEARCH_CASE_SENSITIVE_SEARCH });
   };
 }
 
@@ -177,9 +221,15 @@ function openSearch() {
 function toggleSearchPanel() {
   return (dispatch, getState) => {
     const state = getState();
-    state.search.panelOpen
+
+    state.search.panelOpen && state.ui.selectedActionBarTabId === PANELS.SEARCH
       ? dispatch({ type: CLOSE_SEARCH })
       : dispatch({ type: OPEN_SEARCH });
+
+    dispatch({
+      type: SELECT_ACTION_BAR_TAB,
+      id: PANELS.SEARCH,
+    });
   };
 }
 
@@ -205,8 +255,36 @@ function stopOngoingSearch() {
 
     if (ongoingSearch && status !== SEARCH_STATUS.DONE) {
       ongoingSearch.cancel();
-      dispatch(updateSearchStatus(SEARCH_STATUS.CANCELLED));
+      dispatch(updateSearchStatus(SEARCH_STATUS.CANCELED));
     }
+  };
+}
+
+/**
+ * This action is fired when the user selects a search result
+ * within the Search panel. It opens the details side bar and
+ * selects the right side panel to show the context of the
+ * clicked search result.
+ */
+function navigate(searchResult) {
+  return (dispatch, getState) => {
+    // Store target search result in Search reducer. It's used
+    // for search result navigation within the side panels.
+    dispatch(setTargetSearchResult(searchResult));
+
+    // Preselect the right side panel.
+    dispatch(selectDetailsPanelTab(searchResult.panel));
+
+    // Select related request in the UI (it also opens the
+    // right side bar automatically).
+    dispatch(selectRequest(searchResult.parentResource.id));
+  };
+}
+
+function setTargetSearchResult(searchResult) {
+  return {
+    type: SET_TARGET_SEARCH_RESULT,
+    searchResult,
   };
 }
 
@@ -217,4 +295,8 @@ module.exports = {
   clearSearchResults,
   addSearchQuery,
   toggleSearchPanel,
+  navigate,
+  setTargetSearchResult,
+  toggleCaseSensitiveSearch,
+  clearSearchResultAndCancel,
 };

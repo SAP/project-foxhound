@@ -2,6 +2,10 @@ import os
 
 # OS Specifics
 INSTALLER_PATH = os.path.join(os.getcwd(), "installer.dmg")
+NODEJS_PATH = None
+if 'MOZ_FETCHES_DIR' in os.environ:
+    NODEJS_PATH = os.path.join(os.environ["MOZ_FETCHES_DIR"], "node/bin/node")
+
 XPCSHELL_NAME = 'xpcshell'
 EXE_SUFFIX = ''
 DISABLE_SCREEN_SAVER = False
@@ -76,7 +80,7 @@ config = {
         "mozmill": {
             "options": [
                 "--binary=%(binary_path)s",
-                "--testing-modules-dir=test/modules",
+                "--testing-modules-dir=tests/modules",
                 "--plugins-path=%(test_plugin_path)s",
                 "--symbols-path=%(symbols_path)s"
             ],
@@ -132,7 +136,6 @@ config = {
         "mochitest-browser-chrome": ["--flavor=browser"],
         "mochitest-browser-chrome-chunked": ["--flavor=browser", "--chunk-by-runtime"],
         "mochitest-browser-chrome-screenshots": ["--flavor=browser", "--subsuite=screenshots"],
-        "mochitest-browser-chrome-instrumentation": ["--flavor=browser"],
         "mochitest-webgl1-core": ["--subsuite=webgl1-core"],
         "mochitest-webgl1-ext": ["--subsuite=webgl1-ext"],
         "mochitest-webgl2-core": ["--subsuite=webgl2-core"],
@@ -211,7 +214,5 @@ config = {
     "minidump_stackwalk_path": "macosx64-minidump_stackwalk",
     "minidump_tooltool_manifest_path": "config/tooltool-manifests/macosx64/releng.manifest",
     "tooltool_cache": "/builds/tooltool_cache",
-    "download_nodejs": True,
-    "nodejs_path": "node-osx/bin/node",
-    "nodejs_tooltool_manifest_path": "config/tooltool-manifests/macosx64/nodejs.manifest",
+    "nodejs_path": NODEJS_PATH,
 }

@@ -33,8 +33,10 @@ export {
 } from "../reducers/quick-open";
 
 export {
+  getClosestBreakpoint,
   getBreakpointAtLocation,
   getBreakpointsAtLine,
+  getClosestBreakpointPosition,
 } from "./breakpointAtLocation";
 export {
   getVisibleBreakpoints,

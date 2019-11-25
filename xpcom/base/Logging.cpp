@@ -116,7 +116,7 @@ class LogFile {
 static const char* ExpandLogFileName(const char* aFilename,
                                      char (&buffer)[2048]) {
   MOZ_ASSERT(aFilename);
-  static const char kPIDToken[] = "%PID";
+  static const char kPIDToken[] = MOZ_LOG_PID_TOKEN;
   static const char kMOZLOGExt[] = MOZ_LOG_FILE_EXTENSION;
 
   bool hasMozLogExtension = StringEndsWith(nsDependentCString(aFilename),
@@ -406,10 +406,9 @@ class LogModuleManager {
     }
 
 #ifdef MOZ_GECKO_PROFILER
-    if (mAddProfilerMarker && profiler_is_active()) {
-      profiler_add_marker(
-          "LogMessages", JS::ProfilingCategoryPair::OTHER,
-          MakeUnique<LogMarkerPayload>(aName, buffToWrite, TimeStamp::Now()));
+    if (mAddProfilerMarker && profiler_can_accept_markers()) {
+      PROFILER_ADD_MARKER_WITH_PAYLOAD("LogMessages", OTHER, LogMarkerPayload,
+                                       (aName, buffToWrite, TimeStamp::Now()));
     }
 #endif
 

@@ -21,11 +21,16 @@ MOZ_BC_FIELD(OpenerId, uint64_t)
 
 MOZ_BC_FIELD(OnePermittedSandboxedNavigatorId, uint64_t)
 
+// Window ID of the inner window which embeds this BrowsingContext.
+MOZ_BC_FIELD(EmbedderInnerWindowId, uint64_t)
+
 MOZ_BC_FIELD(HadOriginalOpener, bool)
 
-// Toplevel browsing contexts only. This field controls whether the browsing
-// context is currently considered to be activated by a gesture.
-MOZ_BC_FIELD(IsActivatedByUserGesture, bool)
+MOZ_BC_FIELD(IsPopupSpam, bool)
+
+// This field controls whether the browsing context is currently considered to
+// be activated by a gesture.
+MOZ_BC_FIELD(UserActivationState, UserActivation::State)
 
 // Hold the audio muted state and should be used
 // on top level browsing contexts only.

@@ -7,7 +7,6 @@
  * Tests if the POST requests display the correct information in the UI,
  * for raw payloads with content-type headers attached to the upload stream.
  */
-
 add_task(async function() {
   const { L10N } = require("devtools/client/netmonitor/src/utils/l10n");
 
@@ -23,7 +22,7 @@ add_task(async function() {
   await performRequests(monitor, tab, 1);
 
   // Wait for all tree view updated by react
-  wait = waitForDOM(document, "#headers-panel .tree-section .treeLabel", 3);
+  let wait = waitForDOM(document, "#headers-panel .tree-section .treeLabel", 3);
   store.dispatch(Actions.toggleNetworkDetails());
   EventUtils.sendMouseEvent(
     { type: "click" },
@@ -76,7 +75,7 @@ add_task(async function() {
   );
 
   // Wait for all tree sections updated by react
-  wait = waitForDOM(document, "#params-panel .tree-section");
+  wait = waitForDOM(document, "#params-panel .tree-section", 2);
   EventUtils.sendMouseEvent(
     { type: "click" },
     document.querySelector("#params-tab")

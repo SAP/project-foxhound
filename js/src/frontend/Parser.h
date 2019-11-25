@@ -181,9 +181,11 @@
 #include "frontend/BytecodeCompiler.h"
 #include "frontend/ErrorReporter.h"
 #include "frontend/FullParseHandler.h"
+#include "frontend/FunctionTree.h"
 #include "frontend/NameAnalysisTypes.h"
 #include "frontend/NameCollections.h"
 #include "frontend/ParseContext.h"
+#include "frontend/ParseInfo.h"
 #include "frontend/SharedContext.h"
 #include "frontend/SyntaxParseHandler.h"
 #include "frontend/TokenStream.h"
@@ -205,8 +207,8 @@ class SourceParseContext : public ParseContext {
   template <typename ParseHandler, typename Unit>
   SourceParseContext(GeneralParser<ParseHandler, Unit>* prs, SharedContext* sc,
                      Directives* newDirectives)
-      : ParseContext(prs->cx_, prs->pc_, sc, prs->tokenStream, prs->usedNames_,
-                     prs->getTreeHolder(), newDirectives,
+      : ParseContext(prs->cx_, prs->pc_, sc, prs->tokenStream,
+                     prs->getParseInfo(), newDirectives,
                      mozilla::IsSame<ParseHandler, FullParseHandler>::value) {}
 };
 
@@ -243,7 +245,7 @@ class MOZ_STACK_CLASS ParserSharedBase : private JS::AutoGCRooter {
  public:
   enum class Kind { Parser, BinASTParser };
 
-  ParserSharedBase(JSContext* cx, LifoAlloc& alloc, UsedNameTracker& usedNames,
+  ParserSharedBase(JSContext* cx, ParseInfo& parserInfo,
                    ScriptSourceObject* sourceObject, Kind kind);
   ~ParserSharedBase();
 
@@ -252,7 +254,8 @@ class MOZ_STACK_CLASS ParserSharedBase : private JS::AutoGCRooter {
 
   LifoAlloc& alloc_;
 
-  LifoAlloc::Mark tempPoolMark_;
+  // Information for parsing with a lifetime longer than the parser itself.
+  ParseInfo& parseInfo_;
 
   // list of parsed objects and BigInts for GC tracing
   TraceListNode* traceListHead_;
@@ -283,103 +286,16 @@ class MOZ_STACK_CLASS ParserSharedBase : private JS::AutoGCRooter {
   template <typename BoxT, typename ArgT>
   BoxT* newTraceListNode(ArgT* arg);
 
+  void cleanupTraceList();
+
  public:
+  ParseInfo& getParseInfo() { return parseInfo_; }
+
   // Create a new JSObject and store it into the trace list.
   ObjectBox* newObjectBox(JSObject* obj);
 
   // Create a new BigInt and store it into the trace list.
   BigIntBox* newBigIntBox(BigInt* val);
-};
-
-// A tree of function nodes pointing to a FunctionBox and all its
-// nested inner functions.
-class FunctionTree {
-  FunctionBox* funbox_;
-
-  Vector<FunctionTree> children_;
-
- public:
-  explicit FunctionTree(JSContext* cx) : funbox_(nullptr), children_(cx) {}
-
-  // Note: If we're using vector type, the pointer returned here
-  // is only valid if the tree is only added to in DFS order
-  //
-  // Open to suggestions about how to do that better.
-  FunctionTree* add(JSContext* cx) {
-    if (!children_.emplaceBack(cx)) {
-      return nullptr;
-    }
-    return &children_.back();
-  }
-
-  void reset() {
-    funbox_ = nullptr;
-    children_.clear();
-  }
-
-  FunctionBox* funbox() { return funbox_; }
-  void setFunctionBox(FunctionBox* node) { funbox_ = node; }
-
-  typedef bool (*FunctionTreeVisitorFunction)(ParserBase*, FunctionTree*);
-  bool visitRecursively(JSContext* cx, ParserBase* parser,
-                        FunctionTreeVisitorFunction func) {
-    if (!CheckRecursionLimit(cx)) {
-      return false;
-    }
-
-    for (auto& child : children_) {
-      if (!child.visitRecursively(cx, parser, func)) {
-        return false;
-      }
-    }
-
-    return func(parser, this);
-  }
-
-  void dump(JSContext* cx) { dump(cx, *this, 1); }
-
- private:
-  static void dump(JSContext* cx, FunctionTree& node, int indent);
-};
-
-// Owner of a function tree
-//
-// The holder mode can be eager or deferred:
-//
-// - In Eager mode, deferred items happens right away and the tree is not
-//   constructed.
-// - In Deferred mode, deferred items happens only when publishDeferredItems
-//   is called.
-//
-// Note: Function trees point to function boxes, which only have the lifetime of
-//       the BytecodeCompiler, so exercise caution when holding onto a
-//       holder.
-class FunctionTreeHolder {
- public:
-  enum Mode { Eager, Deferred };
-
- private:
-  FunctionTree treeRoot_;
-  FunctionTree* currentParent_;
-  Mode mode_;
-
- public:
-  explicit FunctionTreeHolder(JSContext* cx, Mode mode = Mode::Eager)
-      : treeRoot_(cx), currentParent_(&treeRoot_), mode_(mode) {}
-
-  FunctionTree* getFunctionTree() { return &treeRoot_; }
-  FunctionTree* getCurrentParent() { return currentParent_; }
-  void setCurrentParent(FunctionTree* parent) { currentParent_ = parent; }
-
-  bool isEager() { return mode_ == Mode::Eager; }
-  bool isDeferred() { return mode_ == Mode::Deferred; }
-
-  // When a parse has failed, we need to reset the root of the
-  // function tree as we don't want a reparse to have old entries.
-  void resetFunctionTree() {
-    treeRoot_.reset();
-    currentParent_ = &treeRoot_;
-  }
 };
 
 class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
@@ -409,16 +325,9 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
 
   /* ParseGoal */ uint8_t parseGoal_ : 1;
 
-  FunctionTreeHolder treeHolder_;
+  FunctionTreeHolder& treeHolder_;
 
- public:
-  FunctionTreeHolder& getTreeHolder() { return treeHolder_; }
-
-  bool publishDeferredItems() {
-    return publishDeferredItems(getTreeHolder().getFunctionTree());
-  }
-
-  bool publishDeferredItems(FunctionTree* root) {
+  MOZ_MUST_USE bool publishDeferredItems(FunctionTree* root) {
     // Publish deferred functions before LazyScripts, as the
     // LazyScripts need the functions.
     if (!publishDeferredFunctions(root)) {
@@ -434,6 +343,13 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
   bool publishLazyScripts(FunctionTree* root);
   bool publishDeferredFunctions(FunctionTree* root);
 
+ public:
+  FunctionTreeHolder& getTreeHolder() { return treeHolder_; }
+
+  MOZ_MUST_USE bool publishDeferredItems() {
+    return publishDeferredItems(getTreeHolder().getFunctionTree());
+  }
+
   bool awaitIsKeyword() const { return awaitHandling_ != AwaitIsName; }
 
   bool inParametersOfAsyncFunction() const {
@@ -447,10 +363,9 @@ class MOZ_STACK_CLASS ParserBase : public ParserSharedBase,
   template <class, typename>
   friend class AutoInParametersOfAsyncFunction;
 
-  ParserBase(JSContext* cx, LifoAlloc& alloc,
-             const JS::ReadOnlyCompileOptions& options, bool foldConstants,
-             UsedNameTracker& usedNames, ScriptSourceObject* sourceObject,
-             ParseGoal parseGoal);
+  ParserBase(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+             bool foldConstants, ParseInfo& parseInfo,
+             ScriptSourceObject* sourceObject, ParseGoal parseGoal);
   ~ParserBase();
 
   bool checkOptions();
@@ -615,23 +530,21 @@ class MOZ_STACK_CLASS PerHandlerParser : public ParserBase {
   // NOTE: The argument ordering here is deliberately different from the
   //       public constructor so that typos calling the public constructor
   //       are less likely to select this overload.
-  PerHandlerParser(JSContext* cx, LifoAlloc& alloc,
-                   const JS::ReadOnlyCompileOptions& options,
-                   bool foldConstants, UsedNameTracker& usedNames,
+  PerHandlerParser(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+                   bool foldConstants, ParseInfo& parserInfo,
                    LazyScript* lazyOuterFunction,
                    ScriptSourceObject* sourceObject, ParseGoal parseGoal,
                    void* internalSyntaxParser);
 
  protected:
   template <typename Unit>
-  PerHandlerParser(JSContext* cx, LifoAlloc& alloc,
-                   const JS::ReadOnlyCompileOptions& options,
-                   bool foldConstants, UsedNameTracker& usedNames,
+  PerHandlerParser(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+                   bool foldConstants, ParseInfo& parserInfo,
                    GeneralParser<SyntaxParseHandler, Unit>* syntaxParser,
                    LazyScript* lazyOuterFunction,
                    ScriptSourceObject* sourceObject, ParseGoal parseGoal)
       : PerHandlerParser(
-            cx, alloc, options, foldConstants, usedNames, lazyOuterFunction,
+            cx, options, foldConstants, parserInfo, lazyOuterFunction,
             sourceObject, parseGoal,
             // JSOPTION_EXTRA_WARNINGS adds extra warnings not
             // generated when functions are parsed lazily.
@@ -1090,22 +1003,20 @@ class MOZ_STACK_CLASS GeneralParser : public PerHandlerParser<ParseHandler> {
   TokenStream tokenStream;
 
  public:
-  GeneralParser(JSContext* cx, LifoAlloc& alloc,
-                const JS::ReadOnlyCompileOptions& options, const Unit* units,
-                size_t length, const StringTaint& taint,
-                bool foldConstants, UsedNameTracker& usedNames,
-                SyntaxParser* syntaxParser, LazyScript* lazyOuterFunction,
-                ScriptSourceObject* sourceObject, ParseGoal parseGoal);
+  GeneralParser(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+                const Unit* units, size_t length, const StringTaint& taint, bool foldConstants,
+                ParseInfo& parserInfo, SyntaxParser* syntaxParser,
+                LazyScript* lazyOuterFunction, ScriptSourceObject* sourceObject,
+                ParseGoal parseGoal);
 
-  GeneralParser(JSContext* cx, LifoAlloc& alloc,
-                const JS::ReadOnlyCompileOptions& options, const Unit* units,
-                size_t length,
-                bool foldConstants, UsedNameTracker& usedNames,
-                SyntaxParser* syntaxParser, LazyScript* lazyOuterFunction,
-                ScriptSourceObject* sourceObject, ParseGoal parseGoal) :
-    GeneralParser(cx, alloc, options, units, length, EmptyTaint,
-                  foldConstants, usedNames, syntaxParser, lazyOuterFunction,
-                  sourceObject, parseGoal) { }
+ GeneralParser(JSContext* cx, const JS::ReadOnlyCompileOptions& options,
+                const Unit* units, size_t length, bool foldConstants,
+                ParseInfo& parserInfo, SyntaxParser* syntaxParser,
+                LazyScript* lazyOuterFunction, ScriptSourceObject* sourceObject,
+                ParseGoal parseGoal) :
+   GeneralParser(cx, options, units, length, EmptyTaint, foldConstants,
+                 parserInfo, syntaxParser, lazyOuterFunction,
+                 sourceObject, parseGoal) {}
 
   inline void setAwaitHandling(AwaitHandling awaitHandling);
   inline void setInParametersOfAsyncFunction(bool inParameters);

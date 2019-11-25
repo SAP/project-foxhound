@@ -906,6 +906,9 @@ void MediaFormatReader::ShutdownDecoder(TrackType aTrack) {
 
 void MediaFormatReader::NotifyDecoderBenchmarkStore() {
   MOZ_ASSERT(OnTaskQueue());
+  if (!StaticPrefs::media_mediacapabilities_from_database()) {
+    return;
+  }
   auto& decoder = GetDecoderData(TrackInfo::kVideoTrack);
   if (decoder.GetCurrentInfo() && decoder.GetCurrentInfo()->GetAsVideoInfo()) {
     VideoInfo info = *(decoder.GetCurrentInfo()->GetAsVideoInfo());
@@ -2871,7 +2874,7 @@ void MediaFormatReader::UpdateBuffered() {
     intervals = mVideo.mTimeRanges;
   }
 
-  if (!intervals.Length() || intervals.GetStart() == TimeUnit::Zero()) {
+  if (intervals.IsEmpty() || intervals.GetStart() == TimeUnit::Zero()) {
     // IntervalSet already starts at 0 or is empty, nothing to shift.
     mBuffered = intervals;
   } else {

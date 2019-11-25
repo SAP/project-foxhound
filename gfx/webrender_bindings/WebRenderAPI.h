@@ -264,6 +264,7 @@ class WebRenderAPI final {
   layers::SyncHandle GetSyncHandle() const { return mSyncHandle; }
 
   void Capture();
+  void SetTransactionLogging(bool aValue);
 
   void SetCompositionRecorder(
       UniquePtr<layers::WebRenderCompositionRecorder> aRecorder);
@@ -336,16 +337,17 @@ class MOZ_RAII AutoTransactionSender {
  */
 struct MOZ_STACK_CLASS StackingContextParams : public WrStackingContextParams {
   StackingContextParams()
-      : WrStackingContextParams{WrStackingContextClip::None(),
-                                nullptr,
-                                nullptr,
-                                wr::TransformStyle::Flat,
-                                wr::WrReferenceFrameKind::Transform,
-                                nullptr,
-                                /* is_backface_visible = */ true,
-                                /* cache_tiles = */ false,
-                                wr::MixBlendMode::Normal,
-                                /* is_backdrop_root = */ false} {}
+      : WrStackingContextParams{
+            WrStackingContextClip::None(),
+            nullptr,
+            nullptr,
+            wr::TransformStyle::Flat,
+            wr::WrReferenceFrameKind::Transform,
+            nullptr,
+            /* prim_flags = */ wr::PrimitiveFlags_IS_BACKFACE_VISIBLE,
+            /* cache_tiles = */ false,
+            wr::MixBlendMode::Normal,
+            /* is_backdrop_root = */ false} {}
 
   void SetPreserve3D(bool aPreserve) {
     transform_style =
@@ -479,11 +481,12 @@ class DisplayListBuilder final {
                  wr::ImageKey aImage, bool aPremultipliedAlpha = true,
                  const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
 
-  void PushImage(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-                 bool aIsBackfaceVisible, const wr::LayoutSize& aStretchSize,
-                 const wr::LayoutSize& aTileSpacing, wr::ImageRendering aFilter,
-                 wr::ImageKey aImage, bool aPremultipliedAlpha = true,
-                 const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
+  void PushRepeatingImage(
+      const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+      bool aIsBackfaceVisible, const wr::LayoutSize& aStretchSize,
+      const wr::LayoutSize& aTileSpacing, wr::ImageRendering aFilter,
+      wr::ImageKey aImage, bool aPremultipliedAlpha = true,
+      const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
 
   void PushYCbCrPlanarImage(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,

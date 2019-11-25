@@ -2167,7 +2167,7 @@ MediaConduitErrorCode WebrtcVideoConduit::StartReceivingLocked() {
 }
 
 // WebRTC::RTP Callback Implementation
-// Called on MSG thread
+// Called on MTG thread
 bool WebrtcVideoConduit::SendRtp(const uint8_t* packet, size_t length,
                                  const webrtc::PacketOptions& options) {
   // XXX(pkerr) - PacketOptions possibly containing RTP extensions are ignored.
@@ -2303,6 +2303,19 @@ bool WebrtcVideoConduit::RequiresNewSendStream(
         !CompatibleH264Config(mEncoderSpecificH264, newConfig))
 #endif
       ;
+}
+
+bool WebrtcVideoConduit::HasH264Hardware() {
+  nsCOMPtr<nsIGfxInfo> gfxInfo = do_GetService("@mozilla.org/gfx/info;1");
+  if (!gfxInfo) {
+    return false;
+  }
+  int32_t status;
+  nsCString discardFailureId;
+  return NS_SUCCEEDED(gfxInfo->GetFeatureStatus(
+             nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_H264, discardFailureId,
+             &status)) &&
+         status == nsIGfxInfo::FEATURE_STATUS_OK;
 }
 
 }  // namespace mozilla

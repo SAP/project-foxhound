@@ -60,11 +60,11 @@ void SetFrameArgumentsObject(JSContext* cx, AbstractFramePtr frame,
 
 /* static */ inline JSFunction* LazyScript::functionDelazifying(
     JSContext* cx, Handle<LazyScript*> script) {
-  RootedFunction fun(cx, script->function_);
-  if (script->function_ && !JSFunction::getOrCreateScript(cx, fun)) {
+  RootedFunction fun(cx, script->functionNonDelazifying());
+  if (fun && !JSFunction::getOrCreateScript(cx, fun)) {
     return nullptr;
   }
-  return script->function_;
+  return fun;
 }
 
 }  // namespace js
@@ -168,7 +168,7 @@ inline bool JSScript::ensureHasAnalyzedArgsUsage(JSContext* cx) {
 }
 
 inline bool JSScript::isDebuggee() const {
-  return realm_->debuggerObservesAllExecution() || hasDebugScript();
+  return realm()->debuggerObservesAllExecution() || hasDebugScript();
 }
 
 inline bool JSScript::hasBaselineScript() const {
@@ -229,6 +229,30 @@ inline js::jit::BaselineScript* JSScript::baselineScript() const {
 
 inline js::jit::IonScript* JSScript::ionScript() const {
   return jitScript()->ionScript();
+}
+
+inline uint32_t JSScript::getWarmUpCount() const {
+  if (warmUpData_.isWarmUpCount()) {
+    return warmUpData_.toWarmUpCount();
+  }
+  return warmUpData_.toJitScript()->warmUpCount_;
+}
+
+inline void JSScript::incWarmUpCounter(uint32_t amount) {
+  if (warmUpData_.isWarmUpCount()) {
+    warmUpData_.incWarmUpCount(amount);
+  } else {
+    warmUpData_.toJitScript()->warmUpCount_ += amount;
+  }
+}
+
+inline void JSScript::resetWarmUpCounterForGC() {
+  incWarmUpResetCounter();
+  if (warmUpData_.isWarmUpCount()) {
+    warmUpData_.resetWarmUpCount(0);
+  } else {
+    warmUpData_.toJitScript()->warmUpCount_ = 0;
+  }
 }
 
 #endif /* vm_JSScript_inl_h */

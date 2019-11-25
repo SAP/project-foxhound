@@ -8,8 +8,10 @@
  */
 interface ContentSecurityPolicy;
 
-[Constructor]
+[Exposed=Window]
 interface DataTransfer {
+  constructor();
+
            attribute DOMString dropEffect;
            attribute DOMString effectAllowed;
 

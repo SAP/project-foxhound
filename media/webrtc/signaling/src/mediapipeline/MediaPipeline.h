@@ -20,7 +20,7 @@
 #include "mediapacket.h"
 #include "mtransport/runnable_utils.h"
 #include "AudioPacketizer.h"
-#include "StreamTracks.h"
+#include "MediaSegment.h"
 #include "signaling/src/peerconnection/PacketDumper.h"
 
 #include "webrtc/modules/rtp_rtcp/include/rtp_header_parser.h"
@@ -43,7 +43,7 @@ class MediaStreamTrack;
 struct RTCRTPContributingSourceStats;
 }  // namespace dom
 
-class SourceMediaStream;
+class SourceMediaTrack;
 
 // A class that represents the pipeline of audio and video
 // The dataflow looks like:
@@ -64,10 +64,10 @@ class SourceMediaStream;
 //   * Receives notification that ICE and DTLS have completed
 //   * Processes incoming network data and passes it to the conduit
 //   * Processes outgoing RTP and RTCP
-// MediaStreamGraph
-//   * Receives outgoing data from the MediaStreamGraph
+// MediaTrackGraph
+//   * Receives outgoing data from the MediaTrackGraph
 //   * Receives pull requests for more data from the
-//     MediaStreamGraph
+//     MediaTrackGraph
 // One or another GIPS threads
 //   * Receives RTCP messages to send to the other side
 //   * Processes video frames GIPS wants to render

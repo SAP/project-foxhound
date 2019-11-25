@@ -127,6 +127,7 @@ rusty-enums = [
     "mozilla::StyleTextRendering",
     "mozilla::StyleColorAdjust",
     "mozilla::StyleFlexDirection",
+    "mozilla::StyleFlexWrap",
     "mozilla::StyleTextDecorationSkipInk",
     "mozilla::StyleTextDecorationLength",
     "nsStyleImageType",
@@ -402,6 +403,7 @@ cbindgen-types = [
     { gecko = "StyleFontFaceSourceListComponent", servo = "font_face::FontFaceSourceListComponent" },
     { gecko = "StyleFontLanguageOverride", servo = "values::computed::font::FontLanguageOverride" },
     { gecko = "StyleOffsetPath", servo = "values::computed::motion::OffsetPath" },
+    { gecko = "StyleGenericOffsetPath", servo = "values::generics::motion::OffsetPath" },
     { gecko = "StyleOffsetRotate", servo = "values::computed::motion::OffsetRotate" },
     { gecko = "StylePathCommand", servo = "values::specified::svg_path::PathCommand" },
     { gecko = "StyleUnicodeRange", servo = "cssparser::UnicodeRange" },
@@ -524,6 +526,8 @@ cbindgen-types = [
     { gecko = "StyleVariantAlternatesList", servo = "values::specified::font::VariantAlternatesList" },
     { gecko = "StyleSVGPaintOrder", servo = "values::specified::svg::SVGPaintOrder" },
     { gecko = "StyleClipRectOrAuto", servo = "values::computed::ClipRectOrAuto" },
+    { gecko = "StyleCounterSetOrReset", servo = "values::computed::CounterSetOrReset" },
+    { gecko = "StyleCounterIncrement", servo = "values::computed::CounterIncrement" },
 ]
 
 mapped-generic-types = [

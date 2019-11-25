@@ -68,6 +68,15 @@ add_task(async function() {
           get myLongStringGetter() {
             return longString;
           },
+          get ["hyphen-getter"]() {
+            return "---";
+          },
+          get [`"quoted-getter"`]() {
+            return "quoted";
+          },
+          get [`"'\``]() {
+            return "quoted2";
+          },
         })
       )
     );
@@ -93,6 +102,8 @@ add_task(async function() {
   await testProxyGetter(oi);
   await testThrowingGetter(oi);
   await testLongStringGetter(oi, LONGSTRING);
+  await testHypgenGetter(oi);
+  await testQuotedGetters(oi);
 });
 
 async function testStringGetter(oi) {
@@ -559,6 +570,80 @@ async function testLongStringGetter(oi, longString) {
     )
   );
   ok(true, "the longstring was expanded");
+}
+
+async function testHypgenGetter(oi) {
+  const findHyphenGetterNode = () =>
+    findObjectInspectorNode(oi, `"hyphen-getter"`);
+  let node = findHyphenGetterNode();
+
+  is(
+    isObjectInspectorNodeExpandable(node),
+    false,
+    "The node can't be expanded"
+  );
+  const invokeButton = getObjectInspectorInvokeGetterButton(node);
+  ok(invokeButton, "There is an invoke button as expected");
+
+  invokeButton.click();
+  await waitFor(
+    () => !getObjectInspectorInvokeGetterButton(findHyphenGetterNode())
+  );
+
+  node = findHyphenGetterNode();
+  ok(
+    node.textContent.includes(`"hyphen-getter": "---"`),
+    "Node now has the expected text content"
+  );
+  is(
+    isObjectInspectorNodeExpandable(node),
+    false,
+    "The node can't be expanded"
+  );
+}
+
+async function testQuotedGetters(oi) {
+  const nodes = [
+    {
+      name: `"\\"quoted-getter\\""`,
+      expected: `"quoted"`,
+      expandable: false,
+    },
+    {
+      name: `"\\"'\`"`,
+      expected: `"quoted2"`,
+      expandable: false,
+    },
+  ];
+
+  for (const { name, expected, expandable } of nodes) {
+    await testGetter(oi, name, expected, expandable);
+  }
+}
+
+async function testGetter(oi, propertyName, expectedResult, resultExpandable) {
+  info(`Check «${propertyName}» getter`);
+  const findNode = () => findObjectInspectorNode(oi, propertyName);
+
+  let node = findNode();
+  is(
+    isObjectInspectorNodeExpandable(node),
+    false,
+    `«${propertyName}» can't be expanded`
+  );
+  getObjectInspectorInvokeGetterButton(node).click();
+  await waitFor(() => !getObjectInspectorInvokeGetterButton(findNode()));
+
+  node = findNode();
+  ok(
+    node.textContent.includes(`${propertyName}: ${expectedResult}`),
+    `«${propertyName}» now has the expected text content («${expectedResult}»)`
+  );
+  is(
+    isObjectInspectorNodeExpandable(node),
+    resultExpandable,
+    `«${propertyName}» ${resultExpandable ? "now can" : "can't"} be expanded`
+  );
 }
 
 function checkChildren(node, expectedChildren) {

@@ -667,6 +667,7 @@ win64-ccov/debug:
         max-run-time: 7200
         env:
             TOOLTOOL_MANIFEST: "browser/config/tooltool-manifests/win64/releng.manifest"
+            RUSTC_BOOTSTRAP: '1'
     run:
         options: [append-env-variables-from-configs]
         script: mozharness/scripts/fx_desktop_build.py
@@ -681,7 +682,7 @@ win64-ccov/debug:
     fetches:
         toolchain:
             - win64-clang-cl
-            - win64-rust-nightly
+            - win64-rust
             - win64-rust-size
             - win64-cbindgen
             - win64-grcov
@@ -875,7 +876,7 @@ win32-devedition-nightly/opt:
     run:
         script: mozharness/scripts/fx_desktop_build.py
         secrets: true
-        options: [enable-pgo, append-env-variables-from-configs]
+        options: [append-env-variables-from-configs]
         config:
             - builds/releng_base_firefox.py
             - builds/taskcluster_base_windows.py

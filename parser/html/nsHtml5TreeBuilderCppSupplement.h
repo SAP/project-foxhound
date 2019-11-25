@@ -274,6 +274,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 url, nullptr, nullptr, nullptr, nullptr);
           }
         } else if (nsGkAtoms::style == aName) {
+          mImportScanner.Start();
           nsHtml5TreeOperation* treeOp =
               mOpQueue.AppendElement(mozilla::fallible);
           if (MOZ_UNLIKELY(!treeOp)) {
@@ -353,6 +354,7 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
                 mode == nsHtml5TreeBuilder::IN_HEAD, false, false, false);
           }
         } else if (nsGkAtoms::style == aName) {
+          mImportScanner.Start();
           nsHtml5TreeOperation* treeOp =
               mOpQueue.AppendElement(mozilla::fallible);
           if (MOZ_UNLIKELY(!treeOp)) {
@@ -362,19 +364,6 @@ nsIContentHandle* nsHtml5TreeBuilder::createElement(
           }
           opSetStyleLineNumber operation(content, tokenizer->getLineNumber());
           treeOp->Init(mozilla::AsVariant(operation));
-
-          nsHtml5String url =
-              aAttributes->getValue(nsHtml5AttributeName::ATTR_XLINK_HREF);
-          if (url) {
-            nsHtml5String crossOrigin =
-                aAttributes->getValue(nsHtml5AttributeName::ATTR_CROSSORIGIN);
-            nsHtml5String integrity =
-                aAttributes->getValue(nsHtml5AttributeName::ATTR_INTEGRITY);
-            nsHtml5String referrerPolicy = aAttributes->getValue(
-                nsHtml5AttributeName::ATTR_REFERRERPOLICY);
-            mSpeculativeLoadQueue.AppendElement()->InitStyle(
-                url, nullptr, crossOrigin, referrerPolicy, integrity);
-          }
         }
         break;
     }
@@ -692,6 +681,14 @@ nsHtml5TreeBuilder::appendCharacters(nsIContentHandle* aParent, char16_t* aBuffe
 
   memcpy(bufferCopy.get(), aBuffer, aLength * sizeof(char16_t));
 
+  if (mImportScanner.ShouldScan()) {
+    nsTArray<nsString> imports =
+        mImportScanner.Scan(MakeSpan(aBuffer, aLength));
+    for (nsString& url : imports) {
+      mSpeculativeLoadQueue.AppendElement()->InitImportStyle(std::move(url));
+    }
+  }
+
   nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement(mozilla::fallible);
   if (MOZ_UNLIKELY(!treeOp)) {
     MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);
@@ -1001,6 +998,14 @@ void nsHtml5TreeBuilder::elementPopped(int32_t aNamespace, nsAtom* aName,
       mBuilder->UpdateStyleSheet(static_cast<nsIContent*>(aElement));
       return;
     }
+
+    if (aName == nsGkAtoms::style) {
+      nsTArray<nsString> imports = mImportScanner.Stop();
+      for (nsString& url : imports) {
+        mSpeculativeLoadQueue.AppendElement()->InitImportStyle(std::move(url));
+      }
+    }
+
     nsHtml5TreeOperation* treeOp = mOpQueue.AppendElement(mozilla::fallible);
     if (MOZ_UNLIKELY(!treeOp)) {
       MarkAsBrokenAndRequestSuspensionWithoutBuilder(NS_ERROR_OUT_OF_MEMORY);

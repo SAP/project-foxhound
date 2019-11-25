@@ -49,32 +49,32 @@ const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function ok(aCondition, aMessage)
 {
-  window.opener.wrappedJSObject.SimpleTest.ok(aCondition, aMessage);
+  window.arguments[0].SimpleTest.ok(aCondition, aMessage);
 }
 
 function is(aLeft, aRight, aMessage)
 {
-  window.opener.wrappedJSObject.SimpleTest.is(aLeft, aRight, aMessage);
+  window.arguments[0].SimpleTest.is(aLeft, aRight, aMessage);
 }
 
 function isnot(aLeft, aRight, aMessage)
 {
-  window.opener.wrappedJSObject.SimpleTest.isnot(aLeft, aRight, aMessage);
+  window.arguments[0].SimpleTest.isnot(aLeft, aRight, aMessage);
 }
 
 function todo(aCondition, aMessage)
 {
-  window.opener.wrappedJSObject.SimpleTest.todo(aCondition, aMessage);
+  window.arguments[0].SimpleTest.todo(aCondition, aMessage);
 }
 
 function todo_is(aLeft, aRight, aMessage)
 {
-  window.opener.wrappedJSObject.SimpleTest.todo_is(aLeft, aRight, aMessage);
+  window.arguments[0].SimpleTest.todo_is(aLeft, aRight, aMessage);
 }
 
 function todo_isnot(aLeft, aRight, aMessage)
 {
-  window.opener.wrappedJSObject.SimpleTest.todo_isnot(aLeft, aRight, aMessage);
+  window.arguments[0].SimpleTest.todo_isnot(aLeft, aRight, aMessage);
 }
 
 function isSimilarTo(aLeft, aRight, aAllowedDifference, aMessage)
@@ -100,6 +100,8 @@ var iframe2 = document.getElementById("iframe2");
 var iframe3 = document.getElementById("iframe3");
 var contenteditable;
 var windowOfContenteditable;
+var contenteditableBySpan;
+var windowOfContenteditableBySpan;
 var input = document.getElementById("input");
 var password = document.getElementById("password");
 var textareaInFrame;
@@ -5190,8 +5192,6 @@ function runBug1530649Test()
 
 function runBug1571375Test()
 {
-  let contenteditableBySpan = document.getElementById("iframe7").contentDocument.getElementById("contenteditable");
-  let windowOfContenteditableBySpan = document.getElementById("iframe7").contentWindow;
   let selection = windowOfContenteditableBySpan.getSelection();
   let doc = document.getElementById("iframe7").contentDocument;
 
@@ -5241,6 +5241,31 @@ function runBug1571375Test()
   synthesizeComposition({type: "compositioncommit", data: "world", key: " "});
   is(contenteditableBySpan.innerHTML, "hello world<div>.</div>",
      "runBug1571375Test: space must not be removed by commit");
+}
+
+async function runBug1584901Test()
+{
+  contenteditableBySpan.focus();
+  contenteditableBySpan.innerHTML = "";
+
+  // XXX synthesizeCompositionChange won't work without wait.
+  await waitForTick();
+
+  synthesizeCompositionChange({
+    composition: {string: "a ", clauses: [{length: 2, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
+  });
+  synthesizeComposition({type: "compositioncommitasis", key: " "});
+
+  is(contenteditableBySpan.innerHTML, "a&nbsp;",
+     "runBug1584901Test: space must not be removed by composition change");
+
+  synthesizeCompositionChange({
+    composition: {string: "b ", clauses: [{length: 2, attr: COMPOSITION_ATTR_RAW_CLAUSE}]},
+  });
+  synthesizeComposition({type: "compositioncommitasis", key: " "});
+
+  is(contenteditableBySpan.innerHTML, "a b&nbsp;",
+     "runBug1584901Test: space must not be removed by composition change");
 }
 
 function runCSSTransformTest()
@@ -9162,11 +9187,14 @@ async function runPasswordMaskDelayTest() {
 
 async function runTest()
 {
-  window.addEventListener("unload", window.opener.wrappedJSObject.SimpleTest.finish, {once: true, capture: true});
+  window.addEventListener("unload", window.arguments[0].SimpleTest.finish, {once: true, capture: true});
 
   contenteditable = document.getElementById("iframe4").contentDocument.getElementById("contenteditable");
   windowOfContenteditable = document.getElementById("iframe4").contentWindow;
   textareaInFrame = iframe.contentDocument.getElementById("textarea");
+
+  contenteditableBySpan = document.getElementById("iframe7").contentDocument.getElementById("contenteditable");
+  windowOfContenteditableBySpan = document.getElementById("iframe7").contentWindow;
 
   await runIMEContentObserverTest();
   await runEditorReframeTests();
@@ -9174,6 +9202,7 @@ async function runTest()
   await runRemoveContentTest();
   await runPanelTest();
   await runPasswordMaskDelayTest();
+  await runBug1584901Test();
 
   runUndoRedoTest();
   runCompositionCommitAsIsTest();
@@ -9208,7 +9237,7 @@ async function runTest()
   window.close();
 }
 
-window.opener.wrappedJSObject.SimpleTest.waitForFocus(runTest, window);
+window.arguments[0].SimpleTest.waitForFocus(runTest, window);
 
 ]]>
 </script>

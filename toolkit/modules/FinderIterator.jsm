@@ -23,20 +23,24 @@ const kIterationSizeMax = 100;
 const kTimeoutPref = "findbar.iteratorTimeout";
 
 /**
- * FinderIterator singleton. See the documentation for the `start()` method to
+ * FinderIterator. See the documentation for the `start()` method to
  * learn more.
  */
-var FinderIterator = {
-  _currentParams: null,
-  _listeners: new Map(),
-  _catchingUp: new Set(),
-  _previousParams: null,
-  _previousRanges: [],
-  _spawnId: 0,
+function FinderIterator() {
+  this._listeners = new Map();
+  this._currentParams = null;
+  this._catchingUp = new Set();
+  this._previousParams = null;
+  this._previousRanges = [];
+  this._spawnId = 0;
+  this._timer = null;
+  this.ranges = [];
+  this.running = false;
+  this.useSubFrames = false;
+}
+
+FinderIterator.prototype = {
   _timeout: Services.prefs.getIntPref(kTimeoutPref),
-  _timer: null,
-  ranges: [],
-  running: false,
 
   // Expose `kIterationSizeMax` to the outside world for unit tests to use.
   get kIterationSizeMax() {
@@ -87,6 +91,8 @@ var FinderIterator = {
    * @param {Boolean} [options.useCache]        Whether to allow results already
    *                                            present in the cache or demand fresh.
    *                                            Optional, defaults to `false`.
+   * @param {Boolean} [options.useSubFrames]    Whether to iterate over subframes.
+   *                                            Optional, defaults to `false`.
    * @param {String}  options.word              Word to search for
    * @return {Promise}
    */
@@ -100,6 +106,7 @@ var FinderIterator = {
     listener,
     useCache,
     word,
+    useSubFrames,
   }) {
     // Take care of default values for non-required options.
     if (typeof allowDistance != "number") {
@@ -113,6 +120,9 @@ var FinderIterator = {
     }
     if (typeof useCache != "boolean") {
       useCache = false;
+    }
+    if (typeof useSubFrames != "boolean") {
+      useSubFrames = false;
     }
 
     // Validate the options.
@@ -151,6 +161,7 @@ var FinderIterator = {
       useCache,
       window,
       word,
+      useSubFrames,
     };
 
     this._listeners.set(listener, { limit, onEnd: resolver });
@@ -294,15 +305,23 @@ var FinderIterator = {
    * @param  {Boolean} options.linksOnly     Whether to search for the word to be
    *                                         present in links only
    * @param  {String}  options.word          The word being searched for
+   * @param  (Boolean) options.useSubFrames  Whether to search subframes
    * @return {Boolean}
    */
-  continueRunning({ caseSensitive, entireWord, linksOnly, word }) {
+  continueRunning({
+    caseSensitive,
+    entireWord,
+    linksOnly,
+    word,
+    useSubFrames,
+  }) {
     return (
       this.running &&
       this._currentParams.caseSensitive === caseSensitive &&
       this._currentParams.entireWord === entireWord &&
       this._currentParams.linksOnly === linksOnly &&
-      this._currentParams.word == word
+      this._currentParams.word == word &&
+      this._currentParams.useSubFrames == useSubFrames
     );
   },
 
@@ -397,6 +416,7 @@ var FinderIterator = {
       paramSet1.entireWord === paramSet2.entireWord &&
       paramSet1.linksOnly === paramSet2.linksOnly &&
       paramSet1.window === paramSet2.window &&
+      paramSet1.useSubFrames === paramSet2.useSubFrames &&
       NLP.levenshtein(paramSet1.word, paramSet2.word) <= allowDistance
     );
   },
@@ -539,10 +559,13 @@ var FinderIterator = {
 
     this._notifyListeners("start", this.params);
 
-    let { linksOnly, window } = this._currentParams;
+    let { linksOnly, useSubFrames, window } = this._currentParams;
     // First we collect all frames we need to search through, whilst making sure
     // that the parent window gets dibs.
-    let frames = [window].concat(this._collectFrames(window, finder));
+    let frames = [window];
+    if (useSubFrames) {
+      frames.push(...this._collectFrames(window, finder));
+    }
     let iterCount = 0;
     for (let frame of frames) {
       for (let range of this._iterateDocument(this._currentParams, frame)) {

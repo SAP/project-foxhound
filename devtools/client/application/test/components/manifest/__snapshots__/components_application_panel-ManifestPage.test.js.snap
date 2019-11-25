@@ -1,45 +1,61 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`ManifestPage renders the expected snapshot 1`] = `
+exports[`ManifestPage renders the expected snapshot when the manifest is loading 1`] = `
 <section
-  className="app-page "
+  className="app-page js-manifest-page app-page--empty"
 >
   <Connect(ManifestLoader) />
+</section>
+`;
+
+exports[`ManifestPage renders the expected snapshot when the manifest needs to load 1`] = `
+<section
+  className="app-page js-manifest-page app-page--empty"
+>
+  <Connect(ManifestLoader) />
+</section>
+`;
+
+exports[`ManifestPage renders the expected snapshot when there is a manifest 1`] = `
+<section
+  className="app-page js-manifest-page "
+>
   <Manifest
-    icons={Array []}
+    icons={
+      Array [
+        Object {
+          "key": Object {
+            "contentType": "image/png",
+            "sizes": "1x1",
+          },
+          "type": "icon",
+          "value": Object {
+            "purpose": "any",
+            "src": "something.png",
+          },
+        },
+      ]
+    }
     identity={
       Array [
         Object {
           "key": "name",
-          "value": "Name is a verrry long name and the name is longer tha you thinnk because it is loooooooooooooooooooooooooooooooooooooooooooooooong",
-        },
-        Object {
-          "key": "short_name",
-          "value": "Na",
+          "type": "string",
+          "value": "foo",
         },
       ]
     }
     presentation={
       Array [
         Object {
-          "key": "display",
-          "value": "browser",
+          "key": "lorem",
+          "type": "string",
+          "value": "ipsum",
         },
         Object {
-          "key": "orientation",
-          "value": "landscape",
-        },
-        Object {
-          "key": "start_url",
-          "value": "root",
-        },
-        Object {
-          "key": "theme_color",
-          "value": "#345",
-        },
-        Object {
-          "key": "background_color",
-          "value": "#F9D",
+          "key": "foo",
+          "type": "string",
+          "value": "bar",
         },
       ]
     }
@@ -47,18 +63,18 @@ exports[`ManifestPage renders the expected snapshot 1`] = `
       Array [
         Object {
           "level": "warning",
-          "message": "Icons item at index 0 is invalid.",
-        },
-        Object {
-          "level": "error",
-          "message": "Random JSON error",
-        },
-        Object {
-          "level": "warning",
-          "message": "Icons item at index 2 is invalid. Icons item at index 2 is invalid. Icons item at index 2 is invalid. Icons item at index 2 is invalid.",
+          "message": "This is a warning",
         },
       ]
     }
   />
+</section>
+`;
+
+exports[`ManifestPage renders the expected snapshot when there is no manifest 1`] = `
+<section
+  className="app-page js-manifest-page app-page--empty"
+>
+  <ManifestEmpty />
 </section>
 `;

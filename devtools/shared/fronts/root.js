@@ -19,6 +19,12 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
+  "FrameDescriptorFront",
+  "devtools/shared/fronts/descriptors/frame",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "BrowsingContextTargetFront",
   "devtools/shared/fronts/targets/browsing-context",
   true
@@ -241,11 +247,11 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     // which is a ParentProcessTargetActor, but not in xpcshell, which uses a
     // ContentProcessTargetActor. So select the right front based on the actor ID.
     if (form.actor.includes("contentProcessTarget")) {
-      front = new ContentProcessTargetFront(this._client);
+      front = new ContentProcessTargetFront(this._client, null, this);
     } else {
       // ParentProcessTargetActor doesn't have a specific front, instead it uses
       // BrowsingContextTargetFront on the client side.
-      front = new BrowsingContextTargetFront(this._client);
+      front = new BrowsingContextTargetFront(this._client, null, this);
     }
     // As these fronts aren't instantiated by protocol.js, we have to set their actor ID
     // manually like that:
@@ -253,6 +259,26 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     front.form(form);
     this.manage(front);
 
+    return front;
+  }
+
+  /**
+   * This exists as a polyfill for now for tabTargets, which do not have descriptors.
+   * The mainRoot fills the role of the descriptor
+   */
+
+  /**
+   *  Get the previous frame descriptor front if it exists, create a new one if not
+   */
+  _getFrameDescriptorFront(form) {
+    let front = this.actor(form.actor);
+    if (front) {
+      return front;
+    }
+    front = new FrameDescriptorFront(this._client, null, this);
+    front.form(form);
+    front.actorID = form.actor;
+    this.manage(front);
     return front;
   }
 
@@ -268,11 +294,19 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     if (front) {
       return front;
     }
-    front = new ProcessDescriptorFront(this._client);
+    front = new ProcessDescriptorFront(this._client, null, this);
     front.form(form);
     front.actorID = form.actor;
     this.manage(front);
     return front;
+  }
+
+  async getBrowsingContextDescriptor(id) {
+    const form = await super.getBrowsingContextDescriptor(id);
+    if (form.actor && form.actor.includes("processDescriptor")) {
+      return this._getProcessDescriptorFront(form);
+    }
+    return this._getFrameDescriptorFront(form);
   }
 
   /**
@@ -339,9 +373,9 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     // devtools/client/framework/test/browser_toolbox_target.js is passing such
     // a fake tab.
     if (filter && filter.tab && filter.tab.tagName == "tab") {
-      front = new LocalTabTargetFront(this._client, filter.tab);
+      front = new LocalTabTargetFront(this._client, null, this, filter.tab);
     } else {
-      front = new BrowsingContextTargetFront(this._client);
+      front = new BrowsingContextTargetFront(this._client, null, this);
     }
     // As these fronts aren't instantiated by protocol.js, we have to set their actor ID
     // manually like that:

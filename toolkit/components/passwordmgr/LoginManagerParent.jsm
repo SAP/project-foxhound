@@ -19,11 +19,6 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["URL"]);
 
 ChromeUtils.defineModuleGetter(
   this,
-  "AutoCompletePopup",
-  "resource://gre/modules/AutoCompletePopup.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "DeferredTask",
   "resource://gre/modules/DeferredTask.jsm"
 );
@@ -127,9 +122,9 @@ this.LoginManagerParent = {
     logins = LoginHelper.shadowHTTPLogins(logins);
 
     let resolveBy = [
+      "subdomain",
       "actionOrigin",
       "scheme",
-      "subdomain",
       "timePasswordChanged",
     ];
     return LoginHelper.dedupeLogins(
@@ -174,11 +169,6 @@ this.LoginManagerParent = {
         break;
       }
 
-      case "PasswordManager:insecureLoginFormPresent": {
-        this.setHasInsecureLoginForms(msg.target, data.hasInsecureLoginForms);
-        break;
-      }
-
       case "PasswordManager:autoCompleteLogins": {
         this.doAutocompleteSearch(data, msg.target);
         break;
@@ -186,7 +176,7 @@ this.LoginManagerParent = {
 
       case "PasswordManager:removeLogin": {
         let login = LoginHelper.vanillaObjectToLogin(data.login);
-        AutoCompletePopup.removeLogin(login);
+        Services.logins.removeLogin(login);
         break;
       }
 
@@ -380,8 +370,24 @@ this.LoginManagerParent = {
     // Note: previousResult is a regular object, not an
     // nsIAutoCompleteResult.
 
-    // Cancel if we unsuccessfully prompted for the master password too recently.
+    // Cancel if the master password prompt is already showing or we unsuccessfully prompted for it too recently.
     if (!Services.logins.isLoggedIn) {
+      if (Services.logins.uiBusy) {
+        log(
+          "Not searching logins for autocomplete since the master password prompt is already showing"
+        );
+        // Return an empty array to make LoginManagerChild clear the
+        // outstanding request it has temporarily saved.
+        target.messageManager.sendAsyncMessage(
+          "PasswordManager:loginsAutoCompleted",
+          {
+            requestId,
+            logins: [],
+          }
+        );
+        return;
+      }
+
       let timeDiff = Date.now() - this._lastMPLoginCancelled;
       if (timeDiff < this._repromptTimeout) {
         log(
@@ -604,7 +610,7 @@ this.LoginManagerParent = {
     // If we didn't find a username field, but seem to be changing a
     // password, allow the user to select from a list of applicable
     // logins to update the password for.
-    if (!usernameField && oldPasswordField && logins.length > 0) {
+    if (!usernameField && oldPasswordField && logins.length) {
       let prompter = this._getPrompter(browser, openerTopWindowID);
 
       if (logins.length == 1) {
@@ -925,62 +931,6 @@ this.LoginManagerParent = {
       formLogin,
       true, // dismissed prompt
       shouldAutoSaveLogin // notifySaved
-    );
-  },
-
-  /**
-   * Maps all the <browser> elements for tabs in the parent process to the
-   * current state used to display tab-specific UI.
-   *
-   * This mapping is not updated in case a web page is moved to a different
-   * chrome window by the swapDocShells method. In this case, it is possible
-   * that a UI update just requested for the login fill doorhanger and then
-   * delayed by a few hundred milliseconds will be lost. Later requests would
-   * use the new browser reference instead.
-   *
-   * Given that the case above is rare, and it would not cause any origin
-   * mismatch at the time of filling because the origin is checked later in the
-   * content process, this case is left unhandled.
-   */
-  loginFormStateByBrowser: new WeakMap(),
-
-  /**
-   * Retrieves a reference to the state object associated with the given
-   * browser. This is initialized to an empty object.
-   */
-  stateForBrowser(browser) {
-    let loginFormState = this.loginFormStateByBrowser.get(browser);
-    if (!loginFormState) {
-      loginFormState = {};
-      this.loginFormStateByBrowser.set(browser, loginFormState);
-    }
-    return loginFormState;
-  },
-
-  /**
-   * Returns true if the page currently loaded in the given browser element has
-   * insecure login forms. This state may be updated asynchronously, in which
-   * case a custom event named InsecureLoginFormsStateChange will be dispatched
-   * on the browser element.
-   */
-  hasInsecureLoginForms(browser) {
-    return !!this.stateForBrowser(browser).hasInsecureLoginForms;
-  },
-
-  /**
-   * Called to indicate whether an insecure password field is present so
-   * insecure password UI can know when to show.
-   */
-  setHasInsecureLoginForms(browser, hasInsecureLoginForms) {
-    let state = this.stateForBrowser(browser);
-
-    // Update the data to use to the latest known values. Since messages are
-    // processed in order, this will always be the latest version to use.
-    state.hasInsecureLoginForms = hasInsecureLoginForms;
-
-    // Report the insecure login form state immediately.
-    browser.dispatchEvent(
-      new browser.ownerGlobal.CustomEvent("InsecureLoginFormsStateChange")
     );
   },
 };

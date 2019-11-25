@@ -668,7 +668,7 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
   }
 
   // Here, we know that |len - 1| cannot underflow.
-  bool mustTrap = false;
+  bool isOOB = false;
 
   // As we're supposed to write data until we trap we have to deal with
   // arithmetic overflow in the limit calculation.
@@ -692,8 +692,10 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
       MOZ_ASSERT(len > Min(srcAvail, dstAvail));
       len = uint32_t(Min(srcAvail, dstAvail));
     }
-    mustTrap = true;
+    isOOB = true;
   }
+
+  bool isOOM = false;
 
   if (len > 0) {
     // The required write direction is indicated by `copyDown`, but apart from
@@ -703,23 +705,31 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
     // overlaps.
     if (&srcTable == &dstTable && dstOffset > srcOffset) {
       for (uint32_t i = len; i > 0; i--) {
-        dstTable->copy(*srcTable, dstOffset + (i - 1), srcOffset + (i - 1));
+        if (!dstTable->copy(*srcTable, dstOffset + (i - 1),
+                            srcOffset + (i - 1))) {
+          isOOM = true;
+          break;
+        }
       }
     } else if (&srcTable == &dstTable && dstOffset == srcOffset) {
       // No-op
     } else {
       for (uint32_t i = 0; i < len; i++) {
-        dstTable->copy(*srcTable, dstOffset + i, srcOffset + i);
+        if (!dstTable->copy(*srcTable, dstOffset + i, srcOffset + i)) {
+          isOOM = true;
+          break;
+        }
       }
     }
   }
 
-  if (!mustTrap) {
+  if (!isOOB && !isOOM) {
     return 0;
   }
-
-  JS_ReportErrorNumberASCII(TlsContext.get(), GetErrorMessage, nullptr,
-                            JSMSG_WASM_OUT_OF_BOUNDS);
+  if (isOOB && !isOOM) {
+    JS_ReportErrorNumberASCII(TlsContext.get(), GetErrorMessage, nullptr,
+                              JSMSG_WASM_OUT_OF_BOUNDS);
+  }
   return -1;
 }
 
@@ -743,7 +753,7 @@ static int32_t PerformWait(Instance* instance, uint32_t byteOffset, T value,
   return 0;
 }
 
-void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
+bool Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
                          uint32_t dstOffset, uint32_t srcOffset, uint32_t len) {
   Table& table = *tables_[tableIndex];
   MOZ_ASSERT(dstOffset <= table.length());
@@ -763,6 +773,13 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
     uint32_t funcIndex = elemFuncIndices[srcOffset + i];
     if (funcIndex == NullFuncIndex) {
       table.setNull(dstOffset + i);
+    } else if (!table.isFunction()) {
+      // Note, fnref must be rooted if we do anything more than just store it.
+      void* fnref = Instance::funcRef(this, funcIndex);
+      if (fnref == AnyRef::invalid().forCompiledCode()) {
+        return false;  // OOM, which has already been reported.
+      }
+      table.fillAnyRef(dstOffset + i, 1, AnyRef::fromCompiledCode(fnref));
     } else {
       if (funcIndex < funcImports.length()) {
         FuncImportTls& import = funcImportTls(funcImports[funcIndex]);
@@ -791,6 +808,7 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
       table.setFuncRef(dstOffset + i, code, this);
     }
   }
+  return true;
 }
 
 /* static */ int32_t Instance::tableInit(Instance* instance, uint32_t dstOffset,
@@ -814,10 +832,6 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
 
   const Table& table = *instance->tables()[tableIndex];
   const uint32_t tableLen = table.length();
-
-  // Element segments cannot currently contain arbitrary values, and anyref
-  // tables cannot be initialized from segments.
-  MOZ_ASSERT(table.kind() == TableKind::FuncRef);
 
   // We are proposing to copy
   //
@@ -850,7 +864,9 @@ void Instance::initElems(uint32_t tableIndex, const ElemSegment& seg,
   }
 
   if (len > 0) {
-    instance->initElems(tableIndex, seg, dstOffset, srcOffset, len);
+    if (!instance->initElems(tableIndex, seg, dstOffset, srcOffset, len)) {
+      return -1;  // OOM, which has already been reported.
+    }
   }
 
   if (!mustTrap) {
@@ -1835,38 +1851,40 @@ bool Instance::callExport(JSContext* cx, uint32_t funcIndex, CallArgs args) {
   // that function.
   void* retAddr = &exportArgs[0];
 
-  DebugCodegen(DebugChannel::Function, "wasm-function[%d]; returns ",
-               funcIndex);
-  switch (funcType->ret().code()) {
-    case ExprType::Void:
-      args.rval().set(UndefinedValue());
-      DebugCodegen(DebugChannel::Function, "void");
-      break;
-    case ExprType::I32:
-      args.rval().set(Int32Value(*(int32_t*)retAddr));
-      DebugCodegen(DebugChannel::Function, "i32(%d)", *(int32_t*)retAddr);
-      break;
-    case ExprType::I64:
-      MOZ_CRASH("unexpected i64 flowing from callExport");
-    case ExprType::F32:
-      args.rval().set(NumberValue(*(float*)retAddr));
-      DebugCodegen(DebugChannel::Function, "f32(%f)", *(float*)retAddr);
-      break;
-    case ExprType::F64:
-      args.rval().set(NumberValue(*(double*)retAddr));
-      DebugCodegen(DebugChannel::Function, "f64(%lf)", *(double*)retAddr);
-      break;
-    case ExprType::Ref:
-      MOZ_CRASH("temporarily unsupported Ref type in callExport");
-    case ExprType::FuncRef:
-    case ExprType::AnyRef:
-      args.rval().set(UnboxAnyRef(AnyRef::fromCompiledCode(*(void**)retAddr)));
-      DebugCodegen(DebugChannel::Function, "ptr(%p)", *(void**)retAddr);
-      break;
-    case ExprType::NullRef:
-      MOZ_CRASH("NullRef not expressible");
-    case ExprType::Limit:
-      MOZ_CRASH("Limit");
+  const ValTypeVector& results = funcType->results();
+  DebugCodegen(DebugChannel::Function, "wasm-function[%d]; returns %u value(s)",
+               funcIndex, uint32_t(results.length()));
+  if (results.length() == 0) {
+    args.rval().set(UndefinedValue());
+  } else {
+    MOZ_ASSERT(results.length() == 1, "multi-value return unimplemented");
+    DebugCodegen(DebugChannel::Function, ": ");
+    switch (results[0].code()) {
+      case ValType::I32:
+        args.rval().set(Int32Value(*(int32_t*)retAddr));
+        DebugCodegen(DebugChannel::Function, "i32(%d)", *(int32_t*)retAddr);
+        break;
+      case ValType::I64:
+        MOZ_CRASH("unexpected i64 flowing from callExport");
+      case ValType::F32:
+        args.rval().set(NumberValue(*(float*)retAddr));
+        DebugCodegen(DebugChannel::Function, "f32(%f)", *(float*)retAddr);
+        break;
+      case ValType::F64:
+        args.rval().set(NumberValue(*(double*)retAddr));
+        DebugCodegen(DebugChannel::Function, "f64(%lf)", *(double*)retAddr);
+        break;
+      case ValType::Ref:
+        MOZ_CRASH("temporarily unsupported Ref type in callExport");
+      case ValType::FuncRef:
+      case ValType::AnyRef:
+        args.rval().set(
+            UnboxAnyRef(AnyRef::fromCompiledCode(*(void**)retAddr)));
+        DebugCodegen(DebugChannel::Function, "ptr(%p)", *(void**)retAddr);
+        break;
+      case ValType::NullRef:
+        MOZ_CRASH("NullRef not expressible");
+    }
   }
   DebugCodegen(DebugChannel::Function, "\n");
 

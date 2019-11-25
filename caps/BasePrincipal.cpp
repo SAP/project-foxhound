@@ -17,7 +17,8 @@
 #include "nsIURIWithSpecialOrigin.h"
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
-
+#include "nsAboutProtocolUtils.h"
+#include "ThirdPartyUtil.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -292,7 +293,7 @@ bool BasePrincipal::Subsumes(nsIPrincipal* aOther,
 
 NS_IMETHODIMP
 BasePrincipal::Equals(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastEquals(aOther);
 
@@ -301,7 +302,7 @@ BasePrincipal::Equals(nsIPrincipal* aOther, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::EqualsConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastEqualsConsideringDomain(aOther);
 
@@ -310,7 +311,7 @@ BasePrincipal::EqualsConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::Subsumes(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastSubsumes(aOther);
 
@@ -319,7 +320,7 @@ BasePrincipal::Subsumes(nsIPrincipal* aOther, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::SubsumesConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastSubsumesConsideringDomain(aOther);
 
@@ -329,7 +330,7 @@ BasePrincipal::SubsumesConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
 NS_IMETHODIMP
 BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
                                                     bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastSubsumesConsideringDomainIgnoringFPD(aOther);
 
@@ -339,6 +340,8 @@ BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
 NS_IMETHODIMP
 BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
                             bool aAllowIfInheritsPrincipal) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
   // Check the internal method first, which allows us to quickly approve loads
   // for the System Principal.
   if (MayLoadInternal(aURI)) {
@@ -379,6 +382,30 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
 }
 
 NS_IMETHODIMP
+BasePrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
+  *aRes = true;
+  // If we do not have a URI its always 3rd party.
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+  return thirdPartyUtil->IsThirdPartyURI(prinURI, aURI, aRes);
+}
+
+NS_IMETHODIMP
+BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
+  *aRes = true;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  return aPrin->IsThirdPartyURI(prinURI, aRes);
+}
+
+NS_IMETHODIMP
 BasePrincipal::GetIsNullPrincipal(bool* aResult) {
   *aResult = Kind() == eNullPrincipal;
   return NS_OK;
@@ -406,6 +433,38 @@ NS_IMETHODIMP
 BasePrincipal::GetIsAddonOrExpandedAddonPrincipal(bool* aResult) {
   *aResult = AddonPolicy() || ContentScriptAddonPolicy();
   return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::SchemeIs(const char* aScheme, bool* aResult) {
+  *aResult = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  *aResult = prinURI->SchemeIs(aScheme);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetAboutModuleFlags(uint32_t* flags) {
+  *flags = 0;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  if (!prinURI->SchemeIs("about")) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIAboutModule> aboutModule;
+  rv = NS_GetAboutModule(prinURI, getter_AddRefs(aboutModule));
+  if (NS_FAILED(rv) || !aboutModule) {
+    return rv;
+  }
+  return aboutModule->GetURIFlags(prinURI, flags);
 }
 
 NS_IMETHODIMP

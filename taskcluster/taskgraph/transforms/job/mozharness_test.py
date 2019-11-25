@@ -177,15 +177,8 @@ def mozharness_test_on_docker(config, job, taskdesc):
 
     # TODO: remove the need for run['chunked']
     if mozharness.get('chunked') or test['chunks'] > 1:
-        # Implement mozharness['chunking-args'], modifying command in place
-        if mozharness['chunking-args'] == 'this-chunk':
-            command.append('--total-chunk={}'.format(test['chunks']))
-            command.append('--this-chunk={}'.format(test['this-chunk']))
-        elif mozharness['chunking-args'] == 'test-suite-suffix':
-            suffix = mozharness['chunk-suffix'].replace('<CHUNK>', str(test['this-chunk']))
-            for i, c in enumerate(command):
-                if isinstance(c, basestring) and c.startswith('--test-suite'):
-                    command[i] += suffix
+        command.append('--total-chunk={}'.format(test['chunks']))
+        command.append('--this-chunk={}'.format(test['this-chunk']))
 
     if 'download-symbols' in mozharness:
         download_symbols = mozharness['download-symbols']
@@ -207,15 +200,7 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
     run = job['run']
     test = taskdesc['run']['test']
     mozharness = test['mozharness']
-
-    is_aarch64_laptop = taskdesc['worker-type'] == 't-win64-aarch64-laptop'
-
-    # Aarch64 laptops don't all have a working python 3 install, so we
-    # can't use run-task there. Bug 1557614.
-    if is_aarch64_laptop:
-        worker = taskdesc['worker']
-    else:
-        worker = taskdesc['worker'] = job['worker']
+    worker = taskdesc['worker'] = job['worker']
 
     bitbar_script = 'test-linux.sh'
 
@@ -284,6 +269,7 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
         raise Exception('reboot: {} not supported on generic-worker'.format(test['reboot']))
 
     worker['max-run-time'] = test['max-run-time']
+    worker['retry-exit-status'] = test['retry-exit-status']
     worker['artifacts'] = artifacts
 
     env = worker.setdefault('env', {})
@@ -371,15 +357,8 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
 
     # TODO: remove the need for run['chunked']
     if mozharness.get('chunked') or test['chunks'] > 1:
-        # Implement mozharness['chunking-args'], modifying command in place
-        if mozharness['chunking-args'] == 'this-chunk':
-            mh_command.append('--total-chunk={}'.format(test['chunks']))
-            mh_command.append('--this-chunk={}'.format(test['this-chunk']))
-        elif mozharness['chunking-args'] == 'test-suite-suffix':
-            suffix = mozharness['chunk-suffix'].replace('<CHUNK>', str(test['this-chunk']))
-            for i, c in enumerate(mh_command):
-                if isinstance(c, basestring) and c.startswith('--test-suite'):
-                    mh_command[i] += suffix
+        mh_command.append('--total-chunk={}'.format(test['chunks']))
+        mh_command.append('--this-chunk={}'.format(test['this-chunk']))
 
     if config.params.is_try():
         env['TRY_COMMIT_MSG'] = config.params['message']
@@ -404,10 +383,6 @@ def mozharness_test_on_generic_worker(config, job, taskdesc):
                 'url': a_url,
             },
         }]
-
-    if is_aarch64_laptop:
-        worker['command'] = [' '.join(mh_command)]
-        return
 
     job['run'] = {
         'workdir': run['workdir'],
@@ -500,15 +475,8 @@ def mozharness_test_on_script_engine_autophone(config, job, taskdesc):
 
     # TODO: remove the need for run['chunked']
     if mozharness.get('chunked') or test['chunks'] > 1:
-        # Implement mozharness['chunking-args'], modifying command in place
-        if mozharness['chunking-args'] == 'this-chunk':
-            command.append('--total-chunk={}'.format(test['chunks']))
-            command.append('--this-chunk={}'.format(test['this-chunk']))
-        elif mozharness['chunking-args'] == 'test-suite-suffix':
-            suffix = mozharness['chunk-suffix'].replace('<CHUNK>', str(test['this-chunk']))
-            for i, c in enumerate(command):
-                if isinstance(c, basestring) and c.startswith('--test-suite'):
-                    command[i] += suffix
+        command.append('--total-chunk={}'.format(test['chunks']))
+        command.append('--this-chunk={}'.format(test['this-chunk']))
 
     if 'download-symbols' in mozharness:
         download_symbols = mozharness['download-symbols']

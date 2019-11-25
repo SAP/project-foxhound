@@ -13,8 +13,10 @@
 interface nsISupports;
 interface Variant;
 
-[HTMLConstructor]
+[Exposed=Window]
 interface HTMLCanvasElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions, Pure, SetterThrows]
            attribute unsigned long width;
   [CEReactions, Pure, SetterThrows]
@@ -56,7 +58,8 @@ partial interface HTMLCanvasElement {
   OffscreenCanvas transferControlToOffscreen();
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface MozCanvasPrintState
 {
   // A canvas rendering context.

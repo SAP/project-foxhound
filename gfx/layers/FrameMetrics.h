@@ -721,10 +721,6 @@ struct ScrollSnapInfo {
   bool operator==(const ScrollSnapInfo& aOther) const {
     return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
            mScrollSnapStrictnessY == aOther.mScrollSnapStrictnessY &&
-           mScrollSnapIntervalX == aOther.mScrollSnapIntervalX &&
-           mScrollSnapIntervalY == aOther.mScrollSnapIntervalY &&
-           mScrollSnapDestination == aOther.mScrollSnapDestination &&
-           mScrollSnapCoordinates == aOther.mScrollSnapCoordinates &&
            mSnapPositionX == aOther.mSnapPositionX &&
            mSnapPositionY == aOther.mSnapPositionY &&
            mXRangeWiderThanSnapport == aOther.mXRangeWiderThanSnapport &&
@@ -753,18 +749,6 @@ struct ScrollSnapInfo {
       mozilla::StyleScrollSnapStrictness::None;
   mozilla::StyleScrollSnapStrictness mScrollSnapStrictnessY =
       mozilla::StyleScrollSnapStrictness::None;
-
-  // The intervals derived from the scroll frame's scroll-snap-points.
-  Maybe<nscoord> mScrollSnapIntervalX;
-  Maybe<nscoord> mScrollSnapIntervalY;
-
-  // The scroll frame's scroll-snap-destination, in cooked form (to avoid
-  // shipping the raw style value over IPC).
-  nsPoint mScrollSnapDestination;
-
-  // The scroll-snap-coordinates of any descendant frames of the scroll frame,
-  // relative to the origin of the scrolled frame.
-  nsTArray<nsPoint> mScrollSnapCoordinates;
 
   // The scroll positions corresponding to scroll-snap-align values.
   nsTArray<nscoord> mSnapPositionX;
@@ -896,7 +880,6 @@ struct ScrollMetadata {
         mHasScrollgrab(false),
         mIsLayersIdRoot(false),
         mIsAutoDirRootContentRTL(false),
-        mUsesContainerScrolling(false),
         mForceDisableApz(false),
         mResolutionUpdated(false),
         mOverscrollBehavior() {}
@@ -912,7 +895,6 @@ struct ScrollMetadata {
            mHasScrollgrab == aOther.mHasScrollgrab &&
            mIsLayersIdRoot == aOther.mIsLayersIdRoot &&
            mIsAutoDirRootContentRTL == aOther.mIsAutoDirRootContentRTL &&
-           mUsesContainerScrolling == aOther.mUsesContainerScrolling &&
            mForceDisableApz == aOther.mForceDisableApz &&
            mResolutionUpdated == aOther.mResolutionUpdated &&
            mDisregardedDirection == aOther.mDisregardedDirection &&
@@ -987,10 +969,6 @@ struct ScrollMetadata {
     mIsAutoDirRootContentRTL = aValue;
   }
   bool IsAutoDirRootContentRTL() const { return mIsAutoDirRootContentRTL; }
-  void SetUsesContainerScrolling(bool aValue) {
-    mUsesContainerScrolling = aValue;
-  }
-  bool UsesContainerScrolling() const { return mUsesContainerScrolling; }
   void SetForceDisableApz(bool aForceDisable) {
     mForceDisableApz = aForceDisable;
   }
@@ -1064,10 +1042,6 @@ struct ScrollMetadata {
   // the writing mode of this root element instead of the target scrollframe,
   // and so we need to know if the writing mode is RTL or not.
   bool mIsAutoDirRootContentRTL : 1;
-
-  // True if scrolling using containers, false otherwise. This can be removed
-  // when containerful scrolling is eliminated.
-  bool mUsesContainerScrolling : 1;
 
   // Whether or not the compositor should actually do APZ-scrolling on this
   // scrollframe.

@@ -29,6 +29,7 @@ class nsIHttpChannel;
 class nsIPrefBranch;
 class nsICancelable;
 class nsICookieService;
+class nsIProcessSwitchRequestor;
 class nsIIOService;
 class nsIRequestContextService;
 class nsISiteSecurityService;
@@ -361,6 +362,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_OPENING_REQUEST_TOPIC);
   }
 
+  void OnOpeningDocumentRequest(nsIIdentChannel* chan) {
+    NotifyObservers(chan, NS_DOCUMENT_ON_OPENING_REQUEST_TOPIC);
+  }
+
   // Called by the channel before writing a request
   void OnModifyRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_MODIFY_REQUEST_TOPIC);
@@ -369,11 +374,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // Called by the channel before writing a request
   void OnStopRequest(nsIHttpChannel* chan) {
     NotifyObservers(chan, NS_HTTP_ON_STOP_REQUEST_TOPIC);
-  }
-
-  // Called by the channel and cached in the loadGroup
-  void OnUserAgentRequest(nsIHttpChannel* chan) {
-    NotifyObservers(chan, NS_HTTP_ON_USERAGENT_REQUEST_TOPIC);
   }
 
   // Called by the channel before setting up the transaction
@@ -408,8 +408,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     NotifyObservers(chan, NS_HTTP_ON_EXAMINE_CACHED_RESPONSE_TOPIC);
   }
 
-  void OnMayChangeProcess(nsIHttpChannel* chan) {
-    NotifyObservers(chan, NS_HTTP_ON_MAY_CHANGE_PROCESS_TOPIC);
+  void OnMayChangeProcess(nsIProcessSwitchRequestor* request) {
+    NotifyObservers(request, NS_HTTP_ON_MAY_CHANGE_PROCESS_TOPIC);
   }
 
   // Generates the host:port string for use in the Host: header as well as the
@@ -479,11 +479,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   MOZ_MUST_USE nsresult InitConnectionMgr();
 
-  void NotifyObservers(nsIHttpChannel* chan, const char* event);
+  void NotifyObservers(nsIChannel* chan, const char* event);
+  void NotifyObservers(nsIProcessSwitchRequestor* request, const char* event);
 
   void SetFastOpenOSSupport();
-
-  void EnsureUAOverridesInit();
 
   // Checks if there are any user certs or active smart cards on a different
   // thread. Updates mSpeculativeConnectEnabled when done.
@@ -551,6 +550,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t mTailTotalMax;
 
   uint8_t mRedirectionLimit;
+
+  bool mBeConservativeForProxy;
 
   // we'll warn the user if we load an URL containing a userpass field
   // unless its length is less than this threshold.  this warning is

@@ -32,8 +32,6 @@
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #endif
 
-using namespace std;
-
 namespace mozilla {
 namespace layers {
 
@@ -251,6 +249,9 @@ void LayerManagerMLGPU::EndTransaction(const TimeStamp& aTimeStamp,
   }
 
   // Resize the window if needed.
+#ifdef XP_WIN
+  mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
+#endif
   if (mSwapChain->GetSize() != windowSize) {
     // Note: all references to the backbuffer must be cleared.
     mDevice->SetRenderTarget(nullptr);
@@ -437,9 +438,8 @@ void LayerManagerMLGPU::DrawDebugOverlay() {
   stats.mScreenPixels = windowSize.width * windowSize.height;
 
   std::string text = mDiagnostics->GetFrameOverlayString(stats);
-  RefPtr<TextureSource> texture =
-      mTextRenderer->RenderText(mTextureSourceProvider, text, 30, 600,
-                                TextRenderer::FontType::FixedWidth);
+  RefPtr<TextureSource> texture = mTextRenderer->RenderText(
+      mTextureSourceProvider, text, 600, TextRenderer::FontType::FixedWidth);
   if (!texture) {
     return;
   }

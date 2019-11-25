@@ -543,14 +543,16 @@ function mainThreadFetch(
       ? channel.LOAD_FROM_CACHE
       : channel.LOAD_BYPASS_CACHE;
 
-    // When loading from cache, the cacheKey allows us to target a specific
-    // SHEntry and offer ways to restore POST requests from cache.
-    if (
-      aOptions.loadFromCache &&
-      aOptions.cacheKey != 0 &&
-      channel instanceof Ci.nsICacheInfoChannel
-    ) {
-      channel.cacheKey = aOptions.cacheKey;
+    if (aOptions.loadFromCache && channel instanceof Ci.nsICacheInfoChannel) {
+      // If DevTools intents to load the content from the cache,
+      // we make the LOAD_FROM_CACHE flag preferred over LOAD_BYPASS_CACHE.
+      channel.preferCacheLoadOverBypass = true;
+
+      // When loading from cache, the cacheKey allows us to target a specific
+      // SHEntry and offer ways to restore POST requests from cache.
+      if (aOptions.cacheKey != 0) {
+        channel.cacheKey = aOptions.cacheKey;
+      }
     }
 
     if (aOptions.window) {
@@ -885,6 +887,12 @@ errorOnFlag(exports, "wantVerbose");
 // where unsafeDereference will return an opaque security wrapper to the
 // referent.
 function callPropertyOnObject(object, name, ...args) {
+  // When replaying, the result of the call may already be known, which avoids
+  // having to communicate with the replaying process.
+  if (isReplaying && args.length == 0 && object.replayHasCallResult(name)) {
+    return object.replayCallResult(name);
+  }
+
   // Find the property.
   let descriptor;
   let proto = object;

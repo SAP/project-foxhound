@@ -38,15 +38,10 @@ class AudioPlaybackConfig {
         mSuspend(aSuspended),
         mNumberOfAgents(0) {}
 
-  void SetConfig(float aVolume, bool aMuted, uint32_t aSuspended) {
-    mVolume = aVolume;
-    mMuted = aMuted;
-    mSuspend = aSuspended;
-  }
-
   float mVolume;
   bool mMuted;
   uint32_t mSuspend;
+  bool mCapturedAudio = false;
   uint32_t mNumberOfAgents;
 };
 
@@ -56,6 +51,41 @@ class AudioChannelService final : public nsIObserver {
   NS_DECL_NSIOBSERVER
 
   /**
+   * We use `AudibleState` to represent the audible state of an owner of audio
+   * channel agent. Those information in AudioChannelWindow could help us to
+   * determine if a tab is being audible or not, in order to tell Chrome JS to
+   * show the sound indicator or delayed autoplay icon on the tab bar.
+   *
+   * - Sound indicator
+   * When a tab is playing sound, we would show the sound indicator on tab bar
+   * to tell users that this tab is producing sound now. In addition, the sound
+   * indicator also give users an ablility to mute or unmute tab.
+   *
+   * When an AudioChannelWindow first contains an agent with state `eAudible`,
+   * or an AudioChannelWindow losts its last agent with state `eAudible`, we
+   * would notify Chrome JS about those changes, to tell them that a tab has
+   * been being audible or not, in order to display or remove the indicator for
+   * a corresponding tab.
+   *
+   * - Delayed autoplay icon (Play Tab icon)
+   * When we enable delaying autoplay, which is to postpone the autoplay media
+   * for unvisited tab until it first goes to foreground, or user click the
+   * play tab icon to resume the delayed media.
+   *
+   * When an AudioChannelWindow first contains an agent with state `eAudible` or
+   * `eMaybeAudible`, we would notify Chrome JS about this change, in order to
+   * show the delayed autoplay tab icon to user, which is used to notice user
+   * there is a media being delayed starting, and then user can click the play
+   * tab icon to resume the start of media, or visit that tab to resume delayed
+   * media automatically.
+   *
+   * According to our UX design, we don't show this icon for inaudible media.
+   * The reason of showing the icon for a tab, where the agent starts with state
+   * `eMaybeAudible`, is because some video might be silent in the beginning
+   * but would soon become audible later.
+   *
+   * ---------------------------------------------------------------------------
+   *
    * eNotAudible : agent is not audible
    * eMaybeAudible : agent is not audible now, but it might be audible later
    * eAudible : agent is audible now
@@ -120,7 +150,8 @@ class AudioChannelService final : public nsIObserver {
 
   bool IsWindowActive(nsPIDOMWindowOuter* aWindow);
 
-  void RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow);
+  void RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow, float aVolume,
+                           bool aMuted);
   void RefreshAgentsSuspend(nsPIDOMWindowOuter* aWindow,
                             nsSuspendedTypes aSuspend);
 
@@ -184,9 +215,6 @@ class AudioChannelService final : public nsIObserver {
     bool mShouldSendActiveMediaBlockStopEvent;
 
    private:
-    void AudioCapturedChanged(AudioChannelAgent* aAgent,
-                              AudioCaptureState aCapture);
-
     void AppendAudibleAgentIfNotContained(AudioChannelAgent* aAgent,
                                           AudibleChangedReasons aReason);
     void RemoveAudibleAgentIfContained(AudioChannelAgent* aAgent,

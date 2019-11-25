@@ -76,6 +76,8 @@ enum class OperatingSystem {
   OSX10_11,
   OSX10_12,
   OSX10_13,
+  OSX10_14,
+  OSX10_15,
   Android,
   Ios
 };
@@ -102,10 +104,10 @@ enum DeviceFamily {
   IntelGMA3150,
   IntelGMAX3000,
   IntelGMAX4500HD,
+  IntelHDGraphicsToIvyBridge,
   IntelHDGraphicsToSandyBridge,
   IntelHDGraphicsToHaswell,
   IntelHD3000,
-  IntelHDGraphicsIvyBridge,
   IntelMobileHDGraphics,
   NvidiaBlockD3D9Layers,
   RadeonX1000,

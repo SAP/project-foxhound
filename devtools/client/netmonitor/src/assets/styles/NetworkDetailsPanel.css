@@ -200,6 +200,13 @@
   padding-inline-start: 4px;
 }
 
+.network-monitor .tabpanel-summary-container .tracking-resource {
+  margin-inline-start: -2px;
+  margin-inline-end: 2px;
+  vertical-align: text-bottom;
+  fill: var(--theme-icon-color);
+}
+
 .network-monitor .tabpanel-summary-labelvalue {
   white-space: pre-wrap;
 }
@@ -207,7 +214,6 @@
 .network-monitor .tabpanel-summary-label {
   display: inline-block;
   padding-inline-end: 3px;
-  font-weight: 600;
 }
 
 .network-monitor .tabpanel-summary-value {
@@ -224,14 +230,6 @@
   color: inherit;
   margin-top: 2px;
   margin-bottom: 2px;
-}
-
-.theme-dark .network-monitor .tracking-protection .tracking-resource {
-  filter: brightness(500%);
-}
-
-.theme-light .network-monitor .tracking-protection .tracking-resource {
-  filter: brightness(0);
 }
 
 .theme-dark .network-monitor .edit-and-resend-button  {
@@ -436,6 +434,45 @@
   min-width: 1px;
   transition: width 0.2s ease-out;
 }
+
+.network-monitor .label-separator {
+  margin-inline-start: 4px;
+  font-weight: 600;
+  margin-top: 5px;
+  margin-bottom: 5px;
+  color: var(--theme-comment);
+}
+
+.theme-light .network-monitor .requests-list-timings-box {
+  --timing-server-color-1: rgba(104, 195, 179, 0.8); /* teal */
+  --timing-server-color-2: rgba(123, 102, 167, 0.8); /* purple */
+  --timing-server-color-3: rgba(233, 236, 130, 0.8); /* yellow */
+  --timing-server-color-total: rgba(186, 90, 140, 0.8); /* pink */
+}
+
+.theme-dark .network-monitor .requests-list-timings-box {
+  --timing-server-color-1: rgba(74, 228, 201, 0.8); /* teal */
+  --timing-server-color-2: rgba(156, 119, 233, 0.8); /* purple */
+  --timing-server-color-3: rgba(234, 239, 73, 0.8); /* yellow */
+  --timing-server-color-total: rgba(186, 74, 133, 0.8); /* pink */
+}
+
+.network-monitor .server-timings-color-1 {
+  background: var(--timing-server-color-1);
+}
+
+.network-monitor .server-timings-color-2 {
+  background: var(--timing-server-color-2);
+}
+
+.network-monitor .server-timings-color-3 {
+  background: var(--timing-server-color-3);
+}
+
+.network-monitor .server-timings-color-total {
+  background: var(--timing-server-color-total);
+}
+
 
 /* Stack trace panel */
 

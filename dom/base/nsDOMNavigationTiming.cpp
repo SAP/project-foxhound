@@ -153,7 +153,7 @@ void nsDOMNavigationTiming::NotifyLoadEventEnd() {
 
   if (IsTopLevelContentDocumentInContentProcess()) {
 #ifdef MOZ_GECKO_PROFILER
-    if (profiler_is_active() || PAGELOAD_LOG_ENABLED()) {
+    if (profiler_can_accept_markers() || PAGELOAD_LOG_ENABLED()) {
       TimeDuration elapsed = mLoadEventEnd - mNavigationStart;
       TimeDuration duration = mLoadEventEnd - mLoadEventStart;
       nsAutoCString spec;
@@ -163,12 +163,11 @@ void nsDOMNavigationTiming::NotifyLoadEventEnd() {
       nsPrintfCString marker(
           "Document %s loaded after %dms, load event duration %dms", spec.get(),
           int(elapsed.ToMilliseconds()), int(duration.ToMilliseconds()));
-      DECLARE_DOCSHELL_AND_HISTORY_ID(mDocShell);
       PAGELOAD_LOG(("%s", marker.get()));
-      profiler_add_marker(
-          "DocumentLoad", JS::ProfilingCategoryPair::DOM,
-          MakeUnique<TextMarkerPayload>(marker, mNavigationStart, mLoadEventEnd,
-                                        docShellId, docShellHistoryId));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "DocumentLoad", DOM, TextMarkerPayload,
+          (marker, mNavigationStart, mLoadEventEnd,
+           profiler_get_inner_window_id_from_docshell(mDocShell)));
     }
 #endif
     Telemetry::AccumulateTimeDelta(Telemetry::TIME_TO_LOAD_EVENT_END_MS,
@@ -346,7 +345,7 @@ void nsDOMNavigationTiming::TTITimeout(nsITimer* aTimer) {
   mTTITimer = nullptr;
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active() || PAGELOAD_LOG_ENABLED()) {
+  if (profiler_can_accept_markers() || PAGELOAD_LOG_ENABLED()) {
     TimeDuration elapsed = mTTFI - mNavigationStart;
     MOZ_ASSERT(elapsed.ToMilliseconds() > 0);
     TimeDuration elapsedLongTask =
@@ -359,11 +358,10 @@ void nsDOMNavigationTiming::TTITimeout(nsITimer* aTimer) {
                            int(elapsed.ToMilliseconds()),
                            int(elapsedLongTask.ToMilliseconds()), spec.get());
 
-    DECLARE_DOCSHELL_AND_HISTORY_ID(mDocShell);
-    profiler_add_marker(
-        "TTFI", JS::ProfilingCategoryPair::DOM,
-        MakeUnique<TextMarkerPayload>(marker, mNavigationStart, mTTFI,
-                                      docShellId, docShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "TTFI", DOM, TextMarkerPayload,
+        (marker, mNavigationStart, mTTFI,
+         profiler_get_inner_window_id_from_docshell(mDocShell)));
   }
 #endif
   return;
@@ -394,11 +392,10 @@ void nsDOMNavigationTiming::NotifyNonBlankPaintForRootContentDocument() {
             : "this tab was inactive some of the time between navigation start "
               "and first non-blank paint");
     PAGELOAD_LOG(("%s", marker.get()));
-    DECLARE_DOCSHELL_AND_HISTORY_ID(mDocShell);
-    profiler_add_marker(
-        "FirstNonBlankPaint", JS::ProfilingCategoryPair::DOM,
-        MakeUnique<TextMarkerPayload>(marker, mNavigationStart, mNonBlankPaint,
-                                      docShellId, docShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "FirstNonBlankPaint", DOM, TextMarkerPayload,
+        (marker, mNavigationStart, mNonBlankPaint,
+         profiler_get_inner_window_id_from_docshell(mDocShell)));
   }
 #endif
 
@@ -430,7 +427,7 @@ void nsDOMNavigationTiming::NotifyContentfulPaintForRootContentDocument(
   mContentfulPaint = aCompositeEndTime;
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active() || PAGELOAD_LOG_ENABLED()) {
+  if (profiler_can_accept_markers() || PAGELOAD_LOG_ENABLED()) {
     TimeDuration elapsed = mContentfulPaint - mNavigationStart;
     nsAutoCString spec;
     if (mLoadedURI) {
@@ -443,12 +440,11 @@ void nsDOMNavigationTiming::NotifyContentfulPaintForRootContentDocument(
             ? "foreground tab"
             : "this tab was inactive some of the time between navigation start "
               "and first non-blank paint");
-    DECLARE_DOCSHELL_AND_HISTORY_ID(mDocShell);
     PAGELOAD_LOG(("%s", marker.get()));
-    profiler_add_marker("FirstContentfulPaint", JS::ProfilingCategoryPair::DOM,
-                        MakeUnique<TextMarkerPayload>(
-                            marker, mNavigationStart, mContentfulPaint,
-                            docShellId, docShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "FirstContentfulPaint", DOM, TextMarkerPayload,
+        (marker, mNavigationStart, mContentfulPaint,
+         profiler_get_inner_window_id_from_docshell(mDocShell)));
   }
 #endif
 
@@ -493,12 +489,11 @@ void nsDOMNavigationTiming::NotifyDOMContentFlushedForRootContentDocument() {
             ? "foreground tab"
             : "this tab was inactive some of the time between navigation start "
               "and DOMContentFlushed");
-    DECLARE_DOCSHELL_AND_HISTORY_ID(mDocShell);
     PAGELOAD_LOG(("%s", marker.get()));
-    profiler_add_marker("DOMContentFlushed", JS::ProfilingCategoryPair::DOM,
-                        MakeUnique<TextMarkerPayload>(
-                            marker, mNavigationStart, mDOMContentFlushed,
-                            docShellId, docShellHistoryId));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "DOMContentFlushed", DOM, TextMarkerPayload,
+        (marker, mNavigationStart, mDOMContentFlushed,
+         profiler_get_inner_window_id_from_docshell(mDocShell)));
   }
 #endif
 }

@@ -9,8 +9,8 @@
 #include "ContainerWriter.h"
 #include "CubebUtils.h"
 #include "MediaQueue.h"
-#include "MediaStreamGraph.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraph.h"
+#include "MediaTrackListener.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/UniquePtr.h"
@@ -51,11 +51,11 @@ class MediaEncoderListener {
  * procedures between ContainerWriter and TrackEncoder. ContainerWriter packs
  * the encoded track data with a specific container (e.g. ogg, webm).
  * AudioTrackEncoder and VideoTrackEncoder are subclasses of TrackEncoder, and
- * are responsible for encoding raw data coming from MediaStreamGraph.
+ * are responsible for encoding raw data coming from MediaTrackGraph.
  *
  * MediaEncoder solves threading issues by doing message passing to a TaskQueue
  * (the "encoder thread") as passed in to the constructor. Each
- * MediaStreamTrack to be recorded is set up with a MediaStreamTrackListener.
+ * MediaStreamTrack to be recorded is set up with a MediaTrackListener.
  * Typically there are a non-direct track listeners for audio, direct listeners
  * for video, and there is always a non-direct listener on each track for
  * time-keeping. The listeners forward data to their corresponding TrackEncoders
@@ -175,15 +175,12 @@ class MediaEncoder {
 
   /**
    * Cancels the encoding and shuts down the encoder using Shutdown().
-   * Listeners are not notified of the shutdown.
    */
-  void Cancel();
+  RefPtr<GenericNonExclusivePromise> Cancel();
 
   bool HasError();
 
-#ifdef MOZ_WEBM_ENCODER
   static bool IsWebMEncoderEnabled();
-#endif
 
   const nsString& MimeType() const;
 
@@ -220,17 +217,17 @@ class MediaEncoder {
   /**
    * Set desired video keyframe interval defined in milliseconds.
    */
-  void SetVideoKeyFrameInterval(int32_t aVideoKeyFrameInterval);
+  void SetVideoKeyFrameInterval(uint32_t aVideoKeyFrameInterval);
 
  protected:
   ~MediaEncoder();
 
  private:
   /**
-   * Sets mGraphStream if not already set, using a new stream from aStream's
+   * Sets mGraphTrack if not already set, using a new stream from aTrack's
    * graph.
    */
-  void EnsureGraphStreamFrom(MediaStream* aStream);
+  void EnsureGraphTrackFrom(MediaTrack* aTrack);
 
   /**
    * Takes a regular runnable and dispatches it to the graph wrapped in a
@@ -242,7 +239,7 @@ class MediaEncoder {
    * Shuts down the MediaEncoder and cleans up track encoders.
    * Listeners will be notified of the shutdown unless we were Cancel()ed first.
    */
-  void Shutdown();
+  RefPtr<GenericNonExclusivePromise> Shutdown();
 
   /**
    * Sets mError to true, notifies listeners of the error if mError changed,
@@ -264,10 +261,10 @@ class MediaEncoder {
   // The AudioNode we are encoding.
   // Will be null when input is media stream or destination node.
   RefPtr<dom::AudioNode> mAudioNode;
-  // Pipe-stream for allowing a track listener on a non-destination AudioNode.
+  // Pipe-track for allowing a track listener on a non-destination AudioNode.
   // Will be null when input is media stream or destination node.
-  RefPtr<AudioNodeStream> mPipeStream;
-  // Input port that connect mAudioNode to mPipeStream.
+  RefPtr<AudioNodeTrack> mPipeTrack;
+  // Input port that connect mAudioNode to mPipeTrack.
   // Will be null when input is media stream or destination node.
   RefPtr<MediaInputPort> mInputPort;
   // An audio track that we are encoding. Will be null if the input stream
@@ -277,16 +274,17 @@ class MediaEncoder {
   // doesn't contain video on start() or if the input is an AudioNode.
   RefPtr<dom::VideoStreamTrack> mVideoTrack;
 
-  // A stream to keep the MediaStreamGraph alive while we're recording.
-  RefPtr<SharedDummyStream> mGraphStream;
+  // A stream to keep the MediaTrackGraph alive while we're recording.
+  RefPtr<SharedDummyTrack> mGraphTrack;
 
   TimeStamp mStartTime;
   const nsString mMIMEType;
   bool mInitialized;
   bool mCompleted;
   bool mError;
-  bool mCanceled;
   bool mShutdown;
+  // Set when shutdown starts.
+  RefPtr<GenericNonExclusivePromise> mShutdownPromise;
   // Get duration from create encoder, for logging purpose
   double GetEncodeTimeStamp() {
     TimeDuration decodeTime;

@@ -50,6 +50,12 @@
 #  include "mozilla/layers/TextureClientX11.h"
 #  include "GLXLibrary.h"
 #endif
+#ifdef MOZ_WAYLAND
+#  include <gtk/gtkx.h>
+#  include "mozilla/widget/nsWaylandDisplay.h"
+#  include "mozilla/layers/WaylandDMABUFTextureClientOGL.h"
+#  include "gfxPlatformGtk.h"
+#endif
 
 #ifdef XP_MACOSX
 #  include "mozilla/layers/MacIOSurfaceTextureClientOGL.h"
@@ -111,7 +117,8 @@ class TextureChild final : PTextureChild {
         mMainThreadOnly(false),
         mIPCOpen(false),
         mOwnsTextureData(false),
-        mOwnerCalledDestroy(false) {}
+        mOwnerCalledDestroy(false),
+        mUsesImageBridge(false) {}
 
   mozilla::ipc::IPCResult Recv__delete__() override { return IPC_OK(); }
 
@@ -122,15 +129,13 @@ class TextureChild final : PTextureChild {
   bool IPCOpen() const { return mIPCOpen; }
 
   void Lock() const {
-    if (mCompositableForwarder &&
-        mCompositableForwarder->GetTextureForwarder()->UsesImageBridge()) {
+    if (mUsesImageBridge) {
       mLock.Enter();
     }
   }
 
   void Unlock() const {
-    if (mCompositableForwarder &&
-        mCompositableForwarder->GetTextureForwarder()->UsesImageBridge()) {
+    if (mUsesImageBridge) {
       mLock.Leave();
     }
   }
@@ -233,6 +238,7 @@ class TextureChild final : PTextureChild {
   bool mIPCOpen;
   bool mOwnsTextureData;
   bool mOwnerCalledDestroy;
+  bool mUsesImageBridge;
 
   friend class TextureClient;
   friend void DeallocateTextureClient(TextureDeallocParams params);
@@ -273,6 +279,15 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
       aFormat == SurfaceFormat::B8G8R8X8 &&
       aBackendType == gfx::BackendType::CAIRO && NS_IsMainThread()) {
     return TextureType::DIB;
+  }
+#endif
+
+#ifdef MOZ_WAYLAND
+  if ((aLayersBackend == LayersBackend::LAYERS_OPENGL ||
+       aLayersBackend == LayersBackend::LAYERS_WR) &&
+      gfxPlatformGtk::GetPlatform()->UseWaylandDMABufSurfaces() &&
+      aFormat != SurfaceFormat::A8) {
+    return TextureType::WaylandDMABUF;
   }
 #endif
 
@@ -354,6 +369,12 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
     case TextureType::DIB:
       return DIBTextureData::Create(aSize, aFormat, aAllocator);
 #endif
+
+#ifdef MOZ_WAYLAND
+    case TextureType::WaylandDMABUF:
+      return WaylandDMABUFTextureData::Create(aSize, aFormat, moz2DBackend);
+#endif
+
 #ifdef MOZ_X11
     case TextureType::X11:
       return X11TextureData::Create(aSize, aFormat, aTextureFlags, aAllocator);
@@ -1034,6 +1055,7 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
         }
       }
       mActor->mCompositableForwarder = aForwarder;
+      mActor->mUsesImageBridge = aForwarder->GetTextureForwarder()->UsesImageBridge();
     }
     return true;
   }

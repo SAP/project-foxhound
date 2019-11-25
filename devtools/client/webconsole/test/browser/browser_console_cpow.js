@@ -46,7 +46,7 @@ async function obtainObjectWithCPOW(hud) {
   info("Cleanup");
   await hud.ui.evaluateJSAsync("delete globalThis.result;");
   const onToolboxDestroyed = toolbox.once("destroyed");
-  toolbox.win.top.close();
+  toolbox.topWindow.close();
   await onToolboxDestroyed;
 
   return { message, actor };
@@ -97,7 +97,7 @@ async function testBackEnd(hud, actor) {
   is(response.prototype.type, "null", "The prototype is null.");
 
   response = await objClient.enumProperties({ ignoreIndexedProperties: true });
-  let slice = await response.iterator.slice(0, response.iterator.count);
+  let slice = await response.slice(0, response.count);
   is(
     Reflect.ownKeys(slice.ownProperties).length,
     0,
@@ -105,7 +105,7 @@ async function testBackEnd(hud, actor) {
   );
 
   response = await objClient.enumProperties({});
-  slice = await response.iterator.slice(0, response.iterator.count);
+  slice = await response.slice(0, response.count);
   is(
     Reflect.ownKeys(slice.ownProperties).length,
     0,
@@ -119,7 +119,7 @@ async function testBackEnd(hud, actor) {
   is(response.descriptor, undefined, "The property does not exist.");
 
   response = await objClient.enumSymbols();
-  slice = await response.iterator.slice(0, response.iterator.count);
+  slice = await response.slice(0, response.count);
   is(slice.ownSymbols.length, 0, "No symbol property was retrieved.");
 
   response = await objClient.getPrototype();

@@ -342,7 +342,7 @@ bool ExecutionRunnable::ParseAndLinkModule(
     JSContext* aCx, JS::MutableHandle<JSObject*> aModule) {
   JS::CompileOptions compileOptions(aCx);
   compileOptions.setIntroductionType("Worklet");
-  compileOptions.setFileAndLine(mHandler->URL().get(), 0);
+  compileOptions.setFileAndLine(mHandler->URL().get(), 1);
   compileOptions.setIsRunOnce(true);
   compileOptions.setNoScriptRval(true);
 
@@ -376,10 +376,7 @@ void ExecutionRunnable::RunOnWorkletThread() {
 
   JS::Rooted<JSObject*> module(cx);
   if (!ParseAndLinkModule(cx, &module)) {
-    ErrorResult error;
-    error.MightThrowJSException();
-    error.StealExceptionFromJSContext(cx);
-    mResult = error.StealNSResult();
+    mResult = NS_ERROR_DOM_ABORT_ERR;
     return;
   }
 
@@ -389,7 +386,6 @@ void ExecutionRunnable::RunOnWorkletThread() {
   // without /rethrow errors/ and so unhandled exceptions do not cause the
   // promise to be rejected.
   JS::ModuleEvaluate(cx, module);
-  JS::Rooted<JS::Value> unused(cx);
 
   // All done.
   mResult = NS_OK;

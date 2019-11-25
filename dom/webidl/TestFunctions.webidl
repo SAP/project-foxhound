@@ -8,13 +8,16 @@
 
 callback PromiseReturner = Promise<any>();
 
-[Pref="dom.expose_test_interfaces"]
+[Pref="dom.expose_test_interfaces",
+ Exposed=Window]
 interface WrapperCachedNonISupportsTestInterface {
 };
 
 [Pref="dom.expose_test_interfaces",
- Constructor]
+ Exposed=Window]
 interface TestFunctions {
+  constructor();
+
   [Throws]
   static void throwUncatchableException();
 

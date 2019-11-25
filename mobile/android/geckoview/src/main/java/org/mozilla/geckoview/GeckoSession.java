@@ -10,10 +10,12 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.ref.WeakReference;
 import java.util.AbstractSequentialList;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.ListIterator;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -21,7 +23,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.EventDispatcher;
-import org.mozilla.gecko.GeckoAppShell;
 import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.IGeckoEditableParent;
 import org.mozilla.gecko.mozglue.JNIObject;
@@ -56,10 +57,14 @@ import android.support.annotation.UiThread;
 import android.util.Base64;
 import android.util.Log;
 import android.util.LongSparseArray;
+import android.util.SparseArray;
 import android.view.Surface;
 import android.view.inputmethod.CursorAnchorInfo;
 import android.view.inputmethod.ExtractedText;
 import android.view.inputmethod.ExtractedTextRequest;
+import android.view.View;
+import android.view.ViewStructure;
+import android.view.autofill.AutofillManager;
 
 public class GeckoSession implements Parcelable {
     private static final String LOGTAG = "GeckoSession";
@@ -119,6 +124,7 @@ public class GeckoSession implements Parcelable {
     private OverscrollEdgeEffect mOverscroll;
     private DynamicToolbarAnimator mToolbar;
     private CompositorController mController;
+    private AutofillSupport mAutofillSupport;
 
     private boolean mAttachedCompositor;
     private boolean mCompositorReady;
@@ -451,6 +457,7 @@ public class GeckoSession implements Parcelable {
                 "GeckoView:FullScreenEnter",
                 "GeckoView:FullScreenExit",
                 "GeckoView:WebAppManifest",
+                "GeckoView:FirstContentfulPaint",
             }
         ) {
             @Override
@@ -503,6 +510,8 @@ public class GeckoSession implements Parcelable {
                     } catch (JSONException e) {
                         Log.e(LOGTAG, "Failed to convert web app manifest to JSON", e);
                     }
+                } else if ("GeckoView:FirstContentfulPaint".equals(event)) {
+                    delegate.onFirstContentfulPaint(GeckoSession.this);
                 }
             }
         };
@@ -512,9 +521,11 @@ public class GeckoSession implements Parcelable {
             "GeckoViewNavigation", this,
             new String[]{
                 "GeckoView:LocationChange",
+                "GeckoView:OnNewSession"
+            },
+            new String[] {
                 "GeckoView:OnLoadError",
                 "GeckoView:OnLoadRequest",
-                "GeckoView:OnNewSession"
             }
         ) {
             // This needs to match nsIBrowserDOMWindow.idl
@@ -525,6 +536,20 @@ public class GeckoSession implements Parcelable {
                         return NavigationDelegate.TARGET_WINDOW_CURRENT;
                     default: // OPEN_NEWWINDOW, OPEN_NEWTAB, OPEN_SWITCHTAB
                         return NavigationDelegate.TARGET_WINDOW_NEW;
+                }
+            }
+
+            @Override
+            public void handleDefaultMessage(final String event,
+                                             final GeckoBundle message,
+                                             final EventCallback callback) {
+
+                if ("GeckoView:OnLoadRequest".equals(event)) {
+                    callback.sendSuccess(false);
+                } else if ("GeckoView:OnLoadError".equals(event)) {
+                    callback.sendSuccess(null);
+                } else {
+                    super.handleDefaultMessage(event, message, callback);
                 }
             }
 
@@ -589,21 +614,13 @@ public class GeckoSession implements Parcelable {
 
                     final GeckoResult<String> result = delegate.onLoadError(GeckoSession.this, uri, err);
                     if (result == null) {
-                        if (GeckoAppShell.isFennec()) {
-                            callback.sendSuccess(null);
-                        } else {
-                            callback.sendError("abort");
-                        }
+                        callback.sendError("abort");
                         return;
                     }
 
                     result.accept(url -> {
                         if (url == null) {
-                            if (GeckoAppShell.isFennec()) {
-                                callback.sendSuccess(null);
-                            } else {
-                                callback.sendError("abort");
-                            }
+                            callback.sendError("abort");
                         } else {
                             callback.sendSuccess(url);
                         }
@@ -711,11 +728,20 @@ public class GeckoSession implements Parcelable {
                     final HistoryDelegate historyDelegate = getHistoryDelegate();
                     final GeckoBundle update = message.getBundle("data");
                     if (update != null) {
+                        final int previousHistorySize = mStateCache.size();
                         mStateCache.updateSessionState(update);
                         final SessionState state = new SessionState(mStateCache);
                         delegate.onSessionStateChange(GeckoSession.this, state);
-                        if (historyDelegate != null && update.getBundle("historychange") != null) {
-                            historyDelegate.onHistoryStateChange(GeckoSession.this, state);
+                        if (update.getBundle("historychange") != null) {
+                            if (historyDelegate != null) {
+                                historyDelegate.onHistoryStateChange(GeckoSession.this, state);
+                            }
+                            // If the previous history was larger than one entry and the new size is one, it means the
+                            // History has been purged and the navigation delegate needs to be update.
+                            if ((previousHistorySize > 1) && (state.size() == 1) && mNavigationHandler.getDelegate() != null) {
+                                mNavigationHandler.getDelegate().onCanGoForward(GeckoSession.this, false);
+                                mNavigationHandler.getDelegate().onCanGoBack(GeckoSession.this, false);
+                            }
                         }
                     }
                 }
@@ -796,6 +822,11 @@ public class GeckoSession implements Parcelable {
                         type = PermissionDelegate.PERMISSION_DESKTOP_NOTIFICATION;
                     } else if ("persistent-storage".equals(typeString)) {
                         type = PermissionDelegate.PERMISSION_PERSISTENT_STORAGE;
+                    } else if ("midi".equals(typeString)) {
+                        // We can get this from WPT and presumably other content, but Gecko
+                        // doesn't support Web MIDI.
+                        callback.sendError("Unsupported");
+                        return;
                     } else {
                         throw new IllegalArgumentException("Unknown permission request: " + typeString);
                     }
@@ -1488,7 +1519,7 @@ public class GeckoSession implements Parcelable {
             mTextInput.onWindowChanged(mWindow);
         }
         if ((change == WINDOW_CLOSE || change == WINDOW_TRANSFER_OUT) && !inProgress) {
-            mTextInput.clearAutoFill();
+            getAutofillSupport().clearAutofill();
         }
     }
 
@@ -1582,12 +1613,39 @@ public class GeckoSession implements Parcelable {
     public static final int LOAD_FLAGS_REPLACE_HISTORY = 1 << 6;
 
     /**
+     * Formats the map of additional request headers into an ArrayList
+     * @param additionalHeaders Request headers to be formatted
+     * @return Correctly formatted request headers as a ArrayList
+     */
+    private ArrayList<String> additionalHeadersToStringArray(final @NonNull Map<String, String> additionalHeaders) {
+        ArrayList<String> headers = new ArrayList<String>();
+        for (String key : additionalHeaders.keySet()) {
+            // skip null key if one exists
+            if (key == null)
+                continue;
+
+            headers.add( String.format("%s:%s", key, additionalHeaders.get(key)) );
+        }
+        return headers;
+    }
+
+    /**
      * Load the given URI.
      * @param uri The URI of the resource to load.
      */
     @AnyThread
     public void loadUri(final @NonNull String uri) {
-        loadUri(uri, (GeckoSession)null, LOAD_FLAGS_NONE);
+        loadUri(uri, (GeckoSession)null, LOAD_FLAGS_NONE, (Map<String, String>) null);
+    }
+
+    /**
+     * Load the given URI with specified HTTP request headers.
+     * @param uri The URI of the resource to load.
+     * @param additionalHeaders any additional request headers used with the load
+     */
+    @AnyThread
+    public void loadUri(final @NonNull String uri, final @Nullable Map<String, String> additionalHeaders) {
+        loadUri(uri, (GeckoSession)null, LOAD_FLAGS_NONE, additionalHeaders);
     }
 
     /**
@@ -1598,7 +1656,7 @@ public class GeckoSession implements Parcelable {
      */
     @AnyThread
     public void loadUri(final @NonNull String uri, final @LoadFlags int flags) {
-        loadUri(uri, (GeckoSession)null, flags);
+        loadUri(uri, (GeckoSession)null, flags, (Map<String, String>) null);
     }
 
     /**
@@ -1611,12 +1669,30 @@ public class GeckoSession implements Parcelable {
     @AnyThread
     public void loadUri(final @NonNull String uri, final @Nullable String referrer,
                         final @LoadFlags int flags) {
+        loadUri(uri, referrer, flags, (Map<String, String>) null);
+    }
+
+    /**
+     * Load the given URI with the specified referrer, load type and HTTP request headers.
+     *
+     * @param uri the URI to load
+     * @param referrer the referrer, may be null
+     * @param flags the load flags to use, an OR-ed value of {@link #LOAD_FLAGS_NONE LOAD_FLAGS_*}
+     * @param additionalHeaders any additional request headers used with the load
+     */
+    @AnyThread
+    public void loadUri(final @NonNull String uri, final @Nullable String referrer,
+                        final @LoadFlags int flags, final @Nullable Map<String, String> additionalHeaders) {
         final GeckoBundle msg = new GeckoBundle();
         msg.putString("uri", uri);
         msg.putInt("flags", flags);
 
         if (referrer != null) {
             msg.putString("referrerUri", referrer);
+        }
+
+        if (additionalHeaders != null) {
+            msg.putStringArray("headers", additionalHeadersToStringArray(additionalHeaders));
         }
         mEventDispatcher.dispatch("GeckoView:LoadUri", msg);
     }
@@ -1633,12 +1709,32 @@ public class GeckoSession implements Parcelable {
     @AnyThread
     public void loadUri(final @NonNull String uri, final @Nullable GeckoSession referrer,
                         final @LoadFlags int flags) {
+        loadUri(uri, referrer, flags, (Map<String, String>) null);
+    }
+
+    /**
+     * Load the given URI with the specified referrer, load type and HTTP request headers. This
+     * method will also do any applicable checks to ensure that the specified URI is both safe and
+     * allowable according to the referring GeckoSession.
+     *
+     * @param uri the URI to load
+     * @param referrer the referring GeckoSession, may be null
+     * @param flags the load flags to use, an OR-ed value of {@link #LOAD_FLAGS_NONE LOAD_FLAGS_*}
+     * @param additionalHeaders any additional request headers used with the load
+     */
+    @AnyThread
+    public void loadUri(final @NonNull String uri, final @Nullable GeckoSession referrer,
+                        final @LoadFlags int flags, final @Nullable Map<String, String> additionalHeaders) {
         final GeckoBundle msg = new GeckoBundle();
         msg.putString("uri", uri);
         msg.putInt("flags", flags);
 
         if (referrer != null) {
             msg.putString("referrerSessionId", referrer.mId);
+        }
+
+        if (additionalHeaders != null) {
+            msg.putStringArray("headers", additionalHeadersToStringArray(additionalHeaders));
         }
         mEventDispatcher.dispatch("GeckoView:LoadUri", msg);
     }
@@ -1649,7 +1745,17 @@ public class GeckoSession implements Parcelable {
      */
     @AnyThread
     public void loadUri(final @NonNull Uri uri) {
-        loadUri(uri, null, LOAD_FLAGS_NONE);
+        loadUri(uri.toString(), (GeckoSession)null, LOAD_FLAGS_NONE, (Map<String, String>) null);
+    }
+
+    /**
+     * Load the given URI with specified HTTP request headers.
+     * @param uri The URI of the resource to load.
+     * @param additionalHeaders any additional request headers used with the load
+     */
+    @AnyThread
+    public void loadUri(final @NonNull Uri uri, final @Nullable Map<String, String> additionalHeaders) {
+        loadUri(uri.toString(), (GeckoSession)null, LOAD_FLAGS_NONE, additionalHeaders);
     }
 
     /**
@@ -1659,7 +1765,7 @@ public class GeckoSession implements Parcelable {
      */
     @AnyThread
     public void loadUri(final @NonNull Uri uri, final @LoadFlags int flags) {
-        loadUri(uri.toString(), (GeckoSession)null, flags);
+        loadUri(uri.toString(), (GeckoSession)null, flags, (Map<String, String>) null);
     }
 
     /**
@@ -1671,7 +1777,20 @@ public class GeckoSession implements Parcelable {
     @AnyThread
     public void loadUri(final @NonNull Uri uri, final @Nullable Uri referrer,
                         final @LoadFlags int flags) {
-        loadUri(uri.toString(), referrer != null ? referrer.toString() : null, flags);
+        loadUri(uri.toString(), referrer != null ? referrer.toString() : null, flags, (Map<String, String>) null);
+    }
+
+    /**
+     * Load the given URI with the specified referrer, load type and HTTP request headers.
+     * @param uri the URI to load
+     * @param referrer the Uri to use as the referrer
+     * @param flags the load flags to use, an OR-ed value of {@link #LOAD_FLAGS_NONE LOAD_FLAGS_*}
+     * @param additionalHeaders any additional request headers used with the load
+     */
+    @AnyThread
+    public void loadUri(final @NonNull Uri uri, final @Nullable Uri referrer,
+                        final @LoadFlags int flags, final @Nullable Map<String, String> additionalHeaders) {
+        loadUri(uri.toString(), referrer != null ? referrer.toString() : null, flags, additionalHeaders);
     }
 
     /**
@@ -1777,6 +1896,17 @@ public class GeckoSession implements Parcelable {
         final GeckoBundle msg = new GeckoBundle(1);
         msg.putInt("index", index);
         mEventDispatcher.dispatch("GeckoView:GotoHistoryIndex", msg);
+    }
+
+    /**
+     * Purge history for the session.
+     * The session history is used for back and forward history.
+     * Purging the session history means {@link NavigationDelegate#onCanGoBack(GeckoSession, boolean)}
+     * and {@link NavigationDelegate#onCanGoForward(GeckoSession, boolean)} will be false.
+     */
+    @AnyThread
+    public void purgeHistory() {
+        mEventDispatcher.dispatch("GeckoView:PurgeHistory", null);
     }
 
     @Retention(RetentionPolicy.SOURCE)
@@ -1899,6 +2029,8 @@ public class GeckoSession implements Parcelable {
         if (!active) {
             mEventDispatcher.dispatch("GeckoView:FlushSessionState", null);
         }
+
+        getAutofillSupport().onActiveChanged(active);
     }
 
     /**
@@ -3008,6 +3140,20 @@ public class GeckoSession implements Parcelable {
          */
         @UiThread
         default void onFirstComposite(@NonNull GeckoSession session) {}
+
+        /**
+         * Notification that the first content paint has occurred.
+         * This callback is invoked for the first content paint after
+         * a page has been loaded. The function {@link #onFirstComposite(GeckoSession)}
+         * will be called once the compositor has started rendering. However, it is
+         * possible for the compositor to start rendering before there is any content to render.
+         * onFirstContentfulPaint() is called once some content has been rendered. It may be nothing
+         * more than the page background color. It is not an indication that the whole page has
+         * been rendered.
+         * @param session The GeckoSession that had a first paint event.
+         */
+        @UiThread
+        default void onFirstContentfulPaint(@NonNull GeckoSession session) {}
 
         /**
          * This is fired when the loaded document has a valid Web App Manifest present.
@@ -4955,59 +5101,12 @@ public class GeckoSession implements Parcelable {
         @UiThread
         default void updateCursorAnchorInfo(@NonNull GeckoSession session,
                                             @NonNull CursorAnchorInfo info) {}
-
-        /** An auto-fill session has started, usually as a result of loading a page. */
-        int AUTO_FILL_NOTIFY_STARTED = 0;
-        /** An auto-fill session has been committed, usually as a result of submitting a form. */
-        int AUTO_FILL_NOTIFY_COMMITTED = 1;
-        /** An auto-fill session has been canceled, usually as a result of unloading a page. */
-        int AUTO_FILL_NOTIFY_CANCELED = 2;
-        /** A view within the auto-fill session has been added. */
-        int AUTO_FILL_NOTIFY_VIEW_ADDED = 3;
-        /** A view within the auto-fill session has been removed. */
-        int AUTO_FILL_NOTIFY_VIEW_REMOVED = 4;
-        /** A view within the auto-fill session has been updated (e.g. change in state). */
-        int AUTO_FILL_NOTIFY_VIEW_UPDATED = 5;
-        /** A view within the auto-fill session has gained focus. */
-        int AUTO_FILL_NOTIFY_VIEW_ENTERED = 6;
-        /** A view within the auto-fill session has lost focus. */
-        int AUTO_FILL_NOTIFY_VIEW_EXITED = 7;
-
-        /**
-         * Notify that an auto-fill event has occurred. The default implementation forwards the
-         * notification to the system {@link android.view.autofill.AutofillManager}. This method is
-         * only called on Android 6.0 and above, and it is called in viewless mode as well.
-         *
-         * @param session Session instance.
-         * @param notification Notification type as one of the {@link #AUTO_FILL_NOTIFY_STARTED
-         *                     AUTO_FILL_NOTIFY_*} constants.
-         * @param virtualId Virtual ID of the target, or {@link android.view.View#NO_ID} if not
-         *                  applicable. The ID matches one of the virtual IDs provided by {@link
-         *                  SessionTextInput#onProvideAutofillVirtualStructure} and can be used
-         *                  with {@link SessionTextInput#autofill}.
-         */
-        @UiThread
-        default void notifyAutoFill(@NonNull GeckoSession session,
-                                    @AutoFillNotification int notification,
-                                    int virtualId) {}
     }
 
     @Retention(RetentionPolicy.SOURCE)
     @IntDef({TextInputDelegate.RESTART_REASON_FOCUS, TextInputDelegate.RESTART_REASON_BLUR,
             TextInputDelegate.RESTART_REASON_CONTENT_CHANGE})
             /* package */ @interface RestartReason {}
-
-    @Retention(RetentionPolicy.SOURCE)
-    @IntDef({
-            TextInputDelegate.AUTO_FILL_NOTIFY_STARTED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_COMMITTED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_CANCELED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_VIEW_ADDED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_VIEW_REMOVED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_VIEW_UPDATED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_VIEW_ENTERED,
-            TextInputDelegate.AUTO_FILL_NOTIFY_VIEW_EXITED})
-    /* package */ @interface AutoFillNotification {}
 
     /* package */ void onSurfaceChanged(final Surface surface, final int x, final int y, final int width,
                                         final int height) {
@@ -5226,8 +5325,6 @@ public class GeckoSession implements Parcelable {
         mViewportLeft = scrollX;
         mViewportTop = scrollY;
         mViewportZoom = zoom;
-
-        mTextInput.onScreenMetricsUpdated();
     }
 
     /* protected */ void onWindowBoundsChanged() {
@@ -5480,4 +5577,103 @@ public class GeckoSession implements Parcelable {
                 HistoryDelegate.VISIT_UNRECOVERABLE_ERROR
             })
     /* package */ @interface VisitFlags {}
+
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef({
+            AutofillDelegate.AUTOFILL_NOTIFY_STARTED,
+            AutofillDelegate.AUTOFILL_NOTIFY_COMMITTED,
+            AutofillDelegate.AUTOFILL_NOTIFY_CANCELED,
+            AutofillDelegate.AUTOFILL_NOTIFY_VIEW_ADDED,
+            AutofillDelegate.AUTOFILL_NOTIFY_VIEW_REMOVED,
+            AutofillDelegate.AUTOFILL_NOTIFY_VIEW_UPDATED,
+            AutofillDelegate.AUTOFILL_NOTIFY_VIEW_ENTERED,
+            AutofillDelegate.AUTOFILL_NOTIFY_VIEW_EXITED})
+    /* package */ @interface AutofillNotification {}
+
+    public interface AutofillDelegate {
+
+        /** An autofill session has started, usually as a result of loading a page. */
+        int AUTOFILL_NOTIFY_STARTED = 0;
+        /** An autofill session has been committed, usually as a result of submitting a form. */
+        int AUTOFILL_NOTIFY_COMMITTED = 1;
+        /** An autofill session has been canceled, usually as a result of unloading a page. */
+        int AUTOFILL_NOTIFY_CANCELED = 2;
+        /** A view within the autofill session has been added. */
+        int AUTOFILL_NOTIFY_VIEW_ADDED = 3;
+        /** A view within the autofill session has been removed. */
+        int AUTOFILL_NOTIFY_VIEW_REMOVED = 4;
+        /** A view within the autofill session has been updated (e.g. change in state). */
+        int AUTOFILL_NOTIFY_VIEW_UPDATED = 5;
+        /** A view within the autofill session has gained focus. */
+        int AUTOFILL_NOTIFY_VIEW_ENTERED = 6;
+        /** A view within the autofill session has lost focus. */
+        int AUTOFILL_NOTIFY_VIEW_EXITED = 7;
+
+        /**
+         * Notify that an autofill event has occurred. The default implementation forwards the
+         * notification to the system {@link AutofillManager}. This method is
+         * only called on Android 6.0 and above, and it is called in viewless mode as well.
+         *
+         * @param session Session instance.
+         * @param notification Notification type as one of the {@link #AUTOFILL_NOTIFY_STARTED
+         *                     AUTO_FILL_NOTIFY_*} constants.
+         * @param virtualId Virtual ID of the target, or {@link View#NO_ID} if not
+         *                  applicable. The ID matches one of the virtual IDs provided by {@link
+         *                  GeckoSession#getAutofillElements()} and can be used
+         *                  with {@link GeckoSession#autofill}.
+         */
+        @UiThread
+        default void onAutofill(@NonNull GeckoSession session,
+                                @GeckoSession.AutofillNotification int notification,
+                                int virtualId) {}
+    }
+
+    private AutofillSupport getAutofillSupport() {
+        if (mAutofillSupport == null) {
+            mAutofillSupport = new AutofillSupport(this);
+        }
+
+        return mAutofillSupport;
+    }
+
+    /**
+     * Sets the autofill delegate for this session.
+     *
+     * @param delegate An instance of {@link AutofillDelegate}.
+     */
+    @UiThread
+    public void setAutofillDelegate(final @Nullable AutofillDelegate delegate) {
+        getAutofillSupport().setDelegate(delegate);
+    }
+
+    /**
+     * @return The current {@link AutofillDelegate} for this session, if any.
+     */
+    @UiThread
+    public @Nullable AutofillDelegate getAutofillDelegate() {
+        return getAutofillSupport().getDelegate();
+    }
+
+    /**
+     * Perform autofill using the specified values.
+     *
+     * @param values Map of autofill IDs to values.
+     */
+    @UiThread
+    public void autofill(final @NonNull SparseArray<CharSequence> values) {
+        getAutofillSupport().autofill(values);
+    }
+
+    /**
+     * Provides an autofill structure similar to {@link View#onProvideAutofillVirtualStructure(ViewStructure, int)} , but
+     * does not rely on {@link ViewStructure} to build the tree. This is useful for apps that want
+     * to provide autofill functionality without using the Android autofill system or requiring
+     * API 26.
+     *
+     * @return The elements available for autofill.
+     */
+    @UiThread
+    public @NonNull AutofillElement getAutofillElements() {
+        return getAutofillSupport().getAutofillElements();
+    }
 }

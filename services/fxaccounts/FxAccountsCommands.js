@@ -4,7 +4,7 @@
 
 const EXPORTED_SYMBOLS = ["SendTab", "FxAccountsCommands"];
 
-const { COMMAND_SENDTAB, log } = ChromeUtils.import(
+const { COMMAND_SENDTAB, COMMAND_SENDTAB_TAIL, log } = ChromeUtils.import(
   "resource://gre/modules/FxAccountsCommon.js"
 );
 ChromeUtils.defineModuleGetter(
@@ -28,21 +28,32 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 });
 
 class FxAccountsCommands {
-  constructor(fxAccounts) {
-    this._fxAccounts = fxAccounts;
-    this.sendTab = new SendTab(this, fxAccounts);
+  constructor(fxAccountsInternal) {
+    this._fxai = fxAccountsInternal;
+    this.sendTab = new SendTab(this, fxAccountsInternal);
+  }
+
+  async availableCommands() {
+    if (
+      !Services.prefs.getBoolPref("identity.fxaccounts.commands.enabled", true)
+    ) {
+      return {};
+    }
+    const sendTabKey = await this.sendTab.getEncryptedKey();
+    if (!sendTabKey) {
+      // This will happen if the account is not verified yet.
+      return {};
+    }
+    return {
+      [COMMAND_SENDTAB]: sendTabKey,
+    };
   }
 
   async invoke(command, device, payload) {
-    const userData = await this._fxAccounts.getSignedInUser();
-    if (!userData) {
-      throw new Error("No user.");
-    }
-    const { sessionToken } = userData;
-    if (!sessionToken) {
-      throw new Error("_send called without a session token.");
-    }
-    const client = this._fxAccounts.getAccountsClient();
+    const { sessionToken } = await this._fxai.getUserAccountData([
+      "sessionToken",
+    ]);
+    const client = this._fxai.fxAccountsClient;
     await client.invokeCommand(sessionToken, command, device.id, payload);
     log.info(`Payload sent to device ${device.id}.`);
   }
@@ -67,42 +78,40 @@ class FxAccountsCommands {
       return false;
     }
     log.info(`Polling device commands.`);
-    await this._fxAccounts._withCurrentAccountState(
-      async (getUserData, updateUserData) => {
-        const { device } = await getUserData(["device"]);
-        if (!device) {
-          throw new Error("No device registration.");
-        }
-        // We increment lastCommandIndex by 1 because the server response includes the current index.
-        // If we don't have a `lastCommandIndex` stored, we fall back on the index from the push message we just got.
-        const lastCommandIndex = device.lastCommandIndex + 1 || receivedIndex;
-        // We have already received this message before.
-        if (receivedIndex > 0 && receivedIndex < lastCommandIndex) {
-          return;
-        }
-        const { index, messages } = await this._fetchDeviceCommands(
-          lastCommandIndex
-        );
-        if (messages.length) {
-          await updateUserData({
-            device: { ...device, lastCommandIndex: index },
-          });
-          log.info(`Handling ${messages.length} messages`);
-          if (scheduledFetch) {
-            Services.telemetry.scalarAdd(
-              "identity.fxaccounts.missed_commands_fetched",
-              messages.length
-            );
-          }
-          await this._handleCommands(messages);
-        }
+    await this._fxai.withCurrentAccountState(async state => {
+      const { device } = await state.getUserAccountData(["device"]);
+      if (!device) {
+        throw new Error("No device registration.");
       }
-    );
+      // We increment lastCommandIndex by 1 because the server response includes the current index.
+      // If we don't have a `lastCommandIndex` stored, we fall back on the index from the push message we just got.
+      const lastCommandIndex = device.lastCommandIndex + 1 || receivedIndex;
+      // We have already received this message before.
+      if (receivedIndex > 0 && receivedIndex < lastCommandIndex) {
+        return;
+      }
+      const { index, messages } = await this._fetchDeviceCommands(
+        lastCommandIndex
+      );
+      if (messages.length) {
+        await state.updateUserAccountData({
+          device: { ...device, lastCommandIndex: index },
+        });
+        log.info(`Handling ${messages.length} messages`);
+        if (scheduledFetch) {
+          Services.telemetry.scalarAdd(
+            "identity.fxaccounts.missed_commands_fetched",
+            messages.length
+          );
+        }
+        await this._handleCommands(messages);
+      }
+    });
     return true;
   }
 
   async _fetchDeviceCommands(index, limit = null) {
-    const userData = await this._fxAccounts.getSignedInUser();
+    const userData = await this._fxai.getUserAccountData();
     if (!userData) {
       throw new Error("No user.");
     }
@@ -110,7 +119,7 @@ class FxAccountsCommands {
     if (!sessionToken) {
       throw new Error("No session token.");
     }
-    const client = this._fxAccounts.getAccountsClient();
+    const client = this._fxai.fxAccountsClient;
     const opts = { index };
     if (limit != null) {
       opts.limit = limit;
@@ -119,12 +128,19 @@ class FxAccountsCommands {
   }
 
   async _handleCommands(messages) {
-    const fxaDevices = await this._fxAccounts.getDeviceList();
+    try {
+      await this._fxai.device.refreshDeviceList();
+    } catch (e) {
+      log.warn("Error refreshing device list", e);
+    }
     // We debounce multiple incoming tabs so we show a single notification.
     const tabsReceived = [];
     for (const { data } of messages) {
       const { command, payload, sender: senderId } = data;
-      const sender = senderId ? fxaDevices.find(d => d.id == senderId) : null;
+      const sender =
+        senderId && this._fxai.device.recentDeviceList
+          ? this._fxai.device.recentDeviceList.find(d => d.id == senderId)
+          : null;
       if (!sender) {
         log.warn(
           "Incoming command is from an unknown device (maybe disconnected?)"
@@ -133,7 +149,7 @@ class FxAccountsCommands {
       switch (command) {
         case COMMAND_SENDTAB:
           try {
-            const { title, uri } = await this.sendTab.handle(payload);
+            const { title, uri } = await this.sendTab.handle(senderId, payload);
             log.info(
               `Tab received with FxA commands: ${title} from ${
                 sender ? sender.name : "Unknown device"
@@ -162,9 +178,9 @@ class FxAccountsCommands {
  * retrieve the send tab keys since it doesn't know kSync.
  */
 class SendTab {
-  constructor(commands, fxAccounts) {
+  constructor(commands, fxAccountsInternal) {
     this._commands = commands;
-    this._fxAccounts = fxAccounts;
+    this._fxai = fxAccountsInternal;
   }
   /**
    * @param {Device[]} to - Device objects (typically returned by fxAccounts.getDevicesList()).
@@ -176,10 +192,9 @@ class SendTab {
    */
   async send(to, tab) {
     log.info(`Sending a tab to ${to.length} devices.`);
+    const flowID = this._fxai.telemetry.generateFlowID();
     const encoder = new TextEncoder("utf8");
-    const data = {
-      entries: [{ title: tab.title, url: tab.url }],
-    };
+    const data = { entries: [{ title: tab.title, url: tab.url }] };
     const bytes = encoder.encode(JSON.stringify(data));
     const report = {
       succeeded: [],
@@ -188,8 +203,14 @@ class SendTab {
     for (let device of to) {
       try {
         const encrypted = await this._encrypt(bytes, device);
-        const payload = { encrypted };
+        const payload = { encrypted, flowID };
         await this._commands.invoke(COMMAND_SENDTAB, device, payload); // FxA needs an object.
+        this._fxai.telemetry.recordEvent(
+          "command-sent",
+          COMMAND_SENDTAB_TAIL,
+          this._fxai.telemetry.sanitizeDeviceId(device.id),
+          { flowID }
+        );
         report.succeeded.push(device);
       } catch (error) {
         log.error("Error while invoking a send tab command.", error);
@@ -212,7 +233,7 @@ class SendTab {
   }
 
   // Handle incoming send tab payload, called by FxAccountsCommands.
-  async handle({ encrypted }) {
+  async handle(senderID, { encrypted, flowID }) {
     const bytes = await this._decrypt(encrypted);
     const decoder = new TextDecoder("utf8");
     const data = JSON.parse(decoder.decode(bytes));
@@ -220,6 +241,13 @@ class SendTab {
       ? data.current
       : data.entries.length - 1;
     const { title, url: uri } = data.entries[current];
+    this._fxai.telemetry.recordEvent(
+      "command-received",
+      COMMAND_SENDTAB_TAIL,
+      this._fxai.telemetry.sanitizeDeviceId(senderID),
+      { flowID }
+    );
+
     return {
       title,
       uri,
@@ -231,7 +259,7 @@ class SendTab {
     if (!bundle) {
       throw new Error(`Device ${device.id} does not have send tab keys.`);
     }
-    const { kSync, kXCS: ourKid } = await this._fxAccounts.getKeys();
+    const { kSync, kXCS: ourKid } = await this._fxai.keys.getKeys();
     const { kid: theirKid } = JSON.parse(
       device.availableCommands[COMMAND_SENDTAB]
     );
@@ -255,7 +283,7 @@ class SendTab {
   }
 
   async _getKeys() {
-    const { device } = await this._fxAccounts.getSignedInUser();
+    const { device } = await this._fxai.getUserAccountData(["device"]);
     return device && device.sendTabKeys;
   }
 
@@ -284,17 +312,15 @@ class SendTab {
       privateKey,
       authSecret,
     };
-    await this._fxAccounts._withCurrentAccountState(
-      async (getUserData, updateUserData) => {
-        const { device } = await getUserData();
-        await updateUserData({
-          device: {
-            ...device,
-            sendTabKeys,
-          },
-        });
-      }
-    );
+    await this._fxai.withCurrentAccountState(async state => {
+      const { device } = await state.getUserAccountData(["device"]);
+      await state.updateUserAccountData({
+        device: {
+          ...device,
+          sendTabKeys,
+        },
+      });
+    });
     return sendTabKeys;
   }
 
@@ -312,7 +338,7 @@ class SendTab {
     // We get -cached- keys using getSignedInUser() instead of getKeys()
     // because we will await on getKeys() which is already awaiting on
     // the promise we return.
-    const { kSync, kXCS } = await this._fxAccounts.getSignedInUser();
+    const { kSync, kXCS } = await this._fxai.getUserAccountData();
     if (!kSync || !kXCS) {
       return null;
     }

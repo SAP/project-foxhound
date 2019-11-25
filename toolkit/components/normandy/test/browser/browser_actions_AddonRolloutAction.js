@@ -5,6 +5,7 @@ ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", this);
 ChromeUtils.import("resource://normandy/actions/AddonRolloutAction.jsm", this);
 ChromeUtils.import("resource://normandy/lib/AddonRollouts.jsm", this);
 ChromeUtils.import("resource://normandy/lib/TelemetryEvents.jsm", this);
+ChromeUtils.import("resource://testing-common/NormandyTestUtils.jsm", this);
 
 // Test that a simple recipe enrolls as expected
 decorate_task(
@@ -46,8 +47,9 @@ decorate_task(
     is(addon.id, FIXTURE_ADDON_ID, "addon should be installed");
 
     // rollout was stored
+    const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
-      await AddonRollouts.getAll(),
+      rollouts,
       [
         {
           recipeId: recipe.id,
@@ -59,17 +61,23 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
+          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
+    );
+    ok(
+      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
+      "enrollmentId should be a UUID"
     );
 
     sendEventStub.assertEvents([
       ["enroll", "addon_rollout", recipe.arguments.slug],
     ]);
-    Assert.deepEqual(
-      setExperimentActiveStub.args,
-      [["test-rollout", "active", { type: "normandy-addonrollout" }]],
+    ok(
+      setExperimentActiveStub.calledWithExactly("test-rollout", "active", {
+        type: "normandy-addonrollout",
+      }),
       "a telemetry experiment should be activated"
     );
 
@@ -136,8 +144,9 @@ decorate_task(
     is(addon.version, "2.0", "addon should be the correct version");
 
     // rollout in the DB has been updated
+    const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
-      await AddonRollouts.getAll(),
+      rollouts,
       [
         {
           recipeId: recipe.id,
@@ -149,9 +158,14 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].hash,
           xpiHashAlgorithm: "sha256",
+          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
+    );
+    ok(
+      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
+      "enrollmentId should be a UUID"
     );
 
     sendEventStub.assertEvents([
@@ -209,8 +223,9 @@ decorate_task(
     is(addon.version, "1.0", "addon should be the correct version");
 
     // rollout in the DB has not been updated
+    const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
-      await AddonRollouts.getAll(),
+      rollouts,
       [
         {
           recipeId: recipe.id,
@@ -222,9 +237,14 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
+          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
+    );
+    ok(
+      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
+      "Enrollment ID should be a UUID"
     );
 
     sendEventStub.assertEvents([["enroll", "addon_rollout", "test-rollout"]]);
@@ -286,8 +306,9 @@ decorate_task(
     is(addon.version, "1.0", "addon should be the correct version");
 
     // rollout in the DB has not been updated
+    const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
-      await AddonRollouts.getAll(),
+      rollouts,
       [
         {
           recipeId: recipe.id,
@@ -299,14 +320,26 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
+          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
     );
+    ok(NormandyTestUtils.isUuid(rollouts[0].enrollmentId));
 
     sendEventStub.assertEvents([
-      ["enroll", "addon_rollout", "test-rollout"],
-      ["enrollFailed", "addon_rollout", "test-conflict"],
+      [
+        "enroll",
+        "addon_rollout",
+        "test-rollout",
+        { addonId: FIXTURE_ADDON_ID, enrollmentId: rollouts[0].enrollmentId },
+      ],
+      [
+        "enrollFailed",
+        "addon_rollout",
+        "test-conflict",
+        { enrollmentId: rollouts[0].enrollmentId, reason: "conflict" },
+      ],
     ]);
 
     // Cleanup
@@ -367,8 +400,9 @@ decorate_task(
     is(addon.version, "1.0", "addon should be the correct version");
 
     // rollout in the DB has not been updated
+    const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
-      await AddonRollouts.getAll(),
+      rollouts,
       [
         {
           recipeId: recipe.id,
@@ -380,9 +414,14 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-1.0"].hash,
           xpiHashAlgorithm: "sha256",
+          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
+    );
+    ok(
+      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
+      "enrollment ID should be a UUID"
     );
 
     sendEventStub.assertEvents([
@@ -452,8 +491,9 @@ decorate_task(
     is(addon.version, "2.0", "addon should be the correct version");
 
     // rollout in the DB has not been updated
+    const rollouts = await AddonRollouts.getAll();
     Assert.deepEqual(
-      await AddonRollouts.getAll(),
+      rollouts,
       [
         {
           recipeId: recipe.id,
@@ -465,9 +505,14 @@ decorate_task(
           xpiUrl: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].url,
           xpiHash: FIXTURE_ADDON_DETAILS["normandydriver-a-2.0"].hash,
           xpiHashAlgorithm: "sha256",
+          enrollmentId: rollouts[0].enrollmentId,
         },
       ],
       "Rollout should be stored in db"
+    );
+    ok(
+      NormandyTestUtils.isUuid(rollouts[0].enrollmentId),
+      "enrollment ID should be a UUID"
     );
 
     sendEventStub.assertEvents([

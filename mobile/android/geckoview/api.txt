@@ -44,6 +44,7 @@ import java.lang.Class;
 import java.lang.Exception;
 import java.lang.Float;
 import java.lang.Integer;
+import java.lang.Long;
 import java.lang.Object;
 import java.lang.Runnable;
 import java.lang.RuntimeException;
@@ -53,10 +54,12 @@ import java.lang.Void;
 import java.net.InetAddress;
 import java.nio.ByteBuffer;
 import java.util.AbstractSequentialList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import org.json.JSONObject;
 import org.mozilla.geckoview.AllowOrDeny;
+import org.mozilla.geckoview.AutofillElement;
 import org.mozilla.geckoview.CompositorController;
 import org.mozilla.geckoview.ContentBlocking;
 import org.mozilla.geckoview.ContentBlockingController;
@@ -86,6 +89,9 @@ import org.mozilla.geckoview.WebExtensionEventDispatcher;
 import org.mozilla.geckoview.WebMessage;
 import org.mozilla.geckoview.WebNotification;
 import org.mozilla.geckoview.WebNotificationDelegate;
+import org.mozilla.geckoview.WebPushController;
+import org.mozilla.geckoview.WebPushDelegate;
+import org.mozilla.geckoview.WebPushSubscription;
 import org.mozilla.geckoview.WebRequest;
 import org.mozilla.geckoview.WebRequestError;
 import org.mozilla.geckoview.WebResponse;
@@ -97,6 +103,30 @@ package org.mozilla.geckoview {
     method public static AllowOrDeny[] values();
     enum_constant public static final AllowOrDeny ALLOW;
     enum_constant public static final AllowOrDeny DENY;
+  }
+
+  public class AutofillElement {
+    ctor protected AutofillElement();
+    field public static final int HINT_EMAIL_ADDRESS = 0;
+    field public static final int HINT_NONE = -1;
+    field public static final int HINT_PASSWORD = 1;
+    field public static final int HINT_URL = 2;
+    field public static final int HINT_USERNAME = 3;
+    field public static final int INPUT_TYPE_NONE = -1;
+    field public static final int INPUT_TYPE_NUMBER = 1;
+    field public static final int INPUT_TYPE_PHONE = 2;
+    field public static final int INPUT_TYPE_TEXT = 0;
+    field @NonNull public final Map<String,String> attributes;
+    field @NonNull public final Collection<AutofillElement> children;
+    field @NonNull public final Rect dimensions;
+    field @NonNull public final String domain;
+    field public final boolean enabled;
+    field public final boolean focusable;
+    field public final boolean focused;
+    field public final int hint;
+    field public final int id;
+    field public final int inputType;
+    field @NonNull public final String tag;
   }
 
   @UiThread public class BasicSelectionActionDelegate implements ActionMode.Callback GeckoSession.SelectionActionDelegate {
@@ -379,11 +409,13 @@ package org.mozilla.geckoview {
     method @UiThread @NonNull public RuntimeTelemetry getTelemetry();
     method @UiThread @NonNull public WebExtensionController getWebExtensionController();
     method @UiThread @Nullable public WebNotificationDelegate getWebNotificationDelegate();
+    method @UiThread @NonNull public WebPushController getWebPushController();
     method @UiThread public void orientationChanged();
     method @UiThread public void orientationChanged(int);
     method @AnyThread public void readFromParcel(@NonNull Parcel);
     method @UiThread @NonNull public GeckoResult<Void> registerWebExtension(@NonNull WebExtension);
     method @UiThread public void setDelegate(@Nullable GeckoRuntime.Delegate);
+    method @UiThread public void setServiceWorkerDelegate(@Nullable GeckoRuntime.ServiceWorkerDelegate);
     method @UiThread public void setWebNotificationDelegate(@Nullable WebNotificationDelegate);
     method @AnyThread public void shutdown();
     method @UiThread @NonNull public GeckoResult<Void> unregisterWebExtension(@NonNull WebExtension);
@@ -398,7 +430,12 @@ package org.mozilla.geckoview {
     method @UiThread public void onShutdown();
   }
 
+  @UiThread public static interface GeckoRuntime.ServiceWorkerDelegate {
+    method @UiThread @NonNull public GeckoResult<GeckoSession> onOpenWindow(@NonNull String);
+  }
+
   @AnyThread public final class GeckoRuntimeSettings extends RuntimeSettings {
+    method public boolean getAboutConfigEnabled();
     method @NonNull public String[] getArguments();
     method public boolean getAutomaticFontSizeAdjustment();
     method public int getAutoplayDefault();
@@ -412,6 +449,7 @@ package org.mozilla.geckoview {
     method @NonNull public Bundle getExtras();
     method public boolean getFontInflationEnabled();
     method public float getFontSizeFactor();
+    method public boolean getForceUserScalableEnabled();
     method public int getGlMsaaLevel();
     method public boolean getInputAutoZoomEnabled();
     method public boolean getJavaScriptEnabled();
@@ -425,12 +463,14 @@ package org.mozilla.geckoview {
     method public boolean getUseContentProcessHint();
     method public boolean getUseMaxScreenDepth();
     method public boolean getWebFontsEnabled();
+    method @NonNull public GeckoRuntimeSettings setAboutConfigEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setAutomaticFontSizeAdjustment(boolean);
     method @NonNull public GeckoRuntimeSettings setAutoplayDefault(int);
     method @NonNull public GeckoRuntimeSettings setConsoleOutputEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setDoubleTapZoomingEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setFontInflationEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setFontSizeFactor(float);
+    method @NonNull public GeckoRuntimeSettings setForceUserScalableEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setGlMsaaLevel(int);
     method @NonNull public GeckoRuntimeSettings setInputAutoZoomEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings setJavaScriptEnabled(boolean);
@@ -448,6 +488,7 @@ package org.mozilla.geckoview {
 
   @AnyThread public static final class GeckoRuntimeSettings.Builder extends RuntimeSettings.Builder {
     ctor public Builder();
+    method @NonNull public GeckoRuntimeSettings.Builder aboutConfigEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder arguments(@NonNull String[]);
     method @NonNull public GeckoRuntimeSettings.Builder automaticFontSizeAdjustment(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder autoplayDefault(int);
@@ -462,6 +503,7 @@ package org.mozilla.geckoview {
     method @NonNull public GeckoRuntimeSettings.Builder extras(@NonNull Bundle);
     method @NonNull public GeckoRuntimeSettings.Builder fontInflation(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder fontSizeFactor(float);
+    method @NonNull public GeckoRuntimeSettings.Builder forceUserScalableEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder glMsaaLevel(int);
     method @NonNull public GeckoRuntimeSettings.Builder inputAutoZoomEnabled(boolean);
     method @NonNull public GeckoRuntimeSettings.Builder javaScriptEnabled(boolean);
@@ -481,11 +523,14 @@ package org.mozilla.geckoview {
     ctor public GeckoSession();
     ctor public GeckoSession(@Nullable GeckoSessionSettings);
     method @UiThread @NonNull public GeckoDisplay acquireDisplay();
+    method @UiThread public void autofill(@NonNull SparseArray<CharSequence>);
     method @UiThread public void close();
     method @AnyThread @NonNull public static String createDataUri(@NonNull byte[], @Nullable String);
     method @AnyThread @NonNull public static String createDataUri(@NonNull String, @Nullable String);
     method @AnyThread public void exitFullScreen();
     method @UiThread @NonNull public SessionAccessibility getAccessibility();
+    method @UiThread @Nullable public GeckoSession.AutofillDelegate getAutofillDelegate();
+    method @UiThread @NonNull public AutofillElement getAutofillElements();
     method @UiThread public void getClientBounds(@NonNull RectF);
     method @UiThread public void getClientToScreenMatrix(@NonNull Matrix);
     method @UiThread public void getClientToSurfaceMatrix(@NonNull Matrix);
@@ -519,18 +564,25 @@ package org.mozilla.geckoview {
     method @AnyThread public void loadData(@NonNull byte[], @Nullable String);
     method @AnyThread public void loadString(@NonNull String, @Nullable String);
     method @AnyThread public void loadUri(@NonNull String);
+    method @AnyThread public void loadUri(@NonNull String, @Nullable Map<String,String>);
     method @AnyThread public void loadUri(@NonNull String, int);
     method @AnyThread public void loadUri(@NonNull String, @Nullable String, int);
+    method @AnyThread public void loadUri(@NonNull String, @Nullable String, int, @Nullable Map<String,String>);
     method @AnyThread public void loadUri(@NonNull String, @Nullable GeckoSession, int);
+    method @AnyThread public void loadUri(@NonNull String, @Nullable GeckoSession, int, @Nullable Map<String,String>);
     method @AnyThread public void loadUri(@NonNull Uri);
+    method @AnyThread public void loadUri(@NonNull Uri, @Nullable Map<String,String>);
     method @AnyThread public void loadUri(@NonNull Uri, int);
     method @AnyThread public void loadUri(@NonNull Uri, @Nullable Uri, int);
+    method @AnyThread public void loadUri(@NonNull Uri, @Nullable Uri, int, @Nullable Map<String,String>);
     method @UiThread public void open(@NonNull GeckoRuntime);
+    method @AnyThread public void purgeHistory();
     method @AnyThread public void readFromParcel(@NonNull Parcel);
     method @UiThread public void releaseDisplay(@NonNull GeckoDisplay);
     method @AnyThread public void reload();
     method @AnyThread public void restoreState(@NonNull GeckoSession.SessionState);
     method @AnyThread public void setActive(boolean);
+    method @UiThread public void setAutofillDelegate(@Nullable GeckoSession.AutofillDelegate);
     method @AnyThread public void setContentBlockingDelegate(@Nullable ContentBlocking.Delegate);
     method @UiThread public void setContentDelegate(@Nullable GeckoSession.ContentDelegate);
     method @AnyThread public void setFocused(boolean);
@@ -564,12 +616,25 @@ package org.mozilla.geckoview {
     field @Nullable protected GeckoSession.Window mWindow;
   }
 
+  public static interface GeckoSession.AutofillDelegate {
+    method @UiThread default public void onAutofill(@NonNull GeckoSession, int, int);
+    field public static final int AUTOFILL_NOTIFY_CANCELED = 2;
+    field public static final int AUTOFILL_NOTIFY_COMMITTED = 1;
+    field public static final int AUTOFILL_NOTIFY_STARTED = 0;
+    field public static final int AUTOFILL_NOTIFY_VIEW_ADDED = 3;
+    field public static final int AUTOFILL_NOTIFY_VIEW_ENTERED = 6;
+    field public static final int AUTOFILL_NOTIFY_VIEW_EXITED = 7;
+    field public static final int AUTOFILL_NOTIFY_VIEW_REMOVED = 4;
+    field public static final int AUTOFILL_NOTIFY_VIEW_UPDATED = 5;
+  }
+
   public static interface GeckoSession.ContentDelegate {
     method @UiThread default public void onCloseRequest(@NonNull GeckoSession);
     method @UiThread default public void onContextMenu(@NonNull GeckoSession, int, int, @NonNull GeckoSession.ContentDelegate.ContextElement);
     method @UiThread default public void onCrash(@NonNull GeckoSession);
     method @UiThread default public void onExternalResponse(@NonNull GeckoSession, @NonNull GeckoSession.WebResponseInfo);
     method @UiThread default public void onFirstComposite(@NonNull GeckoSession);
+    method @UiThread default public void onFirstContentfulPaint(@NonNull GeckoSession);
     method @UiThread default public void onFocusRequest(@NonNull GeckoSession);
     method @UiThread default public void onFullScreen(@NonNull GeckoSession, boolean);
     method @UiThread default public void onKill(@NonNull GeckoSession);
@@ -937,20 +1002,11 @@ package org.mozilla.geckoview {
 
   public static interface GeckoSession.TextInputDelegate {
     method @UiThread default public void hideSoftInput(@NonNull GeckoSession);
-    method @UiThread default public void notifyAutoFill(@NonNull GeckoSession, int, int);
     method @UiThread default public void restartInput(@NonNull GeckoSession, int);
     method @UiThread default public void showSoftInput(@NonNull GeckoSession);
     method @UiThread default public void updateCursorAnchorInfo(@NonNull GeckoSession, @NonNull CursorAnchorInfo);
     method @UiThread default public void updateExtractedText(@NonNull GeckoSession, @NonNull ExtractedTextRequest, @NonNull ExtractedText);
     method @UiThread default public void updateSelection(@NonNull GeckoSession, int, int, int, int);
-    field public static final int AUTO_FILL_NOTIFY_CANCELED = 2;
-    field public static final int AUTO_FILL_NOTIFY_COMMITTED = 1;
-    field public static final int AUTO_FILL_NOTIFY_STARTED = 0;
-    field public static final int AUTO_FILL_NOTIFY_VIEW_ADDED = 3;
-    field public static final int AUTO_FILL_NOTIFY_VIEW_ENTERED = 6;
-    field public static final int AUTO_FILL_NOTIFY_VIEW_EXITED = 7;
-    field public static final int AUTO_FILL_NOTIFY_VIEW_REMOVED = 4;
-    field public static final int AUTO_FILL_NOTIFY_VIEW_UPDATED = 5;
     field public static final int RESTART_REASON_BLUR = 1;
     field public static final int RESTART_REASON_CONTENT_CHANGE = 2;
     field public static final int RESTART_REASON_FOCUS = 0;
@@ -1032,10 +1088,14 @@ package org.mozilla.geckoview {
     ctor public GeckoView(Context, AttributeSet);
     method @UiThread @NonNull public GeckoResult<Bitmap> capturePixels();
     method public void coverUntilFirstPaint(int);
+    method public boolean getAutofillEnabled();
     method @NonNull public DynamicToolbarAnimator getDynamicToolbarAnimator();
     method @NonNull public PanZoomController getPanZoomController();
     method @AnyThread @Nullable public GeckoSession getSession();
+    method public int onGenericMotionEventForResult(@NonNull MotionEvent);
+    method public int onTouchEventForResult(@NonNull MotionEvent);
     method @UiThread @Nullable public GeckoSession releaseSession();
+    method public void setAutofillEnabled(boolean);
     method @UiThread public void setSession(@NonNull GeckoSession);
     method public void setVerticalClipping(int);
     method public boolean shouldPinOnScreen();
@@ -1136,9 +1196,9 @@ package org.mozilla.geckoview {
   @UiThread public class PanZoomController {
     ctor protected PanZoomController(GeckoSession);
     method public float getScrollFactor();
-    method public boolean onMotionEvent(@NonNull MotionEvent);
-    method public boolean onMouseEvent(@NonNull MotionEvent);
-    method public boolean onTouchEvent(@NonNull MotionEvent);
+    method public int onMotionEvent(@NonNull MotionEvent);
+    method public int onMouseEvent(@NonNull MotionEvent);
+    method public int onTouchEvent(@NonNull MotionEvent);
     method @UiThread public void scrollBy(@NonNull ScreenLength, @NonNull ScreenLength);
     method @UiThread public void scrollBy(@NonNull ScreenLength, @NonNull ScreenLength, int);
     method @UiThread public void scrollTo(@NonNull ScreenLength, @NonNull ScreenLength);
@@ -1147,6 +1207,9 @@ package org.mozilla.geckoview {
     method @UiThread public void scrollToTop();
     method public void setIsLongpressEnabled(boolean);
     method public void setScrollFactor(float);
+    field public static final int INPUT_RESULT_HANDLED = 1;
+    field public static final int INPUT_RESULT_HANDLED_CONTENT = 2;
+    field public static final int INPUT_RESULT_UNHANDLED = 0;
     field public static final int SCROLL_BEHAVIOR_AUTO = 1;
     field public static final int SCROLL_BEHAVIOR_SMOOTH = 0;
   }
@@ -1170,13 +1233,21 @@ package org.mozilla.geckoview {
   }
 
   public static interface RuntimeTelemetry.Delegate {
-    method @AnyThread default public void onTelemetryReceived(@NonNull RuntimeTelemetry.Metric);
+    method @AnyThread default public void onBooleanScalar(@NonNull RuntimeTelemetry.Metric<Boolean>);
+    method @AnyThread default public void onHistogram(@NonNull RuntimeTelemetry.Histogram);
+    method @AnyThread default public void onLongScalar(@NonNull RuntimeTelemetry.Metric<Long>);
+    method @AnyThread default public void onStringScalar(@NonNull RuntimeTelemetry.Metric<String>);
   }
 
-  public static class RuntimeTelemetry.Metric {
+  public static class RuntimeTelemetry.Histogram extends RuntimeTelemetry.Metric {
+    ctor protected Histogram();
+    field public final boolean isCategorical;
+  }
+
+  public static class RuntimeTelemetry.Metric<T> {
     ctor protected Metric();
     field @NonNull public final String name;
-    field @NonNull public final long[] values;
+    field @NonNull public final T value;
   }
 
   public class ScreenLength {
@@ -1209,7 +1280,6 @@ package org.mozilla.geckoview {
   }
 
   public final class SessionTextInput {
-    method @UiThread public void autofill(@NonNull SparseArray<CharSequence>);
     method @UiThread @NonNull public GeckoSession.TextInputDelegate getDelegate();
     method @AnyThread @NonNull public synchronized Handler getHandler(@NonNull Handler);
     method @UiThread @Nullable public View getView();
@@ -1219,7 +1289,6 @@ package org.mozilla.geckoview {
     method @UiThread public boolean onKeyMultiple(int, int, @NonNull KeyEvent);
     method @UiThread public boolean onKeyPreIme(int, @NonNull KeyEvent);
     method @UiThread public boolean onKeyUp(int, @NonNull KeyEvent);
-    method @UiThread public void onProvideAutofillVirtualStructure(@NonNull ViewStructure, int);
     method @UiThread public void setDelegate(@Nullable GeckoSession.TextInputDelegate);
     method @UiThread public synchronized void setView(@Nullable View);
   }
@@ -1269,7 +1338,7 @@ package org.mozilla.geckoview {
 
   @UiThread public static interface WebExtension.MessageDelegate {
     method @Nullable default public void onConnect(@NonNull WebExtension.Port);
-    method @Nullable default public GeckoResult<Object> onMessage(@NonNull Object, @NonNull WebExtension.MessageSender);
+    method @Nullable default public GeckoResult<Object> onMessage(@NonNull String, @NonNull Object, @NonNull WebExtension.MessageSender);
   }
 
   @UiThread public static class WebExtension.MessageSender {
@@ -1335,6 +1404,29 @@ package org.mozilla.geckoview {
   public interface WebNotificationDelegate {
     method @AnyThread default public void onCloseNotification(@NonNull WebNotification);
     method @AnyThread default public void onShowNotification(@NonNull WebNotification);
+  }
+
+  public class WebPushController {
+    method @UiThread public void onPushEvent(@NonNull WebPushSubscription);
+    method @UiThread public void onPushEvent(@NonNull WebPushSubscription, @Nullable byte[]);
+    method @UiThread public void onSubscriptionChanged(@NonNull WebPushSubscription);
+    method @UiThread public void setDelegate(@Nullable WebPushDelegate);
+  }
+
+  public interface WebPushDelegate {
+    method @UiThread @Nullable default public GeckoResult<WebPushSubscription> onGetSubscription(@NonNull String);
+    method @UiThread @Nullable default public GeckoResult<WebPushSubscription> onSubscribe(@NonNull String, @Nullable byte[]);
+    method @UiThread @Nullable default public GeckoResult<Void> onUnsubscribe(@NonNull String);
+  }
+
+  public class WebPushSubscription implements Parcelable {
+    ctor public WebPushSubscription(@NonNull String, @NonNull String, @Nullable byte[], @NonNull byte[], @NonNull byte[]);
+    field public static final Parcelable.Creator<WebPushSubscription> CREATOR;
+    field @Nullable public final byte[] appServerKey;
+    field @NonNull public final byte[] authSecret;
+    field @NonNull public final byte[] browserPublicKey;
+    field @NonNull public final String endpoint;
+    field @NonNull public final String scope;
   }
 
   @AnyThread public class WebRequest extends WebMessage {

@@ -832,6 +832,10 @@ static uint32_t GetTrimmableWhitespaceCount(const nsTextFragment* aFrag,
                                             int32_t aStartOffset,
                                             int32_t aLength,
                                             int32_t aDirection) {
+  if (!aLength) {
+    return 0;
+  }
+
   int32_t count = 0;
   if (aFrag->Is2b()) {
     const char16_t* str = aFrag->Get2b() + aStartOffset;
@@ -7593,7 +7597,8 @@ nsresult nsTextFrame::GetCharacterRectsInRange(int32_t aInOffset,
       gfxSkipCharsIterator nextIter(iter);
       nextIter.AdvanceOriginal(1);
       if (!nextIter.IsOriginalCharSkipped() &&
-          !mTextRun->IsClusterStart(nextIter.GetSkippedOffset())) {
+          !mTextRun->IsClusterStart(nextIter.GetSkippedOffset()) &&
+          nextIter.GetOriginalOffset() < kContentEnd) {
         FindClusterEnd(mTextRun, kContentEnd, &nextIter);
       }
 
@@ -9769,15 +9774,25 @@ static void TransformChars(nsTextFrame* aFrame, const nsStyleText* aStyle,
   }
 }
 
-static bool LineEndsInHardLineBreak(nsTextFrame* aFrame,
-                                    nsBlockFrame* aLineContainer) {
+static void LineStartsOrEndsAtHardLineBreak(nsTextFrame* aFrame,
+                                            nsBlockFrame* aLineContainer,
+                                            bool* aStartsAtHardBreak,
+                                            bool* aEndsAtHardBreak) {
   bool foundValidLine;
   nsBlockInFlowLineIterator iter(aLineContainer, aFrame, &foundValidLine);
   if (!foundValidLine) {
     NS_ERROR("Invalid line!");
-    return true;
+    *aStartsAtHardBreak = *aEndsAtHardBreak = true;
+    return;
   }
-  return !iter.GetLine()->IsLineWrapped();
+
+  *aEndsAtHardBreak = !iter.GetLine()->IsLineWrapped();
+  if (iter.Prev()) {
+    *aStartsAtHardBreak = !iter.GetLine()->IsLineWrapped();
+  } else {
+    // Hit block boundary
+    *aStartsAtHardBreak = true;
+  }
 }
 
 nsIFrame::RenderedText nsTextFrame::GetRenderedText(
@@ -9815,11 +9830,11 @@ nsIFrame::RenderedText nsTextFrame::GetRenderedText(
     }
     gfxSkipCharsIterator tmpIter = iter;
 
-    // Whether we need to trim whitespaces after the text frame.
-    bool trimAfter;
-    if (!textFrame->IsAtEndOfLine() ||
-        aTrimTrailingWhitespace != TrailingWhitespace::Trim) {
-      trimAfter = false;
+    // Check if the frame starts/ends at a hard line break, to determine
+    // whether whitespace should be trimmed.
+    bool startsAtHardBreak, endsAtHardBreak;
+    if (!(GetStateBits() & (TEXT_START_OF_LINE | TEXT_END_OF_LINE))) {
+      startsAtHardBreak = endsAtHardBreak = false;
     } else if (nsBlockFrame* thisLc =
                    do_QueryFrame(FindLineContainer(textFrame))) {
       if (thisLc != lineContainer) {
@@ -9828,17 +9843,31 @@ nsIFrame::RenderedText nsTextFrame::GetRenderedText(
         autoLineCursor.reset();
         autoLineCursor.emplace(lineContainer);
       }
-      trimAfter = LineEndsInHardLineBreak(textFrame, lineContainer);
+      LineStartsOrEndsAtHardLineBreak(textFrame, lineContainer,
+                                      &startsAtHardBreak, &endsAtHardBreak);
     } else {
       // Weird situation where we have a line layout without a block.
       // No soft breaks occur in this situation.
-      trimAfter = true;
+      startsAtHardBreak = endsAtHardBreak = true;
     }
 
-    // Skip to the start of the text run, past ignored chars at start of line
-    TrimmedOffsets trimmedOffsets = textFrame->GetTrimmedOffsets(
-        textFrag, (trimAfter ? TrimmedOffsetFlags::Default
-                             : TrimmedOffsetFlags::NoTrimAfter));
+    // Whether we need to trim whitespaces after the text frame.
+    // TrimmedOffsetFlags::Default will allow trimming; we set NoTrim* flags
+    // in the cases where this should not occur.
+    TrimmedOffsetFlags trimFlags = TrimmedOffsetFlags::Default;
+    if (!textFrame->IsAtEndOfLine() ||
+        aTrimTrailingWhitespace != TrailingWhitespace::Trim ||
+        !endsAtHardBreak) {
+      trimFlags |= TrimmedOffsetFlags::NoTrimAfter;
+    }
+
+    // Whether to trim whitespaces before the text frame.
+    if (!startsAtHardBreak) {
+      trimFlags |= TrimmedOffsetFlags::NoTrimBefore;
+    }
+
+    TrimmedOffsets trimmedOffsets =
+        textFrame->GetTrimmedOffsets(textFrag, trimFlags);
     bool trimmedSignificantNewline =
         trimmedOffsets.GetEnd() < GetContentEnd() &&
         HasSignificantTerminalNewline();

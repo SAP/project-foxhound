@@ -39,6 +39,7 @@
 #include "mozilla/TextEditor.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBRElement.h"
+#include "mozilla/dom/HTMLHeadingElement.h"
 #include "mozilla/dom/Selection.h"
 #include "gfxSkipChars.h"
 #include <algorithm>
@@ -295,10 +296,21 @@ uint32_t HyperTextAccessible::TransformOffset(Accessible* aDescendant,
     // If the end offset is not supposed to be inclusive and the original point
     // is not at 0 offset then the returned offset should be after an embedded
     // character the original point belongs to.
-    if (aIsEndOffset)
-      offset = (offset > 0 || descendant->IndexInParent() > 0) ? 1 : 0;
-    else
+    if (aIsEndOffset) {
+      // Similar to our special casing in FindOffset, we add handling for
+      // bulleted lists here because PeekOffset returns the inner text node
+      // for a list when it should return the list bullet.
+      // We manually set the offset so the error doesn't propagate up.
+      if (offset == 0 && parent && parent->IsHTMLListItem() &&
+          descendant->PrevSibling() && descendant->PrevSibling()->GetFrame() &&
+          descendant->PrevSibling()->GetFrame()->IsBulletFrame()) {
+        offset = 0;
+      } else {
+        offset = (offset > 0 || descendant->IndexInParent() > 0) ? 1 : 0;
+      }
+    } else {
       offset = 0;
+    }
 
     descendant = parent;
   }
@@ -522,8 +534,10 @@ uint32_t HyperTextAccessible::FindOffset(uint32_t aOffset,
   nsresult rv = frameAtOffset->PeekOffset(&pos);
 
   // PeekOffset fails on last/first lines of the text in certain cases.
+  bool fallBackToSelectEndLine = false;
   if (NS_FAILED(rv) && aAmount == eSelectLine) {
-    pos.mAmount = (aDirection == eDirNext) ? eSelectEndLine : eSelectBeginLine;
+    fallBackToSelectEndLine = aDirection == eDirNext;
+    pos.mAmount = fallBackToSelectEndLine ? eSelectEndLine : eSelectBeginLine;
     frameAtOffset->PeekOffset(&pos);
   }
   if (!pos.mResultContent) {
@@ -534,6 +548,14 @@ uint32_t HyperTextAccessible::FindOffset(uint32_t aOffset,
   // Turn the resulting DOM point into an offset.
   uint32_t hyperTextOffset = DOMPointToOffset(
       pos.mResultContent, pos.mContentOffset, aDirection == eDirNext);
+
+  if (fallBackToSelectEndLine && IsLineEndCharAt(hyperTextOffset)) {
+    // We used eSelectEndLine, but the caller requested eSelectLine.
+    // If there's a '\n' at the end of the line, eSelectEndLine will stop
+    // on it rather than after it. This is not what we want, since the caller
+    // wants the next line, not the same line.
+    ++hyperTextOffset;
+  }
 
   if (aDirection == eDirPrevious) {
     // If we reached the end during search, this means we didn't find the DOM
@@ -886,13 +908,9 @@ HyperTextAccessible::DefaultTextAttributes() {
 }
 
 int32_t HyperTextAccessible::GetLevelInternal() {
-  if (mContent->IsHTMLElement(nsGkAtoms::h1)) return 1;
-  if (mContent->IsHTMLElement(nsGkAtoms::h2)) return 2;
-  if (mContent->IsHTMLElement(nsGkAtoms::h3)) return 3;
-  if (mContent->IsHTMLElement(nsGkAtoms::h4)) return 4;
-  if (mContent->IsHTMLElement(nsGkAtoms::h5)) return 5;
-  if (mContent->IsHTMLElement(nsGkAtoms::h6)) return 6;
-
+  if (auto* heading = dom::HTMLHeadingElement::FromNode(mContent)) {
+    return heading->AccessibilityLevel();
+  }
   return AccessibleWrap::GetLevelInternal();
 }
 

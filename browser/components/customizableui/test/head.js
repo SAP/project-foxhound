@@ -216,16 +216,19 @@ function getAreaWidgetIds(areaId) {
   return CustomizableUI.getWidgetIdsInArea(areaId);
 }
 
-function simulateItemDrag(aToDrag, aTarget, aEvent = {}) {
+function simulateItemDrag(aToDrag, aTarget, aEvent = {}, aOffset = 2) {
   let ev = aEvent;
   if (ev == "end" || ev == "start") {
     let win = aTarget.ownerGlobal;
     const dwu = win.windowUtils;
     let bounds = dwu.getBoundsWithoutFlushing(aTarget);
     if (ev == "end") {
-      ev = { clientX: bounds.right - 2, clientY: bounds.bottom - 2 };
+      ev = {
+        clientX: bounds.right - aOffset,
+        clientY: bounds.bottom - aOffset,
+      };
     } else {
-      ev = { clientX: bounds.left + 2, clientY: bounds.top + 2 };
+      ev = { clientX: bounds.left + aOffset, clientY: bounds.top + aOffset };
     }
   }
   ev._domDispatchOnly = true;
@@ -530,15 +533,15 @@ function checkContextMenu(aContextMenu, aExpectedEntries, aWindow = window) {
 }
 
 function waitForOverflowButtonShown(win = window) {
+  info("Waiting for overflow button to show");
   let ov = win.document.getElementById("nav-bar-overflow-button");
   return waitForElementShown(ov.icon);
 }
 function waitForElementShown(element) {
-  let win = element.ownerGlobal;
-  let dwu = win.windowUtils;
   return BrowserTestUtils.waitForCondition(() => {
-    info("Waiting for overflow button to have non-0 size");
-    let bounds = dwu.getBoundsWithoutFlushing(element);
-    return bounds.width > 0 && bounds.height > 0;
+    info("Checking if element has non-0 size");
+    // We intentionally flush layout to ensure the element is actually shown.
+    let rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
   });
 }

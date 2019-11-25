@@ -416,7 +416,7 @@ var TrackingProtection = {
     // not detect trackers on the page using the basic list, we currently
     // still show the panel. To reduce the confusion, tell the user that we have
     // not detected any tracker.
-    if (fragment.childNodes.length == 0) {
+    if (!fragment.childNodes.length) {
       let emptyBox = document.createXULElement("vbox");
       let emptyImage = document.createXULElement("image");
       emptyImage.classList.add("protections-popup-trackersView-empty-image");
@@ -606,55 +606,44 @@ var ThirdPartyCookies = {
     this.updateCategoryItem();
   },
 
-  get disabledCategoryLabel() {
-    delete this.disabledCategoryLabel;
-    return (this.disabledCategoryLabel = document.getElementById(
-      "protections-popup-cookies-category-label-disabled"
-    ));
-  },
-
-  get enabledCategoryLabel() {
-    delete this.enabledCategoryLabel;
-    return (this.enabledCategoryLabel = document.getElementById(
-      "protections-popup-cookies-category-label-enabled"
+  get categoryLabel() {
+    delete this.categoryLabel;
+    return (this.categoryLabel = document.getElementById(
+      "protections-popup-cookies-category-label"
     ));
   },
 
   updateCategoryItem() {
     this.categoryItem.classList.toggle("blocked", this.enabled);
 
-    if (!this.enabled) {
-      this.disabledCategoryLabel.hidden = false;
-      this.enabledCategoryLabel.hidden = true;
-      return;
-    }
-
     let label;
-    switch (this.behaviorPref) {
-      case Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN:
-        label = "contentBlocking.cookies.blocking3rdParty2.label";
-        break;
-      case Ci.nsICookieService.BEHAVIOR_REJECT:
-        label = "contentBlocking.cookies.blockingAll2.label";
-        break;
-      case Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN:
-        label = "contentBlocking.cookies.blockingUnvisited2.label";
-        break;
-      case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
-        label = "contentBlocking.cookies.blockingTrackers3.label";
-        break;
-      default:
-        Cu.reportError(
-          `Error: Unknown cookieBehavior pref observed: ${this.behaviorPref}`
-        );
-        break;
+
+    if (!this.enabled) {
+      label = "contentBlocking.cookies.blockingTrackers3.label";
+    } else {
+      switch (this.behaviorPref) {
+        case Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN:
+          label = "contentBlocking.cookies.blocking3rdParty2.label";
+          break;
+        case Ci.nsICookieService.BEHAVIOR_REJECT:
+          label = "contentBlocking.cookies.blockingAll2.label";
+          break;
+        case Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN:
+          label = "contentBlocking.cookies.blockingUnvisited2.label";
+          break;
+        case Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER:
+          label = "contentBlocking.cookies.blockingTrackers3.label";
+          break;
+        default:
+          Cu.reportError(
+            `Error: Unknown cookieBehavior pref observed: ${this.behaviorPref}`
+          );
+          break;
+      }
     }
-    this.enabledCategoryLabel.textContent = label
+    this.categoryLabel.textContent = label
       ? gNavigatorBundle.getString(label)
       : "";
-
-    this.disabledCategoryLabel.hidden = true;
-    this.enabledCategoryLabel.hidden = false;
   },
 
   get enabled() {
@@ -672,20 +661,22 @@ var ThirdPartyCookies = {
   },
 
   isDetected(state) {
-    if (this.behaviorPref == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER) {
-      // We don't have a state that specifically represents loaded tracker cookies,
-      // so use loaded tracking content as a proxy - it's not perfect but it
-      // yields fewer false-positives than the generic loaded cookies state.
+    if (this.isBlocking(state)) {
+      return true;
+    }
+
+    if (
+      this.behaviorPref == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER ||
+      this.behaviorPref == Ci.nsICookieService.BEHAVIOR_ACCEPT
+    ) {
       return (
-        (state & Ci.nsIWebProgressListener.STATE_LOADED_TRACKING_CONTENT) != 0
+        (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_TRACKER) != 0
       );
     }
 
-    // We don't have any proxies for the other cookie behaviors unfortunately.
-    return (
-      this.isBlocking(state) ||
-      (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED) != 0
-    );
+    // We don't have specific flags for the other cookie behaviors so just
+    // fall back to STATE_COOKIES_LOADED.
+    return (state & Ci.nsIWebProgressListener.STATE_COOKIES_LOADED) != 0;
   },
 
   async updateSubView() {
@@ -951,14 +942,10 @@ var ThirdPartyCookies = {
 };
 
 var SocialTracking = {
-  PREF_ENABLED: "privacy.socialtracking.block_cookies.enabled",
-  PREF_NOTIFICATION_UI_ENABLED: "privacy.socialtracking.notification.enabled",
-  PREF_SESSION_PAGELOAD_MIN:
-    "privacy.socialtracking.notification.session.pageload.min",
-  PREF_LAST_SHOWN: "privacy.socialtracking.notification.lastShown",
-  PREF_PERIOD_MIN: "privacy.socialtracking.notification.period.min",
-  PREF_COUNTER: "privacy.socialtracking.notification.counter",
-  PREF_MAX: "privacy.socialtracking.notification.max",
+  PREF_STP_TP_ENABLED: "privacy.trackingprotection.socialtracking.enabled",
+  PREF_STP_COOKIE_ENABLED: "privacy.socialtracking.block_cookies.enabled",
+  PREF_COOKIE_BEHAVIOR: "network.cookie.cookieBehavior",
+  reportBreakageLabel: "socialtracking",
 
   strings: {
     get subViewBlocked() {
@@ -983,58 +970,46 @@ var SocialTracking = {
     },
   },
 
-  sessionPageLoad: 0,
-
-  // points to the object of current showing popup, this is used to avoid
-  // another popup from showing when it's still visible.
-  currentPopup: null,
-
   init() {
     XPCOMUtils.defineLazyPreferenceGetter(
       this,
-      "enabled",
-      this.PREF_ENABLED,
+      "socialTrackingProtectionEnabled",
+      this.PREF_STP_TP_ENABLED,
+      false,
+      this.updateCategoryItem.bind(this)
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "rejectTrackingCookies",
+      this.PREF_COOKIE_BEHAVIOR,
+      false,
+      this.updateCategoryItem.bind(this),
+      val => val == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "blockSocialTrackingCookies",
+      this.PREF_STP_COOKIE_ENABLED,
       false,
       this.updateCategoryItem.bind(this)
     );
     this.updateCategoryItem();
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "uiEnabled",
-      this.PREF_NOTIFICATION_UI_ENABLED
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "sessionPageLoadMin",
-      this.PREF_SESSION_PAGELOAD_MIN
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "lastShownMillisec",
-      this.PREF_LAST_SHOWN,
-      null,
-      str => parseInt(str)
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "periodMinMillisec",
-      this.PREF_PERIOD_MIN
-    );
+  },
 
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "numNotifications",
-      this.PREF_COUNTER
-    );
-    XPCOMUtils.defineLazyPreferenceGetter(
-      this,
-      "maxNotifications",
-      this.PREF_MAX
+  get enabled() {
+    return this.blockSocialTrackingCookies;
+  },
+
+  get blockingEnabled() {
+    return (
+      (this.socialTrackingProtectionEnabled || this.rejectTrackingCookies) &&
+      this.blockSocialTrackingCookies
     );
   },
 
   updateCategoryItem() {
-    this.categoryItem.classList.toggle("blocked", this.enabled);
+    this.categoryItem.hidden = !this.enabled;
+    this.categoryItem.classList.toggle("blocked", this.blockingEnabled);
   },
 
   isBlocking(state) {
@@ -1048,17 +1023,15 @@ var SocialTracking = {
       (state & Ci.nsIWebProgressListener.STATE_LOADED_SOCIALTRACKING_CONTENT) !=
       0;
     return (
-      this.enabled &&
-      ((socialtrackingContentLoaded && cookieTrackerBlocked) ||
-        socialtrackingContentBlocked)
+      (socialtrackingContentLoaded && cookieTrackerBlocked) ||
+      socialtrackingContentBlocked
     );
   },
 
   isAllowing(state) {
     return (
-      this.enabled &&
       (state & Ci.nsIWebProgressListener.STATE_LOADED_SOCIALTRACKING_CONTENT) !=
-        0
+      0
     );
   },
 
@@ -1103,7 +1076,7 @@ var SocialTracking = {
     this.subViewList.append(fragment);
     this.subView.setAttribute(
       "title",
-      this.enabled && !gProtectionsHandler.hasException
+      this.blockingEnabled && !gProtectionsHandler.hasException
         ? this.strings.subViewTitleBlocking
         : this.strings.subViewTitleNotBlocking
     );
@@ -1122,6 +1095,7 @@ var SocialTracking = {
 
     let listItem = document.createXULElement("hbox");
     listItem.className = "protections-popup-list-item";
+    listItem.classList.toggle("allowed", isAllowed);
     // Repeat the host in the tooltip in case it's too long
     // and overflows in our panel.
     listItem.tooltipText = uri.host;
@@ -1133,106 +1107,6 @@ var SocialTracking = {
     listItem.append(label);
 
     return listItem;
-  },
-
-  onBlocked() {
-    let nowMillisec = Date.now();
-    // The heuristics to show the pop-up are:
-    //   0. a social media tracker is blocked
-    //   1. user didn't disable notification UI by:
-    //      - check "don't show again"
-    //      - press "See Protections" button
-    //   2. only after the 4th page load
-    //   3. at most 1 time every 2 days
-    //   4. at most 5 times per profile
-    //   5. no other popup is showing
-    if (
-      !this.uiEnabled ||
-      this.sessionPageLoad <= this.sessionPageLoadMin ||
-      nowMillisec - this.lastShownMillisec < this.periodMinMillisec ||
-      this.numNotifications >= this.maxNotifications ||
-      this.currentPopup
-    ) {
-      return;
-    }
-
-    Services.prefs.setCharPref(this.PREF_LAST_SHOWN, nowMillisec.toString());
-    Services.prefs.setIntPref(this.PREF_COUNTER, this.numNotifications + 1);
-
-    let browser = gBrowser.selectedBrowser;
-    let learnMoreURL =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "social-media-tracking-report";
-
-    let mainAction = {
-      label: gNavigatorBundle.getString(
-        "contentBlocking.socialblock.primaryButton.label"
-      ),
-      accessKey: gNavigatorBundle.getString(
-        "contentBlocking.socialblock.primaryButton.accesskey"
-      ),
-      callback: arg => {
-        let { event } = arg;
-
-        Services.prefs.setBoolPref(this.PREF_NOTIFICATION_UI_ENABLED, false);
-
-        gProtectionsHandler.showProtectionsPopup({ event });
-      },
-    };
-
-    let secondaryAction = {
-      label: gNavigatorBundle.getString(
-        "contentBlocking.socialblock.secondaryButton.label"
-      ),
-      accessKey: gNavigatorBundle.getString(
-        "contentBlocking.socialblock.secondaryButton.accessKey"
-      ),
-      callback: arg => {
-        Services.prefs.setBoolPref(this.PREF_NOTIFICATION_UI_ENABLED, false);
-      },
-    };
-
-    let brandBundle = document.getElementById("bundle_brand");
-    let brandShortName = brandBundle.getString("brandShortName");
-    let options = {
-      hideClose: true,
-      removeOnDismissal: true,
-      learnMoreURL,
-      name: gNavigatorBundle.getFormattedString(
-        "contentBlocking.socialblock.title",
-        [brandShortName]
-      ),
-
-      eventCallback: state => {
-        switch (state) {
-          case "showing":
-            let doc = browser.ownerDocument;
-            let message = doc.getElementById("socialblock-message");
-            message.textContent = gNavigatorBundle.getFormattedString(
-              "contentBlocking.socialblock.prompt",
-              [brandShortName]
-            );
-            break;
-          case "removed":
-            this.currentPopup = null;
-            break;
-        }
-      },
-    };
-
-    // Make gIdentityHandler._trackingProtectionIconContainer as anchor object.
-    let anchorId = "stp";
-    browser[anchorId + "popupnotificationanchor"] = gProtectionsHandler.iconBox;
-
-    this.currentPopup = PopupNotifications.show(
-      browser,
-      "socialblock",
-      "",
-      anchorId,
-      mainAction,
-      [secondaryAction],
-      options
-    );
   },
 };
 
@@ -1261,12 +1135,6 @@ var gProtectionsHandler = {
     delete this.animatedIcon;
     return (this.animatedIcon = document.getElementById(
       "tracking-protection-icon-animatable-image"
-    ));
-  },
-  get appMenuLabel() {
-    delete this.appMenuLabel;
-    return (this.appMenuLabel = document.getElementById(
-      "appMenu-protection-report-text"
     ));
   },
   get _protectionsIconBox() {
@@ -1377,21 +1245,18 @@ var gProtectionsHandler = {
       "tracking-protection-icon-tooltip-label"
     ));
   },
-  get _socialblockPopupNotification() {
-    delete this._socialblockPopupNotification;
-    return (this._socialblockPopupNotification = document.getElementById(
-      "socialblock-notification"
-    ));
-  },
-
-  get _socialTrackingSessionPageLoad() {
-    return SocialTracking.sessionPageLoad;
-  },
 
   get noTrackersDetectedDescription() {
     delete this.noTrackersDetectedDescription;
     return (this.noTrackersDetectedDescription = document.getElementById(
       "protections-popup-no-trackers-found-description"
+    ));
+  },
+
+  get _protectionsPopupMilestonesText() {
+    delete this._protectionsPopupMilestonesText;
+    return (this._protectionsPopupMilestonesText = document.getElementById(
+      "protections-popup-milestones-text"
     ));
   },
 
@@ -1407,20 +1272,6 @@ var gProtectionsHandler = {
   },
 
   strings: {
-    get appMenuTitle() {
-      delete this.appMenuTitle;
-      return (this.appMenuTitle = gNavigatorBundle.getString(
-        "protectionReport.title"
-      ));
-    },
-
-    get appMenuTooltip() {
-      delete this.appMenuTooltip;
-      return (this.appMenuTooltip = gNavigatorBundle.getString(
-        "protectionReport.tooltip"
-      ));
-    },
-
     get activeTooltipText() {
       delete this.activeTooltipText;
       return (this.activeTooltipText = gNavigatorBundle.getString(
@@ -1482,6 +1333,42 @@ var gProtectionsHandler = {
       3000
     );
 
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "milestoneListPref",
+      "browser.contentblocking.cfr-milestone.milestones",
+      [],
+      () => this.maybeSetMilestoneCounterText(),
+      val => JSON.parse(val)
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "milestonePref",
+      "browser.contentblocking.cfr-milestone.milestone-achieved",
+      0,
+      () => this.maybeSetMilestoneCounterText()
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "milestoneTimestampPref",
+      "browser.contentblocking.cfr-milestone.milestone-shown-time",
+      0,
+      null,
+      val => parseInt(val)
+    );
+
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this,
+      "milestonesEnabledPref",
+      "browser.contentblocking.cfr-milestone.enabled",
+      false,
+      () => this.maybeSetMilestoneCounterText()
+    );
+
+    this.maybeSetMilestoneCounterText();
+
     for (let blocker of this.blockers) {
       if (blocker.init) {
         blocker.init();
@@ -1498,9 +1385,6 @@ var gProtectionsHandler = {
     let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
     gProtectionsHandler._protectionsPopupSendReportLearnMore.href =
       baseURL + "blocking-breakage";
-
-    this.appMenuLabel.setAttribute("value", this.strings.appMenuTitle);
-    this.appMenuLabel.setAttribute("tooltiptext", this.strings.appMenuTooltip);
 
     // Add an observer to observe that the history has been cleared.
     Services.obs.addObserver(this, "browser:purge-session-history");
@@ -1531,6 +1415,11 @@ var gProtectionsHandler = {
       relatedToCurrent,
       triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
     });
+
+    // Don't show the milestones section anymore.
+    Services.prefs.clearUserPref(
+      "browser.contentblocking.cfr-milestone.milestone-shown-time"
+    );
   },
 
   async showTrackersSubview(event) {
@@ -1676,10 +1565,6 @@ var gProtectionsHandler = {
 
   // This triggers from top level location changes.
   onLocationChange() {
-    if (["http", "https"].includes(gBrowser.currentURI.scheme)) {
-      SocialTracking.sessionPageLoad += 1;
-    }
-
     if (this._showToastAfterRefresh) {
       this._showToastAfterRefresh = false;
 
@@ -1809,8 +1694,23 @@ var gProtectionsHandler = {
       this.showNoTrackerTooltipForTPIcon();
     }
 
-    if (SocialTracking.isBlocking(event)) {
-      SocialTracking.onBlocked();
+    if (
+      Cryptomining.isBlocking(event) ||
+      Fingerprinting.isBlocking(event) ||
+      SocialTracking.isBlocking(event)
+    ) {
+      let uri = gBrowser.currentURI;
+      let uriHost = uri.asciiHost ? uri.host : uri.spec;
+      Services.obs.notifyObservers(
+        {
+          wrappedJSObject: {
+            browser: gBrowser.selectedBrowser,
+            host: uriHost,
+            event,
+          },
+        },
+        "SiteProtection:ContentBlockingEvent"
+      );
     }
 
     // We report up to one instance of fingerprinting and cryptomining
@@ -1925,6 +1825,16 @@ var gProtectionsHandler = {
 
     // Update the tooltip of the blocked tracker counter.
     this.maybeUpdateEarliestRecordedDateTooltip();
+
+    let today = Date.now();
+    let threeDaysMillis = 72 * 60 * 60 * 1000;
+    let expired = today - this.milestoneTimestampPref > threeDaysMillis;
+
+    if (this._milestoneTextSet && !expired) {
+      this._protectionsPopup.setAttribute("milestone", this.milestonePref);
+    } else {
+      this._protectionsPopup.removeAttribute("milestone");
+    }
   },
 
   /*
@@ -2087,6 +1997,46 @@ var gProtectionsHandler = {
       "showing",
       trackerCount != 0
     );
+  },
+
+  // Whenever one of the milestone prefs are changed, we attempt to update
+  // the milestone section string. This requires us to fetch the earliest
+  // recorded date from the Tracking DB, hence this process is async.
+  // When completed, we set _milestoneSetText to signal that the section
+  // is populated and ready to be shown - which happens next time we call
+  // refreshProtectionsPopup.
+  _milestoneTextSet: false,
+  async maybeSetMilestoneCounterText() {
+    let trackerCount = this.milestonePref;
+    if (
+      !this.milestonesEnabledPref ||
+      !trackerCount ||
+      !this.milestoneListPref.includes(trackerCount)
+    ) {
+      this._milestoneTextSet = false;
+      return;
+    }
+
+    let date = await TrackingDBService.getEarliestRecordedDate();
+    let dateLocaleStr = new Date(date).toLocaleDateString("default", {
+      month: "short",
+      year: "numeric",
+    });
+
+    let desc = PluralForm.get(
+      trackerCount,
+      gNavigatorBundle.getString("protections.milestone.description")
+    );
+
+    this._protectionsPopupMilestonesText.textContent = desc
+      .replace("#1", gBrandBundle.GetStringFromName("brandShortName"))
+      .replace(
+        "#2",
+        trackerCount.toLocaleString(Services.locale.appLocalesAsBCP47)
+      )
+      .replace("#3", dateLocaleStr);
+
+    this._milestoneTextSet = true;
   },
 
   showDisabledTooltipForTPIcon() {

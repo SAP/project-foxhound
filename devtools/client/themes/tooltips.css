@@ -14,8 +14,6 @@
 .theme-dark {
   --bezier-diagonal-color: #eee;
   --bezier-grid-color: rgba(0, 0, 0, 0.2);
-  --onboarding-link-color: var(--theme-highlight-blue);
-  --onboarding-link-active-color: var(--blue-40);
 
   /* Tooltips */
   --theme-tooltip-color: var(--theme-text-color-strong);
@@ -37,8 +35,6 @@
 .theme-light {
   --bezier-diagonal-color: rgba(0, 0, 0, 0.2);
   --bezier-grid-color: rgba(0, 0, 0, 0.05);
-  --onboarding-link-color: var(--blue-60);
-  --onboarding-link-active-color: var(--blue-70);
 
   /* Tooltips */
   --theme-tooltip-color: var(--theme-body-color);
@@ -83,9 +79,9 @@ strong {
 
 .devtools-tooltip-inactive-css {
   color: var(--theme-arrowpanel-color);
-  padding: 7px 14px 9px;
-  font-size: 12px;
   margin: 0;
+  padding: 10px 14px 12px 14px;
+  font-size: 12px;
 }
 
 .devtools-tooltip-inactive-css,
@@ -182,8 +178,8 @@ strong {
 
 /* The arrow image is hidden because the panel is opened using openPopupAtScreen(). */
 
-/* Remove all decorations on .panel-arrowcontent is the tooltip content container. */
-.tooltip-xul-wrapper[type="arrow"] .panel-arrowcontent {
+/* The arrow content is styled on the HTML, so we don't need the styling on the XUL element */
+.tooltip-xul-wrapper[type="arrow"]::part(arrowcontent) {
   margin: 0;
   padding: 0;
   background: transparent;
@@ -234,11 +230,22 @@ strong {
 }
 
 .tooltip-top .tooltip-arrow {
+  /**
+   * The -1px margin is there to make sure the middle of the arrow overlaps with
+   * the border of the tooltip container.
+   * The -2px is there because the rotated arrow is not visually as tall as its
+   * container. Since the positioning logic relies on measuring the size of the
+   * tooltip, this -2px ensures the measured size matches the visuals (and not
+   * simply the box model).
+   */
+  margin-bottom: -2px;
   margin-top: -1px;
 }
 
 .tooltip-bottom .tooltip-arrow {
+  /* See comment in .tooltip-top .tooltip-arrow (inverted here) */
   margin-bottom: -1px;
+  margin-top: -2px;
 }
 
 .tooltip-arrow:before {
@@ -272,9 +279,9 @@ strong {
 /* Tooltip : doorhanger style */
 
 .tooltip-container[type="doorhanger"] > .tooltip-panel {
-  padding: 2px 0;
   color: var(--theme-arrowpanel-color);
-  margin: 4px;
+  margin: 0;
+  padding: 0;
   max-width: 320px;
 }
 
@@ -319,6 +326,12 @@ strong {
    */
   width: calc(var(--arrow-width) + 2 * var(--shadow-margin));
   height: calc(var(--arrow-width) / 2 + var(--shadow-margin));
+
+  /**
+   * The rotated box slightly overlaps the left edge of the arrow container.
+   * This means the arrow is not centered in its own box by default.
+   */
+  padding-left: 1px;
 }
 
 .tooltip-container[type="doorhanger"] > .tooltip-arrow::before {
@@ -353,24 +366,9 @@ strong {
   margin-left: calc(var(--overhang) + var(--shadow-margin));
 }
 
-.tooltip-container[type="doorhanger"].tooltip-top > .tooltip-panel {
-  /*
-   * Drop the margin between the doorhanger and the arrow and add extra
-   * padding.
-   */
-  margin-bottom: 0;
-  padding-top: 6px;
-  padding-bottom: 2px;
-}
-
-.tooltip-container[type="doorhanger"].tooltip-bottom > .tooltip-panel {
-  /*
-   * Drop the margin between the doorhanger and the arrow and add extra
-   * padding.
-   */
-  margin-top: 0;
-  padding-top: 6px;
-  padding-bottom: 6px;
+.tooltip-container[type="doorhanger"] .menu-standard-padding {
+  margin: 0;
+  padding: 6px 0;
 }
 
 .tooltip-container[type="doorhanger"].tooltip-top > .tooltip-arrow {
@@ -700,56 +698,6 @@ strong {
   box-sizing: border-box;
   height: 100%;
   padding: 7px;
-}
-
-/* Tooltip: Onboarding Tooltip */
-
-.onboarding-container {
-  align-items: center;
-  background-color: var(--theme-toolbar-background);
-  box-sizing: border-box;
-  color: var(--theme-body-color);
-  display: flex;
-  font-size: 12px;
-  padding: 7px;
-  width: 100%;
-  user-select: none;
-}
-
-.onboarding-icon {
-  display: inline-block;
-  background-size: 21px;
-  width: 21px;
-  height: 21px;
-  margin: 8px;
-  background-image: url("chrome://devtools/skin/images/fox-smiling.svg");
-}
-
-.onboarding-content {
-  flex: 1;
-  padding-inline-start: 5px;
-}
-
-.onboarding-link {
-  color: var(--onboarding-link-color);
-  cursor: pointer;
-}
-
-.onboarding-link:hover {
-  text-decoration: underline;
-}
-
-.onboarding-link:active {
-  color: var(--onboarding-link-active-color);
-}
-
-.onboarding-close-button {
-  align-self: flex-start;
-}
-
-.onboarding-close-button::before {
-  background-image: url("chrome://devtools/skin/images/close.svg");
-  margin: -6px 0 0 -6px;
 }
 
 /* Tooltip: Invoke getter confirm Tooltip */

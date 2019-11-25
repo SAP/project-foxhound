@@ -39,7 +39,7 @@ export function initialBreakpointsState(
 ): BreakpointsState {
   return {
     breakpoints: {},
-    xhrBreakpoints: xhrBreakpoints,
+    xhrBreakpoints,
     breakpointsDisabled: false,
   };
 }
@@ -61,6 +61,10 @@ function update(
         return removeBreakpoint(state, action);
       }
       return state;
+    }
+
+    case "REMOVE_BREAKPOINTS": {
+      return { ...state, breakpoints: {} };
     }
 
     case "NAVIGATE": {

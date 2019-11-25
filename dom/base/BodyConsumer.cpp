@@ -240,8 +240,8 @@ class ConsumeBodyDoneObserver final : public nsIStreamLoaderObserver,
     return NS_OK;
   }
 
-  virtual void BlobStoreCompleted(MutableBlobStorage* aBlobStorage, Blob* aBlob,
-                                  nsresult aRv) override {
+  virtual void BlobStoreCompleted(MutableBlobStorage* aBlobStorage,
+                                  BlobImpl* aBlobImpl, nsresult aRv) override {
     // On error.
     if (NS_FAILED(aRv)) {
       OnStreamComplete(nullptr, nullptr, aRv, 0, nullptr);
@@ -252,7 +252,7 @@ class ConsumeBodyDoneObserver final : public nsIStreamLoaderObserver,
     // consuming of the body.
     mBodyConsumer->NullifyConsumeBodyPump();
 
-    mBodyConsumer->OnBlobResult(aBlob, mWorkerRef);
+    mBodyConsumer->OnBlobResult(aBlobImpl, mWorkerRef);
   }
 
  private:
@@ -406,7 +406,7 @@ class FileCreationHandler final : public PromiseNativeHandler {
       return;
     }
 
-    mConsumer->OnBlobResult(blob, mWorkerRef);
+    mConsumer->OnBlobResult(blob->Impl(), mWorkerRef);
   }
 
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
@@ -532,8 +532,8 @@ void BodyConsumer::BeginConsumeBodyMainThread(ThreadSafeWorkerRef* aWorkerRef) {
 
   nsCOMPtr<nsIStreamListener> listener;
   if (mConsumeType == CONSUME_BLOB) {
-    listener = new MutableBlobStreamListener(
-        mBlobStorageType, nullptr, mBodyMimeType, p, mMainThreadEventTarget);
+    listener = new MutableBlobStreamListener(mBlobStorageType, mBodyMimeType, p,
+                                             mMainThreadEventTarget);
   } else {
     nsCOMPtr<nsIStreamLoader> loader;
     rv = NS_NewStreamLoader(getter_AddRefs(loader), p);
@@ -574,10 +574,11 @@ void BodyConsumer::BeginConsumeBodyMainThread(ThreadSafeWorkerRef* aWorkerRef) {
  * been wrapped by FileCreationHandler). The blob is sent to the target thread
  * and ContinueConsumeBody is called.
  */
-void BodyConsumer::OnBlobResult(Blob* aBlob, ThreadSafeWorkerRef* aWorkerRef) {
+void BodyConsumer::OnBlobResult(BlobImpl* aBlobImpl,
+                                ThreadSafeWorkerRef* aWorkerRef) {
   AssertIsOnMainThread();
 
-  DispatchContinueConsumeBlobBody(aBlob ? aBlob->Impl() : nullptr, aWorkerRef);
+  DispatchContinueConsumeBlobBody(aBlobImpl, aWorkerRef);
 }
 
 void BodyConsumer::DispatchContinueConsumeBlobBody(
@@ -656,9 +657,7 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
     // https://fetch.spec.whatwg.org/#concept-read-all-bytes-from-readablestream
     // Decoding errors should reject with a TypeError
     if (aStatus == NS_ERROR_INVALID_CONTENT_ENCODING) {
-      IgnoredErrorResult rv;
-      rv.ThrowTypeError<MSG_DOM_DECODING_FAILED>();
-      localPromise->MaybeReject(rv);
+      localPromise->MaybeRejectWithTypeError<MSG_DOM_DECODING_FAILED>();
     } else {
       localPromise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
     }
@@ -756,7 +755,10 @@ void BodyConsumer::ContinueConsumeBlobBody(BlobImpl* aBlobImpl,
 
   if (!aShuttingDown) {
     RefPtr<dom::Blob> blob = dom::Blob::Create(mGlobal, aBlobImpl);
-    MOZ_ASSERT(blob);
+    if (NS_WARN_IF(!blob)) {
+      localPromise->MaybeReject(NS_ERROR_FAILURE);
+      return;
+    }
 
     localPromise->MaybeResolve(blob);
   }

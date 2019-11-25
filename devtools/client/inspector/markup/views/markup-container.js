@@ -109,6 +109,11 @@ MarkupContainer.prototype = {
     this.tagLine.setAttribute("aria-grabbed", this.isDragging);
     this.elt.appendChild(this.tagLine);
 
+    this.mutationMarker = this.win.document.createElement("div");
+    this.mutationMarker.classList.add("markup-tag-mutation-marker");
+    this.mutationMarker.style.setProperty("--markup-level", this.level);
+    this.tagLine.appendChild(this.mutationMarker);
+
     this.tagState = this.win.document.createElement("span");
     this.tagState.classList.add("tag-state");
     this.tagState.setAttribute("role", "presentation");
@@ -557,6 +562,15 @@ MarkupContainer.prototype = {
       event.preventDefault();
     }
 
+    // Middle clicks will trigger the scroll lock feature to turn on.
+    // The toolbox is normally responsible for calling preventDefault when
+    // needed, but we prevent markup-view mousedown events from bubbling up (via
+    // stopPropagation). So we have to preventDefault here as well in order to
+    // avoid this issue.
+    if (isMiddleClick) {
+      event.preventDefault();
+    }
+
     // Follow attribute links if middle or meta click.
     if (isMiddleClick || isMetaClick) {
       const link = target.dataset.link;
@@ -586,17 +600,13 @@ MarkupContainer.prototype = {
     if (this.isDragging) {
       this.cancelDragging();
 
-      const dropTargetNodes = this.markup.dropTargetNodes;
-
-      if (!dropTargetNodes) {
+      if (!this.markup.dropTargetNodes) {
         return;
       }
 
-      await this.markup.walker.insertBefore(
-        this.node,
-        dropTargetNodes.parent,
-        dropTargetNodes.nextSibling
-      );
+      const { nextSibling, parent } = this.markup.dropTargetNodes;
+      const { walkerFront } = parent;
+      await walkerFront.insertBefore(this.node, parent, nextSibling);
       this.markup.emit("drop-completed");
     }
   },
@@ -658,7 +668,7 @@ MarkupContainer.prototype = {
     if (!this.selected) {
       flashElementOn(this.tagState, {
         foregroundElt: this.editor.elt,
-        backgroundClass: "theme-bg-yellow-contrast",
+        backgroundClass: "theme-bg-contrast",
       });
       if (this._flashMutationTimer) {
         clearTimeout(this._flashMutationTimer);
@@ -667,7 +677,7 @@ MarkupContainer.prototype = {
       this._flashMutationTimer = setTimeout(() => {
         flashElementOff(this.tagState, {
           foregroundElt: this.editor.elt,
-          backgroundClass: "theme-bg-yellow-contrast",
+          backgroundClass: "theme-bg-contrast",
         });
       }, this.markup.CONTAINER_FLASHING_DURATION);
     }
@@ -745,6 +755,16 @@ MarkupContainer.prototype = {
       this.elt.classList.add("pseudoclass-locked");
     } else {
       this.elt.classList.remove("pseudoclass-locked");
+    }
+
+    // Show and hide icon for DOM Mutation Breakpoints
+    const hasMutationBreakpoint = Object.values(
+      this.node.mutationBreakpoints
+    ).some(Boolean);
+    if (hasMutationBreakpoint) {
+      this.mutationMarker.classList.add("has-mutations");
+    } else {
+      this.mutationMarker.classList.remove("has-mutations");
     }
 
     this.updateIsDisplayed();

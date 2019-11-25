@@ -170,7 +170,9 @@ namespace JS {
 template <>
 struct GCPolicy<jsid> {
   static void trace(JSTracer* trc, jsid* idp, const char* name) {
-    js::UnsafeTraceManuallyBarrieredEdge(trc, idp, name);
+    // It's not safe to trace unbarriered pointers except as part of root
+    // marking.
+    UnsafeTraceRoot(trc, idp, name);
   }
   static bool isValid(jsid id) {
     return !JSID_IS_GCTHING(id) ||
@@ -201,13 +203,9 @@ struct BarrierMethods<jsid> {
     }
     return nullptr;
   }
-  static void writeBarriers(jsid* idp, jsid prev, jsid next) {
-    if (JSID_IS_STRING(prev)) {
-      JS::IncrementalPreWriteBarrier(JS::GCCellPtr(JSID_TO_STRING(prev)));
-    }
-    if (JSID_IS_SYMBOL(prev)) {
-      JS::IncrementalPreWriteBarrier(JS::GCCellPtr(JSID_TO_SYMBOL(prev)));
-    }
+  static void postWriteBarrier(jsid* idp, jsid prev, jsid next) {
+    MOZ_ASSERT_IF(JSID_IS_STRING(next),
+                  !gc::IsInsideNursery(JSID_TO_STRING(next)));
   }
   static void exposeToJS(jsid id) {
     if (JSID_IS_GCTHING(id)) {

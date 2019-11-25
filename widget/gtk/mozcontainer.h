@@ -75,9 +75,11 @@ struct _MozContainer {
 #ifdef MOZ_WAYLAND
   struct wl_surface* surface;
   struct wl_subsurface* subsurface;
+  int subsurface_dx, subsurface_dy;
   struct wl_egl_window* eglwindow;
   struct wl_callback* frame_callback_handler;
   int frame_callback_handler_surface_id;
+  gboolean surface_position_update;
   gboolean surface_needs_clear;
   gboolean ready_to_draw;
   std::function<void(void)> inital_draw_cb;
@@ -105,6 +107,10 @@ void moz_container_scale_changed(MozContainer* container,
                                  GtkAllocation* aAllocation);
 void moz_container_set_initial_draw_callback(
     MozContainer* container, std::function<void(void)> inital_draw_cb);
+void moz_container_move_resize(MozContainer* container, int dx, int dy,
+                               int width, int height);
+void moz_container_egl_window_set_size(MozContainer* container, int width,
+                                       int height);
 #endif
 
 #endif /* __MOZ_CONTAINER_H__ */

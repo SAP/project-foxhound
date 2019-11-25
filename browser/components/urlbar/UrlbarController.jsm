@@ -286,7 +286,7 @@ class UrlbarController {
       let { queryContext } = this._lastQueryContextWrapper;
       let handled = this.view.oneOffSearchButtons.handleKeyPress(
         event,
-        this.view.visibleItemCount,
+        this.view.visibleElementCount,
         this.view.allowEmptySelection,
         queryContext.searchString
       );
@@ -302,6 +302,7 @@ class UrlbarController {
             this.view.close();
           } else {
             this.input.handleRevert();
+            this.input.endLayoutExtend(true);
           }
         }
         event.preventDefault();
@@ -392,7 +393,7 @@ class UrlbarController {
    */
   speculativeConnect(result, context, reason) {
     // Never speculative connect in private contexts.
-    if (!this.input || context.isPrivate || context.results.length == 0) {
+    if (!this.input || context.isPrivate || !context.results.length) {
       return;
     }
     let { url } = UrlbarUtils.getUrlFromResult(result);
@@ -463,7 +464,7 @@ class UrlbarController {
    *   The selected result.
    */
   recordSelectedResult(event, result) {
-    let resultIndex = result ? result.uiIndex : -1;
+    let resultIndex = result ? result.rowIndex : -1;
     let selectedResult = -1;
     if (resultIndex >= 0) {
       // Except for the history popup, the urlbar always has a selection.  The
@@ -481,6 +482,17 @@ class UrlbarController {
       return;
     }
 
+    // Do not modify existing telemetry types.  To add a new type:
+    //
+    // * Set telemetryType appropriately below.
+    // * Add the type to BrowserUsageTelemetry.URLBAR_SELECTED_RESULT_TYPES.
+    // * See n_values in Histograms.json for FX_URLBAR_SELECTED_RESULT_TYPE and
+    //   FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE.  If your new type causes the
+    //   number of types to become larger than n_values, you'll need to replace
+    //   these histograms with new ones.  See "Changing a histogram" in the
+    //   telemetry docs for more.
+    // * Add a test named browser_UsageTelemetry_urlbar_newType.js to
+    //   browser/modules/test/browser.
     let telemetryType;
     switch (result.type) {
       case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
@@ -515,6 +527,9 @@ class UrlbarController {
       case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
         telemetryType = "remotetab";
         break;
+      case UrlbarUtils.RESULT_TYPE.TIP:
+        telemetryType = "tip";
+        break;
       default:
         Cu.reportError(`Unknown Result Type ${result.type}`);
         return;
@@ -523,8 +538,6 @@ class UrlbarController {
     Services.telemetry
       .getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX")
       .add(resultIndex);
-    // You can add values but don't change any of the existing values.
-    // Otherwise you'll break our data.
     if (telemetryType in URLBAR_SELECTED_RESULT_TYPES) {
       Services.telemetry
         .getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE")
@@ -770,25 +783,29 @@ class TelemetryEvent {
   }
 
   /**
-   * Extracts a type from a result, to be used in the telemetry event.
-   * @param {UrlbarResult} result The result to analyze.
+   * Extracts a type from an element, to be used in the telemetry event.
+   * @param {Element} element The element to analyze.
    * @returns {string} a string type for the telemetry event.
    */
-  typeFromResult(result) {
-    if (result) {
-      switch (result.type) {
+  typeFromElement(element) {
+    if (!element) {
+      return "none";
+    }
+    let row = element.closest(".urlbarView-row");
+    if (row.result) {
+      switch (row.result.type) {
         case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
           return "switchtab";
         case UrlbarUtils.RESULT_TYPE.SEARCH:
-          return result.payload.suggestion ? "searchsuggestion" : "search";
+          return row.result.payload.suggestion ? "searchsuggestion" : "search";
         case UrlbarUtils.RESULT_TYPE.URL:
-          if (result.autofill) {
+          if (row.result.autofill) {
             return "autofill";
           }
-          if (result.heuristic) {
+          if (row.result.heuristic) {
             return "visit";
           }
-          return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
+          return row.result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
             ? "bookmark"
             : "history";
         case UrlbarUtils.RESULT_TYPE.KEYWORD:
@@ -797,6 +814,11 @@ class TelemetryEvent {
           return "extension";
         case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
           return "remotetab";
+        case UrlbarUtils.RESULT_TYPE.TIP:
+          if (element.classList.contains("urlbarView-tip-help")) {
+            return "tiphelp";
+          }
+          return "tip";
       }
     }
     return "none";

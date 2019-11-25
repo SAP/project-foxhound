@@ -598,11 +598,10 @@ struct IonScriptCounts {
   size_t sizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
     size_t size = 0;
     auto currCounts = this;
-    while (currCounts) {
-      const IonScriptCounts* currCount = currCounts;
-      currCounts = currCount->previous_;
-      size += currCount->sizeOfOneIncludingThis(mallocSizeOf);
-    }
+    do {
+      size += currCounts->sizeOfOneIncludingThis(mallocSizeOf);
+      currCounts = currCounts->previous_;
+    } while (currCounts);
     return size;
   }
 
@@ -616,27 +615,6 @@ struct IonScriptCounts {
 };
 
 struct VMFunction;
-
-struct AutoFlushICache {
- private:
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) || \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
-  uintptr_t start_;
-  uintptr_t stop_;
-#  ifdef JS_JITSPEW
-  const char* name_;
-#  endif
-  bool inhibit_;
-  AutoFlushICache* prev_;
-#endif
-
- public:
-  static void setRange(uintptr_t p, size_t len);
-  static void flush(uintptr_t p, size_t len);
-  static void setInhibit();
-  ~AutoFlushICache();
-  explicit AutoFlushICache(const char* nonce, bool inhibit = false);
-};
 
 }  // namespace jit
 

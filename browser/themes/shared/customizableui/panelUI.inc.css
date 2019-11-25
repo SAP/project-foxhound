@@ -237,6 +237,15 @@ panelview {
   padding: 0;
 }
 
+/* Remove padding on xul:arrowscrollbox to avoid extra padding on footer */
+#BMB_bookmarksPopup menupopup::part(popupbox) {
+  padding-bottom: 0px;
+}
+
+#BMB_bookmarksPopup menupopup[nofooterpopup=true]::part(popupbox) {
+  padding-bottom: 4px;
+}
+
 #confirmation-hint {
   --arrowpanel-background: #0060df;
   --arrowpanel-border-color: #0060df;
@@ -246,11 +255,11 @@ panelview {
   font-size: 1.1rem;
 }
 
-#confirmation-hint > .panel-arrowcontainer > .panel-arrowcontent {
+#confirmation-hint::part(arrowcontent) {
   -moz-box-align: center;
 }
 
-#confirmation-hint[hidearrow] > .panel-arrowcontainer > .panel-arrowbox {
+#confirmation-hint[hidearrow]::part(arrowbox) {
   /* Don't display the arrow but keep the popup at the same vertical
      offset as other arrow panels. */
   visibility: hidden;
@@ -269,6 +278,7 @@ panelview {
 }
 
 #confirmation-hint-checkmark-animation-container[animate] > #confirmation-hint-checkmark-image {
+  display: block;
   position: absolute;
   background-image: url(chrome://browser/skin/check-animation.svg);
   background-repeat: no-repeat;
@@ -362,8 +372,7 @@ panelview:not([mainview]) .toolbarbutton-text,
   min-width: calc(@menuPanelWidth@ + 32px);
 }
 
-.cui-widget-panel.cui-widget-panelWithFooter::part(arrowcontent),
-.cui-widget-panel.cui-widget-panelWithFooter > .panel-arrowcontainer > .panel-arrowcontent {
+.cui-widget-panel.cui-widget-panelWithFooter::part(arrowcontent) {
   padding-bottom: 0;
 }
 
@@ -549,16 +558,22 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
   -moz-box-align: center;
 }
 
-#appMenu-fxa-avatar {
+#appMenu-fxa-avatar,
+#fxa-menu-account-fxa-avatar {
   pointer-events: none;
   list-style-image: var(--avatar-image-url);
   -moz-context-properties: fill;
   fill: currentColor;
 }
 
+#PanelUI-fxa-menu-account-signout-button {
+  list-style-image: url(chrome://browser/skin/sign-out.svg);
+}
+
 /* Handle different UI states. */
 #appMenu-fxa-status[fxastatus="signedin"] > #appMenu-fxa-label > .toolbarbutton-icon,
-#appMenu-fxa-status:not([fxastatus="signedin"]) > #appMenu-fxa-avatar {
+#appMenu-fxa-status:not([fxastatus="signedin"]) > #appMenu-fxa-avatar,
+:root:not([fxastatus="signedin"]) #PanelUI-fxa-menu-syncnow-button {
   display: none;
 }
 
@@ -581,6 +596,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 
 #appMenu-fxa-status[fxastatus="login-failed"],
 #appMenu-fxa-status[fxastatus="unverified"],
+:root[fxastatus="login-failed"] .fxa-menu-header,
 :root[fxastatus="unverified"] .fxa-menu-header {
   background-color: @appmenuWarningBackgroundColor@;
   color: @appmenuWarningColor@;
@@ -590,12 +606,14 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 
 #appMenu-fxa-status[fxastatus="login-failed"]:hover,
 #appMenu-fxa-status[fxastatus="unverified"]:hover,
+:root[fxastatus="login-failed"] .fxa-menu-header:hover,
 :root[fxastatus="unverified"] .fxa-menu-header:hover {
   background-color: @appmenuWarningBackgroundColorHover@;
 }
 
 #appMenu-fxa-status[fxastatus="login-failed"]:hover:active,
 #appMenu-fxa-status[fxastatus="unverified"]:hover:active,
+:root[fxastatus="login-failed"] .fxa-menu-header:hover:active,
 :root[fxastatus="unverified"] .fxa-menu-header:hover:active {
   background-color: @appmenuWarningBackgroundColorActive@;
 }
@@ -656,6 +674,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="login-failed"],
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"],
+:root[lwt-popup-brighttext][fxastatus="login-failed"] .fxa-menu-header,
 :root[lwt-popup-brighttext][fxastatus="unverified"] .fxa-menu-header {
   background-color: @appmenuWarningBackgroundColorBrightText@;
   color: @appmenuWarningColorBrightText@;
@@ -663,12 +682,14 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="login-failed"]:hover,
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"]:hover,
+:root[lwt-popup-brighttext][fxastatus="login-failed"] .fxa-menu-header:hover,
 :root[lwt-popup-brighttext][fxastatus="unverified"] .fxa-menu-header:hover {
   background-color: @appmenuWarningBackgroundColorHoverBrightText@;
 }
 
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="login-failed"]:hover:active,
 :root[lwt-popup-brighttext] #appMenu-fxa-status[fxastatus="unverified"]:hover:active,
+:root[lwt-popup-brighttext][fxastatus="login-failed"] .fxa-menu-header:hover:active,
 :root[lwt-popup-brighttext][fxastatus="unverified"] .fxa-menu-header:hover:active {
   background-color: @appmenuWarningBackgroundColorActiveBrightText@;
 }
@@ -688,6 +709,10 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
   --avatar-image-url: url(chrome://browser/skin/fxa/avatar-confirm.svg);
 }
 
+:root[fxastatus="login-failed"] {
+  --avatar-image-url: url(chrome://browser/skin/fxa/avatar-alert.svg);
+}
+
 :root[fxastatus="not_configured"] {
   --avatar-image-url: url(chrome://browser/skin/fxa/avatar-empty.svg);
 }
@@ -701,7 +726,8 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
 }
 
 #fxa-menu-avatar,
-#fxa-avatar-image {
+#fxa-avatar-image,
+#PanelUI-fxa-menu-account-settings-button {
   list-style-image: var(--avatar-image-url);
 }
 
@@ -758,13 +784,12 @@ toolbarbutton[constrain-size="true"][cui-areatype="menu-panel"] > .toolbarbutton
   list-style-image: url(chrome://browser/skin/fxa/add-device.svg);
 }
 
-#PanelUI-fxa-menu-connect-device-button[disabled="true"] {
+:root:not([fxastatus="signedin"]) #PanelUI-fxa-menu-connect-device-button {
   color: var(--panel-disabled-color);
 }
 
 /* From the FxA menu -> remote tabs, we don't need to clutter the view with
    redundant buttons because these are accessible from the main menu */
-panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-view-sidebar,
 panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
   display: none;
 }
@@ -916,6 +941,7 @@ panelmultiview[mainViewId="PanelUI-fxa"] #PanelUI-remotetabs-syncnow {
    the panel is anchored to a toolbar button.
 */
 #PanelUI-remotetabs[mainview] #PanelUI-remotetabs-setupsync,
+#PanelUI-remotetabs[mainview] #PanelUI-remotetabs-syncdisabled,
 #PanelUI-remotetabs[mainview] #PanelUI-remotetabs-reauthsync,
 #PanelUI-remotetabs[mainview] #PanelUI-remotetabs-unverified,
 #PanelUI-remotetabs[mainview] #PanelUI-remotetabs-nodevicespane,
@@ -1369,6 +1395,7 @@ menuitem.panel-subview-footer@menuStateActive@,
 }
 
 #appMenu-fxa-avatar,
+#fxa-menu-account-fxa-avatar,
 #appMenu-fxa-label > .toolbarbutton-icon,
 #PanelUI-containersItems > .subviewbutton > .toolbarbutton-icon,
 #PanelUI-remotetabs-tabslist > toolbarbutton[itemtype="tab"] > .toolbarbutton-icon,
@@ -1379,7 +1406,8 @@ menuitem.panel-subview-footer@menuStateActive@,
   height: 16px;
 }
 
-#appMenu-fxa-avatar {
+#appMenu-fxa-avatar,
+#PanelUI-fxa-menu-account-settings-button > .toolbarbutton-icon {
   border-radius: 50%;
 }
 
@@ -1786,7 +1814,6 @@ toolbarpaletteitem[place="menu-panel"] > .subviewbutton-nav::after {
 
 /* What's New panel */
 #customizationui-widget-multiview #PanelUI-whatsNew {
-  min-width: @menuPanelWidth@;
   max-width: @menuPanelWidth@;
 }
 
@@ -1826,28 +1853,12 @@ toolbarpaletteitem[place="menu-panel"] > .subviewbutton-nav::after {
   color: white;
 }
 
-#customizationui-widget-multiview #PanelUI-whatsNew-content {
-  height: 586px;
+panelview[mainview] #PanelUI-whatsNew-content {
+  height: 43em;
 }
 
-#PanelUI-whatsNew-title {
-  display: none;
-}
-
-/**
- * The Applications Menu container has some extra padding that does not
- * exist when the What's New dropdown is shown directly from the toolbar
- */
-#PanelUI-whatsNew-content {
-  margin-top: -6px;
-}
-
-#customizationui-widget-multiview #PanelUI-whatsNew-content {
-  margin: 0;
-}
-
-#customizationui-widget-multiview #PanelUI-whatsNew-title {
-  display: flex;
+#PanelUI-whatsNew .panel-subview-body {
+  padding-top: 0;
 }
 
 #PanelUI-whatsNew .whatsNew-message {

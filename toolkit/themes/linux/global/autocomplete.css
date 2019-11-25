@@ -11,7 +11,7 @@
 
 /* ::::: autocomplete ::::: */
 
-textbox[nomatch="true"][highlightnonmatches="true"] {
+html|input[nomatch="true"][highlightnonmatches="true"] {
   color: red;
 }
 
@@ -104,11 +104,4 @@ html|span.ac-tag {
 .ac-text-overflow-container {
   padding: 0 !important;
   margin: 0 !important;
-}
-
-/* ::::: textboxes inside toolbarpaletteitems ::::: */
-
-toolbarpaletteitem > toolbaritem > textbox > moz-input-box > html|*.textbox-input,
-toolbarpaletteitem > toolbaritem > * > textbox > moz-input-box > html|*.textbox-input {
-  visibility: hidden;
 }

@@ -444,7 +444,7 @@ decorate_task(
     await action.finalize();
 
     const activeExperiments = await PreferenceExperiments.getAllActive();
-    ok(activeExperiments.length > 0);
+    ok(!!activeExperiments.length);
     Assert.deepEqual(activeExperiments, [
       {
         slug: "integration test experiment",
@@ -463,6 +463,7 @@ decorate_task(
         experimentType: "exp",
         userFacingName: "userFacingName",
         userFacingDescription: "userFacingDescription",
+        enrollmentId: activeExperiments[0].enrollmentId,
       },
     ]);
 

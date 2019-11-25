@@ -22,6 +22,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Casting.h"
 #include "mozilla/Range.h"
+#include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
@@ -37,6 +38,7 @@
 #include "builtin/ModuleObject.h"
 #include "builtin/SelfHostingDefines.h"
 #include "frontend/BytecodeCompiler.h"
+#include "frontend/BytecodeSection.h"
 #include "frontend/FoldConstants.h"
 #include "frontend/ModuleSharedContext.h"
 #include "frontend/ParseNode.h"
@@ -141,8 +143,7 @@ bool GeneralParser<ParseHandler, Unit>::mustMatchTokenInternal(
   return true;
 }
 
-ParserSharedBase::ParserSharedBase(JSContext* cx, LifoAlloc& alloc,
-                                   UsedNameTracker& usedNames,
+ParserSharedBase::ParserSharedBase(JSContext* cx, ParseInfo& parserInfo,
                                    ScriptSourceObject* sourceObject, Kind kind)
     : JS::AutoGCRooter(
           cx,
@@ -154,34 +155,45 @@ ParserSharedBase::ParserSharedBase(JSContext* cx, LifoAlloc& alloc,
 #endif
           ),
       cx_(cx),
-      alloc_(alloc),
+      alloc_(parserInfo.allocScope.alloc()),
+      parseInfo_(parserInfo),
       traceListHead_(nullptr),
       pc_(nullptr),
-      usedNames_(usedNames),
+      usedNames_(parserInfo.usedNames),
       sourceObject_(cx, sourceObject),
       keepAtoms_(cx) {
   cx->frontendCollectionPool().addActiveCompilation();
-  tempPoolMark_ = alloc_.mark();
+}
+
+// Ensure we don't hold onto any memory via trace list nodes
+// which may be freed when the lifo alloc dies.
+void ParserSharedBase::cleanupTraceList() {
+  TraceListNode* elem = traceListHead_;
+  while (elem) {
+    if (elem->isObjectBox()) {
+      ObjectBox* objBox = elem->asObjectBox();
+
+      // FunctionBoxes are LifoAllocated, but the LazyScriptCreationData that
+      // they hold onto have SystemAlloc memory. We need to make sure this gets
+      // cleaned up before the Lifo gets released (in ParseInfo) to ensure that
+      // we don't leak memory.
+      if (objBox->isFunctionBox()) {
+        objBox->asFunctionBox()->cleanupMemory();
+      }
+    }
+    elem = elem->traceLink;
+  }
 }
 
 ParserSharedBase::~ParserSharedBase() {
-  alloc_.release(tempPoolMark_);
-
-  /*
-   * The parser can allocate enormous amounts of memory for large functions.
-   * Eagerly free the memory now (which otherwise won't be freed until the
-   * next GC) to avoid unnecessary OOMs.
-   */
-  alloc_.freeAllIfHugeAndUnused();
-
+  cleanupTraceList();
   cx_->frontendCollectionPool().removeActiveCompilation();
 }
 
-ParserBase::ParserBase(JSContext* cx, LifoAlloc& alloc,
-                       const ReadOnlyCompileOptions& options,
-                       bool foldConstants, UsedNameTracker& usedNames,
+ParserBase::ParserBase(JSContext* cx, const ReadOnlyCompileOptions& options,
+                       bool foldConstants, ParseInfo& parseInfo,
                        ScriptSourceObject* sourceObject, ParseGoal parseGoal)
-    : ParserSharedBase(cx, alloc, usedNames, sourceObject,
+    : ParserSharedBase(cx, parseInfo, sourceObject,
                        ParserSharedBase::Kind::Parser),
       anyChars(cx, options, this),
       ss(nullptr),
@@ -193,7 +205,7 @@ ParserBase::ParserBase(JSContext* cx, LifoAlloc& alloc,
       awaitHandling_(AwaitIsName),
       inParametersOfAsyncFunction_(false),
       parseGoal_(uint8_t(parseGoal)),
-      treeHolder_(cx, FunctionTreeHolder::Mode::Eager) {
+      treeHolder_(parseInfo.treeHolder) {
 }
 
 bool ParserBase::checkOptions() {
@@ -208,24 +220,23 @@ ParserBase::~ParserBase() { MOZ_ASSERT(checkOptionsCalled_); }
 
 template <class ParseHandler>
 PerHandlerParser<ParseHandler>::PerHandlerParser(
-    JSContext* cx, LifoAlloc& alloc, const ReadOnlyCompileOptions& options,
-    bool foldConstants, UsedNameTracker& usedNames,
-    LazyScript* lazyOuterFunction, ScriptSourceObject* sourceObject,
-    ParseGoal parseGoal, void* internalSyntaxParser)
-    : ParserBase(cx, alloc, options, foldConstants, usedNames, sourceObject,
+    JSContext* cx, const ReadOnlyCompileOptions& options, bool foldConstants,
+    ParseInfo& parserInfo, LazyScript* lazyOuterFunction,
+    ScriptSourceObject* sourceObject, ParseGoal parseGoal,
+    void* internalSyntaxParser)
+    : ParserBase(cx, options, foldConstants, parserInfo, sourceObject,
                  parseGoal),
-      handler_(cx, alloc, lazyOuterFunction),
+      handler_(cx, parserInfo.allocScope.alloc(), lazyOuterFunction),
       internalSyntaxParser_(internalSyntaxParser) {}
 
 // TODO taintfox: check EmptyTaint is correct here
 template <class ParseHandler, typename Unit>
 GeneralParser<ParseHandler, Unit>::GeneralParser(
-    JSContext* cx, LifoAlloc& alloc, const ReadOnlyCompileOptions& options,
-    const Unit* units, size_t length, const StringTaint& taint, bool foldConstants,
-    UsedNameTracker& usedNames, SyntaxParser* syntaxParser,
-    LazyScript* lazyOuterFunction, ScriptSourceObject* sourceObject,
-    ParseGoal parseGoal)
-    : Base(cx, alloc, options, foldConstants, usedNames, syntaxParser,
+    JSContext* cx, const ReadOnlyCompileOptions& options, const Unit* units,
+    size_t length, const StringTaint& taint, bool foldConstants, ParseInfo& parserInfo,
+    SyntaxParser* syntaxParser, LazyScript* lazyOuterFunction,
+    ScriptSourceObject* sourceObject, ParseGoal parseGoal)
+    : Base(cx, options, foldConstants, parserInfo, syntaxParser,
            lazyOuterFunction, sourceObject, parseGoal),
       tokenStream(cx, options, units, length, taint) {}
 
@@ -430,7 +441,7 @@ template <class ParseHandler, typename Unit>
 typename ParseHandler::ListNodeType GeneralParser<ParseHandler, Unit>::parse() {
   MOZ_ASSERT(checkOptionsCalled_);
 
-  Directives directives(options().strictOption);
+  Directives directives(options().forceStrictMode());
   GlobalSharedContext globalsc(cx_, ScopeKind::Global, directives,
                                options().extraWarningsOption);
   SourceParseContext globalpc(this, &globalsc, /* newDirectives = */ nullptr);
@@ -1747,6 +1758,12 @@ bool PerHandlerParser<SyntaxParseHandler>::finishFunction(
   FunctionBox* funbox = pc_->functionBox();
   funbox->synchronizeArgCount();
 
+  // Use a ScopeExit to ensure the data is released on eager or error paths.
+  // The funbox is in a LifoAlloc and will not have it's destructor called so
+  // we need to be careful about ownership.
+  auto cleanupGuard =
+      mozilla::MakeScopeExit([funbox]() { funbox->lazyScriptData().reset(); });
+
   // Emplace the data required for the lazy script here. It will
   // be emitted before the rest of script emission.
   funbox->lazyScriptData().emplace(cx_);
@@ -1758,6 +1775,7 @@ bool PerHandlerParser<SyntaxParseHandler>::finishFunction(
 
   // If we can defer the LazyScript creation, we are now done.
   if (getTreeHolder().isDeferred()) {
+    cleanupGuard.release();
     return true;
   }
 
@@ -1861,6 +1879,10 @@ static bool EmitLazyScript(JSContext* cx, FunctionBox* funbox,
 
   function->initLazyScript(lazy);
   funbox->setIsInterpretedLazy(true);
+
+  if (data.fieldInitializers) {
+    lazy->setFieldInitializers(*data.fieldInitializers);
+  }
 
   // In order to allow asserting that we published all lazy script data,
   // reset the lazyScriptData here, now that it's no longer needed.
@@ -2864,10 +2886,6 @@ bool Parser<FullParseHandler, Unit>::trySyntaxParseInnerFunction(
     }
     funbox->initWithEnclosingParseContext(pc_, fcd, kind);
 
-    // set syntaxParser's current parent to link tree and ensure tree
-    // continuity.
-    syntaxParser->getTreeHolder().setCurrentParent(
-        this->getTreeHolder().getCurrentParent());
     SyntaxParseHandler::Node syntaxNode =
         syntaxParser->innerFunctionForFunctionBox(
             SyntaxParseHandler::NodeGeneric, pc_, funbox, inHandling,
@@ -9616,6 +9634,26 @@ BigIntLiteral* Parser<FullParseHandler, Unit>::newBigInt() {
   // BigIntLiteralSuffix (the trailing "n").  Note that NumericLiteralBase
   // productions may start with 0[bBoOxX], indicating binary/octal/hex.
   const auto& chars = tokenStream.getCharBuffer();
+
+  if (this->getTreeHolder().isDeferred()) {
+    BigIntCreationData data;
+    if (!data.init(this->cx_, chars)) {
+      return null();
+    }
+
+    // Should the operations below fail, the buffer held by data will
+    // be cleaned up by the destructor.
+    BigIntLiteral* lit = handler_.newBigInt(pos());
+    if (!lit) {
+      return null();
+    }
+    // Now that possible OOMs are done, move data into Lit. After this
+    // point responsibility for cleanup lies with the cleanup of the
+    // ParseInfo's deferred allocations list.
+    lit->init(std::move(data));
+    return lit;
+  }
+
   mozilla::Range<const char16_t> source(chars.begin(), chars.length());
 
   BigInt* b = js::ParseBigIntLiteral(cx_, source);
@@ -10535,11 +10573,6 @@ GeneralParser<ParseHandler, Unit>::importExpr(YieldHandling yieldHandling,
     }
 
     if (!mustMatchToken(TokenKind::RightParen, JSMSG_PAREN_AFTER_ARGS)) {
-      return null();
-    }
-
-    if (!cx_->runtime()->moduleDynamicImportHook) {
-      error(JSMSG_NO_DYNAMIC_IMPORT);
       return null();
     }
 

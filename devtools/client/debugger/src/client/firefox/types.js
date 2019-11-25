@@ -165,7 +165,6 @@ export type TabPayload = {
   performanceActor: ActorId,
   performanceEntriesActor: ActorId,
   profilerActor: ActorId,
-  promisesActor: ActorId,
   reflowActor: ActorId,
   storageActor: ActorId,
   styleEditorActor: ActorId,
@@ -231,9 +230,9 @@ export type Target = {
   isContentProcess: boolean,
   isWorkerTarget: boolean,
   traits: Object,
-  chrome: Boolean,
+  chrome: boolean,
   url: string,
-  isAddon: Boolean,
+  isAddon: boolean,
 };
 
 /**
@@ -256,12 +255,14 @@ export type DebuggerClient = {
     traits: any,
     getFront: string => Promise<*>,
     listProcesses: () => Promise<{ processes: ProcessDescriptor }>,
+    on: (string, Function) => void,
   },
   connect: () => Promise<*>,
   request: (packet: Object) => Promise<*>,
   attachConsole: (actor: String, listeners: Array<*>) => Promise<*>,
-  createObjectClient: (grip: Grip) => {},
+  createObjectClient: (grip: Grip) => ObjectClient,
   release: (actor: String) => {},
+  getFrontByID: (actor: String) => { release: () => Promise<*> },
 };
 
 type ProcessDescriptor = Object;
@@ -338,6 +339,12 @@ export type SourceClient = {
  */
 export type ObjectClient = {
   getPrototypeAndProperties: () => any,
+  addWatchpoint: (
+    property: string,
+    label: string,
+    watchpointType: string
+  ) => {},
+  removeWatchpoint: (property: string) => {},
 };
 
 /**
@@ -383,6 +390,7 @@ export type ThreadFront = {
 export type Panel = {|
   emit: (eventName: string) => void,
   openLink: (url: string) => void,
+  openInspector: () => void,
   openElementInInspector: (grip: Object) => void,
   openConsoleAndEvaluate: (input: string) => void,
   highlightDomElement: (grip: Object) => void,

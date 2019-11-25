@@ -8,7 +8,7 @@
 #define mozilla_dom_nsSpeechTask_h
 
 #include "SpeechSynthesisUtterance.h"
-#include "nsIAudioChannelAgent.h"
+#include "AudioChannelAgent.h"
 #include "nsISpeechService.h"
 
 namespace mozilla {
@@ -19,13 +19,10 @@ namespace dom {
 
 class SpeechSynthesisUtterance;
 class SpeechSynthesis;
-class SynthStreamListener;
 
 class nsSpeechTask : public nsISpeechTask,
                      public nsIAudioChannelAgentCallback,
                      public nsSupportsWeakReference {
-  friend class SynthStreamListener;
-
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(nsSpeechTask, nsISpeechTask)
@@ -111,7 +108,7 @@ class nsSpeechTask : public nsISpeechTask,
 
   nsCOMPtr<nsISpeechTaskCallback> mCallback;
 
-  nsCOMPtr<nsIAudioChannelAgent> mAudioChannelAgent;
+  RefPtr<mozilla::dom::AudioChannelAgent> mAudioChannelAgent;
 
   RefPtr<SpeechSynthesis> mSpeechSynthesis;
 

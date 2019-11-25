@@ -32,6 +32,7 @@ const {
   pointToString,
   findClosestPoint,
   pointArrayIncludes,
+  pointPrecedes,
   positionEquals,
   positionSubsumes,
   setInterval,
@@ -125,8 +126,8 @@ function ChildProcess(id, recording) {
   // in the process of being scanned by this child.
   this.scannedCheckpoints = new Set();
 
-  // Checkpoints in savedCheckpoints which haven't been sent to the child yet.
-  this.needSaveCheckpoints = [];
+  // All snapshots which this child has taken.
+  this.snapshots = [];
 
   // Whether this child has diverged from the recording and cannot run forward.
   this.divergedFromRecording = false;
@@ -143,6 +144,8 @@ function ChildProcess(id, recording) {
         Services.tm.dispatchToMainThread(
           recording ? maybeResumeRecording : setMainChild
         );
+      } else {
+        this.snapshots.push(checkpointExecutionPoint(FirstCheckpointId));
       }
     },
   };
@@ -216,6 +219,9 @@ ChildProcess.prototype = {
       if (response.memoryUsage) {
         this.lastMemoryUsage = response.memoryUsage;
       }
+      if (response.exception) {
+        ThrowError(response.exception);
+      }
     }
     this.paused = true;
     this.manifest.onFinished(response);
@@ -235,31 +241,39 @@ ChildProcess.prototype = {
       return;
     }
     RecordReplayControl.waitUntilPaused(this.id, maybeCreateCheckpoint);
-    assert(this.paused);
+    assert(this.paused || this.crashed);
   },
 
   // Add a checkpoint for this child to save.
   addSavedCheckpoint(checkpoint) {
     dumpv(`AddSavedCheckpoint #${this.id} ${checkpoint}`);
     this.savedCheckpoints.add(checkpoint);
-    if (checkpoint != FirstCheckpointId) {
-      this.needSaveCheckpoints.push(checkpoint);
-    }
   },
 
-  // Get any checkpoints to inform the child that it needs to save.
-  flushNeedSaveCheckpoints() {
-    const rv = this.needSaveCheckpoints;
-    this.needSaveCheckpoints = [];
+  // Get the checkpoints which the child must save in the range [start, end].
+  savedCheckpointsInRange(start, end) {
+    const rv = [];
+    for (let i = start; i <= end; i++) {
+      if (this.savedCheckpoints.has(i)) {
+        rv.push(i);
+      }
+    }
     return rv;
   },
 
-  // Get the last saved checkpoint equal to or prior to checkpoint.
-  lastSavedCheckpoint(checkpoint) {
-    while (!this.savedCheckpoints.has(checkpoint)) {
-      checkpoint--;
-    }
-    return checkpoint;
+  // Get the locations of snapshots for saved checkpoints which the child must
+  // save when running forward to endpoint.
+  getSnapshotsForSavedCheckpoints(endpoint) {
+    assert(pointPrecedes(this.pausePoint(), endpoint));
+    return this.savedCheckpointsInRange(
+      this.pausePoint().checkpoint + 1,
+      endpoint.checkpoint
+    ).map(checkpointExecutionPoint);
+  },
+
+  // Get the point of the last snapshot which was taken.
+  lastSnapshot() {
+    return this.snapshots[this.snapshots.length - 1];
   },
 
   // Get an estimate of the amount of time required for this child to reach an
@@ -281,13 +295,16 @@ ChildProcess.prototype = {
         startPoint = this.manifest.destination;
       }
     }
-    let startCheckpoint = startPoint.checkpoint;
-    // Assume rewinding is necessary if the child is in between checkpoints.
-    if (startPoint.position) {
-      startCheckpoint = this.lastSavedCheckpoint(startCheckpoint);
-    }
-    if (point.checkpoint < startCheckpoint) {
-      startCheckpoint = this.lastSavedCheckpoint(point.checkpoint);
+    let startCheckpoint;
+    if (this.snapshots.length) {
+      let snapshotIndex = this.snapshots.length - 1;
+      while (pointPrecedes(point, this.snapshots[snapshotIndex])) {
+        snapshotIndex--;
+      }
+      startCheckpoint = this.snapshots[snapshotIndex].checkpoint;
+    } else {
+      // Children which just started haven't taken snapshots.
+      startCheckpoint = FirstCheckpointId;
     }
     return (
       startDelay + checkpointRangeDuration(startCheckpoint, point.checkpoint)
@@ -309,7 +326,6 @@ function lookupChild(id) {
   if (id == gMainChild.id) {
     return gMainChild;
   }
-  assert(gReplayingChildren[id]);
   return gReplayingChildren[id];
 }
 
@@ -357,6 +373,9 @@ function asyncManifestWorklist(lowPriority) {
 //
 // point: Optional point which the associated child must reach before sending
 //   the manifest.
+//
+// snapshot: Optional point at which the associated child should take a snapshot
+//   while heading to the point.
 //
 // scanCheckpoint: If the manifest relies on scan data, the saved checkpoint
 //   whose range the child must have scanned. Such manifests do not have side
@@ -448,7 +467,10 @@ function processAsyncManifest(child) {
 
   child.asyncManifest = manifest;
 
-  if (manifest.point && maybeReachPoint(child, manifest.point)) {
+  if (
+    manifest.point &&
+    maybeReachPoint(child, manifest.point, manifest.snapshot)
+  ) {
     // The manifest has been partially processed.
     return true;
   }
@@ -499,6 +521,9 @@ function CheckpointInfo() {
 
   // If the checkpoint is saved, any debugger statement hits in its region.
   this.debuggerStatements = [];
+
+  // If the checkpoint is saved, any events in its region.
+  this.events = [];
 }
 
 function getCheckpointInfo(id) {
@@ -537,19 +562,22 @@ const FlushMs = 0.5 * 1000;
 let gLastPickedChildId = 0;
 
 function addSavedCheckpoint(checkpoint) {
-  // Use a round robin approach when picking children for saving checkpoints.
-  let child;
-  while (true) {
-    gLastPickedChildId = (gLastPickedChildId + 1) % gReplayingChildren.length;
-    child = gReplayingChildren[gLastPickedChildId];
-    if (child) {
-      break;
-    }
-  }
-
   getCheckpointInfo(checkpoint).saved = true;
   getCheckpointInfo(checkpoint).assignTime = Date.now();
-  child.addSavedCheckpoint(checkpoint);
+
+  if (RecordReplayControl.canRewind()) {
+    // Use a round robin approach when picking children for saving checkpoints.
+    let child;
+    while (true) {
+      gLastPickedChildId = (gLastPickedChildId + 1) % gReplayingChildren.length;
+      child = gReplayingChildren[gLastPickedChildId];
+      if (child) {
+        break;
+      }
+    }
+
+    child.addSavedCheckpoint(checkpoint);
+  }
 }
 
 function addCheckpoint(checkpoint, duration) {
@@ -560,7 +588,8 @@ function addCheckpoint(checkpoint, duration) {
 // Bring a child to the specified execution point, sending it one or more
 // manifests if necessary. Returns true if the child has not reached the point
 // yet but some progress was made, or false if the child is at the point.
-function maybeReachPoint(child, endpoint) {
+// Snapshot specifies any point at which a snapshot should be taken.
+function maybeReachPoint(child, endpoint, snapshot) {
   if (
     pointEquals(child.pausePoint(), endpoint) &&
     !child.divergedFromRecording
@@ -568,23 +597,30 @@ function maybeReachPoint(child, endpoint) {
     return false;
   }
 
-  if (child.divergedFromRecording || child.pausePoint().position) {
-    restoreCheckpointPriorTo(child.pausePoint().checkpoint);
+  if (pointPrecedes(endpoint, child.pausePoint())) {
+    restoreSnapshotPriorTo(endpoint);
     return true;
   }
 
-  if (endpoint.checkpoint < child.pauseCheckpoint()) {
-    restoreCheckpointPriorTo(endpoint.checkpoint);
+  if (child.divergedFromRecording) {
+    restoreSnapshotPriorTo(child.pausePoint());
     return true;
+  }
+
+  const snapshotPoints = child.getSnapshotsForSavedCheckpoints(endpoint);
+  if (
+    snapshot &&
+    pointPrecedes(child.pausePoint(), snapshot) &&
+    !pointArrayIncludes(snapshotPoints, snapshot)
+  ) {
+    snapshotPoints.push(snapshot);
   }
 
   child.sendManifest({
-    contents: {
-      kind: "runToPoint",
-      endpoint,
-      needSaveCheckpoints: child.flushNeedSaveCheckpoints(),
+    contents: { kind: "runToPoint", endpoint, snapshotPoints },
+    onFinished() {
+      child.snapshots.push(...snapshotPoints);
     },
-    onFinished() {},
     destination: endpoint,
     expectedDuration: checkpointRangeDuration(
       child.pausePoint().checkpoint,
@@ -595,15 +631,19 @@ function maybeReachPoint(child, endpoint) {
   return true;
 
   // Send the child to its most recent saved checkpoint at or before target.
-  function restoreCheckpointPriorTo(target) {
-    target = child.lastSavedCheckpoint(target);
+  function restoreSnapshotPriorTo(target) {
+    let numSnapshots = 0;
+    while (pointPrecedes(target, child.lastSnapshot())) {
+      numSnapshots++;
+      child.snapshots.pop();
+    }
     child.sendManifest({
-      contents: { kind: "restoreCheckpoint", target },
-      onFinished({ restoredCheckpoint }) {
-        assert(restoredCheckpoint);
+      contents: { kind: "restoreSnapshot", numSnapshots },
+      onFinished({ restoredSnapshot }) {
+        assert(restoredSnapshot);
         child.divergedFromRecording = false;
       },
-      destination: checkpointExecutionPoint(target),
+      destination: child.lastSnapshot(),
     });
   }
 }
@@ -627,6 +667,10 @@ function forSavedCheckpointsInRange(start, end, callback) {
   ) {
     callback(checkpoint);
   }
+}
+
+function forAllSavedCheckpoints(callback) {
+  forSavedCheckpointsInRange(FirstCheckpointId, gLastFlushCheckpoint, callback);
 }
 
 function getSavedCheckpoint(checkpoint) {
@@ -717,18 +761,21 @@ async function scanRecording(checkpoint) {
     return;
   }
 
-  const endpoint = nextSavedCheckpoint(checkpoint);
+  const endpoint = checkpointExecutionPoint(nextSavedCheckpoint(checkpoint));
+  let snapshotPoints = null;
   await sendAsyncManifest({
     shouldSkip: () => !!findScanChild(checkpoint),
     contents(child) {
       child.scannedCheckpoints.add(checkpoint);
+      snapshotPoints = child.getSnapshotsForSavedCheckpoints(endpoint);
       return {
         kind: "scanRecording",
         endpoint,
-        needSaveCheckpoints: child.flushNeedSaveCheckpoints(),
+        snapshotPoints,
       };
     },
     onFinished(child, { duration }) {
+      child.snapshots.push(...snapshotPoints);
       const info = getCheckpointInfo(checkpoint);
       if (!info.scanTime) {
         info.scanTime = Date.now();
@@ -739,7 +786,7 @@ async function scanRecording(checkpoint) {
       }
     },
     point: checkpointExecutionPoint(checkpoint),
-    destination: checkpointExecutionPoint(endpoint),
+    destination: endpoint,
     expectedDuration: checkpointRangeDuration(checkpoint, endpoint) * 5,
   });
 
@@ -760,15 +807,11 @@ function unscannedRegions() {
     }
   }
 
-  forSavedCheckpointsInRange(
-    FirstCheckpointId,
-    gLastFlushCheckpoint,
-    checkpoint => {
-      if (!findScanChild(checkpoint)) {
-        addRegion(checkpoint, nextSavedCheckpoint(checkpoint));
-      }
+  forAllSavedCheckpoints(checkpoint => {
+    if (!findScanChild(checkpoint)) {
+      addRegion(checkpoint, nextSavedCheckpoint(checkpoint));
     }
-  );
+  });
 
   const lastFlush = gLastFlushCheckpoint || FirstCheckpointId;
   if (lastFlush != gRecordingEndpoint) {
@@ -788,17 +831,6 @@ function canFindHits(position) {
   return position.kind == "Break" || position.kind == "OnStep";
 }
 
-function findExistingHits(checkpoint, position) {
-  const checkpointHits = gHitSearches.get(checkpoint);
-  if (!checkpointHits) {
-    return null;
-  }
-  const entry = checkpointHits.find(({ position: existingPosition, hits }) => {
-    return positionEquals(position, existingPosition);
-  });
-  return entry ? entry.hits : null;
-}
-
 // Find all hits on the specified position between a saved checkpoint and the
 // following saved checkpoint, using data from scanning the recording. This
 // returns a promise that resolves with the resulting hits.
@@ -811,7 +843,7 @@ async function findHits(checkpoint, position) {
   }
 
   // Check if we already have the hits.
-  let hits = findExistingHits(checkpoint, position);
+  let hits = findExisting();
   if (hits) {
     return hits;
   }
@@ -819,7 +851,7 @@ async function findHits(checkpoint, position) {
   await scanRecording(checkpoint);
   const endpoint = nextSavedCheckpoint(checkpoint);
   await sendAsyncManifest({
-    shouldSkip: () => !!findExistingHits(checkpoint, position),
+    shouldSkip: () => !!findExisting(),
     contents() {
       return {
         kind: "findHits",
@@ -838,18 +870,28 @@ async function findHits(checkpoint, position) {
     scanCheckpoint: checkpoint,
   });
 
-  hits = findExistingHits(checkpoint, position);
+  hits = findExisting();
   assert(hits);
   return hits;
+
+  function findExisting() {
+    const checkpointHits = gHitSearches.get(checkpoint);
+    if (!checkpointHits) {
+      return null;
+    }
+    const entry = checkpointHits.find(
+      ({ position: existingPosition, hits }) => {
+        return positionEquals(position, existingPosition);
+      }
+    );
+    return entry ? entry.hits : null;
+  }
 }
 
 // Asynchronously find all hits on a breakpoint's position.
 async function findBreakpointHits(checkpoint, position) {
   if (position.kind == "Break") {
-    const hits = await findHits(checkpoint, position);
-    if (hits.length) {
-      updateNearbyPoints();
-    }
+    findHits(checkpoint, position);
   }
 }
 
@@ -865,24 +907,11 @@ async function findBreakpointHits(checkpoint, position) {
 // initial EnterFrame to the final OnPop. The steps also include the EnterFrame
 // execution points for any direct callees of the frame.
 
-// All steps for frames which have been determined.
-const gFrameSteps = [];
+// Map from point strings to the steps which contain them.
+const gFrameSteps = new Map();
 
-// When there are stepping breakpoints installed, we need to know the steps in
-// the current frame in order to find the next or previous hit.
-function hasSteppingBreakpoint() {
-  return gBreakpoints.some(bp => bp.kind == "EnterFrame" || bp.kind == "OnPop");
-}
-
-function findExistingFrameSteps(point) {
-  // Frame steps will include EnterFrame for both the initial and callee
-  // frames, so the same point can appear in two sets of steps. In this case
-  // the EnterFrame needs to be the first step.
-  if (point.position.kind == "EnterFrame") {
-    return gFrameSteps.find(steps => pointEquals(point, steps[0]));
-  }
-  return gFrameSteps.find(steps => pointArrayIncludes(steps, point));
-}
+// Map from frame entry point strings to the parent frame's entry point.
+const gParentFrames = new Map();
 
 // Find all the steps in the frame which point is part of. This returns a
 // promise that resolves with the steps that were found.
@@ -897,7 +926,7 @@ async function findFrameSteps(point) {
       point.position.kind == "OnPop"
   );
 
-  let steps = findExistingFrameSteps(point);
+  let steps = findExisting();
   if (steps) {
     return steps;
   }
@@ -912,18 +941,57 @@ async function findFrameSteps(point) {
   const checkpoint = getSavedCheckpoint(point.checkpoint);
   await scanRecording(checkpoint);
   await sendAsyncManifest({
-    shouldSkip: () => !!findExistingFrameSteps(point),
+    shouldSkip: () => !!findExisting(),
     contents: () => ({ kind: "findFrameSteps", targetPoint: point, ...info }),
-    onFinished: (_, steps) => gFrameSteps.push(steps),
+    onFinished: (_, steps) => {
+      for (const p of steps) {
+        if (p.position.frameIndex == point.position.frameIndex) {
+          gFrameSteps.set(pointToString(p), steps);
+        } else {
+          assert(p.position.kind == "EnterFrame");
+          gParentFrames.set(pointToString(p), steps[0]);
+        }
+      }
+    },
     scanCheckpoint: checkpoint,
   });
 
-  steps = findExistingFrameSteps(point);
+  steps = findExisting();
   assert(steps);
-
-  updateNearbyPoints();
-
   return steps;
+
+  function findExisting() {
+    return gFrameSteps.get(pointToString(point));
+  }
+}
+
+async function findParentFrameEntryPoint(point) {
+  assert(point.position.kind == "EnterFrame");
+  assert(point.position.frameIndex > 0);
+
+  let parentPoint = findExisting();
+  if (parentPoint) {
+    return parentPoint;
+  }
+
+  const checkpoint = getSavedCheckpoint(point.checkpoint);
+  await scanRecording(checkpoint);
+  await sendAsyncManifest({
+    shouldSkip: () => !!findExisting(),
+    contents: () => ({ kind: "findParentFrameEntryPoint", point }),
+    onFinished: (_, { parentPoint }) => {
+      gParentFrames.set(pointToString(point), parentPoint);
+    },
+    scanCheckpoint: checkpoint,
+  });
+
+  parentPoint = findExisting();
+  assert(parentPoint);
+  return parentPoint;
+
+  function findExisting() {
+    return gParentFrames.get(pointToString(point));
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -931,12 +999,23 @@ async function findFrameSteps(point) {
 ////////////////////////////////////////////////////////////////////////////////
 
 const gPauseData = new Map();
+const gQueuedPauseData = new Set();
 
 // Cached points indicate messages where we have gathered pause data. These are
 // shown differently in the UI.
 const gCachedPoints = new Map();
 
-async function queuePauseData(point, trackCached, shouldSkipCallback) {
+async function queuePauseData({
+  point,
+  snapshot,
+  trackCached,
+  shouldSkip: shouldSkipCallback,
+}) {
+  if (gQueuedPauseData.has(pointToString(point))) {
+    return;
+  }
+  gQueuedPauseData.add(pointToString(point));
+
   await waitForFlushed(point.checkpoint);
 
   sendAsyncManifest({
@@ -963,12 +1042,13 @@ async function queuePauseData(point, trackCached, shouldSkipCallback) {
       return { kind: "getPauseData" };
     },
     onFinished(child, data) {
-      if (!data.restoredCheckpoint) {
+      if (!data.restoredSnapshot) {
         addPauseData(point, data, trackCached);
         child.divergedFromRecording = true;
       }
     },
     point,
+    snapshot,
     expectedDuration: 250,
     lowPriority: true,
   });
@@ -1050,7 +1130,7 @@ function setPauseState(mode, point, child) {
   gActiveChild = child;
 
   if (mode == PauseModes.ARRIVING) {
-    updateNearbyPoints();
+    simulateNearbyNavigation();
   }
 
   pokeChildrenSoon();
@@ -1081,13 +1161,17 @@ function sendActiveChildToPausePoint() {
 
         // Send any debugger requests the child is considered to have received.
         if (gDebuggerRequests.length) {
-          gActiveChild.sendManifest({
+          const child = gActiveChild;
+          child.sendManifest({
             contents: {
               kind: "batchDebuggerRequest",
               requests: gDebuggerRequests.map(r => r.request),
             },
             onFinished(finishData) {
-              assert(!finishData || !finishData.restoredCheckpoint);
+              assert(!finishData.restoredSnapshot);
+              if (finishData.divergedFromRecording) {
+                child.divergedFromRecording = true;
+              }
             },
           });
         }
@@ -1123,68 +1207,56 @@ function pauseReplayingChild(child, point) {
   waitUntilPauseFinishes();
 }
 
-// After the debugger resumes, find the point where it should pause next.
-async function finishResume() {
-  assert(
-    gPauseMode == PauseModes.RESUMING_FORWARD ||
-      gPauseMode == PauseModes.RESUMING_BACKWARD
-  );
-  const forward = gPauseMode == PauseModes.RESUMING_FORWARD;
-
-  let startCheckpoint = gPausePoint.checkpoint;
-  if (!forward && !gPausePoint.position) {
+// Find the point where the debugger should pause when running forward or
+// backward from a point and using a given set of breakpoints. Returns null if
+// there is no point to pause at before hitting the beginning or end of the
+// recording.
+async function resumeTarget(point, forward, breakpoints) {
+  let startCheckpoint = point.checkpoint;
+  if (!forward && !point.position) {
     startCheckpoint--;
+    if (startCheckpoint == InvalidCheckpointId) {
+      return null;
+    }
   }
   startCheckpoint = getSavedCheckpoint(startCheckpoint);
 
   let checkpoint = startCheckpoint;
   for (; ; forward ? checkpoint++ : checkpoint--) {
-    if (checkpoint == gLastFlushCheckpoint) {
-      // We searched the entire space forward to the end of the recording and
-      // didn't find any breakpoint hits, so resume recording.
-      assert(forward);
-      RecordReplayControl.restoreMainGraphics();
-      setPauseState(PauseModes.RUNNING, gMainChild.pausePoint(), gMainChild);
-      gDebugger._callOnPositionChange();
-      maybeResumeRecording();
-      return;
-    }
-
-    if (checkpoint == InvalidCheckpointId) {
-      // We searched backward to the beginning of the recording, so restore the
-      // first checkpoint.
-      assert(!forward);
-      setReplayingPauseTarget(checkpointExecutionPoint(FirstCheckpointId));
-      return;
+    if ([InvalidCheckpointId, gLastFlushCheckpoint].includes(checkpoint)) {
+      return null;
     }
 
     if (!gCheckpoints[checkpoint].saved) {
       continue;
     }
 
-    let hits = [];
+    const hits = [];
 
     // Find any breakpoint hits in this region of the recording.
-    for (const bp of gBreakpoints) {
+    for (const bp of breakpoints) {
       if (canFindHits(bp)) {
         const bphits = await findHits(checkpoint, bp);
-        hits = hits.concat(bphits);
+        hits.push(...bphits);
       }
     }
 
     // When there are stepping breakpoints, look for breakpoint hits in the
     // steps for the current frame.
-    if (checkpoint == startCheckpoint && hasSteppingBreakpoint()) {
-      const steps = await findFrameSteps(gPausePoint);
-      hits = hits.concat(
-        steps.filter(point => {
-          return gBreakpoints.some(bp => positionSubsumes(bp, point.position));
+    if (
+      checkpoint == startCheckpoint &&
+      gBreakpoints.some(bp => bp.kind == "EnterFrame" || bp.kind == "OnPop")
+    ) {
+      const steps = await findFrameSteps(point);
+      hits.push(
+        ...steps.filter(p => {
+          return breakpoints.some(bp => positionSubsumes(bp, p.position));
         })
       );
     }
 
     // Always pause at debugger statements, as if they are breakpoint hits.
-    hits = hits.concat(getCheckpointInfo(checkpoint).debuggerStatements);
+    hits.push(...getCheckpointInfo(checkpoint).debuggerStatements);
 
     const hit = findClosestPoint(
       hits,
@@ -1193,10 +1265,35 @@ async function finishResume() {
       /* inclusive */ false
     );
     if (hit) {
-      // We've found the point where the search should end.
-      setReplayingPauseTarget(hit);
-      return;
+      return hit;
     }
+  }
+}
+
+async function finishResume() {
+  assert(
+    gPauseMode == PauseModes.RESUMING_FORWARD ||
+      gPauseMode == PauseModes.RESUMING_BACKWARD
+  );
+  const forward = gPauseMode == PauseModes.RESUMING_FORWARD;
+
+  const point = await resumeTarget(gPausePoint, forward, gBreakpoints);
+  if (point) {
+    // We found a point to pause at.
+    setReplayingPauseTarget(point);
+  } else if (forward) {
+    // We searched the entire space forward to the end of the recording and
+    // didn't find any breakpoint hits, so resume recording.
+    assert(forward);
+    RecordReplayControl.restoreMainGraphics();
+    setPauseState(PauseModes.RUNNING, gMainChild.pausePoint(), gMainChild);
+    gDebugger._callOnPositionChange();
+    maybeResumeRecording();
+  } else {
+    // We searched backward to the beginning of the recording, so restore the
+    // first checkpoint.
+    assert(!forward);
+    setReplayingPauseTarget(checkpointExecutionPoint(FirstCheckpointId));
   }
 }
 
@@ -1209,13 +1306,14 @@ function resume(forward) {
       maybeResumeRecording();
       return;
     }
+    ensureFlushed();
   }
   if (
     gPausePoint.checkpoint == FirstCheckpointId &&
     !gPausePoint.position &&
     !forward
   ) {
-    gDebugger._onPause();
+    gDebugger._hitRecordingBoundary();
     return;
   }
   setPauseState(
@@ -1303,7 +1401,7 @@ function ChildCrashed(id) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Nearby Points
+// Simulated Navigation
 ////////////////////////////////////////////////////////////////////////////////
 
 // When the user is paused somewhere in the recording, we want to obtain pause
@@ -1312,100 +1410,142 @@ function ChildCrashed(id) {
 // reached by rewinding and resuming, and points that can be reached by
 // stepping. In the latter two cases, we only want to queue up the pause data
 // for points that are close to the current pause point, so that we don't waste
-// time and resources getting pause data that isn't immediately needed. These
-// are the nearby points, which are updated when necessary after user
-// interactions or when new steps or breakpoint hits are found.
+// time and resources getting pause data that isn't immediately needed.
+// We handle the latter by simulating the results of user interactions to
+// visit nearby breakpoints and steps, and queueing up the pause data for those
+// points. The simulation is approximate, as stepping behavior in particular
+// depends on information known to the thread actor which isn't available here.
 //
-// Ideally, as the user navigates through the recording, we will update the
-// nearby points and fetch their pause data quick enough to avoid loading
-// hiccups.
+// When the user navigates through the recording, these simulations are repeated
+// to queue up pause data at new points. Ideally, we will capture the pause data
+// quickly enough that it will be immediately available when the user pauses at
+// a new location, so that they don't experience loading hiccups.
 
-let gNearbyPoints = [];
+// Get the pause data for nearby breakpoint hits, ignoring steps.
+async function simulateBreakpointNavigation(point, forward, count) {
+  if (!count) {
+    return;
+  }
 
-// How many breakpoint hits are nearby points, on either side of the pause point.
-const NumNearbyBreakpointHits = 2;
+  const breakpoints = gBreakpoints.filter(bp => bp.kind == "Break");
+  const next = await resumeTarget(point, forward, breakpoints);
+  if (next) {
+    queuePauseData({ point: next });
+    simulateBreakpointNavigation(next, forward, count - 1);
+  }
+}
 
-// How many frame steps are nearby points, on either side of the pause point.
-const NumNearbySteps = 4;
+async function findFrameEntryPoint(point) {
+  // We never want the debugger to stop at EnterFrame points corresponding to
+  // when a frame was pushed on the stack. Instead, find the first point in the
+  // frame which is a breakpoint site.
+  assert(point.position.kind == "EnterFrame");
+  const steps = await findFrameSteps(point);
+  assert(pointEquals(steps[0], point));
+  return steps[1];
+}
 
-function nextKnownBreakpointHit(point, forward) {
-  let checkpoint = getSavedCheckpoint(point.checkpoint);
-  for (; ; forward ? checkpoint++ : checkpoint--) {
-    if (
-      checkpoint == gLastFlushCheckpoint ||
-      checkpoint == InvalidCheckpointId
-    ) {
-      return null;
-    }
+async function simulateSteppingNavigation(point, count, frameCount, last) {
+  if (!count || !point.position) {
+    return;
+  }
+  const { script } = point.position;
+  const dbgScript = gDebugger._getScript(script);
 
-    if (!gCheckpoints[checkpoint].saved) {
-      continue;
-    }
+  const steps = await findFrameSteps(point);
+  const pointIndex = steps.findIndex(p => pointEquals(p, point));
 
-    let hits = [];
-
-    // Find any breakpoint hits in this region of the recording.
-    for (const bp of gBreakpoints) {
-      if (canFindHits(bp)) {
-        const bphits = findExistingHits(checkpoint, bp);
-        if (bphits) {
-          hits = hits.concat(bphits);
-        }
+  if (last != "reverseStepOver") {
+    for (let i = pointIndex + 1; i < steps.length; i++) {
+      const p = steps[i];
+      if (isStepOverTarget(p)) {
+        queuePauseData({ point: p, snapshot: steps[0] });
+        simulateSteppingNavigation(p, count - 1, frameCount, "stepOver");
+        break;
       }
     }
+  }
 
-    const hit = findClosestPoint(
-      hits,
-      gPausePoint,
-      /* before */ !forward,
-      /* inclusive */ false
+  if (last != "stepOver") {
+    for (let i = pointIndex - 1; i >= 1; i--) {
+      const p = steps[i];
+      if (isStepOverTarget(p)) {
+        queuePauseData({ point: p, snapshot: steps[0] });
+        simulateSteppingNavigation(p, count - 1, frameCount, "reverseStepOver");
+        break;
+      }
+    }
+  }
+
+  if (frameCount) {
+    for (let i = pointIndex + 1; i < steps.length; i++) {
+      const p = steps[i];
+      if (isStepOverTarget(p)) {
+        break;
+      }
+      if (p.position.script != script) {
+        // Currently, the debugger will stop at the EnterFrame site and then run
+        // forward to the first breakpoint site before pausing. We need pause
+        // data from both points, unfortunately.
+        queuePauseData({ point: p, snapshot: steps[0] });
+
+        const np = await findFrameEntryPoint(p);
+        queuePauseData({ point: np, snapshot: steps[0] });
+        findHits(getSavedCheckpoint(point.checkpoint), np.position);
+        simulateSteppingNavigation(np, count - 1, frameCount - 1, "stepIn");
+        break;
+      }
+    }
+  }
+
+  if (
+    frameCount &&
+    last != "stepOver" &&
+    last != "reverseStepOver" &&
+    point.position.frameIndex
+  ) {
+    // The debugger will stop at the OnPop for the frame before finding a place
+    // in the parent frame to pause at.
+    queuePauseData({ point: steps[steps.length - 1], snapshot: steps[0] });
+
+    const parentEntryPoint = await findParentFrameEntryPoint(steps[0]);
+    const parentSteps = await findFrameSteps(parentEntryPoint);
+    for (let i = 0; i < parentSteps.length; i++) {
+      const p = parentSteps[i];
+      if (pointPrecedes(point, p)) {
+        // When stepping out we will stop at the next breakpoint site,
+        // and do not need a point that is a stepping target.
+        queuePauseData({ point: p, snapshot: parentSteps[0] });
+        findHits(getSavedCheckpoint(point.checkpoint), p.position);
+        simulateSteppingNavigation(p, count - 1, frameCount - 1, "stepOut");
+        break;
+      }
+    }
+  }
+
+  function isStepOverTarget(p) {
+    const { kind, offset } = p.position;
+    return (
+      kind == "OnPop" ||
+      (kind == "OnStep" && dbgScript.getOffsetMetadata(offset).isStepStart)
     );
-    if (hit) {
-      return hit;
-    }
   }
 }
 
-function nextKnownBreakpointHits(point, forward, count) {
-  const rv = [];
-  for (let i = 0; i < count; i++) {
-    const next = nextKnownBreakpointHit(point, forward);
-    if (next) {
-      rv.push(next);
-      point = next;
-    } else {
-      break;
-    }
-  }
-  return rv;
-}
+function simulateNearbyNavigation() {
+  // How many breakpoint hit navigations are simulated on either side of the
+  // pause point.
+  const numBreakpointHits = 2;
 
-function updateNearbyPoints() {
-  const nearby = [
-    ...nextKnownBreakpointHits(gPausePoint, true, NumNearbyBreakpointHits),
-    ...nextKnownBreakpointHits(gPausePoint, false, NumNearbyBreakpointHits),
-  ];
+  // Maximum number of steps to take when simulating nearby steps.
+  const numSteps = 4;
 
-  const steps = gPausePoint.position && findExistingFrameSteps(gPausePoint);
-  if (steps) {
-    // Nearby steps are included in the nearby points. Do not include the first
-    // point in any frame steps we find --- these are EnterFrame points which
-    // will not be reverse-stepped to.
-    const index = steps.findIndex(point => pointEquals(point, gPausePoint));
-    const start = Math.max(index - NumNearbySteps, 1);
-    nearby.push(...steps.slice(start, index + NumNearbySteps - start));
-  }
+  // Maximum number of times to change frames when simulating nearby steps.
+  const numChangeFrames = 2;
 
-  // Start gathering pause data for any new nearby points.
-  for (const point of nearby) {
-    if (!pointArrayIncludes(gNearbyPoints, point)) {
-      queuePauseData(point, /* trackCached */ false, () => {
-        return !pointArrayIncludes(gNearbyPoints, point);
-      });
-    }
-  }
-
-  gNearbyPoints = nearby;
+  simulateBreakpointNavigation(gPausePoint, true, numBreakpointHits);
+  simulateBreakpointNavigation(gPausePoint, false, numBreakpointHits);
+  simulateSteppingNavigation(gPausePoint, numSteps, numChangeFrames);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1418,6 +1558,43 @@ function updateNearbyPoints() {
 // associated with the logpoint.
 const gLogpoints = [];
 
+async function evaluateLogpoint({ point, text, condition, callback }) {
+  assert(point);
+  if (!condition) {
+    callback(point, ["Loading..."]);
+  }
+  let skipPauseData = false;
+  const manifest = {
+    shouldSkip: () => false,
+    contents() {
+      return { kind: "hitLogpoint", text, condition, skipPauseData };
+    },
+    onFinished(child, { pauseData, result, resultData, restoredSnapshot }) {
+      if (restoredSnapshot) {
+        if (!skipPauseData) {
+          // Gathering pause data sometimes triggers a snapshot restore.
+          skipPauseData = true;
+          sendAsyncManifest(manifest);
+        } else {
+          callback(point, ["Recording divergence evaluating logpoint"]);
+        }
+      } else {
+        if (result) {
+          if (!skipPauseData) {
+            addPauseData(point, pauseData, /* trackCached */ true);
+          }
+          callback(point, result, resultData);
+        }
+        child.divergedFromRecording = true;
+      }
+    },
+    point,
+    expectedDuration: 250,
+    lowPriority: true,
+  };
+  sendAsyncManifest(manifest);
+}
+
 // Asynchronously invoke a logpoint's callback with all results from hitting
 // the logpoint in the range of the recording covered by checkpoint.
 async function findLogpointHits(
@@ -1426,25 +1603,64 @@ async function findLogpointHits(
 ) {
   const hits = await findHits(checkpoint, position);
   for (const point of hits) {
-    if (!condition) {
-      callback(point, { return: "Loading..." });
+    evaluateLogpoint({ point, text, condition, callback });
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Event Breakpoints
+////////////////////////////////////////////////////////////////////////////////
+
+// Event kinds which will be logged. For now this set can only grow, as we don't
+// have a way to remove old event logpoints from the client.
+const gLoggedEvents = [];
+
+const gEventFrameEntryPoints = new Map();
+
+async function findEventFrameEntry(checkpoint, progress) {
+  if (gEventFrameEntryPoints.has(progress)) {
+    return gEventFrameEntryPoints.get(progress);
+  }
+
+  const savedCheckpoint = getSavedCheckpoint(checkpoint);
+  await scanRecording(savedCheckpoint);
+  await sendAsyncManifest({
+    shouldSkip: () => gEventFrameEntryPoints.has(progress),
+    contents: () => ({ kind: "findEventFrameEntry", checkpoint, progress }),
+    onFinished: (_, { rv }) => gEventFrameEntryPoints.set(progress, rv),
+    scanCheckpoint: savedCheckpoint,
+  });
+
+  const point = gEventFrameEntryPoints.get(progress);
+  if (!point) {
+    return null;
+  }
+
+  return findFrameEntryPoint(point);
+}
+
+async function findEventLogpointHits(checkpoint, event, callback) {
+  for (const info of getCheckpointInfo(checkpoint).events) {
+    if (info.event == event) {
+      const point = await findEventFrameEntry(info.checkpoint, info.progress);
+      if (point) {
+        evaluateLogpoint({ point, text: "arguments[0]", callback });
+      }
     }
-    sendAsyncManifest({
-      shouldSkip: () => false,
-      contents() {
-        return { kind: "hitLogpoint", text, condition };
-      },
-      onFinished(child, { data, result }) {
-        if (result) {
-          addPauseData(point, data, /* trackCached */ true);
-          callback(point, gDebugger._convertCompletionValue(result));
-        }
-        child.divergedFromRecording = true;
-      },
-      point,
-      expectedDuration: 250,
-      lowPriority: true,
-    });
+  }
+}
+
+function setActiveEventBreakpoints(events, callback) {
+  dumpv(`SetActiveEventBreakpoints ${JSON.stringify(events)}`);
+
+  for (const event of events) {
+    if (gLoggedEvents.some(info => info.event == event)) {
+      continue;
+    }
+    gLoggedEvents.push({ event, callback });
+    forAllSavedCheckpoints(checkpoint =>
+      findEventLogpointHits(checkpoint, event, callback)
+    );
   }
 }
 
@@ -1460,14 +1676,17 @@ function handleResumeManifestResponse({
   consoleMessages,
   scripts,
   debuggerStatements,
+  events,
 }) {
   if (!point.position) {
     addCheckpoint(point.checkpoint - 1, duration);
     getCheckpointInfo(point.checkpoint).point = point;
   }
 
-  if (gDebugger && gDebugger.onConsoleMessage) {
-    consoleMessages.forEach(msg => gDebugger.onConsoleMessage(msg));
+  if (gDebugger) {
+    consoleMessages.forEach(msg => {
+      gDebugger._newConsoleMessage(msg);
+    });
   }
 
   if (gDebugger) {
@@ -1476,13 +1695,20 @@ function handleResumeManifestResponse({
 
   consoleMessages.forEach(msg => {
     if (msg.executionPoint) {
-      queuePauseData(msg.executionPoint, /* trackCached */ true);
+      queuePauseData({ point: msg.executionPoint, trackCached: true });
     }
   });
 
+  const savedCheckpoint = getSavedCheckpoint(
+    point.position ? point.checkpoint : point.checkpoint - 1
+  );
+
   for (const point of debuggerStatements) {
-    const checkpoint = getSavedCheckpoint(point.checkpoint);
-    getCheckpointInfo(checkpoint).debuggerStatements.push(point);
+    getCheckpointInfo(savedCheckpoint).debuggerStatements.push(point);
+  }
+
+  for (const event of events) {
+    getCheckpointInfo(savedCheckpoint).events.push(event);
   }
 
   // In repaint stress mode, the child process creates a checkpoint before every
@@ -1490,7 +1716,7 @@ function handleResumeManifestResponse({
   // repaint at all of these checkpoints, ensuring that all the normal paints
   // can be repainted.
   if (RecordReplayControl.inRepaintStressMode()) {
-    queuePauseData(point);
+    queuePauseData({ point });
   }
 }
 
@@ -1512,7 +1738,7 @@ function maybeResumeRecording() {
     ensureFlushed();
     Services.cpmm.sendAsyncMessage("HitRecordingEndpoint");
     if (gDebugger) {
-      gDebugger._onPause();
+      gDebugger._hitRecordingBoundary();
     }
     return;
   }
@@ -1551,12 +1777,11 @@ let gLastFlushTime = Date.now();
 
 // If necessary, synchronously flush the recording to disk.
 function ensureFlushed() {
-  assert(gActiveChild == gMainChild);
   gMainChild.waitUntilPaused(true);
 
   gLastFlushTime = Date.now();
 
-  if (gLastFlushCheckpoint == gActiveChild.pauseCheckpoint()) {
+  if (gLastFlushCheckpoint == gMainChild.pauseCheckpoint()) {
     return;
   }
 
@@ -1594,6 +1819,9 @@ function ensureFlushed() {
         findBreakpointHits(checkpoint, position)
       );
       gLogpoints.forEach(logpoint => findLogpointHits(checkpoint, logpoint));
+      for (const { event, callback } of gLoggedEvents) {
+        findEventLogpointHits(checkpoint, event, callback);
+      }
     }
   );
 
@@ -1662,8 +1890,10 @@ function spawnReplayingChild() {
 const NumReplayingChildren = 4;
 
 function spawnReplayingChildren() {
-  for (let i = 0; i < NumReplayingChildren; i++) {
-    spawnReplayingChild();
+  if (RecordReplayControl.canRewind()) {
+    for (let i = 0; i < NumReplayingChildren; i++) {
+      spawnReplayingChild();
+    }
   }
   addSavedCheckpoint(FirstCheckpointId);
 }
@@ -1691,7 +1921,12 @@ function Initialize(recordingChildId) {
 function ManifestFinished(id, response) {
   try {
     dumpv(`ManifestFinished #${id} ${stringify(response)}`);
-    lookupChild(id).manifestFinished(response);
+    const child = lookupChild(id);
+    if (child) {
+      child.manifestFinished(response);
+    } else {
+      // Ignore messages from child processes that we have marked as crashed.
+    }
   } catch (e) {
     dump(`ERROR: ManifestFinished threw exception: ${e} ${e.stack}\n`);
   }
@@ -1721,6 +1956,10 @@ const gControl = {
     return gPausePoint;
   },
 
+  findFrameSteps(point) {
+    return findFrameSteps(point);
+  },
+
   // Return whether the active child is currently recording.
   childIsRecording() {
     return gActiveChild && gActiveChild.recording;
@@ -1738,14 +1977,13 @@ const gControl = {
 
   // Add a breakpoint where the active child should pause while resuming.
   addBreakpoint(position) {
+    dumpv(`AddBreakpoint ${JSON.stringify(position)}`);
     gBreakpoints.push(position);
 
     // Start searching for breakpoint hits in the recording immediately.
     if (canFindHits(position)) {
-      forSavedCheckpointsInRange(
-        FirstCheckpointId,
-        gLastFlushCheckpoint,
-        checkpoint => findBreakpointHits(checkpoint, position)
+      forAllSavedCheckpoints(checkpoint =>
+        findBreakpointHits(checkpoint, position)
       );
     }
 
@@ -1755,18 +1993,19 @@ const gControl = {
       gActiveChild.waitUntilPaused(true);
     }
 
-    updateNearbyPoints();
+    simulateNearbyNavigation();
   },
 
   // Clear all installed breakpoints.
   clearBreakpoints() {
+    dumpv(`ClearBreakpoints`);
     gBreakpoints.length = 0;
+
     if (gActiveChild == gMainChild) {
       // As for addBreakpoint(), update the active breakpoints in the recording
       // child immediately.
       gActiveChild.waitUntilPaused(true);
     }
-    updateNearbyPoints();
   },
 
   // Get the last known point in the recording.
@@ -1817,7 +2056,7 @@ const gControl = {
     });
     gActiveChild.waitUntilPaused();
 
-    if (data.restoredCheckpoint) {
+    if (data.restoredSnapshot) {
       // The child had an unhandled recording diverge and restored an earlier
       // checkpoint. Restore the child to the point it should be paused at and
       // fill its paused state back in by resending earlier debugger requests.
@@ -1847,7 +2086,7 @@ const gControl = {
       },
     });
     gMainChild.waitUntilPaused();
-    assert(!data.restoredCheckpoint && !data.divergedFromRecording);
+    assert(!data.restoredSnapshot && !data.divergedFromRecording);
     return data.response;
   },
 
@@ -1857,12 +2096,12 @@ const gControl = {
   // Add a new logpoint.
   addLogpoint(logpoint) {
     gLogpoints.push(logpoint);
-    forSavedCheckpointsInRange(
-      FirstCheckpointId,
-      gLastFlushCheckpoint,
-      checkpoint => findLogpointHits(checkpoint, logpoint)
+    forAllSavedCheckpoints(checkpoint =>
+      findLogpointHits(checkpoint, logpoint)
     );
   },
+
+  setActiveEventBreakpoints,
 
   unscannedRegions,
   cachedPoints,
@@ -1871,7 +2110,7 @@ const gControl = {
     return gDebuggerRequests;
   },
 
-  getPauseData() {
+  getPauseDataAndRepaint() {
     // If the child has not arrived at the pause point yet, see if there is
     // cached pause data for this point already which we can immediately return.
     if (gPauseMode == PauseModes.ARRIVING && !gDebuggerRequests.length) {
@@ -1880,39 +2119,27 @@ const gControl = {
         // After the child pauses, it will need to generate the pause data so
         // that any referenced objects will be instantiated.
         addDebuggerRequest({ type: "pauseData" });
+        RecordReplayControl.hadRepaint(data.paintData);
         return data;
       }
     }
     gControl.maybeSwitchToReplayingChild();
-    return gControl.sendRequest({ type: "pauseData" });
+    const data = gControl.sendRequest({ type: "pauseData" });
+    if (data.unhandledDivergence) {
+      RecordReplayControl.clearGraphics();
+    } else {
+      addPauseData(gPausePoint, data, /* trackCached */ true);
+      if (data.paintData) {
+        RecordReplayControl.hadRepaint(data.paintData);
+      }
+    }
+    return data;
   },
 
-  repaint() {
-    if (!gPausePoint) {
-      return;
-    }
-    if (
-      gMainChild.paused &&
-      pointEquals(gPausePoint, gMainChild.pausePoint())
-    ) {
-      // Flush the recording if we are repainting because we interrupted things
-      // and will now rewind.
-      if (gMainChild.recording) {
-        ensureFlushed();
-      }
-      return;
-    }
-    const data = maybeGetPauseData(gPausePoint);
+  paint(point) {
+    const data = maybeGetPauseData(point);
     if (data && data.paintData) {
       RecordReplayControl.hadRepaint(data.paintData);
-    } else {
-      gControl.maybeSwitchToReplayingChild();
-      const rv = gControl.sendRequest({ type: "repaint" });
-      if (rv && rv.length) {
-        RecordReplayControl.hadRepaint(rv);
-      } else {
-        RecordReplayControl.clearGraphics();
-      }
     }
   },
 
@@ -1945,22 +2172,18 @@ function maybeDumpStatistics() {
   let timeTotal = 0;
   let scanDurationTotal = 0;
 
-  forSavedCheckpointsInRange(
-    FirstCheckpointId,
-    gLastFlushCheckpoint,
-    checkpoint => {
-      const checkpointTime = timeForSavedCheckpoint(checkpoint);
-      const info = getCheckpointInfo(checkpoint);
+  forAllSavedCheckpoints(checkpoint => {
+    const checkpointTime = timeForSavedCheckpoint(checkpoint);
+    const info = getCheckpointInfo(checkpoint);
 
-      timeTotal += checkpointTime;
-      if (info.scanTime) {
-        delayTotal += checkpointTime * (info.scanTime - info.assignTime);
-        scanDurationTotal += info.scanDuration;
-      } else {
-        unscannedTotal += checkpointTime;
-      }
+    timeTotal += checkpointTime;
+    if (info.scanTime) {
+      delayTotal += checkpointTime * (info.scanTime - info.assignTime);
+      scanDurationTotal += info.scanDuration;
+    } else {
+      unscannedTotal += checkpointTime;
     }
-  );
+  });
 
   const memoryUsage = [];
   let totalSaved = 0;

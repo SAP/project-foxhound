@@ -6,6 +6,7 @@
 
 #include "TelemetryScalar.h"
 
+#include "geckoview/streaming/GeckoViewStreamingTelemetry.h"
 #include "ipc/TelemetryComms.h"
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "mozilla/dom/ContentParent.h"
@@ -337,7 +338,8 @@ class ScalarBase {
   explicit ScalarBase(const BaseScalarInfo& aInfo)
       : mStoreCount(aInfo.storeCount()),
         mStoreOffset(aInfo.storeOffset()),
-        mStoreHasValue(mStoreCount) {
+        mStoreHasValue(mStoreCount),
+        mName(aInfo.name()) {
     mStoreHasValue.SetLength(mStoreCount);
     for (auto& val : mStoreHasValue) {
       val = false;
@@ -390,6 +392,9 @@ class ScalarBase {
   const uint32_t mStoreCount;
   const uint32_t mStoreOffset;
   nsTArray<bool> mStoreHasValue;
+
+ protected:
+  const nsCString mName;
 };
 
 ScalarResult ScalarBase::HandleUnsupported() const {
@@ -509,6 +514,10 @@ ScalarResult ScalarUnsigned::SetValue(nsIVariant* aValue) {
 }
 
 void ScalarUnsigned::SetValue(uint32_t aValue) {
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    GeckoViewStreamingTelemetry::UintScalarSet(mName, aValue);
+    return;
+  }
   for (auto& val : mStorage) {
     val = aValue;
   }
@@ -532,6 +541,7 @@ ScalarResult ScalarUnsigned::AddValue(nsIVariant* aValue) {
 }
 
 void ScalarUnsigned::AddValue(uint32_t aValue) {
+  MOZ_ASSERT(GetCurrentProduct() != SupportedProduct::GeckoviewStreaming);
   for (auto& val : mStorage) {
     val += aValue;
   }
@@ -539,6 +549,7 @@ void ScalarUnsigned::AddValue(uint32_t aValue) {
 }
 
 ScalarResult ScalarUnsigned::SetMaximum(nsIVariant* aValue) {
+  MOZ_ASSERT(GetCurrentProduct() != SupportedProduct::GeckoviewStreaming);
   ScalarResult sr = CheckInput(aValue);
   if (sr == ScalarResult::UnsignedNegativeValue) {
     return sr;
@@ -664,6 +675,13 @@ ScalarResult ScalarString::SetValue(nsIVariant* aValue) {
 
 ScalarResult ScalarString::SetValue(const nsAString& aValue) {
   auto str = Substring(aValue, 0, kMaximumStringValueLength);
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    GeckoViewStreamingTelemetry::StringScalarSet(mName,
+                                                 NS_ConvertUTF16toUTF8(str));
+    return aValue.Length() > kMaximumStringValueLength
+               ? ScalarResult::StringTooLong
+               : ScalarResult::Ok;
+  }
   for (auto& val : mStorage) {
     val.Assign(str);
   }
@@ -758,6 +776,10 @@ ScalarResult ScalarBoolean::SetValue(nsIVariant* aValue) {
 };
 
 void ScalarBoolean::SetValue(bool aValue) {
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    GeckoViewStreamingTelemetry::BoolScalarSet(mName, aValue);
+    return;
+  }
   for (auto& val : mStorage) {
     val = aValue;
   }
@@ -1387,7 +1409,7 @@ nsresult internal_GetEnumByScalarName(const StaticMutexAutoLock& lock,
   if (!entry) {
     return NS_ERROR_INVALID_ARG;
   }
-  *aId = entry->mData;
+  *aId = entry->GetData();
   return NS_OK;
 }
 
@@ -1899,7 +1921,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
       // Change the scalar to expired if needed.
       if (scalarInfo.mDynamicExpiration && !scalarInfo.builtin) {
         DynamicScalarInfo& scalarData =
-            (*gDynamicScalarInfo)[existingKey->mData.id];
+            (*gDynamicScalarInfo)[existingKey->GetData().id];
         scalarData.mDynamicExpiration = true;
       }
       continue;
@@ -1908,7 +1930,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
     gDynamicScalarInfo->AppendElement(scalarInfo);
     uint32_t scalarId = gDynamicScalarInfo->Length() - 1;
     CharPtrEntryType* entry = gScalarNameIDMap.PutEntry(scalarInfo.name());
-    entry->mData = ScalarKey{scalarId, true};
+    entry->SetData(ScalarKey{scalarId, true});
   }
 }
 
@@ -2393,7 +2415,7 @@ void TelemetryScalar::InitializeGlobalState(bool aCanRecordBase,
       static_cast<uint32_t>(mozilla::Telemetry::ScalarID::ScalarCount);
   for (uint32_t i = 0; i < scalarCount; i++) {
     CharPtrEntryType* entry = gScalarNameIDMap.PutEntry(gScalars[i].name());
-    entry->mData = ScalarKey{i, false};
+    entry->SetData(ScalarKey{i, false});
   }
 
   // To summarize dynamic events we need a dynamic scalar.
@@ -3578,6 +3600,10 @@ void TelemetryScalar::RecordDiscardedData(
              "Discarded Data must be updated from the parent process.");
   StaticMutexAutoLock locker(gTelemetryScalarsMutex);
   if (!internal_CanRecordBase(locker)) {
+    return;
+  }
+
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
     return;
   }
 

@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
-
 import os
 import platform
 import signal
@@ -33,7 +31,7 @@ def test_roll_successful(lint, linters, files):
     assert len(result.issues) == 1
     assert result.failed == set([])
 
-    path = result.issues.keys()[0]
+    path = list(result.issues.keys())[0]
     assert os.path.basename(path) == 'foobar.js'
 
     errors = result.issues[path]
@@ -226,12 +224,17 @@ def test_keyboard_interrupt():
     # will be be stuck blocking on the ProcessPoolExecutor._call_queue when the
     # signal arrives and the other still be doing work.
     cmd = [sys.executable, 'runcli.py', '-l=string', '-l=slow']
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=here)
+    env = os.environ.copy()
+    env['PYTHONPATH'] = os.pathsep.join(sys.path)
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            cwd=here, env=env, universal_newlines=True)
     time.sleep(1)
     proc.send_signal(signal.SIGINT)
 
     out = proc.communicate()[0]
+    print(out)
     assert 'warning: not all files were linted' in out
+    assert '2 problems' in out
     assert 'Traceback' not in out
 
 

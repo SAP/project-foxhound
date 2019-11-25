@@ -755,7 +755,7 @@ GeolocationPermissionPrompt.prototype = {
       name: this.principalName,
     };
 
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       options.checkbox = { show: false };
     } else {
       // Don't offer "always remember" action in PB mode
@@ -782,7 +782,7 @@ GeolocationPermissionPrompt.prototype = {
   },
 
   get message() {
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       return gBrowserBundle.GetStringFromName("geolocation.shareWithFile3");
     }
 
@@ -818,9 +818,15 @@ GeolocationPermissionPrompt.prototype = {
       return;
     }
     gBrowser.updateBrowserSharing(this.browser, { geo: state });
+
+    let devicePermOrigins = this.browser.getDevicePermissionOrigins("geo");
     if (!state) {
+      devicePermOrigins.delete(this.principal.origin);
       return;
     }
+    devicePermOrigins.add(this.principal.origin);
+
+    // Update last access timestamp
     let host;
     try {
       host = this.browser.currentURI.host;
@@ -1062,7 +1068,7 @@ function MIDIPermissionPrompt(request) {
   let types = request.types.QueryInterface(Ci.nsIArray);
   let perm = types.queryElementAt(0, Ci.nsIContentPermissionType);
   this.isSysexPerm =
-    perm.options.length > 0 &&
+    !!perm.options.length &&
     perm.options.queryElementAt(0, Ci.nsISupportsString) == "sysex";
   this.permName = "midi";
   if (this.isSysexPerm) {
@@ -1084,7 +1090,7 @@ MIDIPermissionPrompt.prototype = {
       name: this.principalName,
     };
 
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       options.checkbox = { show: false };
     } else {
       // Don't offer "always remember" action in PB mode
@@ -1112,7 +1118,7 @@ MIDIPermissionPrompt.prototype = {
 
   get message() {
     let message;
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       if (this.isSysexPerm) {
         message = gBrowserBundle.formatStringFromName(
           "midi.shareSysexWithFile.message"

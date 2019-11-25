@@ -42,11 +42,12 @@
 
 scrollcorner, resizer, scrollbar, scrollbarbutton, slider {
   /* All scrollbar parts must not inherit any properties from the scrollable
-   * element (except for visibility), for the anonymous content style caching
-   * system to work.
+   * element (except for visibility and pointer-events), for the anonymous
+   * content style caching system to work.
    */
   all: initial;
   visibility: inherit;
+  pointer-events: inherit;
 
   /* These properties are not included in 'all'. */
   -moz-list-reversed: initial;
@@ -65,6 +66,13 @@ scrollcorner, resizer, scrollbar, scrollbarbutton, slider {
    * font metrics.
    */
   font: 16px sans-serif;
+
+  /* The initial value of justify-items is `legacy`, which makes it depend on
+   * the parent style.
+   *
+   * Reset it to something else.
+   */
+  justify-items: start;
 
   /* Duplicate the rules from the '*' rule above, which were clobbered by the
    * 'all: initial' declaration.

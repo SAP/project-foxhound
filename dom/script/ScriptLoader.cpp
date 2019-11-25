@@ -43,6 +43,7 @@
 #include "nsIPrincipal.h"
 #include "nsJSPrincipals.h"
 #include "nsContentPolicyUtils.h"
+#include "nsIClassifiedChannel.h"
 #include "nsIHttpChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIClassOfService.h"
@@ -351,24 +352,15 @@ bool ScriptLoader::IsAboutPageLoadingChromeURI(ScriptLoadRequest* aRequest) {
   if (!aRequest->TriggeringPrincipal()->GetIsContentPrincipal()) {
     return false;
   }
-
-  // if the triggering uri is not of scheme about:, there is nothing to do
-  nsCOMPtr<nsIURI> triggeringURI;
-  nsresult rv =
-      aRequest->TriggeringPrincipal()->GetURI(getter_AddRefs(triggeringURI));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  if (!triggeringURI->SchemeIs("about")) {
+  if (!aRequest->TriggeringPrincipal()->SchemeIs("about")) {
     return false;
   }
+  // if the triggering uri is not of scheme about:, there is nothing to do
 
   // if the about: page is linkable from content, there is nothing to do
-  nsCOMPtr<nsIAboutModule> aboutMod;
-  rv = NS_GetAboutModule(triggeringURI, getter_AddRefs(aboutMod));
-  NS_ENSURE_SUCCESS(rv, false);
-
   uint32_t aboutModuleFlags = 0;
-  rv = aboutMod->GetURIFlags(triggeringURI, &aboutModuleFlags);
+  nsresult rv =
+      aRequest->TriggeringPrincipal()->GetAboutModuleFlags(&aboutModuleFlags);
   NS_ENSURE_SUCCESS(rv, false);
 
   if (aboutModuleFlags & nsIAboutModule::MAKE_LINKABLE) {
@@ -2572,6 +2564,29 @@ class MOZ_RAII AutoSetProcessingScriptTag {
   ~AutoSetProcessingScriptTag() { mContext->SetProcessingScriptTag(mOldTag); }
 };
 
+static void ReportStreamAndParseTelemetry(JS::Handle<JSScript*> aScript,
+                                          TimeDuration aStreamingTime) {
+  using namespace mozilla::Telemetry;
+  if (!aStreamingTime) {
+    Accumulate(DOM_SCRIPT_IS_STREAMED, false);
+    return;
+  }
+  Accumulate(DOM_SCRIPT_IS_STREAMED, true);
+  TimeDuration parseTime;
+  TimeDuration emitTime;
+  JS_ReportFirstCompileTime(aScript, parseTime, emitTime);
+
+  double st = aStreamingTime.ToMilliseconds();
+  double pt = parseTime.ToMilliseconds();
+  double et = emitTime.ToMilliseconds();
+  double total = st + pt + et;
+  double spt = st + std::max(pt - st, double(0)) + et;
+  Accumulate(DOM_SCRIPT_LOAD_STREAM_TIME_PERCENT, 100 * st / total);
+  Accumulate(DOM_SCRIPT_LOAD_PARSE_TIME_PERCENT, 100 * pt / total);
+  Accumulate(DOM_SCRIPT_LOAD_EMIT_TIME_PERCENT, 100 * et / total);
+  Accumulate(DOM_SCRIPT_LOAD_STREAMPARSE_ESTIMATE_PERCENT, 100 * spt / total);
+}
+
 static nsresult ExecuteCompiledScript(JSContext* aCx,
                                       ScriptLoadRequest* aRequest,
                                       nsJSUtils::ExecutionContext& aExec) {
@@ -2581,6 +2596,11 @@ static nsresult ExecuteCompiledScript(JSContext* aCx,
     // disabled for the global.
     return NS_OK;
   }
+
+  // Report telemetry about streaming, parsing and emitting code for the given
+  // script. These telemetry are used to analyze whether it would be beneficial
+  // to use a streaming parser.
+  ReportStreamAndParseTelemetry(script, aRequest->mStreamingTime);
 
   // Create a ClassicScript object and associate it with the JSScript.
   RefPtr<ClassicScript> classicScript =
@@ -3573,7 +3593,10 @@ nsresult ScriptLoader::PrepareLoadedRequest(ScriptLoadRequest* aRequest,
       aRequest->mSourceMapURL = NS_ConvertUTF8toUTF16(sourceMapURL);
     }
 
-    if (httpChannel->IsThirdPartyTrackingResource()) {
+    nsCOMPtr<nsIClassifiedChannel> classifiedChannel = do_QueryInterface(req);
+    MOZ_ASSERT(classifiedChannel);
+    if (classifiedChannel &&
+        classifiedChannel->IsThirdPartyTrackingResource()) {
       aRequest->SetIsTracking();
     }
   }

@@ -92,6 +92,10 @@ DebuggerPanel.prototype = {
     hud.ui.wrapper.dispatchEvaluateExpression(input);
   },
 
+  openInspector: async function() {
+    this.toolbox.selectTool("inspector");
+  },
+
   openElementInInspector: async function(gripOrFront) {
     const onSelectInspector = this.toolbox.selectTool("inspector");
     const onGripNodeToFront = getNodeFront(gripOrFront, this.toolbox);
@@ -162,6 +166,14 @@ DebuggerPanel.prototype = {
   selectSourceURL(url, line, column) {
     const cx = this._selectors.getContext(this._getState());
     return this._actions.selectSourceURL(cx, url, { line, column });
+  },
+
+  previewPausedLocation(location) {
+    return this._actions.previewPausedLocation(location);
+  },
+
+  clearPreviewPausedLocation() {
+    return this._actions.clearPreviewPausedLocation();
   },
 
   async selectSource(sourceId, line, column) {

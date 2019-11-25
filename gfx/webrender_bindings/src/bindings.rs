@@ -367,22 +367,6 @@ impl<'a> Into<ImageDescriptor> for &'a WrImageDescriptor {
     }
 }
 
-/// cbindgen:field-names=[mHandle]
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct WrExternalImageId(pub u64);
-
-impl Into<ExternalImageId> for WrExternalImageId {
-    fn into(self) -> ExternalImageId {
-        ExternalImageId(self.0)
-    }
-}
-impl Into<WrExternalImageId> for ExternalImageId {
-    fn into(self) -> WrExternalImageId {
-        WrExternalImageId(self.0)
-    }
-}
-
 #[repr(u32)]
 #[allow(dead_code)]
 enum WrExternalImageType {
@@ -411,12 +395,12 @@ struct WrExternalImage {
 extern "C" {
     fn wr_renderer_lock_external_image(
         renderer: *mut c_void,
-        external_image_id: WrExternalImageId,
+        external_image_id: ExternalImageId,
         channel_index: u8,
         rendering: ImageRendering) -> WrExternalImage;
     fn wr_renderer_unlock_external_image(
         renderer: *mut c_void,
-        external_image_id: WrExternalImageId,
+        external_image_id: ExternalImageId,
         channel_index: u8);
 }
 
@@ -433,7 +417,7 @@ impl ExternalImageHandler for WrExternalImageHandler {
             rendering: ImageRendering)
             -> ExternalImage {
 
-        let image = unsafe { wr_renderer_lock_external_image(self.external_image_obj, id.into(), channel_index, rendering) };
+        let image = unsafe { wr_renderer_lock_external_image(self.external_image_obj, id, channel_index, rendering) };
         ExternalImage {
             uv: TexelRect::new(image.u0, image.v0, image.u1, image.v1),
             source: match image.image_type {
@@ -448,7 +432,7 @@ impl ExternalImageHandler for WrExternalImageHandler {
               id: ExternalImageId,
               channel_index: u8) {
         unsafe {
-            wr_renderer_unlock_external_image(self.external_image_obj, id.into(), channel_index);
+            wr_renderer_unlock_external_image(self.external_image_obj, id, channel_index);
         }
     }
 }
@@ -530,7 +514,7 @@ fn get_proc_address(glcontext_ptr: *mut c_void,
 pub enum TelemetryProbe {
     SceneBuildTime = 0,
     SceneSwapTime = 1,
-    RenderTime = 2,
+    FrameBuildTime = 2,
 }
 
 extern "C" {
@@ -598,7 +582,7 @@ impl RenderNotifier for CppNotifier {
                        render_time_ns: Option<u64>) {
         unsafe {
             if let Some(time) = render_time_ns {
-                record_telemetry_time(TelemetryProbe::RenderTime, time);
+                record_telemetry_time(TelemetryProbe::FrameBuildTime, time);
             }
             if composite_needed {
                 wr_notifier_new_frame_ready(self.window_id);
@@ -1629,7 +1613,7 @@ pub extern "C" fn wr_resource_updates_add_external_image(
     txn: &mut Transaction,
     image_key: WrImageKey,
     descriptor: &WrImageDescriptor,
-    external_image_id: WrExternalImageId,
+    external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8
 ) {
@@ -1638,7 +1622,7 @@ pub extern "C" fn wr_resource_updates_add_external_image(
         descriptor.into(),
         ImageData::External(
             ExternalImageData {
-                id: external_image_id.into(),
+                id: external_image_id,
                 channel_index: channel_index,
                 image_type: *image_type,
             }
@@ -1676,7 +1660,7 @@ pub extern "C" fn wr_resource_updates_update_external_image(
     txn: &mut Transaction,
     key: WrImageKey,
     descriptor: &WrImageDescriptor,
-    external_image_id: WrExternalImageId,
+    external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8
 ) {
@@ -1685,7 +1669,7 @@ pub extern "C" fn wr_resource_updates_update_external_image(
         descriptor.into(),
         ImageData::External(
             ExternalImageData {
-                id: external_image_id.into(),
+                id: external_image_id,
                 channel_index,
                 image_type: *image_type,
             }
@@ -1699,7 +1683,7 @@ pub extern "C" fn wr_resource_updates_update_external_image_with_dirty_rect(
     txn: &mut Transaction,
     key: WrImageKey,
     descriptor: &WrImageDescriptor,
-    external_image_id: WrExternalImageId,
+    external_image_id: ExternalImageId,
     image_type: &ExternalImageType,
     channel_index: u8,
     dirty_rect: DeviceIntRect,
@@ -1709,7 +1693,7 @@ pub extern "C" fn wr_resource_updates_update_external_image_with_dirty_rect(
         descriptor.into(),
         ImageData::External(
             ExternalImageData {
-                id: external_image_id.into(),
+                id: external_image_id,
                 channel_index,
                 image_type: *image_type,
             }
@@ -1878,6 +1862,14 @@ pub extern "C" fn wr_api_capture(
 
     let bits = CaptureBits::from_bits(bits_raw as _).unwrap();
     dh.api.save_capture(path, bits);
+}
+
+#[no_mangle]
+pub extern "C" fn wr_api_set_transaction_logging(
+    dh: &mut DocumentHandle,
+    aValue: bool
+) {
+    dh.api.send_debug_cmd(DebugCommand::SetTransactionLogging(aValue));
 }
 
 #[cfg(target_os = "windows")]
@@ -2081,7 +2073,7 @@ pub struct WrStackingContextParams {
     pub transform_style: TransformStyle,
     pub reference_frame_kind: WrReferenceFrameKind,
     pub scrolling_relative_to: *const u64,
-    pub is_backface_visible: bool,
+    pub prim_flags: PrimitiveFlags,
     /// True if picture caching should be enabled for this stacking context.
     pub cache_tiles: bool,
     pub mix_blend_mode: MixBlendMode,
@@ -2201,7 +2193,7 @@ pub extern "C" fn wr_dp_push_stacking_context(
          .dl_builder
          .push_stacking_context(bounds.origin,
                                 wr_spatial_id,
-                                params.is_backface_visible,
+                                params.prim_flags,
                                 wr_clip_id,
                                 params.transform_style,
                                 params.mix_blend_mode,
@@ -2373,6 +2365,17 @@ pub extern "C" fn wr_dp_push_iframe(state: &mut WrState,
     );
 }
 
+// A helper fn to construct a PrimitiveFlags
+fn prim_flags(
+    is_backface_visible: bool,
+) -> PrimitiveFlags {
+    if is_backface_visible {
+        PrimitiveFlags::IS_BACKFACE_VISIBLE
+    } else {
+        PrimitiveFlags::empty()
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn wr_dp_push_rect(state: &mut WrState,
                                   rect: LayoutRect,
@@ -2392,7 +2395,7 @@ pub extern "C" fn wr_dp_push_rect(state: &mut WrState,
         clip_rect: clip_rect.unwrap_or(LayoutRect::zero()),
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2422,7 +2425,7 @@ pub extern "C" fn wr_dp_push_rect_with_parent_clip(
         clip_rect: clip_rect.unwrap(),
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2474,7 +2477,7 @@ pub extern "C" fn wr_dp_push_backdrop_filter_with_parent_clip(
         clip_rect: clip_rect.unwrap(),
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2502,7 +2505,7 @@ pub extern "C" fn wr_dp_push_clear_rect(state: &mut WrState,
         clip_rect: clip_rect.unwrap(),
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible: true,
+        flags: prim_flags(true),
         hit_info: state.current_tag,
     };
 
@@ -2528,7 +2531,7 @@ pub extern "C" fn wr_dp_push_hit_test(state: &mut WrState,
         clip_rect: clip_rect.unwrap(),
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2555,7 +2558,7 @@ pub extern "C" fn wr_dp_push_clear_rect_with_parent_clip(
         clip_rect: clip_rect.unwrap(),
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible: true,
+        flags: prim_flags(true),
         hit_info: state.current_tag,
     };
 
@@ -2570,8 +2573,6 @@ pub extern "C" fn wr_dp_push_image(state: &mut WrState,
                                    clip: LayoutRect,
                                    is_backface_visible: bool,
                                    parent: &WrSpaceAndClipChain,
-                                   stretch_size: LayoutSize,
-                                   tile_spacing: LayoutSize,
                                    image_rendering: ImageRendering,
                                    key: WrImageKey,
                                    premultiplied_alpha: bool,
@@ -2584,7 +2585,7 @@ pub extern "C" fn wr_dp_push_image(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2598,12 +2599,52 @@ pub extern "C" fn wr_dp_push_image(state: &mut WrState,
          .dl_builder
          .push_image(&prim_info,
                      bounds,
-                     stretch_size,
-                     tile_spacing,
                      image_rendering,
                      alpha_type,
                      key,
                      color);
+}
+
+#[no_mangle]
+pub extern "C" fn wr_dp_push_repeating_image(state: &mut WrState,
+                                             bounds: LayoutRect,
+                                             clip: LayoutRect,
+                                             is_backface_visible: bool,
+                                             parent: &WrSpaceAndClipChain,
+                                             stretch_size: LayoutSize,
+                                             tile_spacing: LayoutSize,
+                                             image_rendering: ImageRendering,
+                                             key: WrImageKey,
+                                             premultiplied_alpha: bool,
+                                             color: ColorF) {
+    debug_assert!(unsafe { is_in_main_thread() || is_in_compositor_thread() });
+
+    let space_and_clip = parent.to_webrender(state.pipeline_id);
+
+    let prim_info = CommonItemProperties {
+        clip_rect: clip,
+        clip_id: space_and_clip.clip_id,
+        spatial_id: space_and_clip.spatial_id,
+        flags: prim_flags(is_backface_visible),
+        hit_info: state.current_tag,
+    };
+
+    let alpha_type = if premultiplied_alpha {
+        AlphaType::PremultipliedAlpha
+    } else {
+        AlphaType::Alpha
+    };
+
+    state.frame_builder
+         .dl_builder
+         .push_repeating_image(&prim_info,
+                               bounds,
+                               stretch_size,
+                               tile_spacing,
+                               image_rendering,
+                               alpha_type,
+                               key,
+                               color);
 }
 
 /// Push a 3 planar yuv image.
@@ -2628,7 +2669,7 @@ pub extern "C" fn wr_dp_push_yuv_planar_image(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2664,7 +2705,7 @@ pub extern "C" fn wr_dp_push_yuv_NV12_image(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2699,7 +2740,7 @@ pub extern "C" fn wr_dp_push_yuv_interleaved_image(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2735,7 +2776,7 @@ pub extern "C" fn wr_dp_push_text(state: &mut WrState,
         clip_rect: clip,
         spatial_id: space_and_clip.spatial_id,
         clip_id: space_and_clip.clip_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag
     };
 
@@ -2791,7 +2832,7 @@ pub extern "C" fn wr_dp_push_line(state: &mut WrState,
         clip_rect: *clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2836,7 +2877,7 @@ pub extern "C" fn wr_dp_push_border(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2885,7 +2926,7 @@ pub extern "C" fn wr_dp_push_border_image(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -2943,7 +2984,7 @@ pub extern "C" fn wr_dp_push_border_gradient(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -3005,7 +3046,7 @@ pub extern "C" fn wr_dp_push_border_radial_gradient(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -3048,7 +3089,7 @@ pub extern "C" fn wr_dp_push_linear_gradient(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -3092,7 +3133,7 @@ pub extern "C" fn wr_dp_push_radial_gradient(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -3125,7 +3166,7 @@ pub extern "C" fn wr_dp_push_box_shadow(state: &mut WrState,
         clip_rect: clip,
         clip_id: space_and_clip.clip_id,
         spatial_id: space_and_clip.spatial_id,
-        is_backface_visible,
+        flags: prim_flags(is_backface_visible),
         hit_info: state.current_tag,
     };
 
@@ -3236,9 +3277,8 @@ pub unsafe extern "C" fn wr_dec_ref_arc(arc: *const VecU8) {
 extern "C" {
      // TODO: figure out the API for tiled blob images.
      pub fn wr_moz2d_render_cb(blob: ByteSlice,
-                               width: i32,
-                               height: i32,
                                format: ImageFormat,
+                               render_rect: &LayoutIntRect,
                                visible_rect: &DeviceIntRect,
                                tile_size: Option<&u16>,
                                tile_offset: Option<&TileOffset>,

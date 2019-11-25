@@ -78,7 +78,12 @@ exports.ON_PROFILE_CHANGE_NOTIFICATION = "fxaccounts:profilechange"; // WebChann
 exports.ON_ACCOUNT_STATE_CHANGE_NOTIFICATION = "fxaccounts:statechange";
 exports.ON_NEW_DEVICE_ID = "fxaccounts:new_device_id";
 
-exports.COMMAND_SENDTAB = "https://identity.mozilla.com/cmd/open-uri";
+// The common prefix for all commands.
+exports.COMMAND_PREFIX = "https://identity.mozilla.com/cmd/";
+
+// The commands we support - only the _TAIL values are recorded in telemetry.
+exports.COMMAND_SENDTAB_TAIL = "open-uri";
+exports.COMMAND_SENDTAB = exports.COMMAND_PREFIX + exports.COMMAND_SENDTAB_TAIL;
 
 // OAuth
 exports.FX_OAUTH_CLIENT_ID = "5882386c6d801776";
@@ -108,6 +113,10 @@ exports.COMMAND_SYNC_PREFERENCES = "fxaccounts:sync_preferences";
 exports.COMMAND_CHANGE_PASSWORD = "fxaccounts:change_password";
 exports.COMMAND_FXA_STATUS = "fxaccounts:fxa_status";
 exports.COMMAND_PAIR_PREFERENCES = "fxaccounts:pair_preferences";
+
+// The pref branch where any prefs which relate to a specific account should
+// be stored. This branch will be reset on account signout and signin.
+exports.PREF_ACCOUNT_ROOT = "identity.fxaccounts.account.";
 
 exports.PREF_LAST_FXA_USER = "identity.fxaccounts.lastSignedInUserHash";
 exports.PREF_REMOTE_PAIRING_URI = "identity.fxaccounts.remote.pairing.uri";

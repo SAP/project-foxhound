@@ -65,16 +65,25 @@ void OriginAttributes::SetFirstPartyDomain(const bool aIsTopLevelDocument,
   // Saving isInsufficientDomainLevels before rv is overwritten.
   bool isInsufficientDomainLevels = (rv == NS_ERROR_INSUFFICIENT_DOMAIN_LEVELS);
   nsAutoCString scheme;
-  rv = aURI->GetScheme(scheme);
-  NS_ENSURE_SUCCESS_VOID(rv);
-  if (scheme.EqualsLiteral("about")) {
-    mFirstPartyDomain.AssignLiteral(ABOUT_URI_FIRST_PARTY_DOMAIN);
+  if (aURI) {
+    rv = aURI->GetScheme(scheme);
+    NS_ENSURE_SUCCESS_VOID(rv);
+    if (scheme.EqualsLiteral("about")) {
+      mFirstPartyDomain.AssignLiteral(ABOUT_URI_FIRST_PARTY_DOMAIN);
+      return;
+    }
+  }
+
+  // Add-on principals should never get any first-party domain
+  // attributes in order to guarantee their storage integrity when switching
+  // FPI on and off.
+  if (scheme.EqualsLiteral("moz-extension")) {
     return;
   }
 
   nsCOMPtr<nsIPrincipal> blobPrincipal;
-  if (dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
-          aURI, getter_AddRefs(blobPrincipal))) {
+  if (aURI && dom::BlobURLProtocolHandler::GetBlobURLPrincipal(
+                  aURI, getter_AddRefs(blobPrincipal))) {
     MOZ_ASSERT(blobPrincipal);
     mFirstPartyDomain = blobPrincipal->OriginAttributesRef().mFirstPartyDomain;
     return;

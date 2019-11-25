@@ -227,7 +227,7 @@ def is_windows():
 def build_one_stage(cc, cxx, asm, ld, ar, ranlib, libtool,
                     src_dir, stage_dir, package_name, build_libcxx,
                     osx_cross_compile, build_type, assertions,
-                    python_path, gcc_dir, libcxx_include_dir,
+                    python_path, gcc_dir, libcxx_include_dir, build_wasm,
                     compiler_rt_source_dir=None, runtimes_source_link=None,
                     compiler_rt_source_link=None,
                     is_final_stage=False, android_targets=None,
@@ -270,9 +270,10 @@ def build_one_stage(cc, cxx, asm, ld, ar, ranlib, libtool,
             "-DLLVM_ENABLE_ASSERTIONS=%s" % ("ON" if assertions else "OFF"),
             "-DPYTHON_EXECUTABLE=%s" % slashify_path(python_path),
             "-DLLVM_TOOL_LIBCXX_BUILD=%s" % ("ON" if build_libcxx else "OFF"),
-            "-DLIBCXX_LIBCPPABI_VERSION=\"\"",
             "-DLLVM_ENABLE_BINDINGS=OFF",
         ]
+        if build_wasm:
+            cmake_args += ["-DLLVM_EXPERIMENTAL_TARGETS_TO_BUILD=WebAssembly"]
         if is_linux():
             cmake_args += ["-DLLVM_BINUTILS_INCDIR=%s/include" % gcc_dir]
         if is_windows():
@@ -506,9 +507,10 @@ def prune_final_dir_for_clang_tidy(final_dir, osx_cross_compile):
         name = os.path.basename(f)
         if name == "clang":
             continue
-        if osx_cross_compile and name == 'libLLVM.dylib':
+        if osx_cross_compile and name in ['libLLVM.dylib', 'libclang-cpp.dylib']:
             continue
-        if is_linux() and fnmatch.fnmatch(name, 'libLLVM*.so'):
+        if is_linux() and (fnmatch.fnmatch(name, 'libLLVM*.so') or
+                           fnmatch.fnmatch(name, 'libclang-cpp.so*')):
             continue
         delete(f)
     for f in glob.glob("%s/lib/clang/*" % final_dir):
@@ -602,6 +604,11 @@ if __name__ == "__main__":
         build_libcxx = config["build_libcxx"]
         if build_libcxx not in (True, False):
             raise ValueError("Only boolean values are accepted for build_libcxx.")
+    build_wasm = False
+    if "build_wasm" in config:
+        build_wasm = config["build_wasm"]
+        if build_wasm not in (True, False):
+            raise ValueError("Only boolean values are accepted for build_wasm.")
     build_clang_tidy = False
     if "build_clang_tidy" in config:
         build_clang_tidy = config["build_clang_tidy"]
@@ -765,7 +772,7 @@ if __name__ == "__main__":
         [ld] + extra_ldflags,
         ar, ranlib, libtool,
         llvm_source_dir, stage1_dir, package_name, build_libcxx, osx_cross_compile,
-        build_type, assertions, python_path, gcc_dir, libcxx_include_dir)
+        build_type, assertions, python_path, gcc_dir, libcxx_include_dir, build_wasm)
 
     runtimes_source_link = llvm_source_dir + "/runtimes/compiler-rt"
 
@@ -783,7 +790,7 @@ if __name__ == "__main__":
             [ld] + extra_ldflags,
             ar, ranlib, libtool,
             llvm_source_dir, stage2_dir, package_name, build_libcxx, osx_cross_compile,
-            build_type, assertions, python_path, gcc_dir, libcxx_include_dir,
+            build_type, assertions, python_path, gcc_dir, libcxx_include_dir, build_wasm,
             compiler_rt_source_dir, runtimes_source_link, compiler_rt_source_link,
             is_final_stage=(stages == 2), android_targets=android_targets,
             extra_targets=extra_targets)
@@ -801,7 +808,7 @@ if __name__ == "__main__":
             [ld] + extra_ldflags,
             ar, ranlib, libtool,
             llvm_source_dir, stage3_dir, package_name, build_libcxx, osx_cross_compile,
-            build_type, assertions, python_path, gcc_dir, libcxx_include_dir,
+            build_type, assertions, python_path, gcc_dir, libcxx_include_dir, build_wasm,
             compiler_rt_source_dir, runtimes_source_link, compiler_rt_source_link,
             (stages == 3), extra_targets=extra_targets)
 

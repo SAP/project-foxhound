@@ -28,6 +28,7 @@ ErrorRep.propTypes = {
 function ErrorRep(props) {
   const object = props.object;
   const preview = object.preview;
+  const mode = props.mode;
 
   let name;
   if (preview && preview.name && preview.kind) {
@@ -47,13 +48,13 @@ function ErrorRep(props) {
 
   const content = [];
 
-  if (props.mode === MODE.TINY) {
+  if (mode === MODE.TINY) {
     content.push(name);
   } else {
     content.push(`${name}: "${preview.message}"`);
   }
 
-  if (preview.stack && props.mode !== MODE.TINY) {
+  if (preview.stack && (mode !== MODE.TINY && mode !== MODE.SHORT)) {
     const stacktrace = props.renderStacktrace
       ? props.renderStacktrace(parseStackString(preview.stack))
       : getStacktraceElements(props, preview);
@@ -163,14 +164,18 @@ function getStacktraceElements(props, preview) {
  *                  - {Number} lineNumber
  */
 function parseStackString(stack) {
-  const res = [];
   if (!stack) {
-    return res;
+    return [];
   }
 
   const isStacktraceALongString = isLongString(stack);
   const stackString = isStacktraceALongString ? stack.initial : stack;
 
+  if (typeof stackString !== "string") {
+    return [];
+  }
+
+  const res = [];
   stackString.split("\n").forEach((frame, index, frames) => {
     if (!frame) {
       // Skip any blank lines

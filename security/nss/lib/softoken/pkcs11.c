@@ -324,6 +324,8 @@ static const struct mechanismList mechanisms[] = {
     { CKM_AES_CBC, { 16, 32, CKF_EN_DE_WR_UN }, PR_TRUE },
     { CKM_AES_MAC, { 16, 32, CKF_SN_VR }, PR_TRUE },
     { CKM_AES_MAC_GENERAL, { 16, 32, CKF_SN_VR }, PR_TRUE },
+    { CKM_AES_CMAC, { 16, 32, CKF_SN_VR }, PR_TRUE },
+    { CKM_AES_CMAC_GENERAL, { 16, 32, CKF_SN_VR }, PR_TRUE },
     { CKM_AES_CBC_PAD, { 16, 32, CKF_EN_DE_WR_UN }, PR_TRUE },
     { CKM_AES_CTS, { 16, 32, CKF_EN_DE }, PR_TRUE },
     { CKM_AES_CTR, { 16, 32, CKF_EN_DE }, PR_TRUE },
@@ -2283,14 +2285,19 @@ sftk_PutPubKey(SFTKObject *publicKey, SFTKObject *privateKey, CK_KEY_TYPE keyTyp
         default:
             return CKR_KEY_TYPE_INCONSISTENT;
     }
+    if (crv != CKR_OK) {
+        return crv;
+    }
     crv = sftk_AddAttributeType(publicKey, CKA_CLASS, &classType,
                                 sizeof(CK_OBJECT_CLASS));
-    if (crv != CKR_OK)
+    if (crv != CKR_OK) {
         return crv;
+    }
     crv = sftk_AddAttributeType(publicKey, CKA_KEY_TYPE, &keyType,
                                 sizeof(CK_KEY_TYPE));
-    if (crv != CKR_OK)
+    if (crv != CKR_OK) {
         return crv;
+    }
     /* now handle the operator attributes */
     if (sftk_isTrue(privateKey, CKA_DECRYPT)) {
         crv = sftk_forceAttribute(publicKey, CKA_ENCRYPT, &cktrue, sizeof(CK_BBOOL));
@@ -2798,8 +2805,9 @@ sftk_CloseAllSessions(SFTKSlot *slot, PRBool logout)
             } else {
                 SKIP_AFTER_FORK(PZ_Unlock(lock));
             }
-            if (session)
-                sftk_FreeSession(session);
+            if (session) {
+                sftk_DestroySession(session);
+            }
         } while (session != NULL);
     }
     return CKR_OK;
@@ -4037,8 +4045,6 @@ NSC_CloseSession(CK_SESSION_HANDLE hSession)
     if (sftkqueue_is_queued(session, hSession, slot->head, slot->sessHashSize)) {
         sessionFound = PR_TRUE;
         sftkqueue_delete(session, hSession, slot->head, slot->sessHashSize);
-        session->refCount--; /* can't go to zero while we hold the reference */
-        PORT_Assert(session->refCount > 0);
     }
     PZ_Unlock(lock);
 
@@ -4059,9 +4065,10 @@ NSC_CloseSession(CK_SESSION_HANDLE hSession)
         if (session->info.flags & CKF_RW_SESSION) {
             (void)PR_ATOMIC_DECREMENT(&slot->rwSessionCount);
         }
+        sftk_DestroySession(session);
+        session = NULL;
     }
 
-    sftk_FreeSession(session);
     return CKR_OK;
 }
 

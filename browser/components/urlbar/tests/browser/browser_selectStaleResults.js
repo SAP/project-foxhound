@@ -96,7 +96,7 @@ add_task(async function viewContainsStaleRows() {
 
   // But there should be maxResults visible rows in the view.
   let items = Array.from(gURLBar.view._rows.children).filter(r =>
-    gURLBar.view._isRowVisible(r)
+    gURLBar.view._isElementVisible(r)
   );
   Assert.equal(items.length, maxResults);
 
@@ -104,20 +104,20 @@ add_task(async function viewContainsStaleRows() {
   // result, the stale "x" results should be selected.  We should *not* enter
   // the one-off search buttons at that point.
   for (let i = 1; i < maxResults; i++) {
-    Assert.equal(UrlbarTestUtils.getSelectedIndex(window), i);
+    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), i);
     let result = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
-    Assert.equal(result.element.row.result.uiIndex, i);
+    Assert.equal(result.element.row.result.rowIndex, i);
     EventUtils.synthesizeKey("KEY_ArrowDown");
   }
 
   // Now the first one-off should be selected.
-  Assert.equal(UrlbarTestUtils.getSelectedIndex(window), -1);
+  Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), -1);
   Assert.equal(gURLBar.view.oneOffSearchButtons.selectedButtonIndex, 0);
 
   // Arrow back up through all the results.
   for (let i = maxResults - 1; i >= 0; i--) {
     EventUtils.synthesizeKey("KEY_ArrowUp");
-    Assert.equal(UrlbarTestUtils.getSelectedIndex(window), i);
+    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), i);
   }
 
   await UrlbarTestUtils.promisePopupClose(window, () =>
@@ -259,30 +259,30 @@ add_task(async function staleReplacedWithFresh() {
   Assert.equal(count, maxResults);
   result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   Assert.ok(result.heuristic);
-  Assert.equal(result.element.row.result.uiIndex, 0);
+  Assert.equal(result.element.row.result.rowIndex, 0);
   for (let i = 1; i < maxResults; i++) {
     result = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
     Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.URL);
     Assert.equal(result.title, "test" + (maxResults - i));
-    Assert.equal(result.element.row.result.uiIndex, i);
+    Assert.equal(result.element.row.result.rowIndex, i);
   }
 
   // Arrow down through all the results.  After arrowing down from "test3", we
   // should continue on to "test2".  We should *not* enter the one-off search
   // buttons at that point.
   for (let i = 1; i < maxResults; i++) {
-    Assert.equal(UrlbarTestUtils.getSelectedIndex(window), i);
+    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), i);
     EventUtils.synthesizeKey("KEY_ArrowDown");
   }
 
   // Now the first one-off should be selected.
-  Assert.equal(UrlbarTestUtils.getSelectedIndex(window), -1);
+  Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), -1);
   Assert.equal(gURLBar.view.oneOffSearchButtons.selectedButtonIndex, 0);
 
   // Arrow back up through all the results.
   for (let i = maxResults - 1; i >= 0; i--) {
     EventUtils.synthesizeKey("KEY_ArrowUp");
-    Assert.equal(UrlbarTestUtils.getSelectedIndex(window), i);
+    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), i);
   }
 
   await UrlbarTestUtils.promisePopupClose(window, () =>

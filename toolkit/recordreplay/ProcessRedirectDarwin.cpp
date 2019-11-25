@@ -379,8 +379,8 @@ static PreambleResult MiddlemanPreamble_sendmsg(CallArguments* aArguments) {
 }
 
 static PreambleResult Preamble_mprotect(CallArguments* aArguments) {
-  // Ignore any mprotect calls that occur after saving a checkpoint.
-  if (!HasSavedAnyCheckpoint()) {
+  // Ignore any mprotect calls that occur after taking a snapshot.
+  if (!NumSnapshots()) {
     return PreambleResult::PassThrough;
   }
   aArguments->Rval<ssize_t>() = 0;
@@ -408,7 +408,7 @@ static PreambleResult Preamble_mmap(CallArguments* aArguments) {
     // Get an anonymous mapping for the result.
     if (flags & MAP_FIXED) {
       // For fixed allocations, make sure this memory region is mapped and zero.
-      if (!HasSavedAnyCheckpoint()) {
+      if (!NumSnapshots()) {
         // Make sure this memory region is writable.
         CallFunction<int>(gOriginal_mprotect, address, size,
                           PROT_READ | PROT_WRITE | PROT_EXEC);
@@ -421,10 +421,10 @@ static PreambleResult Preamble_mmap(CallArguments* aArguments) {
     }
   } else {
     // We have to call mmap itself, which can change memory protection flags
-    // for memory that is already allocated. If we haven't saved a checkpoint
-    // then this is no problem, but after saving a checkpoint we have to make
+    // for memory that is already allocated. If we haven't taken a snapshot
+    // then this is no problem, but after taking a snapshot we have to make
     // sure that protection flags are what we expect them to be.
-    int newProt = HasSavedAnyCheckpoint() ? (PROT_READ | PROT_EXEC) : prot;
+    int newProt = NumSnapshots() ? (PROT_READ | PROT_EXEC) : prot;
     memory = CallFunction<void*>(gOriginal_mmap, address, size, newProt, flags,
                                  fd, offset);
 
@@ -608,7 +608,7 @@ static ssize_t WaitForCvar(pthread_mutex_t* aMutex, pthread_cond_t* aCond,
   if (!lock) {
     if (IsReplaying() && !AreThreadEventsPassedThrough()) {
       Thread* thread = Thread::Current();
-      if (thread->MaybeWaitForCheckpointSave(
+      if (thread->MaybeWaitForSnapshot(
               [=]() { pthread_mutex_unlock(aMutex); })) {
         // We unlocked the mutex while the thread idled, so don't wait on the
         // condvar: the state the thread is waiting on may have changed and it
@@ -903,7 +903,7 @@ static PreambleResult Preamble_mach_vm_map(CallArguments* aArguments) {
   } else if (AreThreadEventsPassedThrough()) {
     // We should only reach this at startup, when initializing the graphics
     // shared memory block.
-    MOZ_RELEASE_ASSERT(!HasSavedAnyCheckpoint());
+    MOZ_RELEASE_ASSERT(!NumSnapshots());
     return PreambleResult::PassThrough;
   }
 
@@ -916,9 +916,9 @@ static PreambleResult Preamble_mach_vm_map(CallArguments* aArguments) {
 }
 
 static PreambleResult Preamble_mach_vm_protect(CallArguments* aArguments) {
-  // Ignore any mach_vm_protect calls that occur after saving a checkpoint, as
+  // Ignore any mach_vm_protect calls that occur after taking a snapshot, as
   // for mprotect.
-  if (!HasSavedAnyCheckpoint()) {
+  if (!NumSnapshots()) {
     return PreambleResult::PassThrough;
   }
   aArguments->Rval<size_t>() = KERN_SUCCESS;
@@ -1689,12 +1689,12 @@ static size_t CGPathElementPointCount(CGPathElementType aType) {
 }
 
 static void CGPathDataCallback(void* aData, const CGPathElement* aElement) {
-  InfallibleVector<char>* data = (InfallibleVector<char>*) aData;
+  InfallibleVector<char>* data = (InfallibleVector<char>*)aData;
 
-  data->append((char) aElement->type);
+  data->append((char)aElement->type);
 
   for (size_t i = 0; i < CGPathElementPointCount(aElement->type); i++) {
-    data->append((char*) &aElement->points[i], sizeof(CGPoint));
+    data->append((char*)&aElement->points[i], sizeof(CGPoint));
   }
 }
 
@@ -1707,7 +1707,7 @@ static void CGPathApplyWithData(const InfallibleVector<char>& aData,
   size_t offset = 0;
   while (offset < aData.length()) {
     CGPathElement element;
-    element.type = (CGPathElementType) aData[offset++];
+    element.type = (CGPathElementType)aData[offset++];
 
     CGPoint points[3];
     element.points = points;
@@ -2336,7 +2336,7 @@ static SystemRedirection gSystemRedirections[] = {
     {"CGImageRelease", RR_ScalarRval, nullptr, nullptr, Preamble_Veto<0>},
     {"CGMainDisplayID", RR_ScalarRval},
     {"CGPathAddPath"},
-    {"CGPathApply", nullptr, Preamble_CGPathApply, MM_CGPathApply },
+    {"CGPathApply", nullptr, Preamble_CGPathApply, MM_CGPathApply},
     {"CGPathContainsPoint", RR_ScalarRval},
     {"CGPathCreateMutable", RR_ScalarRval},
     {"CGPathCreateWithRoundedRect", RR_ScalarRval, nullptr,
@@ -2466,7 +2466,8 @@ static SystemRedirection gSystemRedirections[] = {
     {"GetEventDispatcherTarget", RR_ScalarRval},
     {"GetEventKind", RR_ScalarRval},
     {"HIThemeDrawButton",
-     RR_Compose<RR_WriteBufferFixedSize<4, sizeof(HIRect)>, RR_ScalarRval>,
+     RR_Compose<RR_WriteOptionalBufferFixedSize<4, sizeof(HIRect)>,
+                RR_ScalarRval>,
      nullptr,
      MM_Compose<MM_BufferFixedSize<0, sizeof(HIRect)>,
                 MM_BufferFixedSize<1, sizeof(HIThemeButtonDrawInfo)>,
@@ -2489,7 +2490,8 @@ static SystemRedirection gSystemRedirections[] = {
                 MM_BufferFixedSize<1, sizeof(HIThemeMenuDrawInfo)>,
                 MM_UpdateCFTypeArg<2>>},
     {"HIThemeDrawMenuItem",
-     RR_Compose<RR_WriteBufferFixedSize<5, sizeof(HIRect)>, RR_ScalarRval>,
+     RR_Compose<RR_WriteOptionalBufferFixedSize<5, sizeof(HIRect)>,
+                RR_ScalarRval>,
      nullptr,
      MM_Compose<MM_BufferFixedSize<0, sizeof(HIRect)>,
                 MM_BufferFixedSize<1, sizeof(HIRect)>,
@@ -2566,6 +2568,7 @@ static SystemRedirection gSystemRedirections[] = {
     {"SCDynamicStoreCreateRunLoopSource", RR_ScalarRval},
     {"SCDynamicStoreKeyCreateProxies", RR_ScalarRval},
     {"SCDynamicStoreSetNotificationKeys", RR_ScalarRval},
+    {"SecRandomCopyBytes", RR_SaveRvalHadErrorNegative<RR_WriteBuffer<2, 1>>},
     {"SendEventToEventTarget", RR_ScalarRval},
 
     // These are not public APIs, but other redirected functions may be aliases

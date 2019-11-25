@@ -6,7 +6,7 @@
 //!
 //! [Wasmtime]: https://github.com/CraneStation/wasmtime
 
-use crate::state::VisibleTranslationState;
+use crate::state::TranslationState;
 use crate::translation_utils::{
     FuncIndex, Global, GlobalIndex, Memory, MemoryIndex, SignatureIndex, Table, TableIndex,
 };
@@ -80,7 +80,7 @@ pub enum WasmError {
 /// on the arguments to this macro.
 #[macro_export]
 macro_rules! wasm_unsupported {
-    ($($arg:tt)*) => { return Err($crate::environ::WasmError::Unsupported(format!($($arg)*))) }
+    ($($arg:tt)*) => { $crate::environ::WasmError::Unsupported(format!($($arg)*)) }
 }
 
 impl From<BinaryReaderError> for WasmError {
@@ -281,7 +281,7 @@ pub trait FuncEnvironment {
         &mut self,
         _op: &Operator,
         _builder: &mut FunctionBuilder,
-        _state: &VisibleTranslationState,
+        _state: &TranslationState,
     ) -> WasmResult<()> {
         Ok(())
     }
@@ -292,7 +292,7 @@ pub trait FuncEnvironment {
         &mut self,
         _op: &Operator,
         _builder: &mut FunctionBuilder,
-        _state: &VisibleTranslationState,
+        _state: &TranslationState,
     ) -> WasmResult<()> {
         Ok(())
     }
@@ -467,4 +467,18 @@ pub trait ModuleEnvironment<'data> {
         offset: usize,
         data: &'data [u8],
     ) -> WasmResult<()>;
+
+    /// Declares the name of a function to the environment.
+    ///
+    /// By default this does nothing, but implementations can use this to read
+    /// the function name subsection of the custom name section if desired.
+    fn declare_func_name(&mut self, _func_index: FuncIndex, _name: &'data str) -> WasmResult<()> {
+        Ok(())
+    }
+
+    /// Indicates that a custom section has been found in the wasm file
+    fn custom_section(&mut self, name: &'data str, data: &'data [u8]) -> WasmResult<()> {
+        drop((name, data));
+        Ok(())
+    }
 }

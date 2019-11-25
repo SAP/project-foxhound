@@ -71,7 +71,7 @@ class MediaTransportHandler {
 
   // We will probably be able to move the proxy lookup stuff into
   // this class once we move mtransport to its own process.
-  virtual void SetProxyServer(NrSocketProxyConfig&& aProxyConfig) = 0;
+  virtual void SetProxyConfig(NrSocketProxyConfig&& aProxyConfig) = 0;
 
   virtual void EnsureProvisionalTransport(const std::string& aTransportId,
                                           const std::string& aLocalUfrag,
@@ -110,7 +110,8 @@ class MediaTransportHandler {
 
   virtual void AddIceCandidate(const std::string& aTransportId,
                                const std::string& aCandidate,
-                               const std::string& aUFrag) = 0;
+                               const std::string& aUFrag,
+                               const std::string& aObfuscatedAddress) = 0;
 
   virtual void UpdateNetworkState(bool aOnline) = 0;
 

@@ -15,7 +15,7 @@
 #include "nsPresContext.h"
 #include "nsDisplayList.h"
 #include "gfxContext.h"
-#include "nsMathMLElement.h"
+#include "mozilla/dom/MathMLElement.h"
 #include <algorithm>
 #include "gfxMathTable.h"
 
@@ -108,7 +108,7 @@ nscoord nsMathMLmfracFrame::CalcLineThickness(nsPresContext* aPresContext,
       // length value
       lineThickness = defaultThickness;
       ParseNumericValue(aThicknessAttribute, &lineThickness,
-                        nsMathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
+                        dom::MathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
                         aComputedStyle, aFontSizeInflation);
     } else {
       bool isDeprecatedLineThicknessValue = true;
@@ -135,8 +135,8 @@ nscoord nsMathMLmfracFrame::CalcLineThickness(nsPresContext* aPresContext,
         isDeprecatedLineThicknessValue = false;
         lineThickness = defaultThickness;
         ParseNumericValue(aThicknessAttribute, &lineThickness,
-                          nsMathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
-                          aComputedStyle, aFontSizeInflation);
+                          dom::MathMLElement::PARSE_ALLOW_UNITLESS,
+                          aPresContext, aComputedStyle, aFontSizeInflation);
       }
       if (isDeprecatedLineThicknessValue) {
         mContent->OwnerDoc()->WarnOnceAbout(
@@ -253,9 +253,15 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                         defaultRuleThickness, fontSizeInflation);
 
   // bevelled attribute
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::bevelled_,
-                                 value);
-  mIsBevelled = value.EqualsLiteral("true");
+  mIsBevelled = false;
+  if (!StaticPrefs::mathml_mfrac_bevelled_attribute_disabled()) {
+    if (mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::bevelled_,
+                                       value)) {
+      mContent->OwnerDoc()->WarnOnceAbout(
+          dom::Document::eMathML_DeprecatedBevelledAttribute);
+      mIsBevelled = value.EqualsLiteral("true");
+    }
+  }
 
   bool displayStyle = StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_BLOCK;
 
@@ -394,21 +400,31 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
     nscoord dxDen = leftSpace + (width - sizeDen.Width()) / 2;
     width += leftSpace + rightSpace;
 
-    // see if the numalign attribute is there
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::numalign_,
-                                   value);
-    if (value.EqualsLiteral("left"))
-      dxNum = leftSpace;
-    else if (value.EqualsLiteral("right"))
-      dxNum = width - rightSpace - sizeNum.Width();
+    if (!StaticPrefs::mathml_deprecated_alignment_attributes_disabled()) {
+      // see if the numalign attribute is there
+      if (mContent->AsElement()->GetAttr(kNameSpaceID_None,
+                                         nsGkAtoms::numalign_, value)) {
+        mContent->OwnerDoc()->WarnOnceAbout(
+            dom::Document::eMathML_DeprecatedAlignmentAttributes);
+        if (value.EqualsLiteral("left")) {
+          dxNum = leftSpace;
+        } else if (value.EqualsLiteral("right")) {
+          dxNum = width - rightSpace - sizeNum.Width();
+        }
+      }
 
-    // see if the denomalign attribute is there
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::denomalign_,
-                                   value);
-    if (value.EqualsLiteral("left"))
-      dxDen = leftSpace;
-    else if (value.EqualsLiteral("right"))
-      dxDen = width - rightSpace - sizeDen.Width();
+      // see if the denomalign attribute is there
+      if (mContent->AsElement()->GetAttr(kNameSpaceID_None,
+                                         nsGkAtoms::denomalign_, value)) {
+        mContent->OwnerDoc()->WarnOnceAbout(
+            dom::Document::eMathML_DeprecatedAlignmentAttributes);
+        if (value.EqualsLiteral("left")) {
+          dxDen = leftSpace;
+        } else if (value.EqualsLiteral("right")) {
+          dxDen = width - rightSpace - sizeDen.Width();
+        }
+      }
+    }
 
     mBoundingMetrics.rightBearing =
         std::max(dxNum + bmNum.rightBearing, dxDen + bmDen.rightBearing);

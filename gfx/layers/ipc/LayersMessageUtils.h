@@ -14,6 +14,7 @@
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/nsGUIEventIPC.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/APZTypes.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/CompositorOptions.h"
@@ -321,10 +322,6 @@ struct ParamTraits<mozilla::layers::ScrollSnapInfo> {
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mScrollSnapStrictnessX);
     WriteParam(aMsg, aParam.mScrollSnapStrictnessY);
-    WriteParam(aMsg, aParam.mScrollSnapIntervalX);
-    WriteParam(aMsg, aParam.mScrollSnapIntervalY);
-    WriteParam(aMsg, aParam.mScrollSnapDestination);
-    WriteParam(aMsg, aParam.mScrollSnapCoordinates);
     WriteParam(aMsg, aParam.mSnapPositionX);
     WriteParam(aMsg, aParam.mSnapPositionY);
     WriteParam(aMsg, aParam.mXRangeWiderThanSnapport);
@@ -336,10 +333,6 @@ struct ParamTraits<mozilla::layers::ScrollSnapInfo> {
                    paramType* aResult) {
     return (ReadParam(aMsg, aIter, &aResult->mScrollSnapStrictnessX) &&
             ReadParam(aMsg, aIter, &aResult->mScrollSnapStrictnessY) &&
-            ReadParam(aMsg, aIter, &aResult->mScrollSnapIntervalX) &&
-            ReadParam(aMsg, aIter, &aResult->mScrollSnapIntervalY) &&
-            ReadParam(aMsg, aIter, &aResult->mScrollSnapDestination) &&
-            ReadParam(aMsg, aIter, &aResult->mScrollSnapCoordinates) &&
             ReadParam(aMsg, aIter, &aResult->mSnapPositionX) &&
             ReadParam(aMsg, aIter, &aResult->mSnapPositionY) &&
             ReadParam(aMsg, aIter, &aResult->mXRangeWiderThanSnapport) &&
@@ -400,7 +393,6 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
     WriteParam(aMsg, aParam.mHasScrollgrab);
     WriteParam(aMsg, aParam.mIsLayersIdRoot);
     WriteParam(aMsg, aParam.mIsAutoDirRootContentRTL);
-    WriteParam(aMsg, aParam.mUsesContainerScrolling);
     WriteParam(aMsg, aParam.mForceDisableApz);
     WriteParam(aMsg, aParam.mResolutionUpdated);
     WriteParam(aMsg, aParam.mDisregardedDirection);
@@ -433,8 +425,6 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
                                 &paramType::SetIsLayersIdRoot) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetIsAutoDirRootContentRTL) &&
-            ReadBoolForBitfield(aMsg, aIter, aResult,
-                                &paramType::SetUsesContainerScrolling) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetForceDisableApz) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
@@ -520,6 +510,31 @@ struct ParamTraits<mozilla::layers::ScrollableLayerGuid> {
     return (ReadParam(aMsg, aIter, &aResult->mLayersId) &&
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
             ReadParam(aMsg, aIter, &aResult->mScrollId));
+  }
+};
+
+template <>
+struct ParamTraits<nsEventStatus>
+    : public ContiguousEnumSerializer<nsEventStatus, nsEventStatus_eIgnore,
+                                      nsEventStatus_eSentinel> {};
+
+template <>
+struct ParamTraits<mozilla::layers::APZEventResult> {
+  typedef mozilla::layers::APZEventResult paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mStatus);
+    WriteParam(aMsg, aParam.mTargetGuid);
+    WriteParam(aMsg, aParam.mInputBlockId);
+    WriteParam(aMsg, aParam.mHitRegionWithApzAwareListeners);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return (ReadParam(aMsg, aIter, &aResult->mStatus) &&
+            ReadParam(aMsg, aIter, &aResult->mTargetGuid) &&
+            ReadParam(aMsg, aIter, &aResult->mInputBlockId) &&
+            ReadParam(aMsg, aIter, &aResult->mHitRegionWithApzAwareListeners));
   }
 };
 

@@ -62,6 +62,7 @@ namespace frontend {
  * (sorted by alphabetical order)
  */
 #define FOR_EACH_BIN_KIND(F)                                                  \
+  F(_Uninitialized, "Uninitialized", UNINITIALIZED)                           \
   F(_Null, "", NULL)                                                          \
   F(ArrayAssignmentTarget, "ArrayAssignmentTarget", ARRAY_ASSIGNMENT_TARGET)  \
   F(ArrayBinding, "ArrayBinding", ARRAY_BINDING)                              \
@@ -1763,6 +1764,9 @@ const size_t BINAST_SUM_STATEMENT_LIMIT = 24;
 // - OPTIONAL_STRING_ENUM: wrapper for optional string enum type names - called
 // as `OPTIONAL_STRING_ENUM(typename)` where
 //      `typename` is the name of the string enum (e.g. no `Maybe` prefix)
+#define FOR_EACH_BIN_FIELD_IN_INTERFACE_UNINITIALIZED(                    \
+    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM, \
+    STRING_ENUM, OPTIONAL_STRING_ENUM)
 
 // Strongly typed iteration through the fields of interface _Null.
 #define FOR_EACH_BIN_FIELD_IN_INTERFACE_NULL(                             \
@@ -1849,7 +1853,7 @@ const size_t
     INTERFACE(AssertedVarScope),                                                      \
     "ArrowExpressionContentsWithFunctionBody::bodyScope")                             \
   F(ArrowExpressionContentsWithFunctionBody, Body, 3,                                 \
-    LIST(FunctionBody, Statement),                                                    \
+    LIST(ListOfStatement, SUM(Statement)),                                            \
     "ArrowExpressionContentsWithFunctionBody::body")
 
 // The number of fields of interface ArrowExpressionContentsWithFunctionBody.
@@ -2164,12 +2168,13 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_BLOCK = 2;
 const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_BREAK_STATEMENT = 1;
 
 // Strongly typed iteration through the fields of interface CallExpression.
-#define FOR_EACH_BIN_FIELD_IN_INTERFACE_CALL_EXPRESSION(                      \
-    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM,     \
-    STRING_ENUM, OPTIONAL_STRING_ENUM)                                        \
-  F(CallExpression, Callee, 0, SUM(ExpressionOrSuper),                        \
-    "CallExpression::callee")                                                 \
-  F(CallExpression, Arguments, 1, LIST(Arguments, ExpressionOrSpreadElement), \
+#define FOR_EACH_BIN_FIELD_IN_INTERFACE_CALL_EXPRESSION(                  \
+    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM, \
+    STRING_ENUM, OPTIONAL_STRING_ENUM)                                    \
+  F(CallExpression, Callee, 0, SUM(ExpressionOrSuper),                    \
+    "CallExpression::callee")                                             \
+  F(CallExpression, Arguments, 1,                                         \
+    LIST(Arguments, SUM(ExpressionOrSpreadElement)),                      \
     "CallExpression::arguments")
 
 // The number of fields of interface CallExpression.
@@ -2648,8 +2653,8 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_FORMAL_PARAMETERS = 2;
     "FunctionExpressionContents::params")                                      \
   F(FunctionExpressionContents, BodyScope, 4, INTERFACE(AssertedVarScope),     \
     "FunctionExpressionContents::bodyScope")                                   \
-  F(FunctionExpressionContents, Body, 5, LIST(FunctionBody, Statement),        \
-    "FunctionExpressionContents::body")
+  F(FunctionExpressionContents, Body, 5,                                       \
+    LIST(ListOfStatement, SUM(Statement)), "FunctionExpressionContents::body")
 
 // The number of fields of interface FunctionExpressionContents.
 const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_FUNCTION_EXPRESSION_CONTENTS =
@@ -2657,19 +2662,19 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_FUNCTION_EXPRESSION_CONTENTS =
 
 // Strongly typed iteration through the fields of interface
 // FunctionOrMethodContents.
-#define FOR_EACH_BIN_FIELD_IN_INTERFACE_FUNCTION_OR_METHOD_CONTENTS(      \
-    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM, \
-    STRING_ENUM, OPTIONAL_STRING_ENUM)                                    \
-  F(FunctionOrMethodContents, IsThisCaptured, 0, PRIMITIVE(Boolean),      \
-    "FunctionOrMethodContents::isThisCaptured")                           \
-  F(FunctionOrMethodContents, ParameterScope, 1,                          \
-    INTERFACE(AssertedParameterScope),                                    \
-    "FunctionOrMethodContents::parameterScope")                           \
-  F(FunctionOrMethodContents, Params, 2, INTERFACE(FormalParameters),     \
-    "FunctionOrMethodContents::params")                                   \
-  F(FunctionOrMethodContents, BodyScope, 3, INTERFACE(AssertedVarScope),  \
-    "FunctionOrMethodContents::bodyScope")                                \
-  F(FunctionOrMethodContents, Body, 4, LIST(FunctionBody, Statement),     \
+#define FOR_EACH_BIN_FIELD_IN_INTERFACE_FUNCTION_OR_METHOD_CONTENTS(          \
+    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM,     \
+    STRING_ENUM, OPTIONAL_STRING_ENUM)                                        \
+  F(FunctionOrMethodContents, IsThisCaptured, 0, PRIMITIVE(Boolean),          \
+    "FunctionOrMethodContents::isThisCaptured")                               \
+  F(FunctionOrMethodContents, ParameterScope, 1,                              \
+    INTERFACE(AssertedParameterScope),                                        \
+    "FunctionOrMethodContents::parameterScope")                               \
+  F(FunctionOrMethodContents, Params, 2, INTERFACE(FormalParameters),         \
+    "FunctionOrMethodContents::params")                                       \
+  F(FunctionOrMethodContents, BodyScope, 3, INTERFACE(AssertedVarScope),      \
+    "FunctionOrMethodContents::bodyScope")                                    \
+  F(FunctionOrMethodContents, Body, 4, LIST(ListOfStatement, SUM(Statement)), \
     "FunctionOrMethodContents::body")
 
 // The number of fields of interface FunctionOrMethodContents.
@@ -2684,7 +2689,7 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_FUNCTION_OR_METHOD_CONTENTS =
     "GetterContents::isThisCaptured")                                     \
   F(GetterContents, BodyScope, 1, INTERFACE(AssertedVarScope),            \
     "GetterContents::bodyScope")                                          \
-  F(GetterContents, Body, 2, LIST(FunctionBody, Statement),               \
+  F(GetterContents, Body, 2, LIST(ListOfStatement, SUM(Statement)),       \
     "GetterContents::body")
 
 // The number of fields of interface GetterContents.
@@ -2993,11 +2998,12 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_LITERAL_STRING_EXPRESSION = 1;
 const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_MODULE = 3;
 
 // Strongly typed iteration through the fields of interface NewExpression.
-#define FOR_EACH_BIN_FIELD_IN_INTERFACE_NEW_EXPRESSION(                      \
-    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM,    \
-    STRING_ENUM, OPTIONAL_STRING_ENUM)                                       \
-  F(NewExpression, Callee, 0, SUM(Expression), "NewExpression::callee")      \
-  F(NewExpression, Arguments, 1, LIST(Arguments, ExpressionOrSpreadElement), \
+#define FOR_EACH_BIN_FIELD_IN_INTERFACE_NEW_EXPRESSION(                   \
+    F, PRIMITIVE, INTERFACE, OPTIONAL_INTERFACE, LIST, SUM, OPTIONAL_SUM, \
+    STRING_ENUM, OPTIONAL_STRING_ENUM)                                    \
+  F(NewExpression, Callee, 0, SUM(Expression), "NewExpression::callee")   \
+  F(NewExpression, Arguments, 1,                                          \
+    LIST(Arguments, SUM(ExpressionOrSpreadElement)),                      \
     "NewExpression::arguments")
 
 // The number of fields of interface NewExpression.
@@ -3079,7 +3085,7 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_SCRIPT = 3;
   F(SetterContents, Param, 2, SUM(Parameter), "SetterContents::param")    \
   F(SetterContents, BodyScope, 3, INTERFACE(AssertedVarScope),            \
     "SetterContents::bodyScope")                                          \
-  F(SetterContents, Body, 4, LIST(FunctionBody, Statement),               \
+  F(SetterContents, Body, 4, LIST(ListOfStatement, SUM(Statement)),       \
     "SetterContents::body")
 
 // The number of fields of interface SetterContents.
@@ -3351,6 +3357,30 @@ const size_t BINAST_NUMBER_OF_FIELDS_IN_INTERFACE_YIELD_STAR_EXPRESSION = 1;
 // a probability table per field.
 const size_t BINAST_INTERFACE_AND_FIELD_LIMIT = 275;
 
+// Create parameters list to pass mozilla::Array constructor.
+// The number of parameters equals to BINAST_INTERFACE_AND_FIELD_LIMIT.
+#define BINAST_PARAM_NUMBER_OF_INTERFACE_AND_FIELD(X)                        \
+  (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X),  \
+      (X), (X), (X), (X), (X), (X), (X), (X)
+
 /**
  * The different variants of Binary AST string enums, as per
  * the specifications of Binary AST, as a single macro and
@@ -3368,55 +3398,55 @@ const size_t BINAST_INTERFACE_AND_FIELD_LIMIT = 275;
  * (sorted by alphabetical order)
  */
 #define FOR_EACH_BIN_VARIANT(F)                               \
-  F(AssertedDeclaredKindConstLexical, "const lexical")        \
-  F(AssertedDeclaredKindNonConstLexical, "non-const lexical") \
-  F(AssertedDeclaredKindOrVariableDeclarationKindVar, "var")  \
+  F(UnaryOperatorNot, "!")                                    \
+  F(BinaryOperatorNeq, "!=")                                  \
+  F(BinaryOperatorStrictNeq, "!==")                           \
+  F(BinaryOperatorMod, "%")                                   \
+  F(CompoundAssignmentOperatorModAssign, "%=")                \
   F(BinaryOperatorBitAnd, "&")                                \
-  F(BinaryOperatorBitOr, "|")                                 \
-  F(BinaryOperatorBitXor, "^")                                \
+  F(BinaryOperatorLogicalAnd, "&&")                           \
+  F(CompoundAssignmentOperatorBitAndAssign, "&=")             \
+  F(BinaryOperatorMul, "*")                                   \
+  F(BinaryOperatorPow, "**")                                  \
+  F(CompoundAssignmentOperatorPowAssign, "**=")               \
+  F(CompoundAssignmentOperatorMulAssign, "*=")                \
+  F(BinaryOperatorOrUnaryOperatorPlus, "+")                   \
+  F(UpdateOperatorIncr, "++")                                 \
+  F(CompoundAssignmentOperatorPlusAssign, "+=")               \
   F(BinaryOperatorComma, ",")                                 \
+  F(BinaryOperatorOrUnaryOperatorMinus, "-")                  \
+  F(UpdateOperatorDecr, "--")                                 \
+  F(CompoundAssignmentOperatorMinusAssign, "-=")              \
   F(BinaryOperatorDiv, "/")                                   \
+  F(CompoundAssignmentOperatorDivAssign, "/=")                \
+  F(BinaryOperatorLessThan, "<")                              \
+  F(BinaryOperatorLsh, "<<")                                  \
+  F(CompoundAssignmentOperatorLshAssign, "<<=")               \
+  F(BinaryOperatorLeqThan, "<=")                              \
   F(BinaryOperatorEq, "==")                                   \
-  F(BinaryOperatorGeqThan, ">=")                              \
+  F(BinaryOperatorStrictEq, "===")                            \
   F(BinaryOperatorGreaterThan, ">")                           \
+  F(BinaryOperatorGeqThan, ">=")                              \
+  F(BinaryOperatorRsh, ">>")                                  \
+  F(CompoundAssignmentOperatorRshAssign, ">>=")               \
+  F(BinaryOperatorUrsh, ">>>")                                \
+  F(CompoundAssignmentOperatorUrshAssign, ">>>=")             \
+  F(BinaryOperatorBitXor, "^")                                \
+  F(CompoundAssignmentOperatorBitXorAssign, "^=")             \
+  F(VariableDeclarationKindConst, "const")                    \
+  F(AssertedDeclaredKindConstLexical, "const lexical")        \
+  F(UnaryOperatorDelete, "delete")                            \
   F(BinaryOperatorIn, "in")                                   \
   F(BinaryOperatorInstanceof, "instanceof")                   \
-  F(BinaryOperatorLeqThan, "<=")                              \
-  F(BinaryOperatorLessThan, "<")                              \
-  F(BinaryOperatorLogicalAnd, "&&")                           \
-  F(BinaryOperatorLogicalOr, "||")                            \
-  F(BinaryOperatorLsh, "<<")                                  \
-  F(BinaryOperatorMod, "%")                                   \
-  F(BinaryOperatorMul, "*")                                   \
-  F(BinaryOperatorNeq, "!=")                                  \
-  F(BinaryOperatorOrUnaryOperatorMinus, "-")                  \
-  F(BinaryOperatorOrUnaryOperatorPlus, "+")                   \
-  F(BinaryOperatorPow, "**")                                  \
-  F(BinaryOperatorRsh, ">>")                                  \
-  F(BinaryOperatorStrictEq, "===")                            \
-  F(BinaryOperatorStrictNeq, "!==")                           \
-  F(BinaryOperatorUrsh, ">>>")                                \
-  F(CompoundAssignmentOperatorBitAndAssign, "&=")             \
-  F(CompoundAssignmentOperatorBitOrAssign, "|=")              \
-  F(CompoundAssignmentOperatorBitXorAssign, "^=")             \
-  F(CompoundAssignmentOperatorDivAssign, "/=")                \
-  F(CompoundAssignmentOperatorLshAssign, "<<=")               \
-  F(CompoundAssignmentOperatorMinusAssign, "-=")              \
-  F(CompoundAssignmentOperatorModAssign, "%=")                \
-  F(CompoundAssignmentOperatorMulAssign, "*=")                \
-  F(CompoundAssignmentOperatorPlusAssign, "+=")               \
-  F(CompoundAssignmentOperatorPowAssign, "**=")               \
-  F(CompoundAssignmentOperatorRshAssign, ">>=")               \
-  F(CompoundAssignmentOperatorUrshAssign, ">>>=")             \
-  F(UnaryOperatorBitNot, "~")                                 \
-  F(UnaryOperatorDelete, "delete")                            \
-  F(UnaryOperatorNot, "!")                                    \
+  F(VariableDeclarationKindLet, "let")                        \
+  F(AssertedDeclaredKindNonConstLexical, "non-const lexical") \
   F(UnaryOperatorTypeof, "typeof")                            \
+  F(AssertedDeclaredKindOrVariableDeclarationKindVar, "var")  \
   F(UnaryOperatorVoid, "void")                                \
-  F(UpdateOperatorDecr, "--")                                 \
-  F(UpdateOperatorIncr, "++")                                 \
-  F(VariableDeclarationKindConst, "const")                    \
-  F(VariableDeclarationKindLet, "let")
+  F(BinaryOperatorBitOr, "|")                                 \
+  F(CompoundAssignmentOperatorBitOrAssign, "|=")              \
+  F(BinaryOperatorLogicalOr, "||")                            \
+  F(UnaryOperatorBitNot, "~")
 
 enum class BinASTVariant : uint16_t {
 #define EMIT_ENUM(name, _) name,
@@ -3454,6 +3484,14 @@ const size_t BINASTSTRINGENUM_LIMIT = 6;
   F(AssertedDeclaredKind, AssertedDeclaredKindOrVariableDeclarationKindVar,         \
     "var")
 
+#define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_ASSERTED_DECLARED_KIND_BY_WEBIDL_ORDER( \
+    F)                                                                              \
+  F(AssertedDeclaredKind, AssertedDeclaredKindOrVariableDeclarationKindVar,         \
+    "var")                                                                          \
+  F(AssertedDeclaredKind, AssertedDeclaredKindNonConstLexical,                      \
+    "non-const lexical")                                                            \
+  F(AssertedDeclaredKind, AssertedDeclaredKindConstLexical, "const lexical")
+
 const size_t BIN_AST_STRING_ENUM_ASSERTED_DECLARED_KIND_LIMIT = 3;
 
 #define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_BINARY_OPERATOR_BY_STRING_ORDER(F) \
@@ -3483,6 +3521,33 @@ const size_t BIN_AST_STRING_ENUM_ASSERTED_DECLARED_KIND_LIMIT = 3;
   F(BinaryOperator, BinaryOperatorBitOr, "|")                                  \
   F(BinaryOperator, BinaryOperatorLogicalOr, "||")
 
+#define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_BINARY_OPERATOR_BY_WEBIDL_ORDER(F) \
+  F(BinaryOperator, BinaryOperatorComma, ",")                                  \
+  F(BinaryOperator, BinaryOperatorLogicalOr, "||")                             \
+  F(BinaryOperator, BinaryOperatorLogicalAnd, "&&")                            \
+  F(BinaryOperator, BinaryOperatorBitOr, "|")                                  \
+  F(BinaryOperator, BinaryOperatorBitXor, "^")                                 \
+  F(BinaryOperator, BinaryOperatorBitAnd, "&")                                 \
+  F(BinaryOperator, BinaryOperatorEq, "==")                                    \
+  F(BinaryOperator, BinaryOperatorNeq, "!=")                                   \
+  F(BinaryOperator, BinaryOperatorStrictEq, "===")                             \
+  F(BinaryOperator, BinaryOperatorStrictNeq, "!==")                            \
+  F(BinaryOperator, BinaryOperatorLessThan, "<")                               \
+  F(BinaryOperator, BinaryOperatorLeqThan, "<=")                               \
+  F(BinaryOperator, BinaryOperatorGreaterThan, ">")                            \
+  F(BinaryOperator, BinaryOperatorGeqThan, ">=")                               \
+  F(BinaryOperator, BinaryOperatorIn, "in")                                    \
+  F(BinaryOperator, BinaryOperatorInstanceof, "instanceof")                    \
+  F(BinaryOperator, BinaryOperatorLsh, "<<")                                   \
+  F(BinaryOperator, BinaryOperatorRsh, ">>")                                   \
+  F(BinaryOperator, BinaryOperatorUrsh, ">>>")                                 \
+  F(BinaryOperator, BinaryOperatorOrUnaryOperatorPlus, "+")                    \
+  F(BinaryOperator, BinaryOperatorOrUnaryOperatorMinus, "-")                   \
+  F(BinaryOperator, BinaryOperatorMul, "*")                                    \
+  F(BinaryOperator, BinaryOperatorDiv, "/")                                    \
+  F(BinaryOperator, BinaryOperatorMod, "%")                                    \
+  F(BinaryOperator, BinaryOperatorPow, "**")
+
 const size_t BIN_AST_STRING_ENUM_BINARY_OPERATOR_LIMIT = 25;
 
 #define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_COMPOUND_ASSIGNMENT_OPERATOR_BY_STRING_ORDER( \
@@ -3500,6 +3565,21 @@ const size_t BIN_AST_STRING_ENUM_BINARY_OPERATOR_LIMIT = 25;
   F(CompoundAssignmentOperator, CompoundAssignmentOperatorBitXorAssign, "^=")             \
   F(CompoundAssignmentOperator, CompoundAssignmentOperatorBitOrAssign, "|=")
 
+#define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_COMPOUND_ASSIGNMENT_OPERATOR_BY_WEBIDL_ORDER( \
+    F)                                                                                    \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorPlusAssign, "+=")               \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorMinusAssign, "-=")              \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorMulAssign, "*=")                \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorDivAssign, "/=")                \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorModAssign, "%=")                \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorPowAssign, "**=")               \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorLshAssign, "<<=")               \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorRshAssign, ">>=")               \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorUrshAssign, ">>>=")             \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorBitOrAssign, "|=")              \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorBitXorAssign, "^=")             \
+  F(CompoundAssignmentOperator, CompoundAssignmentOperatorBitAndAssign, "&=")
+
 const size_t BIN_AST_STRING_ENUM_COMPOUND_ASSIGNMENT_OPERATOR_LIMIT = 12;
 
 #define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_UNARY_OPERATOR_BY_STRING_ORDER(F) \
@@ -3511,9 +3591,22 @@ const size_t BIN_AST_STRING_ENUM_COMPOUND_ASSIGNMENT_OPERATOR_LIMIT = 12;
   F(UnaryOperator, UnaryOperatorVoid, "void")                                 \
   F(UnaryOperator, UnaryOperatorBitNot, "~")
 
+#define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_UNARY_OPERATOR_BY_WEBIDL_ORDER(F) \
+  F(UnaryOperator, BinaryOperatorOrUnaryOperatorPlus, "+")                    \
+  F(UnaryOperator, BinaryOperatorOrUnaryOperatorMinus, "-")                   \
+  F(UnaryOperator, UnaryOperatorNot, "!")                                     \
+  F(UnaryOperator, UnaryOperatorBitNot, "~")                                  \
+  F(UnaryOperator, UnaryOperatorTypeof, "typeof")                             \
+  F(UnaryOperator, UnaryOperatorVoid, "void")                                 \
+  F(UnaryOperator, UnaryOperatorDelete, "delete")
+
 const size_t BIN_AST_STRING_ENUM_UNARY_OPERATOR_LIMIT = 7;
 
 #define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_UPDATE_OPERATOR_BY_STRING_ORDER(F) \
+  F(UpdateOperator, UpdateOperatorIncr, "++")                                  \
+  F(UpdateOperator, UpdateOperatorDecr, "--")
+
+#define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_UPDATE_OPERATOR_BY_WEBIDL_ORDER(F) \
   F(UpdateOperator, UpdateOperatorIncr, "++")                                  \
   F(UpdateOperator, UpdateOperatorDecr, "--")
 
@@ -3525,6 +3618,13 @@ const size_t BIN_AST_STRING_ENUM_UPDATE_OPERATOR_LIMIT = 2;
   F(VariableDeclarationKind, VariableDeclarationKindLet, "let")                        \
   F(VariableDeclarationKind, AssertedDeclaredKindOrVariableDeclarationKindVar,         \
     "var")
+
+#define FOR_EACH_BIN_VARIANT_IN_STRING_ENUM_VARIABLE_DECLARATION_KIND_BY_WEBIDL_ORDER( \
+    F)                                                                                 \
+  F(VariableDeclarationKind, AssertedDeclaredKindOrVariableDeclarationKindVar,         \
+    "var")                                                                             \
+  F(VariableDeclarationKind, VariableDeclarationKindLet, "let")                        \
+  F(VariableDeclarationKind, VariableDeclarationKindConst, "const")
 
 const size_t BIN_AST_STRING_ENUM_VARIABLE_DECLARATION_KIND_LIMIT = 3;
 
@@ -3553,8 +3653,6 @@ const size_t BIN_AST_STRING_ENUM_VARIABLE_DECLARATION_KIND_LIMIT = 3;
                           OPTIONAL_STRING_ENUM)                                \
   F(Arguments, ExpressionOrSpreadElement, "Arguments",                         \
     LIST(Arguments, SUM(ExpressionOrSpreadElement)))                           \
-  F(FunctionBody, Statement, "FunctionBody",                                   \
-    LIST(FunctionBody, SUM(Statement)))                                        \
   F(ListOfAssertedBoundName, AssertedBoundName, "ListOfAssertedBoundName",     \
     LIST(ListOfAssertedBoundName, INTERFACE(AssertedBoundName)))               \
   F(ListOfAssertedDeclaredName, AssertedDeclaredName,                          \
@@ -3628,6 +3726,12 @@ enum class BinASTList : uint16_t {
 // The number of distinct list types in the grammar. Used typically to maintain
 // a probability table per list type.
 const size_t BINAST_NUMBER_OF_LIST_TYPES = 22;
+
+// Create parameters list to pass mozilla::Array constructor.
+// The number of parameters equals to BINAST_NUMBER_OF_LIST_TYPES.
+#define BINAST_PARAM_NUMBER_OF_LIST_TYPES(X)                                 \
+  (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), (X), \
+      (X), (X), (X), (X), (X), (X), (X)
 
 #define FOR_EACH_BIN_SUM(F)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         \
   F(ArrowExpression, "ArrowExpression", ARROW_EXPRESSION,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           \
@@ -3745,6 +3849,21 @@ const char* describeBinASTInterfaceAndField(
  * Return a string describing a `BinASTVariant`.
  */
 const char* describeBinASTVariant(const BinASTVariant& variant);
+
+/**
+ * Return a string describing a `BinASTList`.
+ */
+const char* describeBinASTList(const BinASTList& list);
+
+/**
+ * Return a sort key for sorting `BinASTKind`s alphabetically.
+ */
+size_t getBinASTKindSortKey(const BinASTKind& kind);
+
+/**
+ * Return a sort key for sorting `BinASTVariant`s alphabetically.
+ */
+size_t getBinASTVariantSortKey(const BinASTVariant& variant);
 
 }  // namespace frontend
 }  // namespace js

@@ -102,11 +102,15 @@ dictionary PaymentOptions {
   PaymentShippingType shippingType = "shipping";
 };
 
-[Constructor(sequence<PaymentMethodData> methodData, PaymentDetailsInit details,
-             optional PaymentOptions options = {}),
- SecureContext,
- Func="mozilla::dom::PaymentRequest::PrefEnabled"]
+[SecureContext,
+ Func="mozilla::dom::PaymentRequest::PrefEnabled",
+ Exposed=Window]
 interface PaymentRequest : EventTarget {
+  [Throws]
+  constructor(sequence<PaymentMethodData> methodData,
+              PaymentDetailsInit details,
+              optional PaymentOptions options = {});
+
   [NewObject]
   Promise<PaymentResponse> show(optional Promise<PaymentDetailsUpdate> detailsPromise);
   [NewObject]

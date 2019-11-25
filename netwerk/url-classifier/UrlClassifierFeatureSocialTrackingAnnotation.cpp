@@ -8,6 +8,7 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
+#include "nsIClassifiedChannel.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -135,19 +136,19 @@ UrlClassifierFeatureSocialTrackingAnnotation::ProcessChannel(
   static std::vector<UrlClassifierCommon::ClassificationData>
       sClassificationData = {
           {NS_LITERAL_CSTRING("social-tracking-protection-facebook-"),
-           nsIHttpChannel::ClassificationFlags::
+           nsIClassifiedChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_FACEBOOK},
           {NS_LITERAL_CSTRING("social-tracking-protection-linkedin-"),
-           nsIHttpChannel::ClassificationFlags::
+           nsIClassifiedChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_LINKEDIN},
           {NS_LITERAL_CSTRING("social-tracking-protection-twitter-"),
-           nsIHttpChannel::ClassificationFlags::
+           nsIClassifiedChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_TWITTER},
       };
 
   uint32_t flags = UrlClassifierCommon::TablesToClassificationFlags(
       aList, sClassificationData,
-      nsIHttpChannel::ClassificationFlags::CLASSIFIED_SOCIALTRACKING);
+      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_SOCIALTRACKING);
 
   UrlClassifierCommon::AnnotateChannel(
       aChannel, flags,
@@ -159,15 +160,19 @@ UrlClassifierFeatureSocialTrackingAnnotation::ProcessChannel(
 NS_IMETHODIMP
 UrlClassifierFeatureSocialTrackingAnnotation::GetURIByListType(
     nsIChannel* aChannel, nsIUrlClassifierFeature::listType aListType,
-    nsIURI** aURI) {
+    nsIUrlClassifierFeature::URIType* aURIType, nsIURI** aURI) {
   NS_ENSURE_ARG_POINTER(aChannel);
+  NS_ENSURE_ARG_POINTER(aURIType);
   NS_ENSURE_ARG_POINTER(aURI);
 
   if (aListType == nsIUrlClassifierFeature::blacklist) {
+    *aURIType = nsIUrlClassifierFeature::blacklistURI;
     return aChannel->GetURI(aURI);
   }
 
   MOZ_ASSERT(aListType == nsIUrlClassifierFeature::whitelist);
+
+  *aURIType = nsIUrlClassifierFeature::pairwiseWhitelistURI;
   return UrlClassifierCommon::CreatePairwiseWhiteListURI(aChannel, aURI);
 }
 

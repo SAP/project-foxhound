@@ -10,6 +10,7 @@ activity_stream:
       "BOOKMARK_ADD",
       "BOOKMARK_DELETE",
       "CLICK",
+      "CLICK_PRIVACY_INFO",
       "CLOSE_NEWTAB_PREFS",
       "DELETE",
       "DELETE_FROM_POCKET",
@@ -31,6 +32,7 @@ activity_stream:
       "SEARCH_EDIT_CLOSE",
       "SEARCH_EDIT_DELETE",
       "SEARCH_HANDOFF",
+      "SHOW_PRIVACY_INFO",
       "SKIPPED_SIGNIN",
       "SUBMIT_EMAIL",
       "DISCLAIMER_ACKED",
@@ -142,6 +144,7 @@ addonsManager:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     bug_numbers: [1433335, 1515697, 1523641, 1549770]
     release_channel_collection: opt-out
@@ -166,6 +169,7 @@ addonsManager:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     bug_numbers: [1433335, 1515697, 1523641, 1549770]
     release_channel_collection: opt-out
@@ -249,23 +253,27 @@ addonsManager:
       An abuse report submitted by a user for a given extension. The object of the event
       represent the report entry point, the value is the id of the addon being reported.
     objects:
+      - amo
       - menu
       - toolbar_context_menu
       - uninstall
     extra_keys:
-      addon_type: The type of the add-on being reported (missing on ERROR_ADDON_NOT_FOUND).
+      addon_type: >
+        The type of the add-on being reported (missing on ERROR_ADDON_NOT_FOUND, ERROR_AMODETAILS_NOTFOUND
+        and ERROR_AMODETAILS_FAILURE).
       error_type: >
         AbuseReport Error Type (included in case of submission failures). The error types include
         ERROR_ABORTED_SUBMIT, ERROR_ADDON_NOT_FOUND, ERROR_CLIENT, ERROR_NETWORK, ERROR_UNKNOWN,
-        ERROR_RECENT_SUBMIT, ERROR_SERVER
+        ERROR_RECENT_SUBMIT, ERROR_SERVER, ERROR_AMODETAILS_NOTFOUND, ERROR_AMODETAILS_FAILURE.
     notification_emails: ["addons-dev-internal@mozilla.com"]
     expiry_version: "73"
     products:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
-    bug_numbers: [1544927]
+    bug_numbers: [1544927, 1580561]
     release_channel_collection: opt-out
   blocklistUpdateError:
     description: >
@@ -284,6 +292,7 @@ addonsManager:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     bug_numbers: [1572711]
     release_channel_collection: opt-out
@@ -386,7 +395,7 @@ urlbar:
         type of the selected result in the urlbar panel. One of:
           "autofill", "visit", "bookmark", "history", "keyword", "search",
           "searchsuggestion", "switchtab", "remotetab", "extension", "oneoff",
-          "keywordoffer", "canonized", "none"
+          "keywordoffer", "canonized", "tip", "tiphelp", "none"
   abandonment:
     objects: ["blur"]
     release_channel_collection: opt-out
@@ -419,6 +428,7 @@ normandy:
         The slug of the branch that was chosen for this client.
       addonId: For addon_study recipes, the ID of the addon that was installed.
       addonVersion: For addon_study recipes, the version of the addon that was installed.
+      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
     bug_numbers: [1443560]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -444,7 +454,8 @@ normandy:
       branch: >
         The branch that failed to enroll.
       addonId: The ID of the addon for the rollout when reason=conflict.
-      conflictingSlug: The slug for the conlicting rollout.
+      conflictingSlug: The slug for the conflicting rollout.
+      enrollmentId: The enrollment ID of the conflicting rollout.
     bug_numbers: [1443560]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -469,6 +480,7 @@ normandy:
       addonId: For addon_study recipes, the ID of the addon that was updated.
       addonVersion: For addon_study recipes, the version of the addon that was installed.
       branch: The branch that was updated.
+      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
     bug_numbers: [1443560, 1474413]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -490,6 +502,7 @@ normandy:
       detail: >
         Extra text describing the failure. Currently only provided for addon_study.
       branch: The branch that failed to update.
+      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
     bug_numbers: [1474413]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -513,6 +526,7 @@ normandy:
       addonId: For addon_study, the ID of the addon that ended.
       addonVersion: For addon_study, the version of the addon for which the recipe ended.
       branch: The branch of the experiment that this client was on.
+      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
     bug_numbers: [1443560]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -530,6 +544,7 @@ normandy:
     objects: ["preference_rollback", "preference_study", "addon_rollback"]
     extra_keys:
       reason: A code describing the reason the unenroll failed.
+      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
     bug_numbers: [1443560]
     notification_emails: ["normandy-notifications@mozilla.com"]
     products:
@@ -554,6 +569,8 @@ normandy:
     record_in_processes: [main]
     release_channel_collection: opt-out
     expiry_version: never
+    extra_keys:
+      enrollmentId: A unique ID for this enrollment that will be included in all related Telemetry.
 
 pwmgr:
   open_management:
@@ -634,6 +651,7 @@ pwmgr:
     notification_emails: ["loines@mozilla.com", "passwords-dev@mozilla.org"]
     products:
       - "firefox"
+      - "thunderbird"
     record_in_processes: ["main"]
     release_channel_collection: opt-out
     expiry_version: never
@@ -662,9 +680,9 @@ fxa_avatar_menu:
       - "geckoview"
     record_in_processes: ["main"]
     description: This is recorded on interactions with the FxA avatar menu on the toolbar
-    bug_numbers: [1524665]
+    bug_numbers: [1524665, 1585459]
     notification_emails: ["vbudhram@mozilla.com", "loines@mozilla.com"]
-    expiry_version: "71"
+    expiry_version: "74"
     extra_keys:
       fxa_status: >
         The current state of the user. Possible states are "not_configured", "unverified",
@@ -716,6 +734,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     description: This is a test entry for Telemetry.
     expiry_version: never
@@ -731,6 +750,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     description: This is an opt-out test entry.
     expiry_version: never
@@ -744,6 +764,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     description: This is a test entry with an expired version.
     expiry_version: "3"
@@ -757,6 +778,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     expiry_version: "999"
   main_only:
@@ -767,6 +789,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     description: This event is used to test main-process only recording.
     expiry_version: never
@@ -778,6 +801,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["content"]
     description: This event is used to test content-process only recording.
     expiry_version: never
@@ -792,6 +816,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main", "content"]
     description: This event is used to test main and content process recording.
     expiry_version: never
@@ -803,6 +828,7 @@ telemetry.test:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     description: This event is used to test default products main recording.
     expiry_version: never
@@ -813,7 +839,7 @@ telemetry.test:
     record_in_processes: ["main"]
     description: This event is used to test desktop-only main recording.
     expiry_version: never
-    products: ["firefox"]
+    products: ["firefox","thunderbird"]
   multiproduct:
     objects: ["object1"]
     bug_numbers: [1452552]
@@ -821,7 +847,7 @@ telemetry.test:
     record_in_processes: ["main"]
     description: This event is used to test multiproduct main recording.
     expiry_version: never
-    products: ["firefox", "fennec", "geckoview"]
+    products: ["firefox", "fennec", "geckoview","thunderbird"]
   mobile_only:
     objects: ["object1"]
     bug_numbers: [1452552]
@@ -842,6 +868,7 @@ telemetry.test.second:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     description: This is a test entry for Telemetry.
     expiry_version: never
@@ -1049,7 +1076,7 @@ devtools.main:
     extra_keys:
       session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
   enter:
-    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "scratchpad", "storage", "styleeditor", "webconsole", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
+    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "scratchpad", "storage", "styleeditor", "whatsnew", "webconsole", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
     bug_numbers: [1441070]
     notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
     products:
@@ -1081,10 +1108,11 @@ devtools.main:
     release_channel_collection: opt-out
     expiry_version: never
     extra_keys:
+      input: Indicates from which input the command was evaluated ("inline" for regular input, "multiline" for editor mode).
       lines: The number of lines contained in the command.
       session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
   exit:
-    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "scratchpad", "storage", "styleeditor", "webconsole", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
+    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "scratchpad", "storage", "styleeditor", "whatsnew", "webconsole", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
     bug_numbers: [1455270]
     notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
     products:
@@ -1483,59 +1511,6 @@ devtools.main:
       tool_id: The id of the panel the user was using
       session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
 
-security.ui.certerror:
-  load:
-    objects: ["aboutcerterror"]
-    bug_numbers:
-      - 1484255
-      - 1505310
-      - 1553181
-    description: >
-      The about:certerror page is loaded, keyed by error code, see https://searchfox.org/mozilla-central/source/security/nss/lib/mozpkix/include/pkix/Result.h
-    expiry_version: "72"
-    notification_emails:
-      - jhofmann@mozilla.com
-      - rtestard@mozilla.com
-      - seceng-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes: ["main", "content"]
-    products:
-      - firefox
-    extra_keys:
-      is_frame: If the error page is loaded in an iframe.
-      has_sts: If the error page is for a site with HSTS headers or with a pinned key.
-  click:
-    objects: [
-      "advanced_button",
-      "exception_button",
-      "return_button_top",
-      "return_button_adv",
-      "learn_more_link",
-      "auto_report_cb",
-      "error_code_link",
-      "clipboard_button_top",
-      "clipboard_button_bot",
-    ]
-    bug_numbers:
-      - 1484255
-      - 1505310
-      - 1553181
-    description: >
-      User interaction by click events on the cert error page. Keyed by error code, see https://searchfox.org/mozilla-central/source/security/nss/lib/mozpkix/include/pkix/Result.h
-    expiry_version: "72"
-    notification_emails:
-      - jhofmann@mozilla.com
-      - rtestard@mozilla.com
-      - seceng-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes: ["content"]
-    products:
-      - firefox
-    extra_keys:
-      is_frame: If the error page is loaded in an iframe.
-      has_sts: If the error page is for a site with HSTS headers or with a pinned key.
-      panel_open: If the advanced panel was open at the time of the interaction.
-
 security.ui.protections:
   show:
     objects: [
@@ -1600,50 +1575,6 @@ security.ui.protections:
       - firefox
     extra_keys:
       category: The category of protections the user is in, standard, strict or custom.
-
-security.ui.identitypopup:
-  open:
-    objects: ["identity_popup"]
-    bug_numbers:
-      - 1484251
-      - 1522256
-      - 1522919
-      - 1553181
-      - 1562575
-    description: >
-      How many times the control center was opened.
-    expiry_version: "72"
-    notification_emails:
-      - jhofmann@mozilla.com
-      - pdol@mozilla.com
-      - seceng-telemetry@mozilla.com
-    release_channel_collection: opt-in
-    record_in_processes:
-      - main
-    products:
-      - firefox
-  click:
-    objects: [
-      "permission_prefs_btn",
-      "clear_sitedata",
-      "security_subview_btn",
-    ]
-    bug_numbers:
-      - 1484251
-      - 1553181
-      - 1562575
-    description: >
-      User interaction by click events in the identity popup.
-    expiry_version: "72"
-    notification_emails:
-      - jhofmann@mozilla.com
-      - pdol@mozilla.com
-      - seceng-telemetry@mozilla.com
-    release_channel_collection: opt-in
-    record_in_processes:
-      - main
-    products:
-      - firefox
 
 security.ui.protectionspopup:
   open:
@@ -1725,6 +1656,7 @@ uptake.remotecontent.result:
       - "firefox"
       - "fennec"
       - "geckoview"
+      - "thunderbird"
     record_in_processes: ["main"]
     release_channel_collection: opt-out
     expiry_version: never
@@ -1778,7 +1710,15 @@ security:
         mozillaextension - An extension claiming to be from *mozilla.org
         otherextension - Another extension not from Mozilla
         suspectedUserChromeJS - A filepath ending in .uc.js
+        sanitizedWindowsPath - A filepath, on Windows, sanitized by WinUtils::PreparePathForTelemetry
+                               which is a bare filename or a subpath of %ProgramFiles%, %SystemRoot%,
+                               or %TEMP%
+        sanitizedWindowsURL - A partial URL, on Windows, consisting of either file://../ followed by
+                              the value prepared as for sanitizedWindowsPath, or the bare scheme of
+                              the original url
         other - Unknown
+        other-on-worker - We cannot do a regex; it is not chromeuri or resourceuri, but
+                          could be any other.
         regexfailure - Our Regex Matching code threw an error
       The fileinfo key may contain additional information about the file that caused the eval()
       depending on the above value. Resource, Chrome, and SingleString will contain the full value.
@@ -1812,9 +1752,10 @@ security.ui.permissionprompt:
     ]
     bug_numbers:
       - 1536454
+      - 1578266
     description: >
       When a permission prompt was shown.
-    expiry_version: "72"
+    expiry_version: "74"
     notification_emails:
       - jhofmann@mozilla.com
       - ehsan@mozilla.com
@@ -1848,9 +1789,10 @@ security.ui.permissionprompt:
     ]
     bug_numbers:
       - 1536454
+      - 1578266
     description: >
       When a permission prompt was removed, with the reasons being represented in the method field.
-    expiry_version: "72"
+    expiry_version: "74"
     notification_emails:
       - jhofmann@mozilla.com
       - ehsan@mozilla.com

@@ -6,6 +6,7 @@
 
 import { prepareSourcePayload, createThread } from "./create";
 import { updateTargets } from "./targets";
+import { clientEvents } from "./events";
 
 import Reps from "devtools-reps";
 import type { Node } from "devtools-reps";
@@ -47,27 +48,20 @@ let debuggerClient: DebuggerClient;
 let sourceActors: { [ActorId]: SourceId };
 let breakpoints: { [string]: Object };
 let eventBreakpoints: ?EventListenerActiveList;
-let supportsWasm: boolean;
 
 type Dependencies = {
   threadFront: ThreadFront,
   tabTarget: Target,
   debuggerClient: DebuggerClient,
-  supportsWasm: boolean,
 };
 
 function setupCommands(dependencies: Dependencies) {
   currentThreadFront = dependencies.threadFront;
   currentTarget = dependencies.tabTarget;
   debuggerClient = dependencies.debuggerClient;
-  supportsWasm = dependencies.supportsWasm;
   targets = { worker: {}, contentProcess: {} };
   sourceActors = {};
   breakpoints = {};
-}
-
-function hasWasmSupport() {
-  return supportsWasm;
 }
 
 function createObjectClient(grip: Grip) {
@@ -78,7 +72,7 @@ async function loadObjectProperties(root: Node) {
   const utils = Reps.objectInspector.utils;
   const properties = await utils.loadProperties.loadItemProperties(
     root,
-    createObjectClient
+    debuggerClient
   );
   return utils.node.getChildren({
     item: root,
@@ -91,7 +85,11 @@ function releaseActor(actor: String) {
     return;
   }
 
-  return debuggerClient.release(actor);
+  const objFront = debuggerClient.getFrontByID(actor);
+
+  if (objFront) {
+    return objFront.release().catch(() => {});
+  }
 }
 
 function sendPacket(packet: Object) {
@@ -186,6 +184,25 @@ function setXHRBreakpoint(path: string, method: string) {
 
 function removeXHRBreakpoint(path: string, method: string) {
   return currentThreadFront.removeXHRBreakpoint(path, method);
+}
+
+function addWatchpoint(
+  object: Grip,
+  property: string,
+  label: string,
+  watchpointType: string
+) {
+  if (currentTarget.traits.watchpoints) {
+    const objectClient = createObjectClient(object);
+    return objectClient.addWatchpoint(property, label, watchpointType);
+  }
+}
+
+function removeWatchpoint(object: Grip, property: string) {
+  if (currentTarget.traits.watchpoints) {
+    const objectClient = createObjectClient(object);
+    return objectClient.removeWatchpoint(property);
+  }
 }
 
 // Get the string key to use for a breakpoint location.
@@ -400,8 +417,41 @@ async function getSources(
   return sources.map(source => prepareSourcePayload(client, source));
 }
 
+async function toggleEventLogging(logEventBreakpoints: boolean) {
+  return forEachThread(thread =>
+    thread.toggleEventLogging(logEventBreakpoints)
+  );
+}
+
+function getAllThreadFronts() {
+  const fronts = [currentThreadFront];
+  for (const targetsForType of (Object.values(targets): any)) {
+    for (const { threadFront } of (Object.values(targetsForType): any)) {
+      fronts.push(threadFront);
+    }
+  }
+  return fronts;
+}
+
+// Fetch the sources for all the targets
 async function fetchSources(): Promise<Array<GeneratedSourceData>> {
-  return getSources(currentThreadFront);
+  let sources = [];
+  for (const threadFront of getAllThreadFronts()) {
+    sources = sources.concat(await getSources(threadFront));
+  }
+  return sources;
+}
+
+// Check if any of the targets were paused before we opened
+// the debugger. If one is paused. Fake a `pause` RDP event
+// by directly calling the client event listener.
+async function checkIfAlreadyPaused() {
+  for (const threadFront of getAllThreadFronts()) {
+    const pausedPacket = threadFront.getLastPausePacket();
+    if (pausedPacket) {
+      clientEvents.paused(threadFront, pausedPacket);
+    }
+  }
 }
 
 function getSourceForActor(actor: ActorId) {
@@ -491,6 +541,10 @@ async function getSourceActorBreakableLines({
   return actorLines;
 }
 
+function getFrontByID(actorID: String) {
+  return debuggerClient.getFrontByID(actorID);
+}
+
 const clientCommands = {
   autocomplete,
   blackBox,
@@ -514,6 +568,8 @@ const clientCommands = {
   setBreakpoint,
   setXHRBreakpoint,
   removeXHRBreakpoint,
+  addWatchpoint,
+  removeWatchpoint,
   removeBreakpoint,
   evaluate,
   evaluateInFrame,
@@ -523,7 +579,9 @@ const clientCommands = {
   getProperties,
   getFrameScopes,
   pauseOnExceptions,
+  toggleEventLogging,
   fetchSources,
+  checkIfAlreadyPaused,
   registerSourceActor,
   fetchThreads,
   getMainThread,
@@ -532,8 +590,8 @@ const clientCommands = {
   setEventListenerBreakpoints,
   getEventListenerBreakpointTypes,
   detachWorkers,
-  hasWasmSupport,
   lookupTarget,
+  getFrontByID,
 };
 
 export { setupCommands, clientCommands };

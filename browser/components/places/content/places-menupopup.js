@@ -30,138 +30,34 @@
       for (let event_name of event_names) {
         this.addEventListener(event_name, ev => this[`on_${event_name}`](ev));
       }
-
-      this.attachShadow({ mode: "open" });
-    }
-
-    get commonStyles() {
-      let s = "";
-      if (this.closest("#BMB_bookmarksPopup")) {
-        s = `
-        /* Remove padding on xul:arrowscrollbox to avoid extra padding on footer */
-        arrowscrollbox.popup-internal-box {
-          padding-bottom: 0px;
-        }
-        .panel-arrowcontainer > .panel-arrowcontent > .popup-internal-box > .scrollbutton-up,
-        .panel-arrowcontainer > .panel-arrowcontent > .popup-internal-box > .scrollbutton-down {
-          -moz-appearance: none;
-          margin-top: 0;
-          margin-bottom: 0;
-        }
-      `;
-      }
-
-      switch (AppConstants.platform) {
-        case "macosx":
-          return `${s}
-          .menupopup-drop-indicator-bar {
-            position: relative;
-            /* these two margins must together compensate the indicator's height */
-            margin-top: -1px;
-            margin-bottom: -1px;
-          }
-          .menupopup-drop-indicator {
-            list-style-image: none;
-            height: 2px;
-            margin-inline-end: -4em;
-            background-color: Highlight;
-          }
-        `;
-        case "linux":
-          return `${s}
-          .menupopup-drop-indicator-bar {
-            position: relative;
-            /* these two margins must together compensate the indicator's height */
-            margin-top: -1px;
-            margin-bottom: -1px;
-          }
-          .menupopup-drop-indicator {
-            list-style-image: none;
-            height: 2px;
-            margin-inline-end: -4em;
-            background-color: Highlight;
-          }
-        `;
-        case "win":
-          return `${s}
-          .menupopup-drop-indicator-bar {
-            position: relative;
-            /* these two margins must together compensate the indicator's height */
-            margin-top: -1px;
-            margin-bottom: -1px;
-          }
-          .menupopup-drop-indicator {
-            list-style-image: none;
-            height: 2px;
-            margin-inline-end: -4em;
-            background-color: Highlight;
-          }
-        `;
-        default:
-          return s;
-      }
-    }
-
-    get styles() {
-      if (!this.closest("#BMB_bookmarksPopup")) {
-        return "";
-      }
-
-      let s = `
-      /* Popups with only one item don't have a footer */
-      :host([singleitempopup=true]) > hbox > .popup-internal-box > .arrowscrollbox-scrollbox,
-      /* These popups never have a footer */
-      :host(#BMB_bookmarksToolbarPopup) > hbox > .popup-internal-box > .arrowscrollbox-scrollbox,
-      :host(#BMB_unsortedBookmarksPopup) > hbox > .popup-internal-box > .arrowscrollbox-scrollbox,
-      :host(#BMB_mobileBookmarksPopup) > hbox > .popup-internal-box > .arrowscrollbox-scrollbox {
-        /* And so they need some bottom padding: */
-        padding-bottom: 4px;
-      }
-    `;
-      switch (AppConstants.platform) {
-        case "linux":
-        case "win":
-          return `${s}
-          /* Add some space at the top because there are no headers: */
-          :host > hbox > .popup-internal-box > .arrowscrollbox-scrollbox  {
-            padding-top: 4px;
-          }
-        `;
-        default:
-          return s;
-      }
     }
 
     get markup() {
       return `
       <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
-      <html:style>${this.commonStyles}${this.styles}</html:style>
       <hbox flex="1" part="innerbox">
-        <vbox class="menupopup-drop-indicator-bar" hidden="true">
-          <image class="menupopup-drop-indicator" mousethrough="always"></image>
+        <vbox part="drop-indicator-bar" hidden="true">
+          <image part="drop-indicator" mousethrough="always"></image>
         </vbox>
         <arrowscrollbox class="popup-internal-box" flex="1" orient="vertical"
-                        smoothscroll="false">
+                        smoothscroll="false" part="popupbox">
           <html:slot></html:slot>
         </arrowscrollbox>
       </hbox>
     `;
     }
 
+    initShadowDOM() {
+      super.initShadowDOM();
+      if (this.closest("#BMB_bookmarksPopup")) {
+        this.scrollBox.classList.add("in-bookmarks-menu");
+      }
+    }
+
     connectedCallback() {
       if (this.delayConnectedCallback()) {
         return;
       }
-
-      this.shadowRoot.textContent = "";
-      this.shadowRoot.appendChild(
-        MozXULElement.parseXULToFragment(this.markup)
-      );
-
-      this._indicatorBar = this.shadowRoot.querySelector(
-        ".menupopup-drop-indicator-bar"
-      );
-      this._scrollBox = this.shadowRoot.querySelector(".popup-internal-box");
 
       /**
        * Sub-menus should be opened when the mouse drags over them, and closed
@@ -312,6 +208,15 @@
           }
         },
       };
+    }
+
+    get _indicatorBar() {
+      if (!this.__indicatorBar) {
+        this.__indicatorBar = this.shadowRoot.querySelector(
+          "[part=drop-indicator-bar]"
+        );
+      }
+      return this.__indicatorBar;
     }
 
     /**
@@ -581,15 +486,14 @@
       }
 
       // Autoscroll the popup strip if we drag over the scroll buttons.
-      let anonid = event.originalTarget.getAttribute("anonid");
       let scrollDir = 0;
-      if (anonid == "scrollbutton-up") {
+      if (event.originalTarget == this.scrollBox._scrollButtonUp) {
         scrollDir = -1;
-      } else if (anonid == "scrollbutton-down") {
+      } else if (event.originalTarget == this.scrollBox._scrollButtonDown) {
         scrollDir = 1;
       }
       if (scrollDir != 0) {
-        this._scrollBox.scrollByIndex(scrollDir, true);
+        this.scrollBox.scrollByIndex(scrollDir, true);
       }
 
       // Check if we should hide the drop indicator for this target.
@@ -601,7 +505,7 @@
       }
 
       // We should display the drop indicator relative to the arrowscrollbox.
-      let scrollRect = this._scrollBox.getBoundingClientRect();
+      let scrollRect = this.scrollBox.getBoundingClientRect();
       let newMarginTop = 0;
       if (scrollDir == 0) {
         let elt = this.firstElementChild;
@@ -612,14 +516,14 @@
           elt = elt.nextElementSibling;
         }
         newMarginTop = elt
-          ? elt.screenY - this._scrollBox.screenY
+          ? elt.screenY - this.scrollBox.screenY
           : scrollRect.height;
       } else if (scrollDir == 1) {
         newMarginTop = scrollRect.height;
       }
 
       // Set the new marginTop based on arrowscrollbox.
-      newMarginTop += scrollRect.y - this._scrollBox.getBoundingClientRect().y;
+      newMarginTop += scrollRect.y - this.scrollBox.getBoundingClientRect().y;
       this._indicatorBar.firstElementChild.style.marginTop =
         newMarginTop + "px";
       this._indicatorBar.hidden = false;
@@ -679,8 +583,6 @@
         "transitionend",
         "popuphiding",
         "popuphidden",
-        "dragexit",
-        "dragend",
       ];
       for (let event_name of event_names) {
         this.addEventListener(event_name, ev => this[`on_${event_name}`](ev));
@@ -689,28 +591,25 @@
 
     static get inheritedAttributes() {
       return {
-        ".panel-arrowcontainer": "side,panelopen",
-        ".panel-arrow": "side",
-        ".panel-arrowcontent": "side,align,dir,orient,pack",
+        ".panel-arrowcontent": "align,dir,orient,pack",
       };
     }
 
     get markup() {
       return `
-      <html:link rel="stylesheet" href="chrome://global/skin/global.css" />
-      <html:style>${this.commonStyles}</html:style>
+      <html:link rel="stylesheet" href="chrome://global/skin/global.css"/>
       <vbox class="panel-arrowcontainer" flex="1">
-        <box class="panel-arrowbox">
-          <image class="panel-arrow"></image>
+        <box class="panel-arrowbox" part="arrowbox">
+          <image class="panel-arrow" part="arrow"/>
         </box>
         <box class="panel-arrowcontent" part="arrowcontent" flex="1">
-          <vbox class="menupopup-drop-indicator-bar" hidden="true">
-            <image class="menupopup-drop-indicator" mousethrough="always"></image>
+          <vbox part="drop-indicator-bar" hidden="true">
+            <image part="drop-indicator" mousethrough="always"/>
           </vbox>
           <arrowscrollbox class="popup-internal-box" flex="1"
                           orient="vertical" smoothscroll="false"
                           part="popupbox">
-            <html:slot></html:slot>
+            <html:slot/>
           </arrowscrollbox>
         </box>
       </vbox>

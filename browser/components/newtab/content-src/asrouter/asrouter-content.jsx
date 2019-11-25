@@ -21,7 +21,7 @@ const INCOMING_MESSAGE_NAME = "ASRouter:parent-to-child";
 const OUTGOING_MESSAGE_NAME = "ASRouter:child-to-parent";
 const TEMPLATES_ABOVE_PAGE = [
   "trailhead",
-  "fxa_overlay",
+  "full_page_interrupt",
   "return_to_amo_overlay",
   "extended_triplets",
 ];
@@ -384,6 +384,7 @@ export class ASRouterUISurface extends React.PureComponent {
             onBlockById={ASRouterUtils.blockById}
             onDismiss={this.onDismissById(this.state.message.id)}
             fxaEndpoint={this.props.fxaEndpoint}
+            appUpdateChannel={this.props.appUpdateChannel}
             fetchFlowParams={this.fetchFlowParams}
           />
         </ImpressionsWrapper>

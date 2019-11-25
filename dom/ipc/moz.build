@@ -66,6 +66,7 @@ EXPORTS.mozilla.dom += [
     'TabMessageUtils.h',
     'URLClassifierChild.h',
     'URLClassifierParent.h',
+    'UserActivationIPCUtils.h',
     'WindowGlobalActor.h',
     'WindowGlobalChild.h',
     'WindowGlobalParent.h',
@@ -76,6 +77,10 @@ EXPORTS.mozilla += [
     'ProcessHangMonitor.h',
     'ProcessHangMonitorIPC.h',
     'ProcessPriorityManager.h',
+]
+
+EXPORTS += [
+    'nsQueryActor.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -125,6 +130,10 @@ SOURCES += [
     'ProcessHangMonitor.cpp',
 ]
 
+PREPROCESSED_IPDL_SOURCES += [
+    'PContent.ipdl',
+]
+
 IPDL_SOURCES += [
     'DOMTypes.ipdlh',
     'MemoryReportTypes.ipdlh',
@@ -132,7 +141,6 @@ IPDL_SOURCES += [
     'PBrowserBridge.ipdl',
     'PBrowserOrId.ipdlh',
     'PColorPicker.ipdl',
-    'PContent.ipdl',
     'PContentPermission.ipdlh',
     'PContentPermissionRequest.ipdl',
     'PCycleCollectWithLogs.ipdl',

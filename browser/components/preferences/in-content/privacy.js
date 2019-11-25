@@ -419,6 +419,10 @@ var gPrivacyPane = {
       gPrivacyPane.networkCookieBehaviorReadPrefs.bind(gPrivacyPane)
     );
 
+    setEventListener("a11yPrivacyCheckbox", "command", ev => {
+      this.updateA11yPrefs(ev.target.checked);
+    });
+
     setEventListener(
       "trackingProtectionExceptions",
       "command",
@@ -1854,12 +1858,9 @@ var gPrivacyPane = {
       Ci.nsIPKCS11ModuleDB
     );
     if (secmodDB.isFIPSEnabled) {
-      var bundle = document.getElementById("bundlePreferences");
-      Services.prompt.alert(
-        window,
-        bundle.getString("pw_change_failed_title"),
-        bundle.getString("pw_change2empty_in_fips_mode")
-      );
+      let title = document.getElementById("fips-title").textContent;
+      let desc = document.getElementById("fips-desc").textContent;
+      Services.prompt.alert(window, title, desc);
       this._initMasterPasswordUI();
     } else {
       gSubDialog.open(

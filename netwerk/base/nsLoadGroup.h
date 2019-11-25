@@ -62,6 +62,9 @@ class nsLoadGroup : public nsILoadGroup,
   void TelemetryReportChannel(nsITimedChannel* timedChannel,
                               bool defaultRequest);
 
+  nsresult RemoveRequestFromHashtable(nsIRequest* aRequest, nsresult aStatus);
+  nsresult NotifyRemovalObservers(nsIRequest* aRequest, nsresult aStatus);
+
  protected:
   uint32_t mForegroundCount;
   uint32_t mLoadFlags;
@@ -87,8 +90,6 @@ class nsLoadGroup : public nsILoadGroup,
   mozilla::TimeStamp mDefaultRequestCreationTime;
   uint32_t mTimedRequests;
   uint32_t mCachedRequests;
-
-  nsCString mUserAgentOverrideCache;
 };
 
 }  // namespace net

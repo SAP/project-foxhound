@@ -144,7 +144,7 @@ function NetworkObserver(filters, owner) {
   this.openRequests = new Map();
   this.openResponses = new Map();
 
-  this.blockedURLs = new Set();
+  this.blockedURLs = [];
 
   this._httpResponseExaminer = DevToolsUtils.makeInfallible(
     this._httpResponseExaminer
@@ -154,6 +154,9 @@ function NetworkObserver(filters, owner) {
   ).bind(this);
   this._httpFailedOpening = DevToolsUtils.makeInfallible(
     this._httpFailedOpening
+  ).bind(this);
+  this._httpStopRequest = DevToolsUtils.makeInfallible(
+    this._httpStopRequest
   ).bind(this);
   this._serviceWorkerRequest = this._serviceWorkerRequest.bind(this);
 
@@ -237,6 +240,7 @@ NetworkObserver.prototype = {
         this._httpModifyExaminer,
         "http-on-modify-request"
       );
+      Services.obs.addObserver(this._httpStopRequest, "http-on-stop-request");
     } else {
       Services.obs.addObserver(
         this._httpFailedOpening,
@@ -304,6 +308,26 @@ NetworkObserver.prototype = {
     this._httpResponseExaminer(subject, topic, blockedCode);
   },
 
+  _httpStopRequest: function(subject, topic) {
+    if (
+      !this.owner ||
+      topic != "http-on-stop-request" ||
+      !(subject instanceof Ci.nsIHttpChannel)
+    ) {
+      return;
+    }
+
+    const timedChannel = subject.QueryInterface(Ci.nsITimedChannel);
+    const httpActivity = this.createOrGetActivityObject(timedChannel);
+
+    // Try extracting server timings. Note that they will be sent to the client
+    // in the `_onTransactionClose` method together with network event timings.
+    const serverTimings = this._extractServerTimings(timedChannel);
+    if (httpActivity.owner) {
+      httpActivity.owner.addSeverTimings(serverTimings);
+    }
+  },
+
   /**
    * Observe notifications for the http-on-examine-response topic, coming from
    * the nsIObserverService.
@@ -324,13 +348,15 @@ NetworkObserver.prototype = {
       (topic != "http-on-examine-response" &&
         topic != "http-on-examine-cached-response" &&
         topic != "http-on-failed-opening-request") ||
-      !(subject instanceof Ci.nsIHttpChannel)
+      !(subject instanceof Ci.nsIHttpChannel) ||
+      !(subject instanceof Ci.nsIClassifiedChannel)
     ) {
       return;
     }
 
     const blockedOrFailed = topic === "http-on-failed-opening-request";
 
+    subject.QueryInterface(Ci.nsIClassifiedChannel);
     const channel = subject.QueryInterface(Ci.nsIHttpChannel);
 
     if (!matchRequest(channel, this.filters)) {
@@ -415,10 +441,13 @@ NetworkObserver.prototype = {
       // There also is never any timing events, so we can fire this
       // event with zeroed out values.
       const timings = this._setupHarTimings(httpActivity, true);
+
+      const serverTimings = this._extractServerTimings(httpActivity.channel);
       httpActivity.owner.addEventTimings(
         timings.total,
         timings.timings,
-        timings.offsets
+        timings.offsets,
+        serverTimings
       );
     } else if (topic === "http-on-failed-opening-request") {
       this._createNetworkEvent(channel, { blockedReason });
@@ -532,11 +561,15 @@ NetworkObserver.prototype = {
       return;
     }
 
-    if (!(channel instanceof Ci.nsIHttpChannel)) {
+    if (
+      !(channel instanceof Ci.nsIHttpChannel) ||
+      !(channel instanceof Ci.nsIClassifiedChannel)
+    ) {
       return;
     }
 
     channel = channel.QueryInterface(Ci.nsIHttpChannel);
+    channel = channel.QueryInterface(Ci.nsIClassifiedChannel);
 
     if (
       activitySubtype == gActivityDistributor.ACTIVITY_SUBTYPE_REQUEST_HEADER
@@ -681,7 +714,7 @@ NetworkObserver.prototype = {
     // Check the request URL with ones manually blocked by the user in DevTools.
     // If it's meant to be blocked, we cancel the request and annotate the event.
     if (!blockedReason) {
-      if (this.blockedURLs.has(httpActivity.url)) {
+      if (this.blockedURLs.some(url => httpActivity.url.includes(url))) {
         channel.cancel(Cr.NS_BINDING_ABORTED);
         event.blockedReason = "devtools";
       }
@@ -791,7 +824,7 @@ NetworkObserver.prototype = {
       return;
     }
 
-    this.blockedURLs.add(filter.url);
+    this.blockedURLs.push(filter.url);
   },
 
   /**
@@ -806,7 +839,16 @@ NetworkObserver.prototype = {
       return;
     }
 
-    this.blockedURLs.delete(filter.url);
+    this.blockedURLs = this.blockedURLs.filter(url => url != filter.url);
+  },
+
+  /**
+   * Updates the list of blocked request strings
+   *
+   * This match will be a (String).includes match, not an exact URL match
+   */
+  setBlockedUrls(urls) {
+    this.blockedURLs = urls || [];
   },
 
   /**
@@ -961,11 +1003,13 @@ NetworkObserver.prototype = {
    */
   _onTransactionClose: function(httpActivity) {
     const result = this._setupHarTimings(httpActivity);
-    httpActivity.owner.addEventTimings(
-      result.total,
-      result.timings,
-      result.offsets
-    );
+    if (httpActivity.owner) {
+      httpActivity.owner.addEventTimings(
+        result.total,
+        result.timings,
+        result.offsets
+      );
+    }
     this.openRequests.delete(httpActivity.channel);
   },
 
@@ -1228,6 +1272,25 @@ NetworkObserver.prototype = {
   },
   /* eslint-enable complexity */
 
+  _extractServerTimings: function(channel) {
+    if (!channel || !channel.serverTiming) {
+      return null;
+    }
+
+    const serverTimings = new Array(channel.serverTiming.length);
+
+    for (let i = 0; i < channel.serverTiming.length; ++i) {
+      const {
+        name,
+        duration,
+        description,
+      } = channel.serverTiming.queryElementAt(i, Ci.nsIServerTiming);
+      serverTimings[i] = { name, duration, description };
+    }
+
+    return serverTimings;
+  },
+
   _calculateOffsetAndTotalTime: function(
     harTimings,
     secureConnectionStartTime,
@@ -1296,6 +1359,10 @@ NetworkObserver.prototype = {
       Services.obs.removeObserver(
         this._httpModifyExaminer,
         "http-on-modify-request"
+      );
+      Services.obs.removeObserver(
+        this._httpStopRequest,
+        "http-on-stop-request"
       );
     } else {
       Services.obs.removeObserver(

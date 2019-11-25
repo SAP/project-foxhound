@@ -9,17 +9,19 @@ use crate::shared::Definitions as SharedDefinitions;
 mod encodings;
 mod instructions;
 mod legalize;
+mod opcodes;
 mod recipes;
 mod registers;
 mod settings;
 
-pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
+pub(crate) fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
     let settings = settings::define(&shared_defs.settings);
     let regs = registers::define();
 
     let inst_group = instructions::define(
         &mut shared_defs.all_instructions,
         &shared_defs.format_registry,
+        &shared_defs.imm,
     );
     legalize::define(shared_defs, &inst_group);
 
@@ -28,13 +30,13 @@ pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
     let mut x86_32 = CpuMode::new("I32");
 
     let expand_flags = shared_defs.transform_groups.by_name("expand_flags");
-    let narrow = shared_defs.transform_groups.by_name("narrow");
+    let narrow_flags = shared_defs.transform_groups.by_name("narrow_flags");
     let widen = shared_defs.transform_groups.by_name("widen");
     let x86_narrow = shared_defs.transform_groups.by_name("x86_narrow");
     let x86_expand = shared_defs.transform_groups.by_name("x86_expand");
 
     x86_32.legalize_monomorphic(expand_flags);
-    x86_32.legalize_default(narrow);
+    x86_32.legalize_default(narrow_flags);
     x86_32.legalize_type(B1, expand_flags);
     x86_32.legalize_type(I8, widen);
     x86_32.legalize_type(I16, widen);

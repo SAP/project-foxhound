@@ -21,5 +21,5 @@ linux64-cctools-port:
         tooltool-downloads: internal
     fetches:
         toolchain:
-            - linux64-clang-8
+            - linux64-clang-9
             - linux64-binutils

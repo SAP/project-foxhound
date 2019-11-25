@@ -377,6 +377,11 @@ void Zone::discardJitCode(JSFreeOp* fop,
       script->maybeReleaseJitScript(fop);
       jitScript = script->maybeJitScript();
       if (!jitScript) {
+        // Try to discard the ScriptCounts too.
+        if (!script->realm()->collectCoverageForDebug() &&
+            !fop->runtime()->profilingScripts) {
+          script->destroyScriptCounts();
+        }
         continue;
       }
     }
@@ -469,14 +474,14 @@ bool Zone::canCollect() {
 }
 
 void Zone::notifyObservingDebuggers() {
+  AutoAssertNoGC nogc;
   MOZ_ASSERT(JS::RuntimeHeapIsCollecting(),
              "This method should be called during GC.");
 
   JSRuntime* rt = runtimeFromMainThread();
-  JSContext* cx = rt->mainContextFromOwnThread();
 
   for (RealmsInZoneIter realms(this); !realms.done(); realms.next()) {
-    RootedGlobalObject global(cx, realms->unsafeUnbarrieredMaybeGlobal());
+    GlobalObject* global = realms->unsafeUnbarrieredMaybeGlobal();
     if (!global) {
       continue;
     }
@@ -591,7 +596,7 @@ void Zone::addSizeOfIncludingThis(
     size_t* jitZone, size_t* baselineStubsOptimized, size_t* cachedCFG,
     size_t* uniqueIdMap, size_t* shapeCaches, size_t* atomsMarkBitmaps,
     size_t* compartmentObjects, size_t* crossCompartmentWrappersTables,
-    size_t* compartmentsPrivateData) {
+    size_t* compartmentsPrivateData, size_t* scriptCountsMapArg) {
   *typePool += types.typeLifoAlloc().sizeOfExcludingThis(mallocSizeOf);
   *regexpZone += regExps().sizeOfExcludingThis(mallocSizeOf);
   if (jitZone_) {
@@ -610,6 +615,15 @@ void Zone::addSizeOfIncludingThis(
                                  crossCompartmentWrappersTables,
                                  compartmentsPrivateData);
   }
+
+  if (scriptCountsMap) {
+    *scriptCountsMapArg +=
+        scriptCountsMap->shallowSizeOfIncludingThis(mallocSizeOf);
+    for (auto r = scriptCountsMap->all(); !r.empty(); r.popFront()) {
+      *scriptCountsMapArg +=
+          r.front().value()->sizeOfIncludingThis(mallocSizeOf);
+    }
+  }
 }
 
 void* ZoneAllocator::onOutOfMemory(js::AllocFunction allocFunc,
@@ -618,6 +632,10 @@ void* ZoneAllocator::onOutOfMemory(js::AllocFunction allocFunc,
   if (!js::CurrentThreadCanAccessRuntime(runtime_)) {
     return nullptr;
   }
+  // The analysis sees that JSRuntime::onOutOfMemory could report an error,
+  // which with a JSErrorInterceptor could GC. But we're passing a null cx (to
+  // a default parameter) so the error will not be reported.
+  JS::AutoSuppressGCAnalysis suppress;
   return runtimeFromMainThread()->onOutOfMemory(allocFunc, arena, nbytes,
                                                 reallocPtr);
 }
@@ -709,4 +727,158 @@ void ZoneList::clear() {
 JS_PUBLIC_API void JS::shadow::RegisterWeakCache(
     JS::Zone* zone, detail::WeakCacheBase* cachep) {
   zone->registerWeakCache(cachep);
+}
+
+void Zone::traceScriptTableRoots(JSTracer* trc) {
+  static_assert(mozilla::IsConvertible<JSScript*, gc::TenuredCell*>::value,
+                "JSScript must not be nursery-allocated for script-table "
+                "tracing to work");
+
+  // Performance optimization: the script-table keys are JSScripts, which
+  // cannot be in the nursery, so we can skip this tracing if we are only in a
+  // minor collection. We static-assert this fact above.
+  if (JS::RuntimeHeapIsMinorCollecting()) {
+    return;
+  }
+
+  // N.B.: the script-table keys are weak *except* in an exceptional case: when
+  // then --dump-bytecode command line option or the PCCount JSFriend API is
+  // used, then the scripts for all counts must remain alive. We only trace
+  // when the `trc->runtime()->profilingScripts` flag is set. This flag is
+  // cleared in JSRuntime::destroyRuntime() during shutdown to ensure that
+  // scripts are collected before the runtime goes away completely.
+  if (scriptCountsMap && trc->runtime()->profilingScripts) {
+    for (ScriptCountsMap::Range r = scriptCountsMap->all(); !r.empty();
+         r.popFront()) {
+      JSScript* script = const_cast<JSScript*>(r.front().key());
+      MOZ_ASSERT(script->hasScriptCounts());
+      TraceRoot(trc, &script, "profilingScripts");
+      MOZ_ASSERT(script == r.front().key(), "const_cast is only a work-around");
+    }
+  }
+}
+
+void Zone::fixupScriptMapsAfterMovingGC(JSTracer* trc) {
+  // Map entries are removed by JSScript::finalize, but we need to update the
+  // script pointers here in case they are moved by the GC.
+
+  if (scriptCountsMap) {
+    for (ScriptCountsMap::Enum e(*scriptCountsMap); !e.empty(); e.popFront()) {
+      JSScript* script = e.front().key();
+      TraceManuallyBarrieredEdge(trc, &script, "Realm::scriptCountsMap::key");
+      if (script != e.front().key()) {
+        e.rekeyFront(script);
+      }
+    }
+  }
+
+  if (scriptLCovMap) {
+    for (ScriptLCovMap::Enum e(*scriptLCovMap); !e.empty(); e.popFront()) {
+      JSScript* script = e.front().key();
+      if (!IsAboutToBeFinalizedUnbarriered(&script) &&
+          script != e.front().key()) {
+        e.rekeyFront(script);
+      }
+    }
+  }
+
+  if (debugScriptMap) {
+    for (DebugScriptMap::Enum e(*debugScriptMap); !e.empty(); e.popFront()) {
+      JSScript* script = e.front().key();
+      if (!IsAboutToBeFinalizedUnbarriered(&script) &&
+          script != e.front().key()) {
+        e.rekeyFront(script);
+      }
+    }
+  }
+
+#ifdef MOZ_VTUNE
+  if (scriptVTuneIdMap) {
+    for (ScriptVTuneIdMap::Enum e(*scriptVTuneIdMap); !e.empty();
+         e.popFront()) {
+      JSScript* script = e.front().key();
+      if (!IsAboutToBeFinalizedUnbarriered(&script) &&
+          script != e.front().key()) {
+        e.rekeyFront(script);
+      }
+    }
+  }
+#endif
+}
+
+#ifdef JSGC_HASH_TABLE_CHECKS
+void Zone::checkScriptMapsAfterMovingGC() {
+  if (scriptCountsMap) {
+    for (auto r = scriptCountsMap->all(); !r.empty(); r.popFront()) {
+      JSScript* script = r.front().key();
+      MOZ_ASSERT(script->zone() == this);
+      CheckGCThingAfterMovingGC(script);
+      auto ptr = scriptCountsMap->lookup(script);
+      MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
+    }
+  }
+
+  if (scriptLCovMap) {
+    for (auto r = scriptLCovMap->all(); !r.empty(); r.popFront()) {
+      JSScript* script = r.front().key();
+      MOZ_ASSERT(script->zone() == this);
+      CheckGCThingAfterMovingGC(script);
+      auto ptr = scriptLCovMap->lookup(script);
+      MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
+    }
+  }
+
+  if (debugScriptMap) {
+    for (auto r = debugScriptMap->all(); !r.empty(); r.popFront()) {
+      JSScript* script = r.front().key();
+      MOZ_ASSERT(script->zone() == this);
+      CheckGCThingAfterMovingGC(script);
+      DebugScript* ds = r.front().value().get();
+      DebugAPI::checkDebugScriptAfterMovingGC(ds);
+      auto ptr = debugScriptMap->lookup(script);
+      MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
+    }
+  }
+
+#  ifdef MOZ_VTUNE
+  if (scriptVTuneIdMap) {
+    for (auto r = scriptVTuneIdMap->all(); !r.empty(); r.popFront()) {
+      JSScript* script = r.front().key();
+      MOZ_ASSERT(script->zone() == this);
+      CheckGCThingAfterMovingGC(script);
+      auto ptr = scriptVTuneIdMap->lookup(script);
+      MOZ_RELEASE_ASSERT(ptr.found() && &*ptr == &r.front());
+    }
+  }
+#  endif  // MOZ_VTUNE
+}
+#endif
+
+void Zone::clearScriptCounts(Realm* realm) {
+  if (!scriptCountsMap) {
+    return;
+  }
+
+  // Clear all hasScriptCounts_ flags of JSScript, in order to release all
+  // ScriptCounts entries of the given realm.
+  for (auto i = scriptCountsMap->modIter(); !i.done(); i.next()) {
+    JSScript* script = i.get().key();
+    if (script->realm() == realm) {
+      script->clearHasScriptCounts();
+      i.remove();
+    }
+  }
+}
+
+void Zone::clearScriptLCov(Realm* realm) {
+  if (!scriptLCovMap) {
+    return;
+  }
+
+  for (auto i = scriptLCovMap->modIter(); !i.done(); i.next()) {
+    JSScript* script = i.get().key();
+    if (script->realm() == realm) {
+      i.remove();
+    }
+  }
 }

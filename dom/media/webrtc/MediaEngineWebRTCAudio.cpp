@@ -10,7 +10,7 @@
 
 #include "AudioConverter.h"
 #include "MediaManager.h"
-#include "MediaStreamGraphImpl.h"
+#include "MediaTrackGraphImpl.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ErrorNames.h"
@@ -48,8 +48,7 @@ MediaEngineWebRTCMicrophoneSource::MediaEngineWebRTCMicrophoneSource(
     RefPtr<AudioDeviceInfo> aInfo, const nsString& aDeviceName,
     const nsCString& aDeviceUUID, const nsString& aDeviceGroup,
     uint32_t aMaxChannelCount, bool aDelayAgnostic, bool aExtendedFilter)
-    : mTrackID(TRACK_NONE),
-      mPrincipal(PRINCIPAL_HANDLE_NONE),
+    : mPrincipal(PRINCIPAL_HANDLE_NONE),
       mDeviceInfo(std::move(aInfo)),
       mDelayAgnostic(aDelayAgnostic),
       mExtendedFilter(aExtendedFilter),
@@ -121,8 +120,7 @@ nsresult MediaEngineWebRTCMicrophoneSource::EvaluateSettings(
 
   // Get the number of channels asked for by content, and clamp it between the
   // pref and the maximum number of channels that the device supports.
-  prefs.mChannels =
-      c.mChannelCount.Get(std::min(aInPrefs.mChannels, maxChannels));
+  prefs.mChannels = c.mChannelCount.Get(std::min(prefs.mChannels, maxChannels));
   prefs.mChannels = std::max(1, std::min(prefs.mChannels, maxChannels));
 
   LOG("Audio config: aec: %d, agc: %d, noise: %d, channels: %d",
@@ -138,7 +136,7 @@ nsresult MediaEngineWebRTCMicrophoneSource::Reconfigure(
     const dom::MediaTrackConstraints& aConstraints,
     const MediaEnginePrefs& aPrefs, const char** aOutBadConstraint) {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(mStream);
+  MOZ_ASSERT(mTrack);
 
   LOG("Mic source %p Reconfigure ", this);
 
@@ -173,7 +171,7 @@ void MediaEngineWebRTCMicrophoneSource::UpdateAECSettings(
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
   NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [that, stream = mStream, aEnable, aUseAecMobile, aLevel] {
+      __func__, [that, track = mTrack, aEnable, aUseAecMobile, aLevel] {
         class Message : public ControlMessage {
          public:
           Message(AudioInputProcessing* aInputProcessing, bool aEnable,
@@ -195,11 +193,11 @@ void MediaEngineWebRTCMicrophoneSource::UpdateAECSettings(
           EchoCancellation::SuppressionLevel mLevel;
         };
 
-        if (stream->IsDestroyed()) {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(MakeUnique<Message>(
+        track->GraphImpl()->AppendMessage(MakeUnique<Message>(
             that->mInputProcessing, aEnable, aUseAecMobile, aLevel));
       }));
 }
@@ -209,8 +207,8 @@ void MediaEngineWebRTCMicrophoneSource::UpdateAGCSettings(
   AssertIsOnOwningThread();
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [that, stream = mStream, aEnable, aMode] {
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction(__func__, [that, track = mTrack, aEnable, aMode] {
         class Message : public ControlMessage {
          public:
           Message(AudioInputProcessing* aInputProcessing, bool aEnable,
@@ -230,11 +228,11 @@ void MediaEngineWebRTCMicrophoneSource::UpdateAGCSettings(
           GainControl::Mode mMode;
         };
 
-        if (stream->IsDestroyed()) {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(
+        track->GraphImpl()->AppendMessage(
             MakeUnique<Message>(that->mInputProcessing, aEnable, aMode));
       }));
 }
@@ -244,8 +242,8 @@ void MediaEngineWebRTCMicrophoneSource::UpdateNSSettings(
   AssertIsOnOwningThread();
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [that, stream = mStream, aEnable, aLevel] {
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction(__func__, [that, track = mTrack, aEnable, aLevel] {
         class Message : public ControlMessage {
          public:
           Message(AudioInputProcessing* aInputProcessing, bool aEnable,
@@ -265,11 +263,11 @@ void MediaEngineWebRTCMicrophoneSource::UpdateNSSettings(
           webrtc::NoiseSuppression::Level mLevel;
         };
 
-        if (stream->IsDestroyed()) {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(
+        track->GraphImpl()->AppendMessage(
             MakeUnique<Message>(that->mInputProcessing, aEnable, aLevel));
       }));
 }
@@ -280,7 +278,7 @@ void MediaEngineWebRTCMicrophoneSource::UpdateAPMExtraOptions(
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
   NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [that, stream = mStream, aExtendedFilter, aDelayAgnostic] {
+      __func__, [that, track = mTrack, aExtendedFilter, aDelayAgnostic] {
         class Message : public ControlMessage {
          public:
           Message(AudioInputProcessing* aInputProcessing, bool aExtendedFilter,
@@ -301,11 +299,11 @@ void MediaEngineWebRTCMicrophoneSource::UpdateAPMExtraOptions(
           bool mDelayAgnostic;
         };
 
-        if (stream->IsDestroyed()) {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(MakeUnique<Message>(
+        track->GraphImpl()->AppendMessage(MakeUnique<Message>(
             that->mInputProcessing, aExtendedFilter, aDelayAgnostic));
       }));
 }
@@ -315,10 +313,10 @@ void MediaEngineWebRTCMicrophoneSource::ApplySettings(
   AssertIsOnOwningThread();
 
   MOZ_ASSERT(
-      mStream,
+      mTrack,
       "ApplySetting is to be called only after SetTrack has been called");
 
-  if (mStream) {
+  if (mTrack) {
     UpdateAGCSettings(aPrefs.mAgcOn,
                       static_cast<webrtc::GainControl::Mode>(aPrefs.mAgc));
     UpdateNSSettings(
@@ -332,8 +330,8 @@ void MediaEngineWebRTCMicrophoneSource::ApplySettings(
   }
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [that, stream = mStream, prefs = aPrefs] {
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction(__func__, [that, track = mTrack, prefs = aPrefs] {
         that->mSettings->mEchoCancellation.Value() = prefs.mAecOn;
         that->mSettings->mAutoGainControl.Value() = prefs.mAgcOn;
         that->mSettings->mNoiseSuppression.Value() = prefs.mNoiseOn;
@@ -361,11 +359,11 @@ void MediaEngineWebRTCMicrophoneSource::ApplySettings(
         };
 
         bool passThrough = !(prefs.mAecOn || prefs.mAgcOn || prefs.mNoiseOn);
-        if (stream->IsDestroyed()) {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(MakeUnique<Message>(
+        track->GraphImpl()->AppendMessage(MakeUnique<Message>(
             that->mInputProcessing, passThrough, prefs.mChannels));
       }));
 }
@@ -407,45 +405,37 @@ nsresult MediaEngineWebRTCMicrophoneSource::Deallocate() {
 
   class EndTrackMessage : public ControlMessage {
    public:
-    EndTrackMessage(MediaStream* aStream,
-                    AudioInputProcessing* aAudioInputProcessing,
-                    TrackID aTrackID)
-        : ControlMessage(aStream),
-          mInputProcessing(aAudioInputProcessing),
-          mTrackID(aTrackID) {}
+    EndTrackMessage(MediaTrack* aTrack,
+                    AudioInputProcessing* aAudioInputProcessing)
+        : ControlMessage(aTrack), mInputProcessing(aAudioInputProcessing) {}
 
     void Run() override {
       mInputProcessing->End();
-      mStream->AsSourceStream()->EndTrack(mTrackID);
+      mTrack->AsSourceTrack()->End();
     }
 
    protected:
-    RefPtr<AudioInputProcessing> mInputProcessing;
-    TrackID mTrackID;
+    const RefPtr<AudioInputProcessing> mInputProcessing;
   };
 
-  if (mStream && IsTrackIDExplicit(mTrackID)) {
+  if (mTrack) {
     RefPtr<AudioInputProcessing> inputProcessing = mInputProcessing;
     NS_DispatchToMainThread(NS_NewRunnableFunction(
-        __func__,
-        [stream = mStream, audioInputProcessing = std::move(inputProcessing),
-         trackID = mTrackID] {
-          if (stream->IsDestroyed()) {
-            // This stream has already been destroyed on main thread by its
+        __func__, [track = std::move(mTrack),
+                   audioInputProcessing = std::move(inputProcessing)] {
+          if (track->IsDestroyed()) {
+            // This track has already been destroyed on main thread by its
             // DOMMediaStream. No cleanup left to do.
             return;
           }
-          stream->GraphImpl()->AppendMessage(MakeUnique<EndTrackMessage>(
-              stream, audioInputProcessing, trackID));
+          track->GraphImpl()->AppendMessage(
+              MakeUnique<EndTrackMessage>(track, audioInputProcessing));
         }));
   }
 
-  MOZ_ASSERT(mTrackID != TRACK_NONE, "Only deallocate once");
-
   // Reset all state. This is not strictly necessary, this instance will get
   // destroyed soon.
-  mStream = nullptr;
-  mTrackID = TRACK_NONE;
+  mTrack = nullptr;
   mPrincipal = PRINCIPAL_HANDLE_NONE;
 
   // If empty, no callbacks to deliver data should be occuring
@@ -458,40 +448,32 @@ nsresult MediaEngineWebRTCMicrophoneSource::Deallocate() {
 }
 
 void MediaEngineWebRTCMicrophoneSource::SetTrack(
-    const RefPtr<SourceMediaStream>& aStream, TrackID aTrackID,
-    const PrincipalHandle& aPrincipal) {
+    const RefPtr<SourceMediaTrack>& aTrack, const PrincipalHandle& aPrincipal) {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(aStream);
-  MOZ_ASSERT(IsTrackIDExplicit(aTrackID));
+  MOZ_ASSERT(aTrack);
 
-  MOZ_ASSERT(!mStream);
-  MOZ_ASSERT(mTrackID == TRACK_NONE);
+  MOZ_ASSERT(!mTrack);
   MOZ_ASSERT(mPrincipal == PRINCIPAL_HANDLE_NONE);
-  mStream = aStream;
-  mTrackID = aTrackID;
+  mTrack = aTrack;
   mPrincipal = aPrincipal;
 
-  AudioSegment* segment = new AudioSegment();
-
-  mStream->AddAudioTrack(mTrackID, mStream->GraphRate(), segment);
-
-  mInputProcessing = new AudioInputProcessing(mDeviceMaxChannelCount, mStream,
-                                              mTrackID, mPrincipal);
+  mInputProcessing =
+      new AudioInputProcessing(mDeviceMaxChannelCount, mTrack, mPrincipal);
 
   // We only add the listener once -- AudioInputProcessing wants pull
   // notifications also when stopped for appending silence.
   mPullListener = new AudioInputProcessingPullListener(mInputProcessing);
   NS_DispatchToMainThread(NS_NewRunnableFunction(
       __func__, [self = RefPtr<MediaEngineWebRTCMicrophoneSource>(this),
-                 stream = mStream, track = mTrackID, listener = mPullListener] {
-        if (stream->IsDestroyed()) {
+                 track = mTrack, listener = mPullListener] {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->AddTrackListener(listener, track);
+        track->AddListener(listener);
       }));
 
-  LOG("Stream %p registered for microphone capture", aStream.get());
+  LOG("Track %p registered for microphone capture", aTrack.get());
 }
 
 class StartStopMessage : public ControlMessage {
@@ -529,24 +511,24 @@ nsresult MediaEngineWebRTCMicrophoneSource::Start() {
   MOZ_ASSERT(mState == kAllocated || mState == kStopped);
 
   CubebUtils::AudioDeviceID deviceID = mDeviceInfo->DeviceID();
-  if (mStream->GraphImpl()->InputDeviceID() &&
-      mStream->GraphImpl()->InputDeviceID() != deviceID) {
+  if (mTrack->GraphImpl()->InputDeviceID() &&
+      mTrack->GraphImpl()->InputDeviceID() != deviceID) {
     // For now, we only allow opening a single audio input device per document,
-    // because we can only have one MSG per document.
+    // because we can only have one MTG per document.
     return NS_ERROR_NOT_AVAILABLE;
   }
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
-  NS_DispatchToMainThread(NS_NewRunnableFunction(
-      __func__, [that, deviceID, stream = mStream, track = mTrackID] {
-        if (stream->IsDestroyed()) {
+  NS_DispatchToMainThread(
+      NS_NewRunnableFunction(__func__, [that, deviceID, track = mTrack] {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(MakeUnique<StartStopMessage>(
+        track->GraphImpl()->AppendMessage(MakeUnique<StartStopMessage>(
             that->mInputProcessing, StartStopMessage::Start));
-        stream->SetPullingEnabled(track, true);
-        stream->OpenAudioInput(deviceID, that->mInputProcessing);
+        track->SetPullingEnabled(true);
+        track->OpenAudioInput(deviceID, that->mInputProcessing);
       }));
 
   ApplySettings(mCurrentPrefs);
@@ -561,7 +543,7 @@ nsresult MediaEngineWebRTCMicrophoneSource::Stop() {
   AssertIsOnOwningThread();
 
   LOG("Mic source %p Stop()", this);
-  MOZ_ASSERT(mStream, "SetTrack must have been called before ::Stop");
+  MOZ_ASSERT(mTrack, "SetTrack must have been called before ::Stop");
 
   if (mState == kStopped) {
     // Already stopped - this is allowed
@@ -570,16 +552,16 @@ nsresult MediaEngineWebRTCMicrophoneSource::Stop() {
 
   RefPtr<MediaEngineWebRTCMicrophoneSource> that = this;
   NS_DispatchToMainThread(
-      NS_NewRunnableFunction(__func__, [that, stream = mStream] {
-        if (stream->IsDestroyed()) {
+      NS_NewRunnableFunction(__func__, [that, track = mTrack] {
+        if (track->IsDestroyed()) {
           return;
         }
 
-        stream->GraphImpl()->AppendMessage(MakeUnique<StartStopMessage>(
+        track->GraphImpl()->AppendMessage(MakeUnique<StartStopMessage>(
             that->mInputProcessing, StartStopMessage::Stop));
         CubebUtils::AudioDeviceID deviceID = that->mDeviceInfo->DeviceID();
         Maybe<CubebUtils::AudioDeviceID> id = Some(deviceID);
-        stream->CloseAudioInput(id);
+        track->CloseAudioInput(id);
       }));
 
   MOZ_ASSERT(mState == kStarted, "Should be started when stopping");
@@ -595,9 +577,9 @@ void MediaEngineWebRTCMicrophoneSource::GetSettings(
 }
 
 AudioInputProcessing::AudioInputProcessing(
-    uint32_t aMaxChannelCount, RefPtr<SourceMediaStream> aStream,
-    TrackID aTrackID, const PrincipalHandle& aPrincipalHandle)
-    : mStream(std::move(aStream)),
+    uint32_t aMaxChannelCount, RefPtr<SourceMediaTrack> aTrack,
+    const PrincipalHandle& aPrincipalHandle)
+    : mTrack(std::move(aTrack)),
       mAudioProcessing(AudioProcessing::Create()),
       mRequestedInputChannelCount(aMaxChannelCount),
       mSkipProcessing(false),
@@ -609,13 +591,12 @@ AudioInputProcessing::AudioInputProcessing(
       ,
       mLiveFramesAppended(false),
       mLiveSilenceAppended(false),
-      mTrackID(aTrackID),
       mPrincipal(aPrincipalHandle),
       mEnabled(false),
       mEnded(false) {
 }
 
-void AudioInputProcessing::Disconnect(MediaStreamGraphImpl* aGraph) {
+void AudioInputProcessing::Disconnect(MediaTrackGraphImpl* aGraph) {
   // This method is just for asserts.
   MOZ_ASSERT(aGraph->OnGraphThread());
 }
@@ -633,7 +614,7 @@ void MediaEngineWebRTCMicrophoneSource::Shutdown() {
   MOZ_ASSERT(mState == kReleased);
 }
 
-bool AudioInputProcessing::PassThrough(MediaStreamGraphImpl* aGraph) const {
+bool AudioInputProcessing::PassThrough(MediaTrackGraphImpl* aGraph) const {
   MOZ_ASSERT(aGraph->OnGraphThread());
   return mSkipProcessing;
 }
@@ -643,7 +624,7 @@ void AudioInputProcessing::SetPassThrough(bool aPassThrough) {
 }
 
 uint32_t AudioInputProcessing::GetRequestedInputChannelCount(
-    MediaStreamGraphImpl* aGraphImpl) {
+    MediaTrackGraphImpl* aGraphImpl) {
   return mRequestedInputChannelCount;
 }
 
@@ -651,7 +632,7 @@ void AudioInputProcessing::SetRequestedInputChannelCount(
     uint32_t aRequestedInputChannelCount) {
   mRequestedInputChannelCount = aRequestedInputChannelCount;
 
-  mStream->GraphImpl()->ReevaluateInputDevice();
+  mTrack->GraphImpl()->ReevaluateInputDevice();
 }
 
 // This does an early return in case of error.
@@ -749,16 +730,15 @@ void AudioInputProcessing::Start() {
 
 void AudioInputProcessing::Stop() { mEnabled = false; }
 
-void AudioInputProcessing::Pull(StreamTime aEndOfAppendedData,
-                                StreamTime aDesiredTime) {
-  TRACE_AUDIO_CALLBACK_COMMENT("SourceMediaStream %p track %i", mStream.get(),
-                               mTrackID);
+void AudioInputProcessing::Pull(TrackTime aEndOfAppendedData,
+                                TrackTime aDesiredTime) {
+  TRACE_AUDIO_CALLBACK_COMMENT("SourceMediaTrack %p", mTrack.get());
 
   if (mEnded) {
     return;
   }
 
-  StreamTime delta = aDesiredTime - aEndOfAppendedData;
+  TrackTime delta = aDesiredTime - aEndOfAppendedData;
   MOZ_ASSERT(delta > 0);
 
   if (!mLiveFramesAppended || !mLiveSilenceAppended) {
@@ -774,10 +754,10 @@ void AudioInputProcessing::Pull(StreamTime aEndOfAppendedData,
     // If there were live frames appended and we haven't appended the
     // right amount of silence, we'll have to append silence once more,
     // failing the other assert below.
-    MOZ_ASSERT_IF(!PassThrough(mStream->GraphImpl()) && !mPacketizerInput,
+    MOZ_ASSERT_IF(!PassThrough(mTrack->GraphImpl()) && !mPacketizerInput,
                   !mLiveFramesAppended);
 
-    if (!PassThrough(mStream->GraphImpl()) && mPacketizerInput) {
+    if (!PassThrough(mTrack->GraphImpl()) && mPacketizerInput) {
       // Processing is active and is processed in chunks of 10ms through the
       // input packetizer. We allow for 10ms of silence on the track to
       // accomodate the buffering worst-case.
@@ -797,7 +777,7 @@ void AudioInputProcessing::Pull(StreamTime aEndOfAppendedData,
   //   before the first graph iteration.
   // And other combinations of order of audio sample sources.
   MOZ_ASSERT_IF(mEnabled && mLiveFramesAppended && mLiveSilenceAppended,
-                mStream->GraphImpl()->IterationEnd() > mLastCallbackAppendTime);
+                mTrack->GraphImpl()->IterationEnd() > mLastCallbackAppendTime);
 
   if (mLiveFramesAppended) {
     mLiveSilenceAppended = true;
@@ -805,10 +785,10 @@ void AudioInputProcessing::Pull(StreamTime aEndOfAppendedData,
 
   AudioSegment audio;
   audio.AppendNullData(delta);
-  mStream->AppendToTrack(mTrackID, &audio);
+  mTrack->AppendData(&audio);
 }
 
-void AudioInputProcessing::NotifyOutputData(MediaStreamGraphImpl* aGraph,
+void AudioInputProcessing::NotifyOutputData(MediaTrackGraphImpl* aGraph,
                                             AudioDataValue* aBuffer,
                                             size_t aFrames, TrackRate aRate,
                                             uint32_t aChannels) {
@@ -897,7 +877,7 @@ void AudioInputProcessing::NotifyOutputData(MediaStreamGraphImpl* aGraph,
 }
 
 // Only called if we're not in passthrough mode
-void AudioInputProcessing::PacketizeAndProcess(MediaStreamGraphImpl* aGraph,
+void AudioInputProcessing::PacketizeAndProcess(MediaTrackGraphImpl* aGraph,
                                                const AudioDataValue* aBuffer,
                                                size_t aFrames, TrackRate aRate,
                                                uint32_t aChannels) {
@@ -976,11 +956,11 @@ void AudioInputProcessing::PacketizeAndProcess(MediaStreamGraphImpl* aGraph,
         outputConfig, processedOutputChannelPointers.Elements());
 
     AudioSegment segment;
-    if (!mStream->GraphImpl()) {
-      // The DOMMediaStream that owns mStream has been cleaned up
-      // and MediaStream::DestroyImpl() has run in the MSG. This is fine and
+    if (!mTrack->GraphImpl()) {
+      // The DOMMediaStream that owns mTrack has been cleaned up
+      // and MediaTrack::DestroyImpl() has run in the MTG. This is fine and
       // can happen before the MediaManager thread gets to stop capture for
-      // this MediaStream.
+      // this MediaTrack.
       continue;
     }
 
@@ -988,33 +968,33 @@ void AudioInputProcessing::PacketizeAndProcess(MediaStreamGraphImpl* aGraph,
               mPacketizerInput->PacketSize());
 
 #ifdef DEBUG
-    mLastCallbackAppendTime = mStream->GraphImpl()->IterationEnd();
+    mLastCallbackAppendTime = mTrack->GraphImpl()->IterationEnd();
 #endif
     mLiveFramesAppended = true;
 
     // We already have planar audio data of the right format. Insert into the
-    // MSG.
+    // MTG.
     MOZ_ASSERT(processedOutputChannelPointers.Length() == aChannels);
     RefPtr<SharedBuffer> other = buffer;
     segment.AppendFrames(other.forget(), processedOutputChannelPointersConst,
                          mPacketizerInput->PacketSize(), mPrincipal);
-    mStream->AppendToTrack(mTrackID, &segment);
+    mTrack->AppendData(&segment);
   }
 }
 
 template <typename T>
 void AudioInputProcessing::InsertInGraph(const T* aBuffer, size_t aFrames,
                                          uint32_t aChannels) {
-  if (!mStream->GraphImpl()) {
-    // The DOMMediaStream that owns mStream has been cleaned up
-    // and MediaStream::DestroyImpl() has run in the MSG. This is fine and
+  if (!mTrack->GraphImpl()) {
+    // The DOMMediaStream that owns mTrack has been cleaned up
+    // and MediaTrack::DestroyImpl() has run in the MTG. This is fine and
     // can happen before the MediaManager thread gets to stop capture for
-    // this MediaStream.
+    // this MediaTrack.
     return;
   }
 
 #ifdef DEBUG
-  mLastCallbackAppendTime = mStream->GraphImpl()->IterationEnd();
+  mLastCallbackAppendTime = mTrack->GraphImpl()->IterationEnd();
 #endif
   mLiveFramesAppended = true;
 
@@ -1048,12 +1028,12 @@ void AudioInputProcessing::InsertInGraph(const T* aBuffer, size_t aFrames,
   MOZ_ASSERT(aChannels == channels.Length());
   segment.AppendFrames(buffer.forget(), channels, aFrames, mPrincipal);
 
-  mStream->AppendToTrack(mTrackID, &segment);
+  mTrack->AppendData(&segment);
 }
 
 // Called back on GraphDriver thread!
 // Note this can be called back after ::Shutdown()
-void AudioInputProcessing::NotifyInputData(MediaStreamGraphImpl* aGraph,
+void AudioInputProcessing::NotifyInputData(MediaTrackGraphImpl* aGraph,
                                            const AudioDataValue* aBuffer,
                                            size_t aFrames, TrackRate aRate,
                                            uint32_t aChannels) {
@@ -1063,7 +1043,7 @@ void AudioInputProcessing::NotifyInputData(MediaStreamGraphImpl* aGraph,
   MOZ_ASSERT(mEnabled);
 
   // If some processing is necessary, packetize and insert in the WebRTC.org
-  // code. Otherwise, directly insert the mic data in the MSG, bypassing all
+  // code. Otherwise, directly insert the mic data in the MTG, bypassing all
   // processing.
   if (PassThrough(aGraph)) {
     InsertInGraph<AudioDataValue>(aBuffer, aFrames, aChannels);
@@ -1092,7 +1072,7 @@ void AudioInputProcessing::NotifyInputData(MediaStreamGraphImpl* aGraph,
     }                                                                \
   } while (0)
 
-void AudioInputProcessing::DeviceChanged(MediaStreamGraphImpl* aGraph) {
+void AudioInputProcessing::DeviceChanged(MediaTrackGraphImpl* aGraph) {
   MOZ_ASSERT(aGraph->OnGraphThread());
   // Reset some processing
   ResetProcessingIfNeeded(gain_control);
@@ -1129,10 +1109,10 @@ nsString MediaEngineWebRTCAudioCaptureSource::GetGroupId() const {
 }
 
 void MediaEngineWebRTCAudioCaptureSource::SetTrack(
-    const RefPtr<SourceMediaStream>& aStream, TrackID aTrackID,
+    const RefPtr<SourceMediaTrack>& aTrack,
     const PrincipalHandle& aPrincipalHandle) {
   AssertIsOnOwningThread();
-  // Nothing to do here. aStream is a placeholder dummy and not exposed.
+  // Nothing to do here. aTrack is a placeholder dummy and not exposed.
 }
 
 nsresult MediaEngineWebRTCAudioCaptureSource::Start() {

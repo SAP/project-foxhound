@@ -8,9 +8,6 @@
 
 // There are shutdown issues for which multiple rejections are left uncaught.
 // See bug 1018184 for resolving these issues.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
 PromiseTestUtils.whitelistRejectionsGlobally(/Component not initialized/);
 PromiseTestUtils.whitelistRejectionsGlobally(/this\.worker is null/);
 
@@ -50,7 +47,7 @@ async function testOpenInDebugger(hud, toolbox, text) {
 
 async function checkClickOnNode(hud, toolbox, frameNode) {
   info("checking click on node location");
-  const onSourceInDebuggerOpened = once(hud.ui, "source-in-debugger-opened");
+  const onSourceInDebuggerOpened = once(hud, "source-in-debugger-opened");
   EventUtils.sendMouseEvent(
     { type: "mousedown" },
     frameNode.querySelector(".location")

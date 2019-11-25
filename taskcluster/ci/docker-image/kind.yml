@@ -22,6 +22,8 @@ jobs:
         symbol: I(ib)
     desktop1604-test:
         symbol: I(dt16t)
+    debian10-test:
+        symbol: I(deb10-test)
     # Neither the debian7-*raw nor the debian7-*packages images can have
     # packages dependencies.
     debian7-raw:
@@ -154,16 +156,6 @@ jobs:
         definition: debian-build
         args:
             ARCH: amd64
-    debian9-arm64-build:
-        symbol: I(deb9-arm64)
-        parent: debian9-base
-        definition: debian-build
-        args:
-            ARCH: arm64
-    toolchain-arm64-build:
-        symbol: I(toolchain-arm64)
-        parent: debian9-arm64-build
-        definition: toolchain-build
     # Neither the debian10-raw nor the debian10-packages images can have
     # packages dependencies.
     debian10-raw:
@@ -190,6 +182,21 @@ jobs:
         definition: debian-build
         args:
             ARCH: amd64
+    debian10-arm64-build:
+        symbol: I(deb10-arm64)
+        parent: debian10-base
+        definition: debian-build
+        args:
+            ARCH: arm64
+    toolchain-arm64-build:
+        symbol: I(toolchain-arm64)
+        parent: debian10-arm64-build
+        definition: toolchain-build
+    debian10-test-iris:
+        symbol: I(deb10-ti)
+        parent: debian10-test
+        packages:
+            - deb10-python-zstandard
     android-build:
         symbol: I(agb)
         parent: debian9-base
@@ -200,7 +207,7 @@ jobs:
             - deb10-python-zstandard
     static-analysis-build:
         symbol: I(static-analysis-build)
-        parent: android-build
+        parent: debian9-base
     mingw32-build:
         symbol: I(mingw)
         parent: debian9-base
@@ -228,6 +235,12 @@ jobs:
     webrender:
         symbol: I(webrender)
         parent: debian9-base
+    condprof:
+        symbol: I(condprof)
+        parent: desktop1604-test
     webrender-updater:
         symbol: I(wrupdater)
+        parent: debian9-base
+    visual-metrics:
+        symbol: I(visual-metrics)
         parent: debian9-base

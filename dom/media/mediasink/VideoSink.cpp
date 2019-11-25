@@ -36,13 +36,13 @@ extern LazyLogModule gMediaDecoderLog;
   MOZ_LOG(gMediaDecoderLog, LogLevel::Verbose, (FMT(x, ##__VA_ARGS__)))
 
 #ifdef MOZ_GECKO_PROFILER
-#  define VSINK_ADD_PROFILER_MARKER(tag, markerTime, aTime, vTime)          \
-    do {                                                                    \
-      if (profiler_thread_is_being_profiled()) {                            \
-        profiler_add_marker(                                                \
-            tag, JS::ProfilingCategoryPair::GRAPHICS,                       \
-            MakeUnique<VideoFrameMarkerPayload>(markerTime, aTime, vTime)); \
-      }                                                                     \
+#  define VSINK_ADD_PROFILER_MARKER(tag, markerTime, aTime, vTime)    \
+    do {                                                              \
+      if (profiler_thread_is_being_profiled()) {                      \
+        PROFILER_ADD_MARKER_WITH_PAYLOAD(tag, GRAPHICS,               \
+                                         VideoFrameMarkerPayload,     \
+                                         (markerTime, aTime, vTime)); \
+      }                                                               \
     } while (0)
 
 class VideoFrameMarkerPayload : public ProfilerMarkerPayload {
@@ -54,9 +54,32 @@ class VideoFrameMarkerPayload : public ProfilerMarkerPayload {
         mAudioPositionUs(aAudioPositionUs),
         mVideoFrameTimeUs(aVideoFrameTimeUs) {}
 
+  BlocksRingBuffer::Length TagAndSerializationBytes() const override {
+    return CommonPropsTagAndSerializationBytes() +
+           BlocksRingBuffer::SumBytes(mAudioPositionUs, mVideoFrameTimeUs);
+  }
+
+  void SerializeTagAndPayload(
+      BlocksRingBuffer::EntryWriter& aEntryWriter) const override {
+    static const DeserializerTag tag = TagForDeserializer(Deserialize);
+    SerializeTagAndCommonProps(tag, aEntryWriter);
+    aEntryWriter.WriteObject(mAudioPositionUs);
+    aEntryWriter.WriteObject(mVideoFrameTimeUs);
+  }
+
+  static UniquePtr<ProfilerMarkerPayload> Deserialize(
+      BlocksRingBuffer::EntryReader& aEntryReader) {
+    ProfilerMarkerPayload::CommonProps props =
+        DeserializeCommonProps(aEntryReader);
+    auto audioPositionUs = aEntryReader.ReadObject<int64_t>();
+    auto videoFrameTimeUs = aEntryReader.ReadObject<int64_t>();
+    return UniquePtr<ProfilerMarkerPayload>(new VideoFrameMarkerPayload(
+        std::move(props), audioPositionUs, videoFrameTimeUs));
+  }
+
   void StreamPayload(SpliceableJSONWriter& aWriter,
                      const TimeStamp& aProcessStartTime,
-                     UniqueStacks& aUniqueStacks) {
+                     UniqueStacks& aUniqueStacks) const override {
     StreamCommonProps("UpdateRenderVideoFrames", aWriter, aProcessStartTime,
                       aUniqueStacks);
     aWriter.IntProperty("audio", mAudioPositionUs);
@@ -64,6 +87,12 @@ class VideoFrameMarkerPayload : public ProfilerMarkerPayload {
   }
 
  private:
+  VideoFrameMarkerPayload(CommonProps&& aCommonProps, int64_t aAudioPositionUs,
+                          int64_t aVideoFrameTimeUs)
+      : ProfilerMarkerPayload(std::move(aCommonProps)),
+        mAudioPositionUs(aAudioPositionUs),
+        mVideoFrameTimeUs(aVideoFrameTimeUs) {}
+
   int64_t mAudioPositionUs;
   int64_t mVideoFrameTimeUs;
 };
@@ -224,7 +253,9 @@ void VideoSink::SetPlaying(bool aPlaying) {
     // Reset any update timer if paused.
     mUpdateScheduler.Reset();
     // Since playback is paused, tell compositor to render only current frame.
-    RenderVideoFrames(1);
+    TimeStamp nowTime;
+    const auto clockTime = mAudioSink->GetPosition(&nowTime);
+    RenderVideoFrames(1, clockTime.ToMicroseconds(), nowTime);
     if (mContainer) {
       mContainer->ClearCachedResources();
     }
@@ -466,21 +497,19 @@ void VideoSink::RenderVideoFrames(int32_t aMaxFrames, int64_t aClockTime,
       continue;
     }
 
-    TimeStamp t;
-    if (aMaxFrames > 1) {
-      MOZ_ASSERT(!aClockTimeStamp.IsNull());
-      int64_t delta = frame->mTime.ToMicroseconds() - aClockTime;
-      t = aClockTimeStamp +
-          TimeDuration::FromMicroseconds(delta / params.mPlaybackRate);
-      if (!lastFrameTime.IsNull() && t <= lastFrameTime) {
-        // Timestamps out of order; drop the new frame. In theory we should
-        // probably replace the previous frame with the new frame if the
-        // timestamps are equal, but this is a corrupt video file already so
-        // never mind.
-        continue;
-      }
-      lastFrameTime = t;
+    MOZ_ASSERT(!aClockTimeStamp.IsNull());
+    int64_t delta = frame->mTime.ToMicroseconds() - aClockTime;
+    TimeStamp t = aClockTimeStamp +
+                  TimeDuration::FromMicroseconds(delta / params.mPlaybackRate);
+    if (!lastFrameTime.IsNull() && t <= lastFrameTime) {
+      // Timestamps out of order; drop the new frame. In theory we should
+      // probably replace the previous frame with the new frame if the
+      // timestamps are equal, but this is a corrupt video file already so
+      // never mind.
+      continue;
     }
+    MOZ_ASSERT(!t.IsNull());
+    lastFrameTime = t;
 
     ImageContainer::NonOwningImage* img = images.AppendElement();
     img->mTimeStamp = t;

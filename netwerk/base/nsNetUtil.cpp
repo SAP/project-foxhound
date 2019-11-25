@@ -25,6 +25,7 @@
 #include "nsFileStreams.h"
 #include "nsHashKeys.h"
 #include "nsHttp.h"
+#include "nsMimeTypes.h"
 #include "nsIAsyncStreamCopier.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
@@ -1126,11 +1127,9 @@ void NS_GetReferrerFromChannel(nsIChannel* channel, nsIURI** referrer) {
     nsresult rv = props->GetPropertyAsInterface(
         NS_LITERAL_STRING("docshell.internalReferrer"), NS_GET_IID(nsIURI),
         reinterpret_cast<void**>(referrer));
-    if (NS_FAILED(rv)) *referrer = nullptr;
-  }
-
-  if (*referrer) {
-    return;
+    if (NS_SUCCEEDED(rv)) {
+      return;
+    }
   }
 
   // if that didn't work, we can still try to get the referrer from the
@@ -2129,7 +2128,7 @@ bool NS_ShouldCheckAppCache(nsIPrincipal* aPrincipal) {
   }
 
   bool allowed;
-  rv = offlineService->OfflineAppAllowed(aPrincipal, nullptr, &allowed);
+  rv = offlineService->OfflineAppAllowed(aPrincipal, &allowed);
   return NS_SUCCEEDED(rv) && allowed;
 }
 
@@ -2721,6 +2720,25 @@ void NS_SniffContent(const char* aSnifferType, nsIRequest* aRequest,
     return;
   }
 
+  // In case XCTO nosniff was present, we could just skip sniffing here
+  nsCOMPtr<nsIChannel> channel = do_QueryInterface(aRequest);
+  if (channel) {
+    nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+    if (loadInfo->GetSkipContentSniffing()) {
+      /* Bug 1571742
+       * We cannot skip snffing if the current MIME-Type might be a JSON.
+       * The JSON-Viewer relies on its own sniffer to determine, if it can
+       * render the page, so we need to make an exception if the Server provides
+       * a application/ mime, as it might be json.
+       */
+      nsAutoCString currentContentType;
+      channel->GetContentType(currentContentType);
+      if (!StringBeginsWith(currentContentType,
+                            NS_LITERAL_CSTRING("application/"))) {
+        return;
+      }
+    }
+  }
   nsCOMArray<nsIContentSniffer> sniffers;
   cache->GetEntries(sniffers);
   for (int32_t i = 0; i < sniffers.Count(); ++i) {

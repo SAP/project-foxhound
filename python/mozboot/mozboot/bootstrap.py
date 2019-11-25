@@ -17,7 +17,7 @@ if sys.version_info < (3,):
         Error as ConfigParserError,
         RawConfigParser,
     )
-    input = raw_input
+    input = raw_input  # noqa
 else:
     from configparser import (
         Error as ConfigParserError,
@@ -34,6 +34,7 @@ from mozboot.gentoo import GentooBootstrapper
 from mozboot.osx import OSXBootstrapper
 from mozboot.openbsd import OpenBSDBootstrapper
 from mozboot.archlinux import ArchlinuxBootstrapper
+from mozboot.solus import SolusBootstrapper
 from mozboot.windows import WindowsBootstrapper
 from mozboot.mozillabuild import MozillaBuildBootstrapper
 from mozboot.util import (
@@ -83,7 +84,7 @@ If you would like to use a different directory, hit CTRL+c and set the
 MOZBUILD_STATE_PATH environment variable to the directory you'd like to
 use and re-run the bootstrapper.
 
-Would you like to create this directory? (Yn):'''
+Would you like to create this directory?'''
 
 STYLO_NODEJS_DIRECTORY_MESSAGE = '''
 Stylo and NodeJS packages require a directory to store shared, persistent
@@ -246,7 +247,18 @@ class Bootstrapper(object):
                 'no_system_changes': no_system_changes}
 
         if sys.platform.startswith('linux'):
+            # TODO: don't call `linux_distribution` at all since it's deprecated
             distro, version, dist_id = platform.linux_distribution()
+
+            # Read the standard `os-release` configuration
+            if distro == '' and os.path.exists('/etc/os-release'):
+                d = {}
+                for line in open('/etc/os-release'):
+                    k, v = line.rstrip().split("=")
+                    d[k] = v.strip('"')
+                distro = d.get("NAME")
+                version = d.get("VERSION_ID")
+                dist_id = d.get("ID")
 
             if distro in ('CentOS', 'CentOS Linux', 'Fedora'):
                 cls = CentOSFedoraBootstrapper
@@ -256,12 +268,14 @@ class Bootstrapper(object):
                 args['distro'] = distro
             elif distro in ('Gentoo Base System', 'Funtoo Linux - baselayout '):
                 cls = GentooBootstrapper
+            elif distro in ('Solus'):
+                cls = SolusBootstrapper
             elif os.path.exists('/etc/arch-release'):
                 # Even on archlinux, platform.linux_distribution() returns ['','','']
                 cls = ArchlinuxBootstrapper
             else:
                 raise NotImplementedError('Bootstrap support for this Linux '
-                                          'distro not yet available.')
+                                          'distro not yet available: ' + distro)
 
             args['version'] = version
             args['dist_id'] = dist_id

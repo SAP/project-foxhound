@@ -8,11 +8,18 @@ import android.provider.Settings
 import android.support.test.InstrumentationRegistry
 import android.support.test.filters.MediumTest
 import android.support.test.runner.AndroidJUnit4
+import android.util.Log
 import org.hamcrest.Matchers.*
 import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.geckoview.GeckoResult
 import kotlin.math.roundToInt
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.WebRequestError
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
+import org.mozilla.geckoview.test.util.Callbacks
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
@@ -138,5 +145,35 @@ class RuntimeSettingsTest : BaseSessionTest() {
                 prefValue, `is`(0))
         assertThat("GeckoRuntimeSettings remains turned off",
                 settings.fontInflationEnabled, `is`(false))
+    }
+
+    @Test
+    fun aboutConfig() {
+        val settings = sessionRule.runtime.settings
+
+        assertThat("about:config should be disabled by default",
+                settings.aboutConfigEnabled, equalTo(false))
+
+        mainSession.loadUri("about:config")
+        mainSession.waitUntilCalled(object : Callbacks.NavigationDelegate {
+            @AssertCalled
+            override fun onLoadError(session: GeckoSession, uri: String?, error: WebRequestError):
+                    GeckoResult<String>? {
+                assertThat("about:config should not load.", uri, equalTo("about:config"))
+                return null
+            }
+        })
+
+        settings.aboutConfigEnabled = true
+
+        mainSession.delegateDuringNextWait(object : Callbacks.ProgressDelegate {
+            @AssertCalled
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                assertThat("about:config load should succeed", success, equalTo(true))
+            }
+        })
+
+        mainSession.loadUri("about:config")
+        mainSession.waitForPageStop()
     }
 }

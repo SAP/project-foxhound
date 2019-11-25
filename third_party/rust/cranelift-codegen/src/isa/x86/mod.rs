@@ -119,8 +119,8 @@ impl TargetIsa for Isa {
         abi::regclass_for_abi_type(ty)
     }
 
-    fn allocatable_registers(&self, func: &ir::Function) -> regalloc::RegisterSet {
-        abi::allocatable_registers(func, &self.triple)
+    fn allocatable_registers(&self, _func: &ir::Function) -> regalloc::RegisterSet {
+        abi::allocatable_registers(&self.triple, &self.shared_flags)
     }
 
     #[cfg(feature = "testing_hooks")]
@@ -141,6 +141,14 @@ impl TargetIsa for Isa {
     fn prologue_epilogue(&self, func: &mut ir::Function) -> CodegenResult<()> {
         let _tt = timing::prologue_epilogue();
         abi::prologue_epilogue(func, self)
+    }
+
+    fn unsigned_add_overflow_condition(&self) -> ir::condcodes::IntCC {
+        ir::condcodes::IntCC::UnsignedLessThan
+    }
+
+    fn unsigned_sub_overflow_condition(&self) -> ir::condcodes::IntCC {
+        ir::condcodes::IntCC::UnsignedLessThan
     }
 }
 

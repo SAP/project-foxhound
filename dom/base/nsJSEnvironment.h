@@ -23,12 +23,14 @@ class nsICycleCollectorListener;
 class nsIDocShell;
 
 namespace mozilla {
+
 template <class>
 class Maybe;
 struct CycleCollectorResults;
-}  // namespace mozilla
 
-#define NS_MAJOR_FORGET_SKIPPABLE_CALLS 5
+static const uint32_t kMajorForgetSkippableCalls = 5;
+
+}  // namespace mozilla
 
 class nsJSContext : public nsIScriptContext {
  public:
@@ -151,23 +153,27 @@ class nsJSContext : public nsIScriptContext {
 namespace mozilla {
 namespace dom {
 
+class SerializedStackHolder;
+
 void StartupJSEnvironment();
 void ShutdownJSEnvironment();
 
 // Runnable that's used to do async error reporting
 class AsyncErrorReporter final : public mozilla::Runnable {
  public:
-  // aWindow may be null if this error report is not associated with a window
-  explicit AsyncErrorReporter(xpc::ErrorReport* aReport)
-      : Runnable("dom::AsyncErrorReporter"), mReport(aReport) {}
-
-  NS_IMETHOD Run() override {
-    mReport->LogToConsole();
-    return NS_OK;
-  }
+  explicit AsyncErrorReporter(xpc::ErrorReport* aReport);
+  // SerializeStack is suitable for main or worklet thread use.
+  // Stacks from worker threads are not supported.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1578968
+  void SerializeStack(JSContext* aCx, JS::Handle<JSObject*> aStack);
 
  protected:
+  NS_IMETHOD Run() override;
+
   RefPtr<xpc::ErrorReport> mReport;
+  // This may be used to marshal a stack from an arbitrary thread/runtime into
+  // the main thread/runtime where the console service runs.
+  UniquePtr<SerializedStackHolder> mStackHolder;
 };
 
 }  // namespace dom

@@ -17,6 +17,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "TextOverflow.h"
 
 #ifdef DEBUG
@@ -76,13 +77,11 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
   mContainerSize.height =
       aReflowInput.ComputedHeight() + mBorderPadding.TopBottom(wm);
 
-  if ((aBStartMarginRoot && !logicalSkipSides.BStart()) ||
-      0 != mBorderPadding.BStart(wm)) {
+  if (aBStartMarginRoot || 0 != mBorderPadding.BStart(wm)) {
     mFlags.mIsBStartMarginRoot = true;
     mFlags.mShouldApplyBStartMargin = true;
   }
-  if ((aBEndMarginRoot && !logicalSkipSides.BEnd()) ||
-      0 != mBorderPadding.BEnd(wm)) {
+  if (aBEndMarginRoot || 0 != mBorderPadding.BEnd(wm)) {
     mFlags.mIsBEndMarginRoot = true;
   }
   if (aBlockNeedsFloatManager) {
@@ -179,21 +178,6 @@ void BlockReflowInput::ComputeReplacedBlockOffsetsForFloats(
   aIEndResult = iEndOffset;
 }
 
-static nscoord GetBEndMarginClone(nsIFrame* aFrame,
-                                  gfxContext* aRenderingContext,
-                                  const LogicalRect& aContentArea,
-                                  WritingMode aWritingMode) {
-  if (aFrame->StyleBorder()->mBoxDecorationBreak ==
-      StyleBoxDecorationBreak::Clone) {
-    SizeComputationInput os(aFrame, aRenderingContext, aWritingMode,
-                            aContentArea.ISize(aWritingMode));
-    return os.ComputedLogicalMargin()
-        .ConvertTo(aWritingMode, aFrame->GetWritingMode())
-        .BEnd(aWritingMode);
-  }
-  return 0;
-}
-
 // Compute the amount of available space for reflowing a block frame
 // at the current block-direction coordinate. This method assumes that
 // GetFloatAvailableSpace has already been called.
@@ -207,12 +191,8 @@ void BlockReflowInput::ComputeBlockAvailSpace(
   WritingMode wm = mReflowInput.GetWritingMode();
   const nscoord availBSize = mReflowInput.AvailableBSize();
   aResult.BStart(wm) = mBCoord;
-  aResult.BSize(wm) =
-      availBSize == NS_UNCONSTRAINEDSIZE
-          ? NS_UNCONSTRAINEDSIZE
-          : availBSize - mBCoord -
-                GetBEndMarginClone(aFrame, mReflowInput.mRenderingContext,
-                                   mContentArea, wm);
+  aResult.BSize(wm) = availBSize == NS_UNCONSTRAINEDSIZE ? NS_UNCONSTRAINEDSIZE
+                                                         : availBSize - mBCoord;
   // mBCoord might be greater than mBEndEdge if the block's top margin pushes
   // it off the page/column. Negative available block-size can confuse other
   // code and is nonsense in principle.

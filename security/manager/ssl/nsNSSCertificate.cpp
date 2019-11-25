@@ -9,11 +9,14 @@
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
 #include "certdb.h"
+#include "ipc/IPCMessageUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
+#include "mozilla/ipc/TransportSecurityInfoUtils.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/Span.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 #include "nsArray.h"
 #include "nsCOMPtr.h"
@@ -554,7 +557,7 @@ void nsNSSCertificate::GetSubjectAltNames() {
             current->name.other.len);
         // dNSName fields are defined as type IA5String and thus should
         // be limited to ASCII characters.
-        if (IsASCII(nameFromCert)) {
+        if (IsAscii(nameFromCert)) {
           name.Assign(NS_ConvertASCIItoUTF16(nameFromCert));
           mSubjectAltNames.push_back(name);
         }
@@ -866,79 +869,6 @@ UniqueCERTCertList nsNSSCertList::DupCertList(
     Unused << cert.release();  // Ownership transferred to the cert list.
   }
   return newList;
-}
-
-NS_IMETHODIMP
-nsNSSCertList::AsPKCS7Blob(/*out*/ nsACString& result) {
-  UniqueNSSCMSMessage cmsg(NSS_CMSMessage_Create(nullptr));
-  if (!cmsg) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("nsNSSCertList::AsPKCS7Blob - can't create CMS message"));
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  UniqueNSSCMSSignedData sigd(nullptr);
-  nsresult rv = ForEachCertificateInChain(
-      [&cmsg, &sigd](nsCOMPtr<nsIX509Cert> aCert, bool /*unused*/,
-                     /*out*/ bool& /*unused*/) {
-        // We need an owning handle when calling nsIX509Cert::GetCert().
-        UniqueCERTCertificate nssCert(aCert->GetCert());
-        if (!sigd) {
-          sigd.reset(NSS_CMSSignedData_CreateCertsOnly(cmsg.get(),
-                                                       nssCert.get(), false));
-          if (!sigd) {
-            MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-                    ("nsNSSCertList::AsPKCS7Blob - can't create SignedData"));
-            return NS_ERROR_FAILURE;
-          }
-        } else if (NSS_CMSSignedData_AddCertificate(
-                       sigd.get(), nssCert.get()) != SECSuccess) {
-          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-                  ("nsNSSCertList::AsPKCS7Blob - can't add cert"));
-          return NS_ERROR_FAILURE;
-        }
-        return NS_OK;
-      });
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  NSSCMSContentInfo* cinfo = NSS_CMSMessage_GetContentInfo(cmsg.get());
-  if (NSS_CMSContentInfo_SetContent_SignedData(cmsg.get(), cinfo, sigd.get()) !=
-      SECSuccess) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("nsNSSCertList::AsPKCS7Blob - can't attach SignedData"));
-    return NS_ERROR_FAILURE;
-  }
-  // cmsg owns sigd now.
-  Unused << sigd.release();
-
-  UniquePLArenaPool arena(PORT_NewArena(1024));
-  if (!arena) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("nsNSSCertList::AsPKCS7Blob - out of memory"));
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
-
-  SECItem certP7 = {siBuffer, nullptr, 0};
-  NSSCMSEncoderContext* ecx = NSS_CMSEncoder_Start(
-      cmsg.get(), nullptr, nullptr, &certP7, arena.get(), nullptr, nullptr,
-      nullptr, nullptr, nullptr, nullptr);
-  if (!ecx) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("nsNSSCertList::AsPKCS7Blob - can't create encoder"));
-    return NS_ERROR_FAILURE;
-  }
-
-  if (NSS_CMSEncoder_Finish(ecx) != SECSuccess) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("nsNSSCertList::AsPKCS7Blob - failed to add encoded data"));
-    return NS_ERROR_FAILURE;
-  }
-
-  result.Assign(nsDependentCSubstring(
-      reinterpret_cast<const char*>(certP7.data), certP7.len));
-  return NS_OK;
 }
 
 // NB: Any updates (except disk-only fields) must be kept in sync with

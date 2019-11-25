@@ -4,7 +4,6 @@
 
 "use strict";
 
-const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const {
   createFactory,
   PureComponent,
@@ -20,22 +19,23 @@ const FluentReact = require("devtools/client/shared/vendor/fluent-react");
 const Localized = createFactory(FluentReact.Localized);
 const { l10n } = require("../../modules/l10n");
 
+const ManifestColorItem = createFactory(require("./ManifestColorItem"));
+const ManifestIconItem = createFactory(require("./ManifestIconItem"));
 const ManifestItem = createFactory(require("./ManifestItem"));
 const ManifestIssueList = createFactory(require("./ManifestIssueList"));
 const ManifestSection = createFactory(require("./ManifestSection"));
+const ManifestJsonLink = createFactory(require("./ManifestJsonLink"));
+
+const { MANIFEST_MEMBER_VALUE_TYPES } = require("../../constants");
+const Types = require("../../types/index");
 
 /**
  * A canonical manifest, splitted in different sections
  */
 class Manifest extends PureComponent {
   static get propTypes() {
-    // TODO: Use well-defined types
-    //       See https://bugzilla.mozilla.org/show_bug.cgi?id=1576881
     return {
-      icons: PropTypes.array.isRequired,
-      identity: PropTypes.array.isRequired,
-      presentation: PropTypes.array.isRequired,
-      validation: PropTypes.array.isRequired,
+      ...Types.manifest, // { identity, presentation, icons, validation, url }
     };
   }
 
@@ -52,6 +52,22 @@ class Manifest extends PureComponent {
           ManifestIssueList({ issues: validation })
         )
       : null;
+  }
+
+  renderMember({ key, value, type }, index) {
+    let domKey = key;
+    switch (type) {
+      case MANIFEST_MEMBER_VALUE_TYPES.COLOR:
+        return ManifestColorItem({ label: key, key: domKey, value });
+      case MANIFEST_MEMBER_VALUE_TYPES.ICON:
+        // since the manifest may have keys with empty size/contentType,
+        // we cannot use them as unique IDs
+        domKey = index;
+        return ManifestIconItem({ label: key, key: domKey, value });
+      case MANIFEST_MEMBER_VALUE_TYPES.STRING:
+      default:
+        return ManifestItem({ label: key, key: domKey }, value);
+    }
   }
 
   renderItemSections() {
@@ -72,31 +88,23 @@ class Manifest extends PureComponent {
         // NOTE: this table should probably be its own component, to keep
         //       the same level of abstraction as with the validation issues
         // Bug https://bugzilla.mozilla.org/show_bug.cgi?id=1577138
-        table(
-          {},
-          tbody(
-            {},
-            // TODO: handle different data types for values (colors, images…)
-            //       See https://bugzilla.mozilla.org/show_bug.cgi?id=1575529
-            items.map(item => {
-              const { key, value } = item;
-              return ManifestItem({ label: key, key: key }, value);
-            })
-          )
-        )
+        table({}, tbody({}, items.map(this.renderMember)))
       );
     });
   }
 
   render() {
+    const { url } = this.props;
+
     return article(
-      {},
+      { className: "js-manifest" },
       Localized(
         {
           id: "manifest-view-header",
         },
         h1({ className: "app-page__title" })
       ),
+      ManifestJsonLink({ url }),
       this.renderIssueSection(),
       this.renderItemSections()
     );

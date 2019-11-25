@@ -1637,7 +1637,8 @@ void WinUtils::SetupKeyModifiersSequence(nsTArray<KeyPair>* aArray,
 /* static */
 nsresult WinUtils::WriteBitmap(nsIFile* aFile, imgIContainer* aImage) {
   RefPtr<SourceSurface> surface = aImage->GetFrame(
-      imgIContainer::FRAME_FIRST, imgIContainer::FLAG_SYNC_DECODE);
+      imgIContainer::FRAME_FIRST,
+      imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
   NS_ENSURE_TRUE(surface, NS_ERROR_FAILURE);
 
   return WriteBitmap(aFile, surface);
@@ -2216,6 +2217,8 @@ bool WinUtils::PreparePathForTelemetry(nsAString& aPath,
   ptrdiff_t cutLen = leafStart - flatPath.get();
   if (cutLen) {
     aPath.Cut(0, cutLen);
+  } else if (aFlags & PathTransformFlags::RequireFilePath) {
+    return false;
   }
 
   return true;

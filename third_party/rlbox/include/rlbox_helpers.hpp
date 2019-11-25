@@ -8,6 +8,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "rlbox_stdlib_polyfill.hpp"
+
 namespace rlbox {
 namespace detail {
   const int CompileErrorCode = 42;
@@ -38,6 +40,13 @@ namespace detail {
     static_assert(!(CondExpr), Message)
 #endif
 
+#ifdef RLBOX_ENABLE_DEBUG_ASSERTIONS
+#  define RLBOX_DEBUG_ASSERT(...)                                              \
+    ::rlbox::detail::dynamic_check(__VA_ARGS__, "Debug assertion failed")
+#else
+#  define RLBOX_DEBUG_ASSERT(...) (void)0
+#endif
+
 #define RLBOX_UNUSED(...) (void)__VA_ARGS__
 
 #define RLBOX_REQUIRE_SEMI_COLON static_assert(true)
@@ -57,6 +66,22 @@ namespace detail {
 #endif
   }
 
+// Create an extension point so applications can provide their own shared lock
+// implementation
+#ifndef RLBOX_USE_CUSTOM_SHARED_LOCK
+#  define RLBOX_SHARED_LOCK(name) std::shared_timed_mutex name
+#  define RLBOX_ACQUIRE_SHARED_GUARD(name, ...)                                \
+    std::shared_lock<std::shared_timed_mutex> name(__VA_ARGS__)
+#  define RLBOX_ACQUIRE_UNIQUE_GUARD(name, ...)                                \
+    std::unique_lock<std::shared_timed_mutex> name(__VA_ARGS__)
+#else
+#  if !defined(RLBOX_SHARED_LOCK) || !defined(RLBOX_ACQUIRE_SHARED_GUARD) ||   \
+    !defined(RLBOX_ACQUIRE_UNIQUE_GUARD)
+#    error                                                                     \
+      "RLBOX_USE_CUSTOM_SHARED_LOCK defined but missing definitions for RLBOX_SHARED_LOCK, RLBOX_ACQUIRE_SHARED_GUARD, RLBOX_ACQUIRE_UNIQUE_GUARD"
+#  endif
+#endif
+
 #define rlbox_detail_forward_binop_to_base(opSymbol, ...)                      \
   template<typename T_Rhs>                                                     \
   inline auto operator opSymbol(T_Rhs rhs)                                     \
@@ -74,7 +99,8 @@ namespace detail {
     return sandbox_const_cast<detail::rlbox_remove_wrapper_t<result_type>>(    \
       const_cast<T_ConstClassPtr>(this)->func_name());                         \
   } else if constexpr (detail::is_fundamental_or_enum_v<result_type> ||        \
-                       detail::is_std_array_v<result_type>) {                  \
+                       detail::is_std_array_v<result_type> ||                  \
+                       detail::is_func_ptr_v<result_type>) {                   \
     return const_cast<T_ConstClassPtr>(this)->func_name();                     \
   } else {                                                                     \
     return const_cast<result_type>(                                            \
@@ -90,12 +116,20 @@ namespace detail {
     return sandbox_const_cast<detail::rlbox_remove_wrapper_t<result_type>>(    \
       const_cast<T_ConstClassPtr>(this)->func_name(__VA_ARGS__));              \
   } else if constexpr (detail::is_fundamental_or_enum_v<result_type> ||        \
-                       detail::is_std_array_v<result_type>) {                  \
+                       detail::is_std_array_v<result_type> ||                  \
+                       detail::is_func_ptr_v<result_type>) {                   \
     return const_cast<T_ConstClassPtr>(this)->func_name(__VA_ARGS__);          \
   } else {                                                                     \
     return const_cast<result_type>(                                            \
       const_cast<T_ConstClassPtr>(this)->func_name(__VA_ARGS__));              \
   }
+
+#define rlbox_detail_member_and_const(sig, ...)                                \
+  sig __VA_ARGS__                                                              \
+                                                                               \
+    sig const __VA_ARGS__                                                      \
+                                                                               \
+    static_assert(true)
 
   template<typename T>
   inline auto remove_volatile_from_ptr_cast(T* ptr)
@@ -127,9 +161,9 @@ namespace detail {
   }
 
   template<typename T, typename T2>
-  inline auto return_first_result(T first_task, T2 second_task)
+  [[nodiscard]] inline auto return_first_result(T first_task, T2 second_task)
   {
-    using T_Result = std::invoke_result_t<T>;
+    using T_Result = rlbox::detail::polyfill::invoke_result_t<T>;
 
     if constexpr (std::is_void_v<T_Result>) {
       first_task();
@@ -139,6 +173,48 @@ namespace detail {
       second_task();
       return val;
     }
+  }
+
+  // Scope Exit guards
+  template<typename T_ExitFunc>
+  class scope_exit
+  {
+    T_ExitFunc exit_func;
+    bool released;
+
+  public:
+    explicit scope_exit(T_ExitFunc&& cleanup)
+      : exit_func(cleanup)
+      , released(true)
+    {}
+
+    scope_exit(scope_exit&& rhs)
+      : exit_func(std::move(rhs.exit_func))
+      , released(rhs.released)
+    {
+      rhs.release();
+    }
+
+    ~scope_exit()
+    {
+      if (released) {
+        exit_func();
+      }
+    }
+
+    void release() { released = false; }
+
+  private:
+    explicit scope_exit(const scope_exit&) = delete;
+    scope_exit& operator=(const scope_exit&) = delete;
+    scope_exit& operator=(scope_exit&&) = delete;
+  };
+
+  template<typename T_ExitFunc>
+  [[nodiscard]] scope_exit<T_ExitFunc> make_scope_exit(
+    T_ExitFunc&& exitFunction)
+  {
+    return scope_exit<T_ExitFunc>(std::move(exitFunction));
   }
 
 /*
@@ -164,10 +240,7 @@ But C++ doesn't seem to allow the above
   friend class rlbox_sandbox;                                                  \
                                                                                \
   template<typename U1, typename U2>                                           \
-  friend class sandbox_callback;                                               \
-                                                                               \
-  template<typename U1, typename U2>                                           \
-  friend class sandbox_function;
+  friend class sandbox_callback;
 
 }
 

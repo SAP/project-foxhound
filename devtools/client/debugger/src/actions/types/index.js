@@ -5,11 +5,20 @@
 // @flow
 
 import typeof SourceMaps from "devtools-source-map";
-import type { ThreadList, Thread, Context, ThreadId } from "../../types";
+import type {
+  ThreadList,
+  Thread,
+  Context,
+  ThreadId,
+  SourceLocation,
+} from "../../types";
 import type { State } from "../../reducers/types";
 import type { MatchedLocations } from "../../reducers/file-search";
 import type { TreeNode } from "../../utils/sources-tree/types";
-import type { SearchOperation } from "../../reducers/project-text-search";
+import type {
+  SearchOperation,
+  StatusType,
+} from "../../reducers/project-text-search";
 
 import type { BreakpointAction } from "./BreakpointAction";
 import type { SourceAction } from "./SourceAction";
@@ -75,7 +84,7 @@ type NavigateAction =
   | {|
       +type: "CONNECT",
       +mainThread: Thread,
-      +canRewind: boolean,
+      +traits: Object,
       +isWebExtension: boolean,
     |}
   | {| +type: "NAVIGATE", +mainThread: Thread |};
@@ -93,7 +102,7 @@ export type ProjectTextSearchAction =
       +cx: Context,
       +result: ProjectTextSearchResult,
     |}
-  | {| +type: "UPDATE_STATUS", +cx: Context, +status: string |}
+  | {| +type: "UPDATE_STATUS", +cx: Context, +status: StatusType |}
   | {| +type: "CLEAR_SEARCH_RESULTS", +cx: Context |}
   | {|
       +type: "ADD_ONGOING_SEARCH",
@@ -149,6 +158,13 @@ export type DebuggeeAction =
       +type: "SELECT_THREAD",
       +cx: Context,
       +thread: ThreadId,
+    |}
+  | {|
+      +type: "PREVIEW_PAUSED_LOCATION",
+      +location: SourceLocation,
+    |}
+  | {|
+      +type: "CLEAR_PREVIEW_PAUSED_LOCATION",
     |};
 
 export type {
@@ -162,8 +178,11 @@ export type { panelPositionType } from "./UIAction";
 export type { ASTAction } from "./ASTAction";
 
 type ActiveEventListener = string;
-type EventListenerEvent = { name: string, id: ActiveEventListener };
-type EventListenerCategory = { name: string, events: EventListenerEvent[] };
+export type EventListenerEvent = { name: string, id: ActiveEventListener };
+export type EventListenerCategory = {
+  name: string,
+  events: EventListenerEvent[],
+};
 
 export type EventListenerActiveList = ActiveEventListener[];
 export type EventListenerCategoryList = EventListenerCategory[];
@@ -181,6 +200,10 @@ export type EventListenerAction =
   | {|
       +type: "UPDATE_EVENT_LISTENER_EXPANDED",
       +expanded: EventListenerExpandedList,
+    |}
+  | {|
+      +type: "TOGGLE_EVENT_LISTENERS",
+      +logEventBreakpoints: boolean,
     |};
 
 /**

@@ -5,8 +5,8 @@
 
 #include "VideoStreamTrack.h"
 
-#include "MediaStreamGraph.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraph.h"
+#include "MediaTrackListener.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "VideoOutput.h"
@@ -15,11 +15,11 @@ namespace mozilla {
 namespace dom {
 
 VideoStreamTrack::VideoStreamTrack(nsPIDOMWindowInner* aWindow,
-                                   MediaStream* aInputStream, TrackID aTrackID,
+                                   mozilla::MediaTrack* aInputTrack,
                                    MediaStreamTrackSource* aSource,
                                    MediaStreamTrackState aReadyState,
                                    const MediaTrackConstraints& aConstraints)
-    : MediaStreamTrack(aWindow, aInputStream, aTrackID, aSource, aReadyState,
+    : MediaStreamTrack(aWindow, aInputTrack, aSource, aReadyState,
                        aConstraints) {}
 
 void VideoStreamTrack::Destroy() {
@@ -81,8 +81,8 @@ void VideoStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
 }
 
 already_AddRefed<MediaStreamTrack> VideoStreamTrack::CloneInternal() {
-  return do_AddRef(new VideoStreamTrack(mWindow, mInputStream, mTrackID,
-                                        mSource, ReadyState(), mConstraints));
+  return do_AddRef(new VideoStreamTrack(mWindow, mInputTrack, mSource,
+                                        ReadyState(), mConstraints));
 }
 
 }  // namespace dom

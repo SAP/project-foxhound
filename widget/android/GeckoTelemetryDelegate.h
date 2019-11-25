@@ -36,9 +36,8 @@ class GeckoTelemetryDelegate final
       : mProxy(aProxy) {}
 
  private:
-  // Implement StreamingTelemetryDelegate.
-  void ReceiveHistogramSamples(const nsCString& aName,
-                               const nsTArray<uint32_t>& aSamples) override {
+  void DispatchHistogram(bool aIsCategorical, const nsCString& aName,
+                         const nsTArray<uint32_t>& aSamples) {
     if (!mozilla::jni::IsAvailable() || !mProxy || aSamples.Length() < 1) {
       return;
     }
@@ -48,9 +47,46 @@ class GeckoTelemetryDelegate final
       samples->AppendElement(static_cast<int64_t>(aSamples[i]));
     }
 
-    mProxy->DispatchTelemetry(
-        aName,
+    mProxy->DispatchHistogram(
+        aIsCategorical, aName,
         mozilla::jni::LongArray::New(samples->Elements(), samples->Length()));
+  }
+
+  // Implement StreamingTelemetryDelegate.
+  void ReceiveHistogramSamples(const nsCString& aName,
+                               const nsTArray<uint32_t>& aSamples) override {
+    DispatchHistogram(/* isCategorical */ false, aName, aSamples);
+  }
+
+  void ReceiveCategoricalHistogramSamples(
+      const nsCString& aName, const nsTArray<uint32_t>& aSamples) override {
+    DispatchHistogram(/* isCategorical */ true, aName, aSamples);
+  }
+
+  void ReceiveBoolScalarValue(const nsCString& aName, bool aValue) override {
+    if (!mozilla::jni::IsAvailable() || !mProxy) {
+      return;
+    }
+
+    mProxy->DispatchBooleanScalar(aName, aValue);
+  }
+
+  void ReceiveStringScalarValue(const nsCString& aName,
+                                const nsCString& aValue) override {
+    if (!mozilla::jni::IsAvailable() || !mProxy) {
+      return;
+    }
+
+    mProxy->DispatchStringScalar(aName, aValue);
+  }
+
+  void ReceiveUintScalarValue(const nsCString& aName,
+                              uint32_t aValue) override {
+    if (!mozilla::jni::IsAvailable() || !mProxy) {
+      return;
+    }
+
+    mProxy->DispatchLongScalar(aName, static_cast<int64_t>(aValue));
   }
 
   mozilla::java::RuntimeTelemetry::Proxy::GlobalRef mProxy;

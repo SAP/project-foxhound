@@ -36,6 +36,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 
 #include "base/eintr_wrapper.h"
@@ -385,6 +386,9 @@ bool gfxPlatformFontList::AddWithLegacyFamilyName(const nsACString& aLegacyName,
 }
 
 nsresult gfxPlatformFontList::InitFontList() {
+  // This shouldn't be called from stylo threads!
+  MOZ_ASSERT(NS_IsMainThread());
+
   mFontlistInitCount++;
 
   if (LOG_FONTINIT_ENABLED()) {
@@ -399,6 +403,13 @@ nsresult gfxPlatformFontList::InitFontList() {
   }
 
   gfxPlatform::PurgeSkiaFontCache();
+
+  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
+  if (obs) {
+    // Notify any current presContexts that fonts are being updated, so existing
+    // caches will no longer be valid.
+    obs->NotifyObservers(nullptr, "font-info-updated", nullptr);
+  }
 
   mAliasTable.Clear();
   mLocalNameTable.Clear();
@@ -438,6 +449,9 @@ nsresult gfxPlatformFontList::InitFontList() {
   if (StaticPrefs::gfx_e10s_font_list_shared_AtStartup() &&
       !gfxPlatform::InSafeMode()) {
     for (auto i = mFontEntries.Iter(); !i.Done(); i.Next()) {
+      if (!i.Data()) {
+        continue;
+      }
       i.Data()->mShmemCharacterMap = nullptr;
       i.Data()->mShmemFace = nullptr;
       i.Data()->mFamilyName = NS_LITERAL_CSTRING("");
@@ -470,6 +484,21 @@ nsresult gfxPlatformFontList::InitFontList() {
       return rv;
     }
     ApplyWhitelist();
+  }
+
+  // Set up mDefaultFontEntry as a "last resort" default that we can use
+  // to avoid crashing if the font list is otherwise unusable.
+  gfxFontStyle defStyle;
+  FontFamily fam = GetDefaultFont(&defStyle);
+  if (fam.mIsShared) {
+    auto face = fam.mShared->FindFaceForStyle(SharedFontList(), defStyle);
+    if (!face) {
+      mDefaultFontEntry = nullptr;
+    } else {
+      mDefaultFontEntry = GetOrCreateFontEntry(face, fam.mShared);
+    }
+  } else {
+    mDefaultFontEntry = fam.mUnshared->FindFontForStyle(defStyle);
   }
 
   return NS_OK;
@@ -937,7 +966,7 @@ bool gfxPlatformFontList::FindAndAddFamilies(
     // since reading name table entries is expensive.
     // Although ASCII localized family names are possible they don't occur
     // in practice, so avoid pulling in names at startup.
-    if (!mOtherFamilyNamesInitialized && !IsASCII(aFamily)) {
+    if (!mOtherFamilyNamesInitialized && !IsAscii(aFamily)) {
       InitOtherFamilyNames(
           !(aFlags & FindFamiliesFlags::eForceOtherFamilyNamesLoading));
       family = SharedFontList()->FindFamily(key);
@@ -974,7 +1003,7 @@ bool gfxPlatformFontList::FindAndAddFamilies(
   // since reading name table entries is expensive.
   // although ASCII localized family names are possible they don't occur
   // in practice so avoid pulling in names at startup
-  if (!familyEntry && !mOtherFamilyNamesInitialized && !IsASCII(aFamily)) {
+  if (!familyEntry && !mOtherFamilyNamesInitialized && !IsAscii(aFamily)) {
     InitOtherFamilyNames(
         !(aFlags & FindFamiliesFlags::eForceOtherFamilyNamesLoading));
     familyEntry = mOtherFamilyNames.GetWeak(key);

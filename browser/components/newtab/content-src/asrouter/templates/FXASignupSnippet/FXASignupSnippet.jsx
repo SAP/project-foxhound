@@ -11,6 +11,7 @@ export const FXASignupSnippet = props => {
   const firefox_version = userAgent ? parseInt(userAgent[1], 10) : 0;
   const extendedContent = {
     scene1_button_label: schema.properties.scene1_button_label.default,
+    retry_button_label: schema.properties.retry_button_label.default,
     scene2_email_placeholder_text:
       schema.properties.scene2_email_placeholder_text.default,
     scene2_button_label: schema.properties.scene2_button_label.default,
@@ -21,7 +22,6 @@ export const FXASignupSnippet = props => {
       action: "email",
       context: "fx_desktop_v3",
       entrypoint: "snippets",
-      service: "sync",
       utm_source: "snippet",
       utm_content: firefox_version,
       utm_campaign: props.content.utm_campaign,

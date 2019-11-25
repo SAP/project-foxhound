@@ -140,9 +140,8 @@ mozilla::ipc::IPCResult CacheOpChild::Recv__delete__(
       // reject instead of crashing, though, if we get a nullptr here.
       MOZ_DIAGNOSTIC_ASSERT(actor);
       if (!actor) {
-        ErrorResult status;
-        status.ThrowTypeError<MSG_CACHE_OPEN_FAILED>();
-        mPromise->MaybeReject(status);
+        mPromise->MaybeRejectWithTypeError(
+            u"CacheStorage.open() failed to access the storage system.");
         break;
       }
 

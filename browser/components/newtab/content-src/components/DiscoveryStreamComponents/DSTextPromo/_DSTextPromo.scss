@@ -1,19 +1,26 @@
+.ds-dismiss-ds-text-promo {
+  width: 744px;
+  margin: auto;
+}
+
 .ds-text-promo {
   display: flex;
-  max-width: 744px;
-  margin: 16px auto;
+  max-width: 640px;
+  margin: 18px 24px;
 
-  picture {
+  .ds-image {
     width: 40px;
     height: 40px;
-    margin: 0 12px 0 0;
-    border-radius: 4px;
+    margin: 4px 12px 0 0;
     flex-shrink: 0;
+
+    img {
+      border-radius: 4px;
+    }
   }
 
   .text {
     line-height: 24px;
-    margin: -4.5px 0 0;
   }
 
   h3 {

@@ -19,6 +19,7 @@
 
 #include "threading/LockGuard.h"
 #include "threading/Mutex.h"
+#include "threading/ThreadId.h"
 #include "vm/MutexIDs.h"
 
 #ifdef XP_WIN
@@ -39,25 +40,6 @@ class ThreadTrampoline;
 // stream and within the current address space. Use with care.
 class Thread {
  public:
-  class Id {
-    class PlatformData;
-    void* platformData_[2];
-
-   public:
-    Id();
-
-    Id(const Id&) = default;
-    Id(Id&&) = default;
-    Id& operator=(const Id&) = default;
-    Id& operator=(Id&&) = default;
-
-    bool operator==(const Id& aOther) const;
-    bool operator!=(const Id& aOther) const { return !operator==(aOther); }
-
-    inline PlatformData* platformData();
-    inline const PlatformData* platformData() const;
-  };
-
   // Provides optional parameters to a Thread.
   class Options {
     size_t stackSize_;
@@ -84,7 +66,7 @@ class Thread {
       typename = typename mozilla::EnableIf<
           mozilla::IsSame<DerefO, Options>::value, void*>::Type>
   explicit Thread(O&& options = Options())
-      : id_(Id()), options_(std::forward<O>(options)) {
+      : id_(ThreadId()), options_(std::forward<O>(options)) {
     MOZ_ASSERT(js::IsInitialized());
   }
 
@@ -96,13 +78,12 @@ class Thread {
   // See the comment below on ThreadTrampoline::args for an explanation.
   template <typename F, typename... Args>
   MOZ_MUST_USE bool init(F&& f, Args&&... args) {
-    MOZ_RELEASE_ASSERT(id_ == Id());
+    MOZ_RELEASE_ASSERT(id_ == ThreadId());
     using Trampoline = detail::ThreadTrampoline<F, Args...>;
-    AutoEnterOOMUnsafeRegion oom;
     auto trampoline =
         js_new<Trampoline>(std::forward<F>(f), std::forward<Args>(args)...);
     if (!trampoline) {
-      oom.crash("js::Thread::init");
+      return false;
     }
 
     // We hold this lock while create() sets the thread id.
@@ -135,7 +116,7 @@ class Thread {
   // Returns the id of this thread if this represents a thread of execution or
   // the default constructed Id() if not. The thread ID is guaranteed to
   // uniquely identify a thread and can be compared with the == operator.
-  Id get_id();
+  ThreadId get_id();
 
   // Allow threads to be moved so that they can be stored in containers.
   Thread(Thread&& aOther);
@@ -147,7 +128,7 @@ class Thread {
   void operator=(const Thread&) = delete;
 
   // Provide a process global ID to each thread.
-  Id id_;
+  ThreadId id_;
 
   // Overridable thread creation options.
   Options options_;
@@ -158,9 +139,6 @@ class Thread {
 };
 
 namespace ThisThread {
-
-// Return the thread id of the calling thread.
-Thread::Id GetId();
 
 // Set the current thread name. Note that setting the thread name may not be
 // available on all platforms; on these platforms setName() will simply do

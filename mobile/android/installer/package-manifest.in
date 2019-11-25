@@ -177,7 +177,6 @@
 @BINPATH@/@PREF_DIR@/mobile.js
 #endif # MOZ_GECKOVIEW_JAR
 @BINPATH@/@PREF_DIR@/channel-prefs.js
-@BINPATH@/ua-update.json
 @BINPATH@/defaults/autoconfig/prefcalls.js
 
 ; [Layout Engine Resources]
@@ -241,6 +240,7 @@
 @BINPATH@/components/GeckoView.manifest
 @BINPATH@/components/GeckoViewExternalAppService.js
 @BINPATH@/components/GeckoViewPrompt.js
+@BINPATH@/components/GeckoViewPush.js
 @BINPATH@/components/GeckoViewPermission.js
 @BINPATH@/components/GeckoViewStartup.js
 #else

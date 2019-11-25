@@ -22,8 +22,10 @@ enum SelectionMode {
 
 interface XULControllers;
 
-[HTMLConstructor]
+[Exposed=Window]
 interface HTMLInputElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions, Pure, SetterThrows]
            attribute DOMString accept;
   [CEReactions, Pure, SetterThrows]
@@ -196,8 +198,7 @@ partial interface HTMLInputElement {
   AutocompleteInfo? getAutocompleteInfo();
 };
 
-[NoInterfaceObject]
-interface MozEditableElement {
+interface mixin MozEditableElement {
   [Pure, ChromeOnly]
   readonly attribute nsIEditor? editor;
 
@@ -214,7 +215,7 @@ interface MozEditableElement {
   void setUserInput(DOMString input);
 };
 
-HTMLInputElement implements MozEditableElement;
+HTMLInputElement includes MozEditableElement;
 
 partial interface HTMLInputElement {
   [Pref="dom.input.dirpicker", SetterThrows]
@@ -233,7 +234,7 @@ partial interface HTMLInputElement {
   void chooseDirectory();
 };
 
-HTMLInputElement implements MozImageLoadingContent;
+HTMLInputElement includes MozImageLoadingContent;
 
 // https://wicg.github.io/entries-api/#idl-index
 partial interface HTMLInputElement {

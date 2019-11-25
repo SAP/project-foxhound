@@ -27,6 +27,14 @@ async function attachDebugger(tab) {
   return { ...dbg, tab, threadFront };
 }
 
+async function openRecordingTab(url) {
+  const tab = BrowserTestUtils.addTab(gBrowser, null, { recordExecution: "*" });
+  gBrowser.selectedTab = tab;
+  await once(Services.ppmm, "RecordingInitialized");
+  openTrustedLinkIn(EXAMPLE_URL + url, "current");
+  return tab;
+}
+
 async function attachRecordingDebugger(
   url,
   { waitForRecording, disableLogging, skipInterrupt } = {}
@@ -35,9 +43,7 @@ async function attachRecordingDebugger(
     await pushPref("devtools.recordreplay.logging", true);
   }
 
-  const tab = BrowserTestUtils.addTab(gBrowser, null, { recordExecution: "*" });
-  gBrowser.selectedTab = tab;
-  openTrustedLinkIn(EXAMPLE_URL + url, "current");
+  const tab = await openRecordingTab(url);
 
   if (waitForRecording) {
     await once(Services.ppmm, "RecordingFinished");
@@ -148,7 +154,7 @@ async function waitForMessageCount(hud, text, length, selector = ".message") {
   return messages;
 }
 
-async function warpToMessage(hud, dbg, text) {
+async function warpToMessage(hud, dbg, text, maybeLine) {
   let messages = await waitForMessages(hud, text);
   ok(messages.length == 1, "Found one message");
   const message = messages.pop();
@@ -167,6 +173,11 @@ async function warpToMessage(hud, dbg, text) {
 
   messages = findMessages(hud, "", ".paused");
   ok(messages.length == 1, "Found one paused message");
+
+  if (maybeLine) {
+    const pauseLine = getVisibleSelectedFrameLine(dbg);
+    ok(pauseLine == maybeLine, `Paused at line ${maybeLine} after warp`);
+  }
 
   return message;
 
@@ -189,16 +200,48 @@ async function warpToMessage(hud, dbg, text) {
   }
 }
 
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
-PromiseTestUtils.whitelistRejectionsGlobally(/NS_ERROR_NOT_INITIALIZED/);
+// For tests that need webconsole test features.
+const BrowserTest = {
+  gTestPath,
+  ok,
+  is,
+  registerCleanupFunction,
+  waitForExplicitFinish,
+  BrowserTestUtils,
+};
 
-// Many web replay tests can resume execution before the debugger has finished
-// all operations related to the pause.
-PromiseTestUtils.whitelistRejectionsGlobally(
-  /Current thread has paused or resumed/
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/devtools/client/webconsole/test/browser/head.js",
+  BrowserTest
 );
+
+async function checkMessageObjectContents(msg, expected, expandList = []) {
+  const oi = msg.querySelector(".tree");
+  const node = oi.querySelector(".tree-node");
+  BrowserTest.expandObjectInspectorNode(node);
+
+  for (const label of expandList) {
+    const labelNode = await waitFor(() =>
+      BrowserTest.findObjectInspectorNode(oi, label)
+    );
+    BrowserTest.expandObjectInspectorNode(labelNode);
+  }
+
+  const properties = await waitFor(() => {
+    const nodes = BrowserTest.getObjectInspectorNodes(oi);
+    if (nodes && nodes.length > 1) {
+      return [...nodes].map(n => n.textContent);
+    }
+    return null;
+  });
+
+  expected.forEach(s => {
+    ok(properties.find(v => v.includes(s)), `Object contents include "${s}"`);
+  });
+}
+
+PromiseTestUtils.whitelistRejectionsGlobally(/NS_ERROR_NOT_INITIALIZED/);
+PromiseTestUtils.whitelistRejectionsGlobally(/Error in asyncStorage/);
 
 // When running the full test suite, long delays can occur early on in tests,
 // before child processes have even been spawned. Allow a longer timeout to

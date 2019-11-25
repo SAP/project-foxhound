@@ -82,15 +82,6 @@ XULMAP(popup, [](Element* aElement, Accessible* aContext) {
   return CreateMenupopupAccessible(aElement, aContext);
 })
 
-XULMAP(textbox, [](Element* aElement, Accessible* aContext) -> Accessible* {
-  if (aElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                            nsGkAtoms::autocomplete, eIgnoreCase)) {
-    return new XULComboboxAccessible(aElement, aContext->Document());
-  }
-
-  return new EnumRoleAccessible<roles::SECTION>(aElement, aContext->Document());
-})
-
 XULMAP(tree, [](Element* aElement, Accessible* aContext) -> Accessible* {
   nsIContent* child =
       nsTreeUtils::GetDescendantChild(aElement, nsGkAtoms::treechildren);

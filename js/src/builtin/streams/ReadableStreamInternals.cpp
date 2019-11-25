@@ -15,7 +15,7 @@
 
 #include "jsfriendapi.h"  // js::AssertSameCompartment
 
-#include "builtin/Promise.h"  // js::PromiseObject
+#include "builtin/Promise.h"                           // js::PromiseObject
 #include "builtin/streams/ReadableStreamController.h"  // js::ReadableStreamController{,CancelSteps}
 #include "builtin/streams/ReadableStreamReader.h"  // js::ReadableStream{,Default}Reader, js::ForAuthorCodeBool
 #include "gc/AllocKind.h"  // js::gc::AllocKind
@@ -50,16 +50,6 @@ using JS::ResolvePromise;
 using JS::Rooted;
 using JS::UndefinedHandleValue;
 using JS::Value;
-
-JS::ReadableStreamMode ReadableStream::mode() const {
-  ReadableStreamController* controller = this->controller();
-  if (controller->is<ReadableStreamDefaultController>()) {
-    return JS::ReadableStreamMode::Default;
-  }
-  return controller->as<ReadableByteStreamController>().hasExternalSource()
-             ? JS::ReadableStreamMode::ExternalSource
-             : JS::ReadableStreamMode::Byte;
-}
 
 /*** 3.5. The interface between readable streams and controllers ************/
 

@@ -1033,7 +1033,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   uint8_t mJustifyItems;
   uint8_t mJustifySelf;
   mozilla::StyleFlexDirection mFlexDirection;
-  uint8_t mFlexWrap;   // NS_STYLE_FLEX_WRAP_*
+  mozilla::StyleFlexWrap mFlexWrap;
   uint8_t mObjectFit;  // NS_STYLE_OBJECT_FIT_*
   int32_t mOrder;
   float mFlexGrow;
@@ -1630,6 +1630,15 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   }
   bool IsListItem() const { return IsListItem(mDisplay); }
 
+  // Whether display is `inline` or `inline list-item`.
+  static bool IsInlineFlow(mozilla::StyleDisplay aDisplay) {
+    return DisplayInside(aDisplay) == mozilla::StyleDisplayInside::Inline;
+  }
+
+  bool IsInlineFlow() const {
+    return IsInlineFlow(mDisplay);
+  }
+
   bool IsInlineInsideStyle() const {
     auto inside = DisplayInside();
     return inside == mozilla::StyleDisplayInside::Inline ||
@@ -2019,6 +2028,8 @@ struct nsStyleCounterData {
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
+  using CounterPair = mozilla::StyleGenericCounterPair<int32_t>;
+
   explicit nsStyleContent(const mozilla::dom::Document&);
   nsStyleContent(const nsStyleContent& aContent);
   ~nsStyleContent();
@@ -2045,57 +2056,13 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleContent {
     mContents.SetLength(aCount);
   }
 
-  uint32_t CounterIncrementCount() const { return mIncrements.Length(); }
-  const nsStyleCounterData& CounterIncrementAt(uint32_t aIndex) const {
-    return mIncrements[aIndex];
-  }
-
-  void AllocateCounterIncrements(uint32_t aCount) {
-    mIncrements.Clear();
-    mIncrements.SetLength(aCount);
-  }
-
-  void SetCounterIncrementAt(uint32_t aIndex, nsAtom* aCounter,
-                             int32_t aIncrement) {
-    mIncrements[aIndex].mCounter = aCounter;
-    mIncrements[aIndex].mValue = aIncrement;
-  }
-
-  uint32_t CounterResetCount() const { return mResets.Length(); }
-  const nsStyleCounterData& CounterResetAt(uint32_t aIndex) const {
-    return mResets[aIndex];
-  }
-
-  void AllocateCounterResets(uint32_t aCount) {
-    mResets.Clear();
-    mResets.SetLength(aCount);
-  }
-
-  void SetCounterResetAt(uint32_t aIndex, nsAtom* aCounter, int32_t aValue) {
-    mResets[aIndex].mCounter = aCounter;
-    mResets[aIndex].mValue = aValue;
-  }
-
-  uint32_t CounterSetCount() const { return mSets.Length(); }
-  const nsStyleCounterData& CounterSetAt(uint32_t aIndex) const {
-    return mSets[aIndex];
-  }
-
-  void AllocateCounterSets(uint32_t aCount) {
-    mSets.Clear();
-    mSets.SetLength(aCount);
-  }
-
-  void SetCounterSetAt(uint32_t aIndex, nsAtom* aCounter, int32_t aValue) {
-    mSets[aIndex].mCounter = aCounter;
-    mSets[aIndex].mValue = aValue;
-  }
-
  protected:
   nsTArray<nsStyleContentData> mContents;
-  nsTArray<nsStyleCounterData> mIncrements;
-  nsTArray<nsStyleCounterData> mResets;
-  nsTArray<nsStyleCounterData> mSets;
+
+ public:
+  mozilla::StyleCounterIncrement mCounterIncrement;
+  mozilla::StyleCounterSetOrReset mCounterReset;
+  mozilla::StyleCounterSetOrReset mCounterSet;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {

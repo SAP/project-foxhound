@@ -58,7 +58,6 @@ pref("toolkit.storage.synchronous", 0);
 // thus we can't use exclusive locking on it.
 pref("storage.multiProcessAccess.enabled", true);
 
-pref("browser.viewport.desktopWidth", 980);
 // The default fallback zoom level to render pages at. Set to -1 to fit page; otherwise
 // the value is divided by 1000 and clamped to hard-coded min/max scale values.
 pref("browser.viewport.defaultZoom", -1);
@@ -80,7 +79,6 @@ pref("image.cache.size", 1048576); // bytes
 /* offline cache prefs */
 pref("browser.offline-apps.notify", true);
 pref("browser.cache.offline.capacity", 5120); // kilobytes
-pref("offline-apps.quota.warn", 1024); // kilobytes
 
 // Automatically shrink-to-fit image documents.
 pref("browser.enable_automatic_image_resizing", true);
@@ -105,7 +103,6 @@ pref("network.buffer.cache.count", 24);
 pref("network.buffer.cache.size",  16384);
 
 // predictive actions
-pref("network.predictor.enabled", true);
 pref("network.predictor.max-db-size", 2097152); // bytes
 pref("network.predictor.preserve", 50); // percentage of predictor data to keep when cleaning up
 
@@ -199,7 +196,7 @@ pref("extensions.update.background.url", "https://versioncheck-bg.addons.mozilla
 /* preferences for the Get Add-ons pane */
 pref("extensions.getAddons.cache.enabled", true);
 pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/android/search?q=%TERMS%&platform=%OS%&appver=%VERSION%");
-pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/firefox/collections/4757633/mob/?page=1&collection_sort=-popularity");
+pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/android/collections/4757633/mob/?page=1&collection_sort=-popularity");
 pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v3/addons/search/?guid=%IDS%&lang=%LOCALE%");
 pref("extensions.getAddons.compatOverides.url", "https://services.addons.mozilla.org/api/v3/addons/compat-override/?guid=%IDS%&lang=%LOCALE%");
 pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v3/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
@@ -228,7 +225,6 @@ pref("privacy.popups.showBrowserMessage", true);
 
 /* disable opening windows with the dialog feature */
 pref("dom.disable_window_open_dialog_feature", true);
-pref("dom.disable_window_showModalDialog", true);
 pref("dom.disable_window_find", true);
 
 pref("keyword.enabled", true);
@@ -296,12 +292,6 @@ pref("gfx.displayport.strategy_vb.danger_y_incr", -1); // additional danger zone
 // prediction bias strategy options
 pref("gfx.displayport.strategy_pb.threshold", -1); // velocity threshold in inches/frame
 
-// Allow 24-bit colour when the hardware supports it
-pref("gfx.android.rgb16.force", false);
-
-// Use SurfaceTextures as preferred backend for TextureClient/Host
-pref("gfx.use-surfacetexture-textures", false);
-
 // don't allow JS to move and resize existing windows
 pref("dom.disable_window_move_resize", true);
 
@@ -352,9 +342,6 @@ pref("devtools.debugger.unix-domain-socket", "@ANDROID_PACKAGE_NAME@/firefox-deb
 pref("devtools.remote.usb.enabled", false);
 pref("devtools.remote.wifi.enabled", false);
 
-// When true, zooming will be enabled on all sites, even ones that declare user-scalable=no.
-pref("browser.ui.zoom.force-user-scalable", false);
-
 // With the typical screen sizes on mobile devices, we want to wrap page sources by default.
 pref("view_source.wrap_long_lines", true);
 
@@ -373,10 +360,6 @@ pref("ui.mouse.radius.rightmm", 3);
 pref("ui.mouse.radius.bottommm", 2);
 pref("ui.mouse.radius.visitedWeight", 120);
 pref("ui.mouse.radius.reposition", true);
-
-// The percentage of the screen that needs to be scrolled before toolbar
-// manipulation is allowed.
-pref("browser.ui.scroll-toolbar-threshold", 10);
 
 // Maximum distance from the point where the user pressed where we still
 // look for text to select
@@ -475,7 +458,6 @@ pref("editor.singleLine.pasteNewlines", 2);
 pref("ui.dragThresholdX", 25);
 pref("ui.dragThresholdY", 25);
 
-pref("layers.acceleration.disabled", false);
 pref("layers.async-video.enabled", true);
 
 // APZ physics settings (fling acceleration, fling curving and axis lock) have
@@ -493,7 +475,6 @@ pref("apz.fling_curve_threshold_inches_per_ms", "0.01");
 // apz.fling_friction and apz.fling_stopped_threshold are currently ignored by Fennec.
 pref("apz.fling_friction", "0.004");
 pref("apz.fling_stopped_threshold", "0.0");
-pref("apz.frame_delay.enabled", true);
 pref("apz.max_velocity_inches_per_ms", "0.07");
 pref("apz.overscroll.enabled", true);
 pref("apz.second_tap_tolerance", "0.3");
@@ -505,8 +486,6 @@ pref("dom.visualviewport.enabled", true);
 
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
-pref("layers.low-precision-resolution", "0.25");
-pref("layers.low-precision-opacity", "1.0");
 // We want to limit layers for two reasons:
 // 1) We can't scroll smoothly if we have to many draw calls
 // 2) Pages that have too many layers consume too much memory and crash.
@@ -514,11 +493,7 @@ pref("layers.low-precision-opacity", "1.0");
 // work harder keep scrolling smooth and memory low.
 pref("layers.max-active", 20);
 
-// Use containerless scrolling on Fennec.
-pref("layout.scroll.root-frame-containers", false);
-
 pref("notification.feature.enabled", true);
-pref("dom.webnotifications.enabled", true);
 
 // prevent tooltips from showing up
 pref("browser.chrome.toolbar_tips", false);
@@ -543,9 +518,6 @@ pref("media.video-queue.default-size", 3);
 // (the most recent) image data.
 pref("media.video-queue.send-to-compositor-size", 1);
 
-// Enable MSE
-pref("media.mediasource.enabled", true);
-
 pref("media.mediadrm-widevinecdm.visible", true);
 
 // Switch block autoplay logic to v2.
@@ -562,9 +534,6 @@ pref("media.gmp-gmpopenh264.enabled", true);
 
 // Disable future downloads of OpenH264 on Android
 pref("media.gmp-gmpopenh264.autoupdate", false);
-
-// optimize images memory usage
-pref("image.downscale-during-decode.enabled", true);
 
 // The download protection UI is not implemented yet (bug 1239094).
 pref("browser.safebrowsing.downloads.enabled", false);
@@ -697,12 +666,6 @@ pref("dom.phonenumber.substringmatching.VE", 7);
 
 pref("gfx.canvas.azure.backends", "skia");
 
-// See ua-update.json.in for the packaged UA override list
-pref("general.useragent.updates.enabled", true);
-pref("general.useragent.updates.url", "https://dynamicua.cdn.mozilla.net/0/%APP_ID%");
-pref("general.useragent.updates.interval", 604800); // 1 week
-pref("general.useragent.updates.retry", 86400); // 1 day
-
 // When true, phone number linkification is enabled.
 pref("browser.ui.linkify.phone", false);
 
@@ -796,9 +759,14 @@ pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com
 // Token server used by Firefox Account-authenticated Sync.
 pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sync/1.5");
 
+#ifdef NIGHTLY_BUILD
+// Use new audio focus management, "media.audioFocus.management".
+pref("dom.audiochannel.audioCompeting", false);
+#else
 pref("dom.audiochannel.audioCompeting", true);
+#endif
+
 pref("dom.audiochannel.mediaControl", true);
-pref("media.block-autoplay-until-in-foreground", false);
 
 // Space separated list of URLS that are allowed to send objects (instead of
 // only strings) through webchannels. This list is duplicated in browser/app/profile/firefox.js

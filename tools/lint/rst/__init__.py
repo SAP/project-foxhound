@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
 import subprocess
 
@@ -69,6 +67,7 @@ def parse_with_split(errors):
 
 def lint(files, config, **lintargs):
 
+    log = lintargs['log']
     config['root'] = lintargs['root']
     paths = expand_exclusions(files, config, config['root'])
     paths = list(paths)
@@ -77,13 +76,17 @@ def lint(files, config, **lintargs):
 
     while paths:
         cmdargs = [
+            which('python'),
             binary,
         ] + paths[:chunk_size]
+        log.debug("Command: {}".format(' '.join(cmdargs)))
+
         proc = subprocess.Popen(
             cmdargs, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=os.environ
-            )
+            env=os.environ,
+            universal_newlines=True,
+        )
         all_errors = proc.communicate()[1]
         for errors in all_errors.split("\n"):
             if len(errors) > 1:

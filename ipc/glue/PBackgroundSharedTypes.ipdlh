@@ -59,12 +59,6 @@ union PrincipalInfo
   ExpandedPrincipalInfo;
 };
 
-union OptionalPrincipalInfo
-{
-  PrincipalInfo;
-  void_t;
-};
-
 struct PolicyInfo
 {
   nsCString policy;
@@ -79,6 +73,7 @@ struct CSPInfo
   nsCString selfURISpec;
   nsString referrer;
   uint64_t innerWindowID;
+  bool skipAllowInlineStyleCheck;
 };
 
 } // namespace ipc

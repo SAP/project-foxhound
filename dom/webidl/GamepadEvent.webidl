@@ -8,9 +8,11 @@
  */
 
 [Pref="dom.gamepad.enabled",
- Constructor(DOMString type, optional GamepadEventInit eventInitDict = {})]
+ Exposed=Window]
 interface GamepadEvent : Event
 {
+  constructor(DOMString type, optional GamepadEventInit eventInitDict = {});
+
   readonly attribute Gamepad? gamepad;
 };
 

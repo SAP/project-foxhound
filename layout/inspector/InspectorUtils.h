@@ -39,6 +39,7 @@ class InspectorUtils {
                                 nsTArray<RefPtr<StyleSheet>>& aResult);
   static void GetCSSStyleRules(GlobalObject& aGlobal, Element& aElement,
                                const nsAString& aPseudo,
+                               bool aIncludeVisitedStyle,
                                nsTArray<RefPtr<BindingStyleRule>>& aResult);
 
   /**
@@ -91,6 +92,7 @@ class InspectorUtils {
                                      BindingStyleRule& aRule,
                                      uint32_t aSelectorIndex,
                                      const nsAString& aPseudo,
+                                     bool aRelevantLinkVisited,
                                      ErrorResult& aRv);
 
   // Utilities for working with CSS properties

@@ -174,7 +174,8 @@ nsresult nsHttpConnectionMgr::Init(
     uint16_t maxRequestDelay, bool throttleEnabled, uint32_t throttleVersion,
     uint32_t throttleSuspendFor, uint32_t throttleResumeFor,
     uint32_t throttleReadLimit, uint32_t throttleReadInterval,
-    uint32_t throttleHoldTime, uint32_t throttleMaxTime) {
+    uint32_t throttleHoldTime, uint32_t throttleMaxTime,
+    bool beConservativeForProxy) {
   LOG(("nsHttpConnectionMgr::Init\n"));
 
   {
@@ -194,6 +195,8 @@ nsresult nsHttpConnectionMgr::Init(
     mThrottleReadInterval = throttleReadInterval;
     mThrottleHoldTime = throttleHoldTime;
     mThrottleMaxTime = TimeDuration::FromMilliseconds(throttleMaxTime);
+
+    mBeConservativeForProxy = beConservativeForProxy;
 
     mIsShuttingDown = false;
   }
@@ -2906,21 +2909,39 @@ void nsHttpConnectionMgr::OnMsgCompleteUpgrade(int32_t, ARefBase* param) {
        conn.get(), data->mUpgradeListener.get(), data->mJsWrapped));
 
   if (!conn) {
-    return;
-  }
+    // Delay any error reporting to happen in transportAvailableFunc
+    rv = NS_ERROR_UNEXPECTED;
+  } else {
+    MOZ_ASSERT(!data->mSocketTransport);
+    rv = conn->TakeTransport(getter_AddRefs(data->mSocketTransport),
+                             getter_AddRefs(data->mSocketIn),
+                             getter_AddRefs(data->mSocketOut));
 
-  MOZ_ASSERT(!data->mSocketTransport);
-  rv = conn->TakeTransport(getter_AddRefs(data->mSocketTransport),
-                           getter_AddRefs(data->mSocketIn),
-                           getter_AddRefs(data->mSocketOut));
-
-  if (NS_FAILED(rv)) {
-    return;
+    if (NS_FAILED(rv)) {
+      LOG(("  conn->TakeTransport failed with %" PRIx32,
+           static_cast<uint32_t>(rv)));
+    }
   }
 
   RefPtr<nsCompleteUpgradeData> upgradeData(data);
-  auto transportAvailableFunc = [upgradeData{std::move(upgradeData)}]() {
-    nsresult rv = upgradeData->mUpgradeListener->OnTransportAvailable(
+  auto transportAvailableFunc = [upgradeData{std::move(upgradeData)},
+                                 aRv(rv)]() {
+    // Handle any potential previous errors first
+    // and call OnUpgradeFailed if necessary.
+    nsresult rv = aRv;
+
+    if (NS_FAILED(rv)) {
+      rv = upgradeData->mUpgradeListener->OnUpgradeFailed(rv);
+      if (NS_FAILED(rv)) {
+        LOG(
+            ("nsHttpConnectionMgr::OnMsgCompleteUpgrade OnUpgradeFailed failed."
+             " listener=%p\n",
+             upgradeData->mUpgradeListener.get()));
+      }
+      return;
+    }
+
+    rv = upgradeData->mUpgradeListener->OnTransportAvailable(
         upgradeData->mSocketTransport, upgradeData->mSocketIn,
         upgradeData->mSocketOut);
     if (NS_FAILED(rv)) {

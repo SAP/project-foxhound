@@ -3,7 +3,7 @@
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
 
 // @flow
-/* eslint complexity: ["error", 30]*/
+/* eslint complexity: ["error", 35]*/
 
 /**
  * Pause reducer
@@ -29,6 +29,7 @@ import type {
   Context,
   ThreadContext,
   Previews,
+  SourceLocation,
 } from "../types";
 
 export type Command =
@@ -90,12 +91,12 @@ type ThreadPauseState = {
 export type PauseState = {
   cx: Context,
   threadcx: ThreadContext,
-  canRewind: boolean,
   threads: { [ThreadId]: ThreadPauseState },
   skipPausing: boolean,
   mapScopes: boolean,
   shouldPauseOnExceptions: boolean,
   shouldPauseOnCaughtExceptions: boolean,
+  previewLocation: ?SourceLocation,
 };
 
 function createPauseState(thread: ThreadId = "UnknownThread") {
@@ -109,8 +110,8 @@ function createPauseState(thread: ThreadId = "UnknownThread") {
       isPaused: false,
       pauseCounter: 0,
     },
+    previewLocation: null,
     threads: {},
-    canRewind: false,
     skipPausing: prefs.skipPausing,
     mapScopes: prefs.mapScopes,
     shouldPauseOnExceptions: prefs.pauseOnExceptions,
@@ -133,7 +134,6 @@ const resumedPauseState = {
 const createInitialPauseState = () => ({
   ...resumedPauseState,
   isWaitingOnBreak: false,
-  canRewind: false,
   command: null,
   lastCommand: null,
   previousLocation: null,
@@ -191,6 +191,7 @@ function update(
 
       state = {
         ...state,
+        previewLocation: null,
         threadcx: {
           ...state.threadcx,
           pauseCounter: state.threadcx.pauseCounter + 1,
@@ -205,6 +206,14 @@ function update(
         frameScopes: { ...resumedPauseState.frameScopes },
         why,
       });
+    }
+
+    case "PREVIEW_PAUSED_LOCATION": {
+      return { ...state, previewLocation: action.location };
+    }
+
+    case "CLEAR_PREVIEW_PAUSED_LOCATION": {
+      return { ...state, previewLocation: null };
     }
 
     case "MAP_FRAMES": {
@@ -267,7 +276,6 @@ function update(
     case "CONNECT":
       return {
         ...createPauseState(action.mainThread.actor),
-        canRewind: action.canRewind,
       };
 
     case "PAUSE_ON_EXCEPTIONS": {
@@ -341,20 +349,6 @@ function update(
           },
         },
       };
-    }
-
-    // Disable skipPausing if a breakpoint is enabled or added
-    case "SET_BREAKPOINT": {
-      return action.breakpoint.disabled
-        ? state
-        : { ...state, skipPausing: false };
-    }
-
-    case "UPDATE_EVENT_LISTENERS":
-    case "REMOVE_BREAKPOINT":
-    case "SET_XHR_BREAKPOINT":
-    case "ENABLE_XHR_BREAKPOINT": {
-      return { ...state, skipPausing: false };
     }
 
     case "TOGGLE_SKIP_PAUSING": {
@@ -471,10 +465,6 @@ export function getShouldPauseOnExceptions(state: State) {
 
 export function getShouldPauseOnCaughtExceptions(state: State) {
   return state.pause.shouldPauseOnCaughtExceptions;
-}
-
-export function getCanRewind(state: State) {
-  return state.pause.canRewind;
 }
 
 export function getFrames(state: State, thread: ThreadId) {
@@ -644,6 +634,16 @@ export function getInlinePreviews(
   ];
 }
 
+export function getSelectedInlinePreviews(state: State) {
+  const thread = getCurrentThread(state);
+  const frameId = getSelectedFrameId(state, thread);
+  if (!frameId) {
+    return null;
+  }
+
+  return getInlinePreviews(state, thread, frameId);
+}
+
 export function getInlinePreviewExpression(
   state: State,
   thread: ThreadId,
@@ -665,6 +665,10 @@ export function getChromeScopes(state: State, thread: ThreadId) {
 
 export function getLastExpandedScopes(state: State, thread: ThreadId) {
   return getThreadPauseState(state.pause, thread).lastExpandedScopes;
+}
+
+export function getPausePreviewLocation(state: State) {
+  return state.pause.previewLocation;
 }
 
 export default update;

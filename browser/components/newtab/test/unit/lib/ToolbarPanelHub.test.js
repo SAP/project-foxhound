@@ -38,6 +38,7 @@ describe("ToolbarPanelHub", () => {
       addEventListener: sandbox.stub(),
       hasAttribute: sandbox.stub(),
       toggleAttribute: sandbox.stub(),
+      remove: sandbox.stub(),
       removeChild: sandbox.stub(),
     };
     fakeDocument = {
@@ -77,6 +78,7 @@ describe("ToolbarPanelHub", () => {
         gBrowser: "gBrowser",
       },
       PanelUI: {
+        panel: fakeElementById,
         whatsNewPanel: fakeElementById,
       },
     };
@@ -282,7 +284,7 @@ describe("ToolbarPanelHub", () => {
         assert.ok(createdElements.find(el => el.tagName === "p"));
       }
       // Call the click handler to make coverage happy.
-      eventListeners.click();
+      eventListeners.mouseup();
       assert.calledOnce(handleUserActionStub);
     });
     it("should clear previous messages on 2nd renderMessages()", async () => {
@@ -420,6 +422,24 @@ describe("ToolbarPanelHub", () => {
 
       assert.notCalled(fakeElementById.addEventListener);
     });
+    it("should attach doCommand cbs that handle user actions", async () => {
+      const messages = (await PanelTestProvider.getMessages()).filter(
+        m => m.template === "whatsnew_panel_message"
+      );
+      getMessagesStub.returns(messages);
+
+      await instance.renderMessages(fakeWindow, fakeDocument, "container-id");
+
+      const buttonEl = createdElements.find(el => el.tagName === "button");
+      const anchorEl = createdElements.find(el => el.tagName === "a");
+
+      assert.notCalled(handleUserActionStub);
+
+      buttonEl.doCommand();
+      anchorEl.doCommand();
+
+      assert.calledTwice(handleUserActionStub);
+    });
     it("should listen for panelhidden and remove the toolbar button", async () => {
       getMessagesStub.returns([]);
 
@@ -488,7 +508,7 @@ describe("ToolbarPanelHub", () => {
         spy.resetHistory();
 
         // Message click event listener cb
-        eventListeners.click();
+        eventListeners.mouseup();
 
         assert.calledOnce(spy);
         assert.calledWithExactly(spy, fakeWindow, "CLICK", messages[0]);
@@ -576,18 +596,82 @@ describe("ToolbarPanelHub", () => {
         );
       });
     });
+    describe("#forceShowMessage", () => {
+      const panelSelector = "PanelUI-whatsNew-message-container";
+      let removeMessagesSpy;
+      let renderMessagesStub;
+      let addEventListenerStub;
+      let message;
+      let browser;
+      beforeEach(async () => {
+        message = (await PanelTestProvider.getMessages()).find(
+          m => m.id === "WHATS_NEW_70_1"
+        );
+        removeMessagesSpy = sandbox.spy(instance, "removeMessages");
+        renderMessagesStub = sandbox.spy(instance, "renderMessages");
+        addEventListenerStub = fakeElementById.addEventListener;
+        browser = {
+          browser: { ownerGlobal: fakeWindow, ownerDocument: fakeDocument },
+        };
+        fakeElementById.querySelectorAll.returns([fakeElementById]);
+      });
+      it("should call removeMessages when forcing a message to show", () => {
+        instance.forceShowMessage(browser, message);
+
+        assert.calledOnce(removeMessagesSpy);
+        assert.calledWithExactly(removeMessagesSpy, fakeWindow, panelSelector);
+      });
+      it("should call renderMessages when forcing a message to show", () => {
+        instance.forceShowMessage(browser, message);
+
+        assert.calledOnce(renderMessagesStub);
+        assert.calledWithExactly(
+          renderMessagesStub,
+          fakeWindow,
+          fakeDocument,
+          panelSelector,
+          {
+            force: true,
+            messages: [message],
+          }
+        );
+      });
+      it("should cleanup after the panel is hidden when forcing a message to show", () => {
+        instance.forceShowMessage(browser, message);
+
+        assert.calledOnce(addEventListenerStub);
+        assert.calledWithExactly(
+          addEventListenerStub,
+          "popuphidden",
+          sinon.match.func
+        );
+
+        const [, cb] = addEventListenerStub.firstCall.args;
+        // Reset the call count from the first `forceShowMessage` call
+        removeMessagesSpy.resetHistory();
+        cb({ target: { ownerGlobal: fakeWindow } });
+
+        assert.calledOnce(removeMessagesSpy);
+        assert.calledWithExactly(removeMessagesSpy, fakeWindow, panelSelector);
+      });
+    });
   });
   describe("#insertProtectionPanelMessage", () => {
     const fakeInsert = () =>
       instance.insertProtectionPanelMessage({
         target: { ownerGlobal: fakeWindow, ownerDocument: fakeDocument },
       });
+    let getMessagesStub;
     beforeEach(async () => {
       const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      getMessagesStub = sandbox
+        .stub()
+        .resolves(
+          onboardingMsgs.find(msg => msg.template === "protections_panel")
+        );
       await instance.init(waitForInitializedStub, {
         dispatch: fakeDispatch,
-        getMessages: () =>
-          onboardingMsgs.find(msg => msg.template === "protections_panel"),
+        getMessages: getMessagesStub,
         handleUserAction: handleUserActionStub,
       });
     });
@@ -614,10 +698,48 @@ describe("ToolbarPanelHub", () => {
 
       assert.callCount(fakeElementById.toggleAttribute, 6);
     });
-    it("should open link on click", async () => {
+    it("should open link on click (separate link element)", async () => {
+      const sendTelemetryStub = sandbox.stub(
+        instance,
+        "sendUserEventTelemetry"
+      );
+      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const msg = onboardingMsgs.find(m => m.template === "protections_panel");
+
       await fakeInsert();
 
-      eventListeners.click();
+      assert.calledOnce(sendTelemetryStub);
+      assert.calledWithExactly(
+        sendTelemetryStub,
+        fakeWindow,
+        "IMPRESSION",
+        msg
+      );
+
+      eventListeners.mouseup();
+
+      assert.calledOnce(handleUserActionStub);
+      assert.calledWithExactly(handleUserActionStub, {
+        target: fakeWindow,
+        data: {
+          type: "OPEN_URL",
+          data: {
+            args: sinon.match.string,
+            where: "tabshifted",
+          },
+        },
+      });
+    });
+    it("should open link on click (directly attached to the message)", async () => {
+      const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
+      const msg = onboardingMsgs.find(m => m.template === "protections_panel");
+      getMessagesStub.resolves({
+        ...msg,
+        content: { ...msg.content, link_text: null },
+      });
+      await fakeInsert();
+
+      eventListeners.mouseup();
 
       assert.calledOnce(handleUserActionStub);
       assert.calledWithExactly(handleUserActionStub, {

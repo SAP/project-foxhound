@@ -272,8 +272,8 @@ fn sib<CS: CodeSink + ?Sized>(scale: u8, index: RegUnit, base: RegUnit, sink: &m
 fn icc2opc(cond: IntCC) -> u16 {
     use crate::ir::condcodes::IntCC::*;
     match cond {
-        // 0x0 = Overflow.
-        // 0x1 = !Overflow.
+        Overflow => 0x0,
+        NotOverflow => 0x1,
         UnsignedLessThan => 0x2,
         UnsignedGreaterThanOrEqual => 0x3,
         Equal => 0x4,
@@ -342,7 +342,7 @@ fn jt_disp4<CS: CodeSink + ?Sized>(jt: JumpTable, func: &Function, sink: &mut CS
     sink.reloc_jt(Reloc::X86PCRelRodata4, jt);
 }
 
-/// Emit a four-byte displacement to `constant`
+/// Emit a four-byte displacement to `constant`.
 fn const_disp4<CS: CodeSink + ?Sized>(constant: Constant, func: &Function, sink: &mut CS) {
     let offset = func.dfg.constants.get_offset(constant);
     let delta = offset.wrapping_sub(sink.offset() + 4);

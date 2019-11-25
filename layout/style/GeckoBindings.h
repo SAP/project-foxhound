@@ -81,6 +81,8 @@ const mozilla::dom::Element* Gecko_GetBeforeOrAfterPseudo(
 const mozilla::dom::Element* Gecko_GetMarkerPseudo(
     const mozilla::dom::Element*);
 
+bool Gecko_IsInAnonymousSubtree(const mozilla::dom::Element*);
+
 nsTArray<nsIContent*>* Gecko_GetAnonymousContentForElement(
     const mozilla::dom::Element*);
 void Gecko_DestroyAnonymousContentList(nsTArray<nsIContent*>* anon_content);
@@ -423,27 +425,8 @@ void Gecko_ResizeAtomArray(nsTArray<RefPtr<nsAtom>>* array, uint32_t length);
 // we'd leak the images, strings, and whatnot.
 void Gecko_ClearAndResizeStyleContents(nsStyleContent* content,
                                        uint32_t how_many);
-
-void Gecko_ClearAndResizeCounterIncrements(nsStyleContent* content,
-                                           uint32_t how_many);
-
-void Gecko_ClearAndResizeCounterResets(nsStyleContent* content,
-                                       uint32_t how_many);
-
-void Gecko_ClearAndResizeCounterSets(nsStyleContent* content,
-                                     uint32_t how_many);
-
 void Gecko_CopyStyleContentsFrom(nsStyleContent* content,
                                  const nsStyleContent* other);
-
-void Gecko_CopyCounterResetsFrom(nsStyleContent* content,
-                                 const nsStyleContent* other);
-
-void Gecko_CopyCounterSetsFrom(nsStyleContent* content,
-                               const nsStyleContent* other);
-
-void Gecko_CopyCounterIncrementsFrom(nsStyleContent* content,
-                                     const nsStyleContent* other);
 
 void Gecko_EnsureImageLayersLength(nsStyleImageLayers* layers, size_t len,
                                    nsStyleImageLayers::LayerType layer_type);

@@ -45,7 +45,7 @@ fn define_registers() -> IsaRegs {
     regs.build()
 }
 
-pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
+pub(crate) fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
     let settings = define_settings(&shared_defs.settings);
     let regs = define_registers();
 
@@ -60,8 +60,8 @@ pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
     let mut a64 = CpuMode::new("A64");
 
     // TODO refine these.
-    let narrow = shared_defs.transform_groups.by_name("narrow");
-    a64.legalize_default(narrow);
+    let narrow_flags = shared_defs.transform_groups.by_name("narrow_flags");
+    a64.legalize_default(narrow_flags);
 
     let cpu_modes = vec![a64];
 

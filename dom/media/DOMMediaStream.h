@@ -11,8 +11,6 @@
 #include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
-#include "StreamTracks.h"
-#include "nsIDOMWindow.h"
 #include "nsIPrincipal.h"
 #include "MediaTrackConstraints.h"
 #include "mozilla/DOMEventTargetHelper.h"
@@ -22,9 +20,6 @@ namespace mozilla {
 
 class AbstractThread;
 class DOMMediaStream;
-class MediaStream;
-class MediaInputPort;
-class ProcessedMediaStream;
 
 enum class BlockingMode;
 
@@ -91,6 +86,16 @@ class DOMMediaStream : public DOMEventTargetHelper,
      * Called when the DOMMediaStream has become inactive.
      */
     virtual void NotifyInactive(){};
+
+    /**
+     * Called when the DOMMediaStream has become audible.
+     */
+    virtual void NotifyAudible(){};
+
+    /**
+     * Called when the DOMMediaStream has become inaudible.
+     */
+    virtual void NotifyInaudible(){};
   };
 
   explicit DOMMediaStream(nsPIDOMWindowInner* aWindow);
@@ -196,6 +201,12 @@ class DOMMediaStream : public DOMEventTargetHelper,
   // Dispatches NotifyInactive() to all registered track listeners.
   void NotifyInactive();
 
+  // Dispatches NotifyAudible() to all registered track listeners.
+  void NotifyAudible();
+
+  // Dispatches NotifyInaudible() to all registered track listeners.
+  void NotifyInaudible();
+
   // Dispatches NotifyTrackAdded() to all registered track listeners.
   void NotifyTrackAdded(const RefPtr<MediaStreamTrack>& aTrack);
 
@@ -225,11 +236,14 @@ class DOMMediaStream : public DOMEventTargetHelper,
   nsTArray<TrackListener*> mTrackListeners;
 
   // True if this stream has live tracks.
-  bool mActive;
+  bool mActive = false;
+
+  // True if this stream has live audio tracks.
+  bool mAudible = false;
 
   // For compatibility with mozCaptureStream, we in some cases do not go
   // inactive until the MediaDecoder lets us. (Remove this in Bug 1302379)
-  bool mFinishedOnInactive;
+  bool mFinishedOnInactive = true;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(DOMMediaStream, NS_DOMMEDIASTREAM_IID)

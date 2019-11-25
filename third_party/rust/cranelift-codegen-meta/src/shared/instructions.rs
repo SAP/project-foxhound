@@ -8,13 +8,14 @@ use crate::cdsl::operands::{create_operand as operand, create_operand_doc as ope
 use crate::cdsl::type_inference::Constraint::WiderOrEq;
 use crate::cdsl::types::{LaneType, ValueType};
 use crate::cdsl::typevar::{Interval, TypeSetBuilder, TypeVar};
-use crate::shared::{types, OperandKinds};
+use crate::shared::types;
+use crate::shared::{entities::EntityRefs, immediates::Immediates};
 
-pub fn define(
+pub(crate) fn define(
     all_instructions: &mut AllInstructions,
     format_registry: &FormatRegistry,
-    immediates: &OperandKinds,
-    entities: &OperandKinds,
+    imm: &Immediates,
+    entities: &EntityRefs,
 ) -> InstructionGroup {
     let mut ig = InstructionGroupBuilder::new(
         "base",
@@ -24,30 +25,6 @@ pub fn define(
     );
 
     // Operand kind shorthands.
-    let intcc = immediates.by_name("intcc");
-    let floatcc = immediates.by_name("floatcc");
-    let trapcode = immediates.by_name("trapcode");
-    let uimm8 = immediates.by_name("uimm8");
-    let uimm32 = immediates.by_name("uimm32");
-    let imm64 = immediates.by_name("imm64");
-    let uimm128 = immediates.by_name("uimm128");
-    let offset32 = immediates.by_name("offset32");
-    let memflags = immediates.by_name("memflags");
-    let ieee32 = immediates.by_name("ieee32");
-    let ieee64 = immediates.by_name("ieee64");
-    let boolean = immediates.by_name("boolean");
-    let regunit = immediates.by_name("regunit");
-
-    let ebb = entities.by_name("ebb");
-    let jump_table = entities.by_name("jump_table");
-    let variable_args = entities.by_name("variable_args");
-    let func_ref = entities.by_name("func_ref");
-    let sig_ref = entities.by_name("sig_ref");
-    let stack_slot = entities.by_name("stack_slot");
-    let global_value = entities.by_name("global_value");
-    let heap = entities.by_name("heap");
-    let table = entities.by_name("table");
-
     let iflags: &TypeVar = &ValueType::Special(types::Flag::IFlags.into()).into();
     let fflags: &TypeVar = &ValueType::Special(types::Flag::FFlags.into()).into();
 
@@ -113,16 +90,6 @@ pub fn define(
             .build(),
     );
 
-    let Scalar = &TypeVar::new(
-        "scalar",
-        "Any scalar value that can be used as a lane in a vector",
-        TypeSetBuilder::new()
-            .bools(Interval::All)
-            .ints(Interval::All)
-            .floats(Interval::All)
-            .build(),
-    );
-
     let Any = &TypeVar::new(
         "Any",
         "Any integer, float, boolean, or reference scalar or vector type",
@@ -152,11 +119,11 @@ pub fn define(
 
     let addr = &operand("addr", iAddr);
     let c = &operand_doc("c", Testable, "Controlling value to test");
-    let Cond = &operand("Cond", intcc);
+    let Cond = &operand("Cond", &imm.intcc);
     let x = &operand("x", iB);
     let y = &operand("y", iB);
-    let EBB = &operand_doc("EBB", ebb, "Destination extended basic block");
-    let args = &operand_doc("args", variable_args, "EBB arguments");
+    let EBB = &operand_doc("EBB", &entities.ebb, "Destination extended basic block");
+    let args = &operand_doc("args", &entities.varargs, "EBB arguments");
 
     ig.push(
         Inst::new(
@@ -263,7 +230,7 @@ pub fn define(
         .is_branch(true),
     );
 
-    let Cond = &operand("Cond", floatcc);
+    let Cond = &operand("Cond", &imm.floatcc);
     let f = &operand("f", fflags);
 
     ig.push(
@@ -280,7 +247,7 @@ pub fn define(
     // The index into the br_table can be any type; legalizer will convert it to the right type.
     let x = &operand_doc("x", iB, "index into jump table");
     let entry = &operand_doc("entry", iAddr, "entry of jump table");
-    let JT = &operand("JT", jump_table);
+    let JT = &operand("JT", &entities.jump_table);
 
     ig.push(
         Inst::new(
@@ -310,7 +277,7 @@ pub fn define(
     // These are the instructions which br_table legalizes to: they perform address computations,
     // using pointer-sized integers, so their type variables are more constrained.
     let x = &operand_doc("x", iAddr, "index into jump table");
-    let Size = &operand_doc("Size", uimm8, "Size in bytes");
+    let Size = &operand_doc("Size", &imm.uimm8, "Size in bytes");
 
     ig.push(
         Inst::new(
@@ -375,7 +342,7 @@ pub fn define(
         .can_store(true),
     );
 
-    let code = &operand("code", trapcode);
+    let code = &operand("code", &imm.trapcode);
 
     ig.push(
         Inst::new(
@@ -407,7 +374,7 @@ pub fn define(
             "resumable_trap",
             r#"
         A resumable trap.
-        
+
         This instruction allows non-conditional traps to be used as non-terminal instructions.
         "#,
         )
@@ -428,7 +395,7 @@ pub fn define(
         .can_trap(true),
     );
 
-    let Cond = &operand("Cond", intcc);
+    let Cond = &operand("Cond", &imm.intcc);
     let f = &operand("f", iflags);
 
     ig.push(
@@ -442,7 +409,7 @@ pub fn define(
         .can_trap(true),
     );
 
-    let Cond = &operand("Cond", floatcc);
+    let Cond = &operand("Cond", &imm.floatcc);
     let f = &operand("f", fflags);
 
     ig.push(
@@ -456,7 +423,7 @@ pub fn define(
         .can_trap(true),
     );
 
-    let rvals = &operand_doc("rvals", variable_args, "return values");
+    let rvals = &operand_doc("rvals", &entities.varargs, "return values");
 
     ig.push(
         Inst::new(
@@ -490,8 +457,12 @@ pub fn define(
         .is_terminator(true),
     );
 
-    let FN = &operand_doc("FN", func_ref, "function to call, declared by `function`");
-    let args = &operand_doc("args", variable_args, "call arguments");
+    let FN = &operand_doc(
+        "FN",
+        &entities.func_ref,
+        "function to call, declared by `function`",
+    );
+    let args = &operand_doc("args", &entities.varargs, "call arguments");
 
     ig.push(
         Inst::new(
@@ -508,7 +479,7 @@ pub fn define(
         .is_call(true),
     );
 
-    let SIG = &operand_doc("SIG", sig_ref, "function signature");
+    let SIG = &operand_doc("SIG", &entities.sig_ref, "function signature");
     let callee = &operand_doc("callee", iAddr, "address of function to call");
 
     ig.push(
@@ -548,13 +519,13 @@ pub fn define(
         .operands_out(vec![addr]),
     );
 
-    let SS = &operand("SS", stack_slot);
-    let Offset = &operand_doc("Offset", offset32, "Byte offset from base address");
+    let SS = &operand("SS", &entities.stack_slot);
+    let Offset = &operand_doc("Offset", &imm.offset32, "Byte offset from base address");
     let x = &operand_doc("x", Mem, "Value to be stored");
     let a = &operand_doc("a", Mem, "Value loaded");
     let p = &operand("p", iAddr);
-    let MemFlags = &operand("MemFlags", memflags);
-    let args = &operand_doc("args", variable_args, "Address arguments");
+    let MemFlags = &operand("MemFlags", &imm.memflags);
+    let args = &operand_doc("args", &entities.varargs, "Address arguments");
 
     ig.push(
         Inst::new(
@@ -886,7 +857,7 @@ pub fn define(
 
     let x = &operand_doc("x", Mem, "Value to be stored");
     let a = &operand_doc("a", Mem, "Value loaded");
-    let Offset = &operand_doc("Offset", offset32, "In-bounds offset into stack slot");
+    let Offset = &operand_doc("Offset", &imm.offset32, "In-bounds offset into stack slot");
 
     ig.push(
         Inst::new(
@@ -940,7 +911,7 @@ pub fn define(
         .operands_out(vec![addr]),
     );
 
-    let GV = &operand("GV", global_value);
+    let GV = &operand("GV", &entities.global_value);
 
     ig.push(
         Inst::new(
@@ -970,9 +941,9 @@ pub fn define(
         TypeSetBuilder::new().ints(32..64).build(),
     );
 
-    let H = &operand("H", heap);
+    let H = &operand("H", &entities.heap);
     let p = &operand("p", HeapOffset);
-    let Size = &operand_doc("Size", uimm32, "Size in bytes");
+    let Size = &operand_doc("Size", &imm.uimm32, "Size in bytes");
 
     ig.push(
         Inst::new(
@@ -993,14 +964,42 @@ pub fn define(
         .operands_out(vec![addr]),
     );
 
+    // Note this instruction is marked as having other side-effects, so GVN won't try to hoist it,
+    // which would result in it being subject to spilling. While not hoisting would generally hurt
+    // performance, since a computed value used many times may need to be regenerated before each
+    // use, it is not the case here: this instruction doesn't generate any code.  That's because,
+    // by definition the pinned register is never used by the register allocator, but is written to
+    // and read explicitly and exclusively by set_pinned_reg and get_pinned_reg.
+    ig.push(
+        Inst::new(
+            "get_pinned_reg",
+            r#"
+            Gets the content of the pinned register, when it's enabled.
+        "#,
+        )
+        .operands_out(vec![addr])
+        .other_side_effects(true),
+    );
+
+    ig.push(
+        Inst::new(
+            "set_pinned_reg",
+            r#"
+        Sets the content of the pinned register, when it's enabled.
+        "#,
+        )
+        .operands_in(vec![addr])
+        .other_side_effects(true),
+    );
+
     let TableOffset = &TypeVar::new(
         "TableOffset",
         "An unsigned table offset",
         TypeSetBuilder::new().ints(32..64).build(),
     );
-    let T = &operand("T", table);
+    let T = &operand("T", &entities.table);
     let p = &operand("p", TableOffset);
-    let Offset = &operand_doc("Offset", offset32, "Byte offset from element address");
+    let Offset = &operand_doc("Offset", &imm.offset32, "Byte offset from element address");
 
     ig.push(
         Inst::new(
@@ -1023,7 +1022,7 @@ pub fn define(
         .operands_out(vec![addr]),
     );
 
-    let N = &operand("N", imm64);
+    let N = &operand("N", &imm.imm64);
     let a = &operand_doc("a", Int, "A constant integer scalar or vector value");
 
     ig.push(
@@ -1040,7 +1039,7 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let N = &operand("N", ieee32);
+    let N = &operand("N", &imm.ieee32);
     let a = &operand_doc("a", f32_, "A constant f32 scalar value");
 
     ig.push(
@@ -1056,7 +1055,7 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let N = &operand("N", ieee64);
+    let N = &operand("N", &imm.ieee64);
     let a = &operand_doc("a", f64_, "A constant f64 scalar value");
 
     ig.push(
@@ -1072,7 +1071,7 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let N = &operand("N", boolean);
+    let N = &operand("N", &imm.boolean);
     let a = &operand_doc("a", Bool, "A constant boolean scalar or vector value");
 
     ig.push(
@@ -1089,7 +1088,11 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let N = &operand_doc("N", uimm128, "The 16 immediate bytes of a 128-bit vector");
+    let N = &operand_doc(
+        "N",
+        &imm.pool_constant,
+        "The 16 immediate bytes of a 128-bit vector",
+    );
     let a = &operand_doc("a", TxN, "A constant vector value");
 
     ig.push(
@@ -1102,6 +1105,41 @@ pub fn define(
         "#,
         )
         .operands_in(vec![N])
+        .operands_out(vec![a]),
+    );
+
+    let mask = &operand_doc(
+        "mask",
+        &imm.uimm128,
+        "The 16 immediate bytes used for selecting the elements to shuffle",
+    );
+    let Tx16 = &TypeVar::new(
+        "Tx16",
+        "A SIMD vector with exactly 16 lanes of 8-bit values; eventually this may support other \
+         lane counts and widths",
+        TypeSetBuilder::new()
+            .ints(8..8)
+            .bools(8..8)
+            .simd_lanes(16..16)
+            .includes_scalars(false)
+            .build(),
+    );
+    let a = &operand_doc("a", Tx16, "A vector value");
+    let b = &operand_doc("b", Tx16, "A vector value");
+
+    ig.push(
+        Inst::new(
+            "shuffle",
+            r#"
+        SIMD vector shuffle.
+        
+        Shuffle two vectors using the given immediate bytes. For each of the 16 bytes of the
+        immediate, a value i of 0-15 selects the i-th element of the first vector and a value i of 
+        16-31 selects the (i-16)th element of the second vector. Immediate values outside of the 
+        0-31 range place a 0 in the resulting vector lane.
+        "#,
+        )
+        .operands_in(vec![a, b, mask])
         .operands_out(vec![a]),
     );
 
@@ -1147,7 +1185,7 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let cc = &operand_doc("cc", intcc, "Controlling condition code");
+    let cc = &operand_doc("cc", &imm.intcc, "Controlling condition code");
     let flags = &operand_doc("flags", iflags, "The machine's flag register");
 
     ig.push(
@@ -1227,8 +1265,8 @@ pub fn define(
         .can_load(true),
     );
 
-    let src = &operand("src", regunit);
-    let dst = &operand("dst", regunit);
+    let src = &operand("src", &imm.regunit);
+    let dst = &operand("dst", &imm.regunit);
 
     ig.push(
         Inst::new(
@@ -1312,7 +1350,7 @@ pub fn define(
         .other_side_effects(true),
     );
 
-    let Offset = &operand_doc("Offset", imm64, "Offset from current stack pointer");
+    let Offset = &operand_doc("Offset", &imm.imm64, "Offset from current stack pointer");
 
     ig.push(
         Inst::new(
@@ -1329,7 +1367,7 @@ pub fn define(
         .other_side_effects(true),
     );
 
-    let Offset = &operand_doc("Offset", imm64, "Offset from current stack pointer");
+    let Offset = &operand_doc("Offset", &imm.imm64, "Offset from current stack pointer");
 
     ig.push(
         Inst::new(
@@ -1401,7 +1439,7 @@ pub fn define(
 
     let N = &operand_doc(
         "args",
-        variable_args,
+        &entities.varargs,
         "Variable number of args for Stackmap",
     );
 
@@ -1508,7 +1546,7 @@ pub fn define(
 
     let x = &operand_doc("x", TxN, "SIMD vector to modify");
     let y = &operand_doc("y", &TxN.lane_of(), "New lane value");
-    let Idx = &operand_doc("Idx", uimm8, "Lane index");
+    let Idx = &operand_doc("Idx", &imm.uimm8, "Lane index");
 
     ig.push(
         Inst::new(
@@ -1534,7 +1572,9 @@ pub fn define(
         Extract lane ``Idx`` from ``x``.
 
         The lane index, ``Idx``, is an immediate value, not an SSA value. It
-        must indicate a valid lane index for the type of ``x``.
+        must indicate a valid lane index for the type of ``x``. Note that the upper bits of ``a``
+        may or may not be zeroed depending on the ISA but the type system should prevent using 
+        ``a`` as anything other than the extracted value.
         "#,
         )
         .operands_in(vec![x, Idx])
@@ -1542,10 +1582,12 @@ pub fn define(
     );
 
     let a = &operand("a", &Int.as_bool());
-    let Cond = &operand("Cond", intcc);
+    let Cond = &operand("Cond", &imm.intcc);
     let x = &operand("x", Int);
     let y = &operand("y", Int);
 
+    // TODO(ryzokuken): Add documentation for unsigned overflow.
+    // TODO(ryzokuken): Add documentation for signed overflow.
     ig.push(
         Inst::new(
             "icmp",
@@ -1576,7 +1618,7 @@ pub fn define(
 
     let a = &operand("a", b1);
     let x = &operand("x", iB);
-    let Y = &operand("Y", imm64);
+    let Y = &operand("Y", &imm.imm64);
 
     ig.push(
         Inst::new(
@@ -1767,7 +1809,7 @@ pub fn define(
 
     let a = &operand("a", iB);
     let x = &operand("x", iB);
-    let Y = &operand("Y", imm64);
+    let Y = &operand("Y", &imm.imm64);
 
     ig.push(
         Inst::new(
@@ -1874,10 +1916,16 @@ pub fn define(
     let a = &operand("a", iB);
     let x = &operand("x", iB);
     let y = &operand("y", iB);
+
     let c_in = &operand_doc("c_in", b1, "Input carry flag");
     let c_out = &operand_doc("c_out", b1, "Output carry flag");
     let b_in = &operand_doc("b_in", b1, "Input borrow flag");
     let b_out = &operand_doc("b_out", b1, "Output borrow flag");
+
+    let c_if_in = &operand("c_in", iflags);
+    let c_if_out = &operand("c_out", iflags);
+    let b_if_in = &operand("b_in", iflags);
+    let b_if_out = &operand("b_out", iflags);
 
     ig.push(
         Inst::new(
@@ -1896,6 +1944,26 @@ pub fn define(
         "#,
         )
         .operands_in(vec![x, y, c_in])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "iadd_ifcin",
+            r#"
+        Add integers with carry in.
+
+        Same as `iadd` with an additional carry flag input. Computes:
+
+        ```text
+            a = x + y + c_{in} \pmod 2^B
+        ```
+
+        Polymorphic over all scalar integer types, but does not support vector
+        types.
+        "#,
+        )
+        .operands_in(vec![x, y, c_if_in])
         .operands_out(vec![a]),
     );
 
@@ -1922,6 +1990,27 @@ pub fn define(
 
     ig.push(
         Inst::new(
+            "iadd_ifcout",
+            r#"
+        Add integers with carry out.
+
+        Same as `iadd` with an additional carry flag output.
+
+        ```text
+            a &= x + y \pmod 2^B \\
+            c_{out} &= x+y >= 2^B
+        ```
+
+        Polymorphic over all scalar integer types, but does not support vector
+        types.
+        "#,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a, c_if_out]),
+    );
+
+    ig.push(
+        Inst::new(
             "iadd_carry",
             r#"
         Add integers with carry in and out.
@@ -1943,6 +2032,27 @@ pub fn define(
 
     ig.push(
         Inst::new(
+            "iadd_ifcarry",
+            r#"
+        Add integers with carry in and out.
+
+        Same as `iadd` with an additional carry flag input and output.
+
+        ```text
+            a &= x + y + c_{in} \pmod 2^B \\
+            c_{out} &= x + y + c_{in} >= 2^B
+        ```
+
+        Polymorphic over all scalar integer types, but does not support vector
+        types.
+        "#,
+        )
+        .operands_in(vec![x, y, c_if_in])
+        .operands_out(vec![a, c_if_out]),
+    );
+
+    ig.push(
+        Inst::new(
             "isub_bin",
             r#"
         Subtract integers with borrow in.
@@ -1958,6 +2068,26 @@ pub fn define(
         "#,
         )
         .operands_in(vec![x, y, b_in])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "isub_ifbin",
+            r#"
+        Subtract integers with borrow in.
+
+        Same as `isub` with an additional borrow flag input. Computes:
+
+        ```text
+            a = x - (y + b_{in}) \pmod 2^B
+        ```
+
+        Polymorphic over all scalar integer types, but does not support vector
+        types.
+        "#,
+        )
+        .operands_in(vec![x, y, b_if_in])
         .operands_out(vec![a]),
     );
 
@@ -1984,6 +2114,27 @@ pub fn define(
 
     ig.push(
         Inst::new(
+            "isub_ifbout",
+            r#"
+        Subtract integers with borrow out.
+
+        Same as `isub` with an additional borrow flag output.
+
+        ```text
+            a &= x - y \pmod 2^B \\
+            b_{out} &= x < y
+        ```
+
+        Polymorphic over all scalar integer types, but does not support vector
+        types.
+        "#,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a, b_if_out]),
+    );
+
+    ig.push(
+        Inst::new(
             "isub_borrow",
             r#"
         Subtract integers with borrow in and out.
@@ -2001,6 +2152,27 @@ pub fn define(
         )
         .operands_in(vec![x, y, b_in])
         .operands_out(vec![a, b_out]),
+    );
+
+    ig.push(
+        Inst::new(
+            "isub_ifborrow",
+            r#"
+        Subtract integers with borrow in and out.
+
+        Same as `isub` with an additional borrow flag input and output.
+
+        ```text
+            a &= x - (y + b_{in}) \pmod 2^B \\
+            b_{out} &= x < y + b_{in}
+        ```
+
+        Polymorphic over all scalar integer types, but does not support vector
+        types.
+        "#,
+        )
+        .operands_in(vec![x, y, b_if_in])
+        .operands_out(vec![a, b_if_out]),
     );
 
     let bits = &TypeVar::new(
@@ -2102,7 +2274,7 @@ pub fn define(
     );
 
     let x = &operand("x", iB);
-    let Y = &operand("Y", imm64);
+    let Y = &operand("Y", &imm.imm64);
     let a = &operand("a", iB);
 
     ig.push(
@@ -2155,7 +2327,7 @@ pub fn define(
 
     let x = &operand_doc("x", Int, "Scalar or vector value to shift");
     let y = &operand_doc("y", iB, "Number of bits to shift");
-    let Y = &operand("Y", imm64);
+    let Y = &operand("Y", &imm.imm64);
     let a = &operand("a", Int);
 
     ig.push(
@@ -2385,7 +2557,7 @@ pub fn define(
             .simd_lanes(Interval::All)
             .build(),
     );
-    let Cond = &operand("Cond", floatcc);
+    let Cond = &operand("Cond", &imm.floatcc);
     let x = &operand("x", Float);
     let y = &operand("y", Float);
     let a = &operand("a", &Float.as_bool());
@@ -2697,7 +2869,7 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let Cond = &operand("Cond", intcc);
+    let Cond = &operand("Cond", &imm.intcc);
     let f = &operand("f", iflags);
     let a = &operand("a", b1);
 
@@ -2715,7 +2887,7 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let Cond = &operand("Cond", floatcc);
+    let Cond = &operand("Cond", &imm.floatcc);
     let f = &operand("f", fflags);
 
     ig.push(
@@ -2772,16 +2944,18 @@ pub fn define(
         .operands_out(vec![a]),
     );
 
-    let s = &operand_doc("s", Scalar, "A scalar value");
-    let a = &operand_doc("a", TxN, "A vector value (i.e. held in an XMM register)");
+    let a = &operand_doc("a", TxN, "A vector value");
+    let s = &operand_doc("s", &TxN.lane_of(), "A scalar value");
 
     ig.push(
         Inst::new(
             "scalar_to_vector",
             r#"
-    Scalar To Vector -- move a value out of a scalar register and into a vector
-    register; the scalar will be moved to the lowest-order bits of the vector
-    register and any higher bits will be zeroed.
+    Scalar To Vector -- move a value out of a scalar register and into a vector register; the 
+    scalar will be moved to the lowest-order bits of the vector register. Note that this 
+    instruction is intended as a low-level legalization instruction and frontends should prefer 
+    insertlane; on certain architectures, scalar_to_vector may zero the highest-order bits for some
+    types (e.g. integers) but not for others (e.g. floats).
     "#,
         )
         .operands_in(vec![s])
@@ -3140,7 +3314,7 @@ pub fn define(
         "WideInt",
         "An integer type with lanes from `i16` upwards",
         TypeSetBuilder::new()
-            .ints(16..64)
+            .ints(16..128)
             .simd_lanes(Interval::All)
             .build(),
     );
@@ -3168,9 +3342,9 @@ pub fn define(
 
     let NarrowInt = &TypeVar::new(
         "NarrowInt",
-        "An integer type with lanes type to `i32`",
+        "An integer type with lanes type to `i64`",
         TypeSetBuilder::new()
-            .ints(8..32)
+            .ints(8..64)
             .simd_lanes(Interval::All)
             .build(),
     );

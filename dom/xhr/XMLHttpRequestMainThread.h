@@ -391,6 +391,8 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   void SetOriginStack(UniquePtr<SerializedStackHolder> aOriginStack);
 
+  void SetSource(UniqueProfilerBacktrace aSource);
+
   virtual uint16_t ErrorCode() const override {
     return static_cast<uint16_t>(mErrorLoad);
   }
@@ -431,7 +433,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   virtual void SetOriginAttributes(
       const mozilla::dom::OriginAttributesDictionary& aAttrs) override;
 
-  void BlobStoreCompleted(MutableBlobStorage* aBlobStorage, Blob* aBlob,
+  void BlobStoreCompleted(MutableBlobStorage* aBlobStorage, BlobImpl* aBlobImpl,
                           nsresult aResult) override;
 
   void LocalFileToBlobCompleted(Blob* aBlob);

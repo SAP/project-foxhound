@@ -41,7 +41,7 @@ class SearchObserver {
 
     this.expectedNotifications.shift();
 
-    if (this.expectedNotifications.length == 0) {
+    if (!this.expectedNotifications.length) {
       this.deferred.resolve(this.addedEngine);
       Services.obs.removeObserver(
         this.observer,
@@ -55,6 +55,10 @@ add_task(async function setup() {
   await AddonTestUtils.promiseStartupManager();
   useHttpServer();
 
+  Services.prefs.setBoolPref(
+    SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault.ui.enabled",
+    true
+  );
   Services.prefs.setBoolPref(
     SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault",
     true

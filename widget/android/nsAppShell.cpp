@@ -58,7 +58,6 @@
 
 #include "AndroidAlerts.h"
 #include "AndroidUiThread.h"
-#include "ANRReporter.h"
 #include "GeckoBatteryManager.h"
 #include "GeckoNetworkManager.h"
 #include "GeckoProcessManager.h"
@@ -69,9 +68,8 @@
 #include "PrefsHelper.h"
 #include "ScreenHelperAndroid.h"
 #include "Telemetry.h"
-#include "fennec/MemoryMonitor.h"
-#include "fennec/ThumbnailHelper.h"
 #include "WebExecutorSupport.h"
+#include "Base64UtilsSupport.h"
 
 #ifdef DEBUG_ANDROID_EVENTS
 #  define EVLOG(args...) ALOG(args)
@@ -363,14 +361,6 @@ class GeckoAppShellSupport final
   }
 };
 
-class BrowserLocaleManagerSupport final
-    : public java::BrowserLocaleManager::Natives<BrowserLocaleManagerSupport> {
- public:
-  static void RefreshLocales() {
-    intl::OSPreferences::GetInstance()->Refresh();
-  }
-};
-
 nsAppShell::nsAppShell()
     : mSyncRunFinished(*(sAppShellLock = new Mutex("nsAppShell")),
                        "nsAppShell.SyncRun"),
@@ -412,17 +402,11 @@ nsAppShell::nsAppShell()
     mozilla::PrefsHelper::Init();
     mozilla::widget::Telemetry::Init();
     mozilla::widget::WebExecutorSupport::Init();
+    mozilla::widget::Base64UtilsSupport::Init();
     nsWindow::InitNatives();
     mozilla::gl::AndroidSurfaceTexture::Init();
     mozilla::WebAuthnTokenManager::Init();
     mozilla::widget::GeckoTelemetryDelegate::Init();
-
-    if (jni::IsFennec()) {
-      BrowserLocaleManagerSupport::Init();
-      mozilla::ANRReporter::Init();
-      mozilla::MemoryMonitor::Init();
-      mozilla::ThumbnailHelper::Init();
-    }
 
     java::GeckoThread::SetState(java::GeckoThread::State::JNI_READY());
 

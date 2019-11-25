@@ -54,6 +54,7 @@ const INITIAL_STATE = {
     config: { enabled: false, layout_endpoint: "" },
     layout: [],
     lastUpdated: null,
+    isPrivacyInfoModalVisible: false,
     feeds: {
       data: {
         // "https://foo.com/feed1": {lastUpdated: 123, data: []}
@@ -307,7 +308,7 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
       });
       // Otherwise, append it
       if (!hasMatch) {
-        const initialized = !!(action.data.rows && action.data.rows.length > 0);
+        const initialized = !!(action.data.rows && !!action.data.rows.length);
         const section = Object.assign(
           { title: "", rows: [], enabled: false },
           action.data,
@@ -327,7 +328,7 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           // Disabling a section (SECTION_UPDATE with empty rows) does not retain pinned cards.
           if (
             action.data.rows &&
-            action.data.rows.length > 0 &&
+            !!action.data.rows.length &&
             section.rows.find(card => card.pinned)
           ) {
             const rows = Array.from(action.data.rows);
@@ -579,6 +580,16 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         ...prevState,
         lastUpdated: action.data.lastUpdated || null,
         layout: action.data.layout || [],
+      };
+    case at.HIDE_PRIVACY_INFO:
+      return {
+        ...prevState,
+        isPrivacyInfoModalVisible: false,
+      };
+    case at.SHOW_PRIVACY_INFO:
+      return {
+        ...prevState,
+        isPrivacyInfoModalVisible: true,
       };
     case at.DISCOVERY_STREAM_LAYOUT_RESET:
       return { ...INITIAL_STATE.DiscoveryStream, config: prevState.config };

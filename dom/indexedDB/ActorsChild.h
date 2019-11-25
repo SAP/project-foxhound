@@ -210,7 +210,7 @@ class BackgroundFactoryRequestChild final
   friend class PermissionRequestChild;
   friend class PermissionRequestParent;
 
-  RefPtr<IDBFactory> mFactory;
+  const RefPtr<IDBFactory> mFactory;
 
   // Normally when opening of a database is successful, we receive a database
   // actor in request response, so we can use it to call ReleaseDOMObject()
@@ -649,7 +649,8 @@ class BackgroundCursorChild final : public PBackgroundIDBCursorChild {
     NS_ASSERT_OWNINGTHREAD(BackgroundCursorChild);
   }
 
-  void SendContinueInternal(const CursorRequestParams& aParams);
+  void SendContinueInternal(const CursorRequestParams& aParams,
+                            const Key& aCurrentKey);
 
   void SendDeleteMeInternal();
 
@@ -700,8 +701,10 @@ class BackgroundCursorChild final : public PBackgroundIDBCursorChild {
   virtual mozilla::ipc::IPCResult RecvResponse(
       const CursorResponse& aResponse) override;
 
+ public:
   // Force callers to use SendContinueInternal.
-  bool SendContinue(const CursorRequestParams& aParams) = delete;
+  bool SendContinue(const CursorRequestParams& aParams,
+                    const Key& aCurrentKey) = delete;
 
   bool SendDeleteMe() = delete;
 };

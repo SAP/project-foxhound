@@ -17,7 +17,7 @@
 #include "builtin/MapObject.h"
 #include "builtin/Promise.h"
 #include "builtin/TestingFunctions.h"
-#include "gc/GCInternals.h"
+#include "gc/GC.h"
 #include "gc/PublicIterators.h"
 #include "gc/WeakMap.h"
 #include "js/CharacterEncoding.h"
@@ -29,6 +29,7 @@
 #include "vm/DateObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
+#include "vm/Printer.h"
 #include "vm/Realm.h"
 #include "vm/Time.h"
 #include "vm/WrapperObject.h"
@@ -561,6 +562,17 @@ JS_FRIEND_API void JS_SetSetUseCounterCallback(
   cx->runtime()->setUseCounterCallback(cx->runtime(), callback);
 }
 
+JS_FRIEND_API void JS_ReportFirstCompileTime(JS::HandleScript script,
+                                             mozilla::TimeDuration& parse,
+                                             mozilla::TimeDuration& emit) {
+  auto ss = script->scriptSource();
+  if (!ss) {
+    return;
+  }
+  parse = ss->parseTime();
+  emit = ss->emitTime();
+}
+
 JS_FRIEND_API JSObject* JS_CloneObject(JSContext* cx, HandleObject obj,
                                        HandleObject protoArg) {
   // |obj| might be in a different compartment.
@@ -699,7 +711,7 @@ static const char* FormatValue(JSContext* cx, HandleValue v,
     }
   }
 
-  bytes = StringToNewUTF8CharsZ(cx, *str);
+  bytes = QuoteString(cx, str, '"');
   return bytes.get();
 }
 
@@ -733,7 +745,7 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
 
   // print the frame number and function name
   if (funname) {
-    UniqueChars funbytes = StringToNewUTF8CharsZ(cx, *funname);
+    UniqueChars funbytes = QuoteString(cx, funname);
     if (!funbytes) {
       return false;
     }
@@ -835,7 +847,7 @@ static bool FormatFrame(JSContext* cx, const FrameIter& iter, Sprinter& sp,
         cx->clearPendingException();
       }
       if (thisValStr) {
-        UniqueChars thisValBytes = StringToNewUTF8CharsZ(cx, *thisValStr);
+        UniqueChars thisValBytes = QuoteString(cx, thisValStr);
         if (!thisValBytes) {
           return false;
         }
@@ -1062,23 +1074,23 @@ static void DumpHeapVisitArena(JSRuntime* rt, void* data, gc::Arena* arena,
           unsigned(arena->getAllocKind()), unsigned(thingSize));
 }
 
-static void DumpHeapVisitCell(JSRuntime* rt, void* data, void* thing,
-                              JS::TraceKind traceKind, size_t thingSize) {
+static void DumpHeapVisitCell(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
+                              size_t thingSize) {
   DumpHeapTracer* dtrc = static_cast<DumpHeapTracer*>(data);
   char cellDesc[1024 * 32];
-  JS_GetTraceThingInfo(cellDesc, sizeof(cellDesc), dtrc, thing, traceKind,
-                       true);
+  JS_GetTraceThingInfo(cellDesc, sizeof(cellDesc), dtrc, cellptr.asCell(),
+                       cellptr.kind(), true);
 
-  fprintf(dtrc->output, "%p %c %s", thing, MarkDescriptor(thing), cellDesc);
+  fprintf(dtrc->output, "%p %c %s", cellptr.asCell(),
+          MarkDescriptor(cellptr.asCell()), cellDesc);
   if (dtrc->mallocSizeOf) {
-    auto size =
-        JS::ubi::Node(JS::GCCellPtr(thing, traceKind)).size(dtrc->mallocSizeOf);
+    auto size = JS::ubi::Node(cellptr).size(dtrc->mallocSizeOf);
     fprintf(dtrc->output, " SIZE:: %" PRIu64 "\n", size);
   } else {
     fprintf(dtrc->output, "\n");
   }
 
-  js::TraceChildren(dtrc, thing, traceKind);
+  js::TraceChildren(dtrc, cellptr.asCell(), cellptr.kind());
 }
 
 bool DumpHeapTracer::onChild(const JS::GCCellPtr& thing) {
@@ -1103,12 +1115,7 @@ void js::DumpHeap(JSContext* cx, FILE* fp,
   DumpHeapTracer dtrc(fp, cx, mallocSizeOf);
 
   fprintf(dtrc.output, "# Roots.\n");
-  {
-    JSRuntime* rt = cx->runtime();
-    js::gc::AutoTraceSession session(rt);
-    gcstats::AutoPhase ap(rt->gc.stats(), gcstats::PhaseKind::TRACE_HEAP);
-    rt->gc.traceRuntime(&dtrc, session);
-  }
+  TraceRuntimeWithoutEviction(&dtrc);
 
   fprintf(dtrc.output, "# Weak maps.\n");
   WeakMapBase::traceAllMappings(&dtrc);

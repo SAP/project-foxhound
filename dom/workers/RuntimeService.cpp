@@ -7,6 +7,7 @@
 #include "RuntimeService.h"
 
 #include "nsAutoPtr.h"
+#include "nsContentSecurityUtils.h"
 #include "nsIChannel.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsICookieService.h"
@@ -286,6 +287,8 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
   JS::ContextOptions contextOptions;
   contextOptions.setAsmJS(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs")))
       .setWasm(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm")))
+      .setWasmForTrustedPrinciples(
+          GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_trustedprincipals")))
       .setWasmBaseline(
           GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_baselinejit")))
       .setWasmIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_ionjit")))
@@ -593,19 +596,24 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleValue aValue) {
   WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
   worker->AssertIsOnWorkerThread();
 
+  JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, aValue));
+  if (NS_WARN_IF(!jsString)) {
+    JS_ClearPendingException(aCx);
+    return false;
+  }
+
+  nsAutoJSString scriptSample;
+  if (NS_WARN_IF(!scriptSample.init(aCx, jsString))) {
+    JS_ClearPendingException(aCx);
+    return false;
+  }
+
+  if (!nsContentSecurityUtils::IsEvalAllowed(aCx, worker->UsesSystemPrincipal(),
+                                             scriptSample)) {
+    return false;
+  }
+
   if (worker->GetReportCSPViolations()) {
-    JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, aValue));
-    if (NS_WARN_IF(!jsString)) {
-      JS_ClearPendingException(aCx);
-      return false;
-    }
-
-    nsAutoJSString scriptSample;
-    if (NS_WARN_IF(!scriptSample.init(aCx, jsString))) {
-      JS_ClearPendingException(aCx);
-      return false;
-    }
-
     nsString fileName;
     uint32_t lineNum = 0;
     uint32_t columnNum = 0;
@@ -814,15 +822,15 @@ static bool PreserveWrapper(JSContext* cx, JS::HandleObject obj) {
   return mozilla::dom::TryPreserveWrapper(obj);
 }
 
-static bool IsWorkerDebuggerGlobalOrSandbox(JSObject* aGlobal) {
+static bool IsWorkerDebuggerGlobalOrSandbox(JS::HandleObject aGlobal) {
   return IsWorkerDebuggerGlobal(aGlobal) || IsWorkerDebuggerSandbox(aGlobal);
 }
 
 JSObject* Wrap(JSContext* cx, JS::HandleObject existing, JS::HandleObject obj) {
-  JSObject* targetGlobal = JS::CurrentGlobalOrNull(cx);
+  JS::RootedObject targetGlobal(cx, JS::CurrentGlobalOrNull(cx));
 
   // Note: the JS engine unwraps CCWs before calling this callback.
-  JSObject* originGlobal = JS::GetNonCCWObjectGlobal(obj);
+  JS::RootedObject originGlobal(cx, JS::GetNonCCWObjectGlobal(obj));
 
   const js::Wrapper* wrapper = nullptr;
   if (IsWorkerDebuggerGlobalOrSandbox(targetGlobal) &&
@@ -963,7 +971,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     JSContext* cx = Context();
 
     js::SetPreserveWrapperCallback(cx, PreserveWrapper);
-    JS_InitDestroyPrincipalsCallback(cx, DestroyWorkerPrincipals);
+    JS_InitDestroyPrincipalsCallback(cx, WorkerPrincipal::Destroy);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     if (mWorkerPrivate->IsDedicatedWorker()) {
       JS_SetFutexCanWait(cx);

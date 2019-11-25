@@ -52,6 +52,10 @@ class nsXBLService final : public nsSupportsWeakReference {
   nsresult BindingReady(nsIContent* aBoundElement, nsIURI* aURI,
                         bool* aIsReady);
 
+ private:
+  nsXBLService();
+  virtual ~nsXBLService();
+
   // This method checks the hashtable and then calls FetchBindingDocument on a
   // miss.  aOriginPrincipal or aBoundDocument may be null to bypass security
   // checks.
@@ -61,14 +65,6 @@ class nsXBLService final : public nsSupportsWeakReference {
                                    nsIPrincipal* aOriginPrincipal,
                                    bool aForceSyncLoad,
                                    nsXBLDocumentInfo** aResult);
-
-  // Used by XUL key bindings and for window XBL.
-  static nsresult AttachGlobalKeyHandler(mozilla::dom::EventTarget* aTarget);
-  static nsresult DetachGlobalKeyHandler(mozilla::dom::EventTarget* aTarget);
-
- private:
-  nsXBLService();
-  virtual ~nsXBLService();
 
  protected:
   // This function clears out the bindings on a given element.

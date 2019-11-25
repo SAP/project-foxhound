@@ -277,10 +277,11 @@ struct LazyScriptCreationData {
 
   // This is traced by the functionbox which owns this LazyScriptCreationData
   FunctionBoxVector innerFunctionBoxes;
-  bool strict;
+  bool strict = false;
 
-  explicit LazyScriptCreationData(JSContext* cx)
-      : closedOverBindings(), innerFunctionBoxes(cx), strict(false) {}
+  mozilla::Maybe<FieldInitializers> fieldInitializers;
+
+  explicit LazyScriptCreationData(JSContext* cx) : innerFunctionBoxes(cx) {}
 
   bool init(JSContext* cx, const frontend::AtomVector& COB,
             FunctionBoxVector& innerBoxes, bool isStrict) {
@@ -525,6 +526,16 @@ class FunctionBox : public ObjectBox, public SharedContext {
   void setEnclosingScopeForInnerLazyFunction(Scope* enclosingScope);
   void finish();
 
+  // Free non-LifoAlloc memory which would otherwise be leaked when
+  // the FunctionBox is LifoAlloc destroyed (without calling destructor)
+  void cleanupMemory() { clearDeferredAllocationInfo(); }
+
+  // Clear any deferred allocation info which will no longer be used.
+  void clearDeferredAllocationInfo() {
+    lazyScriptData().reset();
+    functionCreationData().reset();
+  }
+
   JSFunction* function() const { return &object()->as<JSFunction>(); }
 
   // Initialize FunctionBox with a deferred allocation Function
@@ -715,6 +726,16 @@ class FunctionBox : public ObjectBox, public SharedContext {
     if (hasObject()) {
       function()->setArgCount(nargs_);
     }
+  }
+
+  void setFieldInitializers(FieldInitializers fi) {
+    if (hasObject()) {
+      MOZ_ASSERT(function()->lazyScript());
+      function()->lazyScript()->setFieldInitializers(fi);
+      return;
+    }
+    MOZ_ASSERT(lazyScriptData());
+    lazyScriptData()->fieldInitializers.emplace(fi);
   }
 
   void trace(JSTracer* trc) override;

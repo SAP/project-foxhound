@@ -39,7 +39,9 @@
 #include "nsSprocketLayout.h"
 #include "nsStackLayout.h"
 #include "nsTextControlFrame.h"
-#include "nsXBLService.h"
+#ifdef MOZ_XBL
+#  include "nsXBLService.h"
+#endif
 #include "txMozillaXSLTProcessor.h"
 #include "nsTreeSanitizer.h"
 #include "nsCellMap.h"
@@ -70,7 +72,6 @@
 
 #include "AudioChannelService.h"
 #include "mozilla/dom/PromiseDebugging.h"
-#include "mozilla/dom/WebCryptoThreadPool.h"
 
 #ifdef MOZ_XUL
 #  include "nsXULPopupManager.h"
@@ -167,7 +168,9 @@ nsresult nsLayoutStatics::Initialize() {
   nsGlobalWindowInner::Init();
   nsGlobalWindowOuter::Init();
   Navigator::Init();
+#ifdef MOZ_XBL
   nsXBLService::Init();
+#endif
 
   rv = nsContentUtils::Init();
   if (NS_FAILED(rv)) {
@@ -278,8 +281,6 @@ nsresult nsLayoutStatics::Initialize() {
 
   PromiseDebugging::Init();
 
-  mozilla::dom::WebCryptoThreadPool::Initialize();
-
   if (XRE_IsParentProcess() || XRE_IsContentProcess()) {
     InitializeServo();
   }
@@ -385,7 +386,9 @@ void nsLayoutStatics::Shutdown() {
   nsGlobalWindowInner::ShutDown();
   nsGlobalWindowOuter::ShutDown();
   nsListControlFrame::Shutdown();
+#ifdef MOZ_XBL
   nsXBLService::Shutdown();
+#endif
   FrameLayerBuilder::Shutdown();
 
   CubebUtils::ShutdownLibrary();

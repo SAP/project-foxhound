@@ -12,7 +12,9 @@ const {
   OPEN_SEARCH,
   CLOSE_SEARCH,
   SEARCH_STATUS,
+  TOGGLE_SEARCH_CASE_SENSITIVE_SEARCH,
   UPDATE_SEARCH_STATUS,
+  SET_TARGET_SEARCH_RESULT,
 } = require("../constants");
 
 /**
@@ -29,7 +31,9 @@ function Search(overrideParams = {}) {
       results: [],
       ongoingSearch: null,
       status: SEARCH_STATUS.INITIAL,
+      caseSensitive: false,
       panelOpen: false,
+      targetSearchResult: null,
     },
     overrideParams
   );
@@ -49,8 +53,12 @@ function search(state = new Search(), action) {
       return onCloseSearch(state);
     case OPEN_SEARCH:
       return onOpenSearch(state);
+    case TOGGLE_SEARCH_CASE_SENSITIVE_SEARCH:
+      return onToggleCaseSensitiveSearch(state);
     case UPDATE_SEARCH_STATUS:
       return onUpdateSearchStatus(state, action);
+    case SET_TARGET_SEARCH_RESULT:
+      return onSetTargetSearchResult(state, action);
   }
   return state;
 }
@@ -104,10 +112,24 @@ function onOpenSearch(state) {
   };
 }
 
+function onToggleCaseSensitiveSearch(state) {
+  return {
+    ...state,
+    caseSensitive: !state.caseSensitive,
+  };
+}
+
 function onUpdateSearchStatus(state, action) {
   return {
     ...state,
     status: action.status,
+  };
+}
+
+function onSetTargetSearchResult(state, action) {
+  return {
+    ...state,
+    targetSearchResult: action.searchResult,
   };
 }
 

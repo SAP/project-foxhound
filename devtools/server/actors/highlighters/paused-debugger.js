@@ -9,9 +9,11 @@ const {
   createNode,
 } = require("./utils/markup");
 
-const { LocalizationHelper } = require("devtools/shared/l10n");
-const STRINGS_URI = "devtools/client/shared/locales/debugger.properties";
-const L10N = new LocalizationHelper(STRINGS_URI);
+loader.lazyGetter(this, "L10N", () => {
+  const { LocalizationHelper } = require("devtools/shared/l10n");
+  const STRINGS_URI = "devtools/client/locales/debugger.properties";
+  return new LocalizationHelper(STRINGS_URI);
+});
 
 /**
  * The PausedDebuggerOverlay is a class that displays a semi-transparent mask on top of
@@ -22,9 +24,10 @@ const L10N = new LocalizationHelper(STRINGS_URI);
  */
 function PausedDebuggerOverlay(highlighterEnv, options = {}) {
   this.env = highlighterEnv;
-  this.showOverlayStepButtons = options.showOverlayStepButtons;
   this.resume = options.resume;
   this.stepOver = options.stepOver;
+
+  this.lastTarget = null;
 
   this.markup = new CanvasFrameAnonymousContentHelper(
     highlighterEnv,
@@ -76,36 +79,52 @@ PausedDebuggerOverlay.prototype = {
       prefix,
     });
 
-    if (this.showOverlayStepButtons) {
-      createNode(window, {
-        parent: toolbar,
-        attributes: {
-          id: "divider",
-          class: "divider",
-        },
-        prefix,
-      });
+    createNode(window, {
+      parent: toolbar,
+      attributes: {
+        id: "divider",
+        class: "divider",
+      },
+      prefix,
+    });
 
-      createNode(window, {
-        nodeType: "button",
-        parent: toolbar,
-        attributes: {
-          id: "step-button",
-          class: "step-button",
-        },
-        prefix,
-      });
+    const stepWrapper = createNode(window, {
+      parent: toolbar,
+      attributes: {
+        id: "step-button-wrapper",
+        class: "step-button-wrapper",
+      },
+      prefix,
+    });
 
-      createNode(window, {
-        nodeType: "button",
-        parent: toolbar,
-        attributes: {
-          id: "resume-button",
-          class: "resume-button",
-        },
-        prefix,
-      });
-    }
+    createNode(window, {
+      nodeType: "button",
+      parent: stepWrapper,
+      attributes: {
+        id: "step-button",
+        class: "step-button",
+      },
+      prefix,
+    });
+
+    const resumeWrapper = createNode(window, {
+      parent: toolbar,
+      attributes: {
+        id: "resume-button-wrapper",
+        class: "resume-button-wrapper",
+      },
+      prefix,
+    });
+
+    createNode(window, {
+      nodeType: "button",
+      parent: resumeWrapper,
+      attributes: {
+        id: "resume-button",
+        class: "resume-button",
+      },
+      prefix,
+    });
 
     return container;
   },
@@ -114,19 +133,57 @@ PausedDebuggerOverlay.prototype = {
     this.hide();
     this.markup.destroy();
     this.env = null;
+    this.lastTarget = null;
   },
 
   onClick(target) {
-    if (target.id == "paused-dbg-step-button") {
+    const { id } = target;
+    if (!id) {
+      return;
+    }
+
+    if (id.includes("paused-dbg-step-button")) {
       this.stepOver();
-    } else if (target.id == "paused-dbg-resume-button") {
+    } else if (id.includes("paused-dbg-resume-button")) {
       this.resume();
+    }
+  },
+
+  onMouseMove(target) {
+    // Not an element we care about
+    if (!target.id) {
+      return;
+    }
+
+    // If the user didn't change targets, do nothing
+    if (this.lastTarget && this.lastTarget.id === target.id) {
+      return;
+    }
+
+    if (
+      target.id.includes("step-button") ||
+      target.id.includes("resume-button")
+    ) {
+      // The hover should be applied to the wrapper (icon's parent node)
+      const newTarget = target.parentNode.id.includes("wrapper")
+        ? target.parentNode
+        : target;
+
+      // Remove the hover class if the user has changed buttons
+      if (this.lastTarget && this.lastTarget != newTarget) {
+        this.lastTarget.classList.remove("hover");
+      }
+      newTarget.classList.add("hover");
+      this.lastTarget = newTarget;
+    } else if (this.lastTarget) {
+      // Remove the hover class if the user isn't on a button
+      this.lastTarget.classList.remove("hover");
     }
   },
 
   handleEvent(e) {
     switch (e.type) {
-      case "click":
+      case "mousedown":
         this.onClick(e.target);
         break;
       case "DOMMouseScroll":
@@ -136,7 +193,9 @@ PausedDebuggerOverlay.prototype = {
         // important.
         e.preventDefault();
         break;
-      case "mouseover":
+
+      case "mousemove":
+        this.onMouseMove(e.target);
         break;
     }
   },
@@ -150,6 +209,24 @@ PausedDebuggerOverlay.prototype = {
       return false;
     }
 
+    let reason;
+    try {
+      reason = L10N.getStr(`whyPaused.${options.reason}`);
+    } catch (e) {
+      // This is a temporary workaround to be uplifted to Firefox 71.
+      // This actors relies on a client side properties file. This file will not
+      // be available when debugging Firefox for Android / Gecko View.
+      // The highlighter also shows buttons that use client only images and are
+      // therefore invisible when remote debugging a mobile Firefox.
+      // Should be fixed in Bug 1591025.
+      return false;
+    }
+
+    // Only track mouse movement when the the overlay is shown
+    // Prevents mouse tracking when the user isn't paused
+    const { pageListenerTarget } = this.env;
+    pageListenerTarget.addEventListener("mousemove", this);
+
     // Show the highlighter's root element.
     const root = this.getElement("root");
     root.removeAttribute("hidden");
@@ -157,9 +234,7 @@ PausedDebuggerOverlay.prototype = {
 
     // Set the text to appear in the toolbar.
     const toolbar = this.getElement("toolbar");
-    this.getElement("reason").setTextContent(
-      L10N.getStr(`whyPaused.${options.reason}`)
-    );
+    this.getElement("reason").setTextContent(reason);
     toolbar.removeAttribute("hidden");
 
     this.env.window.document.setSuppressedEventListener(this);
@@ -170,6 +245,9 @@ PausedDebuggerOverlay.prototype = {
     if (this.env.isXUL) {
       return;
     }
+
+    const { pageListenerTarget } = this.env;
+    pageListenerTarget.removeEventListener("mousemove", this);
 
     // Hide the overlay.
     this.getElement("root").setAttribute("hidden", "true");

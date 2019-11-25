@@ -709,14 +709,14 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   void jump(Label* label) { B(label); }
   void jump(JitCode* code) { branch(code); }
-  void jump(TrampolinePtr code) {
+  void jump(ImmPtr ptr) {
     syncStackPtr();
     BufferOffset loc =
         b(-1,
           LabelDoc());  // The jump target will be patched by executableCopy().
-    addPendingJump(loc, ImmPtr(code.value), RelocationKind::HARDCODED);
+    addPendingJump(loc, ptr, RelocationKind::HARDCODED);
   }
-  void jump(RepatchLabel* label) { MOZ_CRASH("jump (repatchlabel)"); }
+  void jump(TrampolinePtr code) { jump(ImmPtr(code.value)); }
   void jump(Register reg) { Br(ARMRegister(reg, 64)); }
   void jump(const Address& addr) {
     loadPtr(addr, ip0);
@@ -1271,28 +1271,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
         b(-1,
           LabelDoc());  // The jump target will be patched by executableCopy().
     addPendingJump(loc, ImmPtr(target->raw()), RelocationKind::JITCODE);
-  }
-
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label) {
-    // jumpWithPatch() is only used by IonCacheIRCompiler::emitReturnFromIC().
-    // The RepatchLabel is unbound and unused.
-    MOZ_ASSERT(!label->used());
-    MOZ_ASSERT(!label->bound());
-
-    vixl::UseScratchRegisterScope temps(this);
-    const ARMRegister scratch64 = temps.AcquireX();
-
-    ARMBuffer::PoolEntry pe;
-    BufferOffset load_bo;
-
-    // This no-op load exists for PatchJump(), in the case of a target outside
-    // the range of +/- 128 MB. If the load is used, then the branch here is
-    // overwritten with a `BR` from the loaded register.
-    load_bo = immPool64(scratch64, (uint64_t)label, &pe);
-    BufferOffset branch_bo = b(-1, LabelDoc());
-
-    label->use(branch_bo.getOffset());
-    return CodeOffsetJump(load_bo.getOffset(), pe.index());
   }
 
   void compareDouble(DoubleCondition cond, FloatRegister lhs,
@@ -1865,7 +1843,7 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Label join;
     testInt32(Equal, ValueOperand(src));
     B(&isInt32, Equal);
-    // is double, move teh bits as is
+    // is double, move the bits as is
     Fmov(dest, ARMRegister(src, 64));
     B(&join);
     bind(&isInt32);
@@ -1956,8 +1934,6 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   }
 
  public:
-  CodeOffset labelForPatch() { return CodeOffset(nextOffset().getOffset()); }
-
   void handleFailureWithHandlerTail(void* handler, Label* profilerExitTail);
 
   void profilerEnterFrame(Register framePtr, Register scratch);

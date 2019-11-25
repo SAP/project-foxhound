@@ -114,7 +114,7 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
   MOZ_ASSERT(!cx->hasIonReturnOverride());
 
   // Release temporary buffer used for OSR into Ion.
-  cx->freeOsrTempData();
+  cx->runtime()->jitRuntime()->freeIonOsrTempData();
 
   if (result.isMagic()) {
     MOZ_ASSERT(result.isMagic(JS_ION_ERROR));
@@ -135,6 +135,12 @@ static EnterJitStatus JS_HAZ_JSNATIVE_CALLER EnterJit(JSContext* cx,
 EnterJitStatus js::jit::MaybeEnterJit(JSContext* cx, RunState& state) {
   if (!IsBaselineInterpreterEnabled()) {
     // All JITs are disabled.
+    return EnterJitStatus::NotEntered;
+  }
+
+  // JITs do not respect the debugger's OnNativeCall hook, so JIT execution is
+  // disabled if this hook might need to be called.
+  if (cx->insideDebuggerEvaluationWithOnNativeCallHook) {
     return EnterJitStatus::NotEntered;
   }
 

@@ -9,9 +9,6 @@ const { XPCOMUtils } = ChromeUtils.import(
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
-const { requestIdleCallback } = ChromeUtils.import(
-  "resource://gre/modules/Timer.jsm"
-);
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 const SCHEMA_VERSION = 1;
@@ -28,14 +25,42 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "AsyncShutdown",
-  "resource://gre/modules/AsyncShutdown.jsm"
+  "milestoneMessagingEnabled",
+  "browser.contentblocking.cfr-milestone.enabled",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "milestones",
+  "browser.contentblocking.cfr-milestone.milestones",
+  "[]",
+  null,
+  JSON.parse
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "oldMilestone",
+  "browser.contentblocking.cfr-milestone.milestone-achieved",
+  0
+);
+
+// How often we check if the user is eligible for seeing a "milestone"
+// doorhanger. 24 hours by default.
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "MILESTONE_UPDATE_INTERVAL",
+  "browser.contentblocking.cfr-milestone.update-interval",
+  24 * 60 * 60 * 1000
 );
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   readAsyncStream: "resource://gre/modules/AsyncStreamReader.jsm",
+  AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
+  DeferredTask: "resource://gre/modules/DeferredTask.jsm",
 });
 
 /**
@@ -100,6 +125,8 @@ TrackingDBService.prototype = {
   _xpcom_factory: XPCOMUtils.generateSingletonFactory(TrackingDBService),
   // This is the connection to the database, opened in _initialize and closed on _shutdown.
   _db: null,
+  waitingTasks: new Set(),
+  finishedShutdown: true,
 
   async ensureDB() {
     await this._initPromise;
@@ -133,19 +160,33 @@ TrackingDBService.prototype = {
       "TrackingDBService: Shutting down the content blocking database.",
       () => this._shutdown()
     );
-
+    this.finishedShutdown = false;
     this._db = db;
   },
 
   async _shutdown() {
     let db = await this.ensureDB();
+    this.finishedShutdown = true;
+    await Promise.all(Array.from(this.waitingTasks, task => task.finalize()));
     await db.close();
   },
 
   async recordContentBlockingLog(inputStream) {
+    if (this.finishedShutdown) {
+      // The database has already been closed.
+      return;
+    }
     /* import-globals-from AsyncStreamReader.jsm */
     let json = await readAsyncStream(inputStream);
-    requestIdleCallback(this.saveEvents.bind(this, json));
+    let task = new DeferredTask(async () => {
+      try {
+        await this.saveEvents(json);
+      } finally {
+        this.waitingTasks.delete(task);
+      }
+    }, 0);
+    task.arm();
+    this.waitingTasks.add(task);
   },
 
   identifyType(events) {
@@ -254,6 +295,44 @@ TrackingDBService.prototype = {
       });
     } catch (e) {
       Cu.reportError(e);
+    }
+
+    // If milestone CFR messaging is not enabled we don't need to update the milestone pref or send the event.
+    // We don't do this check too frequently, for performance reasons.
+    if (
+      !milestoneMessagingEnabled ||
+      (this.lastChecked &&
+        Date.now() - this.lastChecked < MILESTONE_UPDATE_INTERVAL)
+    ) {
+      return;
+    }
+    this.lastChecked = Date.now();
+    let totalSaved = await this.sumAllEvents();
+
+    let reachedMilestone = null;
+    let nextMilestone = null;
+    for (let [index, milestone] of milestones.entries()) {
+      if (totalSaved >= milestone) {
+        reachedMilestone = milestone;
+        nextMilestone = milestones[index + 1];
+      }
+    }
+
+    // Show the milestone message if the user is not too close to the next milestone.
+    // Or if there is no next milestone.
+    if (
+      reachedMilestone &&
+      (!nextMilestone || nextMilestone - totalSaved > 3000) &&
+      (!oldMilestone || oldMilestone < reachedMilestone)
+    ) {
+      Services.obs.notifyObservers(
+        {
+          wrappedJSObject: {
+            event: "ContentBlockingMilestone",
+          },
+        },
+        "SiteProtection:ContentBlockingMilestone"
+      );
     }
   },
 

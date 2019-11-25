@@ -102,28 +102,34 @@ add_task(async function test_popup_url() {
   );
 
   let popup = gURLBar.view.panel;
-  let popupCS = window.getComputedStyle(popup);
 
-  Assert.equal(
-    popupCS.backgroundColor,
-    `rgb(${hexToRGB(POPUP_COLOR).join(", ")})`,
-    `Popup background color should be set to ${POPUP_COLOR}`
-  );
+  if (!gURLBar.megabar) {
+    // The urlbar popup supports these colors only with the legacy non-megabar
+    // design. With megabar, the popup visually extends the textbox and use its
+    // colors.
+    let popupCS = window.getComputedStyle(popup);
 
-  Assert.equal(
-    popupCS.borderBottomColor,
-    `rgb(${hexToRGB(CHROME_CONTENT_SEPARATOR_COLOR).join(", ")})`,
-    `Popup bottom color should be set to ${CHROME_CONTENT_SEPARATOR_COLOR}`
-  );
+    Assert.equal(
+      popupCS.backgroundColor,
+      `rgb(${hexToRGB(POPUP_COLOR).join(", ")})`,
+      `Popup background color should be set to ${POPUP_COLOR}`
+    );
 
-  Assert.equal(
-    popupCS.color,
-    `rgb(${hexToRGB(POPUP_TEXT_COLOR_DARK).join(", ")})`,
-    `Popup color should be set to ${POPUP_TEXT_COLOR_DARK}`
-  );
+    Assert.equal(
+      popupCS.borderBottomColor,
+      `rgb(${hexToRGB(CHROME_CONTENT_SEPARATOR_COLOR).join(", ")})`,
+      `Popup bottom color should be set to ${CHROME_CONTENT_SEPARATOR_COLOR}`
+    );
+
+    Assert.equal(
+      popupCS.color,
+      `rgb(${hexToRGB(POPUP_TEXT_COLOR_DARK).join(", ")})`,
+      `Popup color should be set to ${POPUP_TEXT_COLOR_DARK}`
+    );
+  }
 
   // Set the selected attribute to true to test the highlight popup properties
-  UrlbarTestUtils.setSelectedIndex(window, 1);
+  UrlbarTestUtils.setSelectedRowIndex(window, 1);
   let actionResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
   let urlResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 1);
   let resultCS = window.getComputedStyle(urlResult.element.row);
@@ -142,7 +148,7 @@ add_task(async function test_popup_url() {
 
   // Now set the index to somewhere not on the first two, so that we can test both
   // url and action text colors.
-  UrlbarTestUtils.setSelectedIndex(window, 2);
+  UrlbarTestUtils.setSelectedRowIndex(window, 2);
 
   Assert.equal(
     window.getComputedStyle(urlResult.element.url).color,
@@ -200,12 +206,16 @@ add_task(async function test_popup_url() {
 
   await extension.startup();
 
-  popupCS = window.getComputedStyle(popup);
-  Assert.equal(
-    popupCS.color,
-    `rgb(${hexToRGB(POPUP_TEXT_COLOR_BRIGHT).join(", ")})`,
-    `Popup color should be set to ${POPUP_TEXT_COLOR_BRIGHT}`
-  );
+  if (!gURLBar.megabar) {
+    // The urlbar popup supports this color only with the legacy non-megabar
+    // design. With megabar, the popup visually extends the textbox and use its
+    // colors.
+    Assert.equal(
+      window.getComputedStyle(popup).color,
+      `rgb(${hexToRGB(POPUP_TEXT_COLOR_BRIGHT).join(", ")})`,
+      `Popup color should be set to ${POPUP_TEXT_COLOR_BRIGHT}`
+    );
+  }
 
   Assert.equal(
     window.getComputedStyle(urlResult.element.url).color,

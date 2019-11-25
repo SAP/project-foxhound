@@ -126,7 +126,7 @@ static JitExecStatus EnterBaseline(JSContext* cx, EnterJitData& data) {
   }
 
   // Release temporary buffer used for OSR into Ion.
-  cx->freeOsrTempData();
+  cx->runtime()->jitRuntime()->freeIonOsrTempData();
 
   MOZ_ASSERT_IF(data.result.isMagic(), data.result.isMagic(JS_ION_ERROR));
   return data.result.isMagic() ? JitExec_Error : JitExec_Ok;
@@ -356,6 +356,12 @@ static MethodStatus CanEnterBaselineInterpreter(JSContext* cx,
 MethodStatus jit::CanEnterBaselineInterpreterAtBranch(JSContext* cx,
                                                       InterpreterFrame* fp) {
   if (!CheckFrame(fp)) {
+    return Method_CantCompile;
+  }
+
+  // JITs do not respect the debugger's OnNativeCall hook, so JIT execution is
+  // disabled if this hook might need to be called.
+  if (cx->insideDebuggerEvaluationWithOnNativeCallHook) {
     return Method_CantCompile;
   }
 

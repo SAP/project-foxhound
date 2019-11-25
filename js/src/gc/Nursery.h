@@ -75,7 +75,7 @@ class MacroAssembler;
 
 class NurseryDecommitTask : public GCParallelTaskHelper<NurseryDecommitTask> {
  public:
-  explicit NurseryDecommitTask(JSRuntime* rt) : GCParallelTaskHelper(rt) {}
+  explicit NurseryDecommitTask(gc::GCRuntime* gc) : GCParallelTaskHelper(gc) {}
 
   void queueChunk(NurseryChunk* chunk, const AutoLockHelperThreadState& lock);
 
@@ -180,12 +180,10 @@ class Nursery {
 
   using BufferSet = HashSet<void*, PointerHasher<void*>, SystemAllocPolicy>;
 
-  explicit Nursery(JSRuntime* rt);
+  explicit Nursery(gc::GCRuntime* gc);
   ~Nursery();
 
-  MOZ_MUST_USE bool init(uint32_t maxNurseryBytes, AutoLockGCBgAlloc& lock);
-
-  unsigned chunkCountLimit() const { return chunkCountLimit_; }
+  MOZ_MUST_USE bool init(AutoLockGCBgAlloc& lock);
 
   // Number of allocated (ready to use) chunks.
   unsigned allocatedChunkCount() const { return chunks_.length(); }
@@ -198,8 +196,6 @@ class Nursery {
     MOZ_ASSERT(capacity());
     return JS_HOWMANY(capacity(), gc::ChunkSize);
   }
-
-  bool exists() const { return chunkCountLimit() != 0; }
 
   void enable();
   void disable();
@@ -337,10 +333,7 @@ class Nursery {
   // limit respectively.
   size_t spaceToEnd(unsigned chunkCount) const;
 
-  size_t capacity() const {
-    MOZ_ASSERT(capacity_ <= chunkCountLimit() * gc::ChunkSize);
-    return capacity_;
-  }
+  size_t capacity() const { return capacity_; }
   size_t committed() const { return spaceToEnd(allocatedChunkCount()); }
 
   // Used and free space both include chunk trailers for that part of the
@@ -411,7 +404,7 @@ class Nursery {
   void joinDecommitTask() { decommitTask.join(); }
 
  private:
-  JSRuntime* runtime_;
+  gc::GCRuntime* const gc;
 
   // Vector of allocated chunks to allocate from.
   Vector<NurseryChunk*, 0, SystemAllocPolicy> chunks_;
@@ -440,10 +433,6 @@ class Nursery {
   // changed by maybeResizeNursery() each collection. It does not include chunk
   // trailers.
   size_t capacity_;
-
-  // This limit is fixed by configuration. It represents the maximum size
-  // the nursery is permitted to tune itself to in maybeResizeNursery();
-  unsigned chunkCountLimit_;
 
   mozilla::TimeDuration timeInChunkAlloc_;
 
@@ -568,7 +557,7 @@ class Nursery {
 
   MOZ_ALWAYS_INLINE bool isSubChunkMode() const;
 
-  JSRuntime* runtime() const { return runtime_; }
+  JSRuntime* runtime() const;
   gcstats::Statistics& stats() const;
 
   const js::gc::GCSchedulingTunables& tunables() const;
@@ -612,7 +601,7 @@ class Nursery {
   // Change the allocable space provided by the nursery.
   void maybeResizeNursery(JS::GCReason reason);
   bool maybeResizeExact(JS::GCReason reason);
-  size_t roundSize(size_t size) const;
+  static size_t roundSize(size_t size);
   void growAllocableSpace(size_t newCapacity);
   void shrinkAllocableSpace(size_t newCapacity);
   void minimizeAllocableSpace();

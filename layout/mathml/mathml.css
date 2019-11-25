@@ -62,17 +62,22 @@ ms[rquote]:after {
  }
 
 /**************************************************************************/
-/* Links                                                                  */
+/* Links and focusable elements                                           */
 /**************************************************************************/
 :any-link {
   text-decoration: none !important;
+}
+
+*:-moz-focusring {
+  /* Don't specify the outline-color, we should always use initial value. */
+  outline: 1px dotted;
 }
 
 /**************************************************************************/
 /* attributes common to all tags                                          */
 /**************************************************************************/
 
-/* These attributes are mapped to style in nsMathMLElement.cpp:
+/* These attributes are mapped to style in MathMLElement.cpp:
 
    - background -> background                             (deprecated)
    - color -> color                                       (deprecated)

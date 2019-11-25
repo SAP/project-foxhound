@@ -121,6 +121,7 @@ const UPDATED_REQ_ITEM_PROPS = [
 const UPDATED_REQ_PROPS = [
   "firstRequestStartedMs",
   "index",
+  "networkDetailsOpen",
   "isSelected",
   "requestFilterTypes",
   "waterfallWidth",
@@ -208,6 +209,7 @@ class RequestListItem extends Component {
       isSelected: PropTypes.bool.isRequired,
       firstRequestStartedMs: PropTypes.number.isRequired,
       fromCache: PropTypes.bool,
+      networkDetailsOpen: PropTypes.bool,
       onCauseBadgeMouseDown: PropTypes.func.isRequired,
       onDoubleClick: PropTypes.func.isRequired,
       onContextMenu: PropTypes.func.isRequired,
@@ -323,6 +325,7 @@ class RequestListItem extends Component {
           header,
         })
       ),
+      // The last column is Waterfall (aka Timeline)
       columns.waterfall &&
         RequestListColumnWaterfall({
           connector,

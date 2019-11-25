@@ -5,7 +5,6 @@ py3:
     exclude:
         - browser/app
         - build
-        - client.py
         - dom/canvas/test
         - gfx
         - ipc/ipdl
@@ -14,13 +13,13 @@ py3:
         - layout/tools/reftest
         - security/manager/ssl
         - testing/awsy
+        - testing/condprofile/condprof/android.py
+        - testing/condprofile/condprof/desktop.py
         - testing/gtest
         - testing/mozharness
         - testing/tps
         - testing/web-platform
         - toolkit
-        - tools/profiler
-        - tools/rb
         - xpcom/idl-parser
     extensions: ['py']
     support-files:

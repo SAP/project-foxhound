@@ -54,6 +54,10 @@ class SourceText;
 
 namespace js {
 
+namespace coverage {
+class LCovSource;
+}  // namespace coverage
+
 namespace jit {
 class AutoKeepJitScripts;
 struct BaselineScript;
@@ -87,6 +91,7 @@ namespace detail {
 // Do not call this directly! It is exposed for the friend declarations in
 // this file.
 JSScript* CopyScript(JSContext* cx, HandleScript src,
+                     HandleObject functionOrGlobal,
                      HandleScriptSourceObject sourceObject,
                      MutableHandle<GCVector<Scope*>> scopes);
 
@@ -231,16 +236,32 @@ class ScriptCounts {
   jit::IonScriptCounts* ionCounts_;
 };
 
-// Note: The key of this hash map is a weak reference to a JSScript.  We do not
-// use the WeakMap implementation provided in gc/WeakMap.h because it would be
-// collected at the beginning of the sweeping of the realm, thus before the
-// calls to the JSScript::finalize function which are used to aggregate code
-// coverage results on the realm.
+// The key of these side-table hash maps are intentionally not traced GC
+// references to JSScript. Instead, we use bare pointers and manually fix up
+// when objects could have moved (see Zone::fixupScriptMapsAfterMovingGC) and
+// remove when the realm is destroyed (see Zone::clearScriptCounts and
+// Zone::clearScriptNames). They essentially behave as weak references, except
+// that the references are not cleared early by the GC. They must be non-strong
+// references because the tables are kept at the Zone level and otherwise the
+// table keys would keep scripts alive, thus keeping Realms alive, beyond their
+// expected lifetimes. However, We do not use actual weak references (e.g. as
+// used by WeakMap tables provided in gc/WeakMap.h) because they would be
+// collected before the calls to the JSScript::finalize function which are used
+// to aggregate code coverage results on the realm.
+//
+// Note carefully, however, that there is an exceptional case for which we *do*
+// want the JSScripts to be strong references (and thus traced): when the
+// --dump-bytecode command line option or the PCCount JSFriend API is used,
+// then the scripts for all counts must remain alive. See
+// Zone::traceScriptTableRoots() for more details.
+//
+// TODO: Clean this up by either aggregating coverage results in some other
+// way, or by tweaking sweep ordering.
 using UniqueScriptCounts = js::UniquePtr<ScriptCounts>;
 using ScriptCountsMap = HashMap<JSScript*, UniqueScriptCounts,
                                 DefaultHasher<JSScript*>, SystemAllocPolicy>;
 
-using ScriptNameMap = HashMap<JSScript*, JS::UniqueChars,
+using ScriptLCovMap = HashMap<JSScript*, coverage::LCovSource*,
                               DefaultHasher<JSScript*>, SystemAllocPolicy>;
 
 #ifdef MOZ_VTUNE
@@ -633,12 +654,25 @@ class ScriptSource {
   // function should be recorded before their first execution.
   UniquePtr<XDRIncrementalEncoder> xdrEncoder_ = nullptr;
 
-  // Instant at which the first parse of this source ended, or null
+  // Instant at which the first parse of this source started, or null
   // if the source hasn't been parsed yet.
   //
-  // Used for statistics purposes, to determine how much time code spends
-  // syntax parsed before being full parsed, to help determine whether
-  // our syntax parse vs. full parse heuristics are correct.
+  // Used for telemetry purposes, to evaluate the benefit of using a streaming
+  // parser.
+  mozilla::TimeStamp parseStarted_;
+
+  // Instant at which the top-level compilation starts emitting bytes, or null
+  // if the source hasn't been compiled yet.
+  //
+  // Used for telemetry purposes, to evaluate the cost of the front-end.
+  mozilla::TimeStamp emitStarted_;
+
+  // Instant at which the first compilation of this source ended, or null if the
+  // source hasn't been parsed yet.
+  //
+  // Used for statistics purposes, to determine how much time code spends syntax
+  // parsed before being full parsed, to help determine whether our syntax parse
+  // vs. full parse heuristics are correct.
   mozilla::TimeStamp parseEnded_;
 
   // A string indicating how this source code was introduced into the system.
@@ -972,14 +1006,15 @@ class ScriptSource {
     return data.match(UncompressedLengthMatcher());
   }
 
-  JSFlatString* substring(JSContext* cx, size_t start, size_t stop);
-  JSFlatString* substringDontDeflate(JSContext* cx, size_t start, size_t stop);
+  JSLinearString* substring(JSContext* cx, size_t start, size_t stop);
+  JSLinearString* substringDontDeflate(JSContext* cx, size_t start,
+                                       size_t stop);
 
   MOZ_MUST_USE bool appendSubstring(JSContext* cx, js::StringBuffer& buf,
                                     size_t start, size_t stop);
 
   bool isFunctionBody() { return parameterListEnd_ != 0; }
-  JSFlatString* functionBodyString(JSContext* cx);
+  JSLinearString* functionBodyString(JSContext* cx);
 
   void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
                               JS::ScriptSourceInfo* info) const;
@@ -1178,6 +1213,22 @@ class ScriptSource {
   bool xdrFinalizeEncoder(JS::TranscodeBuffer& buffer);
 
   const mozilla::TimeStamp parseEnded() const { return parseEnded_; }
+  const mozilla::TimeDuration parseTime() const {
+    return emitStarted_ - parseStarted_;
+  }
+  const mozilla::TimeDuration emitTime() const {
+    return parseEnded_ - emitStarted_;
+  }
+  // Record the timestamp at which this source is starting to be parsed.
+  void recordParseStarted() {
+    MOZ_ASSERT(parseStarted_.IsNull());
+    parseStarted_ = ReallyNow();
+  }
+  // Record the timestamp at which this source is starting to be parsed.
+  void recordEmitStarted() {
+    MOZ_ASSERT(emitStarted_.IsNull());
+    emitStarted_ = ReallyNow();
+  }
   // Inform `this` source that it has been fully parsed.
   void recordParseEnded() {
     MOZ_ASSERT(parseEnded_.IsNull());
@@ -1350,6 +1401,11 @@ class BaseScript : public gc::TenuredCell {
   // non-null (except on no-jit builds).
   uint8_t* jitCodeRaw_ = nullptr;
 
+  // Object that determines what Realm this script is compiled for. In general
+  // this refers to the realm's GlobalObject, but for a lazy-script we instead
+  // refer to the associated function.
+  GCPtrObject functionOrGlobal_;
+
   // The ScriptSourceObject for this script.
   GCPtr<ScriptSourceObject*> sourceObject_ = {};
 
@@ -1391,15 +1447,17 @@ class BaseScript : public gc::TenuredCell {
   uint32_t immutableFlags_ = 0;
   uint32_t mutableFlags_ = 0;
 
-  BaseScript(uint8_t* stubEntry, ScriptSourceObject* sourceObject,
-             uint32_t sourceStart, uint32_t sourceEnd, uint32_t toStringStart,
-             uint32_t toStringEnd)
+  BaseScript(uint8_t* stubEntry, JSObject* functionOrGlobal,
+             ScriptSourceObject* sourceObject, uint32_t sourceStart,
+             uint32_t sourceEnd, uint32_t toStringStart, uint32_t toStringEnd)
       : jitCodeRaw_(stubEntry),
+        functionOrGlobal_(functionOrGlobal),
         sourceObject_(sourceObject),
         sourceStart_(sourceStart),
         sourceEnd_(sourceEnd),
         toStringStart_(toStringStart),
         toStringEnd_(toStringEnd) {
+    MOZ_ASSERT(functionOrGlobal->compartment() == sourceObject->compartment());
     MOZ_ASSERT(toStringStart <= sourceStart);
     MOZ_ASSERT(sourceStart <= sourceEnd);
     MOZ_ASSERT(sourceEnd <= toStringEnd);
@@ -1574,6 +1632,12 @@ class BaseScript : public gc::TenuredCell {
   };
 
   uint8_t* jitCodeRaw() const { return jitCodeRaw_; }
+
+  JS::Realm* realm() const { return functionOrGlobal_->nonCCWRealm(); }
+  JS::Compartment* compartment() const {
+    return functionOrGlobal_->compartment();
+  }
+  JS::Compartment* maybeCompartment() const { return compartment(); }
 
   ScriptSourceObject* sourceObject() const { return sourceObject_; }
   ScriptSource* scriptSource() const { return sourceObject()->source(); }
@@ -2265,6 +2329,75 @@ using RuntimeScriptDataTable =
 
 extern void SweepScriptData(JSRuntime* rt);
 
+// ScriptWarmUpData represents a pointer-sized field in JSScript that stores
+// one of the following:
+//
+// * The script's warm-up count. This is only used until the script has a
+//   JitScript. The Baseline Interpreter and JITs use the warm-up count stored
+//   in JitScript.
+//
+// * A pointer to the JitScript, when the script is warm enough for the Baseline
+//   Interpreter.
+//
+// Pointer tagging is used to distinguish those states.
+class ScriptWarmUpData {
+  static constexpr uintptr_t NumTagBits = 2;
+  static constexpr uint32_t MaxWarmUpCount = UINT32_MAX >> NumTagBits;
+
+ public:
+  // Public only for the JITs.
+  static constexpr uintptr_t TagMask = (1 << NumTagBits) - 1;
+  static constexpr uintptr_t JitScriptTag = 0;
+  static constexpr uintptr_t WarmUpCountTag = 1;
+
+ private:
+  uintptr_t data_ = 0 | WarmUpCountTag;
+
+  void setWarmUpCount(uint32_t count) {
+    if (count > MaxWarmUpCount) {
+      count = MaxWarmUpCount;
+    }
+    data_ = (uintptr_t(count) << NumTagBits) | WarmUpCountTag;
+  }
+
+ public:
+  void trace(JSTracer* trc);
+
+  bool isWarmUpCount() const { return (data_ & TagMask) == WarmUpCountTag; }
+  bool isJitScript() const { return (data_ & TagMask) == JitScriptTag; }
+
+  uint32_t toWarmUpCount() const {
+    MOZ_ASSERT(isWarmUpCount());
+    return data_ >> NumTagBits;
+  }
+  void resetWarmUpCount(uint32_t count) {
+    MOZ_ASSERT(isWarmUpCount());
+    setWarmUpCount(count);
+  }
+  void incWarmUpCount(uint32_t amount) {
+    MOZ_ASSERT(isWarmUpCount());
+    data_ += uintptr_t(amount) << NumTagBits;
+  }
+
+  jit::JitScript* toJitScript() const {
+    MOZ_ASSERT(isJitScript());
+    static_assert(JitScriptTag == 0, "Code depends on JitScriptTag being zero");
+    return reinterpret_cast<jit::JitScript*>(data_);
+  }
+  void setJitScript(jit::JitScript* jitScript) {
+    MOZ_ASSERT(isWarmUpCount());
+    MOZ_ASSERT((uintptr_t(jitScript) & TagMask) == 0);
+    data_ = uintptr_t(jitScript) | JitScriptTag;
+  }
+  void clearJitScript() {
+    MOZ_ASSERT(isJitScript());
+    setWarmUpCount(0);
+  }
+};
+
+static_assert(sizeof(ScriptWarmUpData) == sizeof(uintptr_t),
+              "JIT code depends on ScriptWarmUpData being pointer-sized");
+
 } /* namespace js */
 
 namespace JS {
@@ -2285,24 +2418,11 @@ class JSScript : public js::BaseScript {
   // Unshared variable-length data
   js::PrivateScriptData* data_ = nullptr;
 
- public:
-  JS::Realm* realm_ = nullptr;
-
  private:
-  // JIT and type inference data for this script. May be purged on GC.
-  js::jit::JitScript* jitScript_ = nullptr;
+  js::ScriptWarmUpData warmUpData_ = {};
 
   /* Information used to re-lazify a lazily-parsed interpreted function. */
   js::LazyScript* lazyScript = nullptr;
-
-  // 32-bit fields.
-
-  // Number of times the script has been called or has had backedges taken.
-  // When running in ion, also increased for any inlined scripts. Reset if
-  // the script's JIT code is forcibly discarded.
-  mozilla::Atomic<uint32_t, mozilla::Relaxed,
-                  mozilla::recordreplay::Behavior::DontPreserve>
-      warmUpCount = {};
 
   //
   // End of fields.  Start methods.
@@ -2347,21 +2467,22 @@ class JSScript : public js::BaseScript {
       js::frontend::BytecodeEmitter* bce);
 
   friend JSScript* js::detail::CopyScript(
-      JSContext* cx, js::HandleScript src,
+      JSContext* cx, js::HandleScript src, js::HandleObject functionOrGlobal,
       js::HandleScriptSourceObject sourceObject,
       js::MutableHandle<JS::GCVector<js::Scope*>> scopes);
 
  private:
-  JSScript(JS::Realm* realm, uint8_t* stubEntry,
+  JSScript(js::HandleObject functionOrGlobal, uint8_t* stubEntry,
            js::HandleScriptSourceObject sourceObject, uint32_t sourceStart,
            uint32_t sourceEnd, uint32_t toStringStart, uint32_t toStringend);
 
-  static JSScript* New(JSContext* cx, js::HandleScriptSourceObject sourceObject,
+  static JSScript* New(JSContext* cx, js::HandleObject functionOrGlobal,
+                       js::HandleScriptSourceObject sourceObject,
                        uint32_t sourceStart, uint32_t sourceEnd,
                        uint32_t toStringStart, uint32_t toStringEnd);
 
  public:
-  static JSScript* Create(JSContext* cx,
+  static JSScript* Create(JSContext* cx, js::HandleObject functionOrGlobal,
                           const JS::ReadOnlyCompileOptions& options,
                           js::HandleScriptSourceObject sourceObject,
                           uint32_t sourceStart, uint32_t sourceEnd,
@@ -2394,12 +2515,6 @@ class JSScript : public js::BaseScript {
 
  public:
   inline JSPrincipals* principals();
-
-  JS::Compartment* compartment() const {
-    return JS::GetCompartmentForRealm(realm_);
-  }
-  JS::Compartment* maybeCompartment() const { return compartment(); }
-  JS::Realm* realm() const { return realm_; }
 
   js::RuntimeScriptData* scriptData() { return scriptData_; }
   js::ImmutableScriptData* immutableScriptData() const {
@@ -2529,8 +2644,6 @@ class JSScript : public js::BaseScript {
     clearFlag(MutableFlags::HasRunOnce);
   }
 
-  bool hasScriptName();
-
   void setArgumentsHasVarBinding();
   bool argumentsAliasesFormals() const {
     return argumentsHasVarBinding() && hasMappedArgsObj();
@@ -2596,8 +2709,8 @@ class JSScript : public js::BaseScript {
   static constexpr size_t offsetOfPrivateScriptData() {
     return offsetof(JSScript, data_);
   }
-  static constexpr size_t offsetOfJitScript() {
-    return offsetof(JSScript, jitScript_);
+  static constexpr size_t offsetOfWarmUpData() {
+    return offsetof(JSScript, warmUpData_);
   }
 
   void updateJitCodeRaw(JSRuntime* rt);
@@ -2659,7 +2772,7 @@ class JSScript : public js::BaseScript {
   // directly, via lazy arguments or a rest parameter.
   bool mayReadFrameArgsDirectly();
 
-  static JSFlatString* sourceData(JSContext* cx, JS::HandleScript script);
+  static JSLinearString* sourceData(JSContext* cx, JS::HandleScript script);
 
   MOZ_MUST_USE bool appendSourceDataForToString(JSContext* cx,
                                                 js::StringBuffer& buf);
@@ -2705,11 +2818,11 @@ class JSScript : public js::BaseScript {
   /* Ensure the script has a JitScript. */
   inline bool ensureHasJitScript(JSContext* cx, js::jit::AutoKeepJitScripts&);
 
-  bool hasJitScript() const { return jitScript_ != nullptr; }
+  bool hasJitScript() const { return warmUpData_.isJitScript(); }
 
   js::jit::JitScript* jitScript() const {
     MOZ_ASSERT(hasJitScript());
-    return jitScript_;
+    return warmUpData_.toJitScript();
   }
   js::jit::JitScript* maybeJitScript() const {
     return hasJitScript() ? jitScript() : nullptr;
@@ -2797,20 +2910,9 @@ class JSScript : public js::BaseScript {
   void freeScriptData();
 
  public:
-  uint32_t getWarmUpCount() const { return warmUpCount; }
-  uint32_t incWarmUpCounter(uint32_t amount = 1) {
-    return warmUpCount += amount;
-  }
-  uint32_t* addressOfWarmUpCounter() {
-    return reinterpret_cast<uint32_t*>(&warmUpCount);
-  }
-  static size_t offsetOfWarmUpCounter() {
-    return offsetof(JSScript, warmUpCount);
-  }
-  void resetWarmUpCounterForGC() {
-    incWarmUpResetCounter();
-    warmUpCount = 0;
-  }
+  inline uint32_t getWarmUpCount() const;
+  inline void incWarmUpCounter(uint32_t amount = 1);
+  inline void resetWarmUpCounterForGC();
 
   void resetWarmUpCounterToDelayIonCompilation();
 
@@ -2833,9 +2935,7 @@ class JSScript : public js::BaseScript {
 
  public:
   bool initScriptCounts(JSContext* cx);
-  bool initScriptName(JSContext* cx);
   js::ScriptCounts& getScriptCounts();
-  const char* getScriptName();
   js::PCCounts* maybeGetPCCounts(jsbytecode* pc);
   const js::PCCounts* maybeGetThrowCounts(jsbytecode* pc);
   js::PCCounts* getThrowCounts(jsbytecode* pc);
@@ -2845,7 +2945,6 @@ class JSScript : public js::BaseScript {
   js::jit::IonScriptCounts* getIonCounts();
   void releaseScriptCounts(js::ScriptCounts* counts);
   void destroyScriptCounts();
-  void destroyScriptName();
   void clearHasScriptCounts();
   void resetScriptCounts();
 
@@ -3111,9 +3210,6 @@ class LazyScript : public BaseScript {
   WeakHeapPtrScript script_;
   friend void js::gc::SweepLazyScripts(GCParallelTask* task);
 
-  // Original function with which the lazy script is associated.
-  GCPtrFunction function_;
-
   // This field holds one of:
   //   * LazyScript in which the script is nested.  This case happens if the
   //     enclosing script is lazily parsed and have never been compiled.
@@ -3248,11 +3344,18 @@ class LazyScript : public BaseScript {
 
   static inline JSFunction* functionDelazifying(JSContext* cx,
                                                 Handle<LazyScript*>);
-  JSFunction* functionNonDelazifying() const { return function_; }
+  JSFunction* functionNonDelazifying() const {
+    return &functionOrGlobal_->as<JSFunction>();
+  }
 
-  JS::Compartment* compartment() const;
-  JS::Compartment* maybeCompartment() const { return compartment(); }
-  Realm* realm() const;
+  bool canRelazify() const {
+    // Only functions without inner functions or direct eval are re-lazified.
+    // Functions with either of those are on the static scope chain of their
+    // inner functions, or in the case of eval, possibly eval'd inner
+    // functions. Note that if this ever changes, XDRRelazificationInfo will
+    // have to be fixed.
+    return !hasInnerFunctions() && !hasDirectEval();
+  }
 
   void initScript(JSScript* script);
 

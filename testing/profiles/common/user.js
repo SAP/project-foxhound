@@ -41,6 +41,8 @@ user_pref("extensions.legacy.enabled", true);
 user_pref("extensions.update.enabled", false);
 // Prevent network access for recommendations by default. The payload is {"results":[]}.
 user_pref("extensions.getAddons.discovery.api_url", "data:;base64,eyJyZXN1bHRzIjpbXX0%3D");
+// Treat WebExtension API/schema warnings as errors.
+user_pref("extensions.webextensions.warnings-as-errors", true);
 // Disable useragent updates.
 user_pref("general.useragent.updates.enabled", false);
 // Ensure WR doesn't get enabled in tests unless we do it explicitly with the MOZ_WEBRENDER envvar.
@@ -60,5 +62,7 @@ user_pref("media.autoplay.enabled.user-gestures-needed", true);
 user_pref("media.autoplay.ask-permission", false);
 user_pref("media.autoplay.block-webaudio", false);
 user_pref("media.allowed-to-play.enabled", true);
+// Ensure media can always play without delay
+user_pref("media.block-autoplay-until-in-foreground", false);
 user_pref("toolkit.telemetry.coverage.endpoint.base", "http://localhost");
 user_pref("layout.css.moz-binding.content.enabled", true); // Le sad

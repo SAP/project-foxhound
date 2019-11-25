@@ -18,6 +18,12 @@ loader.lazyRequireGetter(
   "resource://gre/modules/AppConstants.jsm",
   true
 );
+loader.lazyRequireGetter(
+  this,
+  "openDocLink",
+  "devtools/client/shared/link",
+  true
+);
 
 exports.OptionsPanel = OptionsPanel;
 
@@ -181,6 +187,7 @@ OptionsPanel.prototype = {
       const commandButton = toolbarButtons.filter(
         toggleableButton => toggleableButton.id === checkbox.id
       )[0];
+
       Services.prefs.setBoolPref(
         commandButton.visibilityswitch,
         checkbox.checked
@@ -195,7 +202,12 @@ OptionsPanel.prototype = {
       const checkboxInput = this.panelDoc.createElement("input");
       checkboxInput.setAttribute("type", "checkbox");
       checkboxInput.setAttribute("id", button.id);
-      if (Services.prefs.getBoolPref(button.visibilityswitch, true)) {
+      const defaultValue =
+        button.id !== "command-button-replay"
+          ? true
+          : Services.prefs.getBoolPref("devtools.recordreplay.mvp.enabled");
+
+      if (Services.prefs.getBoolPref(button.visibilityswitch, defaultValue)) {
         checkboxInput.setAttribute("checked", true);
       }
       checkboxInput.addEventListener(
@@ -285,7 +297,11 @@ OptionsPanel.prototype = {
         const deprecationURL = this.panelDoc.createElement("a");
         deprecationURL.title = deprecationURL.href = tool.deprecationURL;
         deprecationURL.textContent = L10N.getStr("options.deprecationNotice");
-        deprecationURL.target = "_blank";
+        // Cannot use a real link when we are in the Browser Toolbox.
+        deprecationURL.addEventListener("click", e => {
+          e.preventDefault();
+          openDocLink(tool.deprecationURL, { relatedToCurrent: true });
+        });
 
         const checkboxSpanDeprecated = this.panelDoc.createElement("span");
         checkboxSpanDeprecated.className = "deprecation-notice";

@@ -173,7 +173,7 @@ nsProfiler::ResumeSampling() {
 
 NS_IMETHODIMP
 nsProfiler::AddMarker(const char* aMarker) {
-  profiler_add_marker(aMarker, JS::ProfilingCategoryPair::OTHER);
+  PROFILER_ADD_MARKER(aMarker, OTHER);
   return NS_OK;
 }
 
@@ -220,6 +220,30 @@ nsProfiler::GetSharedLibraries(JSContext* aCx,
     return NS_ERROR_FAILURE;
   }
   aResult.setObject(*obj);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProfiler::GetActiveConfiguration(JSContext* aCx,
+                                   JS::MutableHandle<JS::Value> aResult) {
+  JS::RootedValue jsValue(aCx);
+  {
+    nsString buffer;
+    JSONWriter writer(MakeUnique<StringWriteFunc>(buffer));
+    profiler_write_active_configuration(writer);
+    MOZ_ALWAYS_TRUE(JS_ParseJSON(aCx,
+                                 static_cast<const char16_t*>(buffer.get()),
+                                 buffer.Length(), &jsValue));
+  }
+  if (jsValue.isNull()) {
+    aResult.setNull();
+  } else {
+    JS::RootedObject obj(aCx, &jsValue.toObject());
+    if (!obj) {
+      return NS_ERROR_FAILURE;
+    }
+    aResult.setObject(*obj);
+  }
   return NS_OK;
 }
 

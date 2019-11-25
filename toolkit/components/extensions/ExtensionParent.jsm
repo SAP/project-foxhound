@@ -135,14 +135,14 @@ let apiManager = new (class extends SchemaAPIManager {
     let disabledIds = AddonManager.getStartupChanges(
       AddonManager.STARTUP_CHANGE_DISABLED
     );
-    if (disabledIds.length > 0) {
+    if (disabledIds.length) {
       this._callHandlers(disabledIds, "disable", "onDisable");
     }
 
     let uninstalledIds = AddonManager.getStartupChanges(
       AddonManager.STARTUP_CHANGE_UNINSTALLED
     );
-    if (uninstalledIds.length > 0) {
+    if (uninstalledIds.length) {
       this._callHandlers(uninstalledIds, "uninstall", "onUninstall");
     }
   }
@@ -507,7 +507,7 @@ ProxyMessenger = {
       apiManager.global.tabGetSender(extension, target, sender);
     }
 
-    let promise1 = MessageChannel.sendMessage(receiverMM, messageName, data, {
+    let promise = MessageChannel.sendMessage(receiverMM, messageName, data, {
       sender,
       recipient,
       responseType,
@@ -532,7 +532,7 @@ ProxyMessenger = {
           receiverMM
         );
         port.register();
-        promise1.catch(() => {
+        promise.catch(() => {
           port.unregister();
         });
       }
@@ -543,49 +543,7 @@ ProxyMessenger = {
       }
     }
 
-    if (!(recipient.toProxyScript && extension.remote)) {
-      return promise1;
-    }
-
-    // Proxy scripts run in the parent process so we need to dispatch
-    // the message to both the parent and extension process and merge
-    // the results.
-    // Once proxy scripts are gone (bug 1443259) we can remove this
-    let promise2 = MessageChannel.sendMessage(
-      Services.ppmm.getChildAt(0),
-      messageName,
-      data,
-      {
-        sender,
-        recipient,
-        responseType,
-      }
-    );
-
-    let result = undefined;
-    let failures = 0;
-    let tryPromise = async promise => {
-      try {
-        let res = await promise;
-        if (result === undefined) {
-          result = res;
-        }
-      } catch (e) {
-        if (e.result === MessageChannel.RESULT_NO_RESPONSE) {
-          // Ignore.
-        } else if (e.result === MessageChannel.RESULT_NO_HANDLER) {
-          failures++;
-        } else {
-          throw e;
-        }
-      }
-    };
-
-    await Promise.all([tryPromise(promise1), tryPromise(promise2)]);
-    if (failures == 2) {
-      return Promise.reject(noHandlerError);
-    }
-    return result;
+    return promise;
   },
 
   /**
@@ -706,11 +664,7 @@ GlobalManager = {
 
   _onExtensionBrowser(type, browser, additionalData = {}) {
     browser.messageManager.loadFrameScript(
-      `data:,
-      Components.utils.import("resource://gre/modules/Services.jsm");
-
-      Services.obs.notifyObservers(this, "tab-content-frameloader-created", "");
-    `,
+      "resource://gre/modules/onExtensionBrowser.js",
       false,
       true
     );

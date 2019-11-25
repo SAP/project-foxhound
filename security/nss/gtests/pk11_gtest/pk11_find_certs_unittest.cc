@@ -28,7 +28,7 @@ namespace nss_test {
 // issuerKey:secp256r1
 // subjectKey:secp256r1
 // serialNumber:1
-std::vector<uint8_t> kTestCert1DER = {
+const std::vector<uint8_t> kTestCert1DER = {
     0x30, 0x82, 0x01, 0x1D, 0x30, 0x81, 0xC2, 0xA0, 0x03, 0x02, 0x01, 0x02,
     0x02, 0x01, 0x01, 0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7,
     0x0D, 0x01, 0x01, 0x0B, 0x05, 0x00, 0x30, 0x14, 0x31, 0x12, 0x30, 0x10,
@@ -61,7 +61,7 @@ std::vector<uint8_t> kTestCert1DER = {
 // issuerKey:secp256r1
 // subjectKey:secp256r1
 // serialNumber:2
-std::vector<uint8_t> kTestCert2DER = {
+const std::vector<uint8_t> kTestCert2DER = {
     0x30, 0x82, 0x01, 0x1E, 0x30, 0x81, 0xC2, 0xA0, 0x03, 0x02, 0x01, 0x02,
     0x02, 0x01, 0x02, 0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7,
     0x0D, 0x01, 0x01, 0x0B, 0x05, 0x00, 0x30, 0x14, 0x31, 0x12, 0x30, 0x10,
@@ -89,7 +89,7 @@ std::vector<uint8_t> kTestCert2DER = {
     0xB2, 0x54,
 };
 
-std::vector<uint8_t> kTestCertSubjectDER = {
+const std::vector<uint8_t> kTestCertSubjectDER = {
     0x30, 0x14, 0x31, 0x12, 0x30, 0x10, 0x06, 0x03, 0x55, 0x04, 0x03,
     0x0C, 0x09, 0x74, 0x65, 0x73, 0x74, 0x20, 0x63, 0x65, 0x72, 0x74,
 };
@@ -99,7 +99,7 @@ std::vector<uint8_t> kTestCertSubjectDER = {
 // issuerKey:secp256r1
 // subjectKey:secp256r1
 // serialNumber:3
-std::vector<uint8_t> kUnrelatedTestCertDER = {
+const std::vector<uint8_t> kUnrelatedTestCertDER = {
     0x30, 0x82, 0x01, 0x28, 0x30, 0x81, 0xCD, 0xA0, 0x03, 0x02, 0x01, 0x02,
     0x02, 0x01, 0x03, 0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7,
     0x0D, 0x01, 0x01, 0x0B, 0x05, 0x00, 0x30, 0x14, 0x31, 0x12, 0x30, 0x10,
@@ -127,45 +127,47 @@ std::vector<uint8_t> kUnrelatedTestCertDER = {
     0x1B, 0xF3, 0x1F, 0x2C, 0xCE, 0x82, 0x67, 0xC9, 0x5B, 0xBB, 0xBA, 0x0A,
 };
 
-class PK11FindRawCertsBySubjectTest : public ::testing::Test {
+class PK11FindCertsTestBase : public ::testing::Test {
  protected:
-  PK11FindRawCertsBySubjectTest()
-      : mSlot(nullptr), mTestCertDBDir("PK11FindRawCertsBySubjectTest-") {}
+  PK11FindCertsTestBase()
+      : m_slot(nullptr), test_cert_db_dir_("PK11FindCertsTestBase-") {}
 
   virtual void SetUp() {
-    std::string testCertDBPath(mTestCertDBDir.GetPath());
-    const char* testName =
+    std::string test_cert_db_path(test_cert_db_dir_.GetPath());
+    const char* test_name =
         ::testing::UnitTest::GetInstance()->current_test_info()->name();
-    std::string modspec = "configDir='sql:";
-    modspec.append(testCertDBPath);
-    modspec.append("' tokenDescription='");
-    modspec.append(testName);
-    modspec.append("'");
-    mSlot = SECMOD_OpenUserDB(modspec.c_str());
-    ASSERT_NE(mSlot, nullptr);
+    std::string mod_spec = "configDir='sql:";
+    mod_spec.append(test_cert_db_path);
+    mod_spec.append("' tokenDescription='");
+    mod_spec.append(test_name);
+    mod_spec.append("'");
+    m_slot = SECMOD_OpenUserDB(mod_spec.c_str());
+    ASSERT_NE(m_slot, nullptr);
   }
 
   virtual void TearDown() {
-    ASSERT_EQ(SECMOD_CloseUserDB(mSlot), SECSuccess);
-    PK11_FreeSlot(mSlot);
-    std::string testCertDBPath(mTestCertDBDir.GetPath());
-    ASSERT_EQ(0, unlink((testCertDBPath + "/cert9.db").c_str()));
-    ASSERT_EQ(0, unlink((testCertDBPath + "/key4.db").c_str()));
+    ASSERT_EQ(SECMOD_CloseUserDB(m_slot), SECSuccess);
+    PK11_FreeSlot(m_slot);
+    std::string test_cert_db_path(test_cert_db_dir_.GetPath());
+    ASSERT_EQ(0, unlink((test_cert_db_path + "/cert9.db").c_str()));
+    ASSERT_EQ(0, unlink((test_cert_db_path + "/key4.db").c_str()));
   }
 
-  PK11SlotInfo* mSlot;
-  ScopedUniqueDirectory mTestCertDBDir;
+  PK11SlotInfo* m_slot;
+  ScopedUniqueDirectory test_cert_db_dir_;
 };
+
+class PK11FindRawCertsBySubjectTest : public PK11FindCertsTestBase {};
 
 // If we don't have any certificates, we shouldn't get any when we search for
 // them.
 TEST_F(PK11FindRawCertsBySubjectTest, TestNoCertsImportedNoCertsFound) {
-  SECItem subjectItem = {siBuffer,
-                         const_cast<unsigned char*>(kTestCertSubjectDER.data()),
-                         (unsigned int)kTestCertSubjectDER.size()};
+  SECItem subject_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertSubjectDER.data()),
+      (unsigned int)kTestCertSubjectDER.size()};
   CERTCertificateList* certificates = nullptr;
   SECStatus rv =
-      PK11_FindRawCertsWithSubject(mSlot, &subjectItem, &certificates);
+      PK11_FindRawCertsWithSubject(m_slot, &subject_item, &certificates);
   EXPECT_EQ(rv, SECSuccess);
   EXPECT_EQ(certificates, nullptr);
 }
@@ -173,96 +175,96 @@ TEST_F(PK11FindRawCertsBySubjectTest, TestNoCertsImportedNoCertsFound) {
 // If we have one certificate but it has an unrelated subject DN, we shouldn't
 // get it when we search.
 TEST_F(PK11FindRawCertsBySubjectTest, TestOneCertImportedNoCertsFound) {
-  char certNickname[] = "Unrelated Cert";
-  SECItem certItem = {siBuffer,
-                      const_cast<unsigned char*>(kUnrelatedTestCertDER.data()),
-                      (unsigned int)kUnrelatedTestCertDER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &certItem, CK_INVALID_HANDLE,
-                               certNickname, false),
+  char cert_nickname[] = "Unrelated Cert";
+  SECItem cert_item = {siBuffer,
+                       const_cast<unsigned char*>(kUnrelatedTestCertDER.data()),
+                       (unsigned int)kUnrelatedTestCertDER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert_item, CK_INVALID_HANDLE,
+                               cert_nickname, false),
             SECSuccess);
 
-  SECItem subjectItem = {siBuffer,
-                         const_cast<unsigned char*>(kTestCertSubjectDER.data()),
-                         (unsigned int)kTestCertSubjectDER.size()};
+  SECItem subject_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertSubjectDER.data()),
+      (unsigned int)kTestCertSubjectDER.size()};
   CERTCertificateList* certificates = nullptr;
   SECStatus rv =
-      PK11_FindRawCertsWithSubject(mSlot, &subjectItem, &certificates);
+      PK11_FindRawCertsWithSubject(m_slot, &subject_item, &certificates);
   EXPECT_EQ(rv, SECSuccess);
   EXPECT_EQ(certificates, nullptr);
 }
 
 TEST_F(PK11FindRawCertsBySubjectTest, TestMultipleMatchingCertsFound) {
-  char cert1Nickname[] = "Test Cert 1";
-  SECItem cert1Item = {siBuffer,
-                       const_cast<unsigned char*>(kTestCert1DER.data()),
-                       (unsigned int)kTestCert1DER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &cert1Item, CK_INVALID_HANDLE,
-                               cert1Nickname, false),
+  char cert1_nickname[] = "Test Cert 1";
+  SECItem cert1_item = {siBuffer,
+                        const_cast<unsigned char*>(kTestCert1DER.data()),
+                        (unsigned int)kTestCert1DER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert1_item, CK_INVALID_HANDLE,
+                               cert1_nickname, false),
             SECSuccess);
-  char cert2Nickname[] = "Test Cert 2";
-  SECItem cert2Item = {siBuffer,
-                       const_cast<unsigned char*>(kTestCert2DER.data()),
-                       (unsigned int)kTestCert2DER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &cert2Item, CK_INVALID_HANDLE,
-                               cert2Nickname, false),
+  char cert2_nickname[] = "Test Cert 2";
+  SECItem cert2_item = {siBuffer,
+                        const_cast<unsigned char*>(kTestCert2DER.data()),
+                        (unsigned int)kTestCert2DER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert2_item, CK_INVALID_HANDLE,
+                               cert2_nickname, false),
             SECSuccess);
-  char unrelatedCertNickname[] = "Unrelated Test Cert";
-  SECItem unrelatedCertItem = {
+  char unrelated_cert_nickname[] = "Unrelated Test Cert";
+  SECItem unrelated_cert_item = {
       siBuffer, const_cast<unsigned char*>(kUnrelatedTestCertDER.data()),
       (unsigned int)kUnrelatedTestCertDER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &unrelatedCertItem, CK_INVALID_HANDLE,
-                               unrelatedCertNickname, false),
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &unrelated_cert_item, CK_INVALID_HANDLE,
+                               unrelated_cert_nickname, false),
             SECSuccess);
 
   CERTCertificateList* certificates = nullptr;
-  SECItem subjectItem = {siBuffer,
-                         const_cast<unsigned char*>(kTestCertSubjectDER.data()),
-                         (unsigned int)kTestCertSubjectDER.size()};
+  SECItem subject_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertSubjectDER.data()),
+      (unsigned int)kTestCertSubjectDER.size()};
   SECStatus rv =
-      PK11_FindRawCertsWithSubject(mSlot, &subjectItem, &certificates);
+      PK11_FindRawCertsWithSubject(m_slot, &subject_item, &certificates);
   EXPECT_EQ(rv, SECSuccess);
   ASSERT_NE(certificates, nullptr);
-  ScopedCERTCertificateList scopedCertificates(certificates);
-  ASSERT_EQ(scopedCertificates->len, 2);
+  ScopedCERTCertificateList scoped_certificates(certificates);
+  ASSERT_EQ(scoped_certificates->len, 2);
 
-  std::vector<uint8_t> foundCert1(
-      scopedCertificates->certs[0].data,
-      scopedCertificates->certs[0].data + scopedCertificates->certs[0].len);
-  std::vector<uint8_t> foundCert2(
-      scopedCertificates->certs[1].data,
-      scopedCertificates->certs[1].data + scopedCertificates->certs[1].len);
-  EXPECT_TRUE(foundCert1 == kTestCert1DER || foundCert1 == kTestCert2DER);
-  EXPECT_TRUE(foundCert2 == kTestCert1DER || foundCert2 == kTestCert2DER);
-  EXPECT_TRUE(foundCert1 != foundCert2);
+  std::vector<uint8_t> found_cert1(
+      scoped_certificates->certs[0].data,
+      scoped_certificates->certs[0].data + scoped_certificates->certs[0].len);
+  std::vector<uint8_t> found_cert2(
+      scoped_certificates->certs[1].data,
+      scoped_certificates->certs[1].data + scoped_certificates->certs[1].len);
+  EXPECT_TRUE(found_cert1 == kTestCert1DER || found_cert1 == kTestCert2DER);
+  EXPECT_TRUE(found_cert2 == kTestCert1DER || found_cert2 == kTestCert2DER);
+  EXPECT_TRUE(found_cert1 != found_cert2);
 }
 
 // If we try to search the internal slots, we won't find the certificate we just
 // imported (because it's on a different slot).
 TEST_F(PK11FindRawCertsBySubjectTest, TestNoCertsOnInternalSlots) {
-  char cert1Nickname[] = "Test Cert 1";
-  SECItem cert1Item = {siBuffer,
-                       const_cast<unsigned char*>(kTestCert1DER.data()),
-                       (unsigned int)kTestCert1DER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &cert1Item, CK_INVALID_HANDLE,
-                               cert1Nickname, false),
+  char cert1_nickname[] = "Test Cert 1";
+  SECItem cert1_item = {siBuffer,
+                        const_cast<unsigned char*>(kTestCert1DER.data()),
+                        (unsigned int)kTestCert1DER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert1_item, CK_INVALID_HANDLE,
+                               cert1_nickname, false),
             SECSuccess);
 
-  SECItem subjectItem = {siBuffer,
-                         const_cast<unsigned char*>(kTestCertSubjectDER.data()),
-                         (unsigned int)kTestCertSubjectDER.size()};
-  CERTCertificateList* internalKeySlotCertificates = nullptr;
-  ScopedPK11SlotInfo internalKeySlot(PK11_GetInternalKeySlot());
+  SECItem subject_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertSubjectDER.data()),
+      (unsigned int)kTestCertSubjectDER.size()};
+  CERTCertificateList* internal_key_slot_certificates = nullptr;
+  ScopedPK11SlotInfo internal_key_slot(PK11_GetInternalKeySlot());
   SECStatus rv = PK11_FindRawCertsWithSubject(
-      internalKeySlot.get(), &subjectItem, &internalKeySlotCertificates);
+      internal_key_slot.get(), &subject_item, &internal_key_slot_certificates);
   EXPECT_EQ(rv, SECSuccess);
-  EXPECT_EQ(internalKeySlotCertificates, nullptr);
+  EXPECT_EQ(internal_key_slot_certificates, nullptr);
 
-  CERTCertificateList* internalSlotCertificates = nullptr;
-  ScopedPK11SlotInfo internalSlot(PK11_GetInternalSlot());
-  rv = PK11_FindRawCertsWithSubject(internalSlot.get(), &subjectItem,
-                                    &internalSlotCertificates);
+  CERTCertificateList* internal_slot_certificates = nullptr;
+  ScopedPK11SlotInfo internal_slot(PK11_GetInternalSlot());
+  rv = PK11_FindRawCertsWithSubject(internal_slot.get(), &subject_item,
+                                    &internal_slot_certificates);
   EXPECT_EQ(rv, SECSuccess);
-  EXPECT_EQ(internalSlotCertificates, nullptr);
+  EXPECT_EQ(internal_slot_certificates, nullptr);
 }
 
 // issuer:test cert
@@ -270,7 +272,7 @@ TEST_F(PK11FindRawCertsBySubjectTest, TestNoCertsOnInternalSlots) {
 // issuerKey:secp256r1
 // subjectKey:secp256r1
 // serialNumber:4
-std::vector<uint8_t> kEmptySubjectCertDER = {
+const std::vector<uint8_t> kEmptySubjectCertDER = {
     0x30, 0x82, 0x01, 0x09, 0x30, 0x81, 0xAE, 0xA0, 0x03, 0x02, 0x01, 0x02,
     0x02, 0x01, 0x04, 0x30, 0x0D, 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7,
     0x0D, 0x01, 0x01, 0x0B, 0x05, 0x00, 0x30, 0x14, 0x31, 0x12, 0x30, 0x10,
@@ -299,49 +301,247 @@ std::vector<uint8_t> kEmptySubjectDER = {0x30, 0x00};
 
 // This certificate has the smallest possible subject. Finding it should work.
 TEST_F(PK11FindRawCertsBySubjectTest, TestFindEmptySubject) {
-  char emptySubjectCertNickname[] = "Empty Subject Cert";
-  SECItem emptySubjectCertItem = {
+  char empty_subject_cert_nickname[] = "Empty Subject Cert";
+  SECItem empty_subject_cert_item = {
       siBuffer, const_cast<unsigned char*>(kEmptySubjectCertDER.data()),
       (unsigned int)kEmptySubjectCertDER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &emptySubjectCertItem, CK_INVALID_HANDLE,
-                               emptySubjectCertNickname, false),
-            SECSuccess);
+  ASSERT_EQ(
+      PK11_ImportDERCert(m_slot, &empty_subject_cert_item, CK_INVALID_HANDLE,
+                         empty_subject_cert_nickname, false),
+      SECSuccess);
 
-  SECItem subjectItem = {siBuffer,
-                         const_cast<unsigned char*>(kEmptySubjectDER.data()),
-                         (unsigned int)kEmptySubjectDER.size()};
+  SECItem subject_item = {siBuffer,
+                          const_cast<unsigned char*>(kEmptySubjectDER.data()),
+                          (unsigned int)kEmptySubjectDER.size()};
   CERTCertificateList* certificates = nullptr;
   SECStatus rv =
-      PK11_FindRawCertsWithSubject(mSlot, &subjectItem, &certificates);
+      PK11_FindRawCertsWithSubject(m_slot, &subject_item, &certificates);
   EXPECT_EQ(rv, SECSuccess);
   ASSERT_NE(certificates, nullptr);
-  ScopedCERTCertificateList scopedCertificates(certificates);
-  ASSERT_EQ(scopedCertificates->len, 1);
+  ScopedCERTCertificateList scoped_certificates(certificates);
+  ASSERT_EQ(scoped_certificates->len, 1);
 
-  std::vector<uint8_t> foundCert(
-      scopedCertificates->certs[0].data,
-      scopedCertificates->certs[0].data + scopedCertificates->certs[0].len);
-  EXPECT_EQ(foundCert, kEmptySubjectCertDER);
+  std::vector<uint8_t> found_cert(
+      scoped_certificates->certs[0].data,
+      scoped_certificates->certs[0].data + scoped_certificates->certs[0].len);
+  EXPECT_EQ(found_cert, kEmptySubjectCertDER);
 }
 
 // Searching for a zero-length subject doesn't make sense (the minimum subject
 // is the SEQUENCE tag followed by a length byte of 0), but it shouldn't cause
 // problems.
 TEST_F(PK11FindRawCertsBySubjectTest, TestSearchForNullSubject) {
-  char cert1Nickname[] = "Test Cert 1";
-  SECItem cert1Item = {siBuffer,
-                       const_cast<unsigned char*>(kTestCert1DER.data()),
-                       (unsigned int)kTestCert1DER.size()};
-  ASSERT_EQ(PK11_ImportDERCert(mSlot, &cert1Item, CK_INVALID_HANDLE,
-                               cert1Nickname, false),
+  char cert1_nickname[] = "Test Cert 1";
+  SECItem cert1_item = {siBuffer,
+                        const_cast<unsigned char*>(kTestCert1DER.data()),
+                        (unsigned int)kTestCert1DER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert1_item, CK_INVALID_HANDLE,
+                               cert1_nickname, false),
             SECSuccess);
 
-  SECItem subjectItem = {siBuffer, nullptr, 0};
+  SECItem subject_item = {siBuffer, nullptr, 0};
   CERTCertificateList* certificates = nullptr;
   SECStatus rv =
-      PK11_FindRawCertsWithSubject(mSlot, &subjectItem, &certificates);
+      PK11_FindRawCertsWithSubject(m_slot, &subject_item, &certificates);
   EXPECT_EQ(rv, SECSuccess);
   EXPECT_EQ(certificates, nullptr);
+}
+
+class PK11GetCertsMatchingPrivateKeyTest : public PK11FindCertsTestBase {};
+
+// This is the private secp256r1 key corresponding to the above test
+// certificates.
+const std::vector<uint8_t> kTestPrivateKeyInfoDER = {
+    0x30, 0x81, 0x87, 0x02, 0x01, 0x00, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86,
+    0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08, 0x2a, 0x86, 0x48, 0xce, 0x3d,
+    0x03, 0x01, 0x07, 0x04, 0x6d, 0x30, 0x6b, 0x02, 0x01, 0x01, 0x04, 0x20,
+    0x21, 0x91, 0x40, 0x3d, 0x57, 0x10, 0xbf, 0x15, 0xa2, 0x65, 0x81, 0x8c,
+    0xd4, 0x2e, 0xd6, 0xfe, 0xdf, 0x09, 0xad, 0xd9, 0x2d, 0x78, 0xb1, 0x8e,
+    0x7a, 0x1e, 0x9f, 0xeb, 0x95, 0x52, 0x47, 0x02, 0xa1, 0x44, 0x03, 0x42,
+    0x00, 0x04, 0x4f, 0xbf, 0xbb, 0xbb, 0x61, 0xe0, 0xf8, 0xf9, 0xb1, 0xa6,
+    0x0a, 0x59, 0xac, 0x87, 0x04, 0xe2, 0xec, 0x05, 0x0b, 0x42, 0x3e, 0x3c,
+    0xf7, 0x2e, 0x92, 0x3f, 0x2c, 0x4f, 0x79, 0x4b, 0x45, 0x5c, 0x2a, 0x69,
+    0xd2, 0x33, 0x45, 0x6c, 0x36, 0xc4, 0x11, 0x9d, 0x07, 0x06, 0xe0, 0x0e,
+    0xed, 0xc8, 0xd1, 0x93, 0x90, 0xd7, 0x99, 0x1b, 0x7b, 0x2d, 0x07, 0xa3,
+    0x04, 0xea, 0xa0, 0x4a, 0xa6, 0xc0,
+};
+
+// issuer:test cert (different key)
+// subject:test cert (different key)
+// issuerKey:secp256k1
+// subjectKey:secp256k1
+// serialNumber:1
+const std::vector<uint8_t> kTestCertWithOtherKeyDER = {
+    0x30, 0x82, 0x01, 0x3a, 0x30, 0x81, 0xdf, 0xa0, 0x03, 0x02, 0x01, 0x02,
+    0x02, 0x01, 0x01, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7,
+    0x0d, 0x01, 0x01, 0x0b, 0x05, 0x00, 0x30, 0x24, 0x31, 0x22, 0x30, 0x20,
+    0x06, 0x03, 0x55, 0x04, 0x03, 0x0c, 0x19, 0x74, 0x65, 0x73, 0x74, 0x20,
+    0x63, 0x65, 0x72, 0x74, 0x20, 0x28, 0x64, 0x69, 0x66, 0x66, 0x65, 0x72,
+    0x65, 0x6e, 0x74, 0x20, 0x6b, 0x65, 0x79, 0x29, 0x30, 0x22, 0x18, 0x0f,
+    0x32, 0x30, 0x31, 0x37, 0x31, 0x31, 0x32, 0x37, 0x30, 0x30, 0x30, 0x30,
+    0x30, 0x30, 0x5a, 0x18, 0x0f, 0x32, 0x30, 0x32, 0x30, 0x30, 0x32, 0x30,
+    0x35, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x5a, 0x30, 0x24, 0x31, 0x22,
+    0x30, 0x20, 0x06, 0x03, 0x55, 0x04, 0x03, 0x0c, 0x19, 0x74, 0x65, 0x73,
+    0x74, 0x20, 0x63, 0x65, 0x72, 0x74, 0x20, 0x28, 0x64, 0x69, 0x66, 0x66,
+    0x65, 0x72, 0x65, 0x6e, 0x74, 0x20, 0x6b, 0x65, 0x79, 0x29, 0x30, 0x56,
+    0x30, 0x10, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06,
+    0x05, 0x2b, 0x81, 0x04, 0x00, 0x0a, 0x03, 0x42, 0x00, 0x04, 0x35, 0xee,
+    0x7c, 0x72, 0x89, 0xd8, 0xfe, 0xf7, 0xa8, 0x6a, 0xfe, 0x5d, 0xa6, 0x6d,
+    0x8b, 0xc2, 0xeb, 0xb6, 0xa8, 0x54, 0x3f, 0xd2, 0xfe, 0xad, 0x08, 0x9f,
+    0x45, 0xce, 0x7a, 0xcd, 0x0f, 0xa6, 0x43, 0x82, 0xa9, 0x50, 0x0c, 0x41,
+    0xda, 0xd7, 0x70, 0xff, 0xd4, 0xb5, 0x11, 0xbf, 0x4b, 0x49, 0x2e, 0xb1,
+    0x23, 0x88, 0x00, 0xc3, 0x2c, 0x4f, 0x76, 0xc7, 0x3a, 0x3f, 0x32, 0x94,
+    0xe7, 0xc5, 0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d,
+    0x01, 0x01, 0x0b, 0x05, 0x00, 0x03, 0x47, 0x00, 0x30, 0x44, 0x02, 0x20,
+    0x63, 0x59, 0x02, 0x01, 0x89, 0xd7, 0x3e, 0x5b, 0xff, 0xd1, 0x16, 0x4e,
+    0xe3, 0xe2, 0x0a, 0xe0, 0x4a, 0xd8, 0x75, 0xaf, 0x77, 0x5c, 0x93, 0x60,
+    0xba, 0x10, 0x1f, 0x97, 0xdd, 0x27, 0x2d, 0x24, 0x02, 0x20, 0x1e, 0xa0,
+    0x7b, 0xee, 0x90, 0x9b, 0x5f, 0x2c, 0x49, 0xd6, 0x61, 0xda, 0x31, 0x14,
+    0xb1, 0xa4, 0x0d, 0x2d, 0x90, 0x2b, 0x70, 0xd8, 0x6b, 0x07, 0x64, 0x27,
+    0xa5, 0x2e, 0xfe, 0xca, 0x6e, 0xe6,
+};
+
+// If there are no certs at all, we'll get back a null list.
+TEST_F(PK11GetCertsMatchingPrivateKeyTest, TestNoCertsAtAll) {
+  SECItem private_key_info = {
+      siBuffer, const_cast<unsigned char*>(kTestPrivateKeyInfoDER.data()),
+      (unsigned int)kTestPrivateKeyInfoDER.size(),
+  };
+  SECKEYPrivateKey* priv_key = nullptr;
+  ASSERT_EQ(PK11_ImportDERPrivateKeyInfoAndReturnKey(
+                m_slot, &private_key_info, nullptr, nullptr, false, false,
+                KU_ALL, &priv_key, nullptr),
+            SECSuccess);
+  ASSERT_NE(priv_key, nullptr);
+  ScopedSECKEYPrivateKey scoped_priv_key(priv_key);
+  ScopedCERTCertList certs(
+      PK11_GetCertsMatchingPrivateKey(scoped_priv_key.get()));
+  ASSERT_TRUE(CERT_LIST_EMPTY(certs));
+}
+
+// If there are no certs for the private key, we'll get back a null list.
+TEST_F(PK11GetCertsMatchingPrivateKeyTest, TestNoCertsForKey) {
+  SECItem private_key_info = {
+      siBuffer, const_cast<unsigned char*>(kTestPrivateKeyInfoDER.data()),
+      (unsigned int)kTestPrivateKeyInfoDER.size(),
+  };
+  SECKEYPrivateKey* priv_key = nullptr;
+  ASSERT_EQ(PK11_ImportDERPrivateKeyInfoAndReturnKey(
+                m_slot, &private_key_info, nullptr, nullptr, false, false,
+                KU_ALL, &priv_key, nullptr),
+            SECSuccess);
+  ASSERT_NE(priv_key, nullptr);
+  ScopedSECKEYPrivateKey scoped_priv_key(priv_key);
+
+  char cert_nickname[] = "Test Cert With Other Key";
+  SECItem cert_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertWithOtherKeyDER.data()),
+      (unsigned int)kTestCertWithOtherKeyDER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert_item, CK_INVALID_HANDLE,
+                               cert_nickname, false),
+            SECSuccess);
+
+  ScopedCERTCertList certs(
+      PK11_GetCertsMatchingPrivateKey(scoped_priv_key.get()));
+  ASSERT_TRUE(CERT_LIST_EMPTY(certs));
+}
+
+void CheckCertListForSubjects(
+    ScopedCERTCertList& list,
+    const std::vector<const char*>& expected_subjects) {
+  ASSERT_NE(list.get(), nullptr);
+  ASSERT_NE(expected_subjects.size(), 0ul);
+  for (const auto& expected_subject : expected_subjects) {
+    size_t list_length = 0;
+    bool found = false;
+    for (CERTCertListNode* n = CERT_LIST_HEAD(list); !CERT_LIST_END(n, list);
+         n = CERT_LIST_NEXT(n)) {
+      list_length++;
+      if (strcmp(n->cert->subjectName, expected_subject) == 0) {
+        ASSERT_FALSE(found);
+        found = true;
+      }
+    }
+    ASSERT_TRUE(found);
+    ASSERT_EQ(list_length, expected_subjects.size());
+  }
+}
+
+// We should only get back certs that actually match the private key.
+TEST_F(PK11GetCertsMatchingPrivateKeyTest, TestOneCertForKey) {
+  SECItem private_key_info = {
+      siBuffer, const_cast<unsigned char*>(kTestPrivateKeyInfoDER.data()),
+      (unsigned int)kTestPrivateKeyInfoDER.size(),
+  };
+  SECKEYPrivateKey* priv_key = nullptr;
+  ASSERT_EQ(PK11_ImportDERPrivateKeyInfoAndReturnKey(
+                m_slot, &private_key_info, nullptr, nullptr, false, false,
+                KU_ALL, &priv_key, nullptr),
+            SECSuccess);
+  ASSERT_NE(priv_key, nullptr);
+  ScopedSECKEYPrivateKey scoped_priv_key(priv_key);
+
+  char cert1_nickname[] = "Test Cert 1";
+  SECItem cert1_item = {siBuffer,
+                        const_cast<unsigned char*>(kTestCert1DER.data()),
+                        (unsigned int)kTestCert1DER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert1_item, CK_INVALID_HANDLE,
+                               cert1_nickname, false),
+            SECSuccess);
+
+  char cert_nickname[] = "Test Cert With Other Key";
+  SECItem cert_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertWithOtherKeyDER.data()),
+      (unsigned int)kTestCertWithOtherKeyDER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert_item, CK_INVALID_HANDLE,
+                               cert_nickname, false),
+            SECSuccess);
+
+  ScopedCERTCertList certs(
+      PK11_GetCertsMatchingPrivateKey(scoped_priv_key.get()));
+  CheckCertListForSubjects(certs, {"CN=test cert"});
+}
+
+// We should be able to get back all certs that match the private key.
+TEST_F(PK11GetCertsMatchingPrivateKeyTest, TestTwoCertsForKey) {
+  SECItem private_key_info = {
+      siBuffer, const_cast<unsigned char*>(kTestPrivateKeyInfoDER.data()),
+      (unsigned int)kTestPrivateKeyInfoDER.size(),
+  };
+  SECKEYPrivateKey* priv_key = nullptr;
+  ASSERT_EQ(PK11_ImportDERPrivateKeyInfoAndReturnKey(
+                m_slot, &private_key_info, nullptr, nullptr, false, false,
+                KU_ALL, &priv_key, nullptr),
+            SECSuccess);
+  ASSERT_NE(priv_key, nullptr);
+  ScopedSECKEYPrivateKey scoped_priv_key(priv_key);
+
+  char cert1_nickname[] = "Test Cert 1";
+  SECItem cert1_item = {siBuffer,
+                        const_cast<unsigned char*>(kTestCert1DER.data()),
+                        (unsigned int)kTestCert1DER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert1_item, CK_INVALID_HANDLE,
+                               cert1_nickname, false),
+            SECSuccess);
+  char cert2_nickname[] = "Test Cert 2 (same key, different subject)";
+  SECItem cert2_item = {
+      siBuffer, const_cast<unsigned char*>(kUnrelatedTestCertDER.data()),
+      (unsigned int)kUnrelatedTestCertDER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert2_item, CK_INVALID_HANDLE,
+                               cert2_nickname, false),
+            SECSuccess);
+
+  char cert_nickname[] = "Test Cert With Other Key";
+  SECItem cert_item = {
+      siBuffer, const_cast<unsigned char*>(kTestCertWithOtherKeyDER.data()),
+      (unsigned int)kTestCertWithOtherKeyDER.size()};
+  ASSERT_EQ(PK11_ImportDERCert(m_slot, &cert_item, CK_INVALID_HANDLE,
+                               cert_nickname, false),
+            SECSuccess);
+
+  ScopedCERTCertList certs(
+      PK11_GetCertsMatchingPrivateKey(scoped_priv_key.get()));
+  CheckCertListForSubjects(certs, {"CN=test cert", "CN=unrelated subject DN"});
 }
 
 }  // namespace nss_test

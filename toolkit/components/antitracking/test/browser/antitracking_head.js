@@ -8,6 +8,8 @@
 "use strict";
 
 var gFeatures = undefined;
+var gTestTrackersCleanedUp = false;
+var gTestTrackersCleanupRegistered = false;
 
 /**
  * Force garbage collection.
@@ -317,7 +319,11 @@ this.AntiTracking = {
     });
 
     info("Let's interact with the tracker");
-    window.open(TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyOpenUI.html");
+    window.open(
+      TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyOpenUI.html",
+      "",
+      "noopener"
+    );
     await windowClosed;
   },
 
@@ -368,6 +374,16 @@ this.AntiTracking = {
     }
 
     await UrlClassifierTestUtils.addTestTrackers();
+    if (!gTestTrackersCleanupRegistered) {
+      registerCleanupFunction(_ => {
+        if (gTestTrackersCleanedUp) {
+          return;
+        }
+        UrlClassifierTestUtils.cleanupTestTrackers();
+        gTestTrackersCleanedUp = true;
+      });
+      gTestTrackersCleanupRegistered = true;
+    }
   },
 
   _createTask(options) {
@@ -675,7 +691,7 @@ this.AntiTracking = {
       if (expectedCategory == "") {
         is(allMessages.length, 0, "No console messages should be generated");
       } else {
-        ok(allMessages.length != 0, "Some console message should be generated");
+        ok(!!allMessages.length, "Some console message should be generated");
       }
       for (let msg of allMessages) {
         is(
@@ -1051,6 +1067,6 @@ this.AntiTracking = {
       channel.asyncOpen(listener);
     });
 
-    return channel.QueryInterface(Ci.nsIHttpChannel).isTrackingResource();
+    return channel.QueryInterface(Ci.nsIClassifiedChannel).isTrackingResource();
   },
 };

@@ -75,21 +75,26 @@ class NewRenderer : public RendererEvent {
     bool supportLowPriorityTransactions = isMainWindow;
     bool supportPictureCaching = isMainWindow;
     wr::Renderer* wrRenderer = nullptr;
-    if (!wr_window_new(
-            aWindowId, mSize.width, mSize.height,
-            supportLowPriorityTransactions, allow_texture_swizzling,
-            StaticPrefs::gfx_webrender_picture_caching() &&
-                supportPictureCaching,
-            StaticPrefs::gfx_webrender_start_debug_server(), compositor->gl(),
-            aRenderThread.GetProgramCache()
-                ? aRenderThread.GetProgramCache()->Raw()
-                : nullptr,
-            aRenderThread.GetShaders()
-                ? aRenderThread.GetShaders()->RawShaders()
-                : nullptr,
-            aRenderThread.ThreadPool().Raw(), &WebRenderMallocSizeOf,
-            &WebRenderMallocEnclosingSizeOf, (uint32_t)wr::RenderRoot::Default,
-            mDocHandle, &wrRenderer, mMaxTextureSize)) {
+    if (!wr_window_new(aWindowId, mSize.width, mSize.height,
+                       supportLowPriorityTransactions, allow_texture_swizzling,
+                       StaticPrefs::gfx_webrender_picture_caching() &&
+                           supportPictureCaching,
+#ifdef NIGHTLY_BUILD
+                       StaticPrefs::gfx_webrender_start_debug_server(),
+#else
+                       false,
+#endif
+                       compositor->gl(),
+                       aRenderThread.GetProgramCache()
+                           ? aRenderThread.GetProgramCache()->Raw()
+                           : nullptr,
+                       aRenderThread.GetShaders()
+                           ? aRenderThread.GetShaders()->RawShaders()
+                           : nullptr,
+                       aRenderThread.ThreadPool().Raw(), &WebRenderMallocSizeOf,
+                       &WebRenderMallocEnclosingSizeOf,
+                       (uint32_t)wr::RenderRoot::Default, mDocHandle,
+                       &wrRenderer, mMaxTextureSize)) {
       // wr_window_new puts a message into gfxCriticalNote if it returns false
       return;
     }
@@ -577,6 +582,10 @@ void WebRenderAPI::Capture() {
   uint8_t bits = 3;                 // TODO: get from JavaScript
   const char* path = "wr-capture";  // TODO: get from JavaScript
   wr_api_capture(mDocHandle, path, bits);
+}
+
+void WebRenderAPI::SetTransactionLogging(bool aValue) {
+  wr_api_set_transaction_logging(mDocHandle, aValue);
 }
 
 void WebRenderAPI::SetCompositionRecorder(
@@ -1086,14 +1095,15 @@ void DisplayListBuilder::PushImage(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, wr::ImageRendering aFilter, wr::ImageKey aImage,
     bool aPremultipliedAlpha, const wr::ColorF& aColor) {
-  wr::LayoutSize size;
-  size.width = aBounds.size.width;
-  size.height = aBounds.size.height;
-  PushImage(aBounds, aClip, aIsBackfaceVisible, size, size, aFilter, aImage,
-            aPremultipliedAlpha, aColor);
+  wr::LayoutRect clip = MergeClipLeaf(aClip);
+  WRDL_LOG("PushImage b=%s cl=%s\n", mWrState, Stringify(aBounds).c_str(),
+           Stringify(clip).c_str());
+  wr_dp_push_image(mWrState, aBounds, clip, aIsBackfaceVisible,
+                   &mCurrentSpaceAndClipChain, aFilter, aImage,
+                   aPremultipliedAlpha, aColor);
 }
 
-void DisplayListBuilder::PushImage(
+void DisplayListBuilder::PushRepeatingImage(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutSize& aStretchSize,
     const wr::LayoutSize& aTileSpacing, wr::ImageRendering aFilter,
@@ -1102,9 +1112,9 @@ void DisplayListBuilder::PushImage(
   WRDL_LOG("PushImage b=%s cl=%s s=%s t=%s\n", mWrState,
            Stringify(aBounds).c_str(), Stringify(clip).c_str(),
            Stringify(aStretchSize).c_str(), Stringify(aTileSpacing).c_str());
-  wr_dp_push_image(mWrState, aBounds, clip, aIsBackfaceVisible,
-                   &mCurrentSpaceAndClipChain, aStretchSize, aTileSpacing,
-                   aFilter, aImage, aPremultipliedAlpha, aColor);
+  wr_dp_push_repeating_image(
+      mWrState, aBounds, clip, aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
+      aStretchSize, aTileSpacing, aFilter, aImage, aPremultipliedAlpha, aColor);
 }
 
 void DisplayListBuilder::PushYCbCrPlanarImage(

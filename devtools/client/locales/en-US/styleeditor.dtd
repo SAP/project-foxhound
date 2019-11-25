@@ -14,7 +14,6 @@
 <!ENTITY newButton.tooltip          "Create and append a new style sheet to the document">
 <!ENTITY newButton.accesskey        "N">
 
-<!ENTITY importButton.label         "Import…">
 <!ENTITY importButton.tooltip       "Import and append an existing style sheet to the document">
 <!ENTITY importButton.accesskey     "I">
 
@@ -28,7 +27,7 @@
 
 <!-- LOCALICATION NOTE  (mediaRules.label): This is shown above the list of @media rules
      in each stylesheet editor sidebar. -->
-<!ENTITY mediaRules.label           "@media rules">
+<!ENTITY mediaRules.label           "Media Queries">
 
 <!ENTITY editorTextbox.placeholder  "Type CSS here.">
 

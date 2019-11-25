@@ -35,6 +35,8 @@ struct Cell;
 
 namespace jit {
 
+struct IonOsrTempData;
+
 enum DataType : uint8_t {
   Type_Void,
   Type_Bool,
@@ -388,9 +390,10 @@ struct TypeToDataType<JSString*> {
   static const DataType result = Type_Object;
 };
 template <>
-struct TypeToDataType<JSFlatString*> {
+struct TypeToDataType<JSLinearString*> {
   static const DataType result = Type_Object;
 };
+
 template <>
 struct TypeToDataType<HandleObject> {
   static const DataType result = Type_Handle;
@@ -697,6 +700,10 @@ struct OutParamToDataType<uint8_t**> {
   static const DataType result = Type_Pointer;
 };
 template <>
+struct OutParamToDataType<IonOsrTempData**> {
+  static const DataType result = Type_Pointer;
+};
+template <>
 struct OutParamToDataType<bool*> {
   static const DataType result = Type_Bool;
 };
@@ -878,7 +885,7 @@ MOZ_MUST_USE bool SetArrayLength(JSContext* cx, HandleObject obj,
 
 MOZ_MUST_USE bool CharCodeAt(JSContext* cx, HandleString str, int32_t index,
                              uint32_t* code);
-JSFlatString* StringFromCharCode(JSContext* cx, int32_t code);
+JSLinearString* StringFromCharCode(JSContext* cx, int32_t code);
 JSString* StringFromCodePoint(JSContext* cx, int32_t codePoint);
 
 MOZ_MUST_USE bool SetProperty(JSContext* cx, HandleObject obj,
@@ -929,7 +936,8 @@ void FrameIsDebuggeeCheck(BaselineFrame* frame);
 JSObject* CreateGenerator(JSContext* cx, BaselineFrame* frame);
 
 MOZ_MUST_USE bool NormalSuspend(JSContext* cx, HandleObject obj,
-                                BaselineFrame* frame, jsbytecode* pc);
+                                BaselineFrame* frame, uint32_t frameSize,
+                                jsbytecode* pc);
 MOZ_MUST_USE bool FinalSuspend(JSContext* cx, HandleObject obj, jsbytecode* pc);
 MOZ_MUST_USE bool InterpretResume(JSContext* cx, HandleObject obj,
                                   HandleValue val, HandlePropertyName kind,

@@ -36,6 +36,7 @@ export default class LoginList extends HTMLElement {
     this._filter = "";
     this._selectedGuid = null;
     this._blankLoginListItem = LoginListItemFactory.create({});
+    this._blankLoginListItem.hidden = true;
   }
 
   connectedCallback() {
@@ -174,6 +175,12 @@ export default class LoginList extends HTMLElement {
         this._applySortAndScrollToTop();
         const extra = { sort_key: this._sortSelect.value };
         recordTelemetryEvent({ object: "list", method: "sort", extra });
+        document.dispatchEvent(
+          new CustomEvent("AboutLoginsSortChanged", {
+            bubbles: true,
+            detail: this._sortSelect.value,
+          })
+        );
         break;
       }
       case "AboutLoginsClearSelection": {
@@ -291,18 +298,7 @@ export default class LoginList extends HTMLElement {
     this.render();
 
     if (!this._selectedGuid || !this._logins[this._selectedGuid]) {
-      // Select the first visible login after any possible filter is applied.
-      let firstVisibleListItem = this._list.querySelector(
-        ".login-list-item[data-guid]:not([hidden])"
-      );
-      if (firstVisibleListItem) {
-        let { login } = this._logins[firstVisibleListItem.dataset.guid];
-        window.dispatchEvent(
-          new CustomEvent("AboutLoginsInitialLoginSelected", {
-            detail: login,
-          })
-        );
-      }
+      this._selectFirstVisibleLogin();
     }
   }
 
@@ -347,6 +343,7 @@ export default class LoginList extends HTMLElement {
     breachedSortOptionElement.hidden = false;
     this._sortSelect.selectedIndex = breachedSortOptionElement.index;
     this._applySortAndScrollToTop();
+    this._selectFirstVisibleLogin();
   }
 
   /**
@@ -364,6 +361,12 @@ export default class LoginList extends HTMLElement {
     this.setBreaches(this._breachesByLoginGUID);
   }
 
+  setSortDirection(sortDirection) {
+    this._sortSelect.value = sortDirection;
+    this._applySortAndScrollToTop();
+    this._selectFirstVisibleLogin();
+  }
+
   /**
    * @param {login} login A login that was added to storage.
    */
@@ -375,6 +378,13 @@ export default class LoginList extends HTMLElement {
     // Add the list item and update any other related state that may pertain
     // to the list item such as breach alerts.
     this.render();
+
+    if (
+      this.classList.contains("no-logins") &&
+      !this.classList.contains("create-login-selected")
+    ) {
+      this._selectFirstVisibleLogin();
+    }
   }
 
   /**
@@ -584,6 +594,25 @@ export default class LoginList extends HTMLElement {
     activeDescendant.classList.remove("keyboard-selected");
     newlyFocusedItem.classList.add("keyboard-selected");
     newlyFocusedItem.scrollIntoView({ block: "nearest" });
+  }
+
+  /**
+   * Selects the first visible login as part of the initial load of the page,
+   * which will bypass any focus changes that occur during manual login
+   * selection.
+   */
+  _selectFirstVisibleLogin() {
+    let firstVisibleListItem = this._list.querySelector(
+      ".login-list-item[data-guid]:not([hidden])"
+    );
+    if (firstVisibleListItem) {
+      let { login } = this._logins[firstVisibleListItem.dataset.guid];
+      window.dispatchEvent(
+        new CustomEvent("AboutLoginsInitialLoginSelected", {
+          detail: login,
+        })
+      );
+    }
   }
 
   _setListItemAsSelected(listItem) {

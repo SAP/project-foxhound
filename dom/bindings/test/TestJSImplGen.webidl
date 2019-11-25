@@ -15,19 +15,21 @@ enum MyTestEnum {
   "b"
 };
 
-// We don't support multiple constructors (bug 869268) or named constructors
-// for JS-implemented WebIDL.
-[Constructor(DOMString str, unsigned long num, boolean? boolArg,
-             TestInterface? iface, long arg1,
-             DictForConstructor dict, any any1,
-             object obj1,
-             object? obj2, sequence<Dict> seq, optional any any2,
-             optional object obj3,
-             optional object? obj4,
-             Uint8Array typedArr,
-             ArrayBuffer arrayBuf),
- JSImplementation="@mozilla.org/test-js-impl-interface;1"]
+[Exposed=Window, JSImplementation="@mozilla.org/test-js-impl-interface;1"]
 interface TestJSImplInterface {
+  // We don't support multiple constructors (bug 869268) or named constructors
+  // for JS-implemented WebIDL.
+  [Throws]
+  constructor(DOMString str, unsigned long num, boolean? boolArg,
+              TestInterface? iface, long arg1,
+              DictForConstructor dict, any any1,
+              object obj1,
+              object? obj2, sequence<Dict> seq, optional any any2,
+              optional object obj3,
+              optional object? obj4,
+              Uint8Array typedArr,
+              ArrayBuffer arrayBuf);
+
   // Integer types
   // XXXbz add tests for throwing versions of all the integer stuff
   readonly attribute byte readonlyByte;
@@ -184,21 +186,6 @@ interface TestJSImplInterface {
   [NewObject]
   sequence<TestNonWrapperCacheInterface?>? receiveNullableNonWrapperCacheInterfaceNullableSequence();
 
-  // Non-castable interface types
-  IndirectlyImplementedInterface receiveOther();
-  IndirectlyImplementedInterface? receiveNullableOther();
-  IndirectlyImplementedInterface receiveWeakOther();
-  IndirectlyImplementedInterface? receiveWeakNullableOther();
-
-  void passOther(IndirectlyImplementedInterface arg);
-  void passNullableOther(IndirectlyImplementedInterface? arg);
-  attribute IndirectlyImplementedInterface nonNullOther;
-  attribute IndirectlyImplementedInterface? nullableOther;
-  // Optional arguments
-  void passOptionalOther(optional IndirectlyImplementedInterface? arg);
-  void passOptionalNonNullOther(optional IndirectlyImplementedInterface arg);
-  void passOptionalOtherWithDefault(optional IndirectlyImplementedInterface? arg = null);
-
   // External interface types
   TestExternalInterface receiveExternal();
   TestExternalInterface? receiveNullableExternal();
@@ -226,10 +213,6 @@ interface TestJSImplInterface {
   void passOptionalCallbackInterface(optional TestCallbackInterface? arg);
   void passOptionalNonNullCallbackInterface(optional TestCallbackInterface arg);
   void passOptionalCallbackInterfaceWithDefault(optional TestCallbackInterface? arg = null);
-
-  // Miscellaneous interface tests
-  IndirectlyImplementedInterface receiveConsequentialInterface();
-  void passConsequentialInterface(IndirectlyImplementedInterface arg);
 
   // Sequence types
   // [Cached] is not supported in JS-implemented WebIDL.
@@ -374,6 +357,24 @@ interface TestJSImplInterface {
   void passOptionalNullableSVSWithDefaultValue(optional USVString? arg = null);
   void passVariadicSVS(USVString... arg);
   USVString receiveSVS();
+
+  // JSString types
+  void passJSString(JSString arg);
+  // void passNullableJSString(JSString? arg); // NOT SUPPORTED YET
+  // void passOptionalJSString(optional JSString arg); // NOT SUPPORTED YET
+  void passOptionalJSStringWithDefaultValue(optional JSString arg = "abc");
+  // void passOptionalNullableJSString(optional JSString? arg); // NOT SUPPORTED YET
+  // void passOptionalNullableJSStringWithDefaultValue(optional JSString? arg = null); // NOT SUPPORTED YET
+  // void passVariadicJSString(JSString... arg); // NOT SUPPORTED YET
+  // void passRecordOfJSString(record<DOMString, JSString> arg); // NOT SUPPORTED YET
+  // void passSequenceOfJSString(sequence<JSString> arg); // NOT SUPPORTED YET
+  // void passUnionJSString((JSString or long) arg); // NOT SUPPORTED YET
+  JSString receiveJSString();
+  // sequence<JSString> receiveJSStringSequence(); // NOT SUPPORTED YET
+  // (JSString or long) receiveJSStringUnion(); // NOT SUPPORTED YET
+  // record<DOMString, JSString> receiveJSStringRecord(); // NOT SUPPORTED YET
+  readonly attribute JSString readonlyJSStringAttr;
+  attribute JSString jsStringAttr;
 
   // Enumerated types
   void passEnum(MyTestEnum arg);
@@ -594,14 +595,14 @@ interface TestJSImplInterface {
   Promise<any> receiveAddrefedPromise();
 
   // binaryNames tests
+  [BinaryName="methodRenamedTo"]
   void methodRenamedFrom();
-  [BinaryName="otherMethodRenamedTo"]
-  void otherMethodRenamedFrom();
+  [BinaryName="methodRenamedTo"]
   void methodRenamedFrom(byte argument);
+  [BinaryName="attributeGetterRenamedTo"]
   readonly attribute byte attributeGetterRenamedFrom;
+  [BinaryName="attributeRenamedTo"]
   attribute byte attributeRenamedFrom;
-  [BinaryName="otherAttributeRenamedTo"]
-  attribute byte otherAttributeRenamedFrom;
 
   void passDictionary(optional Dict x = {});
   void passDictionary2(Dict x);
@@ -841,14 +842,17 @@ interface TestJSImplInterface {
   // If you add things here, add them to TestCodeGen as well
 };
 
+[Exposed=Window]
 interface TestCImplementedInterface : TestJSImplInterface {
 };
 
+[Exposed=Window]
 interface TestCImplementedInterface2 {
 };
 
 [NoInterfaceObject,
- JSImplementation="@mozilla.org/test-js-impl-interface;2"]
+ JSImplementation="@mozilla.org/test-js-impl-interface;2",
+ Exposed=Window]
 interface TestJSImplNoInterfaceObject {
   // [Cached] is not supported in JS-implemented WebIDL.
   //[Cached, Pure]

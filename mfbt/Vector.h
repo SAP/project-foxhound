@@ -21,6 +21,7 @@
 #include "mozilla/ReentrancyGuard.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TypeTraits.h"
+#include "mozilla/Span.h"
 
 #include <new>  // for placement new
 
@@ -524,6 +525,12 @@ class MOZ_NON_PARAM Vector final : private AllocPolicy {
     return *(end() - 1);
   }
 
+  operator mozilla::Span<const T>() const {
+    return mozilla::MakeSpan(mBegin, mLength);
+  }
+
+  operator mozilla::Span<T>() { return mozilla::MakeSpan(mBegin, mLength); }
+
   class Range {
     friend class Vector;
     T* mCur;
@@ -789,8 +796,8 @@ class MOZ_NON_PARAM Vector final : private AllocPolicy {
 
   /**
    * Removes the elements [|aBegin|, |aEnd|), which must fall in the bounds
-   * [begin, end), shifting existing elements from |aEnd + 1| onward to aBegin's
-   * old position.
+   * [begin, end), shifting existing elements from |aEnd| onward to aBegin's old
+   * position.
    */
   void erase(T* aBegin, T* aEnd);
 

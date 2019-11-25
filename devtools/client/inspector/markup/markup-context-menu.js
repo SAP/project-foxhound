@@ -37,7 +37,7 @@ class MarkupContextMenu {
     this.markup = markup;
     this.inspector = markup.inspector;
     this.selection = this.inspector.selection;
-    this.target = this.inspector.target;
+    this.target = this.inspector.currentTarget;
     this.telemetry = this.inspector.telemetry;
     this.toolbox = this.inspector.toolbox;
     this.walker = this.inspector.walker;
@@ -167,13 +167,15 @@ class MarkupContextMenu {
       return;
     }
 
+    const nodeFront = this.selection.nodeFront;
+
     // If the markup panel is active, use the markup panel to delete
     // the node, making this an undoable action.
     if (this.markup) {
-      this.markup.deleteNode(this.selection.nodeFront);
+      this.markup.deleteNode(nodeFront);
     } else {
       // remove the node from content
-      this.walker.removeNode(this.selection.nodeFront);
+      nodeFront.walkerFront.removeNode(nodeFront);
     }
   }
 
@@ -190,7 +192,8 @@ class MarkupContextMenu {
       return;
     }
 
-    this.walker.duplicateNode(this.selection.nodeFront).catch(console.error);
+    const nodeFront = this.selection.nodeFront;
+    nodeFront.walkerFront.duplicateNode(nodeFront).catch(console.error);
   }
 
   /**

@@ -7,6 +7,7 @@
 #include "RemoteObjectProxy.h"
 #include "AccessCheck.h"
 #include "jsfriendapi.h"
+#include "xpcprivate.h"
 
 namespace mozilla {
 namespace dom {
@@ -62,37 +63,6 @@ bool RemoteObjectProxyBase::delete_(JSContext* aCx,
   return ReportCrossOriginDenial(aCx, aId, NS_LITERAL_CSTRING("delete"));
 }
 
-bool RemoteObjectProxyBase::getPrototype(
-    JSContext* aCx, JS::Handle<JSObject*> aProxy,
-    JS::MutableHandle<JSObject*> aProtop) const {
-  // https://html.spec.whatwg.org/multipage/browsers.html#windowproxy-getprototypeof
-  // step 3 and
-  // https://html.spec.whatwg.org/multipage/browsers.html#location-getprototypeof
-  // step 2
-  aProtop.set(nullptr);
-  return true;
-}
-
-bool RemoteObjectProxyBase::setPrototype(JSContext* aCx,
-                                         JS::Handle<JSObject*> aProxy,
-                                         JS::Handle<JSObject*> aProto,
-                                         JS::ObjectOpResult& aResult) const {
-  // https://html.spec.whatwg.org/multipage/browsers.html#windowproxy-setprototypeof
-  // and
-  // https://html.spec.whatwg.org/multipage/browsers.html#location-setprototypeof
-  // say to call SetImmutablePrototype, which does nothing and just returns
-  // whether the passed-in value equals the current prototype. Our current
-  // prototype is always null, so this just comes down to returning whether null
-  // was passed in.
-  //
-  // In terms of ObjectOpResult that means calling one of the fail*() things on
-  // it if non-null was passed, and it's got one that does just what we want.
-  if (!aProto) {
-    return aResult.succeed();
-  }
-  return aResult.failCantSetProto();
-}
-
 bool RemoteObjectProxyBase::getPrototypeIfOrdinary(
     JSContext* aCx, JS::Handle<JSObject*> aProxy, bool* aIsOrdinary,
     JS::MutableHandle<JSObject*> aProtop) const {
@@ -142,21 +112,6 @@ bool RemoteObjectProxyBase::set(JSContext* aCx, JS::Handle<JSObject*> aProxy,
   return CrossOriginSet(aCx, aProxy, aId, aValue, aReceiver, aResult);
 }
 
-bool RemoteObjectProxyBase::hasOwn(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-                                   JS::Handle<jsid> aId, bool* aBp) const {
-  JS::Rooted<JSObject*> holder(aCx);
-  if (!EnsureHolder(aCx, aProxy, &holder) ||
-      !JS_AlreadyHasOwnPropertyById(aCx, holder, aId, aBp)) {
-    return false;
-  }
-
-  if (!*aBp) {
-    *aBp = xpc::IsCrossOriginWhitelistedProp(aCx, aId);
-  }
-
-  return true;
-}
-
 bool RemoteObjectProxyBase::getOwnEnumerablePropertyKeys(
     JSContext* aCx, JS::Handle<JSObject*> aProxy,
     JS::MutableHandleVector<jsid> aProps) const {
@@ -200,6 +155,12 @@ void RemoteObjectProxyBase::GetOrCreateProxyObject(
   if (!obj) {
     return;
   }
+
+  bool success;
+  if (!JS_SetImmutablePrototype(aCx, obj, &success)) {
+    return;
+  }
+  MOZ_ASSERT(success);
 
   aNewObjectCreated = true;
 

@@ -31,7 +31,6 @@ const DEVTOOLS_ENABLED_PREF = "devtools.enabled";
 
 const DEVTOOLS_POLICY_DISABLED_PREF = "devtools.policy.disabled";
 const PROFILER_POPUP_ENABLED_PREF = "devtools.performance.popup.enabled";
-const WEBIDE_ENABLED_PREF = "devtools.webide.enabled";
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -65,7 +64,7 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineModuleGetter(
   this,
   "ProfilerMenuButton",
-  "resource://devtools/client/performance-new/popup/menu-button.jsm"
+  "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
 );
 
 // We don't want to spend time initializing the full loader here so we create
@@ -165,6 +164,12 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
       shortcut: KeyShortcutsBundle.GetStringFromName("webconsole.commandkey"),
       modifiers,
     },
+    // Key for opening the Debugger
+    {
+      toolId: "jsdebugger",
+      shortcut: KeyShortcutsBundle.GetStringFromName("jsdebugger.commandkey2"),
+      modifiers,
+    },
     // Key for opening the Network Monitor
     {
       toolId: "netmonitor",
@@ -216,20 +221,6 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     });
   }
 
-  // Only add the WebIDE shortcut if WebIDE is enabled.
-  const isWebIDEEnabled = Services.prefs.getBoolPref(
-    WEBIDE_ENABLED_PREF,
-    false
-  );
-  if (isWebIDEEnabled) {
-    // Open WebIDE window
-    shortcuts.push({
-      id: "webide",
-      shortcut: KeyShortcutsBundle.GetStringFromName("webide.commandkey"),
-      modifiers: "shift",
-    });
-  }
-
   if (isProfilerButtonEnabled()) {
     shortcuts.push(...getProfilerKeyShortcuts());
   }
@@ -268,7 +259,7 @@ function isProfilerButtonEnabled() {
 
 XPCOMUtils.defineLazyGetter(this, "ProfilerPopupBackground", function() {
   return ChromeUtils.import(
-    "resource://devtools/client/performance-new/popup/background.jsm"
+    "resource://devtools/client/performance-new/popup/background.jsm.js"
   );
 });
 

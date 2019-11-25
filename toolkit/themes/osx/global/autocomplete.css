@@ -5,7 +5,7 @@
 @namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
 @namespace html url("http://www.w3.org/1999/xhtml");
 
-textbox[nomatch="true"][highlightnonmatches="true"] {
+html|input[nomatch="true"][highlightnonmatches="true"] {
   color: red;
 }
 
@@ -92,11 +92,4 @@ html|span.ac-tag {
 .ac-text-overflow-container {
   padding: 0 !important;
   margin: 0 !important;
-}
-
-/* ::::: textboxes inside toolbarpaletteitems ::::: */
-
-toolbarpaletteitem > toolbaritem > textbox > moz-input-box > html|*.textbox-input,
-toolbarpaletteitem > toolbaritem > * > textbox > moz-input-box > html|*.textbox-input {
-  visibility: hidden;
 }

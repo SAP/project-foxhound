@@ -29,7 +29,9 @@
 #include "nsCOMArray.h"
 #include "nsNodeUtils.h"
 #include "mozilla/dom/DirectionalityUtils.h"
-#include "nsBindingManager.h"
+#ifdef MOZ_XBL
+#  include "nsBindingManager.h"
+#endif
 #include "nsCCUncollectableMarker.h"
 #include "mozAutoDocUpdate.h"
 #include "nsTextNode.h"
@@ -524,7 +526,9 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
 
   HandleShadowDOMRelatedRemovalSteps(aNullParent);
 
+#ifdef MOZ_XBL
   Document* document = GetComposedDoc();
+#endif
 
   if (aNullParent) {
     if (IsRootOfNativeAnonymousSubtree()) {
@@ -547,6 +551,7 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
     SetSubtreeRootPointer(aNullParent ? this : mParent->SubtreeRoot());
   }
 
+#ifdef MOZ_XBL
   if (document && !GetContainingShadow()) {
     // Notify XBL- & nsIAnonymousContentCreator-generated
     // anonymous content that the document is changing.
@@ -557,6 +562,7 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
           document->BindingManager(), this, document));
     }
   }
+#endif
 
   nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
   if (slots) {

@@ -380,10 +380,10 @@ void xpc::ErrorReport::ErrorReportToMessageString(JSErrorReport* aReport,
                                                   nsAString& aString) {
   aString.Truncate();
   if (aReport->message()) {
-    JSFlatString* name = js::GetErrorTypeName(
+    JSLinearString* name = js::GetErrorTypeName(
         CycleCollectedJSContext::Get()->Context(), aReport->exnType);
     if (name) {
-      AssignJSFlatString(aString, name);
+      AssignJSLinearString(aString, name);
       aString.AppendLiteral(": ");
     }
     aString.Append(NS_ConvertUTF8toUTF16(aReport->message().c_str()));
@@ -437,42 +437,45 @@ JSObject* CreateGlobalObject(JSContext* cx, const JSClass* clasp,
       principal != nsContentUtils::GetNullSubjectPrincipal(),
       "The null subject principal is getting inherited - fix that!");
 
-  SiteIdentifier site;
-  nsresult rv = BasePrincipal::Cast(principal)->GetSiteIdentifier(site);
-  NS_ENSURE_SUCCESS(rv, nullptr);
+  RootedObject global(cx);
+  {
+    SiteIdentifier site;
+    nsresult rv = BasePrincipal::Cast(principal)->GetSiteIdentifier(site);
+    NS_ENSURE_SUCCESS(rv, nullptr);
 
-  RootedObject global(
-      cx, JS_NewGlobalObject(cx, clasp, nsJSPrincipals::get(principal),
-                             JS::DontFireOnNewGlobalHook, aOptions));
-  if (!global) {
-    return nullptr;
-  }
-  JSAutoRealm ar(cx, global);
-
-  RealmPrivate::Init(global, site);
-
-  if (clasp->flags & JSCLASS_DOM_GLOBAL) {
-#ifdef DEBUG
-    // Verify that the right trace hook is called. Note that this doesn't
-    // work right for wrapped globals, since the tracing situation there is
-    // more complicated. Manual inspection shows that they do the right
-    // thing.  Also note that we only check this for JSCLASS_DOM_GLOBAL
-    // classes because xpc::TraceXPCGlobal won't call
-    // TraceProtoAndIfaceCache unless that flag is set.
-    if (!((const JSClass*)clasp)->isWrappedNative()) {
-      VerifyTraceProtoAndIfaceCacheCalledTracer trc(cx);
-      TraceChildren(&trc, GCCellPtr(global.get()));
-      MOZ_ASSERT(trc.ok,
-                 "Trace hook on global needs to call TraceXPCGlobal for "
-                 "XPConnect compartments.");
+    global = JS_NewGlobalObject(cx, clasp, nsJSPrincipals::get(principal),
+                                JS::DontFireOnNewGlobalHook, aOptions);
+    if (!global) {
+      return nullptr;
     }
+    JSAutoRealm ar(cx, global);
+
+    RealmPrivate::Init(global, site);
+
+    if (clasp->flags & JSCLASS_DOM_GLOBAL) {
+#ifdef DEBUG
+      // Verify that the right trace hook is called. Note that this doesn't
+      // work right for wrapped globals, since the tracing situation there is
+      // more complicated. Manual inspection shows that they do the right
+      // thing. Also note that we only check this for JSCLASS_DOM_GLOBAL
+      // classes because xpc::TraceXPCGlobal won't call TraceProtoAndIfaceCache
+      // unless that flag is set.
+      if (!((const JSClass*)clasp)->isWrappedNative()) {
+        VerifyTraceProtoAndIfaceCacheCalledTracer trc(cx);
+        TraceChildren(&trc, GCCellPtr(global.get()));
+        MOZ_ASSERT(trc.ok,
+                   "Trace hook on global needs to call TraceXPCGlobal for "
+                   "XPConnect compartments.");
+      }
 #endif
 
-    const char* className = clasp->name;
-    AllocateProtoAndIfaceCache(global, (strcmp(className, "Window") == 0 ||
-                                        strcmp(className, "ChromeWindow") == 0)
-                                           ? ProtoAndIfaceCache::WindowLike
-                                           : ProtoAndIfaceCache::NonWindowLike);
+      const char* className = clasp->name;
+      AllocateProtoAndIfaceCache(global,
+                                 (strcmp(className, "Window") == 0 ||
+                                  strcmp(className, "ChromeWindow") == 0)
+                                     ? ProtoAndIfaceCache::WindowLike
+                                     : ProtoAndIfaceCache::NonWindowLike);
+    }
   }
 
   return global;
@@ -488,7 +491,7 @@ void InitGlobalObjectOptions(JS::RealmOptions& aOptions,
   if (isSystem) {
     // Make sure [SecureContext] APIs are visible:
     aOptions.creationOptions().setSecureContext(true);
-    aOptions.creationOptions().setClampAndJitterTime(false);
+    aOptions.behaviors().setClampAndJitterTime(false);
   }
 
   if (shouldDiscardSystemSource) {

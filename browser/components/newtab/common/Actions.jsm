@@ -65,6 +65,7 @@ for (const type of [
   "FAKE_FOCUS_SEARCH",
   "FILL_SEARCH_TERM",
   "HANDOFF_SEARCH_TO_AWESOMEBAR",
+  "HIDE_PRIVACY_INFO",
   "HIDE_SEARCH",
   "INIT",
   "NEW_TAB_INIT",
@@ -112,6 +113,7 @@ for (const type of [
   "SET_PREF",
   "SHOW_DOWNLOAD_FILE",
   "SHOW_FIREFOX_ACCOUNTS",
+  "SHOW_PRIVACY_INFO",
   "SHOW_SEARCH",
   "SKIPPED_SIGNIN",
   "SNIPPETS_BLOCKLIST_CLEARED",
@@ -121,6 +123,7 @@ for (const type of [
   "SNIPPETS_RESET",
   "SNIPPET_BLOCKED",
   "SUBMIT_EMAIL",
+  "SUBMIT_SIGNIN",
   "SYSTEM_TICK",
   "TELEMETRY_IMPRESSION_STATS",
   "TELEMETRY_PERFORMANCE_EVENT",
@@ -152,6 +155,7 @@ for (const type of [
 // as call-to-action buttons in snippets, onboarding tour, etc.
 const ASRouterActions = {};
 for (const type of [
+  "HIGHLIGHT_FEATURE",
   "INSTALL_ADDON_FROM_URL",
   "OPEN_APPLICATIONS_MENU",
   "OPEN_PRIVATE_BROWSER_WINDOW",
@@ -161,6 +165,8 @@ for (const type of [
   "SHOW_FIREFOX_ACCOUNTS",
   "PIN_CURRENT_TAB",
   "ENABLE_FIREFOX_MONITOR",
+  "OPEN_PROTECTION_PANEL",
+  "OPEN_PROTECTION_REPORT",
 ]) {
   ASRouterActions[type] = type;
 }

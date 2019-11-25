@@ -97,9 +97,14 @@ fn gen_instruction_data(registry: &FormatRegistry, fmt: &mut Formatter) {
 
 fn gen_arguments_method(registry: &FormatRegistry, fmt: &mut Formatter, is_mut: bool) {
     let (method, mut_, rslice, as_slice) = if is_mut {
-        ("arguments_mut", "mut ", "ref_slice_mut", "as_mut_slice")
+        (
+            "arguments_mut",
+            "mut ",
+            "core::slice::from_mut",
+            "as_mut_slice",
+        )
     } else {
-        ("arguments", "", "ref_slice", "as_slice")
+        ("arguments", "", "core::slice::from_ref", "as_slice")
     };
 
     fmtln!(
@@ -1059,7 +1064,7 @@ fn gen_builder(instructions: &AllInstructions, formats: &FormatRegistry, fmt: &m
     fmt.line("}");
 }
 
-pub fn generate(
+pub(crate) fn generate(
     shared_defs: &SharedDefinitions,
     opcode_filename: &str,
     inst_builder_filename: &str,

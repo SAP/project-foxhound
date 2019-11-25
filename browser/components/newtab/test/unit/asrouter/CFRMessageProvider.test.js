@@ -11,8 +11,8 @@ const REGULAR_IDS = [
 ];
 
 describe("CFRMessageProvider", () => {
-  it("should have a total of 5 messages", () => {
-    assert.lengthOf(messages, 5);
+  it("should have a total of 9 messages", () => {
+    assert.lengthOf(messages, 9);
   });
   it("should have one message each for the three regular addons", () => {
     for (const id of REGULAR_IDS) {
@@ -51,8 +51,8 @@ describe("CFRMessageProvider", () => {
     const pinTabMessage = messages.find(m => m.id === "PIN_TAB");
 
     assert.isTrue(
-      pinTabMessage.trigger.params.filter(host => host.startsWith("www."))
-        .length > 0
+      !!pinTabMessage.trigger.params.filter(host => host.startsWith("www."))
+        .length
     );
   });
 });

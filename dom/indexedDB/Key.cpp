@@ -131,7 +131,7 @@ uint32_t Key::LengthOfEncodedBinary(const EncodedDataType* aPos,
   return CalcDecodedStringySize<uint8_t>(aPos + 1, aEnd, &encodedSectionEnd);
 }
 
-IDBResult<void, IDBSpecialValue::Invalid> Key::ToLocaleBasedKey(
+IDBResult<void, IDBSpecialValue::Invalid> Key::ToLocaleAwareKey(
     Key& aTarget, const nsCString& aLocale, ErrorResult& aRv) const {
   if (IsUnset()) {
     aTarget.Unset();
@@ -885,12 +885,6 @@ nsresult Key::SetFromSource(T* aSource, uint32_t aIndex) {
 
   return NS_OK;
 }
-
-#ifdef DEBUG
-
-void Key::Assert(bool aCondition) const { MOZ_ASSERT(aCondition); }
-
-#endif  // DEBUG
 
 }  // namespace indexedDB
 }  // namespace dom

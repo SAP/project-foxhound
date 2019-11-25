@@ -36,7 +36,11 @@ class Toolbar extends Component {
       search: PropTypes.func.isRequired,
       closeSearch: PropTypes.func.isRequired,
       addSearchQuery: PropTypes.func.isRequired,
+      clearSearchResultAndCancel: PropTypes.func.isRequired,
+      caseSensitive: PropTypes.bool.isRequired,
+      toggleCaseSensitiveSearch: PropTypes.func.isRequired,
       connector: PropTypes.object.isRequired,
+      query: PropTypes.string,
     };
   }
 
@@ -76,6 +80,14 @@ class Toolbar extends Component {
     });
   }
 
+  renderModifiers() {
+    return div(
+      { className: "search-modifiers" },
+      span({ className: "pipe-divider" }),
+      this.renderCaseSensitiveButton()
+    );
+  }
+
   /**
    * Render a clear button to clear search results.
    */
@@ -91,18 +103,39 @@ class Toolbar extends Component {
   }
 
   /**
-   * Render filter Search box.
+   * Render the case sensitive search modifier button
+   */
+  renderCaseSensitiveButton() {
+    const { caseSensitive, toggleCaseSensitiveSearch } = this.props;
+    const active = caseSensitive ? "checked" : "";
+
+    return button({
+      id: "devtools-network-search-caseSensitive",
+      className: `devtools-button ${active}`,
+      title: L10N.getStr("netmonitor.search.toolbar.caseSensitive"),
+      onClick: toggleCaseSensitiveSearch,
+    });
+  }
+
+  /**
+   * Render Search box.
    */
   renderFilterBox() {
-    const { addSearchQuery, clearSearchResults, connector } = this.props;
+    const {
+      addSearchQuery,
+      clearSearchResultAndCancel,
+      connector,
+      query,
+    } = this.props;
     return SearchBox({
       keyShortcut: "CmdOrCtrl+Shift+F",
       placeholder: L10N.getStr("netmonitor.search.toolbar.inputPlaceholder"),
       type: "search",
       delay: FILTER_SEARCH_DELAY,
       ref: this.props.searchboxRef,
-      onClearButtonClick: () => clearSearchResults(),
-      onChange: query => addSearchQuery(query),
+      value: query,
+      onClearButtonClick: () => clearSearchResultAndCancel(),
+      onChange: newQuery => addSearchQuery(newQuery),
       onKeyDown: event => this.onKeyDown(event, connector),
     });
   }
@@ -114,17 +147,24 @@ class Toolbar extends Component {
         className: "devtools-toolbar devtools-input-toolbar",
       },
       this.renderFilterBox(),
+      this.renderModifiers(),
       this.renderCloseButton()
     );
   }
 }
 
 module.exports = connect(
-  state => ({}),
+  state => ({
+    caseSensitive: state.search.caseSensitive,
+    query: state.search.query,
+  }),
   dispatch => ({
     closeSearch: () => dispatch(Actions.closeSearch()),
     openSearch: () => dispatch(Actions.openSearch()),
-    clearSearchResults: () => dispatch(Actions.clearSearchResults()),
+    clearSearchResultAndCancel: () =>
+      dispatch(Actions.clearSearchResultAndCancel()),
+    toggleCaseSensitiveSearch: () =>
+      dispatch(Actions.toggleCaseSensitiveSearch()),
     search: (connector, query) => dispatch(Actions.search(connector, query)),
     addSearchQuery: query => dispatch(Actions.addSearchQuery(query)),
   })

@@ -14,7 +14,6 @@
 namespace mozilla {
 
 class HTMLEditor;
-class HTMLEditRules;
 
 // class WSRunObject represents the entire whitespace situation
 // around a given point.  It collects up a list of nodes that contain
@@ -415,20 +414,20 @@ class MOZ_STACK_CLASS WSRunObject final : public WSRunScanner {
                     EditorRawDOMPoint(aScanStartNode, aScanStartOffset),
                     EditorRawDOMPoint(aScanStartNode, aScanStartOffset)) {}
 
-  // ScrubBlockBoundary removes any non-visible whitespace at the specified
-  // location relative to a block node.
-  MOZ_CAN_RUN_SCRIPT
-  static nsresult ScrubBlockBoundary(HTMLEditor* aHTMLEditor,
-                                     BlockBoundary aBoundary, nsINode* aBlock,
-                                     int32_t aOffset = -1);
+  /**
+   * Scrub() removes any non-visible whitespaces at aPoint.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE static nsresult Scrub(
+      HTMLEditor& aHTMLEditor, const EditorDOMPoint& aPoint);
 
-  // PrepareToJoinBlocks fixes up ws at the end of aLeftBlock and the
-  // beginning of aRightBlock in preperation for them to be joined.  Example
-  // of fixup: trailingws in aLeftBlock needs to be removed.
-  MOZ_CAN_RUN_SCRIPT
-  static nsresult PrepareToJoinBlocks(HTMLEditor* aHTMLEditor,
-                                      dom::Element* aLeftBlock,
-                                      dom::Element* aRightBlock);
+  /**
+   * PrepareToJoinBlocks() fixes up whitespaces at the end of aLeftBlockElement
+   * and the start of aRightBlockElement in preperation for them to be joined.
+   * For example, trailing whitespaces in aLeftBlockElement needs to be removed.
+   */
+  MOZ_CAN_RUN_SCRIPT MOZ_MUST_USE static nsresult PrepareToJoinBlocks(
+      HTMLEditor& aHTMLEditor, dom::Element& aLeftBlockElement,
+      dom::Element& aRightBlockElement);
 
   // PrepareToDeleteRange fixes up ws before {aStartNode,aStartOffset}
   // and after {aEndNode,aEndOffset} in preperation for content
@@ -603,8 +602,6 @@ class MOZ_STACK_CLASS WSRunObject final : public WSRunScanner {
   // Non-owning.
   HTMLEditor* mHTMLEditor;
 
-  // Opening this class up for pillaging.
-  friend class HTMLEditRules;
   // Opening this class up for more pillaging.
   friend class HTMLEditor;
 };

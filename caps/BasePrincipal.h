@@ -116,6 +116,8 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetIsContentPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsExpandedPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsSystemPrincipal(bool* aResult) override;
+  NS_IMETHOD SchemeIs(const char* aScheme, bool* aResult) override;
+  NS_IMETHOD GetAboutModuleFlags(uint32_t* flags) override;
   NS_IMETHOD GetIsAddonOrExpandedAddonPrincipal(bool* aResult) override;
   NS_IMETHOD GetOriginAttributes(JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aVal) final;
@@ -125,6 +127,8 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetUserContextId(uint32_t* aUserContextId) final;
   NS_IMETHOD GetPrivateBrowsingId(uint32_t* aPrivateBrowsingId) final;
   NS_IMETHOD GetSiteOrigin(nsACString& aOrigin) override;
+  NS_IMETHOD IsThirdPartyURI(nsIURI* uri, bool* aRes) override;
+  NS_IMETHOD IsThirdPartyPrincipal(nsIPrincipal* uri, bool* aRes) override;
 
   nsresult ToJSON(nsACString& aJSON);
   static already_AddRefed<BasePrincipal> FromJSON(const nsACString& aJSON);
@@ -205,6 +209,8 @@ class BasePrincipal : public nsJSPrincipals {
    * of whether they subsume the document principal.
    */
   bool OverridesCSP(nsIPrincipal* aDocumentPrincipal) {
+    MOZ_ASSERT(aDocumentPrincipal);
+
     // Expanded principals override CSP if and only if they subsume the document
     // principal.
     if (mKind == eExpandedPrincipal) {
@@ -264,6 +270,8 @@ class BasePrincipal : public nsJSPrincipals {
 };
 
 inline bool BasePrincipal::FastEquals(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   auto other = Cast(aOther);
   if (Kind() != other->Kind()) {
     // Principals of different kinds can't be equal.
@@ -287,6 +295,8 @@ inline bool BasePrincipal::FastEquals(nsIPrincipal* aOther) {
 }
 
 inline bool BasePrincipal::FastEqualsConsideringDomain(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   // If neither of the principals have document.domain set, we use the fast path
   // in Equals().  Otherwise, we fall back to the slow path below.
   auto other = Cast(aOther);
@@ -299,6 +309,8 @@ inline bool BasePrincipal::FastEqualsConsideringDomain(nsIPrincipal* aOther) {
 }
 
 inline bool BasePrincipal::FastSubsumes(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   // If two principals are equal, then they both subsume each other.
   if (FastEquals(aOther)) {
     return true;
@@ -309,6 +321,8 @@ inline bool BasePrincipal::FastSubsumes(nsIPrincipal* aOther) {
 }
 
 inline bool BasePrincipal::FastSubsumesConsideringDomain(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   // If neither of the principals have document.domain set, we hand off to
   // FastSubsumes() which has fast paths for some special cases. Otherwise, we
   // fall back to the slow path below.
@@ -321,6 +335,8 @@ inline bool BasePrincipal::FastSubsumesConsideringDomain(nsIPrincipal* aOther) {
 
 inline bool BasePrincipal::FastSubsumesIgnoringFPD(
     nsIPrincipal* aOther, DocumentDomainConsideration aConsideration) {
+  MOZ_ASSERT(aOther);
+
   if (Kind() == eContentPrincipal &&
       !dom::ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
           mOriginAttributes, Cast(aOther)->mOriginAttributes)) {

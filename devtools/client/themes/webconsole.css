@@ -64,7 +64,8 @@ a {
 
 /* Workaround for Bug 575675 - FindChildWithRules aRelevantLinkVisited
  * assertion when loading HTML page with links in XUL iframe */
-*:visited { }
+*:visited {
+}
 
 * {
   box-sizing: border-box;
@@ -129,24 +130,15 @@ a {
   border-bottom-width: 0;
 }
 
-/*
- * Show a blue border on the left side of rows on hover. Avoid using border
- * properties because the top/bottom borders would not span the full width.
- * We always place an empty before pseudo element in order to avoid costly reflows on 
- * hover (See Bug 1571349).
- */
-.message::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+.can-rewind .webconsole-output .message:last-of-type {
+  border-bottom: 1px solid var(--purple-50);
 }
 
-.message:hover::before {
-  background-color: var(--theme-highlight-blue);
+.can-rewind .webconsole-output .paused ~ .message:last-of-type,
+.can-rewind .webconsole-output .paused:last-of-type {
+  border-bottom-width: 0;
 }
+
 
 /*
  * By default, prevent any element in message to overflow.
@@ -182,7 +174,8 @@ a {
 }
 
 .message.paused.paused-before {
-  border-top-color: var(--purple-50);
+  border-top: 1px solid var(--purple-50);
+  margin-top: 0px;
 }
 
 .message.paused:not(.paused-before) {
@@ -194,6 +187,11 @@ a {
 .message.paused ~ .message:not(.command):not(.result) .message-body-wrapper,
 .message.paused.paused-before .message-body-wrapper {
   opacity: 0.5;
+}
+
+.message.paused.paused-before .message-body-wrapper,
+.message.paused.paused-before > .icon {
+  margin-top: calc(var(--console-output-vertical-padding) - 1px);
 }
 
 .message.startGroup,
@@ -484,6 +482,9 @@ html #webconsole-notificationbox {
   line-height: var(--console-output-line-height);
   /* aim for a 32px left space (a descendent has 4px padding) */
   padding-inline-start: calc(var(--console-inline-start-gutter) - 4px);
+  /* Create a new stacking context */
+  position: relative;
+  z-index: 0; /* Keep below column resizers */
   /* input icon */
   background-image: url(chrome://devtools/skin/images/webconsole/input.svg);
   background-position-x: calc(10px + var(--console-icon-horizontal-offset));
@@ -562,7 +563,7 @@ html #webconsole-notificationbox {
 }
 
 a.learn-more-link.webconsole-learn-more-link {
-    font-style: normal;
+  font-style: normal;
 }
 
 /*
@@ -835,14 +836,14 @@ a.learn-more-link.webconsole-learn-more-link {
   z-index: 1;
 }
 
-.new-consoletable > [role=gridcell] {
+.new-consoletable > [role="gridcell"] {
   background-color: var(--theme-body-background);
   padding: 3px 4px;
   min-width: 100px;
   color: var(--theme-body-color);
 }
 
-.new-consoletable > [role=gridcell].even {
+.new-consoletable > [role="gridcell"].even {
   background-color: var(--table-zebra-background);
 }
 
@@ -869,7 +870,7 @@ a.learn-more-link.webconsole-learn-more-link {
   flex: none;
   align-self: flex-start;
   margin-block-start: calc(var(--console-output-vertical-padding) - 1px);
-  margin-inline-start: -2px;
+  margin-inline-start: -4px;
   padding: 3px;
   border: none;
   color: var(--theme-icon-dimmed-color);
@@ -887,6 +888,11 @@ a.learn-more-link.webconsole-learn-more-link {
   transition: transform 125ms ease;
   -moz-context-properties: fill;
   fill: currentColor;
+}
+
+/* Align console.group messages with the border they create for their "children" messages */
+.indent[data-indent]:not([data-indent="0"]) ~ .collapse-button {
+  margin-inline-start: 3px;
 }
 
 .collapse-button[aria-expanded="true"]::before {
@@ -916,7 +922,9 @@ a.learn-more-link.webconsole-learn-more-link {
 /* Use a bigger arrow that is visually similar to other icons (10px) */
 .message.network > .collapse-button::before,
 .message.startGroup > .indent[data-indent="0"] ~ .collapse-button::before,
-.message.startGroupCollapsed > .indent[data-indent="0"] ~ .collapse-button::before {
+.message.startGroupCollapsed
+  > .indent[data-indent="0"]
+  ~ .collapse-button::before {
   width: 100%;
   background-image: url("chrome://devtools/skin/images/arrow-big.svg");
   fill: var(--theme-icon-dimmed-color);
@@ -943,7 +951,7 @@ a.learn-more-link.webconsole-learn-more-link {
 
 .webconsole-app .tree.focused .arrow,
 .webconsole-app .object-inspector .tree-node.focused .arrow {
-  fill: currentColor
+  fill: currentColor;
 }
 
 /** Utils **/

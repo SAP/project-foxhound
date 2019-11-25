@@ -61,7 +61,7 @@ class MachCommands(MachCommandBase):
             python_path = self.virtualenv_manager.python_path
 
         if exec_file:
-            execfile(exec_file)
+            exec(open(exec_file).read())
             return 0
 
         return self.run_process([python_path] + args,
@@ -85,6 +85,10 @@ class MachCommands(MachCommandBase):
                      type=int,
                      help='Number of concurrent jobs to run. Default is the number of CPUs '
                           'in the system.')
+    @CommandArgument('-x', '--exitfirst',
+                     default=False,
+                     action='store_true',
+                     help='Runs all tests sequentially and breaks at the first failure.')
     @CommandArgument('--subsuite',
                      default=None,
                      help=('Python subsuite to run. If not specified, all subsuites are run. '
@@ -93,6 +97,10 @@ class MachCommands(MachCommandBase):
                      metavar='TEST',
                      help=('Tests to run. Each test can be a single file or a directory. '
                            'Default test resolution relies on PYTHON_UNITTEST_MANIFESTS.'))
+    @CommandArgument('extra', nargs=argparse.REMAINDER,
+                     metavar='PYTEST ARGS',
+                     help=('Arguments that aren\'t recognized by mach. These will be '
+                           'passed as it is to pytest'))
     def python_test(self, *args, **kwargs):
         try:
             tempdir = os.environ[b'PYTHON_TEST_TMP'] = str(tempfile.mkdtemp(suffix='-python-test'))
@@ -108,6 +116,8 @@ class MachCommands(MachCommandBase):
                          verbose=False,
                          jobs=None,
                          python=None,
+                         exitfirst=False,
+                         extra=None,
                          **kwargs):
         python = python or self.virtualenv_manager.python_path
         self.activate_pipenv(pipfile=None, populate=True, python=python)
@@ -147,11 +157,20 @@ class MachCommands(MachCommandBase):
 
         parallel = []
         sequential = []
-        for test in tests:
-            if test.get('sequential'):
-                sequential.append(test)
-            else:
-                parallel.append(test)
+        os.environ.setdefault('PYTEST_ADDOPTS', '')
+
+        if extra:
+            os.environ['PYTEST_ADDOPTS'] += " " + " ".join(extra)
+
+        if exitfirst:
+            sequential = tests
+            os.environ['PYTEST_ADDOPTS'] += " -x"
+        else:
+            for test in tests:
+                if test.get('sequential'):
+                    sequential.append(test)
+                else:
+                    parallel.append(test)
 
         self.jobs = jobs or cpu_count()
         self.terminate = False
@@ -186,6 +205,8 @@ class MachCommands(MachCommandBase):
 
         for test in sequential:
             return_code = on_test_finished(self._run_python_test(test))
+            if return_code and exitfirst:
+                break
 
         self.log(logging.INFO, 'python-test', {'return_code': return_code},
                  'Return code from mach python-test: {return_code}')

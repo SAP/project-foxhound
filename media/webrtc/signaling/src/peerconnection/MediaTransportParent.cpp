@@ -135,10 +135,9 @@ mozilla::ipc::IPCResult MediaTransportParent::RecvCreateIceCtx(
   return ipc::IPCResult::Ok();
 }
 
-mozilla::ipc::IPCResult MediaTransportParent::RecvSetProxyServer(
-    const dom::TabId& tabId, const net::LoadInfoArgs& args,
-    const nsCString& alpn) {
-  mImpl->mHandler->SetProxyServer(NrSocketProxyConfig(tabId, alpn, args));
+mozilla::ipc::IPCResult MediaTransportParent::RecvSetProxyConfig(
+    const net::WebrtcProxyConfig& aProxyConfig) {
+  mImpl->mHandler->SetProxyConfig(NrSocketProxyConfig(aProxyConfig));
   return ipc::IPCResult::Ok();
 }
 
@@ -199,8 +198,10 @@ mozilla::ipc::IPCResult MediaTransportParent::RecvSendPacket(
 }
 
 mozilla::ipc::IPCResult MediaTransportParent::RecvAddIceCandidate(
-    const string& transportId, const string& candidate, const string& ufrag) {
-  mImpl->mHandler->AddIceCandidate(transportId, candidate, ufrag);
+    const string& transportId, const string& candidate, const string& ufrag,
+    const string& obfuscatedAddr) {
+  mImpl->mHandler->AddIceCandidate(transportId, candidate, ufrag,
+                                   obfuscatedAddr);
   return ipc::IPCResult::Ok();
 }
 

@@ -4426,7 +4426,7 @@ bool ParseNode::getConstantValue(JSContext* cx,
       vp.setNumber(as<NumericLiteral>().value());
       return true;
     case ParseNodeKind::BigIntExpr:
-      vp.setBigInt(as<BigIntLiteral>().box()->value());
+      vp.setBigInt(as<BigIntLiteral>().value());
       return true;
     case ParseNodeKind::TemplateStringExpr:
     case ParseNodeKind::StringExpr:
@@ -5015,7 +5015,7 @@ bool BytecodeEmitter::emitCopyDataProperties(CopyOption option) {
   return true;
 }
 
-bool BytecodeEmitter::emitBigIntOp(BigInt* bigint) {
+bool BytecodeEmitter::emitBigIntOp(BigIntLiteral* bigint) {
   uint32_t index;
   if (!perScriptData().gcThingList().append(bigint, &index)) {
     return false;
@@ -5683,7 +5683,6 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitFunction(
     FunctionNode* funNode, bool needsProto /* = false */,
     ListNode* classContentsIfConstructor /* = nullptr */) {
   FunctionBox* funbox = funNode->funbox();
-  RootedFunction fun(cx, funbox->function());
 
   MOZ_ASSERT((classContentsIfConstructor != nullptr) ==
              (funbox->kind() == FunctionFlags::FunctionKind::ClassConstructor));
@@ -5707,15 +5706,15 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitFunction(
     return true;
   }
 
-  if (fun->isInterpreted()) {
-    if (fun->isInterpretedLazy()) {
+  if (funbox->isInterpreted()) {
+    if (funbox->isInterpretedLazy()) {
       if (!fe.emitLazy()) {
         //          [stack] FUN?
         return false;
       }
 
       if (classContentsIfConstructor) {
-        fun->lazyScript()->setFieldInitializers(
+        funbox->setFieldInitializers(
             setupFieldInitializers(classContentsIfConstructor));
       }
 
@@ -5735,8 +5734,9 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitFunction(
     JS::CompileOptions options(cx, transitiveOptions);
 
     Rooted<ScriptSourceObject*> sourceObject(cx, script->sourceObject());
-    Rooted<JSScript*> innerScript(
-        cx, JSScript::Create(cx, options, sourceObject, funbox->bufStart,
+    RootedFunction fun(cx, funbox->function());
+    RootedScript innerScript(
+        cx, JSScript::Create(cx, fun, options, sourceObject, funbox->bufStart,
                              funbox->bufEnd, funbox->toStringStart,
                              funbox->toStringEnd));
     if (!innerScript) {
@@ -5754,12 +5754,9 @@ MOZ_NEVER_INLINE bool BytecodeEmitter::emitFunction(
       fieldInitializers = setupFieldInitializers(classContentsIfConstructor);
     }
 
-    uint32_t innerScriptLine, innerScriptColumn;
-    parser->errorReporter().lineAndColumnAt(
-        funNode->pn_pos.begin, &innerScriptLine, &innerScriptColumn);
     BytecodeEmitter bce2(this, parser, funbox, innerScript,
-                         /* lazyScript = */ nullptr, innerScriptLine,
-                         innerScriptColumn, nestedMode, fieldInitializers);
+                         /* lazyScript = */ nullptr, funbox->startLine,
+                         funbox->startColumn, nestedMode, fieldInitializers);
     if (!bce2.init(funNode->pn_pos)) {
       return false;
     }
@@ -9478,7 +9475,7 @@ bool BytecodeEmitter::emitTree(
       break;
 
     case ParseNodeKind::BigIntExpr:
-      if (!emitBigIntOp(pn->as<BigIntLiteral>().box()->value())) {
+      if (!emitBigIntOp(&pn->as<BigIntLiteral>())) {
         return false;
       }
       break;

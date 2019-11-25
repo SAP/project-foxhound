@@ -36,7 +36,6 @@ gfxMacFont::gfxMacFont(const RefPtr<UnscaledFontMac>& aUnscaledFont,
     : gfxFont(aUnscaledFont, aFontEntry, aFontStyle),
       mCGFont(nullptr),
       mCTFont(nullptr),
-      mFontFace(nullptr),
       mFontSmoothingBackgroundColor(aFontStyle->fontSmoothingBackgroundColor),
       mVariationFont(aFontEntry->HasVariations()) {
   mApplySyntheticBold = aFontStyle->NeedsSyntheticBold(aFontEntry);
@@ -122,52 +121,12 @@ gfxMacFont::gfxMacFont(const RefPtr<UnscaledFontMac>& aUnscaledFont,
     return;
   }
 
-  mFontFace = cairo_quartz_font_face_create_for_cgfont(mCGFont);
-
-  cairo_status_t cairoerr = cairo_font_face_status(mFontFace);
-  if (cairoerr != CAIRO_STATUS_SUCCESS) {
-    mIsValid = false;
-#ifdef DEBUG
-    char warnBuf[1024];
-    SprintfLiteral(warnBuf, "Failed to create Cairo font face: %s status: %d",
-                   GetName().get(), cairoerr);
-    NS_WARNING(warnBuf);
-#endif
-    return;
-  }
-
-  cairo_matrix_t sizeMatrix, ctm;
-  cairo_matrix_init_identity(&ctm);
-  cairo_matrix_init_scale(&sizeMatrix, mAdjustedSize, mAdjustedSize);
-
-  cairo_font_options_t* fontOptions = cairo_font_options_create();
-
   // turn off font anti-aliasing based on user pref setting
-  if ((mAdjustedSize <=
-       (gfxFloat)gfxPlatformMac::GetPlatform()->GetAntiAliasingThreshold()) ||
-      // Turn off AA for Ahem for testing purposes when requested.
-      MOZ_UNLIKELY(StaticPrefs::gfx_font_rendering_ahem_antialias_none() &&
-                   mFontEntry->FamilyName().EqualsLiteral("Ahem"))) {
-    cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_NONE);
+  if (mAdjustedSize <=
+      (gfxFloat)gfxPlatformMac::GetPlatform()->GetAntiAliasingThreshold()) {
     mAntialiasOption = kAntialiasNone;
   } else if (mStyle.useGrayscaleAntialiasing) {
-    cairo_font_options_set_antialias(fontOptions, CAIRO_ANTIALIAS_GRAY);
     mAntialiasOption = kAntialiasGrayscale;
-  }
-
-  mScaledFont =
-      cairo_scaled_font_create(mFontFace, &sizeMatrix, &ctm, fontOptions);
-  cairo_font_options_destroy(fontOptions);
-
-  cairoerr = cairo_scaled_font_status(mScaledFont);
-  if (cairoerr != CAIRO_STATUS_SUCCESS) {
-    mIsValid = false;
-#ifdef DEBUG
-    char warnBuf[1024];
-    SprintfLiteral(warnBuf, "Failed to create scaled font: %s status: %d",
-                   GetName().get(), cairoerr);
-    NS_WARNING(warnBuf);
-#endif
   }
 }
 
@@ -177,12 +136,6 @@ gfxMacFont::~gfxMacFont() {
   }
   if (mCTFont) {
     ::CFRelease(mCTFont);
-  }
-  if (mScaledFont) {
-    cairo_scaled_font_destroy(mScaledFont);
-  }
-  if (mFontFace) {
-    cairo_font_face_destroy(mFontFace);
   }
 }
 
@@ -228,16 +181,6 @@ bool gfxMacFont::ShapeText(DrawTarget* aDrawTarget, const char16_t* aText,
 
   return gfxFont::ShapeText(aDrawTarget, aText, aOffset, aLength, aScript,
                             aVertical, aRounding, aShapedText);
-}
-
-bool gfxMacFont::SetupCairoFont(DrawTarget* aDrawTarget) {
-  if (cairo_scaled_font_status(mScaledFont) != CAIRO_STATUS_SUCCESS) {
-    // Don't cairo_set_scaled_font as that would propagate the error to
-    // the cairo_t, precluding any further drawing.
-    return false;
-  }
-  cairo_set_scaled_font(gfxFont::RefCairo(aDrawTarget), mScaledFont);
-  return true;
 }
 
 gfxFont::RunMetrics gfxMacFont::Measure(const gfxTextRun* aTextRun,
@@ -522,6 +465,27 @@ int32_t gfxMacFont::GetGlyphWidth(uint16_t aGID) {
   return advance.width * 0x10000;
 }
 
+bool gfxMacFont::GetGlyphBounds(uint16_t aGID, gfxRect* aBounds, bool aTight) {
+  CGRect bb;
+  if (!::CGFontGetGlyphBBoxes(mCGFont, &aGID, 1, &bb)) {
+    return false;
+  }
+
+  // broken fonts can return incorrect bounds for some null characters,
+  // see https://bugzilla.mozilla.org/show_bug.cgi?id=534260
+  if (bb.origin.x == -32767 && bb.origin.y == -32767 &&
+      bb.size.width == 65534 && bb.size.height == 65534) {
+    *aBounds = gfxRect(0, 0, 0, 0);
+    return true;
+  }
+
+  gfxRect bounds(bb.origin.x, -(bb.origin.y + bb.size.height), bb.size.width,
+                 bb.size.height);
+  bounds.Scale(mFUnitsConvFactor);
+  *aBounds = bounds;
+  return true;
+}
+
 // Try to initialize font metrics via platform APIs (CG/CT),
 // and set mIsValid = TRUE on success.
 // We ONLY call this for local (platform) fonts that are not sfnt format;
@@ -574,18 +538,22 @@ already_AddRefed<ScaledFont> gfxMacFont::GetScaledFont(DrawTarget* aTarget) {
       return nullptr;
     }
     InitializeScaledFont();
-    mAzureScaledFont->SetCairoScaledFont(mScaledFont);
   }
 
   RefPtr<ScaledFont> scaledFont(mAzureScaledFont);
   return scaledFont.forget();
 }
 
+bool gfxMacFont::ShouldRoundXOffset(cairo_t* aCairo) const {
+  // Quartz surfaces implement show_glyphs for Quartz fonts
+  return aCairo && cairo_surface_get_type(cairo_get_target(aCairo)) !=
+                       CAIRO_SURFACE_TYPE_QUARTZ;
+}
+
 void gfxMacFont::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                         FontCacheSizes* aSizes) const {
   gfxFont::AddSizeOfExcludingThis(aMallocSizeOf, aSizes);
   // mCGFont is shared with the font entry, so not counted here;
-  // and we don't have APIs to measure the cairo mFontFace object
 }
 
 void gfxMacFont::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,

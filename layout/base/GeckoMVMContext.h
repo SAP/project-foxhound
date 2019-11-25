@@ -54,9 +54,7 @@ class GeckoMVMContext : public MVMContext {
                                ResolutionChangeOrigin aOrigin) override;
   void SetVisualViewportSize(const CSSSize& aSize) override;
   void UpdateDisplayPortMargins() override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void Reflow(const CSSSize& aNewSize, const CSSSize& aOldSize,
-              ResizeEventFlag aResizeEventFlag) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void Reflow(const CSSSize& aNewSize) override;
 
  private:
   RefPtr<dom::Document> mDocument;

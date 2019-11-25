@@ -629,9 +629,9 @@ void CycleCollectedJSRuntime::DescribeGCThing(
       JSFunction* fun = JS_GetObjectFunction(obj);
       JSString* str = JS_GetFunctionDisplayId(fun);
       if (str) {
-        JSFlatString* flat = JS_ASSERT_STRING_IS_FLAT(str);
+        JSLinearString* linear = JS_ASSERT_STRING_IS_LINEAR(str);
         nsAutoString chars;
-        AssignJSFlatString(chars, flat);
+        AssignJSLinearString(chars, linear);
         NS_ConvertUTF16toUTF8 fname(chars);
         SprintfLiteral(name, "JS Object (Function - %s)", fname.get());
       } else {
@@ -660,7 +660,9 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
   MOZ_ASSERT(aClasp);
   MOZ_ASSERT(aClasp == js::GetObjectClass(aObj));
 
-  if (NoteCustomGCThingXPCOMChildren(aClasp, aObj, aCb)) {
+  JS::Rooted<JSObject*> obj(RootingCx(), aObj);
+
+  if (NoteCustomGCThingXPCOMChildren(aClasp, obj, aCb)) {
     // Nothing else to do!
     return;
   }
@@ -670,7 +672,7 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
   if (aClasp->flags & JSCLASS_HAS_PRIVATE &&
       aClasp->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "js::GetObjectPrivate(obj)");
-    aCb.NoteXPCOMChild(static_cast<nsISupports*>(js::GetObjectPrivate(aObj)));
+    aCb.NoteXPCOMChild(static_cast<nsISupports*>(js::GetObjectPrivate(obj)));
     return;
   }
 
@@ -683,21 +685,21 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
     // that case, since NoteXPCOMChild/NoteNativeChild are null-safe.
     if (domClass->mDOMObjectIsISupports) {
       aCb.NoteXPCOMChild(
-          UnwrapPossiblyNotInitializedDOMObject<nsISupports>(aObj));
+          UnwrapPossiblyNotInitializedDOMObject<nsISupports>(obj));
     } else if (domClass->mParticipant) {
-      aCb.NoteNativeChild(UnwrapPossiblyNotInitializedDOMObject<void>(aObj),
+      aCb.NoteNativeChild(UnwrapPossiblyNotInitializedDOMObject<void>(obj),
                           domClass->mParticipant);
     }
     return;
   }
 
-  if (IsRemoteObjectProxy(aObj)) {
+  if (IsRemoteObjectProxy(obj)) {
     auto handler =
-        static_cast<const RemoteObjectProxyBase*>(js::GetProxyHandler(aObj));
-    return handler->NoteChildren(aObj, aCb);
+        static_cast<const RemoteObjectProxyBase*>(js::GetProxyHandler(obj));
+    return handler->NoteChildren(obj, aCb);
   }
 
-  JS::Value value = js::MaybeGetScriptPrivate(aObj);
+  JS::Value value = js::MaybeGetScriptPrivate(obj);
   if (!value.isUndefined()) {
     aCb.NoteXPCOMChild(static_cast<nsISupports*>(value.toPrivate()));
   }
@@ -841,17 +843,15 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
 #ifdef MOZ_GECKO_PROFILER
   if (profiler_thread_is_being_profiled()) {
     if (aProgress == JS::GC_CYCLE_END) {
-      profiler_add_marker(
-          "GCMajor", JS::ProfilingCategoryPair::GCCC,
-          MakeUnique<GCMajorMarkerPayload>(aDesc.startTime(aContext),
-                                           aDesc.endTime(aContext),
-                                           aDesc.formatJSONProfiler(aContext)));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "GCMajor", GCCC, GCMajorMarkerPayload,
+          (aDesc.startTime(aContext), aDesc.endTime(aContext),
+           aDesc.formatJSONProfiler(aContext)));
     } else if (aProgress == JS::GC_SLICE_END) {
-      profiler_add_marker(
-          "GCSlice", JS::ProfilingCategoryPair::GCCC,
-          MakeUnique<GCSliceMarkerPayload>(
-              aDesc.lastSliceStart(aContext), aDesc.lastSliceEnd(aContext),
-              aDesc.sliceToJSONProfiler(aContext)));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "GCSlice", GCCC, GCSliceMarkerPayload,
+          (aDesc.lastSliceStart(aContext), aDesc.lastSliceEnd(aContext),
+           aDesc.sliceToJSONProfiler(aContext)));
     }
   }
 #endif
@@ -930,10 +930,10 @@ void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
 #ifdef MOZ_GECKO_PROFILER
   else if (aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END &&
            profiler_thread_is_being_profiled()) {
-    profiler_add_marker("GCMinor", JS::ProfilingCategoryPair::GCCC,
-                        MakeUnique<GCMinorMarkerPayload>(
-                            self->mLatestNurseryCollectionStart,
-                            TimeStamp::Now(), JS::MinorGcToJSON(aContext)));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "GCMinor", GCCC, GCMinorMarkerPayload,
+        (self->mLatestNurseryCollectionStart, TimeStamp::Now(),
+         JS::MinorGcToJSON(aContext)));
   }
 #endif
 
@@ -985,10 +985,9 @@ struct JsGcTracer : public TraceCallbacks {
                      void* aClosure) const override {
     JS::TraceEdge(static_cast<JSTracer*>(aClosure), aPtr, aName);
   }
-  virtual void Trace(JSObject** aPtr, const char* aName,
+  virtual void Trace(nsWrapperCache* aPtr, const char* aName,
                      void* aClosure) const override {
-    js::UnsafeTraceManuallyBarrieredEdge(static_cast<JSTracer*>(aClosure), aPtr,
-                                         aName);
+    aPtr->TraceWrapper(static_cast<JSTracer*>(aClosure), aName);
   }
   virtual void Trace(JS::TenuredHeap<JSObject*>* aPtr, const char* aName,
                      void* aClosure) const override {
@@ -1055,9 +1054,9 @@ struct ClearJSHolder : public TraceCallbacks {
     *aPtr = nullptr;
   }
 
-  virtual void Trace(JSObject** aPtr, const char* aName,
+  virtual void Trace(nsWrapperCache* aPtr, const char* aName,
                      void* aClosure) const override {
-    *aPtr = nullptr;
+    aPtr->ClearWrapper();
   }
 
   virtual void Trace(JS::TenuredHeap<JSObject*>* aPtr, const char*,
@@ -1215,6 +1214,8 @@ void CycleCollectedJSRuntime::NurseryWrapperPreserved(JSObject* aWrapper) {
 void CycleCollectedJSRuntime::DeferredFinalize(
     DeferredFinalizeAppendFunction aAppendFunc, DeferredFinalizeFunction aFunc,
     void* aThing) {
+  // Tell the analysis that the function pointers will not GC.
+  JS::AutoSuppressGCAnalysis suppress;
   if (auto entry = mDeferredFinalizerTable.LookupForAdd(aFunc)) {
     aAppendFunc(entry.Data(), aThing);
   } else {

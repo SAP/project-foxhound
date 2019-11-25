@@ -658,10 +658,11 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvSaveRecording(const FileDescriptor& aFile);
 
   mozilla::ipc::IPCResult RecvCrossProcessRedirect(
-      const uint32_t& aRegistrarId, nsIURI* aURI, const uint32_t& aNewLoadFlags,
+      const uint32_t& aRegistrarId, nsIURI* aURI,
+      const ReplacementChannelConfigInit& aConfig,
       const Maybe<LoadInfoArgs>& aLoadInfoForwarder, const uint64_t& aChannelId,
       nsIURI* aOriginalURI, const uint64_t& aIdentifier,
-      const uint32_t& aRedirectMode);
+      const uint32_t& aRedirectMode, CrossProcessRedirectResolver&& aResolve);
 
   mozilla::ipc::IPCResult RecvStartDelayedAutoplayMediaComponents(
       BrowsingContext* aContext);
@@ -687,6 +688,11 @@ class ContentChild final : public PContentChild,
   // NOTE: This method performs an atomic read, and is safe to call from all
   // threads.
   uint32_t GetPendingInputEvents() { return mPendingInputEvents; }
+#endif
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+  mozilla::ipc::IPCResult RecvInitSandboxTesting(
+      Endpoint<PSandboxTestingChild>&& aEndpoint);
 #endif
 
  private:

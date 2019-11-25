@@ -124,6 +124,7 @@ impl<'a, 'b> BatchCompiler<'a, 'b> {
         // Set up the signature before translating the WebAssembly byte code.
         // The translator refers to it.
         let index = FuncIndex::new(func.index as usize);
+
         self.context.func.signature =
             init_sig(&self.environ, self.static_environ.call_conv(), index)?;
         self.context.func.name = wasm_function_name(index);

@@ -39,8 +39,16 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
     }
     Actor.prototype.initialize.call(this, connection);
     this.id = options.id;
+    this._browsingContextTargetActor = null;
     this.isParent = options.parent;
     this.destroy = this.destroy.bind(this);
+  },
+
+  get browsingContextID() {
+    if (this._browsingContextTargetActor) {
+      return this._browsingContextTargetActor.docShell.browsingContext.id;
+    }
+    return null;
   },
 
   _parentProcessConnect() {
@@ -48,7 +56,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       Ci.nsIEnvironment
     );
     const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
-    let targetActor = null;
+    let targetActor;
     if (isXpcshell) {
       // Check if we are running on xpcshell.
       // When running on xpcshell, there is no valid browsing context to attach to
@@ -61,6 +69,10 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       // as this target. Because we are in the same process, we have a true actor that
       // should be managed by the ProcessDescriptorActor.
       targetActor = new ParentProcessTargetActor(this.conn);
+      // this is a special field that only parent process with a browsing context
+      // have, as they are the only processes at the moment that have child
+      // browsing contexts
+      this._browsingContextTargetActor = targetActor;
     }
     this.manage(targetActor);
     // to be consistent with the return value of the _childProcessConnect, we are returning
@@ -73,7 +85,7 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
    */
   async _childProcessConnect() {
     const { id } = this;
-    const mm = Services.ppmm.getChildAt(id);
+    const mm = this._lookupMessageManager(id);
     if (!mm) {
       return {
         error: "noProcess",
@@ -86,6 +98,18 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       this.destroy
     );
     return childTargetForm;
+  },
+
+  _lookupMessageManager(id) {
+    for (let i = 0; i < Services.ppmm.childCount; i++) {
+      const mm = Services.ppmm.getChildAt(i);
+
+      // A zero id is used for the parent process, instead of its actual pid.
+      if (id ? mm.osPid == id : mm.isInProcess) {
+        return mm;
+      }
+    }
+    return null;
   },
 
   /**
@@ -111,6 +135,11 @@ const ProcessDescriptorActor = ActorClassWithSpec(processDescriptorSpec, {
       id: this.id,
       isParent: this.isParent,
     };
+  },
+
+  destroy() {
+    this._browsingContextTargetActor = null;
+    Actor.prototype.destroy.call(this);
   },
 });
 

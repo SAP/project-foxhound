@@ -578,7 +578,7 @@ bool CharCodeAt(JSContext* cx, HandleString str, int32_t index,
   return true;
 }
 
-JSFlatString* StringFromCharCode(JSContext* cx, int32_t code) {
+JSLinearString* StringFromCharCode(JSContext* cx, int32_t code) {
   char16_t c = char16_t(code);
 
   if (StaticStrings::hasUnit(c)) {
@@ -810,12 +810,12 @@ int32_t GetIndexFromString(JSString* str) {
   // We shouldn't GC here as this is called directly from IC code.
   AutoUnsafeCallWithABI unsafe;
 
-  if (!str->isFlat()) {
+  if (!str->isLinear()) {
     return -1;
   }
 
   uint32_t index = UINT32_MAX;
-  if (!str->asFlat().isIndex(&index) || index > INT32_MAX) {
+  if (!str->asLinear().isIndex(&index) || index > INT32_MAX) {
     return -1;
   }
 
@@ -933,11 +933,13 @@ JSObject* CreateGenerator(JSContext* cx, BaselineFrame* frame) {
 }
 
 bool NormalSuspend(JSContext* cx, HandleObject obj, BaselineFrame* frame,
-                   jsbytecode* pc) {
+                   uint32_t frameSize, jsbytecode* pc) {
   MOZ_ASSERT(*pc == JSOP_YIELD || *pc == JSOP_AWAIT);
 
-  MOZ_ASSERT(frame->numValueSlots() > frame->script()->nfixed());
-  uint32_t stackDepth = frame->numValueSlots() - frame->script()->nfixed();
+  uint32_t numValueSlots = frame->numValueSlots(frameSize);
+
+  MOZ_ASSERT(numValueSlots > frame->script()->nfixed());
+  uint32_t stackDepth = numValueSlots - frame->script()->nfixed();
 
   // Return value is still on the stack.
   MOZ_ASSERT(stackDepth >= 1);
@@ -950,7 +952,7 @@ bool NormalSuspend(JSContext* cx, HandleObject obj, BaselineFrame* frame,
     return false;
   }
 
-  size_t firstSlot = frame->numValueSlots() - stackDepth;
+  size_t firstSlot = numValueSlots - stackDepth;
   for (size_t i = 0; i < stackDepth - 1; i++) {
     exprStack.infallibleAppend(*frame->valueSlot(firstSlot + i));
   }
@@ -1310,7 +1312,7 @@ bool RecompileImpl(JSContext* cx, bool force) {
     return true;
   }
 
-  MethodStatus status = Recompile(cx, script, nullptr, nullptr, force);
+  MethodStatus status = Recompile(cx, script, force);
   if (status == Method_Error) {
     return false;
   }

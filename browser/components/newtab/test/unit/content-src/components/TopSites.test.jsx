@@ -463,7 +463,7 @@ describe("<TopSiteLink>", () => {
   it("should have rtl direction automatically set for text", () => {
     const wrapper = shallow(<TopSiteLink link={link} />);
 
-    assert.isTrue(wrapper.find("[dir='auto']").length > 0);
+    assert.isTrue(!!wrapper.find("[dir='auto']").length);
   });
   it("should render a title", () => {
     const wrapper = shallow(<TopSiteLink link={link} title="foobar" />);
@@ -816,6 +816,31 @@ describe("<TopSite>", () => {
       assert.propertyVal(action.data.value, "card_type", "search");
       assert.propertyVal(action.data.value, "icon_type", "tippytop");
       assert.propertyVal(action.data.value, "search_vendor", "google");
+    });
+    it("should dispatch a UserEventAction with the right data for SPOC top site", () => {
+      const dispatch = sinon.stub();
+      const siteInfo = {
+        iconType: "custom_screenshot",
+        type: "SPOC",
+      };
+      const wrapper = shallow(
+        <TopSite
+          link={Object.assign({}, link, siteInfo)}
+          index={0}
+          dispatch={dispatch}
+        />
+      );
+
+      wrapper.find(TopSiteLink).simulate("click", { preventDefault() {} });
+
+      const [action] = dispatch.firstCall.args;
+      assert.isUserEventAction(action);
+
+      assert.propertyVal(action.data, "event", "CLICK");
+      assert.propertyVal(action.data, "source", "TOP_SITES");
+      assert.propertyVal(action.data, "action_position", 0);
+      assert.propertyVal(action.data.value, "card_type", "spoc");
+      assert.propertyVal(action.data.value, "icon_type", "custom_screenshot");
     });
     it("should dispatch OPEN_LINK with the right data", () => {
       const dispatch = sinon.stub();

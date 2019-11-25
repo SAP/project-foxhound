@@ -12,20 +12,7 @@ var {
   getStack,
   callFunctionWithAsyncStack,
 } = require("devtools/shared/platform/stack");
-// Bug 1454373: devtools/shared/defer still uses Promise.jsm which is slower
-// than DOM Promises. So implement our own copy of `defer` based on DOM Promises.
-function defer() {
-  let resolve, reject;
-  const promise = new Promise(function() {
-    resolve = arguments[0];
-    reject = arguments[1];
-  });
-  return {
-    resolve: resolve,
-    reject: reject,
-    promise: promise,
-  };
-}
+const defer = require("devtools/shared/defer");
 
 /**
  * Base class for client-side actor fronts.
@@ -89,7 +76,7 @@ class Front extends Pool {
     this._beforeListeners = null;
   }
 
-  manage(front) {
+  async manage(front, form, ctx) {
     if (!front.actorID) {
       throw new Error(
         "Can't manage front without an actor ID.\n" +
@@ -99,6 +86,19 @@ class Front extends Pool {
       );
     }
     super.manage(front);
+
+    if (typeof front.initialize == "function") {
+      await front.initialize();
+    }
+
+    // Ensure calling form() *before* notifying about this front being just created.
+    // We exprect the front to be fully initialized, especially via its form attributes.
+    // But do that *after* calling manage() so that the front is already registered
+    // in Pools and can be fetched by its ID, in case a child actor, created in form()
+    // tries to get a reference to its parent via the actor ID.
+    if (form) {
+      front.form(form, ctx);
+    }
 
     // Call listeners registered via `onFront` method
     this._frontListeners.emit(front.typeName, front);

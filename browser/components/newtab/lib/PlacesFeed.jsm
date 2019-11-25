@@ -19,6 +19,11 @@ ChromeUtils.defineModuleGetter(
   "PlacesUtils",
   "resource://gre/modules/PlacesUtils.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "PrivateBrowsingUtils",
+  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+);
 
 const LINK_BLOCKED_EVENT = "newtab-linkBlocked";
 const PLACES_LINKS_CHANGED_DELAY_TIME = 1000; // time in ms to delay timer for places links changed events
@@ -250,6 +255,9 @@ class PlacesFeed {
   /**
    * observe - An observer for the LINK_BLOCKED_EVENT.
    *           Called when a link is blocked.
+   *           Links can be blocked outside of newtab,
+   *           which is why we need to listen to this
+   *           on such a generic level.
    *
    * @param  {null} subject
    * @param  {str} topic   The name of the event
@@ -363,17 +371,21 @@ class PlacesFeed {
     _target.browser.ownerGlobal.gURLBar.search(`${data.label} `);
   }
 
-  _getSearchPrefix() {
+  _getSearchPrefix(isPrivateWindow) {
     const searchAliases =
-      Services.search.defaultEngine.wrappedJSObject.__internalAliases;
-    if (searchAliases && searchAliases.length > 0) {
+      Services.search[
+        isPrivateWindow ? "defaultPrivateEngine" : "defaultEngine"
+      ].wrappedJSObject.__internalAliases;
+    if (searchAliases && searchAliases.length) {
       return `${searchAliases[0]} `;
     }
     return "";
   }
 
   handoffSearchToAwesomebar({ _target, data, meta }) {
-    const searchAlias = this._getSearchPrefix();
+    const searchAlias = this._getSearchPrefix(
+      PrivateBrowsingUtils.isBrowserPrivate(_target.browser)
+    );
     const urlBar = _target.browser.ownerGlobal.gURLBar;
     let isFirstChange = true;
 

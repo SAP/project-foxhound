@@ -356,11 +356,13 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     const windows = this.inspector.targetActor.windows;
     let fontsList = [];
     for (const win of windows) {
-      fontsList = [
-        ...fontsList,
-        ...this.getUsedFontFaces(win.document.body, options),
-      ];
+      // Fall back to the documentElement for XUL documents.
+      const node = win.document.body
+        ? win.document.body
+        : win.document.documentElement;
+      fontsList = [...fontsList, ...this.getUsedFontFaces(node, options)];
     }
+
     return fontsList;
   },
 
@@ -720,7 +722,12 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
    * @returns Array
    */
   _getElementRules: function(node, pseudo, inherited, options) {
-    const domRules = InspectorUtils.getCSSStyleRules(node, pseudo);
+    const domRules = InspectorUtils.getCSSStyleRules(
+      node,
+      pseudo,
+      CssLogic.hasVisitedState(node)
+    );
+
     if (!domRules) {
       return [];
     }
@@ -752,6 +759,7 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
       }
 
       const ruleActor = this._styleRef(domRule);
+
       rules.push({
         rule: ruleActor,
         inherited: inherited,
@@ -835,14 +843,17 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
         const { bindingElement, pseudo } = CssLogic.getBindingElementAndPseudo(
           element
         );
+        const relevantLinkVisited = CssLogic.hasVisitedState(bindingElement);
         entry.matchedSelectors = [];
+
         for (let i = 0; i < selectors.length; i++) {
           if (
             InspectorUtils.selectorMatchesElement(
               bindingElement,
               domRule,
               i,
-              pseudo
+              pseudo,
+              relevantLinkVisited
             )
           ) {
             entry.matchedSelectors.push(selectors[i]);

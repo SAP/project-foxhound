@@ -604,9 +604,6 @@ with modules["DOM"]:
     errors["NS_ERROR_DOM_TIMEOUT_ERR"] = FAILURE(23)
     errors["NS_ERROR_DOM_INVALID_NODE_TYPE_ERR"] = FAILURE(24)
     errors["NS_ERROR_DOM_DATA_CLONE_ERR"] = FAILURE(25)
-    # XXX Should be JavaScript native errors
-    errors["NS_ERROR_TYPE_ERR"] = FAILURE(26)
-    errors["NS_ERROR_RANGE_ERR"] = FAILURE(27)
     # StringEncoding API errors from http://wiki.whatwg.org/wiki/StringEncoding
     errors["NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR"] = FAILURE(28)
     errors["NS_ERROR_DOM_INVALID_POINTER_ERR"] = FAILURE(29)
@@ -792,6 +789,7 @@ with modules["PROFILE"]:
 # =======================================================================
 with modules["SECURITY"]:
     # Error code for CSP
+    errors["NS_ERROR_CSP_NAVIGATE_TO_VIOLATION"] = FAILURE(97)
     errors["NS_ERROR_CSP_FORM_ACTION_VIOLATION"] = FAILURE(98)
     errors["NS_ERROR_CSP_FRAME_ANCESTOR_VIOLATION"] = FAILURE(99)
 

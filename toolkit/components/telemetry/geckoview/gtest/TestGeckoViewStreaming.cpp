@@ -13,8 +13,10 @@ using namespace mozilla;
 using namespace mozilla::Telemetry;
 using namespace TelemetryTestHelpers;
 using GeckoViewStreamingTelemetry::StreamingTelemetryDelegate;
+using mozilla::Telemetry::ScalarID;
 using ::testing::_;
 using ::testing::Eq;
+using ::testing::StrictMock;
 
 namespace {
 
@@ -23,6 +25,8 @@ const char* kBatchTimeoutPref = "toolkit.telemetry.geckoview.batchDurationMS";
 
 NS_NAMED_LITERAL_CSTRING(kTestHgramName, "TELEMETRY_TEST_STREAMING");
 NS_NAMED_LITERAL_CSTRING(kTestHgramName2, "TELEMETRY_TEST_STREAMING_2");
+NS_NAMED_LITERAL_CSTRING(kTestCategoricalName,
+                         "TELEMETRY_TEST_CATEGORICAL_OPTOUT");
 const HistogramID kTestHgram = Telemetry::TELEMETRY_TEST_STREAMING;
 const HistogramID kTestHgram2 = Telemetry::TELEMETRY_TEST_STREAMING_2;
 
@@ -40,11 +44,20 @@ class TelemetryStreamingFixture : public TelemetryTestFixture {
   }
 };
 
-class MockDelegate final : public StreamingTelemetryDelegate {
+class MockDelegate : public StreamingTelemetryDelegate {
  public:
   MOCK_METHOD2(ReceiveHistogramSamples,
                void(const nsCString& aHistogramName,
                     const nsTArray<uint32_t>& aSamples));
+  MOCK_METHOD2(ReceiveCategoricalHistogramSamples,
+               void(const nsCString& aHistogramName,
+                    const nsTArray<uint32_t>& aSamples));
+  MOCK_METHOD2(ReceiveBoolScalarValue,
+               void(const nsCString& aScalarName, bool aValue));
+  MOCK_METHOD2(ReceiveStringScalarValue,
+               void(const nsCString& aScalarName, const nsCString& aValue));
+  MOCK_METHOD2(ReceiveUintScalarValue,
+               void(const nsCString& aScalarName, uint32_t aValue));
 };  // class MockDelegate
 
 TEST_F(TelemetryStreamingFixture, HistogramSamples) {
@@ -63,6 +76,27 @@ TEST_F(TelemetryStreamingFixture, HistogramSamples) {
   Telemetry::Accumulate(Telemetry::TELEMETRY_TEST_STREAMING, kSampleOne);
   Preferences::SetInt(kBatchTimeoutPref, 0);
   Telemetry::Accumulate(Telemetry::TELEMETRY_TEST_STREAMING, kSampleTwo);
+}
+
+TEST_F(TelemetryStreamingFixture, CategoricalHistogramSamples) {
+  auto kSampleOne =
+      Telemetry::LABELS_TELEMETRY_TEST_CATEGORICAL_OPTOUT::CommonLabel;
+  auto kSampleTwo = Telemetry::LABELS_TELEMETRY_TEST_CATEGORICAL_OPTOUT::Label5;
+
+  nsTArray<uint32_t> samplesArray;
+  samplesArray.AppendElement(static_cast<uint32_t>(kSampleOne));
+  samplesArray.AppendElement(static_cast<uint32_t>(kSampleOne));
+  samplesArray.AppendElement(static_cast<uint32_t>(kSampleTwo));
+
+  auto md = MakeRefPtr<MockDelegate>();
+  EXPECT_CALL(*md, ReceiveCategoricalHistogramSamples(
+                       Eq(kTestCategoricalName), Eq(std::move(samplesArray))));
+  GeckoViewStreamingTelemetry::RegisterDelegate(md);
+
+  Telemetry::AccumulateCategorical(kSampleOne);
+  Telemetry::AccumulateCategorical(kSampleOne);
+  Preferences::SetInt(kBatchTimeoutPref, 0);
+  Telemetry::AccumulateCategorical(kSampleTwo);
 }
 
 TEST_F(TelemetryStreamingFixture, MultipleHistograms) {
@@ -135,6 +169,46 @@ TEST_F(TelemetryStreamingFixture, MultipleThreads) {
 
   Preferences::SetInt(kBatchTimeoutPref, 0);
   Telemetry::Accumulate(kTestHgram2, kSample1);
+}
+
+TEST_F(TelemetryStreamingFixture, ScalarValues) {
+  NS_NAMED_LITERAL_CSTRING(kBoolScalarName, "telemetry.test.boolean_kind");
+  NS_NAMED_LITERAL_CSTRING(kStringScalarName, "telemetry.test.string_kind");
+  NS_NAMED_LITERAL_CSTRING(kUintScalarName, "telemetry.test.unsigned_int_kind");
+
+  const bool kBoolScalarValue = true;
+  NS_NAMED_LITERAL_CSTRING(kStringScalarValue, "a string scalar value");
+  const uint32_t kUintScalarValue = 42;
+
+  auto md = MakeRefPtr<MockDelegate>();
+  EXPECT_CALL(
+      *md, ReceiveBoolScalarValue(Eq(kBoolScalarName), Eq(kBoolScalarValue)));
+  EXPECT_CALL(*md, ReceiveStringScalarValue(Eq(kStringScalarName),
+                                            Eq(kStringScalarValue)));
+  EXPECT_CALL(
+      *md, ReceiveUintScalarValue(Eq(kUintScalarName), Eq(kUintScalarValue)));
+
+  GeckoViewStreamingTelemetry::RegisterDelegate(md);
+
+  Telemetry::ScalarSet(ScalarID::TELEMETRY_TEST_BOOLEAN_KIND, kBoolScalarValue);
+  Telemetry::ScalarSet(ScalarID::TELEMETRY_TEST_STRING_KIND,
+                       NS_ConvertUTF8toUTF16(kStringScalarValue));
+  Preferences::SetInt(kBatchTimeoutPref,
+                      0);  // Trigger batch on next accumulation.
+  Telemetry::ScalarSet(ScalarID::TELEMETRY_TEST_UNSIGNED_INT_KIND,
+                       kUintScalarValue);
+}
+
+TEST_F(TelemetryStreamingFixture, ExpiredHistogram) {
+  const HistogramID kExpiredHistogram = Telemetry::TELEMETRY_TEST_EXPIRED;
+  const uint32_t kSample = 401;
+
+  // Strict Mock fails on any method calls.
+  auto md = MakeRefPtr<StrictMock<MockDelegate>>();
+  GeckoViewStreamingTelemetry::RegisterDelegate(md);
+
+  Preferences::SetInt(kBatchTimeoutPref, 0);
+  Telemetry::Accumulate(kExpiredHistogram, kSample);
 }
 
 }  // namespace

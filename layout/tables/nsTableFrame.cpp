@@ -2649,19 +2649,15 @@ LogicalMargin nsTableFrame::GetChildAreaOffset(
 }
 
 void nsTableFrame::InitChildReflowInput(ReflowInput& aReflowInput) {
-  nsMargin collapseBorder;
-  nsMargin padding(0, 0, 0, 0);
-  nsMargin* pCollapseBorder = nullptr;
-  nsPresContext* presContext = PresContext();
+  nsMargin border;
   if (IsBorderCollapse()) {
     nsTableRowGroupFrame* rgFrame =
         static_cast<nsTableRowGroupFrame*>(aReflowInput.mFrame);
     WritingMode wm = GetWritingMode();
-    LogicalMargin border = rgFrame->GetBCBorderWidth(wm);
-    collapseBorder = border.GetPhysicalMargin(wm);
-    pCollapseBorder = &collapseBorder;
+    border = rgFrame->GetBCBorderWidth(wm).GetPhysicalMargin(wm);
   }
-  aReflowInput.Init(presContext, Nothing(), pCollapseBorder, &padding);
+  const nsMargin padding;
+  aReflowInput.Init(PresContext(), Nothing(), &border, &padding);
 
   NS_ASSERTION(!mBits.mResizedColumns ||
                    !aReflowInput.mParentReflowInput->mFlags.mSpecialBSizeReflow,
@@ -3731,10 +3727,7 @@ bool nsTableFrame::IsAutoBSize(WritingMode aWM) {
   if (bsize.IsAuto()) {
     return true;
   }
-  // Don't consider calc() here like this quirk for percent.
-  // FIXME(emilio): calc() causing this behavior change seems odd.
-  return bsize.HasPercent() && !bsize.AsLengthPercentage().was_calc &&
-         bsize.ToPercentage() <= 0.0f;
+  return bsize.ConvertsToPercentage() && bsize.ToPercentage() <= 0.0f;
 }
 
 nscoord nsTableFrame::CalcBorderBoxBSize(const ReflowInput& aReflowInput) {
@@ -6928,20 +6921,19 @@ static void CreateWRCommandsForBeveledBorder(
   for (const auto& segment : segments) {
     auto rect = LayoutDeviceRect::FromUnknownRect(NSRectToRect(
         segment.mRect + aOffset, aBorderParams.mAppUnitsPerDevPixel));
-    auto roundedRect = wr::ToRoundedLayoutRect(rect);
+    auto r = wr::ToLayoutRect(rect);
     auto color = wr::ToColorF(ToDeviceColor(segment.mColor));
 
     // Adjust for the start bevel if needed.
-    AdjustAndPushBevel(aBuilder, roundedRect, segment.mColor,
-                       segment.mStartBevel, aBorderParams.mAppUnitsPerDevPixel,
+    AdjustAndPushBevel(aBuilder, r, segment.mColor, segment.mStartBevel,
+                       aBorderParams.mAppUnitsPerDevPixel,
                        aBorderParams.mBackfaceIsVisible, true);
 
-    AdjustAndPushBevel(aBuilder, roundedRect, segment.mColor, segment.mEndBevel,
+    AdjustAndPushBevel(aBuilder, r, segment.mColor, segment.mEndBevel,
                        aBorderParams.mAppUnitsPerDevPixel,
                        aBorderParams.mBackfaceIsVisible, false);
 
-    aBuilder.PushRect(roundedRect, roundedRect,
-                      aBorderParams.mBackfaceIsVisible, color);
+    aBuilder.PushRect(r, r, aBorderParams.mBackfaceIsVisible, color);
   }
 }
 
@@ -6956,7 +6948,7 @@ static void CreateWRCommandsForBorderSegment(
   auto borderRect = LayoutDeviceRect::FromUnknownRect(NSRectToRect(
       aBorderParams.mBorderRect + aOffset, aBorderParams.mAppUnitsPerDevPixel));
 
-  wr::LayoutRect roundedRect = wr::ToRoundedLayoutRect(borderRect);
+  wr::LayoutRect r = wr::ToLayoutRect(borderRect);
   wr::BorderSide wrSide[4];
   NS_FOR_CSS_SIDES(i) {
     wrSide[i] = wr::ToBorderSide(ToDeviceColor(aBorderParams.mBorderColor),
@@ -6964,8 +6956,7 @@ static void CreateWRCommandsForBorderSegment(
   }
   const bool horizontal = aBorderParams.mStartBevelSide == eSideTop ||
                           aBorderParams.mStartBevelSide == eSideBottom;
-  auto borderWidth =
-      horizontal ? roundedRect.size.height : roundedRect.size.width;
+  auto borderWidth = horizontal ? r.size.height : r.size.width;
 
   // All border style is set to none except left side. So setting the widths of
   // each side to width of rect is fine.
@@ -6981,9 +6972,8 @@ static void CreateWRCommandsForBorderSegment(
   }
 
   Range<const wr::BorderSide> wrsides(wrSide, 4);
-  aBuilder.PushBorder(roundedRect, roundedRect,
-                      aBorderParams.mBackfaceIsVisible, borderWidths, wrsides,
-                      wr::EmptyBorderRadius());
+  aBuilder.PushBorder(r, r, aBorderParams.mBackfaceIsVisible, borderWidths,
+                      wrsides, wr::EmptyBorderRadius());
 }
 
 void BCBlockDirSeg::CreateWebRenderCommands(

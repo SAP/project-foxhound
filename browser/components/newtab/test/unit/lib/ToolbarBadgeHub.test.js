@@ -1,7 +1,7 @@
 import { _ToolbarBadgeHub } from "lib/ToolbarBadgeHub.jsm";
 import { GlobalOverrider } from "test/unit/utils";
 import { OnboardingMessageProvider } from "lib/OnboardingMessageProvider.jsm";
-import { _ToolbarPanelHub } from "lib/ToolbarPanelHub.jsm";
+import { _ToolbarPanelHub, ToolbarPanelHub } from "lib/ToolbarPanelHub.jsm";
 
 describe("ToolbarBadgeHub", () => {
   let sandbox;
@@ -23,6 +23,7 @@ describe("ToolbarBadgeHub", () => {
   let clearUserPrefStub;
   let setStringPrefStub;
   let requestIdleCallbackStub;
+  let fakeWindow;
   beforeEach(async () => {
     globals = new GlobalOverrider();
     sandbox = sinon.createSandbox();
@@ -32,9 +33,28 @@ describe("ToolbarBadgeHub", () => {
     isBrowserPrivateStub = sandbox.stub();
     const onboardingMsgs = await OnboardingMessageProvider.getUntranslatedMessages();
     fxaMessage = onboardingMsgs.find(({ id }) => id === "FXA_ACCOUNTS_BADGE");
-    whatsnewMessage = onboardingMsgs.find(({ id }) =>
-      id.includes("WHATS_NEW_BADGE_")
-    );
+    whatsnewMessage = {
+      id: `WHATS_NEW_BADGE_71`,
+      template: "toolbar_badge",
+      content: {
+        delay: 1000,
+        target: "whats-new-menu-button",
+        action: { id: "show-whatsnew-button" },
+        badgeDescription: { string_id: "cfr-badge-reader-label-newfeature" },
+      },
+      priority: 1,
+      trigger: { id: "toolbarBadgeUpdate" },
+      frequency: {
+        // Makes it so that we track impressions for this message while at the
+        // same time it can have unlimited impressions
+        lifetime: Infinity,
+      },
+      // Never saw this message or saw it in the past 4 days or more recent
+      targeting: `isWhatsNewPanelEnabled &&
+      (!messageImpressions['WHATS_NEW_BADGE_71'] ||
+        (messageImpressions['WHATS_NEW_BADGE_71']|length >= 1 &&
+          currentDate|date - messageImpressions['WHATS_NEW_BADGE_71'][0] <= 4 * 24 * 3600 * 1000))`,
+    };
     fakeElement = {
       classList: {
         add: sandbox.stub(),
@@ -44,6 +64,8 @@ describe("ToolbarBadgeHub", () => {
       removeAttribute: sandbox.stub(),
       querySelector: sandbox.stub(),
       addEventListener: sandbox.stub(),
+      remove: sandbox.stub(),
+      appendChild: sandbox.stub(),
     };
     // Share the same element when selecting child nodes
     fakeElement.querySelector.returns(fakeElement);
@@ -54,7 +76,8 @@ describe("ToolbarBadgeHub", () => {
     clearTimeoutStub = sandbox.stub();
     setTimeoutStub = sandbox.stub();
     setIntervalStub = sandbox.stub();
-    const fakeWindow = {
+    fakeWindow = {
+      MozXULElement: { insertFTLIfNeeded: sandbox.stub() },
       ownerGlobal: {
         gBrowser: {
           selectedBrowser: "browser",
@@ -68,6 +91,7 @@ describe("ToolbarBadgeHub", () => {
     setStringPrefStub = sandbox.stub();
     requestIdleCallbackStub = sandbox.stub().callsFake(fn => fn());
     globals.set({
+      ToolbarPanelHub,
       requestIdleCallback: requestIdleCallbackStub,
       EveryWindow: everyWindowStub,
       PrivateBrowsingUtils: { isBrowserPrivate: isBrowserPrivateStub },
@@ -202,8 +226,12 @@ describe("ToolbarBadgeHub", () => {
     let target;
     let fakeDocument;
     beforeEach(() => {
-      fakeDocument = { getElementById: sandbox.stub().returns(fakeElement) };
-      target = { browser: { ownerDocument: fakeDocument } };
+      fakeDocument = {
+        getElementById: sandbox.stub().returns(fakeElement),
+        createElement: sandbox.stub().returns(fakeElement),
+        l10n: { setAttributes: sandbox.stub() },
+      };
+      target = { ...fakeWindow, browser: { ownerDocument: fakeDocument } };
     });
     it("shouldn't do anything if target element is not found", () => {
       fakeDocument.getElementById.returns(null);
@@ -238,7 +266,7 @@ describe("ToolbarBadgeHub", () => {
       );
       assert.calledWithExactly(
         fakeElement.addEventListener,
-        "click",
+        "keypress",
         instance.removeAllNotifications
       );
     });
@@ -251,6 +279,41 @@ describe("ToolbarBadgeHub", () => {
         ...whatsnewMessage.content.action,
         message_id: whatsnewMessage.id,
       });
+    });
+    it("should create a description element", () => {
+      sandbox.stub(instance, "executeAction");
+      instance.addToolbarNotification(target, whatsnewMessage);
+
+      assert.calledOnce(fakeDocument.createElement);
+      assert.calledWithExactly(fakeDocument.createElement, "span");
+    });
+    it("should set description id to element and to button", () => {
+      sandbox.stub(instance, "executeAction");
+      instance.addToolbarNotification(target, whatsnewMessage);
+
+      assert.calledWithExactly(
+        fakeElement.setAttribute,
+        "id",
+        "toolbarbutton-notification-description"
+      );
+      assert.calledWithExactly(
+        fakeElement.setAttribute,
+        "aria-labelledby",
+        `toolbarbutton-notification-description ${
+          whatsnewMessage.content.target
+        }`
+      );
+    });
+    it("should attach fluent id to description", () => {
+      sandbox.stub(instance, "executeAction");
+      instance.addToolbarNotification(target, whatsnewMessage);
+
+      assert.calledOnce(fakeDocument.l10n.setAttributes);
+      assert.calledWithExactly(
+        fakeDocument.l10n.setAttributes,
+        fakeElement,
+        whatsnewMessage.content.badgeDescription.string_id
+      );
     });
   });
   describe("registerBadgeNotificationListener", () => {
@@ -418,10 +481,13 @@ describe("ToolbarBadgeHub", () => {
     it("should remove the notification", () => {
       instance.removeToolbarNotification(fakeElement);
 
-      assert.calledOnce(fakeElement.removeAttribute);
+      assert.calledThrice(fakeElement.removeAttribute);
       assert.calledWithExactly(fakeElement.removeAttribute, "badged");
+      assert.calledWithExactly(fakeElement.removeAttribute, "aria-labelledby");
+      assert.calledWithExactly(fakeElement.removeAttribute, "aria-describedby");
       assert.calledOnce(fakeElement.classList.remove);
       assert.calledWithExactly(fakeElement.classList.remove, "feature-callout");
+      assert.calledOnce(fakeElement.remove);
     });
   });
   describe("removeAllNotifications", () => {
@@ -489,7 +555,7 @@ describe("ToolbarBadgeHub", () => {
       );
       assert.calledWithExactly(
         fakeEvent.target.removeEventListener,
-        "click",
+        "keypress",
         instance.removeAllNotifications
       );
     });
@@ -519,7 +585,7 @@ describe("ToolbarBadgeHub", () => {
       );
       assert.calledWithExactly(
         fakeEvent.target.removeEventListener,
-        "click",
+        "keypress",
         instance.removeAllNotifications
       );
     });

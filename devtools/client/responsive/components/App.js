@@ -269,6 +269,14 @@ class App extends PureComponent {
   doResizeViewport(id, width, height) {
     // This is the setter function that we pass to Toolbar and Viewports
     // so they can modify the viewport.
+    window.postMessage(
+      {
+        type: "viewport-resize",
+        width,
+        height,
+      },
+      "*"
+    );
     this.props.dispatch(resizeViewport(id, width, height));
   }
 
@@ -422,16 +430,18 @@ class App extends PureComponent {
         onToggleUserAgentInput,
         onUpdateDeviceModal,
       }),
-      Viewports({
-        screenshot,
-        viewports,
-        onBrowserMounted,
-        onChangeViewportOrientation,
-        onContentResize,
-        onRemoveDeviceAssociation,
-        doResizeViewport,
-        onResizeViewport,
-      }),
+      !Services.prefs.getBoolPref("devtools.responsive.browserUI.enabled")
+        ? Viewports({
+            screenshot,
+            viewports,
+            onBrowserMounted,
+            onChangeViewportOrientation,
+            onContentResize,
+            onRemoveDeviceAssociation,
+            doResizeViewport,
+            onResizeViewport,
+          })
+        : null,
       devices.isModalOpen
         ? DeviceModal({
             deviceAdderViewportTemplate,

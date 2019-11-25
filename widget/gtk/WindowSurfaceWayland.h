@@ -109,7 +109,7 @@ class WindowBackBufferShm : public WindowBackBuffer {
 
  private:
   void Create(int aWidth, int aHeight);
-  void Release();
+  void ReleaseShmSurface();
 
   // WaylandShmPool provides actual shared memory we draw into
   WaylandShmPool mShmPool;
@@ -147,7 +147,7 @@ class WindowBackBufferDMABuf : public WindowBackBuffer {
   bool Resize(int aWidth, int aHeight);
 
  private:
-  WaylandDMABufSurface mDMAbufSurface;
+  RefPtr<WaylandDMABufSurface> mDMAbufSurface;
 };
 
 class WindowImageSurface {

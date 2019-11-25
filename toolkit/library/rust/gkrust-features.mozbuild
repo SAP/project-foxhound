@@ -25,6 +25,9 @@ if CONFIG['MOZ_AUDIOUNIT_RUST']:
 if CONFIG['MOZ_RUST_SIMD']:
     gkrust_features += ['simd-accel']
 
+if CONFIG['MOZ_XBL']:
+    gkrust_features += ['moz_xbl']
+
 # This feature is not yet supported on all platforms, and this check needs to
 # match MOZ_CUBEB_REMOTING in CubebUtils.cpp.
 if (CONFIG['OS_ARCH'] == 'Linux' and CONFIG['OS_TARGET'] != 'Android') or CONFIG['OS_ARCH'] == 'Darwin' or (CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CPU_ARCH'] != 'aarch64'):
@@ -61,3 +64,9 @@ if CONFIG['MOZ_NEW_XULSTORE']:
 
 if CONFIG['MOZ_NEW_CERT_STORAGE']:
     gkrust_features += ['new_cert_storage']
+
+if CONFIG['FUZZING_INTERFACES']:
+    gkrust_features += ['fuzzing_interfaces']
+
+if CONFIG['MOZ_WEBRTC']:
+    gkrust_features += ['webrtc']

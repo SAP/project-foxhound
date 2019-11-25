@@ -17,6 +17,8 @@ const reasons = {
   resumeLimit: "whyPaused.resumeLimit",
   breakpointConditionThrown: "whyPaused.breakpointConditionThrown",
   eventBreakpoint: "whyPaused.eventBreakpoint",
+  getWatchpoint: "whyPaused.getWatchpoint",
+  setWatchpoint: "whyPaused.setWatchpoint",
   mutationBreakpoint: "whyPaused.mutationBreakpoint",
   interrupted: "whyPaused.interrupted",
   replayForcedPause: "whyPaused.replayForcedPause",
@@ -24,14 +26,14 @@ const reasons = {
   // V8
   DOM: "whyPaused.breakpoint",
   EventListener: "whyPaused.pauseOnDOMEvents",
-  XHR: "whyPaused.xhr",
+  XHR: "whyPaused.XHR",
   promiseRejection: "whyPaused.promiseRejection",
   assert: "whyPaused.assert",
   debugCommand: "whyPaused.debugCommand",
   other: "whyPaused.other",
 };
 
-export function getPauseReason(why?: Why): string | null {
+export function getPauseReason(why?: ?Why): string | null {
   if (!why) {
     return null;
   }

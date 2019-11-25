@@ -27,13 +27,11 @@
 #include "DataChannelProtocol.h"
 #include "DataChannelListener.h"
 #include "mozilla/net/NeckoTargetHolder.h"
+#include "DataChannelLog.h"
+
 #ifdef SCTP_DTLS_SUPPORTED
 #  include "mtransport/sigslot.h"
 #  include "mtransport/transportlayer.h"  // For TransportLayer::State
-#endif
-
-#ifndef DATACHANNEL_LOG
-#  define DATACHANNEL_LOG(args)
 #endif
 
 #ifndef EALREADY
@@ -159,8 +157,9 @@ class DataChannelConnection final : public net::NeckoTargetHolder
 #endif
 
 #ifdef SCTP_DTLS_SUPPORTED
-  bool ConnectToTransport(const std::string& aTransportId, bool aClient,
-                          uint16_t localport, uint16_t remoteport);
+  bool ConnectToTransport(const std::string& aTransportId, const bool aClient,
+                          const uint16_t aLocalPort,
+                          const uint16_t aRemotePort);
   void TransportStateChange(const std::string& aTransportId,
                             TransportLayer::State aState);
   void CompleteConnect();
@@ -205,10 +204,6 @@ class DataChannelConnection final : public net::NeckoTargetHolder
 
   // Find out state
   enum { CONNECTING = 0U, OPEN = 1U, CLOSING = 2U, CLOSED = 3U };
-  uint16_t GetReadyState() {
-    MutexAutoLock lock(mLock);
-    return mState;
-  }
 
   friend class DataChannel;
   Mutex mLock;
@@ -233,6 +228,16 @@ class DataChannelConnection final : public net::NeckoTargetHolder
 
   bool Init(const uint16_t aLocalPort, const uint16_t aNumStreams,
             const Maybe<uint64_t>& aMaxMessageSize);
+
+  // Caller must hold mLock
+  uint16_t GetReadyState() const {
+    mLock.AssertCurrentThreadOwns();
+
+    return mState;
+  }
+
+  // Caller must hold mLock
+  void SetReadyState(const uint16_t aState);
 
 #ifdef SCTP_DTLS_SUPPORTED
   static void DTLSConnectThread(void* data);
@@ -482,10 +487,13 @@ class DataChannel {
   void AnnounceClosed();
 
   // Find out state
-  uint16_t GetReadyState() {
+  uint16_t GetReadyState() const {
     MOZ_ASSERT(NS_IsMainThread());
     return mReadyState;
   }
+
+  // Set ready state
+  void SetReadyState(const uint16_t aState);
 
   void GetLabel(nsAString& aLabel) { CopyUTF8toUTF16(mLabel, aLabel); }
   void GetProtocol(nsAString& aProtocol) {
@@ -586,8 +594,8 @@ class DataChannelOnMessageAvailable : public Runnable {
       case ON_DATA_STRING:
       case ON_DATA_BINARY:
         if (!mChannel->mListener) {
-          DATACHANNEL_LOG((
-              "DataChannelOnMessageAvailable (%d) with null Listener!", mType));
+          DC_ERROR(("DataChannelOnMessageAvailable (%d) with null Listener!",
+                    mType));
           return NS_OK;
         }
 
@@ -611,8 +619,8 @@ class DataChannelOnMessageAvailable : public Runnable {
         break;
       case ON_CHANNEL_CREATED:
         if (!mConnection->mListener) {
-          DATACHANNEL_LOG((
-              "DataChannelOnMessageAvailable (%d) with null Listener!", mType));
+          DC_ERROR(("DataChannelOnMessageAvailable (%d) with null Listener!",
+                    mType));
           return NS_OK;
         }
 

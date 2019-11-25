@@ -23,8 +23,7 @@
 #endif
 
 #ifdef MOZ_WEBRTC
-#  include "mozilla/net/ProxyConfigLookupChild.h"
-#  include "mozilla/net/WebrtcProxyChannelChild.h"
+#  include "mozilla/net/WebrtcTCPSocketChild.h"
 #endif
 
 namespace mozilla {
@@ -194,21 +193,20 @@ void SocketProcessChild::DestroySocketProcessBridgeParent(ProcessId aId) {
   mSocketProcessBridgeParentMap.Remove(aId);
 }
 
-PWebrtcProxyChannelChild* SocketProcessChild::AllocPWebrtcProxyChannelChild(
-    const PBrowserOrId& browser) {
+PWebrtcTCPSocketChild* SocketProcessChild::AllocPWebrtcTCPSocketChild(
+    const Maybe<TabId>& tabId) {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing object
   MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcProxyChannelChild should not be called on"
+      "AllocPWebrtcTCPSocketChild should not be called on"
       " socket child");
   return nullptr;
 }
 
-bool SocketProcessChild::DeallocPWebrtcProxyChannelChild(
-    PWebrtcProxyChannelChild* aActor) {
+bool SocketProcessChild::DeallocPWebrtcTCPSocketChild(
+    PWebrtcTCPSocketChild* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelChild* child =
-      static_cast<WebrtcProxyChannelChild*>(aActor);
+  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
   child->ReleaseIPDLReference();
 #endif
   return true;
@@ -226,19 +224,6 @@ PDNSRequestChild* SocketProcessChild::AllocPDNSRequestChild(
 bool SocketProcessChild::DeallocPDNSRequestChild(PDNSRequestChild* aChild) {
   DNSRequestChild* p = static_cast<DNSRequestChild*>(aChild);
   p->ReleaseIPDLReference();
-  return true;
-}
-
-PProxyConfigLookupChild* SocketProcessChild::AllocPProxyConfigLookupChild() {
-  MOZ_CRASH("AllocPProxyConfigLookupChild should not be called");
-  return nullptr;
-}
-
-bool SocketProcessChild::DeallocPProxyConfigLookupChild(
-    PProxyConfigLookupChild* aActor) {
-#ifdef MOZ_WEBRTC
-  delete static_cast<ProxyConfigLookupChild*>(aActor);
-#endif
   return true;
 }
 

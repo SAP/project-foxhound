@@ -6,7 +6,10 @@
 
 const actionTypes = {
   // manifest substate
-  UPDATE_MANIFEST: "UPDATE_MANIFEST",
+  FETCH_MANIFEST_FAILURE: "FETCH_MANIFEST_FAILURE",
+  FETCH_MANIFEST_START: "FETCH_MANIFEST_START",
+  FETCH_MANIFEST_SUCCESS: "FETCH_MANIFEST_SUCCESS",
+  RESET_MANIFEST: "RESET_MANIFEST",
   // page substate
   UPDATE_DOMAIN: "UPDATE_DOMAIN",
   // ui substate
@@ -16,12 +19,25 @@ const actionTypes = {
   UPDATE_WORKERS: "UPDATE_WORKERS",
 };
 
+// NOTE: these const values are used as part of CSS selectors - be mindful of the characters used
 const PAGE_TYPES = {
   MANIFEST: "manifest",
   SERVICE_WORKERS: "service-workers",
 };
 
 const DEFAULT_PAGE = PAGE_TYPES.MANIFEST;
+
+const MANIFEST_CATEGORIES = {
+  IDENTITY: "identity",
+  PRESENTATION: "presentation",
+  ICONS: "icons",
+};
+
+const MANIFEST_MEMBER_VALUE_TYPES = {
+  COLOR: "color",
+  ICON: "icon",
+  STRING: "string",
+};
 
 const MANIFEST_ISSUE_LEVELS = {
   ERROR: "error",
@@ -34,7 +50,9 @@ module.exports = Object.assign(
   {
     DEFAULT_PAGE,
     PAGE_TYPES,
+    MANIFEST_CATEGORIES,
     MANIFEST_ISSUE_LEVELS,
+    MANIFEST_MEMBER_VALUE_TYPES,
   },
   actionTypes
 );

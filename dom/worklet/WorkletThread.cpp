@@ -40,11 +40,6 @@ bool PreserveWrapper(JSContext* aCx, JS::HandleObject aObj) {
   return mozilla::dom::TryPreserveWrapper(aObj);
 }
 
-void DestroyWorkletPrincipals(JSPrincipals* aPrincipals) {
-  MOZ_ASSERT_UNREACHABLE(
-      "Worklet principals refcount should never fall below one");
-}
-
 JSObject* Wrap(JSContext* aCx, JS::HandleObject aExisting,
                JS::HandleObject aObj) {
   if (aExisting) {
@@ -137,7 +132,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
     JSContext* cx = Context();
 
     js::SetPreserveWrapperCallback(cx, PreserveWrapper);
-    JS_InitDestroyPrincipalsCallback(cx, DestroyWorkletPrincipals);
+    JS_InitDestroyPrincipalsCallback(cx, WorkletPrincipals::Destroy);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     JS_SetFutexCanWait(cx);
 
@@ -169,10 +164,46 @@ class WorkletJSContext final : public CycleCollectedJSContext {
   }
 
   void ReportError(JSErrorReport* aReport,
-                   JS::ConstUTF8CharsZ aToStringResult) override {
-    // TODO: bug 1558128;
+                   JS::ConstUTF8CharsZ aToStringResult) override;
+
+  uint64_t GetCurrentWorkletWindowID() {
+    JSObject* global = JS::CurrentGlobalOrNull(Context());
+    if (NS_WARN_IF(!global)) {
+      return 0;
+    }
+    nsIGlobalObject* nativeGlobal = xpc::NativeGlobal(global);
+    nsCOMPtr<WorkletGlobalScope> workletGlobal =
+        do_QueryInterface(nativeGlobal);
+    if (NS_WARN_IF(!workletGlobal)) {
+      return 0;
+    }
+    return workletGlobal->Impl()->LoadInfo().InnerWindowID();
   }
 };
+
+void WorkletJSContext::ReportError(JSErrorReport* aReport,
+                                   JS::ConstUTF8CharsZ aToStringResult) {
+  RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
+  xpcReport->Init(aReport, aToStringResult.c_str(), IsSystemCaller(),
+                  GetCurrentWorkletWindowID());
+  RefPtr<AsyncErrorReporter> reporter = new AsyncErrorReporter(xpcReport);
+
+  JSContext* cx = Context();
+  JS::Rooted<JS::Value> exn(cx);
+  if (JS_GetPendingException(cx, &exn)) {
+    JS::Rooted<JSObject*> exnStack(cx, JS::GetPendingExceptionStack(cx));
+    JS_ClearPendingException(cx);
+    JS::Rooted<JSObject*> stack(cx);
+    JS::Rooted<JSObject*> stackGlobal(cx);
+    xpc::FindExceptionStackForConsoleReport(nullptr, exn, exnStack, &stack,
+                                            &stackGlobal);
+    if (stack) {
+      reporter->SerializeStack(cx, stack);
+    }
+  }
+
+  NS_DispatchToMainThread(reporter);
+}
 
 // This is the first runnable to be dispatched. It calls the RunEventLoop() so
 // basically everything happens into this runnable. The reason behind this

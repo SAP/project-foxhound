@@ -63,7 +63,12 @@ class DirectoryLock : public RefCountedObject {
   friend class DirectoryLockImpl;
 
  public:
-  virtual void Log() = 0;
+  already_AddRefed<DirectoryLock> Specialize(PersistenceType aPersistenceType,
+                                             const nsACString& aGroup,
+                                             const nsACString& aOrigin,
+                                             Client::Type aClientType) const;
+
+  void Log() const;
 
  private:
   DirectoryLock() {}
@@ -589,6 +594,9 @@ class QuotaManager final : public BackgroundThreadObject {
 
   uint64_t mTemporaryStorageLimit;
   uint64_t mTemporaryStorageUsage;
+  int64_t mNextDirectoryLockId;
+  bool mStorageInitializationAttempted;
+  bool mTemporaryStorageInitializationAttempted;
   bool mTemporaryStorageInitialized;
   bool mCacheUsable;
 };

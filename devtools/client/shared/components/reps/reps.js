@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ 
 (function webpackUniversalModuleDefinition(root, factory) {
 	if(typeof exports === 'object' && typeof module === 'object')
 		module.exports = factory(require("devtools/client/shared/vendor/react-prop-types"), require("devtools/client/shared/vendor/react-dom-factories"), require("devtools/client/shared/vendor/react"), require("Services"), require("devtools/client/shared/vendor/react-redux"));
@@ -214,7 +218,9 @@ class TreeNode extends Component {
     const elms = this.getFocusableElements();
 
     if (this.props.active) {
-      if (elms.length > 0 && !elms.includes(document.activeElement)) {
+      const doc = this.treeNodeRef.current.ownerDocument;
+
+      if (elms.length > 0 && !elms.includes(doc.activeElement)) {
         elms[0].focus();
       }
     } else {
@@ -345,10 +351,15 @@ const TreeNodeFactory = createFactory(TreeNode);
  * frame.
  *
  * @param {Function} fn
+ * @param {Object} options: object that contains the following properties:
+ *                      - {Function} getDocument: A function that return the document
+ *                                                the component is rendered in.
  * @returns {Function}
  */
 
-function oncePerAnimationFrame(fn) {
+function oncePerAnimationFrame(fn, {
+  getDocument
+}) {
   let animationId = null;
   let argsToPass = null;
   return function (...args) {
@@ -358,7 +369,13 @@ function oncePerAnimationFrame(fn) {
       return;
     }
 
-    animationId = requestAnimationFrame(() => {
+    const doc = getDocument();
+
+    if (!doc) {
+      return;
+    }
+
+    animationId = doc.defaultView.requestAnimationFrame(() => {
       fn.call(this, ...argsToPass);
       animationId = null;
       argsToPass = null;
@@ -592,13 +609,18 @@ class Tree extends Component {
       autoExpanded: new Set()
     };
     this.treeRef = _react.default.createRef();
-    this._onExpand = oncePerAnimationFrame(this._onExpand).bind(this);
-    this._onCollapse = oncePerAnimationFrame(this._onCollapse).bind(this);
-    this._focusPrevNode = oncePerAnimationFrame(this._focusPrevNode).bind(this);
-    this._focusNextNode = oncePerAnimationFrame(this._focusNextNode).bind(this);
-    this._focusParentNode = oncePerAnimationFrame(this._focusParentNode).bind(this);
-    this._focusFirstNode = oncePerAnimationFrame(this._focusFirstNode).bind(this);
-    this._focusLastNode = oncePerAnimationFrame(this._focusLastNode).bind(this);
+
+    const opaf = fn => oncePerAnimationFrame(fn, {
+      getDocument: () => this.treeRef.current && this.treeRef.current.ownerDocument
+    });
+
+    this._onExpand = opaf(this._onExpand).bind(this);
+    this._onCollapse = opaf(this._onCollapse).bind(this);
+    this._focusPrevNode = opaf(this._focusPrevNode).bind(this);
+    this._focusNextNode = opaf(this._focusNextNode).bind(this);
+    this._focusParentNode = opaf(this._focusParentNode).bind(this);
+    this._focusFirstNode = opaf(this._focusFirstNode).bind(this);
+    this._focusLastNode = opaf(this._focusLastNode).bind(this);
     this._autoExpand = this._autoExpand.bind(this);
     this._preventArrowKeyScrolling = this._preventArrowKeyScrolling.bind(this);
     this._preventEvent = this._preventEvent.bind(this);
@@ -823,7 +845,9 @@ class Tree extends Component {
     if (this.props.active != undefined) {
       this._activate(undefined);
 
-      if (this.treeRef.current !== document.activeElement) {
+      const doc = this.treeRef.current && this.treeRef.current.ownerDocument;
+
+      if (this.treeRef.current !== doc.activeElement) {
         this.treeRef.current.focus();
       }
     }
@@ -862,7 +886,8 @@ class Tree extends Component {
   _scrollNodeIntoView(item, options = {}) {
     if (item !== undefined) {
       const treeElement = this.treeRef.current;
-      const element = document.getElementById(this.props.getKey(item));
+      const doc = treeElement && treeElement.ownerDocument;
+      const element = doc.getElementById(this.props.getKey(item));
 
       if (element) {
         const {
@@ -934,6 +959,8 @@ class Tree extends Component {
 
     this._preventArrowKeyScrolling(e);
 
+    const doc = this.treeRef.current && this.treeRef.current.ownerDocument;
+
     switch (e.key) {
       case "ArrowUp":
         this._focusPrevNode();
@@ -975,7 +1002,7 @@ class Tree extends Component {
 
       case "Enter":
       case " ":
-        if (this.treeRef.current === document.activeElement) {
+        if (this.treeRef.current === doc.activeElement) {
           this._preventEvent(e);
 
           if (this.props.active !== this.props.focused) {
@@ -992,7 +1019,7 @@ class Tree extends Component {
           this._activate(undefined);
         }
 
-        if (this.treeRef.current !== document.activeElement) {
+        if (this.treeRef.current !== doc.activeElement) {
           this.treeRef.current.focus();
         }
 
@@ -1894,7 +1921,7 @@ function makeNodesForEntries(item) {
         return createNode({
           parent: item,
           name: index,
-          path: `${entriesPath}/${index}`,
+          path: createPath(entriesPath, index),
           contents: {
             value: GripMapEntryRep.createGripMapEntry(key, value)
           }
@@ -1905,7 +1932,7 @@ function makeNodesForEntries(item) {
         return createNode({
           parent: item,
           name: index,
-          path: `${entriesPath}/${index}`,
+          path: createPath(entriesPath, index),
           contents: {
             value
           }
@@ -2030,7 +2057,8 @@ function makeDefaultPropsBucket(propertiesNames, parent, ownProperties) {
     const defaultNodes = defaultProperties.map((name, index) => createNode({
       parent: defaultPropertiesNode,
       name: maybeEscapePropertyName(name),
-      path: `${index}/${name}`,
+      propertyName: name,
+      path: createPath(index, name),
       contents: ownProperties[name]
     }));
     nodes.push(setNodeChildren(defaultPropertiesNode, defaultNodes));
@@ -2043,6 +2071,7 @@ function makeNodesForOwnProps(propertiesNames, parent, ownProperties) {
   return propertiesNames.map(name => createNode({
     parent,
     name: maybeEscapePropertyName(name),
+    propertyName: name,
     contents: ownProperties[name]
   }));
 }
@@ -2164,6 +2193,7 @@ function createNode(options) {
   const {
     parent,
     name,
+    propertyName,
     path,
     contents,
     type = NODE_TYPES.GRIP,
@@ -2174,16 +2204,15 @@ function createNode(options) {
     return null;
   } // The path is important to uniquely identify the item in the entire
   // tree. This helps debugging & optimizes React's rendering of large
-  // lists. The path will be separated by property name, wrapped in a Symbol
-  // to avoid name clashing,
-  // i.e. `{ foo: { bar: { baz: 5 }}}` will have a path of Symbol(`foo/bar/baz`)
-  // for the inner object.
+  // lists. The path will be separated by property name.
 
 
   return {
     parent,
     name,
-    path: parent ? Symbol(`${getSymbolDescriptor(parent.path)}/${path || name}`) : Symbol(path || name),
+    // `name` can be escaped; propertyName contains the original property name.
+    propertyName,
+    path: createPath(parent && parent.path, path || name),
     contents,
     type,
     meta
@@ -2218,10 +2247,6 @@ function createSetterNode({
     },
     type: NODE_TYPES.SET
   });
-}
-
-function getSymbolDescriptor(symbol) {
-  return symbol.toString().replace(/^(Symbol\()(.*)(\))$/, "$2");
 }
 
 function setNodeChildren(node, children) {
@@ -2328,6 +2353,17 @@ function getChildren(options) {
   }
 
   return addToCache(makeNodesForProperties(loadedProps, item));
+} // Builds an expression that resolves to the value of the item in question
+// e.g. `b` in { a: { b: 2 } } resolves to `a.b`
+
+
+function getPathExpression(item) {
+  if (item && item.parent) {
+    let parent = nodeIsBucket(item.parent) ? item.parent.parent : item.parent;
+    return `${getPathExpression(parent)}.${item.name}`;
+  }
+
+  return item.name;
 }
 
 function getParent(item) {
@@ -2425,6 +2461,10 @@ function getNonPrototypeParentGripValue(item) {
   return getValue(parentGripNode);
 }
 
+function createPath(parentPath, path) {
+  return parentPath ? `${parentPath}◦${path}` : path;
+}
+
 module.exports = {
   createNode,
   createGetterNode,
@@ -2434,6 +2474,7 @@ module.exports = {
   getChildrenWithEvaluations,
   getClosestGripNode,
   getClosestNonBucketNode,
+  getPathExpression,
   getParent,
   getParentGripValue,
   getNonPrototypeParentGripValue,
@@ -2487,12 +2528,14 @@ module.exports = {
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function initialState() {
+function initialState(overrides) {
   return {
     expandedPaths: new Set(),
     loadedProperties: new Map(),
     evaluations: new Map(),
-    actors: new Set()
+    actors: new Set(),
+    watchpoints: new Map(),
+    ...overrides
   };
 }
 
@@ -2520,11 +2563,43 @@ function reducer(state = initialState(), action = {}) {
     });
   }
 
+  if (type == "SET_WATCHPOINT") {
+    const {
+      watchpoint,
+      property,
+      path
+    } = data;
+    const obj = state.loadedProperties.get(path);
+    return cloneState({
+      loadedProperties: new Map(state.loadedProperties).set(path, updateObject(obj, property, watchpoint)),
+      watchpoints: new Map(state.watchpoints).set(data.actor, data.watchpoint)
+    });
+  }
+
+  if (type === "REMOVE_WATCHPOINT") {
+    const {
+      path,
+      property,
+      actor
+    } = data;
+    const obj = state.loadedProperties.get(path);
+    const watchpoints = new Map(state.watchpoints);
+    watchpoints.delete(actor);
+    return cloneState({
+      loadedProperties: new Map(state.loadedProperties).set(path, updateObject(obj, property, null)),
+      watchpoints: watchpoints
+    });
+  }
+
   if (type === "NODE_PROPERTIES_LOADED") {
     return cloneState({
       actors: data.actor ? new Set(state.actors || []).add(data.actor) : state.actors,
       loadedProperties: new Map(state.loadedProperties).set(data.node.path, action.data.properties)
     });
+  }
+
+  if (type === "RELEASED_ACTORS") {
+    return onReleasedActorsAction(state, action);
   }
 
   if (type === "ROOTS_CHANGED") {
@@ -2543,10 +2618,44 @@ function reducer(state = initialState(), action = {}) {
 
 
   if (type === "RESUME" || type == "NAVIGATE") {
-    return initialState();
+    return initialState({
+      watchpoints: state.watchpoints
+    });
   }
 
   return state;
+}
+/**
+ * Reducer function for the "RELEASED_ACTORS" action.
+ */
+
+
+function onReleasedActorsAction(state, action) {
+  const {
+    data
+  } = action;
+
+  if (state.actors && state.actors.size > 0 && data.actors.length > 0) {
+    return state;
+  }
+
+  for (const actor of data.actors) {
+    state.actors.delete(actor);
+  }
+
+  return { ...state,
+    actors: new Set(state.actors || [])
+  };
+}
+
+function updateObject(obj, property, watchpoint) {
+  return { ...obj,
+    ownProperties: { ...obj.ownProperties,
+      [property]: { ...obj.ownProperties[property],
+        watchpoint
+      }
+    }
+  };
 }
 
 function getObjectInspectorState(state) {
@@ -2565,6 +2674,10 @@ function getActors(state) {
   return getObjectInspectorState(state).actors;
 }
 
+function getWatchpoints(state) {
+  return getObjectInspectorState(state).watchpoints;
+}
+
 function getLoadedProperties(state) {
   return getObjectInspectorState(state).loadedProperties;
 }
@@ -2579,6 +2692,7 @@ function getEvaluations(state) {
 
 const selectors = {
   getActors,
+  getWatchpoints,
   getEvaluations,
   getExpandedPathKeys,
   getExpandedPaths,
@@ -2734,14 +2848,16 @@ const IGNORED_SOURCE_URLS = ["debugger eval code"];
 FunctionRep.propTypes = {
   object: PropTypes.object.isRequired,
   parameterNames: PropTypes.array,
-  onViewSourceInDebugger: PropTypes.func
+  onViewSourceInDebugger: PropTypes.func,
+  sourceMapService: PropTypes.object
 };
 
 function FunctionRep(props) {
   const {
     object: grip,
     onViewSourceInDebugger,
-    recordTelemetryEvent
+    recordTelemetryEvent,
+    sourceMapService
   } = props;
   let jumpToDefinitionButton;
 
@@ -2750,7 +2866,7 @@ function FunctionRep(props) {
       className: "jump-definition",
       draggable: false,
       title: "Jump to definition",
-      onClick: e => {
+      onClick: async e => {
         // Stop the event propagation so we don't trigger ObjectInspector
         // expand/collapse.
         e.stopPropagation();
@@ -2759,7 +2875,8 @@ function FunctionRep(props) {
           recordTelemetryEvent("jump_to_definition");
         }
 
-        onViewSourceInDebugger(grip.location);
+        const sourceLocation = await getSourceLocation(grip.location, sourceMapService);
+        onViewSourceInDebugger(sourceLocation);
       }
     });
   }
@@ -2877,6 +2994,31 @@ function supportsObject(grip, noGrip = false) {
   }
 
   return type == "Function";
+}
+
+async function getSourceLocation(location, sourceMapService) {
+  if (!sourceMapService) {
+    return location;
+  }
+
+  try {
+    const originalLocation = await sourceMapService.originalPositionFor(location.url, location.line, location.column);
+
+    if (originalLocation) {
+      const {
+        sourceUrl,
+        line,
+        column
+      } = originalLocation;
+      return {
+        url: sourceUrl,
+        line,
+        column
+      };
+    }
+  } catch (e) {}
+
+  return location;
 } // Exports from this module
 
 
@@ -2969,6 +3111,7 @@ ErrorRep.propTypes = {
 function ErrorRep(props) {
   const object = props.object;
   const preview = object.preview;
+  const mode = props.mode;
   let name;
 
   if (preview && preview.name && preview.kind) {
@@ -2990,13 +3133,13 @@ function ErrorRep(props) {
 
   const content = [];
 
-  if (props.mode === MODE.TINY) {
+  if (mode === MODE.TINY) {
     content.push(name);
   } else {
     content.push(`${name}: "${preview.message}"`);
   }
 
-  if (preview.stack && props.mode !== MODE.TINY) {
+  if (preview.stack && mode !== MODE.TINY && mode !== MODE.SHORT) {
     const stacktrace = props.renderStacktrace ? props.renderStacktrace(parseStackString(preview.stack)) : getStacktraceElements(props, preview);
     content.push(stacktrace);
   }
@@ -3083,14 +3226,18 @@ function getStacktraceElements(props, preview) {
 
 
 function parseStackString(stack) {
-  const res = [];
-
   if (!stack) {
-    return res;
+    return [];
   }
 
   const isStacktraceALongString = isLongString(stack);
   const stackString = isStacktraceALongString ? stack.initial : stack;
+
+  if (typeof stackString !== "string") {
+    return [];
+  }
+
+  const res = [];
   stackString.split("\n").forEach((frame, index, frames) => {
     if (!frame) {
       // Skip any blank lines
@@ -3805,43 +3952,54 @@ const {
   nodeIsLongString
 } = __webpack_require__(114);
 
-function loadItemProperties(item, createObjectClient, createLongStringClient, loadedProperties) {
+function loadItemProperties(item, client, loadedProperties) {
   const gripItem = getClosestGripNode(item);
   const value = getValue(gripItem);
+
   const [start, end] = item.meta ? [item.meta.startIndex, item.meta.endIndex] : [];
   const promises = [];
   let objectClient;
+  
+  if (value && client && client.getFrontByID) {
+    objectClient = client.getFrontByID(value.actor);
+  }
 
-  const getObjectClient = () => objectClient || createObjectClient(value);
+  const getObjectClient = function() {
+    if (!objectClient) {
+      objectClient = client.createObjectClient(value);
+    }
+
+    return objectClient;
+  }
 
   if (shouldLoadItemIndexedProperties(item, loadedProperties)) {
     promises.push(enumIndexedProperties(getObjectClient(), start, end));
   }
-
+  
   if (shouldLoadItemNonIndexedProperties(item, loadedProperties)) {
     promises.push(enumNonIndexedProperties(getObjectClient(), start, end));
   }
-
+  
   if (shouldLoadItemEntries(item, loadedProperties)) {
     promises.push(enumEntries(getObjectClient(), start, end));
   }
-
+  
   if (shouldLoadItemPrototype(item, loadedProperties)) {
     promises.push(getPrototype(getObjectClient()));
   }
-
+  
   if (shouldLoadItemSymbols(item, loadedProperties)) {
     promises.push(enumSymbols(getObjectClient(), start, end));
   }
-
+  
   if (shouldLoadItemFullText(item, loadedProperties)) {
-    promises.push(getFullText(createLongStringClient(value), item));
+    promises.push(getFullText(client.createLongStringClient(value), item));
   }
-
+  
   if (shouldLoadItemProxySlots(item, loadedProperties)) {
     promises.push(getProxySlots(getObjectClient()));
   }
-
+  
   return Promise.all(promises).then(mergeResponses);
 }
 
@@ -3941,9 +4099,7 @@ const {
 
 async function enumIndexedProperties(objectClient, start, end) {
   try {
-    const {
-      iterator
-    } = await objectClient.enumProperties({
+    const iterator = await objectClient.enumProperties({
       ignoreNonIndexedProperties: true
     });
     const response = await iteratorSlice(iterator, start, end);
@@ -3956,9 +4112,7 @@ async function enumIndexedProperties(objectClient, start, end) {
 
 async function enumNonIndexedProperties(objectClient, start, end) {
   try {
-    const {
-      iterator
-    } = await objectClient.enumProperties({
+    const iterator = await objectClient.enumProperties({
       ignoreIndexedProperties: true
     });
     const response = await iteratorSlice(iterator, start, end);
@@ -3971,9 +4125,7 @@ async function enumNonIndexedProperties(objectClient, start, end) {
 
 async function enumEntries(objectClient, start, end) {
   try {
-    const {
-      iterator
-    } = await objectClient.enumEntries();
+    const iterator = await objectClient.enumEntries();
     const response = await iteratorSlice(iterator, start, end);
     return response;
   } catch (e) {
@@ -3984,9 +4136,7 @@ async function enumEntries(objectClient, start, end) {
 
 async function enumSymbols(objectClient, start, end) {
   try {
-    const {
-      iterator
-    } = await objectClient.enumSymbols();
+    const iterator = await objectClient.enumSymbols();
     const response = await iteratorSlice(iterator, start, end);
     return response;
   } catch (e) {
@@ -7397,9 +7547,12 @@ const utils = __webpack_require__(116);
 
 const reducer = __webpack_require__(115);
 
+const actions = __webpack_require__(485);
+
 module.exports = {
   ObjectInspector,
   utils,
+  actions,
   reducer
 };
 
@@ -7523,6 +7676,12 @@ class ObjectInspector extends Component {
     if (this.roots !== nextProps.roots) {
       this.cachedNodes.clear();
       return;
+    }
+
+    for (const [path, properties] of nextProps.loadedProperties) {
+      if (properties !== this.props.loadedProperties.get(path)) {
+        this.cachedNodes.delete(path);
+      }
     } // If there are new evaluations, we want to remove the existing cached
     // nodes from the cache.
 
@@ -7551,7 +7710,7 @@ class ObjectInspector extends Component {
     // - OR the focused node changed.
     // - OR the active node changed.
 
-    return loadedProperties.size !== nextProps.loadedProperties.size || evaluations.size !== nextProps.evaluations.size || expandedPaths.size !== nextProps.expandedPaths.size && [...nextProps.expandedPaths].every(path => nextProps.loadedProperties.has(path)) || expandedPaths.size === nextProps.expandedPaths.size && [...nextProps.expandedPaths].some(key => !expandedPaths.has(key)) || this.focusedItem !== nextProps.focusedItem || this.activeItem !== nextProps.activeItem || this.roots !== nextProps.roots;
+    return loadedProperties !== nextProps.loadedProperties || loadedProperties.size !== nextProps.loadedProperties.size || evaluations.size !== nextProps.evaluations.size || expandedPaths.size !== nextProps.expandedPaths.size && [...nextProps.expandedPaths].every(path => nextProps.loadedProperties.has(path)) || expandedPaths.size === nextProps.expandedPaths.size && [...nextProps.expandedPaths].some(key => !expandedPaths.has(key)) || this.focusedItem !== nextProps.focusedItem || this.activeItem !== nextProps.activeItem || this.roots !== nextProps.roots;
   }
 
   componentWillUnmount() {
@@ -7749,8 +7908,15 @@ const {
 } = __webpack_require__(196);
 
 const {
+  getPathExpression,
+  getValue,
+  nodeIsBucket
+} = __webpack_require__(114);
+
+const {
   getLoadedProperties,
-  getActors
+  getActors,
+  getWatchpoints
 } = __webpack_require__(115);
 
 /**
@@ -7801,7 +7967,7 @@ function nodeLoadProperties(node, actor) {
     }
 
     try {
-      const properties = await loadItemProperties(node, client.createObjectClient, client.createLongStringClient, loadedProperties);
+      const properties = await loadItemProperties(node, client, loadedProperties);
       dispatch(nodePropertiesLoaded(node, actor, properties));
     } catch (e) {
       console.error(e);
@@ -7819,14 +7985,87 @@ function nodePropertiesLoaded(node, actor, properties) {
     }
   };
 }
+/*
+ * This action adds a property watchpoint to an object
+ */
+
+
+function addWatchpoint(item, watchpoint) {
+  return async function ({
+    dispatch,
+    client
+  }) {
+    const {
+      parent,
+      name
+    } = item;
+    let object = getValue(parent);
+
+    if (nodeIsBucket(parent)) {
+      object = getValue(parent.parent);
+    }
+
+    if (!object) {
+      return;
+    }
+
+    const path = parent.path;
+    const property = name;
+    const label = getPathExpression(item);
+    const actor = object.actor;
+    await client.addWatchpoint(object, property, label, watchpoint);
+    dispatch({
+      type: "SET_WATCHPOINT",
+      data: {
+        path,
+        watchpoint,
+        property,
+        actor
+      }
+    });
+  };
+}
+/*
+ * This action removes a property watchpoint from an object
+ */
+
+
+function removeWatchpoint(item) {
+  return async function ({
+    dispatch,
+    client
+  }) {
+    const {
+      parent,
+      name
+    } = item;
+    let object = getValue(parent);
+
+    if (nodeIsBucket(parent)) {
+      object = getValue(parent.parent);
+    }
+
+    const property = name;
+    const path = parent.path;
+    const actor = object.actor;
+    await client.removeWatchpoint(object, property);
+    dispatch({
+      type: "REMOVE_WATCHPOINT",
+      data: {
+        path,
+        property,
+        actor
+      }
+    });
+  };
+}
 
 function closeObjectInspector() {
-  return async ({
+  return ({
+    dispatch,
     getState,
     client
-  }) => {
-    releaseActors(getState(), client);
-  };
+  }) => releaseActors(getState(), client, dispatch);
 }
 /*
  * This action is dispatched when the `roots` prop, provided by a consumer of
@@ -7839,12 +8078,12 @@ function closeObjectInspector() {
 
 
 function rootsChanged(props) {
-  return async ({
+  return ({
     dispatch,
     client,
     getState
   }) => {
-    releaseActors(getState(), client);
+    releaseActors(getState(), client, dispatch);
     dispatch({
       type: "ROOTS_CHANGED",
       data: props
@@ -7852,11 +8091,32 @@ function rootsChanged(props) {
   };
 }
 
-function releaseActors(state, client) {
+async function releaseActors(state, client, dispatch) {
   const actors = getActors(state);
 
+  if (actors.size === 0) {
+    return;
+  }
+
+  const watchpoints = getWatchpoints(state);
+  let released = false;
+
   for (const actor of actors) {
-    client.releaseActor(actor);
+    // Watchpoints are stored in object actors.
+    // If we release the actor we lose the watchpoint.
+    if (!watchpoints.has(actor)) {
+      await client.releaseActor(actor);
+      released = true;
+    }
+  }
+
+  if (released) {
+    dispatch({
+      type: "RELEASED_ACTORS",
+      data: {
+        actors
+      }
+    });
   }
 }
 
@@ -7889,7 +8149,9 @@ module.exports = {
   nodeCollapse,
   nodeLoadProperties,
   nodePropertiesLoaded,
-  rootsChanged
+  rootsChanged,
+  addWatchpoint,
+  removeWatchpoint
 };
 
 /***/ }),
@@ -7959,7 +8221,13 @@ const {
 } = Utils.node;
 
 class ObjectInspectorItem extends Component {
-  // eslint-disable-next-line complexity
+  static get defaultProps() {
+    return {
+      onContextMenu: () => {}
+    };
+  } // eslint-disable-next-line complexity
+
+
   getLabelAndValue() {
     const {
       item,
@@ -8050,7 +8318,7 @@ class ObjectInspectorItem extends Component {
 
         if (targetGrip && receiverGrip) {
           Object.assign(repProps, {
-            onInvokeGetterButtonClick: () => this.props.invokeGetter(item, targetGrip, receiverGrip.actor, item.name)
+            onInvokeGetterButtonClick: () => this.props.invokeGetter(item, targetGrip, receiverGrip.actor, item.propertyName || item.name)
           });
         }
       }
@@ -8074,7 +8342,8 @@ class ObjectInspectorItem extends Component {
       expanded,
       onCmdCtrlClick,
       onDoubleClick,
-      dimTopLevelWindow
+      dimTopLevelWindow,
+      onContextMenu
     } = this.props;
     const parentElementProps = {
       className: classnames("node object-node", {
@@ -8100,10 +8369,11 @@ class ObjectInspectorItem extends Component {
         // So we need to also check if the arrow was clicked.
 
 
-        if (Utils.selection.documentHasSelection() && !(e.target && e.target.matches && e.target.matches(".arrow"))) {
+        if (e.target && Utils.selection.documentHasSelection(e.target.ownerDocument) && !(e.target.matches && e.target.matches(".arrow"))) {
           e.stopPropagation();
         }
-      }
+      },
+      onContextMenu: e => onContextMenu(e, item)
     };
 
     if (onDoubleClick) {
@@ -8137,7 +8407,7 @@ class ObjectInspectorItem extends Component {
       onClick: onLabelClick ? event => {
         event.stopPropagation(); // If the user selected text, bail out.
 
-        if (Utils.selection.documentHasSelection()) {
+        if (Utils.selection.documentHasSelection(event.target.ownerDocument)) {
           return;
         }
 
@@ -8149,6 +8419,24 @@ class ObjectInspectorItem extends Component {
         });
       } : undefined
     }, label);
+  }
+
+  renderWatchpointButton() {
+    const {
+      item,
+      removeWatchpoint
+    } = this.props;
+
+    if (!item || !item.contents || !item.contents.watchpoint) {
+      return;
+    }
+
+    const watchpoint = item.contents.watchpoint;
+    return dom.button({
+      className: `remove-${watchpoint}-watchpoint`,
+      title: L10N.getStr("watchpoints.removeWatchpointTooltip"),
+      onClick: () => removeWatchpoint(item)
+    });
   }
 
   render() {
@@ -8163,7 +8451,7 @@ class ObjectInspectorItem extends Component {
     const delimiter = value && labelElement ? dom.span({
       className: "object-delimiter"
     }, ": ") : null;
-    return dom.div(this.getTreeItemProps(), arrow, labelElement, delimiter, value);
+    return dom.div(this.getTreeItemProps(), arrow, labelElement, delimiter, value, this.renderWatchpointButton());
   }
 
 }
@@ -8178,8 +8466,8 @@ module.exports = ObjectInspectorItem;
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
-function documentHasSelection() {
-  const selection = getSelection();
+function documentHasSelection(doc = document) {
+  const selection = doc.defaultView.getSelection();
 
   if (!selection) {
     return false;

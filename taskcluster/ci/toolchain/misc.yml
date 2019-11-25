@@ -65,7 +65,7 @@ linux64-hfsplus:
         fetch:
             - hfsplus-tools
         toolchain:
-            - linux64-clang-8
+            - linux64-clang-9
 
 linux64-libdmg:
     description: "libdmg-hfsplus toolchain build"
@@ -174,4 +174,4 @@ wrench-deps:
         fetch:
             - android-rs-glue
         toolchain:
-            - linux64-rust-1.36  # whatever m-c is built with
+            - linux64-rust-1.37  # whatever m-c is built with

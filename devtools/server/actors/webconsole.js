@@ -189,7 +189,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     this.conn.addActorPool(this._actorPool);
 
     this._prefs = {};
-    this.dbg = this.parentActor.makeDebugger();
+    this.dbg = this.parentActor.dbg;
 
     this._gripDepth = 0;
     this._evalCounter = 0;
@@ -406,10 +406,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
 
   typeName: "console",
 
-  get globalDebugObject() {
-    return this.parentActor.threadActor.globalDebugObject;
-  },
-
   grip: function() {
     return { actor: this.actorID };
   },
@@ -469,7 +465,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     this._webConsoleCommandsCache = null;
     this._lastConsoleInputEvaluation = null;
     this._evalWindow = null;
-    this.dbg.disable();
     this.dbg = null;
     this.conn = null;
   },
@@ -566,7 +561,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
             Error("sources not yet implemented")
           ),
         createEnvironmentActor: env => this.createEnvironmentActor(env),
-        getGlobalDebugObject: () => this.globalDebugObject,
       },
       this.conn
     );
@@ -785,9 +779,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
                 this
               );
             }
-            this.consoleProgressListener.startMonitor(
-              this.consoleProgressListener.MONITOR_FILE_ACTIVITY
-            );
+            this.consoleProgressListener.startMonitor();
             startedListeners.push(event);
           }
           break;
@@ -895,9 +887,7 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           break;
         case "FileActivity":
           if (this.consoleProgressListener) {
-            this.consoleProgressListener.stopMonitor(
-              this.consoleProgressListener.MONITOR_FILE_ACTIVITY
-            );
+            this.consoleProgressListener.stopMonitor();
             this.consoleProgressListener = null;
           }
           stoppedListeners.push(event);
@@ -1295,7 +1285,14 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
     let resultGrip;
     if (!awaitResult) {
       try {
-        resultGrip = this.createValueGrip(result);
+        const objectActor = this.parentActor.threadActor.getThreadLifetimeObject(
+          result
+        );
+        if (objectActor) {
+          resultGrip = this.parentActor.threadActor.createValueGrip(result);
+        } else {
+          resultGrip = this.createValueGrip(result);
+        }
       } catch (e) {
         errorMessage = e;
       }
@@ -1355,7 +1352,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   ) {
     let dbgObject = null;
     let environment = null;
-    let hadDebuggee = false;
     let matches = [];
     let matchProp;
     let isElementAccess;
@@ -1388,8 +1384,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
           );
         }
       } else {
-        // This is the general case (non-paused debugger)
-        hadDebuggee = this.dbg.hasDebuggee(this.evalWindow);
         dbgObject = this.dbg.addDebuggee(this.evalWindow);
       }
 
@@ -1402,10 +1396,6 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
         selectedNodeActor,
         authorizedEvaluations,
       });
-
-      if (!hadDebuggee && dbgObject) {
-        this.dbg.removeDebuggee(this.evalWindow);
-      }
 
       if (result === null) {
         return {
@@ -1912,6 +1902,39 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
   },
 
   /**
+   * Send a message to all the netmonitor message managers, and resolve when
+   * all of them replied with the expected responseName message.
+   *
+   * @param {String} messageName
+   *        Name of the message to send via the netmonitor message managers.
+   * @param {String} responseName
+   *        Name of the message that should be received when the message has
+   *        been processed by the netmonitor instance.
+   * @param {Object} args
+   *        argument object passed with the initial message.
+   */
+  async _sendMessageToNetmonitors(messageName, responseName, args) {
+    if (!this.netmonitors) {
+      return;
+    }
+    await Promise.all(
+      this.netmonitors.map(({ messageManager }) => {
+        const onResponseReceived = new Promise(resolve => {
+          messageManager.addMessageListener(
+            responseName,
+            function onResponse() {
+              messageManager.removeMessageListener(responseName, onResponse);
+              resolve();
+            }
+          );
+        });
+        messageManager.sendAsyncMessage(messageName, args);
+        return onResponseReceived;
+      })
+    );
+  },
+
+  /**
    * Block a request based on certain filtering options.
    *
    * Currently, an exact URL match is the only supported filter type.
@@ -1922,13 +1945,11 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    *   An object containing a `url` key with a URL to block.
    */
   async blockRequest(filter) {
-    if (this.netmonitors) {
-      for (const { messageManager } of this.netmonitors) {
-        messageManager.sendAsyncMessage("debug:block-request", {
-          filter,
-        });
-      }
-    }
+    await this._sendMessageToNetmonitors(
+      "debug:block-request",
+      "debug:block-request:response",
+      { filter }
+    );
 
     return {};
   },
@@ -1944,13 +1965,29 @@ const WebConsoleActor = ActorClassWithSpec(webconsoleSpec, {
    *   An object containing a `url` key with a URL to unblock.
    */
   async unblockRequest(filter) {
-    if (this.netmonitors) {
-      for (const { messageManager } of this.netmonitors) {
-        messageManager.sendAsyncMessage("debug:unblock-request", {
-          filter,
-        });
-      }
-    }
+    await this._sendMessageToNetmonitors(
+      "debug:unblock-request",
+      "debug:unblock-request:response",
+      { filter }
+    );
+
+    return {};
+  },
+
+  /**
+   * Sets the list of blocked request URLs as provided by the netmonitor frontend
+   *
+   * This match will be a (String).includes match, not an exact URL match
+   *
+   * @param object filter
+   *   An object containing a `url` key with a URL to unblock.
+   */
+  async setBlockedUrls(urls) {
+    await this._sendMessageToNetmonitors(
+      "debug:set-blocked-urls",
+      "debug:set-blocked-urls:response",
+      { urls }
+    );
 
     return {};
   },

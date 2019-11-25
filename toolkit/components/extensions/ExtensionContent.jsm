@@ -355,7 +355,7 @@ class Script {
   }
 
   get requiresCleanup() {
-    return !this.removeCSS && (this.css.length > 0 || this.cssCodeHash);
+    return !this.removeCSS && (!!this.css.length || this.cssCodeHash);
   }
 
   async addCSSCode(cssCode) {
@@ -399,19 +399,24 @@ class Script {
 
         for (let url of this.css) {
           this.cssCache.deleteDocument(url, window.document);
-          runSafeSyncWithoutClone(
-            winUtils.removeSheetUsingURIString,
-            url,
-            type
-          );
+
+          if (!window.closed) {
+            runSafeSyncWithoutClone(
+              winUtils.removeSheetUsingURIString,
+              url,
+              type
+            );
+          }
         }
 
         const { cssCodeHash } = this;
 
         if (cssCodeHash && this.cssCodeCache.has(cssCodeHash)) {
-          this.cssCodeCache.get(cssCodeHash).then(({ uri }) => {
-            runSafeSyncWithoutClone(winUtils.removeSheet, uri, type);
-          });
+          if (!window.closed) {
+            this.cssCodeCache.get(cssCodeHash).then(({ uri }) => {
+              runSafeSyncWithoutClone(winUtils.removeSheet, uri, type);
+            });
+          }
           this.cssCodeCache.deleteDocument(cssCodeHash, window.document);
         }
       }
@@ -531,7 +536,7 @@ class Script {
         // problem since there are no network loads involved, and since we cache
         // the stylesheets on first load. We should fix this up if it does becomes
         // a problem.
-        if (this.css.length > 0) {
+        if (this.css.length) {
           context.contentWindow.document.blockParsing(cssPromise, {
             blockScriptCreated: false,
           });
@@ -543,6 +548,9 @@ class Script {
     if (scripts instanceof Promise) {
       scripts = await scripts;
     }
+
+    // Make sure we've injected any related CSS before we run content scripts.
+    await cssPromise;
 
     let result;
 
@@ -563,7 +571,9 @@ class Script {
         result = Cu.evalInSandbox(
           this.matcher.jsCode,
           context.cloneScope,
-          "latest"
+          "latest",
+          "sandbox eval code",
+          1
         );
       }
     } finally {
@@ -573,7 +583,6 @@ class Script {
       );
     }
 
-    await cssPromise;
     return result;
   }
 

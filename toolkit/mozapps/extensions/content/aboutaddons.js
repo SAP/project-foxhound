@@ -715,25 +715,21 @@ class PanelList extends HTMLElement {
           // If the menu is opened with the mouse, the active element might be
           // somewhere else in the document. In that case we should ignore it
           // to avoid walking unrelated DOM nodes.
-          this.walker.currentNode = this.contains(document.activeElement)
+          this.focusWalker.currentNode = this.contains(document.activeElement)
             ? document.activeElement
             : this;
           let nextItem = moveForward
-            ? this.walker.nextNode()
-            : this.walker.previousNode();
+            ? this.focusWalker.nextNode()
+            : this.focusWalker.previousNode();
 
           // If the next item wasn't found, try looping to the top/bottom.
           if (!nextItem) {
-            this.walker.currentNode = this;
+            this.focusWalker.currentNode = this;
             if (moveForward) {
-              nextItem = this.walker.firstChild();
+              nextItem = this.focusWalker.firstChild();
             } else {
-              nextItem = this.walker.lastChild();
+              nextItem = this.focusWalker.lastChild();
             }
-          }
-
-          if (nextItem) {
-            nextItem.focus();
           }
           break;
         } else if (e.key === "Escape") {
@@ -768,19 +764,44 @@ class PanelList extends HTMLElement {
     }
   }
 
-  get walker() {
-    if (!this._walker) {
-      this._walker = document.createTreeWalker(this, NodeFilter.SHOW_ELEMENT, {
-        acceptNode: node => {
-          if (node.disabled || node.hidden || node.localName !== "panel-item") {
-            return NodeFilter.FILTER_REJECT;
-          }
+  /**
+   * A TreeWalker that can be used to focus elements. The returned element will
+   * be the element that has gained focus based on the requested movement
+   * through the tree.
+   *
+   * Example:
+   *
+   *   this.focusWalker.currentNode = this;
+   *   // Focus and get the first focusable child.
+   *   let focused = this.focusWalker.nextNode();
+   *   // Focus the second focusable child.
+   *   this.focusWalker.nextNode();
+   */
+  get focusWalker() {
+    if (!this._focusWalker) {
+      this._focusWalker = document.createTreeWalker(
+        this,
+        NodeFilter.SHOW_ELEMENT,
+        {
+          acceptNode: node => {
+            // No need to look at hidden nodes.
+            if (node.hidden) {
+              return NodeFilter.FILTER_REJECT;
+            }
 
-          return NodeFilter.FILTER_ACCEPT;
-        },
-      });
+            // Focus the node, if it worked then this is the node we want.
+            node.focus();
+            if (node === document.activeElement) {
+              return NodeFilter.FILTER_ACCEPT;
+            }
+
+            // Continue into child nodes if the parent couldn't be focused.
+            return NodeFilter.FILTER_SKIP;
+          },
+        }
+      );
     }
-    return this._walker;
+    return this._focusWalker;
   }
 
   async onShow() {
@@ -797,11 +818,8 @@ class PanelList extends HTMLElement {
         triggeringEvent &&
         triggeringEvent.mozInputSource === MouseEvent.MOZ_SOURCE_KEYBOARD
       ) {
-        this.walker.currentNode = this;
-        let firstItem = this.walker.nextNode();
-        if (firstItem) {
-          firstItem.focus();
-        }
+        this.focusWalker.currentNode = this;
+        this.focusWalker.nextNode();
       }
 
       this.sendEvent("shown");
@@ -852,7 +870,7 @@ customElements.define("panel-item", PanelItem);
 
 class AddonOptions extends HTMLElement {
   connectedCallback() {
-    if (this.children.length == 0) {
+    if (!this.children.length) {
       this.render();
     }
   }
@@ -895,7 +913,27 @@ class AddonOptions extends HTMLElement {
   setElementState(el, card, addon, updateInstall) {
     switch (el.getAttribute("action")) {
       case "remove":
-        el.hidden = !hasPermission(addon, "uninstall");
+        if (hasPermission(addon, "uninstall")) {
+          // Regular add-on that can be uninstalled.
+          el.disabled = false;
+          el.hidden = false;
+          document.l10n.setAttributes(el, "remove-addon-button");
+        } else if (addon.isBuiltin) {
+          // Likely the built-in themes, can't be removed, that's fine.
+          el.hidden = true;
+        } else {
+          // Likely sideloaded, mention that it can't be removed with a link.
+          el.hidden = false;
+          el.disabled = true;
+          if (!el.querySelector('[slot="support-link"]')) {
+            let link = document.createElement("a", { is: "support-link" });
+            link.setAttribute("data-l10n-name", "link");
+            link.setAttribute("support-page", "cant-remove-addon");
+            link.setAttribute("slot", "support-link");
+            el.appendChild(link);
+            document.l10n.setAttributes(el, "remove-addon-disabled-button");
+          }
+        }
         break;
       case "report":
         el.hidden = !isAbuseReportSupported(addon);
@@ -1035,7 +1073,7 @@ customElements.define("five-star-rating", FiveStarRating);
 
 class ContentSelectDropdown extends HTMLElement {
   connectedCallback() {
-    if (this.children.length > 0) {
+    if (this.children.length) {
       return;
     }
     // This creates the menulist and menupopup elements needed for the inline
@@ -1332,7 +1370,7 @@ class AddonPermissionsList extends HTMLElement {
 
     this.textContent = "";
 
-    if (msgs.length > 0) {
+    if (msgs.length) {
       // Add a row for each permission message.
       for (let msg of msgs) {
         let row = document.createElement("div");
@@ -1363,7 +1401,7 @@ customElements.define("addon-permissions-list", AddonPermissionsList);
 
 class AddonDetails extends HTMLElement {
   connectedCallback() {
-    if (this.children.length == 0) {
+    if (!this.children.length) {
       this.render();
     }
     this.deck.addEventListener("view-changed", this);
@@ -1628,7 +1666,7 @@ customElements.define("addon-details", AddonDetails);
 class AddonCard extends HTMLElement {
   connectedCallback() {
     // If we've already rendered we can just update, otherwise render.
-    if (this.children.length > 0) {
+    if (this.children.length) {
       this.update();
     } else {
       this.render();
@@ -1658,7 +1696,7 @@ class AddonCard extends HTMLElement {
 
   set updateInstall(install) {
     this._updateInstall = install;
-    if (this.children.length > 0) {
+    if (this.children.length) {
       this.update();
     }
   }
@@ -1683,7 +1721,7 @@ class AddonCard extends HTMLElement {
     if (install && install.state == AddonManager.STATE_AVAILABLE) {
       this.updateInstall = install;
     }
-    if (this.children.length > 0) {
+    if (this.children.length) {
       this.render();
     }
   }
@@ -2067,7 +2105,7 @@ class AddonCard extends HTMLElement {
   }
 
   expand() {
-    if (this.children.length == 0) {
+    if (!this.children.length) {
       this.expanded = true;
     } else {
       throw new Error("expand() is only supported before render()");
@@ -2379,7 +2417,7 @@ class AddonList extends HTMLElement {
     // happpen as close to each other as possible.
     this.registerListener();
     // Don't render again if we were rendered prior to being inserted.
-    if (this.children.length == 0) {
+    if (!this.children.length) {
       // Render the initial view.
       this.render();
     }
@@ -2545,7 +2583,7 @@ class AddonList extends HTMLElement {
     let sectionCards = this.getCards(section);
 
     // If this is the first card in the section, create the heading.
-    if (sectionCards.length == 0) {
+    if (!sectionCards.length) {
       section.appendChild(this.createSectionHeading(sectionIndex));
     }
 
@@ -2621,7 +2659,7 @@ class AddonList extends HTMLElement {
     section.setAttribute("section", index);
 
     // Render the heading and add-ons if there are any.
-    if (addons.length > 0) {
+    if (addons.length) {
       section.appendChild(this.createSectionHeading(index));
 
       for (let addon of addons) {
@@ -3250,6 +3288,14 @@ async function show(type, param, { isKeyboardNavigation, historyEntryId }) {
     container.append(elem);
   } else if (type == "updates") {
     await new UpdatesView({ param, root: container }).render();
+  } else if (type == "shortcuts") {
+    // Force the extension category to be selected, in the case of a reload,
+    // restart, or if the view was opened from another category's page.
+    setCategoryFn("extension");
+    let view = document.createElement("addon-shortcuts");
+    await view.render();
+    await document.l10n.translateFragment(view);
+    container.appendChild(view);
   } else {
     throw new Error(`Unknown view type: ${type}`);
   }

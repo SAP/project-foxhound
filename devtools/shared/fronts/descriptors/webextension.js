@@ -44,10 +44,6 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
     }
   }
 
-  connect() {
-    return this.getTarget();
-  }
-
   /**
    * Returns the actual target front for web extensions.
    *
@@ -56,10 +52,7 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
    * the final target actor to use.
    */
   async getTarget() {
-    if (
-      this.isWebExtension &&
-      this.client.mainRoot.traits.webExtensionAddonConnect
-    ) {
+    if (this.isWebExtension) {
       // The Webextension form is related to a WebExtensionActor instance,
       // which isn't a target actor on its own, it is an actor living in the parent
       // process with access to the extension metadata, it can control the extension (e.g.
@@ -74,9 +67,7 @@ class WebExtensionDescriptorFront extends FrontClassWithSpec(
       } else {
         form = await super.getTarget();
       }
-      const front = new BrowsingContextTargetFront(this.conn, {
-        actor: form.actor,
-      });
+      const front = new BrowsingContextTargetFront(this.conn, null, this);
       front.form(form);
       this.manage(front);
       return front;

@@ -15,8 +15,8 @@
 #include "mozilla/RefPtr.h"
 #include "MediaPipeline.h"
 #include "MediaPipelineFilter.h"
-#include "MediaStreamGraph.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraph.h"
+#include "MediaTrackListener.h"
 #include "MediaStreamTrack.h"
 #include "transportflow.h"
 #include "transportlayerloopback.h"
@@ -55,7 +55,7 @@ class FakeMediaStreamTrackSource : public mozilla::dom::MediaStreamTrackSource {
 class FakeAudioStreamTrack : public mozilla::dom::AudioStreamTrack {
  public:
   FakeAudioStreamTrack()
-      : AudioStreamTrack(nullptr, nullptr, 0, new FakeMediaStreamTrackSource(),
+      : AudioStreamTrack(nullptr, nullptr, new FakeMediaStreamTrackSource(),
                          mozilla::dom::MediaStreamTrackState::Ended),
         mMutex("Fake AudioStreamTrack"),
         mStop(false),
@@ -73,13 +73,13 @@ class FakeAudioStreamTrack : public mozilla::dom::AudioStreamTrack {
     mTimer->Cancel();
   }
 
-  virtual void AddListener(MediaStreamTrackListener* aListener) override {
+  virtual void AddListener(MediaTrackListener* aListener) override {
     mozilla::MutexAutoLock lock(mMutex);
     mListeners.push_back(aListener);
   }
 
  private:
-  std::vector<MediaStreamTrackListener*> mListeners;
+  std::vector<MediaTrackListener*> mListeners;
   mozilla::Mutex mMutex;
   bool mStop;
   nsCOMPtr<nsITimer> mTimer;
@@ -153,7 +153,7 @@ class LoopbackTransport : public MediaTransportHandler {
 
   // We will probably be able to move the proxy lookup stuff into
   // this class once we move mtransport to its own process.
-  void SetProxyServer(NrSocketProxyConfig&& aProxyConfig) override {}
+  void SetProxyConfig(NrSocketProxyConfig&& aProxyConfig) override {}
 
   void EnsureProvisionalTransport(const std::string& aTransportId,
                                   const std::string& aLocalUfrag,
@@ -187,8 +187,8 @@ class LoopbackTransport : public MediaTransportHandler {
                       const std::vector<std::string>& aIceOptions) override {}
 
   void AddIceCandidate(const std::string& aTransportId,
-                       const std::string& aCandidate,
-                       const std::string& aUfrag) override {}
+                       const std::string& aCandidate, const std::string& aUfrag,
+                       const std::string& aObfuscatedAddress) override {}
 
   void UpdateNetworkState(bool aOnline) override {}
 

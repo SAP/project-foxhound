@@ -39,7 +39,6 @@
 #include "mozilla/dom/L10nOverlays.h"
 #include "mozilla/StaticPrefs_layout.h"
 #include "nsAttrValueOrString.h"
-#include "nsBindingManager.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentList.h"
@@ -90,8 +89,11 @@
 #include "nsSVGUtils.h"
 #include "nsTextNode.h"
 #include "nsUnicharUtils.h"
-#include "nsXBLBinding.h"
-#include "nsXBLPrototypeBinding.h"
+#ifdef MOZ_XBL
+#  include "nsBindingManager.h"
+#  include "nsXBLBinding.h"
+#  include "nsXBLPrototypeBinding.h"
+#endif
 #include "nsWindowSizes.h"
 #include "mozilla/Preferences.h"
 #include "xpcpublic.h"
@@ -2540,14 +2542,18 @@ const RawServoSelectorList* nsINode::ParseSelectorList(
 
   UniquePtr<RawServoSelectorList> selectorList =
       Servo_SelectorList_Parse(&selectorString).Consume();
-  if (!selectorList) {
+  // We want to cache even if null was returned, because we want to
+  // cache the "This is not a valid selector" result.
+  auto* ret = selectorList.get();
+  cache.CacheList(aSelectorString, std::move(selectorList));
+
+  // Now make sure we throw an exception if the selector was invalid.
+  if (!ret) {
     aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR,
                           NS_LITERAL_CSTRING("'") + selectorString +
                               NS_LITERAL_CSTRING("' is not a valid selector"));
   }
 
-  auto* ret = selectorList.get();
-  cache.CacheList(aSelectorString, std::move(selectorList));
   return ret;
 }
 

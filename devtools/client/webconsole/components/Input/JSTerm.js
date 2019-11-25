@@ -33,7 +33,7 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "focusableSelector",
+  "getFocusableElements",
   "devtools/client/shared/focus",
   true
 );
@@ -64,6 +64,8 @@ const {
   HISTORY_BACK,
   HISTORY_FORWARD,
 } = require("devtools/client/webconsole/constants");
+
+const JSTERM_CODEMIRROR_ORIGIN = "jsterm";
 
 /**
  * Create a JSTerminal (a JavaScript command line). This is attached to an
@@ -97,8 +99,6 @@ class JSTerm extends Component {
       editorToggle: PropTypes.func.isRequired,
       // Dismiss the editor onboarding UI.
       editorOnboardingDismiss: PropTypes.func.isRequired,
-      // Is the editor feature enabled
-      editorFeatureEnabled: PropTypes.bool,
       // Is the input in editor mode.
       editorMode: PropTypes.bool,
       editorWidth: PropTypes.number,
@@ -540,7 +540,12 @@ class JSTerm extends Component {
         return null;
       }
 
-      const items = Array.from(el.querySelectorAll(focusableSelector));
+      // We only want to get visible focusable element, and for that we can assert that
+      // the offsetParent isn't null. We can do that because we don't have fixed position
+      // element in the console.
+      const items = getFocusableElements(el).filter(
+        ({ offsetParent }) => offsetParent !== null
+      );
       const inputIndex = items.indexOf(inputField);
 
       if (items.length === 0 || (inputIndex > -1 && items.length === 1)) {
@@ -645,10 +650,20 @@ class JSTerm extends Component {
   /**
    * The editor "changes" event handler.
    */
-  _onEditorChanges() {
+  _onEditorChanges(cm, changes) {
     const value = this._getValue();
+
     if (this.lastInputValue !== value) {
-      if (this.props.autocomplete || this.autocompletePopup.isOpen) {
+      // We don't autocomplete if the changes were made by JsTerm (e.g. autocomplete was
+      // accepted).
+      const isJsTermChangeOnly = changes.every(
+        ({ origin }) => origin === JSTERM_CODEMIRROR_ORIGIN
+      );
+
+      if (
+        !isJsTermChangeOnly &&
+        (this.props.autocomplete || this.hasAutocompletionSuggestion())
+      ) {
         this.autocompleteUpdate();
       }
       this.lastInputValue = value;
@@ -944,27 +959,15 @@ class JSTerm extends Component {
       return;
     }
 
-    const value = this._getValue();
-    let prefix = this.getInputValueBeforeCursor();
-    const suffix = value.replace(prefix, "");
+    const cursor = this.editor.getCursor();
+    const from = {
+      line: cursor.line,
+      ch: cursor.ch - numberOfCharsToReplaceCharsBeforeCursor,
+    };
 
-    if (numberOfCharsToReplaceCharsBeforeCursor) {
-      prefix = prefix.substring(
-        0,
-        prefix.length - numberOfCharsToReplaceCharsBeforeCursor
-      );
-    }
-
-    // We need to retrieve the cursor before setting the new value.
-    const { line, ch } = this.editor.getCursor();
-
-    this._setValue(prefix + str + suffix);
-
-    // Set the cursor on the same line it was already at, after the autocompleted text
-    this.editor.setCursor({
-      line,
-      ch: ch + str.length - numberOfCharsToReplaceCharsBeforeCursor,
-    });
+    this.editor
+      .getDoc()
+      .replaceRange(str, from, cursor, JSTERM_CODEMIRROR_ORIGIN);
   }
 
   /**
@@ -1049,7 +1052,7 @@ class JSTerm extends Component {
   }
 
   renderOpenEditorButton() {
-    if (!this.props.editorFeatureEnabled || this.props.editorMode) {
+    if (this.props.editorMode) {
       return null;
     }
 
@@ -1063,7 +1066,7 @@ class JSTerm extends Component {
   }
 
   renderEditorOnboarding() {
-    if (!this.props.editorFeatureEnabled || !this.props.showEditorOnboarding) {
+    if (!this.props.showEditorOnboarding) {
       return null;
     }
 
@@ -1113,7 +1116,6 @@ class JSTerm extends Component {
       {
         className: "jsterm-input-container devtools-input devtools-monospace",
         key: "jsterm-container",
-        style: { direction: "ltr" },
         "aria-live": "off",
         onContextMenu: this.onContextMenu,
         ref: node => {

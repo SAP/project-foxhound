@@ -32,6 +32,14 @@
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
 
+namespace mozilla {
+
+namespace net {
+class CookieSettingsArgs;
+}
+
+}  // namespace mozilla
+
 class nsOfflineCacheUpdate;
 
 class nsOfflineCacheUpdateItem : public nsIStreamListener,
@@ -215,6 +223,11 @@ class nsOfflineCacheUpdate final : public nsIOfflineCacheUpdate,
 
   virtual nsresult UpdateFinished(nsOfflineCacheUpdate* aUpdate) override;
 
+  nsICookieSettings* CookieSettings() const { return mCookieSettings; }
+  void SetCookieSettings(nsICookieSettings* aCookieSettings);
+  void SetCookieSettingsArgs(
+      const mozilla::net::CookieSettingsArgs& aCookieSettingsArgs);
+
  protected:
   ~nsOfflineCacheUpdate();
 
@@ -271,6 +284,7 @@ class nsOfflineCacheUpdate final : public nsIOfflineCacheUpdate,
   nsCOMPtr<nsIURI> mDocumentURI;
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
   nsCOMPtr<nsIFile> mCustomProfileDir;
+  nsCOMPtr<nsICookieSettings> mCookieSettings;
 
   nsCOMPtr<nsIObserver> mUpdateAvailableObserver;
 
@@ -341,9 +355,7 @@ class nsOfflineCacheUpdateService final : public nsIOfflineCacheUpdateService,
 
   static already_AddRefed<nsOfflineCacheUpdateService> GetInstance();
 
-  static nsresult OfflineAppPinnedForURI(nsIURI* aDocumentURI,
-                                         nsIPrefBranch* aPrefBranch,
-                                         bool* aPinned);
+  static nsresult OfflineAppPinnedForURI(nsIURI* aDocumentURI, bool* aPinned);
 
   static nsTHashtable<nsCStringHashKey>* AllowedDomains();
 

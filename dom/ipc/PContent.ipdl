@@ -65,6 +65,10 @@ include HangTypes;
 include PrefsTypes;
 include NeckoChannelParams;
 
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+include protocol PSandboxTesting;
+#endif
+
 using refcounted class nsIDOMGeoPosition from "nsGeoPositionIPCSerialiser.h";
 using refcounted class nsIAlertNotification from "mozilla/AlertNotificationIPCSerializer.h";
 
@@ -97,7 +101,6 @@ using mozilla::Telemetry::DynamicScalarDefinition from "mozilla/TelemetryComms.h
 using mozilla::Telemetry::ChildEventData from "mozilla/TelemetryComms.h";
 using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
 using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
-using refcounted class nsIInputStream from "mozilla/ipc/IPCStreamUtils.h";
 using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextInitializer from "mozilla/dom/BrowsingContext.h";
@@ -792,14 +795,18 @@ child:
     // new HttpChannelChild that will be connected to the parent channel
     // represented by registrarId.
     // This is on PContent not PNecko, as PNecko may not be initialized yet.
+    // The returned loadInfo needs to be set on the channel - since the channel
+    // moved to a new process it now has different properties.
+
     async CrossProcessRedirect(uint32_t aRegistrarId,
                                nsIURI aURI,
-                               uint32_t aNewLoadFlags,
+                               ReplacementChannelConfigInit config,
                                LoadInfoArgs? aLoadInfo,
                                uint64_t aChannelId,
                                nsIURI aOriginalURI,
                                uint64_t aIdentifier,
-                               uint32_t aRedirectMode);
+                               uint32_t aRedirectMode)
+        returns (nsresult rv, LoadInfoArgs? arg);
 
     /**
     * This method is used to notifty content process to start delayed autoplay
@@ -816,6 +823,11 @@ child:
     // Begin subscribing to a new BrowsingContextGroup, sending down the current
     // value for every individual BrowsingContext.
     async RegisterBrowsingContextGroup(BrowsingContextInitializer[] aInits);
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+    // Initialize top-level actor for testing content process sandbox.
+    async InitSandboxTesting(Endpoint<PSandboxTestingChild> aEndpoint);
+#endif
 
 parent:
     async InitBackground(Endpoint<PBackgroundParent> aEndpoint);
@@ -1008,7 +1020,7 @@ parent:
 
     async DeviceReset();
 
-    sync KeywordToURI(nsCString keyword)
+    sync KeywordToURI(nsCString keyword, bool isPrivateContext)
         returns (nsString providerName, nsIInputStream postData, URIParams? uri);
 
     sync NotifyKeywordSearchLoading(nsString providerName, nsString keyword);
@@ -1053,11 +1065,6 @@ parent:
     async RequestAnonymousTemporaryFile(uint64_t aID);
 
     /**
-     * Tell the chrome process there is a destruction of PBrowser(Tab)
-     */
-    async NotifyTabDestroying(TabId tabId,
-                              ContentParentId cpId);
-    /**
      * Starts an offline application cache update.
      * @param manifestURI
      *   URI of the manifest to fetch, the application cache group ID
@@ -1084,12 +1091,12 @@ parent:
      *   To identify which tab owns the app.
      */
     async POfflineCacheUpdate(URIParams manifestURI, URIParams documentURI,
-                              PrincipalInfo loadingPrincipal, bool stickDocument);
+                              PrincipalInfo loadingPrincipal, bool stickDocument,
+                              CookieSettingsArgs cookieSettings);
 
     /**
      * Sets "offline-app" permission for the principal.  Called when we hit
-     * a web app with the manifest attribute in <html> and
-     * offline-apps.allow_by_default is set to true.
+     * a web app with the manifest attribute in <html>
      */
     async SetOfflinePermission(Principal principal);
 

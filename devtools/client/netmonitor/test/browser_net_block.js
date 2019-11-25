@@ -43,8 +43,15 @@ add_task(async function() {
       monitor,
       "request-list-context-block-url"
     );
+
+    const onRequestBlocked = waitForDispatch(
+      store,
+      "REQUEST_BLOCKING_UPDATE_COMPLETE"
+    );
     contextBlock.click();
-    info("Set request to blocked");
+    info("Wait for selected request to be blocked");
+    await onRequestBlocked;
+    info("Selected request is now blocked");
   }
 
   // Reload to have one request in the list
@@ -72,8 +79,15 @@ add_task(async function() {
       monitor,
       "request-list-context-unblock-url"
     );
+    const onRequestUnblocked = waitForDispatch(
+      store,
+      "REQUEST_BLOCKING_UPDATE_COMPLETE"
+    );
     contextUnblock.click();
-    info("Set request to unblocked");
+
+    info("Wait for selected request to be unblocked");
+    await onRequestUnblocked;
+    info("Selected request is now unblocked");
   }
 
   // Reload to have one request in the list

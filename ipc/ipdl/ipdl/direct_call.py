@@ -554,14 +554,12 @@ VIRTUAL_CALL_CLASSES = set([
     ("PPluginWidget", "parent"),
     ("PProfiler", "child"),
     ("PProfiler", "parent"),
-    ("PProxyConfigLookup", "child"),
-    ("PProxyConfigLookup", "parent"),
     ("PSpeechSynthesisRequest", "child"),
     ("PSpeechSynthesisRequest", "parent"),
     ("PStunAddrsRequest", "child"),
     ("PStunAddrsRequest", "parent"),
-    ("PWebrtcProxyChannel", "child"),
-    ("PWebrtcProxyChannel", "parent"),
+    ("PWebrtcTCPSocket", "child"),
+    ("PWebrtcTCPSocket", "parent"),
 
     # .h includes something that's a LOCAL_INCLUDE
     ("PBackgroundLocalStorageCache", "child"),

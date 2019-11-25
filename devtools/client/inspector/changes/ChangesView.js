@@ -82,19 +82,19 @@ class ChangesView {
       changesApp
     );
 
-    this.inspector.target.on("will-navigate", this.onClearChanges);
+    this.inspector.currentTarget.on("will-navigate", this.onClearChanges);
   }
 
   _getChangesFront() {
     if (this.changesFrontPromise) {
       return this.changesFrontPromise;
     }
-    this.changesFrontPromise = new Promise(async resolve => {
-      const target = this.inspector.target;
+    this.changesFrontPromise = (async () => {
+      const target = this.inspector.currentTarget;
       const front = await target.getFront("changes");
       this.onChangesFront(front);
-      resolve(front);
-    });
+      return front;
+    })();
     return this.changesFrontPromise;
   }
 

@@ -12,8 +12,11 @@
  * liability, trademark and document use rules apply.
  */
 
-[Constructor]
+[Exposed=Window]
 interface Range : AbstractRange {
+  [Throws]
+  constructor();
+
   [Throws]
   readonly attribute Node commonAncestorContainer;
 

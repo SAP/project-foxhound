@@ -10,6 +10,8 @@
 #include "mozilla/dom/PWindowGlobal.h"
 #include "mozilla/dom/Promise.h"
 #include "js/Promise.h"
+#include "xpcprivate.h"
+#include "nsIXPConnect.h"
 
 namespace mozilla {
 namespace dom {
@@ -31,6 +33,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSWindowActor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingQueries)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWrappedJS)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(JSWindowActor)
@@ -71,6 +74,26 @@ void JSWindowActor::InvokeCallback(CallbackFunction callback) {
   }
 }
 
+nsresult JSWindowActor::QueryInterfaceActor(const nsIID& aIID, void** aPtr) {
+  if (!mWrappedJS) {
+    AutoEntryScript aes(GetParentObject(), "JSWindowActor query interface");
+    JSContext* cx = aes.cx();
+
+    JS::Rooted<JSObject*> self(cx, GetWrapper());
+    JSAutoRealm ar(cx, self);
+
+    RefPtr<nsXPCWrappedJS> wrappedJS;
+    nsresult rv = nsXPCWrappedJS::GetNewOrUsed(
+        cx, self, NS_GET_IID(nsISupports), getter_AddRefs(wrappedJS));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    mWrappedJS = do_QueryInterface(wrappedJS);
+    MOZ_ASSERT(mWrappedJS);
+  }
+
+  return mWrappedJS->QueryInterface(aIID, aPtr);
+}
+
 void JSWindowActor::RejectPendingQueries() {
   // Take our queries out, in case somehow rejecting promises can trigger
   // additions or removals.
@@ -89,11 +112,10 @@ void JSWindowActor::SetName(const nsAString& aName) {
 void JSWindowActor::SendAsyncMessage(JSContext* aCx,
                                      const nsAString& aMessageName,
                                      JS::Handle<JS::Value> aObj,
-                                     JS::Handle<JS::Value> aTransfers,
                                      ErrorResult& aRv) {
   ipc::StructuredCloneData data;
-  if (!nsFrameMessageManager::GetParamsForMessage(aCx, aObj, aTransfers,
-                                                  data)) {
+  if (!nsFrameMessageManager::GetParamsForMessage(
+          aCx, aObj, JS::UndefinedHandleValue, data)) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
     return;
   }
@@ -108,10 +130,10 @@ void JSWindowActor::SendAsyncMessage(JSContext* aCx,
 
 already_AddRefed<Promise> JSWindowActor::SendQuery(
     JSContext* aCx, const nsAString& aMessageName, JS::Handle<JS::Value> aObj,
-    JS::Handle<JS::Value> aTransfers, ErrorResult& aRv) {
+    ErrorResult& aRv) {
   ipc::StructuredCloneData data;
-  if (!nsFrameMessageManager::GetParamsForMessage(aCx, aObj, aTransfers,
-                                                  data)) {
+  if (!nsFrameMessageManager::GetParamsForMessage(
+          aCx, aObj, JS::UndefinedHandleValue, data)) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
     return nullptr;
   }

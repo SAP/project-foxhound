@@ -224,7 +224,8 @@ void js::CheckTracedThing(JSTracer* trc, T* thing) {
 
   if (!IsTracerKind(trc, JS::CallbackTracer::TracerKind::Moving) &&
       !IsTracerKind(trc, JS::CallbackTracer::TracerKind::GrayBuffering) &&
-      !IsTracerKind(trc, JS::CallbackTracer::TracerKind::ClearEdges)) {
+      !IsTracerKind(trc, JS::CallbackTracer::TracerKind::ClearEdges) &&
+      !IsTracerKind(trc, JS::CallbackTracer::TracerKind::Sweeping)) {
     MOZ_ASSERT(CurrentThreadCanAccessZone(zone));
     MOZ_ASSERT(CurrentThreadCanAccessRuntime(rt));
   }
@@ -968,6 +969,7 @@ bool js::GCMarker::mark(T* thing) {
 // traversing equivalent subgraphs.
 
 void BaseScript::traceChildren(JSTracer* trc) {
+  TraceEdge(trc, &functionOrGlobal_, "function");
   TraceNullableEdge(trc, &sourceObject_, "sourceObject");
 }
 
@@ -978,8 +980,6 @@ void LazyScript::traceChildren(JSTracer* trc) {
   if (trc->traceWeakEdges()) {
     TraceNullableEdge(trc, &script_, "script");
   }
-
-  TraceEdge(trc, &function_, "function");
 
   if (enclosingLazyScriptOrScope_) {
     TraceGenericPointerRoot(
@@ -1007,13 +1007,13 @@ void LazyScript::traceChildren(JSTracer* trc) {
   }
 }
 inline void js::GCMarker::eagerlyMarkChildren(LazyScript* thing) {
+  traverseEdge(thing, static_cast<JSObject*>(thing->functionOrGlobal_));
+
   if (thing->sourceObject_) {
     traverseEdge(thing, static_cast<JSObject*>(thing->sourceObject_));
   }
 
   // script_ is weak so is not traced here.
-
-  traverseEdge(thing, static_cast<JSObject*>(thing->function_));
 
   if (thing->enclosingLazyScriptOrScope_) {
     TraceManuallyBarrieredGenericPointerEdge(
@@ -1573,10 +1573,10 @@ GCMarker::MarkQueueProgress GCMarker::processMarkQueue() {
       processMarkStackTop(unlimited);
     } else if (val.isString()) {
       JSLinearString* str = &val.toString()->asLinear();
-      if (js::StringEqualsAscii(str, "yield") && gcrt.isIncrementalGc()) {
+      if (js::StringEqualsLiteral(str, "yield") && gcrt.isIncrementalGc()) {
         return QueueYielded;
-      } else if (js::StringEqualsAscii(str, "enter-weak-marking-mode") ||
-                 js::StringEqualsAscii(str, "abort-weak-marking-mode")) {
+      } else if (js::StringEqualsLiteral(str, "enter-weak-marking-mode") ||
+                 js::StringEqualsLiteral(str, "abort-weak-marking-mode")) {
         if (!isWeakMarkingTracer() && !linearWeakMarkingDisabled_) {
           // We can't enter weak marking mode at just any time, so instead
           // we'll stop processing the queue and continue on with the GC. Once
@@ -1586,13 +1586,13 @@ GCMarker::MarkQueueProgress GCMarker::processMarkQueue() {
           queuePos--;
           return QueueSuspended;
         }
-        if (js::StringEqualsAscii(str, "abort-weak-marking-mode")) {
+        if (js::StringEqualsLiteral(str, "abort-weak-marking-mode")) {
           abortLinearWeakMarking();
         }
-      } else if (js::StringEqualsAscii(str, "drain")) {
+      } else if (js::StringEqualsLiteral(str, "drain")) {
         auto unlimited = SliceBudget::unlimited();
         MOZ_RELEASE_ASSERT(markUntilBudgetExhausted(unlimited));
-      } else if (js::StringEqualsAscii(str, "set-color-gray")) {
+      } else if (js::StringEqualsLiteral(str, "set-color-gray")) {
         queueMarkColor = mozilla::Some(MarkColor::Gray);
         if (gcrt.state() != State::Sweep) {
           // Cannot mark gray yet, so continue with the GC.
@@ -1600,10 +1600,10 @@ GCMarker::MarkQueueProgress GCMarker::processMarkQueue() {
           return QueueSuspended;
         }
         setMarkColor(MarkColor::Gray);
-      } else if (js::StringEqualsAscii(str, "set-color-black")) {
+      } else if (js::StringEqualsLiteral(str, "set-color-black")) {
         queueMarkColor = mozilla::Some(MarkColor::Black);
         setMarkColor(MarkColor::Black);
-      } else if (js::StringEqualsAscii(str, "unset-color")) {
+      } else if (js::StringEqualsLiteral(str, "unset-color")) {
         queueMarkColor.reset();
       }
     }
@@ -2808,29 +2808,14 @@ void js::gc::StoreBuffer::MonoTypeBuffer<T>::trace(TenuringTracer& mover) {
   }
 }
 
-template <typename T>
-template <typename CellType>
-void js::gc::StoreBuffer::MonoTypeBuffer<T>::traceTyped(TenuringTracer& mover) {
-  mozilla::ReentrancyGuard g(*owner_);
-  MOZ_ASSERT(owner_->isEnabled());
-  if (last_) {
-    last_.template traceTyped<CellType>(mover);
-  }
-  for (typename StoreSet::Range r = stores_.all(); !r.empty(); r.popFront()) {
-    r.front().template traceTyped<CellType>(mover);
-  }
-}
-
 namespace js {
 namespace gc {
 template void StoreBuffer::MonoTypeBuffer<StoreBuffer::ValueEdge>::trace(
     TenuringTracer&);
 template void StoreBuffer::MonoTypeBuffer<StoreBuffer::SlotsEdge>::trace(
     TenuringTracer&);
-template void StoreBuffer::MonoTypeBuffer<StoreBuffer::CellPtrEdge>::traceTyped<
-    JSString>(TenuringTracer&);
-template void StoreBuffer::MonoTypeBuffer<StoreBuffer::CellPtrEdge>::traceTyped<
-    JSObject>(TenuringTracer&);
+template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::StringPtrEdge>;
+template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::ObjectPtrEdge>;
 }  // namespace gc
 }  // namespace js
 
@@ -2930,23 +2915,20 @@ void js::gc::StoreBuffer::WholeCellBuffer::trace(TenuringTracer& mover) {
   head_ = nullptr;
 }
 
-template <typename CellType>
-void js::gc::StoreBuffer::CellPtrEdge::traceTyped(TenuringTracer& mover) const {
+template <typename T>
+void js::gc::StoreBuffer::CellPtrEdge<T>::trace(TenuringTracer& mover) const {
+  static_assert(std::is_base_of<Cell, T>::value, "T must be a Cell type");
+  static_assert(!std::is_base_of<TenuredCell, T>::value,
+                "T must not be a tenured Cell type");
+
   if (!*edge) {
     return;
   }
 
   MOZ_ASSERT(IsCellPointerValid(*edge));
+  MOZ_ASSERT((*edge)->getTraceKind() == JS::MapTypeToTraceKind<T>::kind);
 
-#ifdef DEBUG
-  auto traceKind = (*edge)->getTraceKind();
-  MOZ_ASSERT(traceKind == JS::TraceKind::Object ||
-             traceKind == JS::TraceKind::String);
-  MOZ_ASSERT(traceKind == JS::MapTypeToTraceKind<CellType>::kind,
-             "traceKind mismatch.");
-#endif
-
-  mover.traverse(reinterpret_cast<CellType**>(edge));
+  mover.traverse(edge);
 }
 
 void js::gc::StoreBuffer::ValueEdge::trace(TenuringTracer& mover) const {
@@ -3312,12 +3294,27 @@ static inline void CheckIsMarkedThing(T* thingp) {
 #ifdef DEBUG
   MOZ_ASSERT(thingp);
   MOZ_ASSERT(*thingp);
-  JSRuntime* rt = (*thingp)->runtimeFromAnyThread();
-  MOZ_ASSERT_IF(
-      !ThingIsPermanentAtomOrWellKnownSymbol(*thingp),
-      CurrentThreadCanAccessRuntime(rt) ||
-          CurrentThreadCanAccessZone((*thingp)->zoneFromAnyThread()) ||
-          (JS::RuntimeHeapIsCollecting() && rt->gc.state() == State::Sweep));
+
+  // Allow any thread access to uncollected things.
+  T thing = *thingp;
+  if (ThingIsPermanentAtomOrWellKnownSymbol(thing)) {
+    return;
+  }
+
+  // Allow the current thread access if it is sweeping, but try to check the
+  // zone. Some threads have access to all zones when sweeping.
+  JSContext* cx = TlsContext.get();
+  if (cx->gcSweeping) {
+    Zone* zone = thing->zoneFromAnyThread();
+    MOZ_ASSERT_IF(cx->gcSweepingZone,
+                  cx->gcSweepingZone == zone || zone->isAtomsZone());
+    return;
+  }
+
+  // Otherwise only allow access from the main thread or this zone's associated
+  // thread.
+  MOZ_ASSERT(CurrentThreadCanAccessRuntime(thing->runtimeFromAnyThread()) ||
+             CurrentThreadCanAccessZone(thing->zoneFromAnyThread()));
 #endif
 }
 
@@ -3467,9 +3464,12 @@ inline bool SweepingTracer::sweepEdge(T** thingp) {
     return true;
   }
 
+  // TODO: We should assert the zone of the tenured cell is in Sweeping state,
+  // however we need to fix atoms and JitcodeGlobalTable first.
+  // Bug 1501334 : IsAboutToBeFinalized doesn't work for atoms
+  // Bug 1071218 : Refactor Debugger::sweepAll and
+  //               JitRuntime::SweepJitcodeGlobalTable to work per sweep group
   TenuredCell& tenured = thing->asTenured();
-  MOZ_ASSERT(tenured.zoneFromAnyThread()->isGCSweeping(),
-             "Should be called during Sweeping.");
   if (!tenured.isMarkedAny()) {
     *thingp = nullptr;
     return false;
@@ -3492,9 +3492,15 @@ bool SweepingTracer::onLazyScriptEdge(LazyScript** lazyp) {
 bool SweepingTracer::onBaseShapeEdge(BaseShape** basep) {
   return sweepEdge(basep);
 }
+bool SweepingTracer::onJitCodeEdge(jit::JitCode** jitp) {
+  return sweepEdge(jitp);
+}
 bool SweepingTracer::onScopeEdge(Scope** scopep) { return sweepEdge(scopep); }
 bool SweepingTracer::onRegExpSharedEdge(RegExpShared** sharedp) {
   return sweepEdge(sharedp);
+}
+bool SweepingTracer::onObjectGroupEdge(ObjectGroup** groupp) {
+  return sweepEdge(groupp);
 }
 bool SweepingTracer::onBigIntEdge(BigInt** bip) { return sweepEdge(bip); }
 
@@ -3631,16 +3637,16 @@ bool UnmarkGrayTracer::onChild(const JS::GCCellPtr& thing) {
 
   TenuredCell& tenured = cell->asTenured();
 
-  // If the cell is in a zone that we're currently marking gray, then it's
-  // possible that it is currently white but will end up gray. To handle this
-  // case, push any cells in zones that are currently being marked onto the
-  // mark stack and they will eventually get marked black.
+  // If the cell is in a zone that we're currently marking, then it's possible
+  // that it is currently white but will end up gray. To handle this case, push
+  // any cells in zones that are currently being marked onto the mark stack and
+  // they will eventually get marked black.
   Zone* zone = tenured.zone();
-  if (zone->isGCMarkingBlackAndGray()) {
+  if (zone->isGCMarking()) {
     if (!cell->isMarkedBlack()) {
       Cell* tmp = cell;
-      TraceManuallyBarrieredGenericPointerEdge(zone->barrierTracer(), &tmp,
-                                               "read barrier");
+      JSTracer* trc = &runtime()->gc.marker;
+      TraceManuallyBarrieredGenericPointerEdge(trc, &tmp, "read barrier");
       MOZ_ASSERT(tmp == cell);
       unmarkedAny = true;
     }

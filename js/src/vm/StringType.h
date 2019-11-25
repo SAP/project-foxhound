@@ -7,6 +7,7 @@
 #ifndef vm_StringType_h
 #define vm_StringType_h
 
+#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Range.h"
 #include "mozilla/TextUtils.h"
@@ -343,6 +344,12 @@ class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
 
     /* Ensure js::shadow::String has the same layout. */
     using JS::shadow::String;
+    static_assert(JSString::offsetOfRawFlagsField() == offsetof(String, flags_),
+                  "shadow::String flags offset must match JSString");
+#if JS_BITS_PER_WORD == 32
+    static_assert(JSString::offsetOfLength() == offsetof(String, length_),
+                  "shadow::String length offset must match JSString");
+#endif
     static_assert(offsetof(JSString, d.s.u2.nonInlineCharsLatin1) ==
                       offsetof(String, nonInlineCharsLatin1),
                   "shadow::String nonInlineChars offset must match JSString");
@@ -466,7 +473,7 @@ class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
   bool hasIndexValue() const { return flags() & INDEX_VALUE_BIT; }
   uint32_t getIndexValue() const {
     MOZ_ASSERT(hasIndexValue());
-    MOZ_ASSERT(isFlat());
+    MOZ_ASSERT(isLinear());
     return flags() >> INDEX_VALUE_SHIFT;
   }
 
@@ -823,6 +830,9 @@ class JSLinearString : public JSString {
   bool isLinear() const = delete;
   JSLinearString& asLinear() const = delete;
 
+  template <typename CharT>
+  static bool isIndexSlow(const CharT* s, size_t length, uint32_t* indexp);
+
  protected:
   /* Returns void pointer to latin1/twoByte chars, for finalizers. */
   MOZ_ALWAYS_INLINE
@@ -892,6 +902,62 @@ class JSLinearString : public JSString {
                             : twoByteChars(nogc)[index];
   }
 
+  bool isIndexSlow(uint32_t* indexp) const {
+    MOZ_ASSERT(JSString::isLinear());
+    size_t len = length();
+    if (len == 0 || len > js::UINT32_CHAR_BUFFER_LENGTH) {
+      return false;
+    }
+    JS::AutoCheckCannotGC nogc;
+    if (hasLatin1Chars()) {
+      const JS::Latin1Char* s = latin1Chars(nogc);
+      return mozilla::IsAsciiDigit(*s) && isIndexSlow(s, len, indexp);
+    }
+    const char16_t* s = twoByteChars(nogc);
+    return mozilla::IsAsciiDigit(*s) && isIndexSlow(s, len, indexp);
+  }
+
+  /*
+   * Returns true if this string's characters store an unsigned 32-bit
+   * integer value, initializing *indexp to that value if so.  (Thus if
+   * calling isIndex returns true, js::IndexToString(cx, *indexp) will be a
+   * string equal to this string.)
+   */
+  bool isIndex(uint32_t* indexp) const {
+    MOZ_ASSERT(JSString::isLinear());
+
+    if (JSString::hasIndexValue()) {
+      *indexp = getIndexValue();
+      return true;
+    }
+
+    return isIndexSlow(indexp);
+  }
+
+  void maybeInitializeIndex(uint32_t index, bool allowAtom = false) {
+    MOZ_ASSERT(JSString::isLinear());
+    MOZ_ASSERT_IF(hasIndexValue(), getIndexValue() == index);
+    MOZ_ASSERT_IF(!allowAtom, !isAtom());
+
+    if (hasIndexValue() || index > UINT16_MAX) {
+      return;
+    }
+
+    mozilla::DebugOnly<uint32_t> containedIndex;
+    MOZ_ASSERT(isIndexSlow(&containedIndex));
+    MOZ_ASSERT(index == containedIndex);
+
+    setFlagBit((index << INDEX_VALUE_SHIFT) | INDEX_VALUE_BIT);
+    MOZ_ASSERT(getIndexValue() == index);
+  }
+
+  /*
+   * Returns a property name represented by this string, or null on failure.
+   * You must verify that this is not an index per isIndex before calling
+   * this method.
+   */
+  inline js::PropertyName* toPropertyName(JSContext* cx);
+
 #if defined(DEBUG) || defined(JS_JITSPEW)
   void dumpRepresentationChars(js::GenericPrinter& out, int indent) const;
 #endif
@@ -958,9 +1024,6 @@ class JSFlatString : public JSLinearString {
   bool isFlat() const = delete;
   JSFlatString& asFlat() const = delete;
 
-  template <typename CharT>
-  static bool isIndexSlow(const CharT* s, size_t length, uint32_t* indexp);
-
   void init(const char16_t* chars, size_t length);
   void init(const JS::Latin1Char* chars, size_t length);
 
@@ -969,57 +1032,6 @@ class JSFlatString : public JSLinearString {
   static inline JSFlatString* new_(JSContext* cx,
                                    js::UniquePtr<CharT[], JS::FreePolicy> chars,
                                    size_t length);
-
-  inline bool isIndexSlow(uint32_t* indexp) const {
-    MOZ_ASSERT(JSString::isFlat());
-    JS::AutoCheckCannotGC nogc;
-    if (hasLatin1Chars()) {
-      const JS::Latin1Char* s = latin1Chars(nogc);
-      return mozilla::IsAsciiDigit(*s) && isIndexSlow(s, length(), indexp);
-    }
-    const char16_t* s = twoByteChars(nogc);
-    return mozilla::IsAsciiDigit(*s) && isIndexSlow(s, length(), indexp);
-  }
-
-  /*
-   * Returns true if this string's characters store an unsigned 32-bit
-   * integer value, initializing *indexp to that value if so.  (Thus if
-   * calling isIndex returns true, js::IndexToString(cx, *indexp) will be a
-   * string equal to this string.)
-   */
-  inline bool isIndex(uint32_t* indexp) const {
-    MOZ_ASSERT(JSString::isFlat());
-
-    if (JSString::hasIndexValue()) {
-      *indexp = getIndexValue();
-      return true;
-    }
-
-    return isIndexSlow(indexp);
-  }
-
-  inline void maybeInitializeIndex(uint32_t index, bool allowAtom = false) {
-    MOZ_ASSERT(JSString::isFlat());
-    MOZ_ASSERT_IF(hasIndexValue(), getIndexValue() == index);
-    MOZ_ASSERT_IF(!allowAtom, !isAtom());
-
-    if (hasIndexValue() || index > UINT16_MAX) {
-      return;
-    }
-
-    mozilla::DebugOnly<uint32_t> containedIndex;
-    MOZ_ASSERT(isIndexSlow(&containedIndex));
-    MOZ_ASSERT(index == containedIndex);
-
-    setFlagBit((index << INDEX_VALUE_SHIFT) | INDEX_VALUE_BIT);
-  }
-
-  /*
-   * Returns a property name represented by this string, or null on failure.
-   * You must verify that this is not an index per isIndex before calling
-   * this method.
-   */
-  inline js::PropertyName* toPropertyName(JSContext* cx);
 
   /*
    * Once a JSFlatString sub-class has been added to the atom state, this
@@ -1347,6 +1359,8 @@ class LittleEndianChars {
     return (current[offset + 1] << 8) | current[offset];
   }
 
+  constexpr const uint8_t* get() { return current; }
+
  private:
   const uint8_t* current;
 };
@@ -1449,17 +1463,18 @@ class StaticStrings {
     return nullptr;
   }
 
+  MOZ_ALWAYS_INLINE JSAtom* lookup(const char* chars, size_t length) {
+    // Collapse calls for |const char*| into |const Latin1Char char*| to avoid
+    // excess instantiations.
+    return lookup(reinterpret_cast<const Latin1Char*>(chars), length);
+  }
+
   template <typename CharT, typename = typename std::enable_if<
-                                std::is_same<CharT, char>::value ||
-                                std::is_same<CharT, const char>::value ||
                                 !std::is_const<CharT>::value>::type>
   MOZ_ALWAYS_INLINE JSAtom* lookup(CharT* chars, size_t length) {
-    // Collapse calls for |char*| or |const char*| into |const unsigned char*|
-    // to avoid excess instantiations.  Collapse the remaining |CharT*| to
-    // |const CharT*| for the same reason.
-    using UnsignedCharT = typename std::make_unsigned<CharT>::type;
-    UnsignedCharT* unsignedChars = reinterpret_cast<UnsignedCharT*>(chars);
-    return lookup(const_cast<const UnsignedCharT*>(unsignedChars), length);
+    // Collapse the remaining |CharT*| to |const CharT*| to avoid excess
+    // instantiations.
+    return lookup(const_cast<const CharT*>(chars), length);
   }
 
  private:
@@ -1671,6 +1686,19 @@ extern bool StringIsAscii(JSLinearString* str);
  * Return true if the string matches the given sequence of ASCII bytes.
  */
 extern bool StringEqualsAscii(JSLinearString* str, const char* asciiBytes);
+/*
+ * Return true if the string matches the given sequence of ASCII
+ * bytes.  The sequence of ASCII bytes must have length "length".  The
+ * length should not include the trailing null, if any.
+ */
+extern bool StringEqualsAscii(JSLinearString* str, const char* asciiBytes,
+                              size_t length);
+
+template <size_t N>
+bool StringEqualsLiteral(JSLinearString* str, const char (&asciiBytes)[N]) {
+  MOZ_ASSERT(asciiBytes[N - 1] == '\0');
+  return StringEqualsAscii(str, asciiBytes, N - 1);
+}
 
 extern int StringFindPattern(JSLinearString* text, JSLinearString* pat,
                              size_t start);

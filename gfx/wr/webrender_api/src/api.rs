@@ -39,6 +39,35 @@ pub enum ResourceUpdate {
     DeleteFontInstance(font::FontInstanceKey),
 }
 
+impl fmt::Debug for ResourceUpdate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceUpdate::AddImage(ref i) => f.write_fmt(format_args!(
+                "ResourceUpdate::AddImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::UpdateImage(ref i) => f.write_fmt(format_args!(
+                "ResourceUpdate::UpdateImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::AddBlobImage(ref i) => f.write_fmt(format_args!(
+                "ResourceUpdate::AddBlobImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::UpdateBlobImage(i) => f.write_fmt(format_args!(
+                "ResourceUpdate::UpdateBlobImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::DeleteImage(..) => f.write_str("ResourceUpdate::DeleteImage"),
+            ResourceUpdate::SetBlobImageVisibleArea(..) => f.write_str("ResourceUpdate::SetBlobImageVisibleArea"),
+            ResourceUpdate::AddFont(..) => f.write_str("ResourceUpdate::AddFont"),
+            ResourceUpdate::DeleteFont(..) => f.write_str("ResourceUpdate::DeleteFont"),
+            ResourceUpdate::AddFontInstance(..) => f.write_str("ResourceUpdate::AddFontInstance"),
+            ResourceUpdate::DeleteFontInstance(..) => f.write_str("ResourceUpdate::DeleteFontInstance"),
+        }
+    }
+}
+
 /// A Transaction is a group of commands to apply atomically to a document.
 ///
 /// This mechanism ensures that:
@@ -468,6 +497,29 @@ pub struct TransactionMsg {
     pub notifications: Vec<NotificationRequest>,
 }
 
+impl fmt::Debug for TransactionMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "threaded={}, genframe={}, invalidate={}, low_priority={}",
+                        self.use_scene_builder_thread,
+                        self.generate_frame,
+                        self.invalidate_rendered_frame,
+                        self.low_priority,
+                    ).unwrap();
+        for scene_op in &self.scene_ops {
+            writeln!(f, "\t\t{:?}", scene_op).unwrap();
+        }
+
+        for frame_op in &self.frame_ops {
+            writeln!(f, "\t\t{:?}", frame_op).unwrap();
+        }
+
+        for resource_update in &self.resource_updates {
+            writeln!(f, "\t\t{:?}", resource_update).unwrap();
+        }
+        Ok(())
+    }
+}
+
 impl TransactionMsg {
     pub fn is_empty(&self) -> bool {
         !self.generate_frame &&
@@ -723,6 +775,8 @@ pub enum DebugCommand {
     /// Causes the low priority scene builder to pause for a given amount of milliseconds
     /// each time it processes a transaction.
     SimulateLongLowPrioritySceneBuild(u32),
+    // Logs transactions to a file for debugging purposes
+    SetTransactionLogging(bool),
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -1087,6 +1141,9 @@ bitflags! {
         const DISABLE_CLIP_MASKS = 1 << 21;
         const DISABLE_TEXT_PRIMS = 1 << 22;
         const DISABLE_GRADIENT_PRIMS = 1 << 23;
+        const OBSCURE_IMAGES = 1 << 24;
+        /// The profiler only displays information that is out of the ordinary.
+        const SMART_PROFILER        = 1 << 26;
     }
 }
 

@@ -15,10 +15,20 @@ class Document;
 }  // namespace dom
 }  // namespace mozilla
 
+typedef mozilla::Pair<nsCString, mozilla::Maybe<nsString>> FilenameType;
+
 class nsContentSecurityUtils {
  public:
-#if defined(DEBUG) && !defined(ANDROID)
-  static void AssertAboutPageHasCSP(Document* aDocument);
+  static FilenameType FilenameToEvalType(const nsString& fileName);
+  static bool IsEvalAllowed(JSContext* cx, bool aIsSystemPrincipal,
+                            const nsAString& aScript);
+  static void NotifyEvalUsage(bool aIsSystemPrincipal,
+                              NS_ConvertUTF8toUTF16& aFileNameA,
+                              uint64_t aWindowID, uint32_t aLineNumber,
+                              uint32_t aColumnNumber);
+
+#if defined(DEBUG)
+  static void AssertAboutPageHasCSP(mozilla::dom::Document* aDocument);
 #endif
 };
 

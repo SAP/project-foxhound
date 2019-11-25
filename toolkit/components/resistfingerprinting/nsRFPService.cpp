@@ -42,7 +42,6 @@
 #include "js/Date.h"
 
 using namespace mozilla;
-using namespace std;
 
 static mozilla::LazyLogModule gResistFingerprintingLog(
     "nsResistFingerprinting");
@@ -95,7 +94,7 @@ double nsRFPService::TimerResolution() {
   double prefValue = StaticPrefs::
       privacy_resistFingerprinting_reduceTimerPrecision_microseconds();
   if (nsRFPService::IsResistFingerprintingEnabled()) {
-    return max(100000.0, prefValue);
+    return std::max(100000.0, prefValue);
   }
   return prefValue;
 }
@@ -625,7 +624,7 @@ uint32_t nsRFPService::GetSpoofedDroppedFrames(double aTime, uint32_t aWidth,
   double precision = TimerResolution() / 1000 / 1000;
   double time = floor(aTime / precision) * precision;
   // Bound the dropped ratio from 0 to 100.
-  uint32_t boundedDroppedRatio = min(kVideoDroppedRatio, 100U);
+  uint32_t boundedDroppedRatio = std::min(kVideoDroppedRatio, 100U);
 
   return NSToIntFloor(time * kVideoFramesPerSec *
                       (boundedDroppedRatio / 100.0));
@@ -646,7 +645,7 @@ uint32_t nsRFPService::GetSpoofedPresentedFrames(double aTime, uint32_t aWidth,
   double precision = TimerResolution() / 1000 / 1000;
   double time = floor(aTime / precision) * precision;
   // Bound the dropped ratio from 0 to 100.
-  uint32_t boundedDroppedRatio = min(kVideoDroppedRatio, 100U);
+  uint32_t boundedDroppedRatio = std::min(kVideoDroppedRatio, 100U);
 
   return NSToIntFloor(time * kVideoFramesPerSec *
                       ((100 - boundedDroppedRatio) / 100.0));
@@ -675,7 +674,7 @@ static uint32_t GetSpoofedVersion() {
   // If we are running in Firefox ESR, determine whether the formula of ESR
   // version has changed.  Once changed, we must update the formula in this
   // function.
-  if (!strcmp(NS_STRINGIFY(MOZ_UPDATE_CHANNEL), "esr")) {
+  if (!strcmp(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL), "esr")) {
     MOZ_ASSERT(((firefoxVersion % 8) == 4),
                "Please update ESR version formula in nsRFPService.cpp");
   }

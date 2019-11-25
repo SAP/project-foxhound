@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <meta charset=utf-8>
-<title>Web NFC: Test exceptions in NFCWriter.push</title>
+<title>Web NFC: NFCWriter.push Tests</title>
 <link rel="author" title="Intel" href="http://www.intel.com"/>
 <link rel="help" href="https://w3c.github.io/web-nfc/"/>
 <script src="/resources/testharness.js"></script>
@@ -23,18 +23,14 @@ const invalid_type_messages =
       // NDEFRecord must have data.
       createMessage([createTextRecord()]),
 
-      // NDEFRecord.data for 'text' record must be number or string.
+      // NDEFRecord.data for 'text' record must be a string.
       createMessage([createTextRecord(test_buffer_data)]),
       createMessage([createTextRecord(test_json_data)]),
+      createMessage([createTextRecord(test_number_data)]),
 
       // https://w3c.github.io/web-nfc/#dfn-map-a-json-object-to-ndef
       // NDEFRecord must have data.
       createMessage([createJsonRecord()]),
-
-      // NDEFRecord.data for 'json' record must be object.
-      createMessage([createJsonRecord(test_buffer_data)]),
-      createMessage([createJsonRecord(test_number_data)]),
-      createMessage([createJsonRecord(test_text_data)]),
 
       // https://w3c.github.io/web-nfc/#dfn-map-a-url-to-ndef
       // NDEFRecord must have data.
@@ -59,16 +55,16 @@ const invalid_syntax_messages =
     [
       // NDEFRecord.mediaType for 'text' record must be 'text/*'.
       createMessage([createRecord('text', 'application/json',
-          test_number_data)]),
+          test_text_data)]),
 
       // Data for 'url' record, must be a valid URL.
       createMessage([createUrlRecord('Invalid URL:// Data')]),
 
-      // NDEFRecord.mediaType for 'json' record must be 'application/json' or
-      // starts with 'application/' and ends with '+json'.
+      // A JSON MIME type is any MIME type whose subtype ends in "+json" or
+      // whose essence is "application/json" or "text/json".
       createMessage([createRecord('json', 'image/png', test_json_data)]),
       createMessage([createRecord('json', 'application/x+y', test_json_data)]),
-      createMessage([createRecord('json', 'custom/app+json', test_json_data)]),
+      createMessage([createRecord('json', 'custom/app+jsonx', test_json_data)]),
     ];
 
 const invalid_signals = [
@@ -144,6 +140,23 @@ promise_test(async t => {
 }, "NFCWriter.push should fail if signal is not an AbortSignal.");
 
 nfc_test(async (t, mockNFC) => {
+  const writer1 = new NFCWriter();
+  const writer2 = new NFCWriter();
+  const controller = new AbortController();
+  mockNFC.setPendingPushCompleted(false);
+  const p1 = writer1.push(test_text_data,
+      { signal: controller.signal, timeout: 100 });
+
+  // Even though push request is grantable,
+  // this abort should be processed synchronously.
+  controller.abort();
+  await promise_rejects(t, 'AbortError', p1);
+
+  await writer2.push(test_text_data);
+  assertNDEFMessagesEqual(test_text_data, mockNFC.pushedMessage());
+}, "Synchronously signaled abort.");
+
+nfc_test(async (t, mockNFC) => {
   const writer = new NFCWriter();
   mockNFC.setHWStatus(NFCHWStatus.DISABLED);
   await promise_rejects(t, 'NotReadableError', writer.push(test_text_data));
@@ -195,8 +208,8 @@ promise_test(async t => {
   const writer = new NFCWriter();
   const message = createMessage([createRecord('json','application/json',
       { get x(){ return this; } })]);
-  await promise_rejects(t, 'SyntaxError', writer.push(message));
-}, "Reject promise with SyntaxError if 'json' record cannot be serialized.");
+  await promise_rejects(t, new TypeError(), writer.push(message));
+}, "Reject promise with exceptions thrown from serializing the 'json' record data.");
 
 promise_test(async t => {
   const writer = new NFCWriter();
@@ -251,8 +264,8 @@ nfc_test(async (t, mockNFC) => {
   const writer = new NFCWriter();
   let message = createMessage([createTextRecord(test_text_data),
                                createJsonRecord(test_json_data),
+                               createJsonRecord(test_number_data),
                                createOpaqueRecord(test_buffer_data),
-                               createTextRecord(test_number_data),
                                createUrlRecord(test_url_data)],
                                test_message_origin);
   await writer.push(message);
@@ -292,20 +305,61 @@ nfc_test(async (t, mockNFC) => {
 }, "Check that provided NFCPushOptions values are correctly converted.");
 
 nfc_test(async (t, mockNFC) => {
+  const reader = new NFCReader();
+  const message = createMessage([createTextRecord(test_text_data)]);
+  const controller = new AbortController();
+  const readerWatcher = new EventWatcher(t, reader, ["reading", "error"]);
+  const promise = readerWatcher.wait_for("reading").then(event => {
+    controller.abort();
+    assertWebNDEFMessagesEqual(event.message, new NDEFMessage(message));
+  });
+
+  reader.scan({ signal: controller.signal });
+
+  const writer = new NFCWriter();
+  await writer.push(test_text_data, { ignoreRead: false });
+  mockNFC.setReadingMessage(message);
+  assertNDEFMessagesEqual(test_text_data, mockNFC.pushedMessage());
+  await promise;
+}, "NFCWriter.push should read data when ignoreRead is false.");
+
+nfc_test(async (t, mockNFC) => {
+  const reader = new NFCReader();
+  const message = createMessage([createTextRecord(test_text_data)]);
+  // Ignore reading if NFCPushOptions.ignoreRead is true
+  reader.onreading = t.unreached_func("reading event should not be fired.");
+  reader.scan();
+
+  const writer = new NFCWriter();
+  await writer.push(test_text_data, { ignoreRead: true });
+  mockNFC.setReadingMessage(message);
+  assertNDEFMessagesEqual(test_text_data, mockNFC.pushedMessage());
+}, "NFCWriter.push should ignore reading data when ignoreRead is true.");
+
+nfc_test(async (t, mockNFC) => {
   const writer1 = new NFCWriter();
   const writer2 = new NFCWriter();
-  const controller = new AbortController();
-  mockNFC.setPendingPushCompleted(false);
-  const p1 = writer1.push(test_text_data,
-      { signal: controller.signal, timeout: 100 });
 
-  // Even though push request is grantable,
-  // this abort should be processed synchronously.
-  controller.abort();
-  await promise_rejects(t, 'AbortError', p1);
+  const nfcPushOptions1 = createNFCPushOptions('tag', 1000, false);
+  const nfcPushOptions2 = createNFCPushOptions('tag', Infinity, true);
+  const p1 = writer1.push(test_text_data, nfcPushOptions1);
+  const p2 = writer2.push(test_url_data, nfcPushOptions2);
 
-  await writer2.push(test_text_data);
-  assertNDEFMessagesEqual(test_text_data, mockNFC.pushedMessage());
-}, "Synchronously signaled abort.");
-
+  await new Promise((resolve, reject) => {
+    // Make first push pending
+    mockNFC.setPendingPushCompleted(false);
+    let err = "";
+    p1.then(() => {
+      reject("pending push should not be fulfilled");
+    }).catch(e => {
+      err = e.name;
+    });
+    p2.then(() => {
+      assertNDEFMessagesEqual(test_url_data, mockNFC.pushedMessage());
+      assertNFCPushOptionsEqual(nfcPushOptions2, mockNFC.pushOptions());
+      assert_equals(err, "AbortError", "the pending push should be aborted");
+      resolve();
+    });
+  });
+}, "NFCWriter.push should replace all previously configured push operations.");
 </script>

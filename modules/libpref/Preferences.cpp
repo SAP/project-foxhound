@@ -3340,7 +3340,7 @@ static bool TelemetryPrefValue() {
   // toolkit.telemetry.enabled determines whether we send "extended" data.
   // We only want extended data from pre-release channels due to size.
 
-  NS_NAMED_LITERAL_CSTRING(channel, NS_STRINGIFY(MOZ_UPDATE_CHANNEL));
+  NS_NAMED_LITERAL_CSTRING(channel, MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
 
   // Easy cases: Nightly, Aurora, Beta.
   if (channel.EqualsLiteral("nightly") || channel.EqualsLiteral("aurora") ||
@@ -4360,11 +4360,10 @@ struct Internals {
 
 #ifdef MOZ_GECKO_PROFILER
       if (profiler_feature_active(ProfilerFeature::PreferenceReads)) {
-        profiler_add_marker("PreferenceRead",
-                            JS::ProfilingCategoryPair::OTHER_PreferenceRead,
-                            MakeUnique<PrefMarkerPayload>(
-                                aPrefName, Some(aKind), Some(pref->Type()),
-                                PrefValueToString(aResult), TimeStamp::Now()));
+        PROFILER_ADD_MARKER_WITH_PAYLOAD(
+            "PreferenceRead", OTHER_PreferenceRead, PrefMarkerPayload,
+            (aPrefName, Some(aKind), Some(pref->Type()),
+             PrefValueToString(aResult), TimeStamp::Now()));
       }
 #endif
     }
@@ -4381,11 +4380,10 @@ struct Internals {
 
 #ifdef MOZ_GECKO_PROFILER
       if (profiler_feature_active(ProfilerFeature::PreferenceReads)) {
-        profiler_add_marker(
-            "PreferenceRead", JS::ProfilingCategoryPair::OTHER_PreferenceRead,
-            MakeUnique<PrefMarkerPayload>(
-                aName, Nothing() /* indicates Shared */, Some(pref->Type()),
-                PrefValueToString(aResult), TimeStamp::Now()));
+        PROFILER_ADD_MARKER_WITH_PAYLOAD(
+            "PreferenceRead", OTHER_PreferenceRead, PrefMarkerPayload,
+            (aName, Nothing() /* indicates Shared */, Some(pref->Type()),
+             PrefValueToString(aResult), TimeStamp::Now()));
       }
 #endif
     }
@@ -5236,9 +5234,14 @@ static void InitPref_uint32_t(const char* aName, uint32_t aDefaultValue) {
 static void InitPref_float(const char* aName, float aDefaultValue) {
   MOZ_ASSERT(XRE_IsParentProcess());
   PrefValue value;
-  // Convert the value in a locale-independent way.
+  // Convert the value in a locale-independent way, including a trailing ".0"
+  // if necessary to distinguish floating-point from integer prefs when viewing
+  // them in about:config.
   nsAutoCString defaultValue;
   defaultValue.AppendFloat(aDefaultValue);
+  if (!defaultValue.Contains('.') && !defaultValue.Contains('e')) {
+    defaultValue.AppendLiteral(".0");
+  }
   value.mStringVal = defaultValue.get();
   pref_SetPref(aName, PrefType::String, PrefValueKind::Default, value,
                /* isSticky */ false,

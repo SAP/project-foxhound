@@ -51,6 +51,16 @@ let RPMAccessManager = {
         "services.settings.last_update_seconds",
       ],
       getAppBuildID: ["yes"],
+      recordTelemetryEvent: ["yes"],
+    },
+    "about:neterror": {
+      getFormatURLPref: ["app.support.baseURL"],
+      getBoolPref: [
+        "security.certerror.hideAddException",
+        "security.ssl.errorReporting.automatic",
+        "security.ssl.errorReporting.enabled",
+        "security.tls.version.enable-deprecated",
+      ],
     },
     "about:privatebrowsing": {
       // "sendAsyncMessage": handled within AboutPrivateBrowsingHandler.jsm

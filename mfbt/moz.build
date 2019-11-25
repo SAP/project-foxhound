@@ -9,6 +9,10 @@ with Files("**"):
 
 Library('mfbt')
 
+EXPORTS += [
+    '../third_party/rust/encoding_c_mem/include/encoding_rs_mem.h',
+]
+
 EXPORTS.mozilla = [
     'Algorithm.h',
     'Alignment.h',
@@ -46,10 +50,13 @@ EXPORTS.mozilla = [
     'GuardObjects.h',
     'HashFunctions.h',
     'HashTable.h',
+    'HelperMacros.h',
     'IntegerPrintfMacros.h',
     'IntegerRange.h',
     'IntegerTypeTraits.h',
     'JSONWriter.h',
+    'JsRust.h',
+    'Latin1.h',
     'Likely.h',
     'LinkedList.h',
     'MacroArgs.h',
@@ -170,7 +177,10 @@ DEFINES['IMPL_MFBT'] = True
 
 SOURCES += [
     'Compression.cpp',
-    'lz4.c',
+    'lz4/lz4.c',
+    'lz4/lz4frame.c',
+    'lz4/lz4hc.c',
+    'lz4/xxhash.c',
 ]
 
 DisableStlWrapping()

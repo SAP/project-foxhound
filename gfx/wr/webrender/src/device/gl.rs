@@ -1375,12 +1375,14 @@ impl Device {
             ext_framebuffer_fetch &&
             ext_pixel_local_storage;
 
+        let is_adreno = renderer_name.starts_with("Adreno");
+
         // KHR_blend_equation_advanced renders incorrectly on Adreno
         // devices. This has only been confirmed up to Adreno 5xx, and has been
         // fixed for Android 9, so this condition could be made more specific.
         let supports_advanced_blend_equation =
             supports_extension(&extensions, "GL_KHR_blend_equation_advanced") &&
-            !renderer_name.starts_with("Adreno");
+            !is_adreno;
 
         let supports_texture_swizzle = allow_texture_swizzling &&
             (gl.get_type() == gl::GlType::Gles || supports_extension(&extensions, "GL_ARB_texture_storage"));
@@ -1390,7 +1392,8 @@ impl Device {
         // Other platforms may have similar requirements and should be added
         // here.
         // The default value should be 4.
-        let optimal_pbo_stride = if renderer_name.contains("Adreno") {
+        let is_amd_macos = cfg!(target_os = "macos") && renderer_name.starts_with("AMD");
+        let optimal_pbo_stride = if is_adreno || is_amd_macos {
             NonZeroUsize::new(256).unwrap()
         } else {
             NonZeroUsize::new(4).unwrap()
@@ -1489,7 +1492,7 @@ impl Device {
         }
     }
 
-    pub fn get_optimal_pbo_stride(&self) -> NonZeroUsize {
+    pub fn optimal_pbo_stride(&self) -> NonZeroUsize {
         self.optimal_pbo_stride
     }
 
@@ -3311,7 +3314,7 @@ impl Device {
         }
     }
 
-    fn gl_describe_format(&self, format: ImageFormat) -> FormatDesc {
+    pub fn gl_describe_format(&self, format: ImageFormat) -> FormatDesc {
         match format {
             ImageFormat::R8 => FormatDesc {
                 internal: gl::R8,
@@ -3392,16 +3395,16 @@ impl Device {
     }
 }
 
-struct FormatDesc {
+pub struct FormatDesc {
     /// Format the texel data is internally stored in within a texture.
-    internal: gl::GLenum,
+    pub internal: gl::GLenum,
     /// Format that we expect the data to be provided when filling the texture.
-    external: gl::GLuint,
+    pub external: gl::GLuint,
     /// Format to read the texels as, so that they can be uploaded as `external`
     /// later on.
-    read: gl::GLuint,
+    pub read: gl::GLuint,
     /// Associated pixel type.
-    pixel_type: gl::GLuint,
+    pub pixel_type: gl::GLuint,
 }
 
 struct UploadChunk {
@@ -3493,7 +3496,10 @@ impl<'a, T> TextureUploader<'a, T> {
         // for optimal PBO texture uploads the stride of the data in
         // the buffer may have to be a multiple of a certain value.
         let dst_stride = round_up_to_multiple(src_stride, self.target.optimal_pbo_stride);
-        let dst_size = (rect.size.height as usize - 1) * dst_stride + width_bytes;
+        // The size of the PBO should only need to be (height - 1) * dst_stride + width_bytes,
+        // however, the android emulator will error unless it is height * dst_stride.
+        // See bug 1587047 for details.
+        let dst_size = rect.size.height as usize * dst_stride;
 
         match self.buffer {
             Some(ref mut buffer) => {

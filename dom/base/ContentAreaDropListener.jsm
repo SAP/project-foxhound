@@ -18,11 +18,11 @@ ContentAreaDropListener.prototype = {
   classID: Components.ID("{1f34bc80-1bc7-11d6-a384-d705dd0746fc}"),
   QueryInterface: ChromeUtils.generateQI([Ci.nsIDroppedLinkHandler]),
 
-  _addLink: function(links, url, name, type) {
+  _addLink(links, url, name, type) {
     links.push({ url, name, type });
   },
 
-  _addLinksFromItem: function(links, dt, i) {
+  _addLinksFromItem(links, dt, i) {
     let types = dt.mozTypesAt(i);
     let type, data;
 
@@ -72,6 +72,9 @@ ContentAreaDropListener.prototype = {
           //       Add the entire text as a single entry, so that the entire
           //       text is searched.
           let hasURI = false;
+          // We don't care whether we are in a private context, because we are
+          // only using fixedURI and thus there's no risk to use the wrong
+          // search engine.
           let flags =
             Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
             Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -107,7 +110,7 @@ ContentAreaDropListener.prototype = {
     }
   },
 
-  _getDropLinks: function(dt) {
+  _getDropLinks(dt) {
     let links = [];
     for (let i = 0; i < dt.mozItemCount; i++) {
       this._addLinksFromItem(links, dt, i);
@@ -115,12 +118,7 @@ ContentAreaDropListener.prototype = {
     return links;
   },
 
-  _validateURI: function(
-    dataTransfer,
-    uriString,
-    disallowInherit,
-    triggeringPrincipal
-  ) {
+  _validateURI(dataTransfer, uriString, disallowInherit, triggeringPrincipal) {
     if (!uriString) {
       return "";
     }
@@ -134,6 +132,9 @@ ContentAreaDropListener.prototype = {
     // Apply URI fixup so that this validation prevents bad URIs even if the
     // similar fixup is applied later, especialy fixing typos up will convert
     // non-URI to URI.
+    // We don't know if the uri comes from a private context, but luckily we
+    // are only using fixedURI, so there's no risk to use the wrong search
+    // engine.
     let fixupFlags =
       Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
       Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
@@ -159,7 +160,7 @@ ContentAreaDropListener.prototype = {
     return uri.spec;
   },
 
-  _getTriggeringPrincipalFromDataTransfer: function(
+  _getTriggeringPrincipalFromDataTransfer(
     aDataTransfer,
     fallbackToSystemPrincipal
   ) {
@@ -212,12 +213,12 @@ ContentAreaDropListener.prototype = {
     );
   },
 
-  getTriggeringPrincipal: function(aEvent) {
+  getTriggeringPrincipal(aEvent) {
     let dataTransfer = aEvent.dataTransfer;
     return this._getTriggeringPrincipalFromDataTransfer(dataTransfer, true);
   },
 
-  getCSP: function(aEvent) {
+  getCSP(aEvent) {
     let sourceNode = aEvent.dataTransfer.mozSourceNode;
     if (aEvent.dataTransfer.mozCSP !== null) {
       return aEvent.dataTransfer.mozCSP;
@@ -239,7 +240,7 @@ ContentAreaDropListener.prototype = {
     return null;
   },
 
-  canDropLink: function(aEvent, aAllowSameDocument) {
+  canDropLink(aEvent, aAllowSameDocument) {
     if (this._eventTargetIsDisabled(aEvent)) {
       return false;
     }
@@ -287,7 +288,7 @@ ContentAreaDropListener.prototype = {
     return true;
   },
 
-  dropLink: function(aEvent, aName, aDisallowInherit) {
+  dropLink(aEvent, aName, aDisallowInherit) {
     aName.value = "";
     let links = this.dropLinks(aEvent, aDisallowInherit);
     let url = "";
@@ -302,7 +303,7 @@ ContentAreaDropListener.prototype = {
     return url;
   },
 
-  dropLinks: function(aEvent, aDisallowInherit) {
+  dropLinks(aEvent, aDisallowInherit) {
     if (aEvent && this._eventTargetIsDisabled(aEvent)) {
       return [];
     }
@@ -334,7 +335,7 @@ ContentAreaDropListener.prototype = {
     return links;
   },
 
-  validateURIsForDrop: function(aEvent, aURIs, aDisallowInherit) {
+  validateURIsForDrop(aEvent, aURIs, aDisallowInherit) {
     let dataTransfer = aEvent.dataTransfer;
     let triggeringPrincipal = this._getTriggeringPrincipalFromDataTransfer(
       dataTransfer,
@@ -351,11 +352,11 @@ ContentAreaDropListener.prototype = {
     }
   },
 
-  queryLinks: function(aDataTransfer) {
+  queryLinks(aDataTransfer) {
     return this._getDropLinks(aDataTransfer);
   },
 
-  _eventTargetIsDisabled: function(aEvent) {
+  _eventTargetIsDisabled(aEvent) {
     let ownerDoc = aEvent.originalTarget.ownerDocument;
     if (!ownerDoc || !ownerDoc.defaultView) {
       return false;

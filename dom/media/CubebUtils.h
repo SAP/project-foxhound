@@ -23,9 +23,6 @@ typedef cubeb_devid AudioDeviceID;
 // Initialize Audio Library. Some Audio backends require initializing the
 // library before using it.
 void InitLibrary();
-#  ifdef XP_LINUX
-void InitAudioThreads();
-#  endif
 
 // Shutdown Audio Library. Some Audio backends require shutting down the
 // library after using it.
@@ -45,7 +42,7 @@ cubeb* GetCubebContext();
 void ReportCubebStreamInitFailure(bool aIsFirstStream);
 void ReportCubebBackendUsed();
 uint32_t GetCubebPlaybackLatencyInMilliseconds();
-uint32_t GetCubebMSGLatencyInFrames(cubeb_stream_params* params);
+uint32_t GetCubebMTGLatencyInFrames(cubeb_stream_params* params);
 bool CubebLatencyPrefSet();
 void GetCurrentBackend(nsAString& aBackend);
 cubeb_stream_prefs GetDefaultStreamPrefs();

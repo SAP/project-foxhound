@@ -47,6 +47,7 @@
 #include "jsapi.h"
 #include "js/BuildId.h"  // JS::BuildIdCharVector, JS::SetProcessBuildIdOp
 #include "js/experimental/SourceHook.h"  // js::{,Set}SourceHook
+#include "js/GCAPI.h"
 #include "js/MemoryFunctions.h"
 #include "js/MemoryMetrics.h"
 #include "js/UbiNode.h"
@@ -397,19 +398,11 @@ static bool PrincipalImmuneToScriptPolicy(nsIPrincipal* aPrincipal) {
 
   // Check whether our URI is an "about:" URI that allows scripts.  If it is,
   // we need to allow JS to run.
-  nsCOMPtr<nsIURI> principalURI;
-  aPrincipal->GetURI(getter_AddRefs(principalURI));
-  MOZ_ASSERT(principalURI);
-
-  if (principalURI->SchemeIs("about")) {
-    nsCOMPtr<nsIAboutModule> module;
-    nsresult rv = NS_GetAboutModule(principalURI, getter_AddRefs(module));
-    if (NS_SUCCEEDED(rv)) {
-      uint32_t flags;
-      rv = module->GetURIFlags(principalURI, &flags);
-      if (NS_SUCCEEDED(rv) && (flags & nsIAboutModule::ALLOW_SCRIPT)) {
-        return true;
-      }
+  if (aPrincipal->SchemeIs("about")) {
+    uint32_t flags;
+    nsresult rv = aPrincipal->GetAboutModuleFlags(&flags);
+    if (NS_SUCCEEDED(rv) && (flags & nsIAboutModule::ALLOW_SCRIPT)) {
+      return true;
     }
   }
 
@@ -1496,6 +1489,10 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
                  zStats.cachedCFG,
                  "The cached CFG to construct Ion code out of it.");
 
+  ZRREPORT_BYTES(pathPrefix + NS_LITERAL_CSTRING("script-counts-map"),
+                 zStats.scriptCountsMap,
+                 "Profiling-related information for scripts.");
+
   size_t stringsNotableAboutMemoryGCHeap = 0;
   size_t stringsNotableAboutMemoryMallocHeap = 0;
 
@@ -1887,10 +1884,6 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
 
   ZRREPORT_BYTES(realmJSPathPrefix + NS_LITERAL_CSTRING("jit-realm"),
                  realmStats.jitRealm, "The JIT realm.");
-
-  ZRREPORT_BYTES(realmJSPathPrefix + NS_LITERAL_CSTRING("script-counts-map"),
-                 realmStats.scriptCountsMap,
-                 "Profiling-related information for scripts.");
 
   if (sundriesGCHeap > 0) {
     // We deliberately don't use ZRREPORT_GC_BYTES here.
@@ -2761,6 +2754,9 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_GC_SLICE_COUNT:
       Telemetry::Accumulate(Telemetry::GC_SLICE_COUNT, sample);
       break;
+    case JS_TELEMETRY_GC_EFFECTIVENESS:
+      Telemetry::Accumulate(Telemetry::GC_EFFECTIVENESS, sample);
+      break;
     case JS_TELEMETRY_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS:
       Telemetry::Accumulate(
           Telemetry::JS_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS, sample);
@@ -2768,9 +2764,6 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_WEB_PARSER_COMPILE_LAZY_AFTER_MS:
       Telemetry::Accumulate(Telemetry::JS_WEB_PARSER_COMPILE_LAZY_AFTER_MS,
                             sample);
-      break;
-    case JS_TELEMETRY_DEPRECATED_ARRAY_GENERICS:
-      Telemetry::Accumulate(Telemetry::JS_DEPRECATED_ARRAY_GENERICS, sample);
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected JS_TELEMETRY id");
@@ -2901,10 +2894,9 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
     ptr += bytesRead;
   }
 
-  size_t bytesAllocated;
   if (utf8Source) {
     // |buf| is already UTF-8, so we can directly return it.
-    *len = bytesAllocated = rawLen;
+    *len = rawLen;
     *utf8Source = buf.release();
   } else {
     MOZ_ASSERT(twoByteSource != nullptr);
@@ -2920,8 +2912,6 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
     if (!*twoByteSource) {
       return NS_ERROR_FAILURE;
     }
-
-    bytesAllocated = *len * sizeof(char16_t);
   }
 
   return NS_OK;
@@ -3017,20 +3007,23 @@ js::UniquePtr<EdgeRange> ReflectorNode::edges(JSContext* cx,
   if (!range) {
     return nullptr;
   }
-  // UNWRAP_OBJECT assumes the object is completely initialized, but ours
-  // may not be.  Luckily, UnwrapDOMObjectToISupports checks for the
-  // uninitialized case (and returns null if uninitialized), so we can use
-  // that to guard against uninitialized objects.
+  // UNWRAP_NON_WRAPPER_OBJECT assumes the object is completely initialized,
+  // but ours may not be. Luckily, UnwrapDOMObjectToISupports checks for the
+  // uninitialized case (and returns null if uninitialized), so we can use that
+  // to guard against uninitialized objects.
   nsISupports* supp = UnwrapDOMObjectToISupports(&get());
   if (supp) {
-    nsCOMPtr<nsINode> node;
-    UNWRAP_OBJECT(Node, &get(), node);
-    if (node) {
+    JS::AutoSuppressGCAnalysis nogc;  // bug 1582326
+
+    nsINode* node;
+    // UnwrapDOMObjectToISupports can only return non-null if its argument is
+    // an actual DOM object, not a cross-compartment wrapper.
+    if (NS_SUCCEEDED(UNWRAP_NON_WRAPPER_OBJECT(Node, &get(), node))) {
       char16_t* edgeName = nullptr;
       if (wantNames) {
         edgeName = NS_xstrdup(u"Reflected Node");
       }
-      if (!range->addEdge(Edge(edgeName, node.get()))) {
+      if (!range->addEdge(Edge(edgeName, node))) {
         return nullptr;
       }
     }
@@ -3276,34 +3269,39 @@ JSObject* XPCJSRuntime::GetUAWidgetScope(JSContext* cx,
   MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(principal),
              "Running UA Widget in chrome");
 
-  RefPtr<BasePrincipal> key = BasePrincipal::Cast(principal);
-  if (Principal2JSObjectMap::Ptr p = mUAWidgetScopeMap.lookup(key)) {
-    return p->value();
-  }
+  RootedObject scope(cx);
+  do {
+    RefPtr<BasePrincipal> key = BasePrincipal::Cast(principal);
+    if (Principal2JSObjectMap::Ptr p = mUAWidgetScopeMap.lookup(key)) {
+      scope = p->value();
+      break;  // Need ~RefPtr to run, and potentially GC, before returning.
+    }
 
-  SandboxOptions options;
-  options.sandboxName.AssignLiteral("UA Widget Scope");
-  options.wantXrays = false;
-  options.wantComponents = false;
-  options.isUAWidgetScope = true;
+    SandboxOptions options;
+    options.sandboxName.AssignLiteral("UA Widget Scope");
+    options.wantXrays = false;
+    options.wantComponents = false;
+    options.isUAWidgetScope = true;
 
-  // Use an ExpandedPrincipal to create asymmetric security.
-  MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(principal));
-  nsTArray<nsCOMPtr<nsIPrincipal>> principalAsArray(1);
-  principalAsArray.AppendElement(principal);
-  RefPtr<ExpandedPrincipal> ep = ExpandedPrincipal::Create(
-      principalAsArray, principal->OriginAttributesRef());
+    // Use an ExpandedPrincipal to create asymmetric security.
+    MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(principal));
+    nsTArray<nsCOMPtr<nsIPrincipal>> principalAsArray(1);
+    principalAsArray.AppendElement(principal);
+    RefPtr<ExpandedPrincipal> ep = ExpandedPrincipal::Create(
+        principalAsArray, principal->OriginAttributesRef());
 
-  // Create the sandbox.
-  RootedValue v(cx);
-  nsresult rv = CreateSandboxObject(
-      cx, &v, static_cast<nsIExpandedPrincipal*>(ep), options);
-  NS_ENSURE_SUCCESS(rv, nullptr);
-  JSObject* scope = &v.toObject();
+    // Create the sandbox.
+    RootedValue v(cx);
+    nsresult rv = CreateSandboxObject(
+        cx, &v, static_cast<nsIExpandedPrincipal*>(ep), options);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+    scope = &v.toObject();
 
-  MOZ_ASSERT(xpc::IsInUAWidgetScope(js::UncheckedUnwrap(scope)));
+    JSObject* unwrapped = js::UncheckedUnwrap(scope);
+    MOZ_ASSERT(xpc::IsInUAWidgetScope(unwrapped));
 
-  MOZ_ALWAYS_TRUE(mUAWidgetScopeMap.putNew(key, scope));
+    MOZ_ALWAYS_TRUE(mUAWidgetScopeMap.putNew(key, unwrapped));
+  } while (false);
 
   return scope;
 }

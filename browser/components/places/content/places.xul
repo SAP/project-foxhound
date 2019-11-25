@@ -331,13 +331,11 @@
 
       <spacer id="libraryToolbarSpacer" flex="1"/>
 
-      <textbox id="searchFilter"
-               flex="1"
-               is="search-textbox"
-               aria-controls="placeContent"
-               oncommand="PlacesSearchBox.search(this.value);"
-               collection="bookmarks">
-      </textbox>
+      <search-textbox id="searchFilter"
+                      flex="1"
+                      aria-controls="placeContent"
+                      oncommand="PlacesSearchBox.search(this.value);"
+                      collection="bookmarks"/>
       <toolbarbutton id="clearDownloadsButton"
                      class="tabbable"
                      insertbefore="libraryToolbarSpacer"
@@ -406,7 +404,10 @@
           </treecols>
           <treechildren flex="1" onclick="ContentTree.onClick(event);"/>
         </tree>
-#include ../../downloads/content/downloadsRichListBox.inc.xul
+        <richlistbox flex="1"
+                     seltype="multiple"
+                     id="downloadsRichListBox"
+                     context="downloadsContextMenu"/>
       </deck>
       <deck id="detailsDeck" style="height: 11em;">
         <vbox id="itemsCountBox" align="center">

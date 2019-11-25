@@ -150,7 +150,7 @@ void FetchEvent::PostInit(const nsACString& aScriptSpec,
 /*static*/
 already_AddRefed<FetchEvent> FetchEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const FetchEventInit& aOptions, ErrorResult& aRv) {
+    const FetchEventInit& aOptions) {
   RefPtr<EventTarget> owner = do_QueryObject(aGlobal.GetAsSupports());
   MOZ_ASSERT(owner);
   RefPtr<FetchEvent> e = new FetchEvent(owner);
@@ -1051,7 +1051,7 @@ nsresult ExtractBytesFromData(
 }
 }  // namespace
 
-PushMessageData::PushMessageData(nsISupports* aOwner,
+PushMessageData::PushMessageData(nsIGlobalObject* aOwner,
                                  nsTArray<uint8_t>&& aBytes)
     : mOwner(aOwner), mBytes(std::move(aBytes)) {}
 
@@ -1149,7 +1149,7 @@ already_AddRefed<PushEvent> PushEvent::Constructor(
       aRv.Throw(rv);
       return nullptr;
     }
-    e->mData = new PushMessageData(aOwner, std::move(bytes));
+    e->mData = new PushMessageData(aOwner->GetOwnerGlobal(), std::move(bytes));
   }
   return e.forget();
 }
@@ -1203,15 +1203,15 @@ void ExtendableMessageEvent::GetSource(
 /* static */
 already_AddRefed<ExtendableMessageEvent> ExtendableMessageEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const ExtendableMessageEventInit& aOptions, ErrorResult& aRv) {
+    const ExtendableMessageEventInit& aOptions) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
-  return Constructor(t, aType, aOptions, aRv);
+  return Constructor(t, aType, aOptions);
 }
 
 /* static */
 already_AddRefed<ExtendableMessageEvent> ExtendableMessageEvent::Constructor(
     mozilla::dom::EventTarget* aEventTarget, const nsAString& aType,
-    const ExtendableMessageEventInit& aOptions, ErrorResult& aRv) {
+    const ExtendableMessageEventInit& aOptions) {
   RefPtr<ExtendableMessageEvent> event =
       new ExtendableMessageEvent(aEventTarget);
 

@@ -12,6 +12,7 @@ use crate::properties::longhands::float::computed_value::T as Float;
 use crate::properties::longhands::overflow_x::computed_value::T as Overflow;
 use crate::properties::longhands::position::computed_value::T as Position;
 use crate::properties::{self, ComputedValues, StyleBuilder};
+#[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
 use crate::values::specified::box_::DisplayInside;
 use app_units::Au;
 
@@ -144,7 +145,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     ///    computed to 'absolute' if the element is in a top layer.
     ///
     fn adjust_for_top_layer(&mut self) {
-        if !self.style.out_of_flow_positioned() && self.style.in_top_layer() {
+        if !self.style.is_absolutely_positioned() && self.style.in_top_layer() {
             self.style.mutate_box().set_position(Position::Absolute);
         }
     }
@@ -155,7 +156,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     ///    value of 'float' is 'none'.
     ///
     fn adjust_for_position(&mut self) {
-        if self.style.out_of_flow_positioned() && self.style.floated() {
+        if self.style.is_absolutely_positioned() && self.style.is_floating() {
             self.style.mutate_box().set_float(Float::None);
         }
     }
@@ -183,6 +184,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     where
         E: TElement,
     {
+        #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
         use crate::computed_values::list_style_position::T as ListStylePosition;
 
         let mut blockify = false;
@@ -203,8 +205,9 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
 
         let is_item_or_root = blockify;
 
-        blockify_if!(self.style.floated());
-        blockify_if!(self.style.out_of_flow_positioned());
+        blockify_if!(self.style.is_floating());
+        blockify_if!(self.style.is_absolutely_positioned());
+        #[cfg(any(feature = "servo-layout-2013", feature = "gecko"))]
         blockify_if!(
             self.style.pseudo.map_or(false, |p| p.is_marker()) &&
                 self.style.get_parent_list().clone_list_style_position() ==
@@ -280,6 +283,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     fn adjust_for_text_combine_upright(&mut self) {
         use crate::computed_values::text_combine_upright::T as TextCombineUpright;
         use crate::computed_values::writing_mode::T as WritingMode;
+        use crate::logical_geometry;
 
         let writing_mode = self.style.get_inherited_box().clone_writing_mode();
         let text_combine_upright = self.style.get_inherited_text().clone_text_combine_upright();
@@ -291,6 +295,8 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             self.style
                 .mutate_inherited_box()
                 .set_writing_mode(WritingMode::HorizontalTb);
+            self.style.writing_mode =
+                logical_geometry::WritingMode::new(self.style.get_inherited_box());
         }
     }
 
@@ -369,7 +375,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         use crate::computed_values::align_self::T as AlignSelf;
 
         if self.style.get_position().clone_align_self() == AlignSelf::Auto &&
-            !self.style.out_of_flow_positioned()
+            !self.style.is_absolutely_positioned()
         {
             let self_align = match layout_parent_style.get_position().clone_align_items() {
                 AlignItems::Stretch => AlignSelf::Stretch,
@@ -550,7 +556,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     #[cfg(feature = "gecko")]
     fn should_suppress_linebreak(&self, layout_parent_style: &ComputedValues) -> bool {
         // Line break suppression should only be propagated to in-flow children.
-        if self.style.floated() || self.style.out_of_flow_positioned() {
+        if self.style.is_floating() || self.style.is_absolutely_positioned() {
             return false;
         }
         let parent_display = layout_parent_style.get_box().clone_display();

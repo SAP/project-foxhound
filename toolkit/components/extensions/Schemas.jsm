@@ -50,6 +50,13 @@ XPCOMUtils.defineLazyGetter(
   () => ExtensionParent.StartupCache
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "treatWarningsAsErrors",
+  "extensions.webextensions.warnings-as-errors",
+  false
+);
+
 var EXPORTED_SYMBOLS = ["SchemaRoot", "Schemas"];
 
 const KEY_CONTENT_SCHEMAS = "extensions-framework/schemas/content";
@@ -454,9 +461,12 @@ class Context {
    *        A caller may pass `null` to prevent a choice from being
    *        added, but this should *only* be done from code processing a
    *        choices type.
+   * @param {boolean} [warning = false]
+   *        If true, make message prefixed `Warning`. If false, make message
+   *        prefixed `Error`
    * @returns {object}
    */
-  error(errorMessage, choicesMessage = undefined) {
+  error(errorMessage, choicesMessage = undefined, warning = false) {
     if (choicesMessage !== null) {
       let { choicePath } = this;
       if (choicePath) {
@@ -470,7 +480,9 @@ class Context {
       let { currentTarget } = this;
       return {
         error: () =>
-          `Error processing ${currentTarget}: ${forceString(errorMessage)}`,
+          `${
+            warning ? "Warning" : "Error"
+          } processing ${currentTarget}: ${forceString(errorMessage)}`,
       };
     }
     return { error: errorMessage };
@@ -485,10 +497,12 @@ class Context {
    * the message, in the same way as for the `error` method.
    *
    * @param {string} message
+   * @param {object} [options]
+   * @param {boolean} [options.warning = false]
    * @returns {Error}
    */
-  makeError(message) {
-    let error = forceString(this.error(message).error);
+  makeError(message, { warning = false } = {}) {
+    let error = forceString(this.error(message, null, warning).error);
     if (this.cloneScope) {
       return new this.cloneScope.Error(error);
     }
@@ -1186,7 +1200,31 @@ class Entry {
       }
     }
 
-    context.logError(context.makeError(message));
+    this.logWarning(context, message);
+  }
+
+  /**
+   * @param {Context} context
+   * @param {string} warningMessage
+   */
+  logWarning(context, warningMessage) {
+    let error = context.makeError(warningMessage, { warning: true });
+    context.logError(error);
+
+    if (treatWarningsAsErrors) {
+      // This pref is false by default, and true by default in tests to
+      // discourage the use of deprecated APIs in our unit tests.
+      // If a warning is an expected part of a test, temporarily set the pref
+      // to false, e.g. with the ExtensionTestUtils.failOnSchemaWarnings helper.
+      Services.console.logStringMessage(
+        "Treating warning as error because the preference " +
+          "extensions.webextensions.warnings-as-errors is set to true"
+      );
+      if (typeof error === "string") {
+        error = new Error(error);
+      }
+      throw error;
+    }
   }
 
   /**
@@ -1867,7 +1905,7 @@ class ObjectType extends Type {
 
     if (error) {
       if (onError == "warn") {
-        context.logError(forceString(error.error));
+        this.logWarning(context, forceString(error.error));
       } else if (onError != "ignore") {
         throw error;
       }
@@ -2165,7 +2203,7 @@ class ArrayType extends Type {
       );
       if (element.error) {
         if (this.onError == "warn") {
-          context.logError(forceString(element.error));
+          this.logWarning(context, forceString(element.error));
         } else if (this.onError != "ignore") {
           return element;
         }
@@ -3153,7 +3191,7 @@ class SchemaRoots extends Namespaces {
       return results[0];
     }
 
-    if (results.length > 0) {
+    if (results.length) {
       return new Namespaces(this.root, name, name.split("."), results);
     }
     return null;

@@ -54,8 +54,8 @@
 
     <popupnotification id="password-notification" hidden="true">
       <popupnotificationcontent orient="vertical">
-        <textbox id="password-notification-username"/>
-        <textbox id="password-notification-password" type="password" show-content=""/>
+        <html:input id="password-notification-username"/>
+        <html:input id="password-notification-password" type="password"/>
         <checkbox id="password-notification-visibilityToggle" hidden="true"/>
       </popupnotificationcontent>
     </popupnotification>
@@ -130,11 +130,5 @@
             class="text-link popup-notification-learnmore-link"/><html:span
             id="storage-access-perm-endlabel"/></xul:description>
         </xul:vbox>
-      </popupnotificationcontent>
-    </popupnotification>
-
-    <popupnotification id="socialblock-notification" hidden="true">
-      <popupnotificationcontent id="socialblock-content" orient="vertical">
-        <description id="socialblock-message"></description>
       </popupnotificationcontent>
     </popupnotification>

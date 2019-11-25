@@ -21,16 +21,10 @@ addEventListener("fetch", function(event) {
     event.respondWith(fetch(event.request));
   } else if (event.request.url.includes("redirect")) {
     let param = get_query_params(event.request.url);
-    let url = param["url"];
-    let mode = param["mode"];
+    let url = param.url;
+    let mode = param.mode;
 
-    event.respondWith(fetch(url, { mode: mode }));
-  }
-});
-
-addEventListener("message", function(event) {
-  if (event.data === "claim") {
-    event.waitUntil(clients.claim());
+    event.respondWith(fetch(url, { mode }));
   }
 });
 

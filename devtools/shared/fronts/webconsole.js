@@ -13,7 +13,7 @@ const {
 const { webconsoleSpec } = require("devtools/shared/specs/webconsole");
 
 /**
- * A WebConsoleClient is used as a front end for the WebConsoleActor that is
+ * A WebConsoleFront is used as a front end for the WebConsoleActor that is
  * created on the server, hiding implementation details.
  *
  * @param object client
@@ -200,7 +200,7 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
    * Evaluate a JavaScript expression asynchronously.
    * See evaluateJS for parameter and response information.
    */
-  evaluateJSAsync(string, opts = {}) {
+  async evaluateJSAsync(string, opts = {}) {
     const options = {
       text: string,
       frameActor: opts.frameActor,
@@ -210,8 +210,8 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
       mapped: opts.mapped,
     };
 
-    return new Promise(async (resolve, reject) => {
-      const { resultID } = await super.evaluateJSAsync(options);
+    const { resultID } = await super.evaluateJSAsync(options);
+    return new Promise((resolve, reject) => {
       // Null check this in case the client has been detached while sending
       // the one way request
       if (this.pendingEvaluationResults) {
@@ -464,7 +464,7 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   }
 
   /**
-   * Close the WebConsoleClient.
+   * Close the WebConsoleFront.
    *
    */
   destroy() {
@@ -484,7 +484,10 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   }
 
   clearNetworkRequests() {
-    this._networkRequests.clear();
+    // Prevent exception if the front has already been destroyed.
+    if (this._networkRequests) {
+      this._networkRequests.clear();
+    }
   }
 
   /**

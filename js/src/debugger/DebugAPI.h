@@ -8,7 +8,9 @@
 #define debugger_DebugAPI_h
 
 #include "vm/GlobalObject.h"
+#include "vm/Interpreter.h"
 #include "vm/JSContext.h"
+#include "vm/Realm.h"
 
 namespace js {
 
@@ -97,7 +99,10 @@ class DebugAPI {
   // Trace all debugger-owned GC things unconditionally, during a moving GC.
   static void traceAllForMovingGC(JSTracer* trc);
 
-  // Sweep dying debuggers, and detach edges to dying debuggees.
+  // The garbage collector calls this after everything has been marked, but
+  // before anything has been finalized. We use this to clear Debugger /
+  // debuggee edges at a point where the parties concerned are all still
+  // initialized.
   static void sweepAll(JSFreeOp* fop);
 
   // Add sweep group edges due to the presence of any debuggers.
@@ -203,6 +208,9 @@ class DebugAPI {
    * should not be user-visible.
    */
   static inline ResumeMode onResumeFrame(JSContext* cx, AbstractFramePtr frame);
+
+  static inline ResumeMode onNativeCall(JSContext* cx, const CallArgs& args,
+                                        CallReason reason);
 
   /*
    * Announce to the debugger a |debugger;| statement on has been
@@ -330,13 +338,6 @@ class DebugAPI {
   static inline void notifyParticipatesInGC(GlobalObject* global,
                                             uint64_t majorGCNumber);
 
-  // Allocate an object which holds a GlobalObject::DebuggerVector.
-  static JSObject* newGlobalDebuggersHolder(JSContext* cx);
-
-  // Get the GlobalObject::DebuggerVector for an object allocated by
-  // newGlobalDebuggersObject.
-  static GlobalObject::DebuggerVector* getGlobalDebuggers(JSObject* holder);
-
   /*
    * Get any instrumentation ID which has been associated with a script using
    * the specified debugger object.
@@ -352,11 +353,11 @@ class DebugAPI {
   static void slowPathOnNewScript(JSContext* cx, HandleScript script);
   static void slowPathOnNewGlobalObject(JSContext* cx,
                                         Handle<GlobalObject*> global);
-  static void slowPathNotifyParticipatesInGC(
-      uint64_t majorGCNumber, GlobalObject::DebuggerVector& dbgs);
+  static void slowPathNotifyParticipatesInGC(uint64_t majorGCNumber,
+                                             JS::Realm::DebuggerVector& dbgs);
   static MOZ_MUST_USE bool slowPathOnLogAllocationSite(
       JSContext* cx, HandleObject obj, HandleSavedFrame frame,
-      mozilla::TimeStamp when, GlobalObject::DebuggerVector& dbgs);
+      mozilla::TimeStamp when, JS::Realm::DebuggerVector& dbgs);
   static MOZ_MUST_USE bool slowPathOnLeaveFrame(JSContext* cx,
                                                 AbstractFramePtr frame,
                                                 jsbytecode* pc, bool ok);
@@ -368,6 +369,8 @@ class DebugAPI {
   static ResumeMode slowPathOnEnterFrame(JSContext* cx, AbstractFramePtr frame);
   static ResumeMode slowPathOnResumeFrame(JSContext* cx,
                                           AbstractFramePtr frame);
+  static ResumeMode slowPathOnNativeCall(JSContext* cx, const CallArgs& args,
+                                         CallReason reason);
   static ResumeMode slowPathOnDebuggerStatement(JSContext* cx,
                                                 AbstractFramePtr frame);
   static ResumeMode slowPathOnExceptionUnwind(JSContext* cx,

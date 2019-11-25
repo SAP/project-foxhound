@@ -52,6 +52,7 @@ class GfxInfo : public GfxInfoBase {
       nsAString& aAdapterDriverVersion) override;
   NS_IMETHOD GetAdapterDriverDate2(nsAString& aAdapterDriverDate) override;
   NS_IMETHOD GetIsGPU2Active(bool* aIsGPU2Active) override;
+  NS_IMETHOD GetDisplayInfo(nsTArray<nsString>& aDisplayInfo) override;
   using GfxInfoBase::GetFeatureStatus;
   using GfxInfoBase::GetFeatureSuggestedDriverVersion;
 
@@ -77,9 +78,14 @@ class GfxInfo : public GfxInfoBase {
   virtual const nsTArray<GfxDriverInfo>& GetGfxDriverInfo() override;
 
  private:
+   struct ScreenInfo {
+     gfx::Rect mScreenDimensions;
+   };
+ private:
   void AddCrashReportAnnotations();
-  int32_t WebRtcHwEncodeSupported();
-  int32_t WebRtcHwDecodeSupported();
+  int32_t WebRtcHwVp8EncodeSupported();
+  int32_t WebRtcHwVp8DecodeSupported();
+  int32_t WebRtcHwH264Supported();
 
   bool mInitialized;
 
@@ -94,6 +100,7 @@ class GfxInfo : public GfxInfoBase {
   nsCString mOSVersion;
   uint32_t mOSVersionInteger;
   int32_t mSDKVersion;
+  ScreenInfo mScreenInfo;
 };
 
 }  // namespace widget

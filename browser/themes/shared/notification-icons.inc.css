@@ -82,14 +82,6 @@
   list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media-blocked.svg);
 }
 
-.image-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/images.svg);
-}
-
-.image-icon.blocked-permission-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/images-blocked.svg);
-}
-
 .storage-access-notification-content {
   color: var(--panel-disabled-color);
   font-style: italic;
@@ -198,6 +190,7 @@ html|*#webRTC-previewVideo {
   width: 300px;
   /* If we don't set the min-width, width is ignored. */
   min-width: 300px;
+  min-height: 10em;
   max-height: 200px;
 }
 
@@ -296,7 +289,6 @@ html|*#webRTC-previewVideo {
 
 /* OFFLINE APPS */
 
-.popup-notification-icon[popupid*="offline-app-requested"],
 .popup-notification-icon[popupid="offline-app-usage"] {
   list-style-image: url(chrome://global/skin/icons/question-64.png);
 }
@@ -399,12 +391,4 @@ html|*#webRTC-previewVideo {
 .popup-notification-icon[popupid="update-unsupported"] {
   background: #FFE900 url(chrome://browser/skin/notification-icons/update.svg) no-repeat center;
   border-radius: 50%;
-}
-
-/* Social Tracking */
-:root[lwt-toolbar-field-brighttext] .popup-notification-icon[popupid="socialblock"] {
-  list-style-image: url(chrome://browser/skin/notification-icons/block-social-dark.svg);
-}
-.popup-notification-icon[popupid="socialblock"] {
-  list-style-image: url(chrome://browser/skin/notification-icons/block-social.svg);
 }

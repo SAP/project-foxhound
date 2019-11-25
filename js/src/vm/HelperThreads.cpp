@@ -13,7 +13,6 @@
 
 #include "builtin/Promise.h"
 #include "frontend/BytecodeCompilation.h"
-#include "gc/GCInternals.h"
 #include "jit/IonBuilder.h"
 #include "js/ContextOptions.h"  // JS::ContextOptions
 #include "js/SourceText.h"
@@ -73,13 +72,17 @@ bool js::CreateHelperThreadsState() {
   gHelperThreadState = helperThreadState.release();
   if (!gHelperThreadState->ensureContextListForThreadCount()) {
     js_delete(gHelperThreadState);
+    gHelperThreadState = nullptr;
     return false;
   }
   return true;
 }
 
 void js::DestroyHelperThreadsState() {
-  MOZ_ASSERT(gHelperThreadState);
+  if (!gHelperThreadState) {
+    return;
+  }
+
   gHelperThreadState->finish();
   js_delete(gHelperThreadState);
   gHelperThreadState = nullptr;
@@ -528,7 +531,7 @@ void ParseTask::trace(JSTracer* trc) {
     return;
   }
 
-  TraceManuallyBarrieredEdge(trc, &parseGlobal, "ParseTask::parseGlobal");
+  TraceRoot(trc, &parseGlobal, "ParseTask::parseGlobal");
   scripts.trace(trc);
   sourceObjects.trace(trc);
 }
@@ -683,8 +686,7 @@ void BinASTDecodeTask::parse(JSContext* cx) {
   RootedScriptSourceObject sourceObject(cx);
 
   JSScript* script = frontend::CompileGlobalBinASTScript(
-      cx, cx->tempLifoAlloc(), options, data.begin().get(), data.length(),
-      &sourceObject.get());
+      cx, options, data.begin().get(), data.length(), &sourceObject.get());
   if (script) {
     scripts.infallibleAppend(script);
     if (sourceObject) {
@@ -840,15 +842,15 @@ static bool EnsureParserCreatedClasses(JSContext* cx, ParseTaskKind kind) {
     return false;  // needed by regular expression literals
   }
 
-  if (!GlobalObject::initGenerators(cx, global)) {
+  if (!EnsureConstructor(cx, global, JSProto_GeneratorFunction)) {
     return false;  // needed by function*() {}
   }
 
-  if (!GlobalObject::initAsyncFunction(cx, global)) {
+  if (!EnsureConstructor(cx, global, JSProto_AsyncFunction)) {
     return false;  // needed by async function() {}
   }
 
-  if (!GlobalObject::initAsyncGenerators(cx, global)) {
+  if (!EnsureConstructor(cx, global, JSProto_AsyncGeneratorFunction)) {
     return false;  // needed by async function*() {}
   }
 
@@ -1124,38 +1126,43 @@ bool GlobalHelperThreadState::ensureInitialized() {
   MOZ_ASSERT(CanUseExtraThreads());
 
   MOZ_ASSERT(this == &HelperThreadState());
-  AutoLockHelperThreadState lock;
 
-  if (threads) {
-    return true;
-  }
+  {
+    // We must not hold this lock during the error handling code below.
+    AutoLockHelperThreadState lock;
 
-  threads = js::MakeUnique<HelperThreadVector>();
-  if (!threads || !threads->initCapacity(threadCount)) {
-    return false;
-  }
+    if (threads) {
+      return true;
+    }
 
-  for (size_t i = 0; i < threadCount; i++) {
-    threads->infallibleEmplaceBack();
-    HelperThread& helper = (*threads)[i];
-
-    helper.thread = mozilla::Some(
-        Thread(Thread::Options().setStackSize(HELPER_STACK_SIZE)));
-    if (!helper.thread->init(HelperThread::ThreadMain, &helper)) {
+    threads = js::MakeUnique<HelperThreadVector>();
+    if (!threads) {
+      return false;
+    }
+    if (!threads->initCapacity(threadCount)) {
       goto error;
     }
 
-    continue;
+    for (size_t i = 0; i < threadCount; i++) {
+      threads->infallibleEmplaceBack();
+      HelperThread& helper = (*threads)[i];
 
-  error:
-    // Ensure that we do not leave uninitialized threads in the `threads`
-    // vector.
-    threads->popBack();
-    finishThreads();
-    return false;
+      helper.thread = mozilla::Some(
+          Thread(Thread::Options().setStackSize(HELPER_STACK_SIZE)));
+      if (!helper.thread->init(HelperThread::ThreadMain, &helper)) {
+        // Ensure that we do not leave uninitialized threads in the `threads`
+        // vector.
+        threads->popBack();
+        goto error;
+      }
+    }
   }
 
   return true;
+
+error:
+  finishThreads();
+  return false;
 }
 
 GlobalHelperThreadState::GlobalHelperThreadState()
@@ -1211,6 +1218,10 @@ bool GlobalHelperThreadState::ensureContextListForThreadCount() {
   while (helperContexts_.length() < threadCount) {
     UniquePtr<JSContext> cx =
         js::MakeUnique<JSContext>(nullptr, JS::ContextOptions());
+    if (!cx) {
+      return false;
+    }
+
     // To initialize context-specific protected data, the context must
     // temporarily set itself to the main thread. After initialization,
     // cx can clear itself from the thread.
@@ -1600,8 +1611,10 @@ static bool IonBuilderHasHigherPriority(jit::IonBuilder* first,
   }
 
   // A higher warm-up counter indicates a higher priority.
-  return first->script()->getWarmUpCount() / first->script()->length() >
-         second->script()->getWarmUpCount() / second->script()->length();
+  jit::JitScript* firstJitScript = first->script()->jitScript();
+  jit::JitScript* secondJitScript = second->script()->jitScript();
+  return firstJitScript->warmUpCount() / first->script()->length() >
+         secondJitScript->warmUpCount() / second->script()->length();
 }
 
 bool GlobalHelperThreadState::canStartIonCompile(
@@ -1723,7 +1736,7 @@ void js::GCParallelTask::startOrRunIfIdle(AutoLockHelperThreadState& lock) {
 
   if (!(CanUseExtraThreads() && startWithLockHeld(lock))) {
     AutoUnlockHelperThreadState unlock(lock);
-    runFromMainThread(runtime());
+    runFromMainThread();
   }
 }
 
@@ -1755,19 +1768,19 @@ static inline TimeDuration TimeSince(TimeStamp prev) {
   return now - prev;
 }
 
-void GCParallelTask::joinAndRunFromMainThread(JSRuntime* rt) {
+void GCParallelTask::joinAndRunFromMainThread() {
   {
     AutoLockHelperThreadState lock;
     MOZ_ASSERT(!isRunningWithLockHeld(lock));
     joinWithLockHeld(lock);
   }
 
-  runFromMainThread(rt);
+  runFromMainThread();
 }
 
-void js::GCParallelTask::runFromMainThread(JSRuntime* rt) {
+void js::GCParallelTask::runFromMainThread() {
   assertNotStarted();
-  MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(rt));
+  MOZ_ASSERT(js::CurrentThreadCanAccessRuntime(gc->rt));
   TimeStamp timeStart = ReallyNow();
   runTask();
   duration_ = TimeSince(timeStart);
@@ -1779,7 +1792,7 @@ void js::GCParallelTask::runFromHelperThread(AutoLockHelperThreadState& lock) {
   {
     AutoUnlockHelperThreadState parallelSection(lock);
     AutoSetHelperThreadContext usesContext;
-    AutoSetContextRuntime ascr(runtime());
+    AutoSetContextRuntime ascr(gc->rt);
     gc::AutoSetThreadIsPerformingGC performingGC;
     TimeStamp timeStart = ReallyNow();
     runTask();
@@ -1884,6 +1897,43 @@ UniquePtr<ParseTask> GlobalHelperThreadState::finishParseTaskCommon(
   }
   if (cx->isExceptionPending()) {
     return nullptr;
+  }
+
+  // Generate initial LCovSources for generated inner functions.
+  if (coverage::IsLCovEnabled()) {
+    Rooted<GCVector<JSScript*>> workList(cx, GCVector<JSScript*>(cx));
+
+    if (!workList.appendAll(parseTask->scripts)) {
+      return nullptr;
+    }
+
+    RootedScript elem(cx);
+    while (!workList.empty()) {
+      elem = workList.popCopy();
+
+      // Initialize LCov data for the script.
+      if (!coverage::InitScriptCoverage(cx, elem)) {
+        return nullptr;
+      }
+
+      // Add inner-function scripts to the work-list.
+      for (JS::GCCellPtr gcThing : elem->gcthings()) {
+        if (!gcThing.is<JSObject>()) {
+          continue;
+        }
+        JSObject* obj = &gcThing.as<JSObject>();
+        if (!obj->is<JSFunction>()) {
+          continue;
+        }
+        JSFunction* fun = &obj->as<JSFunction>();
+        if (!fun->hasScript()) {
+          continue;
+        }
+        if (!workList.append(fun->nonLazyScript())) {
+          return nullptr;
+        }
+      }
+    }
   }
 
   return std::move(parseTask.get());
@@ -2089,7 +2139,6 @@ void HelperThread::ThreadMain(void* arg) {
   mozilla::recordreplay::AutoDisallowThreadEvents d;
 
   static_cast<HelperThread*>(arg)->threadLoop();
-  Mutex::ShutDown();
 }
 
 void HelperThread::handleWasmTier1Workload(AutoLockHelperThreadState& locked) {
@@ -2223,7 +2272,7 @@ HelperThread* js::CurrentHelperThread() {
   if (!HelperThreadState().threads) {
     return nullptr;
   }
-  auto threadId = ThisThread::GetId();
+  auto threadId = ThreadId::ThisThreadId();
   for (auto& thisThread : *HelperThreadState().threads) {
     if (thisThread.thread.isSome() && threadId == thisThread.thread->get_id()) {
       return &thisThread;

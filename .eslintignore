@@ -1,5 +1,5 @@
 # Always ignore node_modules.
-**/node_modules/**/*.*
+**/node_modules/
 
 # Always ignore crashtests - specially crafted files that originally caused a
 # crash.
@@ -14,7 +14,6 @@ obj*/
 # dom/ exclusions which should be removed (aka ESLint enabled)
 dom/media/test/
 !dom/media/test/marionette/yttest/*.js
-dom/xhr/
 
 # build/ third-party code
 build/pgo/js-input/
@@ -60,28 +59,17 @@ browser/extensions/formautofill/phonenumberutils/PhoneNumberMetaData.jsm
 
 # devtools/ exclusions
 devtools/client/inspector/markup/test/doc_markup_events_*.html
-devtools/client/inspector/rules/test/doc_media_queries.html
 devtools/client/performance/components/test/test_jit_optimizations_01.html
-devtools/client/responsive.html/test/browser/touch.html
 devtools/client/shared/test/*.html
-devtools/client/shared/test/code_*.js
 devtools/client/shared/components/test/mochitest/*.html
 !devtools/client/shared/components/test/mochitest/test_stack-trace.html
-devtools/client/storage/test/*.html
-!devtools/client/storage/test/storage-cookies.html
-!devtools/client/storage/test/storage-overflow.html
-!devtools/client/storage/test/storage-search.html
-!devtools/client/storage/test/storage-unsecured-iframe.html
-!devtools/client/storage/test/storage-unsecured-iframe-usercontextid.html
 devtools/server/tests/browser/storage-*.html
 !devtools/server/tests/browser/storage-unsecured-iframe.html
 devtools/server/tests/browser/stylesheets-nested-iframes.html
-devtools/client/shared/webpack/shims/test/test_clipboard.html
 devtools/shared/qrcode/tests/mochitest/test_decode.html
 devtools/shared/tests/mochitest/*.html
 devtools/shared/webconsole/test/test_*.html
 devtools/client/webreplay/mochitest/examples/*.html
-devtools/server/tests/mochitest/test_inspector-inactive-property-helper.html
 
 # Ignore devtools debugger files
 # Keep in sync with devtools/client/debugger/.eslintignore
@@ -95,6 +83,7 @@ devtools/client/debugger/bin/
 devtools/client/debugger/packages/**/fixtures/
 devtools/client/debugger/node_modules
 devtools/client/debugger/out
+devtools/client/webreplay/mochitest/examples/
 
 # Ignore devtools debugger files which aren't intended for linting, and also
 # aren't included in any .eslintignore or .prettierignore file.
@@ -148,6 +137,9 @@ devtools/client/webconsole/test/browser/code_bundle_invalidmap.js
 devtools/server/tests/unit/babel_and_browserify_script_with_source_map.js
 devtools/server/tests/unit/setBreakpoint*
 devtools/server/tests/unit/sourcemapped.js
+
+# Testing syntax error
+devtools/client/webconsole/test/browser/test-syntaxerror-worklet.js
 
 # devtools specific format test file
 devtools/server/tests/unit/xpcshell_debugging_script.js

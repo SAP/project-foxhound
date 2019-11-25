@@ -46,14 +46,12 @@ void main(void) {
     ImageResource res = fetch_image_resource_direct(cmi.resource_address);
 
     RectWithSize dest_rect = bs_data.dest_rect;
-    dest_rect.p0 += cmi.local_pos;
 
     ClipVertexInfo vi = write_clip_tile_vertex(
         dest_rect,
         prim_transform,
         clip_transform,
         cmi.sub_rect,
-        cmi.snap_offsets,
         cmi.task_origin,
         cmi.screen_origin,
         cmi.device_pixel_scale

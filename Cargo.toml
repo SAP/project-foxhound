@@ -37,6 +37,7 @@ exclude = [
   "media/mp4parse-rust/mp4parse_capi",
   "media/mp4parse-rust/mp4parse_fallible",
   "xpcom/rust/gkrust_utils",
+  "tools/fuzzing/rust",
 ]
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
@@ -63,11 +64,11 @@ packed_simd = { git = "https://github.com/hsivonen/packed_simd", branch = "rust_
 
 [patch.crates-io.cranelift-codegen]
 git = "https://github.com/CraneStation/Cranelift"
-rev = "fc88520b88bcaad4e4a92f28a5e17347af20edbd"
+rev = "182414f15c18538dfebbe040469ec8001e93ecc5"
 
 [patch.crates-io.cranelift-wasm]
 git = "https://github.com/CraneStation/Cranelift"
-rev = "fc88520b88bcaad4e4a92f28a5e17347af20edbd"
+rev = "182414f15c18538dfebbe040469ec8001e93ecc5"
 
 [patch.crates-io.coreaudio-sys]
 path = "third_party/rust/coreaudio-sys"

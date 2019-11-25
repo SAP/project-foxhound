@@ -36,45 +36,67 @@ using mozilla::dom::quota::QuotaManager;
 using mozilla::dom::quota::UsageInfo;
 using mozilla::ipc::AssertIsOnBackgroundThread;
 
-static nsresult GetBodyUsage(nsIFile* aDir, const Atomic<bool>& aCanceled,
-                             UsageInfo* aUsageInfo) {
+static nsresult GetBodyUsage(nsIFile* aMorgueDir, const Atomic<bool>& aCanceled,
+                             UsageInfo* aUsageInfo, const bool aInitializing) {
   AssertIsOnIOThread();
 
   nsCOMPtr<nsIDirectoryEnumerator> entries;
-  nsresult rv = aDir->GetDirectoryEntries(getter_AddRefs(entries));
+  nsresult rv = aMorgueDir->GetDirectoryEntries(getter_AddRefs(entries));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  nsCOMPtr<nsIFile> file;
-  while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
-         file && !aCanceled) {
+  nsCOMPtr<nsIFile> bodyDir;
+  while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(bodyDir))) &&
+         bodyDir && !aCanceled) {
     if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
       return NS_ERROR_ABORT;
     }
-
     bool isDir;
-    rv = file->IsDirectory(&isDir);
+    rv = bodyDir->IsDirectory(&isDir);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    if (isDir) {
-      rv = GetBodyUsage(file, aCanceled, aUsageInfo);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
+    if (!isDir) {
+      QuotaInfo dummy;
+      mozilla::DebugOnly<nsresult> result =
+          RemoveNsIFile(dummy, bodyDir, /* aTrackQuota */ false);
+      // Try to remove the unexpected files, and keep moving on even if it fails
+      // because it might be created by virus or the operation system
+      MOZ_ASSERT(NS_SUCCEEDED(result));
       continue;
     }
 
-    int64_t fileSize;
-    rv = file->GetFileSize(&fileSize);
+    const QuotaInfo dummy;
+    const auto getUsage = [&aUsageInfo](nsIFile* bodyFile,
+                                        const nsACString& leafName,
+                                        bool& fileDeleted) {
+      MOZ_DIAGNOSTIC_ASSERT(bodyFile);
+      Unused << leafName;
+
+      int64_t fileSize;
+      nsresult rv = bodyFile->GetFileSize(&fileSize);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+      MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
+      aUsageInfo->AppendToFileUsage(Some(fileSize));
+
+      fileDeleted = false;
+
+      return NS_OK;
+    };
+    rv = mozilla::dom::cache::BodyTraverseFiles(dummy, bodyDir, getUsage,
+                                                /* aCanRemoveFiles */
+                                                aInitializing,
+                                                /* aTrackQuota */ false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
-    MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
-
-    aUsageInfo->AppendToFileUsage(Some(fileSize));
+  }
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
   return NS_OK;
@@ -454,7 +476,7 @@ class CacheQuotaClient final : public Client {
 
       if (isDir) {
         if (leafName.EqualsLiteral("morgue")) {
-          rv = GetBodyUsage(file, aCanceled, aUsageInfo);
+          rv = GetBodyUsage(file, aCanceled, aUsageInfo, aInitializing);
           if (NS_WARN_IF(NS_FAILED(rv))) {
             if (rv != NS_ERROR_ABORT) {
               REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
@@ -500,6 +522,9 @@ class CacheQuotaClient final : public Client {
       }
 
       NS_WARNING("Unknown Cache file found!");
+    }
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
     }
 
     return NS_OK;

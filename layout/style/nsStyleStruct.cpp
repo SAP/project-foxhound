@@ -1176,7 +1176,7 @@ nsStylePosition::nsStylePosition(const Document& aDocument)
       mJustifyItems(NS_STYLE_JUSTIFY_NORMAL),
       mJustifySelf(NS_STYLE_JUSTIFY_AUTO),
       mFlexDirection(StyleFlexDirection::Row),
-      mFlexWrap(NS_STYLE_FLEX_WRAP_NOWRAP),
+      mFlexWrap(StyleFlexWrap::Nowrap),
       mObjectFit(NS_STYLE_OBJECT_FIT_FILL),
       mOrder(NS_STYLE_ORDER_INITIAL),
       mFlexGrow(0.0f),
@@ -1356,7 +1356,8 @@ nsChangeHint nsStylePosition::CalcDifference(
   // It doesn't matter whether we're looking at the old or new visibility
   // struct, since a change between vertical and horizontal writing-mode will
   // cause a reframe.
-  bool isVertical = WritingMode(&aOldStyleVisibility).IsVertical();
+  bool isVertical =
+      aOldStyleVisibility.mWritingMode != NS_STYLE_WRITING_MODE_HORIZONTAL_TB;
   if (isVertical ? widthChanged : heightChanged) {
     hint |= nsChangeHint_ReflowHintsForBSizeChange;
   }
@@ -3275,9 +3276,9 @@ void nsStyleContent::TriggerImageLoads(Document& aDocument,
 
 nsStyleContent::nsStyleContent(const nsStyleContent& aSource)
     : mContents(aSource.mContents),
-      mIncrements(aSource.mIncrements),
-      mResets(aSource.mResets),
-      mSets(aSource.mSets) {
+      mCounterIncrement(aSource.mCounterIncrement),
+      mCounterReset(aSource.mCounterReset),
+      mCounterSet(aSource.mCounterSet) {
   MOZ_COUNT_CTOR(nsStyleContent);
 }
 
@@ -3286,8 +3287,10 @@ nsChangeHint nsStyleContent::CalcDifference(
   // Unfortunately we need to reframe even if the content lengths are the same;
   // a simple reflow will not pick up different text or different image URLs,
   // since we set all that up in the CSSFrameConstructor
-  if (mContents != aNewData.mContents || mIncrements != aNewData.mIncrements ||
-      mResets != aNewData.mResets || mSets != aNewData.mSets) {
+  if (mContents != aNewData.mContents ||
+      mCounterIncrement != aNewData.mCounterIncrement ||
+      mCounterReset != aNewData.mCounterReset ||
+      mCounterSet != aNewData.mCounterSet) {
     return nsChangeHint_ReconstructFrame;
   }
 

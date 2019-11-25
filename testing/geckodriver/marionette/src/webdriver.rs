@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::common::{from_cookie, from_name, to_cookie, to_name, Cookie, Timeouts};
+use crate::common::{from_cookie, from_name, to_cookie, to_name, Cookie, Frame, Timeouts, Window};
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Url {
+    pub url: String,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LegacyWebElement {
@@ -53,6 +58,13 @@ pub struct Keys {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ScreenshotOptions {
+    pub id: Option<String>,
+    pub highlights: Vec<Option<String>>,
+    pub full: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Script {
     pub script: String,
     pub args: Option<Vec<Value>>,
@@ -85,6 +97,12 @@ pub enum Command {
     ElementClear(LegacyWebElement),
     #[serde(rename = "WebDriver:ElementClick")]
     ElementClick(LegacyWebElement),
+    #[serde(rename = "WebDriver:ElementSendKeys")]
+    ElementSendKeys {
+        id: String,
+        text: String,
+        value: Vec<String>,
+    },
     #[serde(rename = "WebDriver:ExecuteAsyncScript")]
     ExecuteAsyncScript(Script),
     #[serde(rename = "WebDriver:ExecuteScript")]
@@ -107,12 +125,22 @@ pub enum Command {
     },
     #[serde(rename = "WebDriver:FullscreenWindow")]
     FullscreenWindow,
+    #[serde(rename = "WebDriver:Navigate")]
+    Get(Url),
     #[serde(rename = "WebDriver:GetActiveElement")]
     GetActiveElement,
     #[serde(rename = "WebDriver:GetAlertText")]
     GetAlertText,
     #[serde(rename = "WebDriver:GetCookies")]
     GetCookies,
+    #[serde(rename = "WebDriver:GetElementCSSValue")]
+    GetCSSValue {
+        id: String,
+        #[serde(rename = "propertyName")]
+        property: String,
+    },
+    #[serde(rename = "WebDriver:GetCurrentURL")]
+    GetCurrentUrl,
     #[serde(rename = "WebDriver:GetElementAttribute")]
     GetElementAttribute { id: String, name: String },
     #[serde(rename = "WebDriver:GetElementProperty")]
@@ -123,8 +151,12 @@ pub enum Command {
     GetElementTagName(LegacyWebElement),
     #[serde(rename = "WebDriver:GetElementText")]
     GetElementText(LegacyWebElement),
+    #[serde(rename = "WebDriver:GetPageSource")]
+    GetPageSource,
     #[serde(rename = "WebDriver:GetTimeouts")]
     GetTimeouts,
+    #[serde(rename = "WebDriver:GetTitle")]
+    GetTitle,
     #[serde(rename = "WebDriver:GetWindowHandle")]
     GetWindowHandle,
     #[serde(rename = "WebDriver:GetWindowHandles")]
@@ -147,12 +179,28 @@ pub enum Command {
     MinimizeWindow,
     #[serde(rename = "WebDriver:NewWindow")]
     NewWindow(NewWindow),
+    #[serde(rename = "WebDriver:Refresh")]
+    Refresh,
+    #[serde(rename = "WebDriver:ReleaseActions")]
+    ReleaseActions,
     #[serde(rename = "WebDriver:SendAlertText")]
     SendAlertText(Keys),
     #[serde(rename = "WebDriver:SetTimeouts")]
     SetTimeouts(Timeouts),
     #[serde(rename = "WebDriver:SetWindowRect")]
     SetWindowRect(WindowRect),
+    #[serde(rename = "WebDriver:SwitchToFrame")]
+    SwitchToFrame(Frame),
+    #[serde(rename = "WebDriver:SwitchToParentFrame")]
+    SwitchToParentFrame,
+    #[serde(rename = "WebDriver:SwitchToWindow")]
+    SwitchToWindow(Window),
+    #[serde(rename = "WebDriver:TakeScreenshot")]
+    TakeElementScreenshot(ScreenshotOptions),
+    #[serde(rename = "WebDriver:TakeScreenshot")]
+    TakeFullScreenshot(ScreenshotOptions),
+    #[serde(rename = "WebDriver:TakeScreenshot")]
+    TakeScreenshot(ScreenshotOptions),
 }
 
 #[cfg(test)]
@@ -161,6 +209,17 @@ mod tests {
     use crate::common::Date;
     use crate::test::{assert_ser, assert_ser_de};
     use serde_json::json;
+
+    #[test]
+    fn test_json_screenshot() {
+        let data = ScreenshotOptions {
+            id: None,
+            highlights: vec![],
+            full: false,
+        };
+        let json = json!({"full":false,"highlights":[],"id":null});
+        assert_ser_de(&data, json);
+    }
 
     #[test]
     fn test_json_selector_css() {
@@ -301,6 +360,17 @@ mod tests {
                 value: "bar".into(),
             },
             json!({"WebDriver:FindElement": {"element": "foo", "using": "xpath", "value": "bar" }}),
+        );
+    }
+
+    #[test]
+    fn test_json_get_css_value() {
+        assert_ser_de(
+            &Command::GetCSSValue {
+                id: "foo".into(),
+                property: "bar".into(),
+            },
+            json!({"WebDriver:GetElementCSSValue": {"id": "foo", "propertyName": "bar"}}),
         );
     }
 }

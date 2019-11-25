@@ -4,7 +4,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "AudioChannelAgent.h"
 #include "AudioChannelService.h"
 #include "AudioSegment.h"
 #include "nsSpeechTask.h"
@@ -340,15 +339,13 @@ void nsSpeechTask::CreateAudioChannelAgent() {
   mAudioChannelAgent = new AudioChannelAgent();
   mAudioChannelAgent->InitWithWeakCallback(mUtterance->GetOwner(), this);
 
-  AudioPlaybackConfig config;
   nsresult rv = mAudioChannelAgent->NotifyStartedPlaying(
-      &config, AudioChannelService::AudibleState::eAudible);
+      AudioChannelService::AudibleState::eAudible);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }
 
-  WindowVolumeChanged(config.mVolume, config.mMuted);
-  WindowSuspendChanged(config.mSuspend);
+  mAudioChannelAgent->PullInitialUpdate();
 }
 
 void nsSpeechTask::DestroyAudioChannelAgent() {

@@ -8,7 +8,7 @@ newtab-unit-tests:
     treeherder:
         symbol: node(newtab)
         kind: test
-        tier: 2
+        tier: 1
     worker-type: t-linux-xlarge
     worker:
         docker-image: {in-tree: "desktop1604-test"}
@@ -82,6 +82,7 @@ devtools-tests:
             node devtools-node-test-runner.js --suite=aboutdebugging &&
             node devtools-node-test-runner.js --suite=accessibility &&
             node devtools-node-test-runner.js --suite=application &&
+            node devtools-node-test-runner.js --suite=compatibility &&
             node devtools-node-test-runner.js --suite=framework &&
             node devtools-node-test-runner.js --suite=netmonitor &&
             node devtools-node-test-runner.js --suite=webconsole

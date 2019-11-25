@@ -219,6 +219,30 @@ void TestTheService() {
   fflush(nullptr);
 }
 
+DWORD TestWaitForVREventThreadProc(_In_ LPVOID lpParameter) {
+  // WaitForVREvent
+  printf("\nStarting TestWaitForVREventThreadProc\n");
+
+  PFN_WAITFORVREVENT fnWaitForVRMsg = (PFN_WAITFORVREVENT)lpParameter;
+
+  uint32_t nVRWindowID = 0;
+  uint32_t eventType = 0;
+  uint32_t eventData1 = 0;
+  uint32_t eventData2 = 0;
+
+  while (eventType != 2) {  // FxEvent_SHUTDOWN
+    fnWaitForVRMsg(nVRWindowID, eventType, eventData1, eventData2);
+    printf(
+        "\nWaitForVRMessage:\n\tvrWindowID: %d\n\teventType: %d\n\teventData1: "
+        "%d\n\teventData2: %d\n",
+        nVRWindowID, eventType, eventData1, eventData2);
+  }
+
+  printf("\nReturning from TestWaitForVREventThreadProc\n");
+
+  return 0;
+}
+
 // This function tests the export CreateVRWindow by outputting the return values
 // from the call to the console, as well as testing CloseVRWindow after the data
 // is retrieved.
@@ -231,9 +255,10 @@ void TestCreateVRWindow() {
       (PFN_CREATEVRWINDOW)::GetProcAddress(hVRHost, "CreateVRWindow");
   PFN_CLOSEVRWINDOW fnClose =
       (PFN_CLOSEVRWINDOW)::GetProcAddress(hVRHost, "CloseVRWindow");
-
   PFN_SENDUIMSG fnSendMsg =
       (PFN_SENDUIMSG)::GetProcAddress(hVRHost, "SendUIMessageToVRWindow");
+  PFN_WAITFORVREVENT fnWaitForVRMsg =
+      (PFN_WAITFORVREVENT)::GetProcAddress(hVRHost, "WaitForVREvent");
 
   // Create the VR Window and store data from creation
   char currentDir[MAX_PATH] = {0};
@@ -254,29 +279,58 @@ void TestCreateVRWindow() {
     fnCreate(currentDir, currentDirProfile, 0, 100, 200, &windowId, &hTex,
              &width, &height);
 
+    // Now that the Fx window is created, start a new thread to wait for VR
+    // events to be sent from it
+    DWORD dwTid;
+    HANDLE hThreadWait = CreateThread(nullptr, 0, TestWaitForVREventThreadProc,
+                                      (void*)fnWaitForVRMsg, 0, &dwTid);
+
     // Wait for Fx to finish launch
     ::Sleep(5000);
 
     printf(
-        "Now, should see window contents turn from orange to blue with onclick "
-        "event output...\n");
-
-    // Simulate a click, then moving the mouse across the screen
+        "Now, simulating a click on the Home button, which should look "
+        "pressed\n");
     POINT pt;
-    pt.x = 200;
-    pt.y = 200;
+    pt.x = 180;
+    pt.y = 790;
     fnSendMsg(windowId, WM_LBUTTONDOWN, 0, POINTTOPOINTS(pt));
+    ::Sleep(3000);
     fnSendMsg(windowId, WM_LBUTTONUP, 0, POINTTOPOINTS(pt));
+
+    printf(
+        "Next, simulating hovering across the URL bar, which should turn "
+        "blue\n");
+    pt.x = 600;
     for (int i = 0; i < 100; ++i) {
       pt.x++;
       fnSendMsg(windowId, WM_MOUSEMOVE, 0, POINTTOPOINTS(pt));
       ::Sleep(5);
     }
 
-    ::Sleep(2000);
+    printf(
+        "Next, simulating clicking inside the URL bar, which should "
+        "highlight the text\n");
+    pt.x = 700;
+    pt.y = 790;
+    fnSendMsg(windowId, WM_LBUTTONDOWN, 0, POINTTOPOINTS(pt));
+    fnSendMsg(windowId, WM_LBUTTONUP, 0, POINTTOPOINTS(pt));
+    ::Sleep(3000);
+
+    printf(
+        "Finally, simulating clicking outside the URL bar, which should "
+        "send a keyboard blur event\n");
+    pt.x = 80;
+    fnSendMsg(windowId, WM_LBUTTONDOWN, 0, POINTTOPOINTS(pt));
+    fnSendMsg(windowId, WM_LBUTTONUP, 0, POINTTOPOINTS(pt));
+
+    ::Sleep(5000);
 
     // Close the Firefox VR Window
     fnClose(windowId, true);
+
+    // Wait for the VR event thread to return
+    ::WaitForSingleObject(hThreadWait, INFINITE);
 
     // Print output from CreateVRWindow
     printf(

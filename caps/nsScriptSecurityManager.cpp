@@ -30,7 +30,7 @@
 #include "nsString.h"
 #include "nsCRT.h"
 #include "nsCRTGlue.h"
-#include "nsContentSecurityManager.h"
+#include "nsContentSecurityUtils.h"
 #include "nsDocShell.h"
 #include "nsError.h"
 #include "nsGlobalWindowInner.h"
@@ -271,6 +271,15 @@ nsScriptSecurityManager::GetChannelResultPrincipals(
     return rv;
   }
 
+  if (!(*aPrincipal)->GetIsContentPrincipal()) {
+    // If for some reason we don't have a content principal here, just reuse our
+    // principal for the storage principal too, since attempting to create a
+    // storage principal would fail anyway.
+    nsCOMPtr<nsIPrincipal> copy = *aPrincipal;
+    copy.forget(aStoragePrincipal);
+    return NS_OK;
+  }
+
   return StoragePrincipalHelper::Create(aChannel, *aPrincipal,
                                         aStoragePrincipal);
 }
@@ -443,8 +452,10 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
   }
 
 #if !defined(ANDROID)
-  nsContentSecurityManager::AssertEvalNotRestricted(cx, subjectPrincipal,
-                                                    scriptSample);
+  if (!nsContentSecurityUtils::IsEvalAllowed(
+          cx, subjectPrincipal->IsSystemPrincipal(), scriptSample)) {
+    return false;
+  }
 #endif
 
   if (NS_FAILED(rv)) {
@@ -1057,7 +1068,11 @@ nsScriptSecurityManager::CheckLoadURIStrWithPrincipal(
                           nsIURIFixup::FIXUP_FLAGS_MAKE_ALTERNATE_URI};
 
   for (uint32_t i = 0; i < ArrayLength(flags); ++i) {
-    rv = fixup->CreateFixupURI(aTargetURIStr, flags[i], nullptr,
+    uint32_t fixupFlags = flags[i];
+    if (aPrincipal->OriginAttributesRef().mPrivateBrowsingId > 0) {
+      fixupFlags |= nsIURIFixup::FIXUP_FLAG_PRIVATE_CONTEXT;
+    }
+    rv = fixup->CreateFixupURI(aTargetURIStr, fixupFlags, nullptr,
                                getter_AddRefs(target));
     NS_ENSURE_SUCCESS(rv, rv);
 

@@ -14,6 +14,7 @@ const {
 } = require("devtools/client/shared/vendor/react-dom-factories");
 const { connect } = require("devtools/client/shared/vendor/react-redux");
 
+const Types = require("../../types/index");
 const WorkerList = createFactory(require("./WorkerList"));
 const WorkerListEmpty = createFactory(require("./WorkerListEmpty"));
 
@@ -23,7 +24,7 @@ class WorkersPage extends PureComponent {
       // mapped from state
       canDebugWorkers: PropTypes.bool.isRequired,
       domain: PropTypes.string.isRequired,
-      workers: PropTypes.array.isRequired,
+      workers: Types.workerArray.isRequired,
     };
   }
 
@@ -38,7 +39,9 @@ class WorkersPage extends PureComponent {
 
     return section(
       {
-        className: `app-page ${isWorkerListEmpty ? "app-page--empty" : ""}`,
+        className: `app-page js-service-workers-page ${
+          isWorkerListEmpty ? "app-page--empty" : ""
+        }`,
       },
       isWorkerListEmpty
         ? WorkerListEmpty({})

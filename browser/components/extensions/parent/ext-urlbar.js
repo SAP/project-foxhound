@@ -135,6 +135,11 @@ this.urlbar = class extends ExtensionAPI {
   getAPI(context) {
     return {
       urlbar: {
+        search(searchString) {
+          let window = windowTracker.getTopNormalWindow(context);
+          window.gURLBar.search(searchString);
+        },
+
         onBehaviorRequested: new EventManager({
           context,
           name: "urlbar.onBehaviorRequested",
@@ -189,6 +194,20 @@ this.urlbar = class extends ExtensionAPI {
               }
             );
             return () => provider.setEventListener("resultsRequested", null);
+          },
+        }).api(),
+
+        onResultPicked: new EventManager({
+          context,
+          name: "urlbar.onResultPicked",
+          register: (fire, providerName) => {
+            let provider = UrlbarProviderExtension.getOrCreate(providerName);
+            provider.setEventListener("resultPicked", async resultPayload => {
+              return fire.async(resultPayload).catch(error => {
+                throw context.normalizeError(error);
+              });
+            });
+            return () => provider.setEventListener("resultPicked", null);
           },
         }).api(),
 

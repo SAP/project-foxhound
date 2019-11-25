@@ -253,6 +253,7 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
       FrameUniformityData* data) = 0;
   virtual mozilla::ipc::IPCResult RecvWillClose() = 0;
   virtual mozilla::ipc::IPCResult RecvPause() = 0;
+  virtual mozilla::ipc::IPCResult RecvRequestFxrOutput() = 0;
   virtual mozilla::ipc::IPCResult RecvResume() = 0;
   virtual mozilla::ipc::IPCResult RecvResumeAsync() = 0;
   virtual mozilla::ipc::IPCResult RecvNotifyChildCreated(
@@ -274,6 +275,7 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) = 0;
   virtual mozilla::ipc::IPCResult RecvInitPCanvasParent(
       Endpoint<PCanvasParent>&& aEndpoint) = 0;
+  virtual mozilla::ipc::IPCResult RecvReleasePCanvasParent() = 0;
 
   bool mCanSend;
 
@@ -320,6 +322,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       FrameUniformityData* aOutData) override;
   mozilla::ipc::IPCResult RecvWillClose() override;
   mozilla::ipc::IPCResult RecvPause() override;
+  mozilla::ipc::IPCResult RecvRequestFxrOutput() override;
   mozilla::ipc::IPCResult RecvResume() override;
   mozilla::ipc::IPCResult RecvResumeAsync() override;
   mozilla::ipc::IPCResult RecvNotifyChildCreated(
@@ -391,6 +394,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       LayerTransactionParent* aLayerTree) override {
     return mCompositionManager;
   }
+  void SetFixedLayerMargins(ScreenIntCoord aTop, ScreenIntCoord aBottom);
 
   PTextureParent* AllocPTextureParent(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
@@ -401,6 +405,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   mozilla::ipc::IPCResult RecvInitPCanvasParent(
       Endpoint<PCanvasParent>&& aEndpoint) final;
+
+  mozilla::ipc::IPCResult RecvReleasePCanvasParent() final;
 
   bool IsSameProcess() const override;
 
@@ -470,6 +476,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    */
   void ScheduleRotationOnCompositorThread(const TargetConfig& aTargetConfig,
                                           bool aIsFirstPaint);
+
+  static void ScheduleForcedComposition(const LayersId& aLayersId);
 
   /**
    * Returns the unique layer tree identifier that corresponds to the root
@@ -758,6 +766,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   bool mPaused;
   bool mHaveCompositionRecorder;
+  bool mIsForcedFirstPaint;
 
   bool mUseExternalSurfaceSize;
   gfx::IntSize mEGLSurfaceSize;

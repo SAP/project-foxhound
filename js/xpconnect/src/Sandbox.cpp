@@ -816,68 +816,68 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       JS_ReportErrorASCII(cx, "Property names must be strings");
       return false;
     }
-    JSFlatString* nameStr = JS_FlattenString(cx, nameValue.toString());
+    JSLinearString* nameStr = JS_EnsureLinearString(cx, nameValue.toString());
     if (!nameStr) {
       return false;
     }
-    if (JS_FlatStringEqualsAscii(nameStr, "Blob")) {
+    if (JS_LinearStringEqualsLiteral(nameStr, "Blob")) {
       Blob = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "ChromeUtils")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "ChromeUtils")) {
       ChromeUtils = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "CSS")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "CSS")) {
       CSS = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "CSSRule")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "CSSRule")) {
       CSSRule = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Directory")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Directory")) {
       Directory = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "DOMParser")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "DOMParser")) {
       DOMParser = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Element")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Element")) {
       Element = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Event")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Event")) {
       Event = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "File")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "File")) {
       File = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "FileReader")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "FileReader")) {
       FileReader = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "FormData")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "FormData")) {
       FormData = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "InspectorUtils")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "InspectorUtils")) {
       InspectorUtils = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "MessageChannel")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "MessageChannel")) {
       MessageChannel = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Node")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Node")) {
       Node = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "NodeFilter")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "NodeFilter")) {
       NodeFilter = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "PromiseDebugging")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "PromiseDebugging")) {
       PromiseDebugging = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "TextDecoder")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "TextDecoder")) {
       TextDecoder = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "TextEncoder")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "TextEncoder")) {
       TextEncoder = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "URL")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "URL")) {
       URL = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "URLSearchParams")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "URLSearchParams")) {
       URLSearchParams = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "XMLHttpRequest")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "XMLHttpRequest")) {
       XMLHttpRequest = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "XMLSerializer")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "XMLSerializer")) {
       XMLSerializer = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "atob")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "atob")) {
       atob = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "btoa")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "btoa")) {
       btoa = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "caches")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "caches")) {
       caches = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "crypto")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "crypto")) {
       crypto = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "fetch")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "fetch")) {
       fetch = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "indexedDB")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "indexedDB")) {
       indexedDB = true;
 #ifdef MOZ_WEBRTC
-    } else if (JS_FlatStringEqualsAscii(nameStr, "rtcIdentityProvider")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "rtcIdentityProvider")) {
       rtcIdentityProvider = true;
 #endif
     } else {
@@ -1044,9 +1044,6 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
   // creationOptions.setSecureContext(true).
 
   bool isSystemPrincipal = principal->IsSystemPrincipal();
-  if (isSystemPrincipal) {
-    creationOptions.setClampAndJitterTime(false);
-  }
 
   xpc::SetPrefableRealmOptions(realmOptions);
   if (options.sameZoneAs) {
@@ -1068,6 +1065,10 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
       .setTrace(TraceXPCGlobal);
 
   realmOptions.behaviors().setDiscardSource(options.discardSource);
+
+  if (isSystemPrincipal) {
+    realmOptions.behaviors().setClampAndJitterTime(false);
+  }
 
   const JSClass* clasp = &SandboxClass;
 

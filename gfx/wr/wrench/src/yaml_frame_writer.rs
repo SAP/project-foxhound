@@ -203,7 +203,9 @@ fn maybe_radius_yaml(radius: &BorderRadius) -> Option<Yaml> {
 
 fn common_node(v: &mut Table, clip_id_mapper: &mut ClipIdMapper, info: &CommonItemProperties) {
     rect_node(v, "clip-rect", &info.clip_rect);
-    bool_node(v, "backface-visible", info.is_backface_visible);
+    bool_node(v, "backface-visible", info.flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE));
+    bool_node(v, "scrollbar-container", info.flags.contains(PrimitiveFlags::IS_SCROLLBAR_CONTAINER));
+    bool_node(v, "scrollbar-thumb", info.flags.contains(PrimitiveFlags::IS_SCROLLBAR_THUMB));
 
     clip_and_scroll_node(v, clip_id_mapper, info.clip_id, info.spatial_id);
 
@@ -1065,6 +1067,29 @@ impl YamlFrameWriter {
                     {
                         u32_node(&mut v, "tile-size", tile_size as u32);
                     }
+                    match item.image_rendering {
+                        ImageRendering::Auto => (),
+                        ImageRendering::CrispEdges => str_node(&mut v, "rendering", "crisp-edges"),
+                        ImageRendering::Pixelated => str_node(&mut v, "rendering", "pixelated"),
+                    };
+                    match item.alpha_type {
+                        AlphaType::PremultipliedAlpha => str_node(&mut v, "alpha-type", "premultiplied-alpha"),
+                        AlphaType::Alpha => str_node(&mut v, "alpha-type", "alpha"),
+                    };
+                }
+                DisplayItem::RepeatingImage(item) => {
+                    common_node(&mut v, clip_id_mapper, &item.common);
+                    rect_node(&mut v, "bounds", &item.bounds);
+                    if let Some(path) = self.path_for_image(item.image_key) {
+                        path_node(&mut v, "image", &path);
+                    }
+                    if let Some(&CachedImage {
+                        tiling: Some(tile_size),
+                        ..
+                    }) = self.images.get(&item.image_key)
+                    {
+                        u32_node(&mut v, "tile-size", tile_size as u32);
+                    }
                     size_node(&mut v, "stretch-size", &item.stretch_size);
                     size_node(&mut v, "tile-spacing", &item.tile_spacing);
                     match item.image_rendering {
@@ -1270,7 +1295,18 @@ impl YamlFrameWriter {
                         item.spatial_id
                     );
                     point_node(&mut v, "origin", &item.origin);
-                    bool_node(&mut v, "backface-visible", item.is_backface_visible);
+                    bool_node(
+                        &mut v,
+                        "backface-visible",
+                        item.prim_flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE));
+                    bool_node(
+                        &mut v,
+                        "scrollbar-container",
+                        item.prim_flags.contains(PrimitiveFlags::IS_SCROLLBAR_CONTAINER));
+                    bool_node(
+                        &mut v,
+                        "scrollbar-thumb",
+                        item.prim_flags.contains(PrimitiveFlags::IS_SCROLLBAR_THUMB));
                     write_stacking_context(
                         &mut v,
                         &item.stacking_context,

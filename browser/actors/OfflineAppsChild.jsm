@@ -19,22 +19,16 @@ class OfflineAppsChild extends ActorChild {
     this._docIdMap = new Map();
 
     this._docManifestSet = new Set();
-
-    this._observerAdded = false;
   }
 
   registerWindow(aWindow) {
-    if (!this._observerAdded) {
-      this._observerAdded = true;
-      Services.obs.addObserver(this, "offline-cache-update-completed", true);
-    }
     let manifestURI = this._getManifestURI(aWindow);
     this._docManifestSet.add(manifestURI.spec);
   }
 
   handleEvent(event) {
     if (event.type == "MozApplicationManifest") {
-      this.offlineAppRequested(event.originalTarget.defaultView);
+      this.registerWindow(event.originalTarget.defaultView);
     }
   }
 
@@ -57,37 +51,6 @@ class OfflineAppsChild extends ActorChild {
     } catch (e) {
       return null;
     }
-  }
-
-  offlineAppRequested(aContentWindow) {
-    this.registerWindow(aContentWindow);
-    if (!Services.prefs.getBoolPref("browser.offline-apps.notify")) {
-      return;
-    }
-
-    let currentURI = aContentWindow.document.documentURIObject;
-    // don't bother showing UI if the user has already made a decision
-    if (
-      Services.perms.testExactPermission(currentURI, "offline-app") !=
-      Services.perms.UNKNOWN_ACTION
-    ) {
-      return;
-    }
-
-    try {
-      if (Services.prefs.getBoolPref("offline-apps.allow_by_default")) {
-        // all pages can use offline capabilities, no need to ask the user
-        return;
-      }
-    } catch (e) {
-      // this pref isn't set by default, ignore failures
-    }
-    let docId = ++this._docId;
-    this._docIdMap.set(docId, Cu.getWeakReference(aContentWindow.document));
-    this.mm.sendAsyncMessage("OfflineApps:RequestPermission", {
-      uri: currentURI.spec,
-      docId,
-    });
   }
 
   _startFetching(aDocument) {
@@ -119,16 +82,6 @@ class OfflineAppsChild extends ActorChild {
         this._startFetching(doc);
       }
       this._docIdMap.delete(aMessage.data.docId);
-    }
-  }
-
-  observe(aSubject, aTopic, aState) {
-    if (aTopic == "offline-cache-update-completed") {
-      let cacheUpdate = aSubject.QueryInterface(Ci.nsIOfflineCacheUpdate);
-      let uri = cacheUpdate.manifestURI;
-      if (uri && this._docManifestSet.has(uri.spec)) {
-        this.mm.sendAsyncMessage("OfflineApps:CheckUsage", { uri: uri.spec });
-      }
     }
   }
 }

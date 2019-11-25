@@ -6,16 +6,25 @@
 
 %filter substitution
 %define urlbarViewPadding 4px
-%define urlbarViewIconMarginEnd 8px
+%define urlbarViewIconMarginEnd (@identityBoxPaddingInline@ + @identityBoxMarginInlineEnd@)
 %define urlbarViewFaviconOffset (@urlbarViewPadding@ + 16px /* type icon width */ + @urlbarViewIconMarginEnd@)
-%define urlbarViewInlineStartPadding (@urlbarBreakoutHorizontalExtend@ - 16px /* type icon width */ - @urlbarViewIconMarginEnd@ - 2px /* border */)
-%define urlbarViewHorizontalMargin 8px
+%define urlbarViewMarginInline 5px
+%define urlbarViewPaddingInline 30px
+%define urlbarViewItemPaddingStart (@urlbarViewPaddingInline@ - (/* type icon: */ 16px + @urlbarViewIconMarginEnd@))
 
 :root {
   --autocomplete-popup-background: var(--arrowpanel-background);
   --autocomplete-popup-color: var(--arrowpanel-color);
   --autocomplete-popup-highlight-background: Highlight;
   --autocomplete-popup-highlight-color: HighlightText;
+
+  /* From in-content/common.inc.css. */
+  --in-content-button-background: rgba(12, 12, 13, 0.1);
+  --in-content-button-background-hover: rgba(12, 12, 13, 0.2);
+  --in-content-button-background-active: rgba(12, 12, 13, 0.3);
+  --in-content-primary-button-background: #0060df;
+  --in-content-primary-button-background-hover: #003eaa;
+  --in-content-primary-button-background-active: #002275;
 }
 
 :root[lwt-popup-darktext] {
@@ -26,16 +35,33 @@
 :root[lwt-popup-brighttext] {
   --urlbar-popup-url-color: @lwtPopupBrighttextLinkColor@;
   --urlbar-popup-action-color: #30e60b;
+
+  /* From in-content/common.inc.css. */
+  --in-content-button-background-hover: rgba(249, 249, 250, 0.15);
+  --in-content-button-background-active: rgba(249, 249, 250, 0.2);
 }
 
 .urlbarView {
   /* Don't handle window drag events in case we are overlapping a toolbar */
   -moz-window-dragging: no-drag;
   text-shadow: none;
+  overflow: -moz-hidden-unscrollable;
 }
 
 .urlbarView.megabar {
-  margin-inline: @urlbarViewHorizontalMargin@;
+  margin-inline: @urlbarViewMarginInline@;
+  width: calc(100% - 2 * @urlbarViewMarginInline@);
+  /* Match urlbar-background's border. */
+  border-inline: 1px solid transparent;
+}
+
+.urlbarView:not([hidden]) {
+  display: block;
+}
+
+.urlbarView.megabar .urlbarView-body-inner {
+  width: 100%;
+  border-top: 1px solid var(--panel-separator-color);
 }
 
 .urlbarView:not(.megabar) {
@@ -54,8 +80,8 @@
   display: flex;
   padding-top: 24px;
   padding-bottom: 24px;
-  padding-inline-start: calc(@urlbarViewInlineStartPadding@);
-  padding-inline-end: calc(@urlbarBreakoutHorizontalExtend@ - @urlbarViewHorizontalMargin@);
+  padding-inline-start: calc(@urlbarViewItemPaddingStart@);
+  padding-inline-end: @urlbarViewPaddingInline@;
 }
 
 .urlbarView:not(.megabar) #urlbar-contextual-tip {
@@ -71,19 +97,18 @@
 #urlbar-contextual-tip-button {
   height: 2.3em;
   width: 9.15em;
-  font-size: inherit;
   border: none;
   border-radius: 2px;
   color: white;
-  background-color: #0060df; /* corresponds to blue-60 */
+  background-color: var(--in-content-primary-button-background);
 }
 
 #urlbar-contextual-tip-button:hover {
-  background-color: #003eaa; /* corresponds to blue-70 */
+  background-color: var(--in-content-primary-button-background-hover);
 }
 
 #urlbar-contextual-tip-button:active {
-  background-color: #002275; /* corresponds to blue-80 */
+  background-color: var(--in-content-primary-button-background-active);
 }
 
 #urlbar-contextual-tip-button:-moz-focusring {
@@ -92,11 +117,6 @@
 
 #urlbar-contextual-tip-link {
   text-align: end;
-}
-
-.urlbarView.megabar .urlbarView-body-inner {
-  width: calc(var(--urlbar-width) + 2 * @urlbarBreakoutHorizontalExtend@ - 2 * @urlbarViewHorizontalMargin@ - 2px /* urlbar border */);
-  border-top: 1px solid var(--panel-separator-color);
 }
 
 .urlbarView-results {
@@ -112,10 +132,8 @@
   border-radius: 2px;
   fill: currentColor;
   fill-opacity: .6;
-  padding-top: 6px;
-  padding-bottom: 6px;
-  padding-inline-start: calc(@urlbarViewInlineStartPadding@);
-  padding-inline-end: calc(@urlbarBreakoutHorizontalExtend@ - @urlbarViewHorizontalMargin@);
+  padding-block: 6px;
+  padding-inline-start: calc(@urlbarViewItemPaddingStart@);
 }
 
 .urlbarView:not(.megabar) .urlbarView-row {
@@ -124,8 +142,7 @@
 }
 
 :root[uidensity=touch] .urlbarView-row {
-  padding-top: 11px;
-  padding-bottom: 11px;
+  padding-block: 11px;
 }
 
 .urlbarView-row-inner {
@@ -149,11 +166,11 @@
   direction: ltr !important;
 }
 
-.urlbarView-row:hover {
+.urlbarView-row:not([type=tip]):hover {
   background: var(--arrowpanel-dimmed);
 }
 
-.urlbarView-row[selected] {
+.urlbarView-row:not([type=tip])[selected] {
   background: var(--autocomplete-popup-highlight-background);
   color: var(--autocomplete-popup-highlight-color);
   fill-opacity: 1;
@@ -163,16 +180,48 @@
 .urlbarView-favicon {
   min-width: 16px;
   height: 16px;
-  margin-inline-end: @urlbarViewIconMarginEnd@;
+  margin-inline-end: calc(@urlbarViewIconMarginEnd@);
   background-repeat: no-repeat;
   background-size: contain;
   -moz-context-properties: fill, fill-opacity;
 }
 
+.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-favicon {
+  min-width: 24px;
+  height: 24px;
+  margin-inline-start: calc(12px + @urlbarViewIconMarginEnd@);
+  margin-inline-end: 12px;
+}
+
+/* The help icon is a standard Photon ghost button. */
+.urlbarView-tip-help {
+  min-width: 16px;
+  height: 32px;
+  background-image: url("chrome://global/skin/icons/help.svg");
+  background-size: 16px;
+  background-position: center;
+  background-repeat: no-repeat;
+  padding-inline: 8px;
+  margin-inline-start: 8px;
+  -moz-context-properties: fill, fill-opacity;
+}
+
+.urlbarView-tip-help[selected] {
+  box-shadow: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3);
+}
+
+.urlbarView-tip-help:hover {
+  background-color: var(--in-content-button-background-hover);
+}
+
+.urlbarView-tip-help:hover:active {
+  background-color: var(--in-content-button-background-active);
+}
+
 #urlbar-contextual-tip-icon {
   min-width: 24px;
   height: 24px;
-  margin-inline-end: @urlbarViewIconMarginEnd@;
+  margin-inline-end: calc(@urlbarViewIconMarginEnd@);
   background-repeat: no-repeat;
   background-size: contain;
   -moz-context-properties: fill, fill-opacity;
@@ -195,6 +244,63 @@
   background-image: url(chrome://browser/skin/tab.svg);
 }
 
+.urlbarView-row[type=tip] {
+  padding-block: 24px;
+  padding-inline-end: @urlbarViewPaddingInline@;
+}
+
+.urlbarView-row[type=tip]:not(:last-child) {
+  border-bottom: 1px solid var(--panel-separator-color);
+  margin-bottom: 4px;
+}
+
+.urlbarView-row[type=tip]:not(:first-child) {
+  border-top: 1px solid var(--panel-separator-color);
+  margin-top: 4px;
+}
+
+.urlbarView-row[type=tip] > .urlbarView-row-inner {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  width: 100%;
+}
+
+/* The tip button is a Photon default button when unfocused and a
+   primary button in all other states. */
+.urlbarView-tip-button {
+  min-height: 16px;
+  padding: 8px;
+  border: none;
+  border-radius: 2px;
+  font-size: 0.93em;
+  color: inherit;
+  background-color: var(--in-content-button-background);
+  min-width: 8.75em;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.urlbarView-tip-button[selected] {
+  color: white;
+  background-color: var(--in-content-primary-button-background);
+  box-shadow: 0 0 0 1px #0a84ff inset, 0 0 0 1px #0a84ff, 0 0 0 4px rgba(10, 132, 255, 0.3);
+}
+.urlbarView-tip-button:hover {
+  color: white;
+  background-color: var(--in-content-primary-button-background-hover);
+}
+
+.urlbarView-tip-button:hover:active {
+  color: white;
+  background-color: var(--in-content-primary-button-background-active);
+}
+
+.urlbarView-tip-button-spacer {
+  flex: 1;
+  min-width: 75px;
+}
+
 .urlbarView-title {
   overflow: hidden;
   white-space: nowrap;
@@ -202,6 +308,11 @@
      never crop the url completely */
   flex-shrink: 0;
   max-width: calc(70% - 2 * (16px + @urlbarViewIconMarginEnd@));
+}
+
+.urlbarView-row[type=tip] > .urlbarView-row-inner > .urlbarView-title {
+   white-space: normal;
+   flex: auto;
 }
 
 .urlbarView-title-separator::before {
@@ -280,7 +391,7 @@
 }
 
 .urlbarView.megabar .search-one-offs {
-  padding-inline: calc(@urlbarBreakoutHorizontalExtend@ - @urlbarViewHorizontalMargin@);
+  padding-inline: @urlbarViewPaddingInline@;
 }
 
 #urlbar:not(.megabar) .search-one-offs {
@@ -329,4 +440,3 @@
   background: var(--autocomplete-popup-highlight-background);
   color: var(--autocomplete-popup-highlight-color);
 }
-

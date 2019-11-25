@@ -7,7 +7,7 @@
 "use strict";
 
 import { parse } from "./certDecoder.js";
-import { pemToDER } from "./utils.js";
+import { pemToDER, normalizeToKebabCase } from "./utils.js";
 
 document.addEventListener("DOMContentLoaded", async e => {
   let url = new URL(document.URL);
@@ -35,21 +35,25 @@ export const updateSelectedItem = (() => {
   };
 })();
 
-const createEntryItem = (label, info) => {
-  if (label == null || info == null) {
+const createEntryItem = (labelId, info) => {
+  if (
+    labelId == null ||
+    info == null ||
+    (Array.isArray(info) && !info.length)
+  ) {
     return null;
   }
   return {
-    label,
+    labelId,
     info,
   };
 };
 
-const addToResultUsing = (callback, certItems, sectionTitle, Critical) => {
+const addToResultUsing = (callback, certItems, sectionId, Critical) => {
   let items = callback();
-  if (items.length > 0) {
+  if (items.length) {
     certItems.push({
-      sectionTitle,
+      sectionId,
       sectionItems: items,
       Critical,
     });
@@ -84,13 +88,15 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.subject && cert.subject.entries) {
         items = cert.subject.entries
-          .map(entry => createEntryItem(entry[0], entry[1]))
+          .map(entry =>
+            createEntryItem(normalizeToKebabCase(entry[0]), entry[1])
+          )
           .filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Subject Name",
+    "subject-name",
     false
   );
 
@@ -99,13 +105,15 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.issuer && cert.issuer.entries) {
         items = cert.issuer.entries
-          .map(entry => createEntryItem(entry[0], entry[1]))
+          .map(entry =>
+            createEntryItem(normalizeToKebabCase(entry[0]), entry[1])
+          )
           .filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Issuer Name",
+    "issuer-name",
     false
   );
 
@@ -114,16 +122,20 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.notBefore && cert.notAfter) {
         items = [
-          createEntryItem("Not Before", cert.notBefore),
-          createEntryItem("Not Before UTC", cert.notBeforeUTC),
-          createEntryItem("Not After", cert.notAfter),
-          createEntryItem("Not After UTC", cert.notAfterUTC),
+          createEntryItem("not-before", {
+            local: cert.notBefore,
+            utc: cert.notBeforeUTC,
+          }),
+          createEntryItem("not-after", {
+            local: cert.notAfter,
+            utc: cert.notAfterUTC,
+          }),
         ].filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Validity",
+    "validity",
     false
   );
 
@@ -132,13 +144,15 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.ext && cert.ext.san && cert.ext.san.altNames) {
         items = cert.ext.san.altNames
-          .map(entry => createEntryItem(entry[0], entry[1]))
+          .map(entry =>
+            createEntryItem(normalizeToKebabCase(entry[0]), entry[1])
+          )
           .filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Subject Alt Names",
+    "subject-alt-names",
     getElementByPathOrFalse(cert, "ext.san.critical")
   );
 
@@ -147,36 +161,36 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.subjectPublicKeyInfo) {
         items = [
-          createEntryItem("Algorithm", cert.subjectPublicKeyInfo.kty),
-          createEntryItem("Key size", cert.subjectPublicKeyInfo.keysize),
-          createEntryItem("Curve", cert.subjectPublicKeyInfo.crv),
-          createEntryItem("Public Value", cert.subjectPublicKeyInfo.xy),
-          createEntryItem("Exponent", cert.subjectPublicKeyInfo.e),
-          createEntryItem("Modulus", cert.subjectPublicKeyInfo.n),
+          createEntryItem("algorithm", cert.subjectPublicKeyInfo.kty),
+          createEntryItem("key-size", cert.subjectPublicKeyInfo.keysize),
+          createEntryItem("curve", cert.subjectPublicKeyInfo.crv),
+          createEntryItem("public-value", cert.subjectPublicKeyInfo.xy),
+          createEntryItem("exponent", cert.subjectPublicKeyInfo.e),
+          createEntryItem("modulus", cert.subjectPublicKeyInfo.n),
         ].filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Public Key Info",
+    "public-key-info",
     false
   );
 
   addToResultUsing(
     () => {
       let items = [
-        createEntryItem("Serial Number", cert.serialNumber),
+        createEntryItem("serial-number", cert.serialNumber),
         createEntryItem(
-          "Signature Algorithm",
+          "signature-algorithm",
           cert.signature ? cert.signature.name : null
         ),
-        createEntryItem("Version", cert.version),
-        createEntryItem("Download", cert.files ? cert.files.pem : null),
+        createEntryItem("version", cert.version),
+        createEntryItem("download", cert.files ? cert.files.pem : null),
       ].filter(elem => elem != null);
       return items;
     },
     certItems,
-    "Miscellaneous",
+    "miscellaneous",
     false
   );
 
@@ -185,14 +199,14 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.fingerprint) {
         items = [
-          createEntryItem("SHA-256", cert.fingerprint.sha256),
-          createEntryItem("SHA-1", cert.fingerprint.sha1),
+          createEntryItem("sha-256", cert.fingerprint.sha256),
+          createEntryItem("sha-1", cert.fingerprint.sha1),
         ].filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Fingerprints",
+    "fingerprints",
     false
   );
 
@@ -209,7 +223,7 @@ export const adjustCertInformation = cert => {
       if (cert.ext.basicConstraints) {
         items = [
           createEntryItem(
-            "Certificate Authority",
+            "certificate-authority",
             cert.ext.basicConstraints.cA
           ),
         ].filter(elem => elem != null);
@@ -217,7 +231,7 @@ export const adjustCertInformation = cert => {
       return items;
     },
     certItems,
-    "Basic Constraints",
+    "basic-constraints",
     getElementByPathOrFalse(cert, "ext.basicConstraints.critical")
   );
 
@@ -226,13 +240,13 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.ext.keyUsages) {
         items = [
-          createEntryItem("Purposes", cert.ext.keyUsages.purposes),
+          createEntryItem("purposes", cert.ext.keyUsages.purposes),
         ].filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Key Usages",
+    "key-usages",
     getElementByPathOrFalse(cert, "ext.keyUsages.critical")
   );
 
@@ -241,28 +255,26 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.ext.eKeyUsages) {
         items = [
-          createEntryItem("Purposes", cert.ext.eKeyUsages.purposes),
+          createEntryItem("purposes", cert.ext.eKeyUsages.purposes),
         ].filter(elem => elem != null);
       }
       return items;
     },
     certItems,
-    "Extended Key Usages",
+    "extended-key-usages",
     getElementByPathOrFalse(cert, "ext.eKeyUsages.critical")
   );
 
   addToResultUsing(
     () => {
       let items = [];
-      if (cert.ext.ocspStaple) {
-        items = [
-          createEntryItem("Required", cert.ext.ocspStaple.critical),
-        ].filter(elem => elem != null);
+      if (cert.ext.ocspStaple && cert.ext.ocspStaple.required) {
+        items = [createEntryItem("required", true)];
       }
       return items;
     },
     certItems,
-    "OCSP Stapling",
+    "ocsp-stapling",
     getElementByPathOrFalse(cert, "ext.ocspStaple.critical")
   );
 
@@ -270,14 +282,14 @@ export const adjustCertInformation = cert => {
     () => {
       let items = [];
       if (cert.ext.sKID) {
-        items = [createEntryItem("Key ID", cert.ext.sKID.id)].filter(
+        items = [createEntryItem("key-id", cert.ext.sKID.id)].filter(
           elem => elem != null
         );
       }
       return items;
     },
     certItems,
-    "Subject Key ID",
+    "subject-key-id",
     getElementByPathOrFalse(cert, "ext.sKID.critical")
   );
 
@@ -285,14 +297,14 @@ export const adjustCertInformation = cert => {
     () => {
       let items = [];
       if (cert.ext.aKID) {
-        items = [createEntryItem("Key ID", cert.ext.aKID.id)].filter(
+        items = [createEntryItem("key-id", cert.ext.aKID.id)].filter(
           elem => elem != null
         );
       }
       return items;
     },
     certItems,
-    "Authority Key ID",
+    "authority-key-id",
     getElementByPathOrFalse(cert, "ext.aKID.critical")
   );
 
@@ -302,7 +314,7 @@ export const adjustCertInformation = cert => {
       if (cert.ext.crlPoints && cert.ext.crlPoints.points) {
         items = cert.ext.crlPoints.points
           .map(entry => {
-            let label = "Distribution Point";
+            let label = "distribution-point";
             return createEntryItem(label, entry);
           })
           .filter(elem => elem != null);
@@ -310,7 +322,7 @@ export const adjustCertInformation = cert => {
       return items;
     },
     certItems,
-    "CRL Endpoints",
+    "crl-endpoints",
     getElementByPathOrFalse(cert, "ext.crlPoints.critical")
   );
 
@@ -319,14 +331,14 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.ext.aia && cert.ext.aia.descriptions) {
         cert.ext.aia.descriptions.forEach(entry => {
-          items.push(createEntryItem("Location", entry.location));
-          items.push(createEntryItem("Method", entry.method));
+          items.push(createEntryItem("location", entry.location));
+          items.push(createEntryItem("method", entry.method));
         });
       }
       return items.filter(elem => elem != null);
     },
     certItems,
-    "Authority Info (AIA)",
+    "authority-info-aia",
     getElementByPathOrFalse(cert, "ext.aia.critical")
   );
 
@@ -337,21 +349,21 @@ export const adjustCertInformation = cert => {
         cert.ext.cp.policies.forEach(entry => {
           if (entry.name && entry.id) {
             items.push(
-              createEntryItem("Policy", entry.name + " ( " + entry.id + " )")
+              createEntryItem("policy", entry.name + " ( " + entry.id + " )")
             );
           }
-          items.push(createEntryItem("Value", entry.value));
+          items.push(createEntryItem("value", entry.value));
           if (entry.qualifiers) {
             entry.qualifiers.forEach(qualifier => {
               if (qualifier.name && qualifier.id) {
                 items.push(
                   createEntryItem(
-                    "Qualifier",
+                    "qualifier",
                     qualifier.name + " ( " + qualifier.id + " )"
                   )
                 );
               }
-              items.push(createEntryItem("Value", qualifier.value));
+              items.push(createEntryItem("value", qualifier.value));
             });
           }
         });
@@ -359,7 +371,7 @@ export const adjustCertInformation = cert => {
       return items.filter(elem => elem != null);
     },
     certItems,
-    "Certificate Policies",
+    "certificate-policies",
     getElementByPathOrFalse(cert, "ext.cp.critical")
   );
 
@@ -368,15 +380,23 @@ export const adjustCertInformation = cert => {
       let items = [];
       if (cert.ext.scts && cert.ext.scts.timestamps) {
         cert.ext.scts.timestamps.forEach(entry => {
+          let timestamps = {};
           for (let key of Object.keys(entry)) {
-            items.push(createEntryItem(key, entry[key]));
+            if (key.includes("timestamp")) {
+              timestamps[key.includes("UTC") ? "utc" : "local"] = entry[key];
+            } else {
+              items.push(
+                createEntryItem(normalizeToKebabCase(key), entry[key])
+              );
+            }
           }
+          items.push(createEntryItem("timestamp", timestamps));
         });
       }
       return items.filter(elem => elem != null);
     },
     certItems,
-    "Embedded SCTs",
+    "embedded-scts",
     getElementByPathOrFalse(cert, "ext.scts.critical")
   );
 

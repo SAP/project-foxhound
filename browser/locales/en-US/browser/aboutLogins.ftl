@@ -18,12 +18,6 @@ login-filter =
 
 create-login-button = Create New Login
 
-# This string is used as alternative text for favicon images.
-# Variables:
-#   $title (String) - The title of the website associated with the favicon.
-login-favicon =
-  .alt = Favicon for { $title }
-
 fxaccounts-sign-in-text = Get your passwords on your other devices
 fxaccounts-sign-in-button = Sign in to { -sync-brand-short-name }
 fxaccounts-avatar-button =
@@ -65,13 +59,13 @@ about-logins-login-list-empty-search-description = There are no results matching
 login-list-item-title-new-login = New Login
 login-list-item-subtitle-new-login = Enter your login credentials
 login-list-item-subtitle-missing-username = (no username)
-about-logins-list-item-warning-icon = 
-  .alt = Warning icon
+about-logins-list-item-breach-icon =
   .title = Breached website
 
 ## Introduction screen
 
 login-intro-heading = Looking for your saved logins? Set up { -sync-brand-short-name }.
+about-logins-login-intro-heading-logged-in = No synced logins found.
 login-intro-description = If you saved your logins to { -brand-product-name } on a different device, here’s how to get them here:
 login-intro-instruction-fxa = Create or sign in to your { -fxaccount-brand-name } on the device where your logins are saved
 login-intro-instruction-fxa-settings = Make sure you’ve selected the Logins checkbox in { -sync-brand-short-name } Settings
@@ -151,7 +145,7 @@ breach-alert-dismiss =
 # a new login that is identical to an existing saved login.
 # Variables:
 #   $loginTitle (String) - The title of the website associated with the login.
-about-logins-error-message-duplicate-login = An entry for { $loginTitle } with that username already exists.
+about-logins-error-message-duplicate-login-with-link = An entry for { $loginTitle } with that username already exists. <a data-l10n-name="duplicate-link">Go to existing entry?</a>
 
 # This is a generic error message.
 about-logins-error-message-default = An error occurred while trying to save this password.

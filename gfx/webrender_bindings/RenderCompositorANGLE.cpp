@@ -14,10 +14,12 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/HelpersD3D11.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/webrender/DCLayerTree.h"
 #include "mozilla/webrender/RenderThread.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 #include "mozilla/WindowsVersion.h"
+#include "FxROutputHandler.h"
 
 #undef NTDDI_VERSION
 #define NTDDI_VERSION NTDDI_WIN8
@@ -258,59 +260,31 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
     return;
   }
 
-  RefPtr<IDCompositionDevice> dCompDevice =
-      gfx::DeviceManagerDx::Get()->GetDirectCompositionDevice();
-  if (!dCompDevice) {
-    return;
-  }
-  MOZ_ASSERT(XRE_IsGPUProcess());
-
-  RefPtr<IDXGIDevice> dxgiDevice;
-  mDevice->QueryInterface((IDXGIDevice**)getter_AddRefs(dxgiDevice));
-
-  RefPtr<IDXGIFactory> dxgiFactory;
-  {
-    RefPtr<IDXGIAdapter> adapter;
-    dxgiDevice->GetAdapter(getter_AddRefs(adapter));
-    adapter->GetParent(
-        IID_PPV_ARGS((IDXGIFactory**)getter_AddRefs(dxgiFactory)));
-  }
-
   HWND hwnd = mWidget->AsWindows()->GetCompositorHwnd();
   if (!hwnd) {
     gfxCriticalNote << "Compositor window was not created ";
     return;
   }
 
-  HRESULT hr = dCompDevice->CreateTargetForHwnd(
-      hwnd, TRUE, getter_AddRefs(mCompositionTarget));
-  if (FAILED(hr)) {
-    gfxCriticalNote << "Could not create DCompositionTarget: " << gfx::hexa(hr);
+  mDCLayerTree = DCLayerTree::Create(hwnd);
+  if (!mDCLayerTree) {
     return;
   }
-
-  hr = dCompDevice->CreateVisual(getter_AddRefs(mVisual));
-  if (FAILED(hr)) {
-    gfxCriticalNote << "Could not create DCompositionVisualt: "
-                    << gfx::hexa(hr);
-    return;
-  }
+  MOZ_ASSERT(XRE_IsGPUProcess());
 
   bool useTripleBuffering = gfx::gfxVars::UseWebRenderTripleBufferingWin();
-  bool useAlpha = mUseAlpha;
+  // Non Glass window is common since Windows 10.
+  bool useAlpha = false;
   RefPtr<IDXGISwapChain1> swapChain1 =
       CreateSwapChainForDComp(useTripleBuffering, useAlpha);
   if (swapChain1) {
     mSwapChain = swapChain1;
-    mVisual->SetContent(swapChain1);
-    mCompositionTarget->SetRoot(mVisual);
-    mCompositionDevice = dCompDevice;
     mUseTripleBuffering = useTripleBuffering;
     mUseAlpha = useAlpha;
+    mDCLayerTree->SetDefaultSwapChain(swapChain1);
   } else {
-    // Clear on failure
-    mVisual = nullptr;
-    mCompositionTarget = nullptr;
+    // Clear CLayerTree on falire
+    mDCLayerTree = nullptr;
   }
 }
 
@@ -379,7 +353,7 @@ bool RenderCompositorANGLE::BeginFrame(layers::NativeLayer* aNativeLayer) {
   MOZ_RELEASE_ASSERT(!aNativeLayer, "Unexpected native layer on this platform");
   mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
 
-  if (mCompositionDevice) {
+  if (mDCLayerTree) {
     bool useAlpha = mWidget->AsWindows()->HasGlass();
     // When Alpha usage is changed, SwapChain needs to be recreatd.
     if (useAlpha != mUseAlpha) {
@@ -391,7 +365,7 @@ bool RenderCompositorANGLE::BeginFrame(layers::NativeLayer* aNativeLayer) {
       if (swapChain1) {
         mSwapChain = swapChain1;
         mUseAlpha = useAlpha;
-        mVisual->SetContent(swapChain1);
+        mDCLayerTree->SetDefaultSwapChain(swapChain1);
       } else {
         gfxCriticalNote << "Failed to re-create SwapChain";
         RenderThread::Get()->HandleWebRenderError(WebRenderError::NEW_SURFACE);
@@ -422,10 +396,19 @@ bool RenderCompositorANGLE::BeginFrame(layers::NativeLayer* aNativeLayer) {
 void RenderCompositorANGLE::EndFrame() {
   InsertPresentWaitQuery();
 
+  if (mWidget->AsWindows()->HasFxrOutputHandler()) {
+    // There is a Firefox Reality handler for this swapchain. Update this
+    // window's contents to the VR window.
+    FxROutputHandler* fxrHandler = mWidget->AsWindows()->GetFxrOutputHandler();
+    if (fxrHandler->TryInitialize(mSwapChain, mDevice)) {
+      fxrHandler->UpdateOutput(mCtx);
+    }
+  }
+
   mSwapChain->Present(0, 0);
 
-  if (mCompositionDevice) {
-    mCompositionDevice->Commit();
+  if (mDCLayerTree) {
+    mDCLayerTree->MaybeUpdateDebug();
   }
 }
 
@@ -461,14 +444,32 @@ bool RenderCompositorANGLE::ResizeBufferIfNeeded() {
     return true;
   }
 
-  HRESULT hr;
-  RefPtr<ID3D11Texture2D> backBuf;
-
   // Release EGLSurface of back buffer before calling ResizeBuffers().
   DestroyEGLSurface();
 
-  // Reset buffer size
-  mBufferSize.reset();
+  mBufferSize = Some(size);
+
+  if (!CreateEGLSurface()) {
+    mBufferSize.reset();
+    return false;
+  }
+
+  return true;
+}
+
+bool RenderCompositorANGLE::CreateEGLSurface() {
+  MOZ_ASSERT(mBufferSize.isSome());
+  MOZ_ASSERT(mEGLSurface == EGL_NO_SURFACE);
+
+  HRESULT hr;
+  RefPtr<ID3D11Texture2D> backBuf;
+
+  if (mBufferSize.isNothing()) {
+    gfxCriticalNote << "Buffer size is invalid";
+    return false;
+  }
+
+  const LayoutDeviceIntSize& size = mBufferSize.ref();
 
   // Resize swap chain
   DXGI_SWAP_CHAIN_DESC desc;
@@ -523,7 +524,6 @@ bool RenderCompositorANGLE::ResizeBufferIfNeeded() {
   }
 
   mEGLSurface = surface;
-  mBufferSize = Some(size);
 
   return true;
 }
@@ -542,6 +542,13 @@ void RenderCompositorANGLE::DestroyEGLSurface() {
 void RenderCompositorANGLE::Pause() {}
 
 bool RenderCompositorANGLE::Resume() { return true; }
+
+void RenderCompositorANGLE::Update() {
+  // Update compositor window's size if it exists.
+  // It needs to be called here, since OS might update compositor
+  // window's size at unexpected timing.
+  mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
+}
 
 bool RenderCompositorANGLE::MakeCurrent() {
   gl::GLContextEGL::Cast(gl())->SetEGLSurfaceOverride(mEGLSurface);

@@ -23,8 +23,6 @@ extern crate webrender_bindings;
 extern crate cubeb_coreaudio;
 #[cfg(feature = "cubeb_pulse_rust")]
 extern crate cubeb_pulse;
-extern crate encoding_c;
-extern crate encoding_c_mem;
 extern crate encoding_glue;
 #[cfg(feature = "cubeb-remoting")]
 extern crate audioipc_client;
@@ -52,6 +50,7 @@ extern crate arrayvec;
 
 extern crate audio_thread_priority;
 
+#[cfg(feature = "webrtc")]
 extern crate mdns_service;
 
 use std::boxed::Box;
@@ -83,8 +82,8 @@ impl GeckoLogger {
         let mut builder = env_logger::Builder::new();
         let default_level = if cfg!(debug_assertions) { "warn" } else { "error" };
         let logger = match env::var("RUST_LOG") {
-            Ok(v) => builder.parse(&v).build(),
-            _ => builder.parse(default_level).build(),
+            Ok(v) => builder.parse_filters(&v).build(),
+            _ => builder.parse_filters(default_level).build(),
         };
 
         GeckoLogger {

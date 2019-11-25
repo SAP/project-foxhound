@@ -11,6 +11,73 @@ exclude: true
 
 # GeckoView API Changelog.
 
+⚠️  breaking change
+
+## v71
+- Added [`onBooleanScalar`][71.1], [`onLongScalar`][71.2],
+  [`onStringScalar`][71.3] to [`RuntimeTelemetry.Delegate`][70.12] to support
+  scalars in streaming telemetry. ⚠️  As part of this change,
+  `onTelemetryReceived` has been renamed to [`onHistogram`][71.4], and
+  [`Metric`][71.5] now takes a type parameter.
+  ([bug 1576730]({{bugzilla}}1576730))
+- Added overloads of [`GeckoSession.loadUri`][71.6] that accept a map of
+  additional HTTP request headers.
+  ([bug 1567549]({{bugzilla}}1567549))
+- Added support for exposing the content blocking log in [`ContentBlockingController`][71.7].
+  ([bug 1580201]({{bugzilla}}1580201))
+- ⚠️  Added `nativeApp` to [`WebExtension.MessageDelegate.onMessage`][71.8] which
+  exposes the native application identifier that was used to send the message.
+  ([bug 1546445]({{bugzilla}}1546445))
+- Added [`GeckoRuntime.ServiceWorkerDelegate`][71.9] set via
+  [`setServiceWorkerDelegate`][71.10] to support [`ServiceWorkerClients.openWindow`][71.11]
+  ([bug 1511033]({{bugzilla}}1511033))
+- Added [`GeckoRuntimeSettings.Builder#aboutConfigEnabled`][71.12] to control whether or
+  not `about:config` should be available.
+  ([bug 1540065]({{bugzilla}}1540065))
+- Added [`GeckoSession.ContentDelegate.onFirstContentfulPaint`][71.13]
+  ([bug 1578947]({{bugzilla}}1578947))
+- Added `setEnhancedTrackingProtectionLevel` to [`ContentBlocking.Settings`][71.14].
+  ([bug 1580854]({{bugzilla}}1580854))
+- ⚠️ Added [`GeckoView.onTouchEventForResult`][71.15] and modified
+  [`PanZoomController.onTouchEvent`][71.16] to return how the touch event was handled. This
+  allows apps to know if an event is handled by touch event listeners in web content. The methods in `PanZoomController` now return `int` instead of `boolean`.
+- Added [`GeckoSession.purgeHistory`][71.17] allowing apps to clear a session's history.
+  ([bug 1583265]({{bugzilla}}1583265))
+- Added [`GeckoRuntimeSettings.Builder#forceUserScalableEnabled`][71.18] to control whether or
+  not to force user scalable zooming.
+  ([bug 1540615]({{bugzilla}}1540615))
+- ⚠️ Moved Autofill related methods from `SessionTextInput` and `GeckoSession.TextInputDelegate`
+  into `GeckoSession` and `AutofillDelegate`.
+- Added [`GeckoSession.getAutofillElements()`][71.19], which is a new method for getting
+  an autofill virtual structure without using `ViewStructure`. It relies on a new class,
+  [`AutofillElement`][71.20], for representing the virtual tree.
+- Added [`GeckoView.setAutofillEnabled`][71.21] for controlling whether or not the `GeckoView`
+  instance participates in Android autofill. When enabled, this connects an `AutofillDelegate`
+  to the session it holds.
+- Changed [`AutofillElement.children`][71.20] interface to `Collection` to provide
+  an efficient way to pre-allocate memory when filling `ViewStructure`.
+
+[71.1]: {{javadoc_uri}}/RuntimeTelemetry.Delegate.html#onBooleanScalar-org.mozilla.geckoview.RuntimeTelemetry.Metric-
+[71.2]: {{javadoc_uri}}/RuntimeTelemetry.Delegate.html#onLongScalar-org.mozilla.geckoview.RuntimeTelemetry.Metric-
+[71.3]: {{javadoc_uri}}/RuntimeTelemetry.Delegate.html#onStringScalar-org.mozilla.geckoview.RuntimeTelemetry.Metric-
+[71.4]: {{javadoc_uri}}/RuntimeTelemetry.Delegate.html#onHistogram-org.mozilla.geckoview.RuntimeTelemetry.Metric-
+[71.5]: {{javadoc_uri}}/RuntimeTelemetry.Metric.html
+[71.6]: {{javadoc_uri}}/GeckoSession.html#loadUri-java.lang.String-java.io.File-java.util.Map-
+[71.7]: {{javadoc_uri}}/ContentBlockingController.html
+[71.8]: {{javadoc_uri}}/WebExtension.MessageDelegate.html#onMessage-java.lang.String-java.lang.Object-org.mozilla.geckoview.WebExtension.MessageSender-
+[71.9]: {{javadoc_uri}}/GeckoRuntime.ServiceWorkerDelegate.html
+[71.10]: {{javadoc_uri}}/GeckoRuntime#setServiceWorkerDelegate-org.mozilla.geckoview.GeckoRuntime.ServiceWorkerDelegate-
+[71.11]: https://developer.mozilla.org/en-US/docs/Web/API/Clients/openWindow
+[71.12]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#aboutConfigEnabled-boolean-
+[71.13]: {{javadoc_uri}}/GeckoSession.ContentDelegate.html#onFirstContentfulPaint-org.mozilla.geckoview.GeckoSession-
+[71.15]: {{javadoc_uri}}/GeckoView.html#onTouchEventForResult-android.view.MotionEvent-
+[71.16]: {{javadoc_uri}}/PanZoomController.html#onTouchEvent-android.view.MotionEvent-
+[71.17]: {{javadoc_uri}}/GeckoSession.html#purgeHistory--
+[71.18]: {{javadoc_uri}}/GeckoRuntimeSettings.Builder.html#forceUserScalableEnabled-boolean-
+[71.19]: {{javadoc_uri}}/GeckoSession.html#getAutofillElements--
+[71.20]: {{javadoc_uri}}/AutofillElement.html
+[71.21]: {{javadoc_uri}}/GeckoView.html#setAutofillEnabled-boolean-
+
 ## v70
 - Added API for session context assignment
   [`GeckoSessionSettings.Builder.contextId`][70.1] and deletion of data related
@@ -56,12 +123,10 @@ exclude: true
   ([bug 1565782]({{bugzilla}}1565782))
 - Added onSlowScript to [`ContentDelegate`][70.23] which allows handling of slow and hung scripts.
   ([bug 1621094]({{bugzilla}}1621094))
-- Added [`ContentBlockingController`][70.24], accessible via [`GeckoRuntime.getContentBlockingController`][70.25]
+- Added support for Web Push via [`WebPushController`][70.24], [`WebPushDelegate`][70.25], and
+  [`WebPushSubscription`][70.26].
+- Added [`ContentBlockingController`][70.27], accessible via [`GeckoRuntime.getContentBlockingController`][70.28]
   to allow modification and inspection of a content blocking exception list.
-- Added support for exposing the content blocking log in [`ContentBlockingController`][70.26].
-  ([bug 1580201]({{bugzilla}}1580201))
-- Added `setEnhancedTrackingProtectionLevel` to [`ContentBlocking.Settings`][70.27].
-  ([bug 1580854]({{bugzilla}}1580854))
 
 [70.1]: {{javadoc_uri}}/GeckoSessionSettings.Builder.html#contextId-java.lang.String-
 [70.2]: {{javadoc_uri}}/StorageController.html#clearDataForSessionContext-java.lang.String-
@@ -86,10 +151,11 @@ exclude: true
 [70.21]: {{javadoc_uri}}/WebExtensionController.TabDelegate.html#onCloseTab-org.mozilla.geckoview.WebExtension-org.mozilla.geckoview.GeckoSession-
 [70.22]: https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/API/tabs/remove
 [70.23]: {{javadoc_uri}}/GeckoSession.ContentDelegate.html
-[70.24]: {{javadoc_uri}}/ContentBlockingController.html
-[70.25]: {{javadoc_uri}}/GeckoRuntime.html#getContentBlockingController--
-[70.26]: {{javadoc_uri}}/ContentBlockingController.html
-[70.27]: {{javadoc_uri}}/ContentBlocking.Settings.html
+[70.24]: {{javadoc_uri}}/WebPushController.html
+[70.25]: {{javadoc_uri}}/WebPushDelegate.html
+[70.26]: {{javadoc_uri}}/WebPushSubscription.html
+[70.27]: {{javadoc_uri}}/ContentBlockingController.html
+[70.28]: {{javadoc_uri}}/GeckoRuntime.html#getContentBlockingController--
 
 ## v69
 - Modified behavior of ['setAutomaticFontSizeAdjustment'][69.1] so that it no 
@@ -333,4 +399,4 @@ exclude: true
 [65.24]: {{javadoc_uri}}/CrashReporter.html#sendCrashReport-android.content.Context-android.os.Bundle-java.lang.String-
 [65.25]: {{javadoc_uri}}/GeckoResult.html
 
-[api-version]: 021320d9ccd0e7fe9b9a4e52f472478b6d574bbd
+[api-version]: ee3ceb65db78c3a801f525465ff3c6e9eca22ae9

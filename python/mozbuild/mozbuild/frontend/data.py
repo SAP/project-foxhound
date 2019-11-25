@@ -1206,19 +1206,27 @@ class GeneratedFile(ContextDerived):
         self.localized = localized
         self.force = force
 
-        suffixes = (
+        suffixes = [
             '.h',
             '.inc',
             '.py',
             '.rs',
-            'node.stub',  # To avoid VPATH issues with installing node files:
-                          # https://bugzilla.mozilla.org/show_bug.cgi?id=1461714#c55
             # We need to compile Java to generate JNI wrappers for native code
             # compilation to consume.
             'android_apks',
             '.profdata',
             '.webidl'
-        )
+        ]
+
+        try:
+            lib_suffix = context.config.substs['LIB_SUFFIX']
+            suffixes.append('.' + lib_suffix)
+        except KeyError:
+            # Tests may not define LIB_SUFFIX
+            pass
+
+        suffixes = tuple(suffixes)
+
         self.required_before_compile = [
             f for f in self.outputs if f.endswith(suffixes) or 'stl_wrappers/' in f]
 

@@ -226,7 +226,8 @@ already_AddRefed<nsIURI> GetJSValueAsURI(JSContext* aCtx,
     nsCOMPtr<nsIXPConnect> xpc = nsIXPConnect::XPConnect();
 
     nsCOMPtr<nsIXPConnectWrappedNative> wrappedObj;
-    nsresult rv = xpc->GetWrappedNativeOfJSObject(aCtx, aValue.toObjectOrNull(),
+    JS::Rooted<JSObject*> obj(aCtx, aValue.toObjectOrNull());
+    nsresult rv = xpc->GetWrappedNativeOfJSObject(aCtx, obj,
                                                   getter_AddRefs(wrappedObj));
     NS_ENSURE_SUCCESS(rv, nullptr);
     nsCOMPtr<nsIURI> uri = do_QueryInterface(wrappedObj->Native());
@@ -473,14 +474,11 @@ class VisitedQuery final : public AsyncStatementCallback,
     nsCOMPtr<nsIObserverService> observerService =
         mozilla::services::GetObserverService();
     if (observerService) {
-      nsAutoString status;
-      if (mIsVisited) {
-        status.AssignLiteral(URI_VISITED);
-      } else {
-        status.AssignLiteral(URI_NOT_VISITED);
-      }
+      static const char16_t visited[] = u"" URI_VISITED;
+      static const char16_t notVisited[] = u"" URI_NOT_VISITED;
+      const char16_t* status = mIsVisited ? visited : notVisited;
       (void)observerService->NotifyObservers(mURI, URI_VISITED_RESOLUTION_TOPIC,
-                                             status.get());
+                                             status);
     }
 
     return NS_OK;

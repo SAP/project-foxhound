@@ -165,7 +165,6 @@ EXTRA_JS_MODULES += [
     'ActorManagerParent.jsm',
     'AppMenuNotifications.jsm',
     'AsyncPrefs.jsm',
-    'AutoCompletePopupContent.jsm',
     'AutoScrollController.jsm',
     'BinarySearch.jsm',
     'BrowserUtils.jsm',
@@ -230,7 +229,6 @@ EXTRA_JS_MODULES += [
     'Troubleshoot.jsm',
     'UpdateUtils.jsm',
     'WebChannel.jsm',
-    'ZipUtils.jsm',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
@@ -297,9 +295,7 @@ for var in ('ANDROID_PACKAGE_NAME',
 for var in ('MOZ_SYSTEM_NSS',
             'MOZ_UNSIGNED_APP_SCOPE',
             'MOZ_UNSIGNED_SYSTEM_SCOPE',
-            'MOZ_UPDATER',
-            'MOZ_ANDROID_MOZILLA_ONLINE',
-            'MOZ_SWITCHBOARD'):
+            'MOZ_UPDATER'):
     if CONFIG[var]:
         DEFINES[var] = True
 

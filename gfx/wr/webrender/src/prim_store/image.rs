@@ -3,12 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{
-    AlphaType, ColorDepth, ColorF, ColorU,
+    AlphaType, ColorDepth, ColorF, ColorU, PrimitiveFlags,
     ImageKey as ApiImageKey, ImageRendering,
     PremultipliedColorF, Shadow, YuvColorSpace, ColorRange, YuvFormat,
 };
 use api::units::*;
-use crate::display_list_flattener::{CreateShadow, IsVisible};
+use crate::scene_building::{CreateShadow, IsVisible};
 use crate::frame_builder::FrameBuildingState;
 use crate::gpu_cache::{GpuCache, GpuDataRequest};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
@@ -19,9 +19,10 @@ use crate::prim_store::{
     PrimTemplate, PrimTemplateCommonData, PrimitiveStore, SegmentInstanceIndex,
     SizeKey, InternablePrimitive,
 };
-use crate::render_task::{
-    BlitSource, RenderTask, RenderTaskCacheEntryHandle, RenderTaskCacheKey,
-    RenderTaskCacheKeyKind, RenderTargetKind,
+use crate::render_target::RenderTargetKind;
+use crate::render_task::{BlitSource, RenderTask};
+use crate::render_task_cache::{
+    RenderTaskCacheEntryHandle, RenderTaskCacheKey, RenderTaskCacheKeyKind
 };
 use crate::resource_cache::{ImageRequest, ResourceCache};
 use crate::util::pack_as_float;
@@ -84,13 +85,13 @@ pub type ImageKey = PrimKey<Image>;
 
 impl ImageKey {
     pub fn new(
-        is_backface_visible: bool,
+        flags: PrimitiveFlags,
         prim_size: LayoutSize,
         image: Image,
     ) -> Self {
         ImageKey {
             common: PrimKeyCommonData {
-                is_backface_visible,
+                flags,
                 prim_size: prim_size.into(),
             },
             kind: image,
@@ -326,7 +327,7 @@ impl InternablePrimitive for Image {
         info: &LayoutPrimitiveInfo,
     ) -> ImageKey {
         ImageKey::new(
-            info.is_backface_visible,
+            info.flags,
             info.rect.size,
             self
         )
@@ -392,14 +393,14 @@ pub type YuvImageKey = PrimKey<YuvImage>;
 
 impl YuvImageKey {
     pub fn new(
-        is_backface_visible: bool,
+        flags: PrimitiveFlags,
         prim_size: LayoutSize,
         yuv_image: YuvImage,
     ) -> Self {
 
         YuvImageKey {
             common: PrimKeyCommonData {
-                is_backface_visible,
+                flags,
                 prim_size: prim_size.into(),
             },
             kind: yuv_image,
@@ -508,7 +509,7 @@ impl InternablePrimitive for YuvImage {
         info: &LayoutPrimitiveInfo,
     ) -> YuvImageKey {
         YuvImageKey::new(
-            info.is_backface_visible,
+            info.flags,
             info.rect.size,
             self,
         )

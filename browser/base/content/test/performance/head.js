@@ -256,35 +256,9 @@ async function ensureNoPreloadedBrowser(win = window) {
   });
 }
 
-/**
- * The navigation toolbar is overflowable, meaning that some items
- * will be moved and held within a sub-panel if the window gets too
- * small to show their icons. The calculation for hiding those items
- * occurs after resize events, and is debounced using a DeferredTask.
- * This utility function allows us to fast-forward to just running
- * that function for that DeferredTask instead of waiting for the
- * debounce timeout to occur.
- */
-function forceImmediateToolbarOverflowHandling(win) {
-  let overflowableToolbar = win.document.getElementById("nav-bar").overflowable;
-  if (
-    overflowableToolbar._lazyResizeHandler &&
-    overflowableToolbar._lazyResizeHandler.isArmed
-  ) {
-    overflowableToolbar._lazyResizeHandler.disarm();
-    // Ensure the root frame is dirty before resize so that, if we're
-    // in the middle of a reflow test, we record the reflows deterministically.
-    let dwu = win.windowUtils;
-    dwu.ensureDirtyRootFrame();
-    overflowableToolbar._onLazyResize();
-  }
-}
-
 async function prepareSettledWindow() {
   let win = await BrowserTestUtils.openNewBrowserWindow();
-
   await ensureNoPreloadedBrowser(win);
-  forceImmediateToolbarOverflowHandling(win);
   return win;
 }
 
@@ -784,33 +758,57 @@ async function runUrlbarTest(
     await UrlbarTestUtils.promisePopupClose(win);
   };
 
-  // Hide the results as we expect many changes there that we don't want to
-  // detect here.
-  URLBar.view.panel.style.visibility = "hidden";
+  let expectedRects;
+  if (URLBar.megabar) {
+    let urlbarRect = URLBar.textbox.getBoundingClientRect();
+    const SHADOW_SIZE = 4;
+    expectedRects = {
+      filter: rects => {
+        // We put text into the urlbar so expect its textbox to change.
+        // The dropmarker is displayed as active during some of the test.
+        // We expect many changes in the results view.
+        // So we just whitelist the whole urlbar. We don't check the bottom of
+        // the rect because the result view height varies depending on the
+        // results.
+        return rects.filter(
+          r =>
+            !(
+              r.x1 >= urlbarRect.left - SHADOW_SIZE &&
+              r.x2 <= urlbarRect.right + SHADOW_SIZE &&
+              r.y1 >= urlbarRect.top - SHADOW_SIZE
+            )
+        );
+      },
+    };
+  } else {
+    // Hide the results as we expect many changes there that we don't want to
+    // detect here.
+    URLBar.view.panel.style.visibility = "hidden";
 
-  let dropmarkerRect = URLBar.dropmarker.getBoundingClientRect();
-  let textBoxRect = URLBar.querySelector(
-    "moz-input-box"
-  ).getBoundingClientRect();
-  let expectedRects = {
-    filter: rects =>
-      rects.filter(
-        r =>
-          !// We put text into the urlbar so expect its textbox to change.
-          (
-            (r.x1 >= textBoxRect.left &&
-              r.x2 <= textBoxRect.right &&
-              r.y1 >= textBoxRect.top &&
-              r.y2 <= textBoxRect.bottom) ||
-            // The dropmarker is displayed as active during some of the test.
-            // dropmarkerRect.left isn't always an integer, hence the - 1 and + 1
-            (r.x1 >= dropmarkerRect.left - 1 &&
-              r.x2 <= dropmarkerRect.right + 1 &&
-              r.y1 >= dropmarkerRect.top &&
-              r.y2 <= dropmarkerRect.bottom)
-          )
-      ),
-  };
+    let dropmarkerRect = URLBar.dropmarker.getBoundingClientRect();
+    let textBoxRect = URLBar.querySelector(
+      "moz-input-box"
+    ).getBoundingClientRect();
+    expectedRects = {
+      filter: rects =>
+        rects.filter(
+          r =>
+            !// We put text into the urlbar so expect its textbox to change.
+            (
+              (r.x1 >= textBoxRect.left &&
+                r.x2 <= textBoxRect.right &&
+                r.y1 >= textBoxRect.top &&
+                r.y2 <= textBoxRect.bottom) ||
+              // The dropmarker is displayed as active during some of the test.
+              // dropmarkerRect.left isn't always an integer, hence the - 1 and + 1
+              (r.x1 >= dropmarkerRect.left - 1 &&
+                r.x2 <= dropmarkerRect.right + 1 &&
+                r.y1 >= dropmarkerRect.top &&
+                r.y2 <= dropmarkerRect.bottom)
+            )
+        ),
+    };
+  }
 
   info("First opening");
   await withPerfObserver(

@@ -39,6 +39,10 @@ namespace docshell {
   NS_IMETHOD GetUpdateDomain(nsACString& aUpdateDomain) override {             \
     return !_to ? NS_ERROR_NULL_POINTER : _to->GetUpdateDomain(aUpdateDomain); \
   }                                                                            \
+  NS_IMETHOD GetLoadingPrincipal(nsIPrincipal** aLoadingPrincipal) override {  \
+    return !_to ? NS_ERROR_NULL_POINTER                                        \
+                : _to->GetLoadingPrincipal(aLoadingPrincipal);                 \
+  }                                                                            \
   NS_IMETHOD GetManifestURI(nsIURI** aManifestURI) override {                  \
     return !_to ? NS_ERROR_NULL_POINTER : _to->GetManifestURI(aManifestURI);   \
   }                                                                            \
@@ -47,10 +51,11 @@ namespace docshell {
   }                                                                            \
   NS_IMETHOD InitPartial(nsIURI* aManifestURI, const nsACString& aClientID,    \
                          nsIURI* aDocumentURI,                                 \
-                         nsIPrincipal* aLoadingPrincipal) override {           \
+                         nsIPrincipal* aLoadingPrincipal,                      \
+                         nsICookieSettings* aCookieSettings) override {        \
     return !_to ? NS_ERROR_NULL_POINTER                                        \
                 : _to->InitPartial(aManifestURI, aClientID, aDocumentURI,      \
-                                   aLoadingPrincipal);                         \
+                                   aLoadingPrincipal, aCookieSettings);        \
   }                                                                            \
   NS_IMETHOD InitForUpdateCheck(nsIURI* aManifestURI,                          \
                                 nsIPrincipal* aLoadingPrincipal,               \
@@ -111,6 +116,7 @@ class OfflineCacheUpdateGlue final : public nsSupportsWeakReference,
   RefPtr<mozilla::dom::Document> mDocument;
   nsCOMPtr<nsIURI> mDocumentURI;
   nsCOMPtr<nsIPrincipal> mLoadingPrincipal;
+  nsCOMPtr<nsICookieSettings> mCookieSettings;
 };
 
 }  // namespace docshell

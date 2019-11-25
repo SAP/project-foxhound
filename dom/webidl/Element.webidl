@@ -13,6 +13,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface Element : Node {
   [Constant]
   readonly attribute DOMString? namespaceURI;
@@ -31,6 +32,10 @@ interface Element : Node {
            attribute DOMString className;
   [Constant, PutForwards=value]
   readonly attribute DOMTokenList classList;
+
+  // https://drafts.csswg.org/css-shadow-parts/#idl
+  [SameObject, PutForwards=value, Pref="layout.css.shadow-parts.enabled"]
+  readonly attribute DOMTokenList part;
 
   [SameObject]
   readonly attribute NamedNodeMap attributes;
@@ -160,11 +165,22 @@ dictionary FocusOptions {
   boolean preventScroll = false;
 };
 
-// TODO(mbrodesser): once https://bugzilla.mozilla.org/show_bug.cgi?id=1414372
-// is fixed, mixin should be used.
-[NoInterfaceObject] interface HTMLOrSVGOrXULElementMixin {
-  [Throws]
-  void focus(optional FocusOptions options = {});
+interface mixin HTMLOrForeignElement {
+  [SameObject] readonly attribute DOMStringMap dataset;
+  // See bug 1389421
+  // attribute DOMString nonce; // intentionally no [CEReactions]
+
+  // See bug 1575154
+  // [CEReactions] attribute boolean autofocus;
+  [CEReactions, SetterThrows, Pure] attribute long tabIndex;
+  [Throws] void focus(optional FocusOptions options = {});
+  [Throws] void blur();
+};
+
+// https://drafts.csswg.org/cssom/#the-elementcssinlinestyle-mixin
+interface mixin ElementCSSInlineStyle {
+  [SameObject, PutForwards=cssText]
+  readonly attribute CSSStyleDeclaration style;
 };
 
 // http://dev.w3.org/csswg/cssom-view/
@@ -258,11 +274,11 @@ partial interface Element {
            attribute DOMString slot;
 };
 
-Element implements ChildNode;
-Element implements NonDocumentTypeChildNode;
-Element implements ParentNode;
-Element implements Animatable;
-Element implements GeometryUtils;
+Element includes ChildNode;
+Element includes NonDocumentTypeChildNode;
+Element includes ParentNode;
+Element includes Animatable;
+Element includes GeometryUtils;
 
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {

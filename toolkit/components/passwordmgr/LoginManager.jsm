@@ -5,6 +5,7 @@
 "use strict";
 
 const PERMISSION_SAVE_LOGINS = "login-saving";
+const MAX_DATE_MS = 8640000000000000;
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -255,7 +256,7 @@ LoginManager.prototype = {
    */
   _checkLogin(login) {
     // Sanity check the login
-    if (login.origin == null || login.origin.length == 0) {
+    if (login.origin == null || !login.origin.length) {
       throw new Error("Can't add a login with a null or empty origin.");
     }
 
@@ -264,7 +265,7 @@ LoginManager.prototype = {
       throw new Error("Can't add a login with a null username.");
     }
 
-    if (login.password == null || login.password.length == 0) {
+    if (login.password == null || !login.password.length) {
       throw new Error("Can't add a login with a null or empty password.");
     }
 
@@ -287,6 +288,14 @@ LoginManager.prototype = {
       throw new Error(
         "Can't add a login without a httpRealm or formActionOrigin."
       );
+    }
+
+    login.QueryInterface(Ci.nsILoginMetaInfo);
+    for (let pname of ["timeCreated", "timeLastUsed", "timePasswordChanged"]) {
+      // Invalid dates
+      if (login[pname] > MAX_DATE_MS) {
+        throw new Error("Can't add a login with invalid date properties.");
+      }
     }
   },
 

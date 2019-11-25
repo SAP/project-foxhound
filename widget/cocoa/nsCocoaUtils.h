@@ -413,6 +413,12 @@ class nsCocoaUtils {
   static nsresult GetAudioCapturePermissionState(uint16_t& aPermissionState);
 
   /**
+   * Get the current screen capture permission status.
+   * Returns NS_ERROR_NOT_IMPLEMENTED on 10.14 and earlier macOS versions.
+   */
+  static nsresult GetScreenCapturePermissionState(uint16_t& aPermissionState);
+
+  /**
    * Request video capture permission from the OS. Caller must be running
    * on the main thread and the promise will be resolved on the main thread.
    * Returns NS_ERROR_NOT_IMPLEMENTED on 10.13 and earlier macOS versions.
@@ -425,6 +431,11 @@ class nsCocoaUtils {
    * Returns NS_ERROR_NOT_IMPLEMENTED on 10.13 and earlier macOS versions.
    */
   static nsresult RequestAudioCapturePermission(RefPtr<Promise>& aPromise);
+
+  /**
+   * Request screen capture permission from the OS using an unreliable method.
+   */
+  static nsresult MaybeRequestScreenCapturePermission();
 
  private:
   /**

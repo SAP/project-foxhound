@@ -444,7 +444,7 @@ async function openContextMenuInSidebar(selector = "body") {
   return contentAreaContextMenu;
 }
 
-async function openContextMenuInFrame(frameSelector) {
+async function openContextMenuInFrame(selector = "body", frameIndex = 0) {
   let contentAreaContextMenu = document.getElementById(
     "contentAreaContextMenu"
   );
@@ -453,9 +453,9 @@ async function openContextMenuInFrame(frameSelector) {
     "popupshown"
   );
   await BrowserTestUtils.synthesizeMouseAtCenter(
-    [frameSelector, "body"],
+    selector,
     { type: "contextmenu" },
-    gBrowser.selectedBrowser
+    gBrowser.selectedBrowser.browsingContext.getChildren()[frameIndex]
   );
   await popupShownPromise;
   return contentAreaContextMenu;
@@ -502,7 +502,7 @@ async function openExtensionContextMenu(selector = "#img1") {
   );
 
   // Return null if the extension only has one item and therefore no extension menu.
-  if (topLevelMenu.length == 0) {
+  if (!topLevelMenu.length) {
     return null;
   }
 

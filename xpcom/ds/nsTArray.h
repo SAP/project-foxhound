@@ -74,6 +74,7 @@ namespace indexedDB {
 struct StructuredCloneReadInfo;
 class SerializedStructuredCloneReadInfo;
 class ObjectStoreCursorResponse;
+class IndexCursorResponse;
 }  // namespace indexedDB
 }  // namespace dom
 }  // namespace mozilla
@@ -501,7 +502,8 @@ namespace detail {
 template <typename... T>
 struct ChooseFirst;
 
-template <> struct ChooseFirst<> {
+template <>
+struct ChooseFirst<> {
   // Choose a default type that is guaranteed to not match E* for any
   // nsTArray<E>.
   typedef void Type;
@@ -512,7 +514,7 @@ struct ChooseFirst<A, Args...> {
   typedef A Type;
 };
 
-}
+}  // namespace detail
 
 //
 // This class defines convenience functions for element specific operations.
@@ -544,7 +546,8 @@ class nsTArrayElementTraits {
   template <class... Args>
   static inline void Emplace(E* aE, Args&&... aArgs) {
     typedef typename mozilla::RemoveCV<E>::Type E_NoCV;
-    typedef typename mozilla::RemoveCV<typename ::detail::ChooseFirst<Args...>::Type>::Type A_NoCV;
+    typedef typename mozilla::RemoveCV<
+        typename ::detail::ChooseFirst<Args...>::Type>::Type A_NoCV;
     static_assert(!mozilla::IsSame<E_NoCV*, A_NoCV>::value,
                   "For safety, we disallow constructing nsTArray<E> elements "
                   "from E* pointers. See bug 960591.");
@@ -724,6 +727,7 @@ DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::ClonedMessageData)
 DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::indexedDB::StructuredCloneReadInfo);
 DECLARE_USE_COPY_CONSTRUCTORS(
     mozilla::dom::indexedDB::ObjectStoreCursorResponse)
+DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::indexedDB::IndexCursorResponse)
 DECLARE_USE_COPY_CONSTRUCTORS(
     mozilla::dom::indexedDB::SerializedStructuredCloneReadInfo);
 DECLARE_USE_COPY_CONSTRUCTORS(JSStructuredCloneData)
@@ -1665,8 +1669,7 @@ class nsTArray_Impl
 
  public:
   template <class... Args>
-  MOZ_MUST_USE
-  elem_type* EmplaceBack(Args&&... aArgs, mozilla::fallible_t&) {
+  MOZ_MUST_USE elem_type* EmplaceBack(Args&&... aArgs, mozilla::fallible_t&) {
     return EmplaceBack<Args..., FallibleAlloc>(std::forward<Args>(aArgs)...);
   }
 
@@ -1720,6 +1723,29 @@ class nsTArray_Impl
   /* MOZ_MUST_USE */
   elem_type* AppendElement(const mozilla::fallible_t&) {
     return AppendElement<FallibleAlloc>();
+  }
+
+  // This method removes a single element from this array, like
+  // std::vector::erase.
+  // @param pos to the element to remove
+  const_iterator RemoveElementAt(const_iterator pos) {
+    MOZ_ASSERT(pos.GetArray() == this);
+
+    RemoveElementAt(pos.GetIndex());
+    return pos;
+  }
+
+  // This method removes a range of elements from this array, like
+  // std::vector::erase.
+  // @param first iterator to the first of elements to remove
+  // @param last iterator to the last of elements to remove
+  const_iterator RemoveElementsAt(const_iterator first, const_iterator last) {
+    MOZ_ASSERT(first.GetArray() == this);
+    MOZ_ASSERT(last.GetArray() == this);
+    MOZ_ASSERT(last.GetIndex() >= first.GetIndex());
+
+    RemoveElementsAt(first.GetIndex(), last.GetIndex() - first.GetIndex());
+    return first;
   }
 
   // This method removes a range of elements from this array.

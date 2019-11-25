@@ -461,7 +461,7 @@ LoginManagerPrompter.prototype = {
 
       // XXX Like the original code, we can't deal with multiple
       // account selection. (bug 227632)
-      if (foundLogins.length > 0) {
+      if (foundLogins.length) {
         selectedLogin = foundLogins[0];
 
         // If the caller provided a username, try to use it. If they
@@ -698,7 +698,7 @@ LoginManagerPrompter.prototype = {
       this.log(foundLogins.length, "matching logins remain after deduping");
 
       // XXX Can't select from multiple accounts yet. (bug 227632)
-      if (foundLogins.length > 0) {
+      if (foundLogins.length) {
         selectedLogin = foundLogins[0];
         this._SetAuthInfo(
           aAuthInfo,
@@ -1041,13 +1041,12 @@ LoginManagerPrompter.prototype = {
     );
 
     let chromeDoc = browser.ownerDocument;
-
     let currentNotification;
 
     let updateButtonStatus = element => {
       let mainActionButton = element.button;
       // Disable the main button inside the menu-button if the password field is empty.
-      if (login.password.length == 0) {
+      if (!login.password.length) {
         mainActionButton.setAttribute("disabled", true);
         chromeDoc
           .getElementById("password-notification-password")
@@ -1076,7 +1075,7 @@ LoginManagerPrompter.prototype = {
         foundLogins,
         autoSavedLoginGuid
       );
-      let msgNames = logins.length == 0 ? saveMsgNames : changeMsgNames;
+      let msgNames = !logins.length ? saveMsgNames : changeMsgNames;
 
       // Update the label based on whether this will be a new login or not.
       let label = this._getLocalizedString(msgNames.buttonLabel);
@@ -1098,15 +1097,10 @@ LoginManagerPrompter.prototype = {
     };
 
     let writeDataToUI = () => {
-      // setAttribute is used in addition to setting the property since the
-      // <textbox> binding may not be attached yet.
-      chromeDoc
-        .getElementById("password-notification-username")
-        .setAttribute("placeholder", usernamePlaceholder);
       let nameField = chromeDoc.getElementById(
         "password-notification-username"
       );
-      nameField.setAttribute("value", login.username);
+      nameField.placeholder = usernamePlaceholder;
       nameField.value = login.username;
 
       let toggleCheckbox = chromeDoc.getElementById(
@@ -1117,8 +1111,7 @@ LoginManagerPrompter.prototype = {
         "password-notification-password"
       );
       // Ensure the type is reset so the field is masked.
-      passwordField.setAttribute("type", "password");
-      passwordField.setAttribute("value", login.password);
+      passwordField.type = "password";
       passwordField.value = login.password;
       updateButtonLabel();
     };
@@ -1135,6 +1128,12 @@ LoginManagerPrompter.prototype = {
     let onInput = () => {
       readDataFromUI();
       updateButtonLabel();
+    };
+
+    let onKeyUp = e => {
+      if (e.key == "Enter") {
+        e.target.closest("popupnotification").button.doCommand();
+      }
     };
 
     let onVisibilityToggle = commandEvent => {
@@ -1330,6 +1329,12 @@ LoginManagerPrompter.prototype = {
                   .getElementById("password-notification-username")
                   .addEventListener("input", onInput);
                 chromeDoc
+                  .getElementById("password-notification-username")
+                  .addEventListener("keyup", onKeyUp);
+                chromeDoc
+                  .getElementById("password-notification-password")
+                  .addEventListener("keyup", onKeyUp);
+                chromeDoc
                   .getElementById("password-notification-password")
                   .addEventListener("input", onInput);
                 let toggleBtn = chromeDoc.getElementById(
@@ -1377,8 +1382,14 @@ LoginManagerPrompter.prototype = {
                   .getElementById("password-notification-username")
                   .removeEventListener("input", onInput);
                 chromeDoc
+                  .getElementById("password-notification-username")
+                  .removeEventListener("keyup", onKeyUp);
+                chromeDoc
                   .getElementById("password-notification-password")
                   .removeEventListener("input", onInput);
+                chromeDoc
+                  .getElementById("password-notification-password")
+                  .removeEventListener("keyup", onKeyUp);
                 chromeDoc
                   .getElementById("password-notification-visibilityToggle")
                   .removeEventListener("command", onVisibilityToggle);

@@ -42,6 +42,7 @@ linux64/opt:
         - mochitest-headless
         - linux-talos-flex
         - raptor-firefox
+        - browsertime
         - raptor-fetch-firefox
         - marionette-media-tests
 linux64-shippable/opt:
@@ -57,9 +58,11 @@ linux64-shippable/opt:
         - mochitest-headless
         - marionette-headless
         - linux-talos-flex
+        - raptor-chrome
         - raptor-chromium
         - raptor-fetch-chromium
         - raptor-firefox
+        - browsertime
         - raptor-fetch-firefox
         - raptor-profiling
         - raptor-fetch-profiling
@@ -93,6 +96,7 @@ linux64-qr/opt:
         - awsy
         - web-platform-tests
         - raptor-firefox
+        - browsertime
         - raptor-fetch-firefox
 linux64-shippable-qr/opt:
     build-platform: linux64-shippable/opt
@@ -102,6 +106,7 @@ linux64-shippable-qr/opt:
         - awsy
         - web-platform-tests
         - raptor-firefox
+        - browsertime
         - raptor-fetch-firefox
 linux64-qr/debug:
     build-platform: linux64/debug
@@ -143,6 +148,7 @@ windows7-32/opt:
         - windows-tests
         - web-platform-tests
         - raptor-firefox
+        - browsertime
 
 windows7-32-shippable/opt:
     build-platform: win32-shippable/opt
@@ -154,8 +160,10 @@ windows7-32-shippable/opt:
         - windows-tests
         - web-platform-tests
         - web-platform-tests-wdspec-headless
+        - raptor-chrome
         - raptor-chromium
         - raptor-firefox
+        - browsertime
 
 windows7-32-devedition/opt:
     build-platform: win32-devedition-nightly/opt
@@ -196,6 +204,7 @@ windows10-64/opt:
         - windows-tests
         - web-platform-tests
         - raptor-firefox
+        - browsertime
         - marionette-media-tests
 
 windows10-aarch64/opt:
@@ -204,6 +213,7 @@ windows10-aarch64/opt:
         - awsy
         - marionette-gpu-tests
         - raptor-firefox
+        - browsertime
         - windows-aarch64-tests
         - windows-talos
 
@@ -211,6 +221,7 @@ windows10-64-ref-hw-2017/opt:
     build-platform: win64-shippable/opt
     test-sets:
         - raptor-firefox
+        - browsertime
         - talos-ref-hw
 
 windows10-64-shippable/opt:
@@ -218,14 +229,15 @@ windows10-64-shippable/opt:
     test-sets:
         - awsy
         - desktop-screenshot-capture
-        - desktop-instrumentation
         - windows-talos
         - marionette-gpu-tests
         - windows-tests
         - web-platform-tests
         - web-platform-tests-wdspec-headless
-        - raptor-firefox
+        - raptor-chrome
         - raptor-chromium
+        - raptor-firefox
+        - browsertime
         - raptor-profiling
 
 windows10-64-devedition/opt:
@@ -255,6 +267,7 @@ windows10-64-qr/opt:
         - windows-qr-tests
         - windows-talos
         - raptor-firefox
+        - browsertime
         - web-platform-tests
 
 windows10-64-shippable-qr/opt:
@@ -264,6 +277,7 @@ windows10-64-shippable-qr/opt:
         - windows-qr-tests
         - windows-talos
         - raptor-firefox
+        - browsertime
         - web-platform-tests
 
 windows10-64-mingwclang/debug:
@@ -296,8 +310,11 @@ macosx1014-64-shippable/opt:
         - macosx64-talos
         - desktop-screenshot-capture
         - awsy
+        - raptor-chrome
         - raptor-chromium
         - raptor-firefox
+        - browsertime
+        - raptor-firefox-power
         - raptor-profiling
         - marionette-media-tests
         - web-platform-tests-wdspec-headless
@@ -333,30 +350,6 @@ macosx1014-64-ccov/debug:
 #
 # android-em test platforms execute on android emulators.
 
-android-em-4.3-arm7-api-16/debug:
-    build-platform: android-api-16/debug
-    test-sets:
-        - android-common-tests
-
-# Disable ccov testing on Android due to issues with
-# Java 8 features. Bug 1498721.
-# android-em-4.3-arm7-api-16-ccov/debug:
-#     build-platform: android-api-16-ccov/debug
-#     test-sets:
-#         - android-ccov-tests
-
-android-em-4.3-arm7-api-16/opt:
-    build-platform: android-api-16/opt
-    test-sets:
-        - android-common-tests
-        - android-opt-tests
-
-android-em-4.3-arm7-api-16/pgo:
-    build-platform: android-api-16-pgo/opt
-    test-sets:
-        - android-common-tests
-        - android-opt-tests
-
 android-em-7.0-x86_64/opt:
     build-platform: android-x86_64/opt
     test-sets:
@@ -374,6 +367,7 @@ android-em-7.0-x86_64/debug:
 android-hw-g5-7-0-arm7-api-16/opt:
     build-platform: android-api-16/opt
     test-sets:
+        - android-hw-arm7-browsertime
         - android-hw-arm7-raptor
         - android-hw-arm7-raptor-power
         - android-hw-arm7-raptor-cpu-memory
@@ -383,6 +377,7 @@ android-hw-g5-7-0-arm7-api-16/opt:
 android-hw-g5-7-0-arm7-api-16/pgo:
     build-platform: android-api-16-pgo/opt
     test-sets:
+        - android-hw-arm7-browsertime
         - android-hw-arm7-raptor
         - android-hw-arm7-raptor-power
         - android-hw-arm7-raptor-cpu-memory
@@ -394,6 +389,7 @@ android-hw-g5-7-0-arm7-api-16/pgo:
 android-hw-p2-8-0-arm7-api-16/pgo:
     build-platform: android-api-16-pgo/opt
     test-sets:
+        - android-hw-arm7-browsertime
         - android-hw-arm7-pgo-unittests
         - android-hw-arm7-raptor
         - android-hw-arm7-raptor-power
@@ -404,6 +400,7 @@ android-hw-p2-8-0-arm7-api-16/pgo:
 android-hw-p2-8-0-arm7-api-16/opt:
     build-platform: android-api-16/opt
     test-sets:
+        - android-hw-arm7-browsertime
         - android-hw-arm7-opt-unittests
         - android-hw-arm7-raptor
         - android-hw-arm7-raptor-power
@@ -429,6 +426,7 @@ android-hw-p2-8-0-arm7-api-16-qr/debug:
 android-hw-p2-8-0-android-aarch64/opt:
     build-platform: android-aarch64/opt
     test-sets:
+        - android-hw-aarch64-browsertime
         - android-hw-aarch64-raptor
         - android-hw-aarch64-raptor-power
         - android-hw-aarch64-raptor-cpu-memory
@@ -437,17 +435,8 @@ android-hw-p2-8-0-android-aarch64/opt:
 android-hw-p2-8-0-android-aarch64/pgo:
     build-platform: android-aarch64-pgo/opt
     test-sets:
+        - android-hw-aarch64-browsertime
         - android-hw-aarch64-raptor
         - android-hw-aarch64-raptor-power
         - android-hw-aarch64-raptor-cpu-memory
         - android-hw-aarch64-raptor-cpu-memory-power
-
-android-hw-p2-8-0-arm7-api-16-nightly/opt:
-    build-platform: android-api-16-nightly/opt
-    test-sets:
-        - android-hw-arm7-raptor-nightly
-
-android-hw-p2-8-0-android-aarch64-nightly/opt:
-    build-platform: android-aarch64-nightly/opt
-    test-sets:
-        - android-hw-aarch64-raptor-nightly

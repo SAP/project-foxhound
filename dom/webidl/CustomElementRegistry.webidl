@@ -3,9 +3,10 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 // https://html.spec.whatwg.org/#dom-window-customelements
+[Exposed=Window]
 interface CustomElementRegistry {
   [CEReactions, Throws, UseCounter]
-  void define(DOMString name, CustomElementConstructor functionConstructor,
+  void define(DOMString name, CustomElementConstructor constructor,
               optional ElementDefinitionOptions options = {});
   [ChromeOnly, Throws]
   void setElementCreationCallback(DOMString name, CustomElementCreationCallback callback);

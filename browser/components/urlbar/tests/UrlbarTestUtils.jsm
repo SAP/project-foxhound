@@ -138,12 +138,13 @@ var UrlbarTestUtils = {
     let actions = element.getElementsByClassName("urlbarView-action");
     let urls = element.getElementsByClassName("urlbarView-url");
     let typeIcon = element.querySelector(".urlbarView-type-icon");
-    let typeIconStyle = win.getComputedStyle(typeIcon);
     details.displayed = {
       title: element.getElementsByClassName("urlbarView-title")[0].textContent,
-      action: actions.length > 0 ? actions[0].textContent : null,
-      url: urls.length > 0 ? urls[0].textContent : null,
-      typeIcon: typeIconStyle["background-image"],
+      action: actions.length ? actions[0].textContent : null,
+      url: urls.length ? urls[0].textContent : null,
+      typeIcon: typeIcon
+        ? win.getComputedStyle(typeIcon)["background-image"]
+        : null,
     };
     details.element = {
       action: element.getElementsByClassName("urlbarView-action")[0],
@@ -160,6 +161,8 @@ var UrlbarTestUtils = {
         keyword: result.payload.keyword,
         query: result.payload.query,
         suggestion: result.payload.suggestion,
+        inPrivateWindow: result.payload.inPrivateWindow,
+        isPrivateEngine: result.payload.isPrivateEngine,
       };
     } else if (details.type == UrlbarUtils.RESULT_TYPE.KEYWORD) {
       details.keyword = result.payload.keyword;
@@ -169,29 +172,48 @@ var UrlbarTestUtils = {
 
   /**
    * Gets the currently selected element.
-   * @param {object} win The window containing the urlbar
-   * @returns {HtmlElement|XulElement} the selected element.
+   * @param {object} win The window containing the urlbar.
+   * @returns {HtmlElement|XulElement} The selected element.
    */
   getSelectedElement(win) {
-    return win.gURLBar.view._selected || null;
+    return win.gURLBar.view.selectedElement || null;
   },
 
   /**
-   * Gets the index of the currently selected item.
+   * Gets the index of the currently selected element.
    * @param {object} win The window containing the urlbar.
    * @returns {number} The selected index.
    */
-  getSelectedIndex(win) {
-    return win.gURLBar.view.selectedIndex;
+  getSelectedElementIndex(win) {
+    return win.gURLBar.view.selectedElementIndex;
   },
 
   /**
-   * Selects the item at the index specified.
+   * Gets the currently selected row. If the selected element is a descendant of
+   * a row, this will return the ancestor row.
+   * @param {object} win The window containing the urlbar.
+   * @returns {HTMLElement|XulElement} The selected row.
+   */
+  getSelectedRow(win) {
+    return win.gURLBar.view._getSelectedRow() || null;
+  },
+
+  /**
+   * Gets the index of the currently selected element.
+   * @param {object} win The window containing the urlbar.
+   * @returns {number} The selected row index.
+   */
+  getSelectedRowIndex(win) {
+    return win.gURLBar.view.selectedRowIndex;
+  },
+
+  /**
+   * Selects the element at the index specified.
    * @param {object} win The window containing the urlbar.
    * @param {index} index The index to select.
    */
-  setSelectedIndex(win, index) {
-    win.gURLBar.view.selectedIndex = index;
+  setSelectedRowIndex(win, index) {
+    win.gURLBar.view.selectedRowIndex = index;
   },
 
   /**
@@ -220,12 +242,13 @@ var UrlbarTestUtils = {
     // complete.
     return this.promiseSearchComplete(win).then(context => {
       // Look for search suggestions.
-      let hasSearchSuggestion = context.results.some(
+      let firstSearchSuggestionIndex = context.results.findIndex(
         r => r.type == UrlbarUtils.RESULT_TYPE.SEARCH && r.payload.suggestion
       );
-      if (!hasSearchSuggestion) {
+      if (firstSearchSuggestionIndex == -1) {
         throw new Error("Cannot find a search suggestion");
       }
+      return firstSearchSuggestionIndex;
     });
   },
 

@@ -18,7 +18,6 @@ load chrome://reftest/content/crashtests/layout/xul/crashtests/326879-1.xul
 load chrome://reftest/content/crashtests/layout/xul/crashtests/328135-1.xul
 load chrome://reftest/content/crashtests/layout/xul/crashtests/329327-1.xul
 load 329407-1.xml
-load 329477-1.xhtml
 load chrome://reftest/content/crashtests/layout/xul/crashtests/336962-1.xul
 load chrome://reftest/content/crashtests/layout/xul/crashtests/344228-1.xul
 load chrome://reftest/content/crashtests/layout/xul/crashtests/350460.xul
@@ -40,7 +39,7 @@ load 384105-1.html
 load 384373.html
 load 384871-1.html
 load chrome://reftest/content/crashtests/layout/xul/crashtests/386642.xul
-load 387033-1.xhtml
+skip-if(!xbl) load 387033-1.xhtml
 load chrome://reftest/content/crashtests/layout/xul/crashtests/387080-1.xul
 load 391974-1.html
 load chrome://reftest/content/crashtests/layout/xul/crashtests/399013.xul
@@ -50,9 +49,9 @@ load chrome://reftest/content/crashtests/layout/xul/crashtests/408904-1.xul
 load 412479-1.xhtml
 load chrome://reftest/content/crashtests/layout/xul/crashtests/417509.xul
 load 430356-1.xhtml
-load 452185.html
+skip-if(!xbl) load 452185.html
 asserts(0-1) load 464407-1.xhtml # Bugs 450974, 1267054, 718883
-load chrome://reftest/content/crashtests/layout/xul/crashtests/467080.xul
+skip-if(!xbl) load chrome://reftest/content/crashtests/layout/xul/crashtests/467080.xul
 load 470063-1.html
 load 470272.html
 load chrome://reftest/content/crashtests/layout/xul/crashtests/538308-1.xul
@@ -62,5 +61,4 @@ load 583957-1.html
 load 617089.html
 load menulist-focused.xhtml
 load 716503.html
-load chrome://reftest/content/crashtests/layout/xul/crashtests/1379332-1.xul
 load chrome://reftest/content/crashtests/layout/xul/crashtests/1379332-2.xul

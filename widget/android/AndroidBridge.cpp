@@ -16,6 +16,7 @@
 #include <prthread.h>
 #include "AndroidBridge.h"
 #include "AndroidBridgeUtilities.h"
+#include "AndroidRect.h"
 #include "nsAlertsUtils.h"
 #include "nsAppShell.h"
 #include "nsOSHelperAppService.h"
@@ -30,7 +31,6 @@
 #include "nsPresContext.h"
 #include "nsIDocShell.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDOMWindowUtils.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "nsPrintfCString.h"
 #include "nsContentUtils.h"
@@ -48,7 +48,7 @@
 #include "nsISupportsPrimitives.h"
 #include "WidgetUtils.h"
 
-#include "FennecJNIWrappers.h"
+#include "GeneratedJNIWrappers.h"
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -235,20 +235,26 @@ bool AndroidBridge::GetHandlersForMimeType(const nsAString& aMimeType,
   return true;
 }
 
-bool AndroidBridge::GetHWEncoderCapability() {
-  ALOG_BRIDGE("AndroidBridge::GetHWEncoderCapability");
+bool AndroidBridge::HasHWVP8Encoder() {
+  ALOG_BRIDGE("AndroidBridge::HasHWVP8Encoder");
 
-  bool value = GeckoAppShell::GetHWEncoderCapability();
+  bool value = GeckoAppShell::HasHWVP8Encoder();
 
   return value;
 }
 
-bool AndroidBridge::GetHWDecoderCapability() {
-  ALOG_BRIDGE("AndroidBridge::GetHWDecoderCapability");
+bool AndroidBridge::HasHWVP8Decoder() {
+  ALOG_BRIDGE("AndroidBridge::HasHWVP8Decoder");
 
-  bool value = GeckoAppShell::GetHWDecoderCapability();
+  bool value = GeckoAppShell::HasHWVP8Decoder();
 
   return value;
+}
+
+bool AndroidBridge::HasHWH264() {
+  ALOG_BRIDGE("AndroidBridge::HasHWH264");
+
+  return HardwareCodecCapabilityUtils::HasHWH264();
 }
 
 bool AndroidBridge::GetHandlersForURL(const nsAString& aURL,
@@ -290,6 +296,16 @@ void AndroidBridge::GetExtensionFromMimeType(const nsACString& aMimeType,
   if (jstrExt) {
     aFileExt = jstrExt->ToCString();
   }
+}
+
+gfx::Rect AndroidBridge::getScreenSize()
+{
+  ALOG_BRIDGE("AndroidBridge::getScreenSize");
+
+  java::sdk::Rect::LocalRef screenrect = GeckoAppShell::GetScreenSize();
+  gfx::Rect screensize(screenrect->Left(), screenrect->Top(), screenrect->Width(), screenrect->Height());
+
+  return screensize;
 }
 
 int AndroidBridge::GetScreenDepth() {
@@ -620,36 +636,14 @@ nsAndroidBridge::Observe(nsISupports* aSubject, const char* aTopic,
                          const char16_t* aData) {
   if (!strcmp(aTopic, "xpcom-shutdown")) {
     RemoveObservers();
-  } else if (!strcmp(aTopic, "audio-playback")) {
-    ALOG_BRIDGE("nsAndroidBridge::Observe, get audio-playback event.");
-
-    nsAutoString activeStr(aData);
-    bool isPlaying = activeStr.EqualsLiteral("active");
-    UpdateAudioPlayingWindows(isPlaying);
   }
   return NS_OK;
-}
-
-void nsAndroidBridge::UpdateAudioPlayingWindows(bool aPlaying) {
-  // Request audio focus for the first audio playing window and abandon focus
-  // for the last audio playing window.
-  MOZ_ASSERT(mAudibleWindowsNum >= 0);
-  if (aPlaying && mAudibleWindowsNum++ == 0) {
-    ALOG_BRIDGE("nsAndroidBridge, request audio focus.");
-    AudioFocusAgent::NotifyStartedPlaying();
-  } else if (!aPlaying && --mAudibleWindowsNum == 0) {
-    ALOG_BRIDGE("nsAndroidBridge, abandon audio focus.");
-    AudioFocusAgent::NotifyStoppedPlaying();
-  }
 }
 
 void nsAndroidBridge::AddObservers() {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
     obs->AddObserver(this, "xpcom-shutdown", false);
-    if (jni::IsFennec()) {  // No AudioFocusAgent in non-Fennec environment.
-      obs->AddObserver(this, "audio-playback", false);
-    }
   }
 }
 
@@ -657,9 +651,6 @@ void nsAndroidBridge::RemoveObservers() {
   nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
   if (obs) {
     obs->RemoveObserver(this, "xpcom-shutdown");
-    if (jni::IsFennec()) {  // No AudioFocusAgent in non-Fennec environment.
-      obs->RemoveObserver(this, "audio-playback");
-    }
   }
 }
 
@@ -717,7 +708,7 @@ bool AndroidBridge::PumpMessageLoop() {
 }
 
 NS_IMETHODIMP nsAndroidBridge::GetIsFennec(bool* aIsFennec) {
-  *aIsFennec = jni::IsFennec();
+  *aIsFennec = false;
   return NS_OK;
 }
 

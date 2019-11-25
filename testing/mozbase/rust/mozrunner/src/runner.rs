@@ -18,31 +18,31 @@ use crate::firefox_args::Arg;
 pub trait Runner {
     type Process;
 
-    fn arg<'a, S>(&'a mut self, arg: S) -> &'a mut Self
+    fn arg<S>(&mut self, arg: S) -> &mut Self
     where
         S: AsRef<OsStr>;
 
-    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut Self
+    fn args<I, S>(&mut self, args: I) -> &mut Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>;
 
-    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut Self
+    fn env<K, V>(&mut self, key: K, value: V) -> &mut Self
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>;
 
-    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut Self
+    fn envs<I, K, V>(&mut self, envs: I) -> &mut Self
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
         V: AsRef<OsStr>;
 
-    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self
+    fn stdout<T>(&mut self, stdout: T) -> &mut Self
     where
         T: Into<Stdio>;
 
-    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self
+    fn stderr<T>(&mut self, stderr: T) -> &mut Self
     where
         T: Into<Stdio>;
 
@@ -186,8 +186,8 @@ impl FirefoxRunner {
 
         FirefoxRunner {
             path: path.to_path_buf(),
-            envs: envs,
-            profile: profile,
+            envs,
+            profile,
             args: vec![],
             stdout: None,
             stderr: None,
@@ -198,7 +198,7 @@ impl FirefoxRunner {
 impl Runner for FirefoxRunner {
     type Process = FirefoxProcess;
 
-    fn arg<'a, S>(&'a mut self, arg: S) -> &'a mut FirefoxRunner
+    fn arg<S>(&mut self, arg: S) -> &mut FirefoxRunner
     where
         S: AsRef<OsStr>,
     {
@@ -206,7 +206,7 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn args<'a, I, S>(&'a mut self, args: I) -> &'a mut FirefoxRunner
+    fn args<I, S>(&mut self, args: I) -> &mut FirefoxRunner
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
@@ -217,7 +217,7 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn env<'a, K, V>(&'a mut self, key: K, value: V) -> &'a mut FirefoxRunner
+    fn env<K, V>(&mut self, key: K, value: V) -> &mut FirefoxRunner
     where
         K: AsRef<OsStr>,
         V: AsRef<OsStr>,
@@ -226,7 +226,7 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn envs<'a, I, K, V>(&'a mut self, envs: I) -> &'a mut FirefoxRunner
+    fn envs<I, K, V>(&mut self, envs: I) -> &mut FirefoxRunner
     where
         I: IntoIterator<Item = (K, V)>,
         K: AsRef<OsStr>,
@@ -238,7 +238,7 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn stdout<'a, T>(&'a mut self, stdout: T) -> &'a mut Self
+    fn stdout<T>(&mut self, stdout: T) -> &mut Self
     where
         T: Into<Stdio>,
     {
@@ -246,7 +246,7 @@ impl Runner for FirefoxRunner {
         self
     }
 
-    fn stderr<'a, T>(&'a mut self, stderr: T) -> &'a mut Self
+    fn stderr<T>(&mut self, stderr: T) -> &mut Self
     where
         T: Into<Stdio>,
     {
@@ -257,8 +257,8 @@ impl Runner for FirefoxRunner {
     fn start(mut self) -> Result<FirefoxProcess, RunnerError> {
         self.profile.user_prefs()?.write()?;
 
-        let stdout = self.stdout.unwrap_or_else(|| Stdio::inherit());
-        let stderr = self.stderr.unwrap_or_else(|| Stdio::inherit());
+        let stdout = self.stdout.unwrap_or_else(Stdio::inherit);
+        let stderr = self.stderr.unwrap_or_else(Stdio::inherit);
 
         let binary_path = platform::resolve_binary_path(&mut self.path);
         let mut cmd = Command::new(binary_path);
@@ -334,13 +334,10 @@ pub mod platform {
             if let Ok(plist) = Value::from_file(&info_plist) {
                 if let Some(dict) = plist.as_dictionary() {
                     if let Some(binary_file) = dict.get("CFBundleExecutable") {
-                        match binary_file {
-                            Value::String(s) => {
-                                path.push("Contents");
-                                path.push("MacOS");
-                                path.push(s);
-                            }
-                            _ => {}
+                        if let Value::String(s) = binary_file {
+                            path.push("Contents");
+                            path.push("MacOS");
+                            path.push(s);
                         }
                     }
                 }

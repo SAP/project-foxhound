@@ -41,7 +41,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
 
 #[cfg(not(feature = "std"))]
 #[macro_use]
@@ -96,7 +95,6 @@ mod partition_slice;
 mod postopt;
 mod predicates;
 mod redundant_reload_remover;
-mod ref_slice;
 mod regalloc;
 mod result;
 mod scoped_hash_map;

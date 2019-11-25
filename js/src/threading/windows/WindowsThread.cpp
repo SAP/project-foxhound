@@ -10,29 +10,33 @@
 
 namespace js {
 
-inline Thread::Id::PlatformData* Thread::Id::platformData() {
+inline ThreadId::PlatformData* ThreadId::platformData() {
   static_assert(sizeof platformData_ >= sizeof(PlatformData),
                 "platformData_ is too small");
   return reinterpret_cast<PlatformData*>(platformData_);
 }
 
-inline const Thread::Id::PlatformData* Thread::Id::platformData() const {
+inline const ThreadId::PlatformData* ThreadId::platformData() const {
   static_assert(sizeof platformData_ >= sizeof(PlatformData),
                 "platformData_ is too small");
   return reinterpret_cast<const PlatformData*>(platformData_);
 }
 
-Thread::Id::Id() {
+ThreadId::ThreadId() {
   platformData()->handle = nullptr;
   platformData()->id = 0;
 }
 
-bool Thread::Id::operator==(const Id& aOther) const {
+bool ThreadId::operator==(const ThreadId& aOther) const {
   return platformData()->id == aOther.platformData()->id;
 }
 
 bool Thread::create(unsigned int(__stdcall* aMain)(void*), void* aArg) {
   MOZ_RELEASE_ASSERT(!joinable());
+
+  if (oom::ShouldFailWithOOM()) {
+    return false;
+  }
 
   // Use _beginthreadex and not CreateThread, because threads that are
   // created with the latter leak a small amount of memory when they use
@@ -43,7 +47,7 @@ bool Thread::create(unsigned int(__stdcall* aMain)(void*), void* aArg) {
   if (!handle) {
     // On either Windows or POSIX we can't be sure if id_ was initalisad. So
     // reset it manually.
-    id_ = Id();
+    id_ = ThreadId();
     return false;
   }
   id_.platformData()->handle = reinterpret_cast<HANDLE>(handle);
@@ -56,21 +60,21 @@ void Thread::join() {
   MOZ_RELEASE_ASSERT(r == WAIT_OBJECT_0);
   BOOL success = CloseHandle(id_.platformData()->handle);
   MOZ_RELEASE_ASSERT(success);
-  id_ = Id();
+  id_ = ThreadId();
 }
 
 void Thread::detach() {
   MOZ_RELEASE_ASSERT(joinable());
   BOOL success = CloseHandle(id_.platformData()->handle);
   MOZ_RELEASE_ASSERT(success);
-  id_ = Id();
+  id_ = ThreadId();
 }
 
-Thread::Id ThisThread::GetId() {
-  Thread::Id id;
+ThreadId ThreadId::ThisThreadId() {
+  ThreadId id;
   id.platformData()->handle = GetCurrentThread();
   id.platformData()->id = GetCurrentThreadId();
-  MOZ_RELEASE_ASSERT(id != Thread::Id());
+  MOZ_RELEASE_ASSERT(id != ThreadId());
   return id;
 }
 

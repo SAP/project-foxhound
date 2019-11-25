@@ -15,7 +15,6 @@ euclid = "0.20"
 gleam = "0.6.2"
 glutin = "0.21"
 app_units = "0.7"
-image = "0.22"
 clap = { version = "2", features = ["yaml"] }
 lazy_static = "1"
 log = "0.4"
@@ -32,9 +31,14 @@ winit = "0.19"
 serde = {version = "1.0", features = ["derive"] }
 semver = "0.9.0"
 
+[dependencies.image]
+version = "0.22"
+default-features = false
+features = ["png"]
+
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.17.1"
-core-foundation = "0.6"
+core-foundation = "0.6.4"
 
 [features]
 default = [ "env_logger" ]
@@ -42,7 +46,7 @@ headless = [ "osmesa-sys", "osmesa-src" ]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.9"
-mozangle = {version = "0.1.5", features = ["egl"]}
+mozangle = {version = "0.3.1", features = ["egl"]}
 
 [target.'cfg(all(unix, not(target_os = "android")))'.dependencies]
 font-loader = "0.7"
@@ -63,3 +67,5 @@ opengles_version_minor = 0
 [package.metadata.android.activity_attributes]
 "android:screenOrientation" = "unspecified"
 "android:uiOptions" = "none"
+[[package.metadata.android.permission]]
+name = "android.permission.READ_EXTERNAL_STORAGE"

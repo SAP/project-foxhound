@@ -42,13 +42,6 @@ using namespace mozilla::media;
 
 namespace mozilla {
 
-// GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
-// GetTickCount() and conflicts with MediaDecoder::GetCurrentTime
-// implementation.
-#ifdef GetCurrentTime
-#  undef GetCurrentTime
-#endif
-
 // avoid redefined macro in unified build
 #undef LOG
 #undef DUMP
@@ -239,7 +232,7 @@ RefPtr<GenericPromise> MediaDecoder::SetSink(AudioDeviceInfo* aSink) {
 }
 
 void MediaDecoder::AddOutputStream(DOMMediaStream* aStream,
-                                   SharedDummyStream* aDummyStream) {
+                                   SharedDummyTrack* aDummyStream) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(mDecoderStateMachine, "Must be called after Load().");
   AbstractThread::AutoEnter context(AbstractMainThread());
@@ -1363,7 +1356,7 @@ RefPtr<GenericPromise> MediaDecoder::RequestDebugInfo(
           SystemGroup::AbstractMainThreadFor(TaskCategory::Other), __func__,
           []() { return GenericPromise::CreateAndResolve(true, __func__); },
           []() {
-            UNREACHABLE();
+            MOZ_ASSERT_UNREACHABLE("Unexpected RequestDebugInfo() rejection");
             return GenericPromise::CreateAndResolve(false, __func__);
           });
 }

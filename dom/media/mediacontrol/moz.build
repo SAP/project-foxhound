@@ -8,16 +8,28 @@ EXPORTS.mozilla.dom += [
     'MediaController.h',
     'MediaControlService.h',
     'MediaControlUtils.h',
+    'MediaHardwareKeysEvent.h',
+    'MediaHardwareKeysManager.h',
 ]
 
 EXPORTS.ipc += [
     'MediaControlIPC.h',
 ]
 
+if CONFIG['MOZ_APPLEMEDIA']:
+  EXPORTS += [
+      'MediaHardwareKeysEventSourceMac.h',
+  ]
+  UNIFIED_SOURCES += [
+      'MediaHardwareKeysEventSourceMac.mm',
+  ]
+
 UNIFIED_SOURCES += [
     'AudioFocusManager.cpp',
     'MediaController.cpp',
     'MediaControlService.cpp',
+    'MediaHardwareKeysEvent.cpp',
+    'MediaHardwareKeysManager.cpp',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

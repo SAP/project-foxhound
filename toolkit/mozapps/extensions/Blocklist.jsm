@@ -466,12 +466,12 @@ async function targetAppFilter(entry, environment) {
 
   // Iterate the targeted applications, at least one of them must match.
   // If no target application, keep the entry.
-  if (versionRange.length == 0) {
+  if (!versionRange.length) {
     return entry;
   }
   for (const vr of versionRange) {
     const { targetApplication = [] } = vr;
-    if (targetApplication.length == 0) {
+    if (!targetApplication.length) {
       return entry;
     }
     for (const ta of targetApplication) {
@@ -754,9 +754,8 @@ this.PluginBlocklistRS = {
       return null;
     }
     if (!entry.matchFilename && !entry.matchName && !entry.matchDescription) {
-      Cu.reportError(
-        new Error("Nothing to filter plugin item " + entry.blockID + " on")
-      );
+      let blockID = entry.blockID || entry.id;
+      Cu.reportError(new Error(`Nothing to filter plugin item ${blockID}`));
       return null;
     }
     return entry;
@@ -966,11 +965,8 @@ this.PluginBlocklistRS = {
       return null;
     }
     let blockEntry = r.entry;
-    if (!blockEntry.blockID) {
-      return null;
-    }
-
-    return blockEntry.infoURL || Utils._createBlocklistURL(blockEntry.blockID);
+    let blockID = blockEntry.blockID || blockEntry.id;
+    return blockEntry.infoURL || Utils._createBlocklistURL(blockID);
   },
 
   async getState(plugin, appVersion, toolkitVersion) {
@@ -1192,9 +1188,8 @@ this.ExtensionBlocklistRS = {
     }
     // Need something to filter on - at least a guid or name (either could be a regex):
     if (!entry.guid && !entry.name) {
-      Cu.reportError(
-        new Error("Nothing to filter add-on item " + entry.blockID + " on")
-      );
+      let blockID = entry.blockID || entry.id;
+      Cu.reportError(new Error(`Nothing to filter add-on item ${blockID} on`));
       return null;
     }
     return entry;
@@ -1362,12 +1357,13 @@ this.ExtensionBlocklistRS = {
             toolkitVersion
           )
         ) {
+          let blockID = entry.blockID || entry.id;
           return {
             state:
               versionRange.severity >= gBlocklistLevel
                 ? Ci.nsIBlocklistService.STATE_BLOCKED
                 : Ci.nsIBlocklistService.STATE_SOFTBLOCKED,
-            url: entry.blockID && Utils._createBlocklistURL(entry.blockID),
+            url: Utils._createBlocklistURL(blockID),
             prefs: entry.prefs || [],
           };
         }
@@ -1525,7 +1521,7 @@ function matchesOSABI(blocklistElement) {
   let os = blocklistElement.getAttribute("os");
   if (os) {
     let choices = os.split(",");
-    if (choices.length > 0 && !choices.includes(gApp.OS)) {
+    if (choices.length && !choices.includes(gApp.OS)) {
       return false;
     }
   }
@@ -1533,7 +1529,7 @@ function matchesOSABI(blocklistElement) {
   let xpcomabi = blocklistElement.getAttribute("xpcomabi");
   if (xpcomabi) {
     let choices = xpcomabi.split(",");
-    if (choices.length > 0 && !choices.includes(gApp.XPCOMABI)) {
+    if (choices.length && !choices.includes(gApp.XPCOMABI)) {
       return false;
     }
   }
@@ -2264,7 +2260,7 @@ var BlocklistXML = {
             );
         }
       }
-      if (this._gfxEntries.length > 0) {
+      if (this._gfxEntries.length) {
         this._notifyObserversBlocklistGFX();
       }
     } catch (e) {
@@ -2344,7 +2340,7 @@ var BlocklistXML = {
     }
     // if only the extension ID is specified block all versions of the
     // extension for the current application.
-    if (blockEntry.versions.length == 0) {
+    if (!blockEntry.versions.length) {
       blockEntry.versions.push(new BlocklistItemData(null));
     }
 
@@ -2391,7 +2387,7 @@ var BlocklistXML = {
       return;
     }
     // Add a default versionRange if there wasn't one specified
-    if (blockEntry.versions.length == 0) {
+    if (!blockEntry.versions.length) {
       blockEntry.versions.push(new BlocklistItemData(null));
     }
 
@@ -2803,7 +2799,7 @@ var BlocklistXML = {
       }
     }
 
-    if (addonList.length == 0) {
+    if (!addonList.length) {
       this._notifyObserversBlocklistUpdated();
       return;
     }
@@ -3033,7 +3029,7 @@ BlocklistItemData.prototype = {
     }
     // return minVersion = null and maxVersion = null if no specific versionRange
     // elements were found
-    if (appVersions.length == 0) {
+    if (!appVersions.length) {
       appVersions.push({ minVersion: null, maxVersion: null });
     }
     return appVersions;

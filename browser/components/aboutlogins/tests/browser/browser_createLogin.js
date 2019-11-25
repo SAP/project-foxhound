@@ -397,6 +397,7 @@ add_task(async function test_cancel_create_login_with_logins_filtered_out() {
 
 add_task(async function test_create_duplicate_login() {
   let browser = gBrowser.selectedBrowser;
+  EXPECTED_ERROR_MESSAGE = "This login already exists.";
   await ContentTask.spawn(browser, null, async () => {
     let loginList = Cu.waiveXrays(content.document.querySelector("login-list"));
     let createButton = loginList._createLoginButton;
@@ -445,7 +446,7 @@ add_task(async function test_create_duplicate_login() {
       confirmationDialog.hidden,
       "the discard-changes dialog should be hidden before clicking the error-message-text"
     );
-    loginItem._errorMessageLink.click();
+    loginItem._errorMessageLink.querySelector("a").click();
     ok(
       !confirmationDialog.hidden,
       "the discard-changes dialog should be visible"
@@ -467,4 +468,5 @@ add_task(async function test_create_duplicate_login() {
       "the duplicated login should be selected in the list"
     );
   });
+  EXPECTED_ERROR_MESSAGE = null;
 });

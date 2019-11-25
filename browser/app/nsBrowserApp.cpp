@@ -25,6 +25,7 @@
 
 #ifdef XP_WIN
 #  include "LauncherProcessWin.h"
+#  include "mozilla/WindowsDllBlocklist.h"
 
 #  define XRE_WANT_ENVIRON
 #  define strcasecmp _stricmp
@@ -38,7 +39,6 @@
 
 #include "mozilla/Sprintf.h"
 #include "mozilla/StartupTimeline.h"
-#include "mozilla/WindowsDllBlocklist.h"
 #include "BaseProfiler.h"
 
 #ifdef LIBFUZZER
@@ -207,7 +207,7 @@ static int do_main(int argc, char* argv[], char* envp[]) {
 #endif
 
 #ifdef LIBFUZZER
-  if (getenv("LIBFUZZER"))
+  if (getenv("FUZZER"))
     gBootstrap->XRE_LibFuzzerSetDriver(fuzzer::FuzzerDriver);
 #endif
 

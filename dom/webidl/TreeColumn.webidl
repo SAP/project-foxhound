@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-[Func="IsChromeOrXBL"]
+[Func="IsChromeOrXBL",
+ Exposed=Window]
 interface TreeColumn {
   readonly attribute Element element;
 
@@ -22,7 +23,6 @@ interface TreeColumn {
 
   const short TYPE_TEXT                = 1;
   const short TYPE_CHECKBOX            = 2;
-  const short TYPE_PASSWORD            = 3;
   readonly attribute short type;
 
   TreeColumn? getNext();

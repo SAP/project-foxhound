@@ -7,9 +7,11 @@
  * https://html.spec.whatwg.org/multipage/#dragevent
  */
 
-[Constructor(DOMString type, optional DragEventInit eventInitDict = {})]
+[Exposed=Window]
 interface DragEvent : MouseEvent
 {
+  constructor(DOMString type, optional DragEventInit eventInitDict = {});
+
   readonly attribute DataTransfer? dataTransfer;
 
   void initDragEvent(DOMString type,

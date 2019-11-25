@@ -8,17 +8,21 @@ check-alphabetical-order = false
 packages = [
     "crossbeam-utils",
     "gl_generator",
-    "khronos_api",
     "lazy_static",
-    "nix",
     "percent-encoding",
     "rand",
     "rand_core",
     "winapi",
     "core-graphics",
     "core-text",
-    "xml-rs",
     "yaml-rust",
+
+    # These are tracked in bug 1587468, see there for pending work.
+    "syn",
+    "quote",
+    "unicode-xid",
+    "synstructure",
+    "proc-macro2",
 ]
 
 # Files that are ignored for all tidy and lint checks.

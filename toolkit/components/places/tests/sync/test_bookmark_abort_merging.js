@@ -5,6 +5,33 @@ var { AsyncShutdown } = ChromeUtils.import(
   "resource://gre/modules/AsyncShutdown.jsm"
 );
 
+add_task(async function test_abort_store() {
+  let buf = await openMirror("abort_store");
+
+  let controller = new AbortController();
+  controller.abort();
+  await Assert.rejects(
+    storeRecords(
+      buf,
+      [
+        {
+          id: "menu",
+          parentid: "places",
+          type: "folder",
+          children: [],
+        },
+      ],
+      { signal: controller.signal }
+    ),
+    ex => ex.name == "InterruptedError",
+    "Should abort storing when signaled"
+  );
+
+  await buf.finalize();
+  await PlacesUtils.bookmarks.eraseEverything();
+  await PlacesSyncUtils.bookmarks.reset();
+});
+
 add_task(async function test_abort_merging() {
   let buf = await openMirror("abort_merging");
 
@@ -28,7 +55,6 @@ add_task(async function test_blocker_state() {
   let buf = await SyncedBookmarksMirror.open({
     path: "blocker_state_buf.sqlite",
     finalizeAt: barrier.client,
-    recordTelemetryEvent(...args) {},
     recordStepTelemetry(...args) {},
     recordValidationTelemetry(...args) {},
   });
@@ -64,7 +90,7 @@ add_task(async function test_blocker_state() {
         );
         deepEqual(
           s.counts,
-          [{ name: "items", count: 6 }],
+          [{ name: "items", count: 6 }, { name: "deletions", count: 0 }],
           "Should report number of items in local tree"
         );
         break;
@@ -77,7 +103,7 @@ add_task(async function test_blocker_state() {
         );
         deepEqual(
           s.counts,
-          [{ name: "items", count: 6 }],
+          [{ name: "items", count: 6 }, { name: "deletions", count: 0 }],
           "Should report number of items in remote tree"
         );
         break;

@@ -255,9 +255,7 @@ static RefPtr<UnscaledFont> GetUnscaledFont(Translator* aTranslator,
 #endif
   // makes a copy of the data
   RefPtr<NativeFontResource> fontResource = Factory::CreateNativeFontResource(
-      (uint8_t*)data.mData, data.mSize,
-      aTranslator->GetReferenceDrawTarget()->GetBackendType(), type,
-      aTranslator->GetFontContext());
+      (uint8_t*)data.mData, data.mSize, type, aTranslator->GetFontContext());
   RefPtr<UnscaledFont> unscaledFont;
   if (!fontResource) {
     gfxDevCrash(LogReason::NativeFontResourceNotFound)
@@ -336,21 +334,23 @@ struct Reader {
 };
 
 static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
-                                gfx::IntSize aSize, gfx::SurfaceFormat aFormat,
+                                gfx::SurfaceFormat aFormat,
                                 const mozilla::wr::DeviceIntRect* aVisibleRect,
+                                const mozilla::wr::LayoutIntRect* aRenderRect,
                                 const uint16_t* aTileSize,
                                 const mozilla::wr::TileOffset* aTileOffset,
                                 const mozilla::wr::LayoutIntRect* aDirtyRect,
                                 Range<uint8_t> aOutput) {
+  IntSize size(aRenderRect->size.width, aRenderRect->size.height);
   AUTO_PROFILER_TRACING("WebRender", "RasterizeSingleBlob", GRAPHICS);
-  MOZ_RELEASE_ASSERT(aSize.width > 0 && aSize.height > 0);
-  if (aSize.width <= 0 || aSize.height <= 0) {
+  MOZ_RELEASE_ASSERT(size.width > 0 && size.height > 0);
+  if (size.width <= 0 || size.height <= 0) {
     return false;
   }
 
-  auto stride = aSize.width * gfx::BytesPerPixel(aFormat);
+  auto stride = size.width * gfx::BytesPerPixel(aFormat);
 
-  if (aOutput.length() < static_cast<size_t>(aSize.height * stride)) {
+  if (aOutput.length() < static_cast<size_t>(size.height * stride)) {
     return false;
   }
 
@@ -358,7 +358,7 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
   bool uninitialized = false;
 
   RefPtr<gfx::DrawTarget> dt = gfx::Factory::CreateDrawTargetForData(
-      gfx::BackendType::SKIA, aOutput.begin().get(), aSize, stride, aFormat,
+      gfx::BackendType::SKIA, aOutput.begin().get(), size, stride, aFormat,
       uninitialized);
 
   if (!dt) {
@@ -367,25 +367,21 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
 
   // We try hard to not have empty blobs but we can end up with
   // them because of CompositorHitTestInfo and merging.
-  size_t footerSize = sizeof(size_t) + sizeof(IntPoint);
+  size_t footerSize = sizeof(size_t);
   MOZ_RELEASE_ASSERT(aBlob.length() >= footerSize);
   size_t indexOffset = ConvertFromBytes<size_t>(aBlob.end().get() - footerSize);
-  IntPoint origin = ConvertFromBytes<IntPoint>(aBlob.end().get() - footerSize +
-                                               sizeof(size_t));
-  // Apply the visibleRect's offset to make (0, 0) in the DT correspond to (0,
-  // 0) in the texture
+
+  // aRenderRect is the part of the blob that we are currently rendering
+  // (for example a tile) in the same coordinate space as aVisibleRect.
+  IntPoint origin = gfx::IntPoint(aRenderRect->origin.x, aRenderRect->origin.y);
 
   MOZ_RELEASE_ASSERT(indexOffset <= aBlob.length() - footerSize);
   Reader reader(aBlob.begin().get() + indexOffset,
                 aBlob.length() - footerSize - indexOffset);
 
-  if (aTileOffset) {
-    origin +=
-        gfx::IntPoint(aTileOffset->x * *aTileSize, aTileOffset->y * *aTileSize);
-  }
   dt = gfx::Factory::CreateOffsetDrawTarget(dt, origin);
 
-  auto bounds = gfx::IntRect(origin, aSize);
+  auto bounds = gfx::IntRect(origin, size);
 
   if (aDirtyRect) {
     gfx::Rect dirty(aDirtyRect->origin.x, aDirtyRect->origin.y,
@@ -436,7 +432,7 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
     float r = float(rand()) / float(RAND_MAX);
     float g = float(rand()) / float(RAND_MAX);
     float b = float(rand()) / float(RAND_MAX);
-    dt->FillRect(gfx::Rect(origin.x, origin.y, aSize.width, aSize.height),
+    dt->FillRect(gfx::Rect(origin.x, origin.y, size.width, size.height),
                  gfx::ColorPattern(gfx::Color(r, g, b, 0.5)));
   }
 
@@ -459,17 +455,19 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
 
 extern "C" {
 
-bool wr_moz2d_render_cb(const mozilla::wr::ByteSlice blob, int32_t width,
-                        int32_t height, mozilla::wr::ImageFormat aFormat,
+bool wr_moz2d_render_cb(const mozilla::wr::ByteSlice blob,
+                        mozilla::wr::ImageFormat aFormat,
+                        const mozilla::wr::LayoutIntRect* aRenderRect,
                         const mozilla::wr::DeviceIntRect* aVisibleRect,
                         const uint16_t* aTileSize,
                         const mozilla::wr::TileOffset* aTileOffset,
                         const mozilla::wr::LayoutIntRect* aDirtyRect,
                         mozilla::wr::MutByteSlice output) {
   return mozilla::wr::Moz2DRenderCallback(
-      mozilla::wr::ByteSliceToRange(blob), mozilla::gfx::IntSize(width, height),
-      mozilla::wr::ImageFormatToSurfaceFormat(aFormat), aVisibleRect, aTileSize,
-      aTileOffset, aDirtyRect, mozilla::wr::MutByteSliceToRange(output));
+      mozilla::wr::ByteSliceToRange(blob),
+      mozilla::wr::ImageFormatToSurfaceFormat(aFormat), aVisibleRect,
+      aRenderRect, aTileSize, aTileOffset, aDirtyRect,
+      mozilla::wr::MutByteSliceToRange(output));
 }
 
 }  // extern

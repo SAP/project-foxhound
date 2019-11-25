@@ -18,14 +18,14 @@
 
 #include "AppleUtils.h"
 
+namespace mozilla {
+extern LazyLogModule sPEMLog;
 #define VTENC_LOGE(fmt, ...)                 \
   MOZ_LOG(sPEMLog, mozilla::LogLevel::Error, \
           ("[AppleVTEncoder] %s: " fmt, __func__, ##__VA_ARGS__))
 #define VTENC_LOGD(fmt, ...)                 \
   MOZ_LOG(sPEMLog, mozilla::LogLevel::Debug, \
           ("[AppleVTEncoder] %s: " fmt, __func__, ##__VA_ARGS__))
-
-namespace mozilla {
 
 static CFDictionaryRef BuildEncoderSpec() {
   const void* keys[] = {
@@ -395,6 +395,10 @@ void AppleVTEncoder::OutputFrame(CMSampleBufferRef aBuffer) {
   bool succeeded = WriteExtraData(output, aBuffer, asAnnexB) &&
                    WriteNALUs(output, aBuffer, asAnnexB);
 
+  output->mTime = media::TimeUnit::FromSeconds(
+      CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(aBuffer)));
+  output->mDuration = media::TimeUnit::FromSeconds(
+      CMTimeGetSeconds(CMSampleBufferGetOutputDuration(aBuffer)));
   ProcessOutput(succeeded ? std::move(output) : nullptr);
 }
 

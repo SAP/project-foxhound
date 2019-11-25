@@ -70,7 +70,7 @@ const prefs = {
       // Max number of entries in history list.
       INPUT_HISTORY_COUNT: "devtools.webconsole.inputHistoryCount",
       // Is editor mode enabled.
-      EDITOR: "devtools.webconsole.input.editor",
+      EDITOR: "input.editor",
       // Display content messages in the browser console.
       CONTENT_MESSAGES: "devtools.browserconsole.contentMessages",
       // Display timestamp in messages.
@@ -85,7 +85,6 @@ const prefs = {
       SIDEBAR_TOGGLE: "devtools.webconsole.sidebarToggle",
       AUTOCOMPLETE: "devtools.webconsole.input.autocomplete",
       GROUP_WARNINGS: "devtools.webconsole.groupWarningMessages",
-      EDITOR: "devtools.webconsole.features.editor",
       BROWSER_TOOLBOX_FISSION: "devtools.browsertoolbox.fission",
     },
   },

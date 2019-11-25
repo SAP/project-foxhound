@@ -12,13 +12,13 @@
 
 #include "jsapi.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/Utf8.h"
 #include "mozilla/dom/CryptoBuffer.h"
 #include "mozilla/dom/CryptoKey.h"
 #include "mozilla/dom/KeyAlgorithmProxy.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 #include "mozilla/dom/WebCryptoTask.h"
-#include "mozilla/dom/WebCryptoThreadPool.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerPrivate.h"
 
@@ -338,7 +338,13 @@ void WebCryptoTask::DispatchWithPromise(Promise* aResultPromise) {
   MAYBE_EARLY_FAIL(mEarlyRv);
 
   // dispatch to thread pool
-  mEarlyRv = WebCryptoThreadPool::Dispatch(this);
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    mEarlyRv = NS_ERROR_FAILURE;
+  }
+  MAYBE_EARLY_FAIL(mEarlyRv);
+
+  mEarlyRv = NS_DispatchToBackgroundThread(this);
   MAYBE_EARLY_FAIL(mEarlyRv)
 }
 
@@ -1365,7 +1371,7 @@ class ImportKeyTask : public WebCryptoTask {
       nsDependentCSubstring utf8(
           (const char*)mKeyData.Elements(),
           (const char*)(mKeyData.Elements() + mKeyData.Length()));
-      if (!IsUTF8(utf8)) {
+      if (!IsUtf8(utf8)) {
         mEarlyRv = NS_ERROR_DOM_DATA_ERR;
         return;
       }

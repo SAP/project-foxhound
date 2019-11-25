@@ -541,16 +541,6 @@ bool Layer::HasScrollableFrameMetrics() const {
   return false;
 }
 
-bool Layer::HasRootScrollableFrameMetrics() const {
-  for (uint32_t i = 0; i < GetScrollMetadataCount(); i++) {
-    if (GetFrameMetrics(i).IsScrollable() &&
-        GetFrameMetrics(i).IsRootContent()) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool Layer::IsScrollableWithoutContent() const {
   // A scrollable container layer with no children
   return AsContainerLayer() && HasScrollableFrameMetrics() && !GetFirstChild();
@@ -1312,7 +1302,8 @@ void ContainerLayer::DidInsertChild(Layer* aLayer) {
 }
 
 void RefLayer::FillSpecificAttributes(SpecificLayerAttributes& aAttrs) {
-  aAttrs = RefLayerAttributes(GetReferentId(), mEventRegionsOverride);
+  aAttrs = RefLayerAttributes(GetReferentId(), mEventRegionsOverride,
+                              mRemoteDocumentRect);
 }
 
 /**
@@ -2319,12 +2310,12 @@ void RecordCompositionPayloadsPresented(
     TimeStamp presented = TimeStamp::Now();
     for (const CompositionPayload& payload : aPayloads) {
 #if MOZ_GECKO_PROFILER
-      if (profiler_is_active()) {
+      if (profiler_can_accept_markers()) {
         nsPrintfCString marker(
             "Payload Presented, type: %d latency: %dms\n",
             int32_t(payload.mType),
             int32_t((presented - payload.mTimeStamp).ToMilliseconds()));
-        profiler_add_marker(marker.get(), JS::ProfilingCategoryPair::GRAPHICS);
+        PROFILER_ADD_MARKER(marker.get(), GRAPHICS);
       }
 #endif
 

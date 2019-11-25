@@ -27,9 +27,8 @@
 #include "mozilla/net/ClassifierDummyChannelChild.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
 #ifdef MOZ_WEBRTC
-#  include "mozilla/net/ProxyConfigLookupChild.h"
 #  include "mozilla/net/StunAddrsRequestChild.h"
-#  include "mozilla/net/WebrtcProxyChannelChild.h"
+#  include "mozilla/net/WebrtcTCPSocketChild.h"
 #endif
 
 #include "SerializedLoadContext.h"
@@ -95,21 +94,19 @@ bool NeckoChild::DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor) {
   return true;
 }
 
-PWebrtcProxyChannelChild* NeckoChild::AllocPWebrtcProxyChannelChild(
-    const TabId& tabId) {
+PWebrtcTCPSocketChild* NeckoChild::AllocPWebrtcTCPSocketChild(
+    const Maybe<TabId>& tabId) {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing object
   MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcProxyChannelChild should not be called on"
+      "AllocPWebrtcTCPSocketChild should not be called on"
       " child");
   return nullptr;
 }
 
-bool NeckoChild::DeallocPWebrtcProxyChannelChild(
-    PWebrtcProxyChannelChild* aActor) {
+bool NeckoChild::DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelChild* child =
-      static_cast<WebrtcProxyChannelChild*>(aActor);
+  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
   child->ReleaseIPDLReference();
 #endif
   return true;
@@ -129,6 +126,13 @@ bool NeckoChild::DeallocPAltDataOutputStreamChild(
       static_cast<AltDataOutputStreamChild*>(aActor);
   child->ReleaseIPDLReference();
   return true;
+}
+
+already_AddRefed<PDocumentChannelChild> NeckoChild::AllocPDocumentChannelChild(
+    const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+    const DocumentChannelCreationArgs& args) {
+  MOZ_ASSERT_UNREACHABLE("AllocPDocumentChannelChild should not be called");
+  return nullptr;
 }
 
 PFTPChannelChild* NeckoChild::AllocPFTPChannelChild(
@@ -386,19 +390,6 @@ PClassifierDummyChannelChild* NeckoChild::AllocPClassifierDummyChannelChild(
 bool NeckoChild::DeallocPClassifierDummyChannelChild(
     PClassifierDummyChannelChild* aActor) {
   delete static_cast<ClassifierDummyChannelChild*>(aActor);
-  return true;
-}
-
-PProxyConfigLookupChild* NeckoChild::AllocPProxyConfigLookupChild() {
-  MOZ_CRASH("AllocPProxyConfigLookupChild should not be called");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPProxyConfigLookupChild(
-    PProxyConfigLookupChild* aActor) {
-#ifdef MOZ_WEBRTC
-  delete static_cast<ProxyConfigLookupChild*>(aActor);
-#endif
   return true;
 }
 

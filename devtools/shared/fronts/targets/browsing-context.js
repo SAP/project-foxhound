@@ -15,8 +15,8 @@ const { TargetMixin } = require("./target-mixin");
 class BrowsingContextTargetFront extends TargetMixin(
   FrontClassWithSpec(browsingContextTargetSpec)
 ) {
-  constructor(client) {
-    super(client);
+  constructor(client, targetFront, parentFront) {
+    super(client, targetFront, parentFront);
 
     // Cache the value of some target properties that are being returned by `attach`
     // request and then keep them up-to-date in `reconfigure` request.
@@ -33,6 +33,7 @@ class BrowsingContextTargetFront extends TargetMixin(
 
   form(json) {
     this.actorID = json.actor;
+    this.browsingContextID = json.browsingContextID;
 
     // Save the full form for Target class usage.
     // Do not use `form` name to avoid colliding with protocol.js's `form` method
@@ -125,6 +126,10 @@ class BrowsingContextTargetFront extends TargetMixin(
     }
 
     return response;
+  }
+
+  listRemoteFrames() {
+    return this.client.mainRoot.listRemoteFrames(this.browsingContextID);
   }
 
   async detach() {

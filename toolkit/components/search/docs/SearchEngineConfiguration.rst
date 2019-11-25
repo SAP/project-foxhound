@@ -112,7 +112,10 @@ with identifier ``webext-engine1``, version 1.1. GB region users would get
 Special Attributes
 ------------------
 
-If a ``webExtensionLocale`` attribute is specified with the value
+$USER_LOCALE
+------------
+
+If a ``webExtensionLocales`` attribute contains an element with the value
 ``"$USER_LOCALE"`` then the special value will be replaced in the
 configuration object with the users locale. For example:
 
@@ -126,11 +129,47 @@ configuration object with the users locale. For example:
           "locales": {
             "matches": ["us", "gb"]
           },
-          "webExtensionLocale": "$USER_LOCALE",
+          "webExtensionLocales": ["$USER_LOCALE"],
         },
 
-Will report either ``us`` or ``gb`` as the ``webExtensionLocale``
+Will report either ``[us]`` or ``[gb]`` as the ``webExtensionLocales``
 depending on the user.
+
+"default"
+---------
+
+You can specify ``"default"`` as a region in the configuration if
+the engine is to be included when no region is specified.
+
+Experiments
+-----------
+
+We can run experiments by giving sections within ``appliesTo`` a
+``cohort`` value, the Search Service can then optionally pass in a
+matching ``cohort`` value to match those sections.
+
+Sections which have a ``cohort`` will not be used unless a matching
+``cohort`` has been passed in, for example:
+
+.. code-block:: js
+
+    "engine1": {
+      "webExtensionId": "webext",
+      "webExtensionVersion": "1.0",
+      "appliesTo": [{
+        "included": {
+          "everywhere": true
+        },
+        "cohort": "nov-16",
+        "webExtensionId": "webext-experimental",
+      }, {
+        "included": {
+          "everywhere": true
+        },
+        "webExtensionId": "webext-gb",
+        "webExtensionVersion": "1.2"
+      }]
+    }
 
 Engine Defaults
 ---------------

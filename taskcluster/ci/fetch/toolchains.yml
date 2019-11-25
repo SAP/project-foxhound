@@ -114,6 +114,13 @@ gmp-6.1.0:
         strip-components: 1
         add-prefix: gmp-source/
 
+iris-2.0:
+    description: Iris_Firefox source code
+    fetch:
+        type: git
+        repo: https://github.com/mozilla/iris_firefox
+        revision: 614bf07e14769552a533798fb3ccf8a7c1e7f23d
+
 isl-0.15:
     description: ISL 0.15 source code
     fetch:
@@ -333,8 +340,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.2.10 release
-        revision: bf4158875d5690294f4d4b2b190097b18c8d0a21
+        # 0.2.12 release
+        revision: 5f2cf631feaf24332dd59c76736f12f26b3c44ea
 
 openssl-1.1.0g:
     description: openssl 1.1.0g source code
@@ -376,8 +383,8 @@ android-rs-glue:
     description: android-rs-glue source code
     fetch:
         type: git
-        repo: https://github.com/staktrace/android-rs-glue
-        revision: 486491e81819c3346d364a93fc1f3c0206d3ece0
+        repo: https://github.com/rust-windowing/android-rs-glue
+        revision: e3ac6edea5814e1faca0c31ea8fac6877cb929ea
 
 clang-4.0:
     description: clang 4.0 source code
@@ -399,6 +406,13 @@ clang-8:
         type: git
         repo: https://github.com/llvm/llvm-project
         revision: 19a71f6bdf2dddb10764939e7f0ec2b98dba76c9
+
+clang-9:
+    description: clang 9.0.0 source code
+    fetch:
+        type: git
+        repo: https://github.com/llvm/llvm-project
+        revision: 0399d5a9682b3cef71c653373e38890c63c4c365
 
 ninja:
     description: ninja 1.9.0

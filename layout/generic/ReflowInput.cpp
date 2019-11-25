@@ -208,6 +208,7 @@ ReflowInput::ReflowInput(nsPresContext* aPresContext,
   mFlags.mIsColumnBalancing = false;
   mFlags.mColumnSetWrapperHasNoBSizeLeft = false;
   mFlags.mIsFlexContainerMeasuringBSize = false;
+  mFlags.mTreatBSizeAsIndefinite = false;
   mFlags.mDummyParentReflowInput = false;
   mFlags.mShrinkWrap = !!(aFlags & COMPUTE_SIZE_SHRINK_WRAP);
   mFlags.mUseAutoBSize = !!(aFlags & COMPUTE_SIZE_USE_AUTO_BSIZE);
@@ -489,6 +490,7 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
                                   LayoutFrameType aFrameType) {
   SetBResize(false);
   SetIResize(false);
+  mFlags.mIsBResizeForPercentages = false;
 
   const WritingMode wm = mWritingMode;  // just a shorthand
   // We should report that we have a resize in the inline dimension if
@@ -609,53 +611,58 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
 
   // XXX Should we really need to null check mCBReflowInput?  (We do for
   // at least nsBoxFrame).
-  if (aFrameType == LayoutFrameType::TableCell &&
-      (mFlags.mSpecialBSizeReflow || (mFrame->FirstInFlow()->GetStateBits() &
-                                      NS_TABLE_CELL_HAD_SPECIAL_REFLOW)) &&
-      (mFrame->GetStateBits() & NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
+  if (mFrame->HasBSizeChange()) {
+    // When we have an nsChangeHint_UpdateComputedBSize, we'll set a bit
+    // on the frame to indicate we're resizing.  This might catch cases,
+    // such as a change between auto and a length, where the box doesn't
+    // actually resize but children with percentages resize (since those
+    // percentages become auto if their containing block is auto).
+    SetBResize(true);
+    mFlags.mIsBResizeForPercentages = true;
+    // We don't clear the HasBSizeChange state here, since sometimes we
+    // construct reflow states (e.g., in
+    // nsBlockReflowContext::ComputeCollapsedBStartMargin) without
+    // reflowing the frame.  Instead, we clear it in nsFrame::DidReflow.
+  } else if (mCBReflowInput &&
+             mCBReflowInput->IsBResizeForPercentagesForWM(wm) &&
+             (mStylePosition->BSize(wm).HasPercent() ||
+              mStylePosition->MinBSize(wm).HasPercent() ||
+              mStylePosition->MaxBSize(wm).HasPercent())) {
+    // We have a percentage (or calc-with-percentage) block-size, and the
+    // value it's relative to has changed.
+    SetBResize(true);
+    mFlags.mIsBResizeForPercentages = true;
+  } else if (aFrameType == LayoutFrameType::TableCell &&
+             (mFlags.mSpecialBSizeReflow ||
+              (mFrame->FirstInFlow()->GetStateBits() &
+               NS_TABLE_CELL_HAD_SPECIAL_REFLOW)) &&
+             (mFrame->GetStateBits() & NS_FRAME_CONTAINS_RELATIVE_BSIZE)) {
     // Need to set the bit on the cell so that
     // mCBReflowInput->IsBResize() is set correctly below when
     // reflowing descendant.
     SetBResize(true);
+    mFlags.mIsBResizeForPercentages = true;
   } else if (mCBReflowInput && mFrame->IsBlockWrapper()) {
     // XXX Is this problematic for relatively positioned inlines acting
     // as containing block for absolutely positioned elements?
     // Possibly; in that case we should at least be checking
     // NS_SUBTREE_DIRTY, I'd think.
     SetBResize(mCBReflowInput->IsBResizeForWM(wm));
-  } else if (mCBReflowInput && !mFrame->IsBlockFrameOrSubclass()) {
-    // Some non-block frames (e.g. table frames) aggressively optimize out their
-    // BSize recomputation when they don't have the BResize flag set.  This
-    // means that if they go from having a computed non-auto height to having an
-    // auto height and don't have that flag set, they will not actually compute
-    // their auto height and will just remain at whatever size they already
-    // were.  We can end up in that situation if the child has a percentage
-    // specified height and the parent changes from non-auto height to auto
-    // height.  When that happens, the parent will typically have the BResize
-    // flag set, and we want to propagate that flag to the kid.
-    //
-    // Ideally it seems like we'd do this for blocks too, of course... but we'd
-    // really want to restrict it to the percentage height case or something, to
-    // avoid extra reflows in common cases.  Maybe we should be examining
-    // mStylePosition->BSize(wm).GetUnit() for that purpose?
-    //
-    // Note that we _also_ need to set the BResize flag if we have auto
-    // ComputedBSize() and a dirty subtree, since that might require us to
-    // change BSize due to kids having been added or removed.
-    SetBResize(mCBReflowInput->IsBResizeForWM(wm));
-    if (ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
-      SetBResize(IsBResize() || NS_SUBTREE_DIRTY(mFrame));
-    }
+    mFlags.mIsBResizeForPercentages =
+        mCBReflowInput->IsBResizeForPercentagesForWM(wm);
   } else if (ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
+    // We have an 'auto' block-size.
     if (eCompatibility_NavQuirks == aPresContext->CompatibilityMode() &&
         mCBReflowInput) {
+      // FIXME: This should probably also check IsIResize().
       SetBResize(mCBReflowInput->IsBResizeForWM(wm));
     } else {
       SetBResize(IsIResize());
     }
     SetBResize(IsBResize() || NS_SUBTREE_DIRTY(mFrame));
   } else {
-    // not 'auto' block-size
+    // We have a non-'auto' block-size, i.e., a length.  Set the BResize
+    // flag to whether the size is actually different.
     SetBResize(mFrame->BSize(wm) !=
                ComputedBSize() + ComputedLogicalBorderPadding().BStartEnd(wm));
   }
@@ -765,7 +772,7 @@ void ReflowInput::InitDynamicReflowRoot() {
   if (mFrame->IsFrameOfType(nsIFrame::eLineParticipant) ||
       nsStyleDisplay::IsRubyDisplayType(display) ||
       mFrameType == NS_CSS_FRAME_TYPE_INTERNAL_TABLE ||
-      display == StyleDisplay::Table || display == StyleDisplay::InlineTable ||
+      nsStyleDisplay::DisplayInside(display) == StyleDisplayInside::Table ||
       (mFrame->GetParent() && mFrame->GetParent()->IsXULBoxFrame())) {
     // We have a display type where 'width' and 'height' don't actually
     // set the width or height (i.e., the size depends on content).
@@ -1321,7 +1328,7 @@ void ReflowInput::CalculateHypotheticalPosition(
   // the element had been in the flow
   nscoord boxISize;
   bool knowBoxISize = false;
-  if ((StyleDisplay::Inline == mStyleDisplay->mOriginalDisplay) &&
+  if (mStyleDisplay->IsOriginalDisplayInlineOutside() &&
       !NS_FRAME_IS_REPLACED(mFrameType)) {
     // For non-replaced inline-level elements the 'inline size' property
     // doesn't apply, so we don't know what the inline size would have
@@ -2085,6 +2092,10 @@ LogicalSize ReflowInput::ComputeContainingBlockRectangle(
 
   WritingMode wm = aContainingBlockRI->GetWritingMode();
 
+  if (aContainingBlockRI->mFlags.mTreatBSizeAsIndefinite) {
+    cbSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
+  }
+
   // mFrameType for abs-pos tables is NS_CSS_FRAME_TYPE_BLOCK, so we need to
   // special case them here.
   if (NS_FRAME_GET_TYPE(mFrameType) == NS_CSS_FRAME_TYPE_ABSOLUTE ||
@@ -2119,9 +2130,8 @@ LogicalSize ReflowInput::ComputeContainingBlockRectangle(
           aContainingBlockRI->ComputedLogicalPadding().BStartEnd(wm);
     }
   } else {
-    auto IsQuirky = [&](const StyleSize& aSize) -> bool {
-      return aSize.ConvertsToPercentage() &&
-             !aSize.AsLengthPercentage().was_calc;
+    auto IsQuirky = [](const StyleSize& aSize) -> bool {
+      return aSize.ConvertsToPercentage();
     };
     // an element in quirks mode gets a containing block based on looking for a
     // parent with a non-auto height if the element has a percent height
@@ -2172,6 +2182,11 @@ void ReflowInput::InitConstraints(
     nsPresContext* aPresContext, const Maybe<LogicalSize>& aContainingBlockSize,
     const nsMargin* aBorder, const nsMargin* aPadding,
     LayoutFrameType aFrameType) {
+  MOZ_ASSERT(
+      !IsFloating() || (mStyleDisplay->mDisplay != StyleDisplay::MozBox &&
+                        mStyleDisplay->mDisplay != StyleDisplay::MozInlineBox),
+      "Please don't try to float a -moz-box or a -moz-inline-box");
+
   WritingMode wm = GetWritingMode();
   LogicalSize cbSize = aContainingBlockSize.valueOr(
       LogicalSize(mWritingMode, NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE));
@@ -2368,10 +2383,15 @@ void ReflowInput::InitConstraints(
     } else {
       AutoMaybeDisableFontInflation an(mFrame);
 
-      bool isBlock = NS_CSS_FRAME_TYPE_BLOCK == NS_FRAME_GET_TYPE(mFrameType);
+      // Note: all flex and grid items are block-level, even if they have
+      // e.g. 'display:-moz-box' (which doesn't get NS_CSS_FRAME_TYPE_BLOCK).
+      const bool isBlockLevel =
+          NS_CSS_FRAME_TYPE_BLOCK == NS_FRAME_GET_TYPE(mFrameType) ||
+          mFrame->IsFlexOrGridItem();
       typedef nsIFrame::ComputeSizeFlags ComputeSizeFlags;
-      ComputeSizeFlags computeSizeFlags =
-          isBlock ? ComputeSizeFlags::eDefault : ComputeSizeFlags::eShrinkWrap;
+      ComputeSizeFlags computeSizeFlags = isBlockLevel
+                                              ? ComputeSizeFlags::eDefault
+                                              : ComputeSizeFlags::eShrinkWrap;
       if (mFlags.mIClampMarginBoxMinSize) {
         computeSizeFlags = ComputeSizeFlags(
             computeSizeFlags | ComputeSizeFlags::eIClampMarginBoxMinSize);
@@ -2419,7 +2439,7 @@ void ReflowInput::InitConstraints(
         // Make sure legend frames with display:block and width:auto still
         // shrink-wrap.
         // Also shrink-wrap blocks that are orthogonal to their container.
-        if (isBlock &&
+        if (isBlockLevel &&
             ((aFrameType == LayoutFrameType::Legend &&
               mFrame->Style()->GetPseudoType() !=
                   PseudoStyleType::scrolledContent) ||
@@ -2470,7 +2490,7 @@ void ReflowInput::InitConstraints(
 
       // Exclude inline tables, side captions, outside ::markers, flex and grid
       // items from block margin calculations.
-      if (isBlock && !IsSideCaption(mFrame, mStyleDisplay, cbwm) &&
+      if (isBlockLevel && !IsSideCaption(mFrame, mStyleDisplay, cbwm) &&
           mStyleDisplay->mDisplay != StyleDisplay::InlineTable &&
           !alignCB->IsFlexOrGridContainer() &&
           !(mFrame->Style()->GetPseudoType() == PseudoStyleType::marker &&
@@ -2642,8 +2662,9 @@ void ReflowInput::CalculateBlockSideMargins(LayoutFrameType aFrameType) {
   nscoord computedISizeCBWM = ComputedSize(cbWM).ISize(cbWM);
   if (computedISizeCBWM == NS_UNCONSTRAINEDSIZE) {
     // For orthogonal flows, where we found a parent orthogonal-limit
-    // for AvailableISize() in Init(), we'll use the same here as well.
-    computedISizeCBWM = availISizeCBWM;
+    // for AvailableISize() in Init(), we don't have meaningful sizes to
+    // adjust.  Act like the sum is already correct (below).
+    return;
   }
 
   LAYOUT_WARN_IF_FALSE(NS_UNCONSTRAINEDSIZE != computedISizeCBWM &&

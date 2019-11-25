@@ -214,6 +214,10 @@ def target_tasks_ash(full_task_graph, parameters, graph_config):
                 if p in attr['test_platform']:
                     return False
 
+            # filter out raptor-fis (they are broken)
+            if attr['unittest_suite'] == 'raptor' and attr.get('unittest_variant') == 'fission':
+                return False
+
         # don't upload symbols
         if attr['kind'] == 'upload-symbols':
             return False
@@ -401,9 +405,9 @@ def target_tasks_ship_desktop(full_task_graph, parameters, graph_config):
             return False
 
         if 'secondary' in task.kind:
-                return is_rc
+            return is_rc
         else:
-                return not is_rc
+            return not is_rc
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
@@ -490,10 +494,10 @@ def target_tasks_ship_geckoview(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
-@_target_task('fennec_v64')
-def target_tasks_fennec_v64(full_task_graph, parameters, graph_config):
+@_target_task('fennec_v68')
+def target_tasks_fennec_v68(full_task_graph, parameters, graph_config):
     """
-    Select tasks required for running tp6m fennec v64 tests
+    Select tasks required for running tp6m fennec v68 tests
     """
     def filter(task):
         platform = task.attributes.get('build_platform')
@@ -503,37 +507,49 @@ def target_tasks_fennec_v64(full_task_graph, parameters, graph_config):
             return False
         if attributes.get('unittest_suite') != 'raptor':
             return False
-        if '-fennec64-' in attributes.get('raptor_try_name'):
+        if '-fennec68-' in attributes.get('raptor_try_name'):
             return True
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
 
-@_target_task('android_power')
-def target_tasks_android_power(full_task_graph, parameters, graph_config):
+@_target_task('general_perf_testing')
+def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config):
     """
-    Select tasks required for running android power tests
+    Select tasks required for running performance tests 3 times a week.
     """
     def filter(task):
         platform = task.attributes.get('build_platform')
         attributes = task.attributes
-
-        if platform and 'android' not in platform:
-            return False
         if attributes.get('unittest_suite') != 'raptor':
             return False
         try_name = attributes.get('raptor_try_name')
+        # Run chrome and chromium on all platforms available
+        if '-chrome' in try_name:
+            return True
+        if '-chromium' in try_name:
+            return True
+
+        # Run the following tests on android geckoview
+        if platform and 'android' not in platform:
+            return False
         if 'geckoview' not in try_name:
             return False
-        if '-cpu' in try_name:
+
+        # Run cpu+memory, and power tests
+        cpu_n_memory_task = '-cpu' in try_name and '-memory' in try_name
+        power_task = '-power' in try_name
+        # Ignore cpu+memory+power tests
+        if power_task and cpu_n_memory_task:
             return False
-        if '-memory' in try_name:
-            return False
-        if '-power' in try_name and 'pgo' in platform:
+        if power_task or cpu_n_memory_task:
+            if 'pgo' not in platform:
+                return False
             if '-speedometer-' in try_name:
                 return True
-            if '-scn-power-idle' in try_name:
+            if '-scn' in try_name and '-idle' in try_name:
                 return True
+        return False
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
 
@@ -794,3 +810,13 @@ def target_tasks_raptor_tp6m(full_task_graph, parameters, graph_config):
                 return True
 
     return [l for l, t in full_task_graph.tasks.iteritems() if filter(t)]
+
+
+@_target_task('condprof')
+def target_tasks_condprof(full_task_graph, parameters, graph_config):
+    """
+    Select tasks required for building conditioned profiles.
+    """
+    for name, task in full_task_graph.tasks.iteritems():
+        if task.kind == "condprof":
+            yield name

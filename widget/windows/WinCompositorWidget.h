@@ -11,8 +11,10 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/gfx/CriticalSection.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/widget/WinCompositorWindowThread.h"
+#include "FxROutputHandler.h"
 #include "nsIWidget.h"
 
 class nsWindow;
@@ -37,6 +39,7 @@ class PlatformCompositorWidgetDelegate : public CompositorWidgetDelegate {
   virtual void SetParentWnd(const HWND aParentWnd) {}
   virtual void UpdateCompositorWnd(const HWND aCompositorWnd,
                                    const HWND aParentWnd) {}
+  virtual void SetRootLayerTreeID(const layers::LayersId& aRootLayerTreeId) {}
 
   // CompositorWidgetDelegate Overrides
 
@@ -105,6 +108,10 @@ class WinCompositorWidget : public CompositorWidget,
     return mTransparentSurfaceLock;
   }
 
+  void RequestFxrOutput();
+  bool HasFxrOutputHandler() const { return mFxrHandler != nullptr; }
+  FxROutputHandler* GetFxrOutputHandler() const { return mFxrHandler.get(); }
+
   bool HasGlass() const;
 
  protected:
@@ -113,6 +120,9 @@ class WinCompositorWidget : public CompositorWidget,
   void FreeWindowSurface(HDC dc);
 
   void CreateTransparentSurface(const gfx::IntSize& aSize);
+
+ protected:
+  bool mSetParentCompleted;
 
  private:
   uintptr_t mWidgetKey;
@@ -135,6 +145,8 @@ class WinCompositorWidget : public CompositorWidget,
   uint8_t* mLockedBackBufferData;
 
   bool mNotDeferEndRemoteDrawing;
+
+  UniquePtr<FxROutputHandler> mFxrHandler;
 };
 
 }  // namespace widget

@@ -182,6 +182,11 @@ void HTMLVideoElement::UnbindFromTree(bool aNullParent) {
   if (mVisualCloneSource) {
     mVisualCloneSource->EndCloningVisually();
   } else if (mVisualCloneTarget) {
+    RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
+        this, NS_LITERAL_STRING("MozStopPictureInPicture"), CanBubble::eNo,
+        ChromeOnlyDispatch::eYes);
+    asyncDispatcher->RunDOMEventWhenSafe();
+
     EndCloningVisually();
   }
 
@@ -536,16 +541,6 @@ void HTMLVideoElement::EndCloningVisually() {
 
   if (IsInComposedDoc() && !StaticPrefs::media_cloneElementVisually_testing()) {
     NotifyUAWidgetSetupOrChange();
-  }
-}
-
-void HTMLVideoElement::TogglePictureInPicture(ErrorResult& error) {
-  // The MozTogglePictureInPicture event is listen for via the
-  // PictureInPictureChild actor, which is responsible for opening the new
-  // window and starting the visual clone.
-  nsresult rv = DispatchEvent(NS_LITERAL_STRING("MozTogglePictureInPicture"));
-  if (NS_FAILED(rv)) {
-    error.Throw(rv);
   }
 }
 

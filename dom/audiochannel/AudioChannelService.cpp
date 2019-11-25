@@ -139,10 +139,6 @@ bool IsEnableAudioCompetingForAllAgents() {
 namespace mozilla {
 namespace dom {
 
-extern void NotifyMediaStarted(uint64_t aWindowID);
-extern void NotifyMediaStopped(uint64_t aWindowID);
-extern void NotifyMediaAudibleChanged(uint64_t aWindowID, bool aAudible);
-
 const char* SuspendTypeToStr(const nsSuspendedTypes& aSuspend) {
   MOZ_ASSERT(aSuspend == nsISuspendedTypes::NONE_SUSPENDED ||
              aSuspend == nsISuspendedTypes::SUSPENDED_PAUSE ||
@@ -325,7 +321,9 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
   AudioPlaybackConfig config(1.0, false, nsISuspendedTypes::NONE_SUSPENDED);
 
   if (!aWindow) {
-    config.SetConfig(0.0, true, nsISuspendedTypes::SUSPENDED_BLOCK);
+    config.mVolume = 0.0;
+    config.mMuted = true;
+    config.mSuspend = nsISuspendedTypes::SUSPENDED_BLOCK;
     return config;
   }
 
@@ -342,6 +340,7 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
       config.mSuspend = winData->mOwningAudioFocus
                             ? config.mSuspend
                             : nsISuspendedTypes::SUSPENDED_STOP_DISPOSABLE;
+      config.mCapturedAudio = winData->mIsAudioCaptured;
     }
 
     config.mVolume *= window->GetAudioVolume();
@@ -411,7 +410,8 @@ AudioChannelService::Observe(nsISupports* aSubject, const char* aTopic,
       nsTObserverArray<AudioChannelAgent*>::ForwardIterator iter(
           winData->mAgents);
       while (iter.HasMore()) {
-        iter.GetNext()->WindowVolumeChanged();
+        iter.GetNext()->WindowVolumeChanged(winData->mConfig.mVolume,
+                                            winData->mConfig.mMuted);
       }
     }
   }
@@ -440,9 +440,11 @@ void AudioChannelService::RefreshAgents(
   }
 }
 
-void AudioChannelService::RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow) {
-  RefreshAgents(aWindow,
-                [](AudioChannelAgent* agent) { agent->WindowVolumeChanged(); });
+void AudioChannelService::RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow,
+                                              float aVolume, bool aMuted) {
+  RefreshAgents(aWindow, [aVolume, aMuted](AudioChannelAgent* agent) {
+    agent->WindowVolumeChanged(aVolume, aMuted);
+  });
 }
 
 void AudioChannelService::RefreshAgentsSuspend(nsPIDOMWindowOuter* aWindow,
@@ -720,12 +722,10 @@ void AudioChannelService::AudioChannelWindow::AppendAgent(
 
   RequestAudioFocus(aAgent);
   AppendAgentAndIncreaseAgentsNum(aAgent);
-  AudioCapturedChanged(aAgent, AudioCaptureState::eCapturing);
-  if (aAudible == AudibleState::eAudible) {
-    AudioAudibleChanged(aAgent, AudibleState::eAudible,
-                        AudibleChangedReasons::eDataAudibleChanged);
-  } else if (IsEnableAudioCompetingForAllAgents() &&
-             aAudible != AudibleState::eAudible) {
+  AudioAudibleChanged(aAgent, aAudible,
+                      AudibleChangedReasons::eDataAudibleChanged);
+  if (IsEnableAudioCompetingForAllAgents() &&
+      aAudible != AudibleState::eAudible) {
     NotifyAudioCompetingChanged(aAgent);
   }
 }
@@ -735,7 +735,6 @@ void AudioChannelService::AudioChannelWindow::RemoveAgent(
   MOZ_ASSERT(aAgent);
 
   RemoveAgentAndReduceAgentsNum(aAgent);
-  AudioCapturedChanged(aAgent, AudioCaptureState::eNotCapturing);
   AudioAudibleChanged(aAgent, AudibleState::eNotAudible,
                       AudibleChangedReasons::ePauseStateChanged);
 }
@@ -774,7 +773,6 @@ void AudioChannelService::AudioChannelWindow::AppendAgentAndIncreaseAgentsNum(
   if (mConfig.mNumberOfAgents == 1) {
     NotifyChannelActive(aAgent->WindowID(), true);
   }
-  NotifyMediaStarted(aAgent->WindowID());
 }
 
 void AudioChannelService::AudioChannelWindow::RemoveAgentAndReduceAgentsNum(
@@ -789,16 +787,6 @@ void AudioChannelService::AudioChannelWindow::RemoveAgentAndReduceAgentsNum(
 
   if (mConfig.mNumberOfAgents == 0) {
     NotifyChannelActive(aAgent->WindowID(), false);
-  }
-  NotifyMediaStopped(aAgent->WindowID());
-}
-
-void AudioChannelService::AudioChannelWindow::AudioCapturedChanged(
-    AudioChannelAgent* aAgent, AudioCaptureState aCapture) {
-  MOZ_ASSERT(aAgent);
-
-  if (mIsAudioCaptured) {
-    aAgent->WindowAudioCaptureChanged(aAgent->InnerWindowID(), aCapture);
   }
 }
 
@@ -830,7 +818,6 @@ void AudioChannelService::AudioChannelWindow::AppendAudibleAgentIfNotContained(
       NotifyAudioAudibleChanged(aAgent->Window(), AudibleState::eAudible,
                                 aReason);
     }
-    NotifyMediaAudibleChanged(aAgent->WindowID(), true);
   }
 }
 
@@ -844,7 +831,6 @@ void AudioChannelService::AudioChannelWindow::RemoveAudibleAgentIfContained(
       NotifyAudioAudibleChanged(aAgent->Window(), AudibleState::eNotAudible,
                                 aReason);
     }
-    NotifyMediaAudibleChanged(aAgent->WindowID(), false);
   }
 }
 

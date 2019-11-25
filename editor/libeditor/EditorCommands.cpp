@@ -643,11 +643,7 @@ bool SelectAllCommand::IsCommandEnabled(Command aCommand,
   }
 
   // You can select all if there is an editor which is non-empty
-  bool isEmpty = false;
-  if (NS_WARN_IF(NS_FAILED(aTextEditor->IsEmpty(&isEmpty)))) {
-    return false;
-  }
-  return !isEmpty;
+  return !aTextEditor->IsEmpty();
 }
 
 nsresult SelectAllCommand::DoCommand(Command aCommand, TextEditor& aTextEditor,
@@ -872,7 +868,8 @@ nsresult InsertParagraphCommand::DoCommand(Command aCommand,
   if (!htmlEditor) {
     return NS_OK;  // Do nothing for now.
   }
-  nsresult rv = htmlEditor->InsertParagraphSeparatorAsAction(aPrincipal);
+  nsresult rv =
+      MOZ_KnownLive(htmlEditor)->InsertParagraphSeparatorAsAction(aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "InsertParagraphSeparatorAsAction() failed");
   return rv;

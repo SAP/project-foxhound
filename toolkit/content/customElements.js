@@ -4,7 +4,7 @@
 
 // This file defines these globals on the window object.
 // Define them here so that ESLint can find them:
-/* globals MozXULElement, MozElements */
+/* globals MozXULElement, MozHTMLElement, MozElements */
 
 "use strict";
 
@@ -460,6 +460,18 @@
       }
 
       /**
+       * Passes DOM events to the on_<event type> methods.
+       */
+      handleEvent(event) {
+        let methodName = "on_" + event.type;
+        if (methodName in this) {
+          this[methodName](event);
+        } else {
+          throw new Error("Unrecognized event: " + event.type);
+        }
+      }
+
+      /**
        * Allows eager deterministic construction of XUL elements with XBL attached, by
        * parsing an element tree and returning a DOM fragment to be inserted in the
        * document before any of the inner elements is referenced by JavaScript.
@@ -486,7 +498,7 @@
        *         but excluding any text node.
        */
       static parseXULToFragment(str, entities = []) {
-        let doc = gXULDOMParser.parseFromString(
+        let doc = gXULDOMParser.parseFromSafeString(
           `
       ${
         entities.length
@@ -616,6 +628,7 @@
   };
 
   const MozXULElement = MozElements.MozElementMixin(XULElement);
+  const MozHTMLElement = MozElements.MozElementMixin(HTMLElement);
 
   /**
    * Given an object, add a proxy that reflects interface implementations
@@ -737,6 +750,7 @@
 
   // Attach the base class to the window so other scripts can use it:
   window.MozXULElement = MozXULElement;
+  window.MozHTMLElement = MozHTMLElement;
 
   customElements.setElementCreationCallback("browser", () => {
     Services.scriptloader.loadSubScript(
@@ -751,6 +765,7 @@
     document.documentURI == "chrome://extensions/content/dummy.xul";
   if (!isDummyDocument) {
     for (let script of [
+      "chrome://global/content/elements/arrowscrollbox.js",
       "chrome://global/content/elements/dialog.js",
       "chrome://global/content/elements/general.js",
       "chrome://global/content/elements/button.js",
@@ -758,6 +773,7 @@
       "chrome://global/content/elements/menu.js",
       "chrome://global/content/elements/menupopup.js",
       "chrome://global/content/elements/notificationbox.js",
+      "chrome://global/content/elements/panel.js",
       "chrome://global/content/elements/popupnotification.js",
       "chrome://global/content/elements/radio.js",
       "chrome://global/content/elements/richlistbox.js",
@@ -777,6 +793,10 @@
       ["findbar", "chrome://global/content/elements/findbar.js"],
       ["menulist", "chrome://global/content/elements/menulist.js"],
       ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
+      [
+        "autocomplete-input",
+        "chrome://global/content/elements/autocomplete-input.js",
+      ],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [
         "printpreview-toolbar",

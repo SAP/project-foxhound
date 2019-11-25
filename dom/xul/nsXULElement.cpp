@@ -65,7 +65,9 @@
 #include "nsReadableUtils.h"
 #include "nsIFrame.h"
 #include "nsNodeInfoManager.h"
-#include "nsXBLBinding.h"
+#ifdef MOZ_XBL
+#  include "nsXBLBinding.h"
+#endif
 #include "nsXULTooltipListener.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozAutoDocUpdate.h"
@@ -84,6 +86,7 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/XULCommandEvent.h"
+#include "mozilla/GlobalKeyListener.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -106,12 +109,6 @@ uint32_t nsXULPrototypeAttribute::gNumCacheFills;
 nsXULElement::nsXULElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : nsStyledElement(std::move(aNodeInfo)), mBindingParent(nullptr) {
   XUL_PROTOTYPE_ATTRIBUTE_METER(gNumElements);
-
-  // We may be READWRITE by default; check.
-  if (IsReadWriteTextElement()) {
-    AddStatesSilently(NS_EVENT_STATE_MOZ_READWRITE);
-    RemoveStatesSilently(NS_EVENT_STATE_MOZ_READONLY);
-  }
 }
 
 nsXULElement::~nsXULElement() {}
@@ -199,8 +196,8 @@ already_AddRefed<nsXULElement> nsXULElement::CreateFromPrototype(
       // Check each attribute on the prototype to see if we need to do
       // any additional processing and hookup that would otherwise be
       // done 'automagically' by SetAttr().
-      for (size_t i = 0; i < aPrototype->mAttributes.Length(); ++i) {
-        element->AddListenerFor(aPrototype->mAttributes[i].mName);
+      for (const auto& attribute : aPrototype->mAttributes) {
+        element->AddListenerForAttributeIfNeeded(attribute.mName);
       }
     }
 
@@ -307,59 +304,11 @@ nsresult nsXULElement::Clone(mozilla::dom::NodeInfo* aNodeInfo,
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
   RefPtr<nsXULElement> element = Construct(ni.forget());
 
-  nsresult rv = element->mAttrs.EnsureCapacityToClone(mAttrs);
+  nsresult rv = const_cast<nsXULElement*>(this)->CopyInnerTo(
+      element, ReparseAttributes::No);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Note that we're _not_ copying mControllers.
-
-  uint32_t count = mAttrs.AttrCount();
-  rv = NS_OK;
-  // FIXME(emilio): This setup looks somewhat error prone. Other than the
-  // AddListenerFor bit (what is that for?), everything else could be handled by
-  // the generic Element::CopyInnerTo, or the equivalent in
-  // nsGenericHTMLElement (somehow), both of which go through AfterSetAttr...
-  for (uint32_t i = 0; i < count; ++i) {
-    const nsAttrName* originalName = mAttrs.AttrNameAt(i);
-    const nsAttrValue* originalValue = mAttrs.AttrAt(i);
-    nsAttrValue attrValue;
-
-    // Style rules need to be cloned.
-    if (originalValue->Type() == nsAttrValue::eCSSDeclaration) {
-      DeclarationBlock* decl = originalValue->GetCSSDeclarationValue();
-      RefPtr<DeclarationBlock> declClone = decl->Clone();
-
-      nsString stringValue;
-      originalValue->ToString(stringValue);
-
-      attrValue.SetTo(declClone.forget(), &stringValue);
-    } else {
-      attrValue.SetTo(*originalValue);
-    }
-
-    bool oldValueSet;
-    if (originalName->IsAtom()) {
-      rv = element->mAttrs.SetAndSwapAttr(originalName->Atom(), attrValue,
-                                          &oldValueSet);
-    } else {
-      rv = element->mAttrs.SetAndSwapAttr(originalName->NodeInfo(), attrValue,
-                                          &oldValueSet);
-    }
-    NS_ENSURE_SUCCESS(rv, rv);
-    element->AddListenerFor(*originalName);
-    if (originalName->Equals(nsGkAtoms::id) &&
-        !originalValue->IsEmptyString()) {
-      element->SetHasID();
-    }
-    if (originalName->Equals(nsGkAtoms::_class)) {
-      element->SetMayHaveClass();
-    }
-    if (originalName->Equals(nsGkAtoms::style)) {
-      element->SetMayHaveStyle();
-    }
-    if (originalName->Equals(nsGkAtoms::part)) {
-      element->SetHasPartAttribute(true);
-    }
-  }
 
   element.forget(aResult);
   return rv;
@@ -570,8 +519,7 @@ bool nsXULElement::PerformAccesskey(bool aKeyCausesActivation,
         }
       }
     }
-    if (aKeyCausesActivation &&
-        !content->IsAnyOfXULElements(nsGkAtoms::textbox, nsGkAtoms::menulist)) {
+    if (aKeyCausesActivation && !content->IsXULElement(nsGkAtoms::menulist)) {
       elm->ClickWithInputSource(MouseEvent_Binding::MOZ_SOURCE_KEYBOARD,
                                 aIsTrustedEvent);
     }
@@ -584,30 +532,26 @@ bool nsXULElement::PerformAccesskey(bool aKeyCausesActivation,
 
 //----------------------------------------------------------------------
 
-void nsXULElement::AddListenerFor(const nsAttrName& aName) {
+void nsXULElement::AddListenerForAttributeIfNeeded(nsAtom* aLocalName) {
   // If appropriate, add a popup listener and/or compile the event
   // handler. Called when we change the element's document, create a
   // new element, change an attribute's value, etc.
-  // Eventlistenener-attributes are always in the null namespace
-  if (aName.IsAtom()) {
-    nsAtom* attr = aName.Atom();
-    MaybeAddPopupListener(attr);
-    if (nsContentUtils::IsEventAttributeName(attr, EventNameType_XUL)) {
-      nsAutoString value;
-      GetAttr(kNameSpaceID_None, attr, value);
-      SetEventHandler(attr, value, true);
-    }
-  }
-}
-
-void nsXULElement::MaybeAddPopupListener(nsAtom* aLocalName) {
-  // If appropriate, add a popup listener. Called when we change the
-  // element's document, create a new element, change an attribute's
-  // value, etc.
+  // Eventlistenener-attributes are always in the null namespace.
   if (aLocalName == nsGkAtoms::menu || aLocalName == nsGkAtoms::contextmenu ||
       // XXXdwh popup and context are deprecated
       aLocalName == nsGkAtoms::popup || aLocalName == nsGkAtoms::context) {
     AddPopupListener(aLocalName);
+  }
+  if (nsContentUtils::IsEventAttributeName(aLocalName, EventNameType_XUL)) {
+    nsAutoString value;
+    GetAttr(kNameSpaceID_None, aLocalName, value);
+    SetEventHandler(aLocalName, value, true);
+  }
+}
+
+void nsXULElement::AddListenerForAttributeIfNeeded(const nsAttrName& aName) {
+  if (aName.IsAtom()) {
+    AddListenerForAttributeIfNeeded(aName.Atom());
   }
 }
 
@@ -712,7 +656,7 @@ nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
   if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
     // Create our XUL key listener and hook it up.
-    nsXBLService::AttachGlobalKeyHandler(this);
+    XULKeySetGlobalKeyListener::AttachKeyHandler(this);
   }
 
   if (NeedTooltipSupport(*this)) {
@@ -731,7 +675,7 @@ nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
 void nsXULElement::UnbindFromTree(bool aNullParent) {
   if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
-    nsXBLService::DetachGlobalKeyHandler(this);
+    XULKeySetGlobalKeyListener::DetachKeyHandler(this);
   }
 
   if (NeedTooltipSupport(*this)) {
@@ -857,19 +801,7 @@ nsresult nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                     bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aValue) {
-      // Add popup and event listeners. We can't call AddListenerFor since
-      // the attribute isn't set yet.
-      MaybeAddPopupListener(aName);
-      if (nsContentUtils::IsEventAttributeName(aName, EventNameType_XUL)) {
-        if (aValue->Type() == nsAttrValue::eString) {
-          SetEventHandler(aName, aValue->GetStringValue(), true);
-        } else {
-          nsAutoString body;
-          aValue->ToString(body);
-          SetEventHandler(aName, body, true);
-        }
-      }
-
+      AddListenerForAttributeIfNeeded(aName);
       Document* document = GetUncomposedDoc();
 
       // Hide chrome if needed
@@ -1251,17 +1183,6 @@ nsresult nsXULElement::AddPopupListener(nsAtom* aName) {
                                     TrustedEventsAtSystemGroupBubble());
   }
   return NS_OK;
-}
-
-EventStates nsXULElement::IntrinsicState() const {
-  EventStates state = nsStyledElement::IntrinsicState();
-
-  if (IsReadWriteTextElement()) {
-    state |= NS_EVENT_STATE_MOZ_READWRITE;
-    state &= ~NS_EVENT_STATE_MOZ_READONLY;
-  }
-
-  return state;
 }
 
 //----------------------------------------------------------------------

@@ -137,9 +137,9 @@ JS_PUBLIC_API const char* JS::detail::InitWithFailureDiagnostic(
 
   RETURN_IF_FAIL(js::Mutex::Init());
 
-  RETURN_IF_FAIL(js::wasm::Init());
-
   js::gc::InitMemorySubsystem();  // Ensure gc::SystemPageSize() works.
+
+  RETURN_IF_FAIL(js::wasm::Init());
 
   js::coverage::InitLCov();
 
@@ -222,8 +222,6 @@ JS_PUBLIC_API void JS_ShutDown(void) {
   js::MemoryProtectionExceptionHandler::uninstall();
 
   js::wasm::ShutDown();
-
-  js::Mutex::ShutDown();
 
   // The only difficult-to-address reason for the restriction that you can't
   // call JS_Init/stuff/JS_ShutDown multiple times is the Windows PRMJ

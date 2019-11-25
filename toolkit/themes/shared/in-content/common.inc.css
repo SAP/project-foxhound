@@ -150,9 +150,7 @@
 }
 }
 
-html|html,
-xul|page,
-xul|window {
+:root {
   font: message-box;
   -moz-appearance: none;
   background-color: var(--in-content-page-background);
@@ -270,6 +268,7 @@ html|input[type="color"]::-moz-focus-inner {
 
 *|button:-moz-focusring,
 html|select:-moz-focusring,
+html|input[type="checkbox"]:-moz-focusring,
 html|input[type="color"]:-moz-focusring,
 xul|menulist:-moz-focusring {
   outline: 2px solid var(--in-content-border-active);
@@ -463,7 +462,7 @@ html|input[type="password"],
 html|input[type="url"],
 html|input[type="number"],
 html|textarea,
-xul|textbox {
+xul|search-textbox {
   -moz-appearance: none;
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 2px;
@@ -473,7 +472,7 @@ xul|textbox {
   background-color: var(--in-content-box-background) !important;
 }
 
-xul|textbox {
+xul|search-textbox {
   min-height: 30px;
   padding-right: 8px;
   padding-left: 8px;
@@ -499,7 +498,7 @@ html|input[type="password"]:enabled:not(:focus):hover,
 html|input[type="url"]:enabled:not(:focus):hover,
 html|input[type="number"]:enabled:not(:focus):hover,
 html|textarea:enabled:not(:focus):hover,
-xul|textbox:not([disabled="true"]):not([focused]):hover {
+xul|search-textbox:not([disabled="true"]):not([focused]):hover {
   border-color: var(--in-content-border-hover);
 }
 
@@ -510,7 +509,7 @@ html|input[type="password"]:focus,
 html|input[type="url"]:focus,
 html|input[type="number"]:focus,
 html|textarea:focus,
-xul|textbox[focused] {
+xul|search-textbox[focused] {
   border-color: var(--in-content-border-active);
   box-shadow: 0 0 0 1px var(--in-content-border-active),
     0 0 0 4px var(--in-content-border-active-shadow);
@@ -526,9 +525,7 @@ html|textarea:-moz-ui-invalid {
   border-color: var(--in-content-border-invalid);
 }
 
-/* Don't show the field error outlines and focus borders at the same time.
-   This doesn't apply to XUL <textbox> since they don't expose validity
-   attributes */
+/* Don't show the field error outlines and focus borders at the same time. */
 html|input[type="email"]:-moz-ui-invalid:focus,
 html|input[type="tel"]:-moz-ui-invalid:focus,
 html|input[type="text"]:-moz-ui-invalid:focus,
@@ -546,7 +543,7 @@ html|input[type="password"]:disabled,
 html|input[type="url"]:disabled,
 html|input[type="number"]:disabled,
 html|textarea:disabled,
-xul|textbox[disabled="true"] {
+xul|search-textbox[disabled="true"] {
   opacity: 0.4;
 }
 
@@ -679,6 +676,7 @@ xul|*.radio-label-box {
   margin: 70px 0 0;
   border-width: 0;
   width: 240px;
+  box-shadow: none;
 }
 
 *|*#categories > *|*.category {
@@ -833,6 +831,12 @@ xul|treechildren::-moz-tree-row(selected) {
   background-color: var(--in-content-item-selected);
 }
 
+xul|panel[type="autocomplete-richlistbox"] {
+  background-color: var(--in-content-box-background);
+  border: 1px solid var(--in-content-box-border-color);
+  color: var(--in-content-text-color);
+}
+
 /* Trees */
 
 xul|tree {
@@ -846,7 +850,9 @@ xul|tree {
 
 xul|tree:-moz-focusring,
 xul|richlistbox:-moz-focusring {
-  border: 1px dotted var(--in-content-border-focus);
+  border-color: var(--in-content-border-active);
+  box-shadow: 0 0 0 1px var(--in-content-border-active),
+    0 0 0 4px var(--in-content-border-active-shadow);
 }
 
 xul|treecols {

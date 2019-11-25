@@ -27,6 +27,7 @@ WORKER_TYPES = {
     "scriptworker-k8s/gecko-1-tree": ('treescript', None),
     'terraform-packet/gecko-t-linux': ('docker-worker', 'linux'),
     'releng-hardware/gecko-t-osx-1014': ('generic-worker', 'macosx'),
+    'releng-hardware/gecko-t-osx-1014-power': ('generic-worker', 'macosx'),
 }
 
 

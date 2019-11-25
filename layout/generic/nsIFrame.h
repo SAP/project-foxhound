@@ -600,6 +600,7 @@ class nsIFrame : public nsQueryFrame {
         mMayHaveTransformAnimation(false),
         mMayHaveOpacityAnimation(false),
         mAllDescendantsAreInvisible(false),
+        mHasBSizeChange(false),
         mInScrollAnchorChain(false),
         mHasColumnSpanSiblings(false),
         mDescendantMayDependOnItsStaticPosition(false) {
@@ -893,8 +894,12 @@ class nsIFrame : public nsQueryFrame {
    * It's usually the 'writing-mode' computed value, but there are exceptions:
    *   * inner table frames copy the value from the table frame
    *     (@see nsTableRowGroupFrame::Init, nsTableRowFrame::Init etc)
-   *   * the root element frame propagates its value to its ancestors
-   *     (@see nsCanvasFrame::MaybePropagateRootElementWritingMode)
+   *   * the root element frame propagates its value to its ancestors.
+   *     The value may obtain from the principal <body> element.
+   *     (@see nsCSSFrameConstructor::ConstructDocElementFrame)
+   *   * the internal anonymous frames of the root element copy their value
+   *     from the parent.
+   *     (@see nsFrame::Init)
    *   * a scrolled frame propagates its value to its ancestor scroll frame
    *     (@see nsHTMLScrollFrame::ReloadChildFrames)
    */
@@ -3992,7 +3997,7 @@ class nsIFrame : public nsQueryFrame {
   Maybe<mozilla::StyleVerticalAlignKeyword> VerticalAlignEnum() const;
 
   void CreateOwnLayerIfNeeded(nsDisplayListBuilder* aBuilder,
-                              nsDisplayList* aList,
+                              nsDisplayList* aList, uint16_t aType,
                               bool* aCreatedContainerItem = nullptr);
 
   /**
@@ -4222,6 +4227,11 @@ class nsIFrame : public nsQueryFrame {
     mMayHaveWillChangeBudget = aHasBudget;
   }
 
+  bool HasBSizeChange() const { return mHasBSizeChange; }
+  void SetHasBSizeChange(bool aHasBSizeChange) {
+    mHasBSizeChange = aHasBSizeChange;
+  }
+
   bool HasColumnSpanSiblings() const { return mHasColumnSpanSiblings; }
   void SetHasColumnSpanSiblings(bool aHasColumnSpanSiblings) {
     mHasColumnSpanSiblings = aHasColumnSpanSiblings;
@@ -4248,6 +4258,11 @@ class nsIFrame : public nsQueryFrame {
    */
   mozilla::gfx::CompositorHitTestInfo GetCompositorHitTestInfo(
       nsDisplayListBuilder* aBuilder);
+
+  /**
+   * Copies aWM to mWritingMode on 'this' and all its ancestors.
+   */
+  inline void PropagateWritingModeToSelfAndAncestors(mozilla::WritingMode aWM);
 
  protected:
   static void DestroyAnonymousContent(nsPresContext* aPresContext,
@@ -4303,11 +4318,6 @@ class nsIFrame : public nsQueryFrame {
   }
 
  protected:
-  /**
-   * Copies aRootElemWM to mWritingMode on 'this' and all its ancestors.
-   */
-  inline void PropagateRootElementWritingMode(mozilla::WritingMode aRootElemWM);
-
   void MarkInReflow() {
 #ifdef DEBUG_dbaron_off
     // bug 81268
@@ -4452,6 +4462,8 @@ class nsIFrame : public nsQueryFrame {
    * child. This flag is stil false in such case.
    */
   bool mAllDescendantsAreInvisible : 1;
+
+  bool mHasBSizeChange : 1;
 
   /**
    * True if we are or contain the scroll anchor for a scrollable frame.

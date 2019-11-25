@@ -182,6 +182,7 @@ already_AddRefed<TextureHost> TextureHost::Create(
     case SurfaceDescriptor::TEGLImageDescriptor:
     case SurfaceDescriptor::TSurfaceTextureDescriptor:
     case SurfaceDescriptor::TSurfaceDescriptorSharedGLTexture:
+    case SurfaceDescriptor::TSurfaceDescriptorDMABuf:
       result = CreateTextureHostOGL(aDesc, aDeallocator, aBackend, aFlags);
       break;
 
@@ -222,6 +223,11 @@ already_AddRefed<TextureHost> TextureHost::Create(
       UniquePtr<SurfaceDescriptor> realDesc =
           aDeallocator->AsCompositorBridgeParentBase()
               ->LookupSurfaceDescriptorForClientDrawTarget(desc.drawTarget());
+      if (!realDesc) {
+        NS_WARNING("Failed to get descriptor for recorded texture.");
+        return nullptr;
+      }
+
       result = TextureHost::Create(*realDesc, aReadLock, aDeallocator, aBackend,
                                    aFlags, aExternalImageId);
       return result.forget();

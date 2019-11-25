@@ -463,6 +463,14 @@ const PREFS_CONFIG = new Map([
   ],
   // See browser/app/profile/firefox.js for other ASR preferences. They must be defined there to enable roll-outs.
   [
+    "discoverystream.campaign.blocks",
+    {
+      title: "Track campaign blocks",
+      skipBroadcast: true,
+      value: "{}",
+    },
+  ],
+  [
     "discoverystream.config",
     {
       title: "Configuration for the new pocket new tab",
@@ -484,7 +492,7 @@ const PREFS_CONFIG = new Map([
           enabled: isEnabled,
           show_spocs: showSpocs({ geo }),
           hardcoded_layout: true,
-          personalized: false,
+          personalized: true,
           // This is currently an exmple layout used for dev purposes.
           layout_endpoint:
             "https://getpocket.cdn.mozilla.net/v3/newtab/layout?version=1&consumer_key=$apiKey&layout_variant=basic",

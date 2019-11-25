@@ -157,7 +157,7 @@ class Output(object):
 
                     # responsiveness has it's own metric, not the mean
                     # TODO: consider doing this for all counters
-                    if 'responsiveness' is name:
+                    if 'responsiveness' == name:
                         subtest = {
                             'name': name,
                             'value': filter.responsiveness_Metric(vals)
@@ -293,7 +293,8 @@ class Output(object):
         # We receive 76 entries per test, which ads up to 380. We want to use
         # the 5 test entries, not the rest.
         if len(results) != 380:
-            raise Exception("StyleBench has 380 entries, found: %s instead" % len(results))
+            raise Exception("StyleBench requires 380 entries, found: %s instead"
+                            % len(results))
 
         results = results[75::76]
         score = 60 * 1000 / filter.geometric_mean(results) / correctionFactor

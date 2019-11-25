@@ -41,12 +41,6 @@ const {
 const {
   browsingContextTargetSpec,
 } = require("devtools/shared/specs/targets/browsing-context");
-loader.lazyRequireGetter(
-  this,
-  "FrameDescriptorActor",
-  "devtools/server/actors/descriptors/frame",
-  true
-);
 
 loader.lazyRequireGetter(
   this,
@@ -282,11 +276,12 @@ const browsingContextTargetPrototype = {
       logInPage: true,
       // Supports requests related to rewinding.
       canRewind,
+      // Supports watchpoints in the server for Fx71+
+      watchpoints: true,
     };
 
     this._workerTargetActorList = null;
     this._workerTargetActorPool = null;
-    this._frameDescriptorActorPool = null;
     this._onWorkerTargetActorListChanged = this._onWorkerTargetActorListChanged.bind(
       this
     );
@@ -310,6 +305,16 @@ const browsingContextTargetPrototype = {
 
   get attached() {
     return !!this._attached;
+  },
+
+  /*
+   * Return a Debugger instance or create one if there is none yet
+   */
+  get dbg() {
+    if (!this._dbg) {
+      this._dbg = this.makeDebugger();
+    }
+    return this._dbg;
   },
 
   /**
@@ -358,10 +363,6 @@ const browsingContextTargetPrototype = {
       "`docShell` getter should be overridden by a subclass of " +
         "`BrowsingContextTargetActor`"
     );
-  },
-
-  get childBrowsingContexts() {
-    return this.docShell.browsingContext.getChildren();
   },
 
   /**
@@ -492,6 +493,7 @@ const browsingContextTargetPrototype = {
 
     const response = {
       actor: this.actorID,
+      browsingContextID: this.docShell.browsingContext.id,
       traits: {
         // FF64+ exposes a new trait to help identify BrowsingContextActor's inherited
         // actorss from the client side.
@@ -669,49 +671,6 @@ const browsingContextTargetPrototype = {
   listFrames(request) {
     const windows = this._docShellsToWindows(this.docShells);
     return { frames: windows };
-  },
-
-  listRemoteFrames() {
-    const frames = [];
-    const contextsToWalk = this.childBrowsingContexts;
-
-    if (contextsToWalk == 0) {
-      return { frames };
-    }
-
-    const pool = new Pool(this.conn);
-    while (contextsToWalk.length) {
-      const currentContext = contextsToWalk.pop();
-      let frameDescriptor = this._getKnownFrameDescriptor(currentContext.id);
-      if (!frameDescriptor) {
-        frameDescriptor = new FrameDescriptorActor(this.conn, currentContext);
-      }
-      pool.manage(frameDescriptor);
-      frames.push(frameDescriptor);
-      contextsToWalk.push(...currentContext.getChildren());
-    }
-    // Do not destroy the pool before transfering ownership to the newly created
-    // pool, so that we do not accidently destroy actors that are still in use.
-    if (this._frameDescriptorActorPool) {
-      this._frameDescriptorActorPool.destroy();
-    }
-
-    this._frameDescriptorActorPool = pool;
-
-    return { frames };
-  },
-
-  _getKnownFrameDescriptor(id) {
-    // if there is no pool, then we do not have any descriptors
-    if (!this._frameDescriptorActorPool) {
-      return null;
-    }
-    for (const descriptor of this._frameDescriptorActorPool.poolChildren()) {
-      if (descriptor.id === id) {
-        return descriptor;
-      }
-    }
-    return null;
   },
 
   ensureWorkerTargetActorList() {
@@ -1011,9 +970,9 @@ const browsingContextTargetPrototype = {
       this._workerTargetActorPool = null;
     }
 
-    if (this._frameDescriptorActorPool !== null) {
-      this._frameDescriptorActorPool.destroy();
-      this._frameDescriptorActorPool = null;
+    if (this._dbg) {
+      this._dbg.disable();
+      this._dbg = null;
     }
 
     this._attached = false;
@@ -1133,17 +1092,14 @@ const browsingContextTargetPrototype = {
         docShell.document,
         /* documentOnly = */ true
       );
-      const promises = [];
       for (const sheet of sheets) {
         if (InspectorUtils.hasRulesModifiedByCSSOM(sheet)) {
           continue;
         }
         // Reparse the sheet so that we see the existing errors.
-        promises.push(
-          getSheetText(sheet, this._consoleActor).then(text => {
-            InspectorUtils.parseStyleSheet(sheet, text, /* aUpdate = */ false);
-          })
-        );
+        getSheetText(sheet, this._consoleActor).then(text => {
+          InspectorUtils.parseStyleSheet(sheet, text, /* aUpdate = */ false);
+        });
       }
     }
 

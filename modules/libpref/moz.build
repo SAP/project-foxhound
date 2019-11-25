@@ -61,6 +61,7 @@ pref_groups = [
     'network',
     'nglayout',
     'page_load',
+    'permissions',
     'plain_text',
     'plugins',
     'preferences',
@@ -142,6 +143,9 @@ DEFINES['MOZ_WIDGET_TOOLKIT'] = CONFIG['MOZ_WIDGET_TOOLKIT']
 
 if CONFIG['MOZ_SERVICES_SYNC']:
   DEFINES['MOZ_SERVICES_SYNC'] = True
+
+if CONFIG['MOZ_BUILD_APP'] == 'browser':
+    DEFINES['MOZ_BUILD_APP_IS_BROWSER'] = True
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     if not CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']:

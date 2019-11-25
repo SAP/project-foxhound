@@ -25,7 +25,7 @@ Steps for distributing a build as an sccache-dist client
 Start by following the instructions at https://github.com/mozilla/sccache/blob/master/docs/DistributedQuickstart.md#configure-a-client
 to configure your sccache distributed client. Ignore the note about custom
 toolchains if you're distributing compilation from linux.
-sccache 0.2.10 or above is recommended, and the auth section of your config
+sccache 0.2.11 or above is recommended, and the auth section of your config
 must read::
 
     [dist.auth]
@@ -35,13 +35,48 @@ must read::
   where <OFFICE> is, for instance, sfo1. A complete list of office short names
   to be used can be found `here <https://docs.google.com/spreadsheets/d/1alscUTcfFyu3L0vs_S_cGi9JxF4uPrfsmwJko9annWE/edit#gid=0>`_
 
+* To use distributed sccache from a Mozilla office, you must be on the corporate
+  network. Use the ``Mozilla`` ssid for wireless. The corp vlan is the default
+  if wired.
+
 * If you're compiling from a macOS client, there are a handful of additional
   considerations detailed here:
   https://github.com/mozilla/sccache/blob/master/docs/DistributedQuickstart.md#considerations-when-distributing-from-macos.
   In particular, custom toolchains will need to be specified.
-  Run ``./mach bootstrap`` to download prebuilt toolchains and place them in
+  Run ``./mach bootstrap`` to download prebuilt toolchains to
   ``~/.mozbuild/clang-dist-toolchain.tar.xz`` and
-  ``~/.mozbuild/rustc-dist-toolchain.tar.xz``.
+  ``~/.mozbuild/rustc-dist-toolchain.tar.xz``. This is an example of the paths
+  that should be added to your client config to specify toolchains to build on
+  macOS, located at ``~/Library/Preferences/Mozilla.sccache/config``::
+
+    [[dist.toolchains]]
+    type = "path_override"
+    compiler_executable = "/path/to/home/.rustup/toolchains/stable-x86_64-apple-darwin/bin/rustc"
+    archive = "/path/to/home/.mozbuild/rustc-dist-toolchain.tar.xz"
+    archive_compiler_executable = "/builds/worker/toolchains/rustc/bin/rustc"
+
+    [[dist.toolchains]]
+    type = "path_override"
+    compiler_executable = "/path/to/home/.mozbuild/clang/bin/clang"
+    archive = "/path/to/home/.mozbuild/clang-dist-toolchain.tar.xz"
+    archive_compiler_executable = "/builds/worker/toolchains/clang/bin/clang"
+
+    [[dist.toolchains]]
+    type = "path_override"
+    compiler_executable = "/path/to/home/.mozbuild/clang/bin/clang++"
+    archive = "/path/to/home/.mozbuild/clang-dist-toolchain.tar.xz"
+    archive_compiler_executable = "/builds/worker/toolchains/clang/bin/clang"
+
+  Note that the version of ``rustc`` found in ``rustc-dist-toolchain.tar.xz``
+  must match the version of ``rustc`` used locally. The distributed archive
+  will contain the version of ``rustc`` used by automation builds, which may
+  lag behind stable for a few days after Rust releases, which is specified by
+  the task definition in
+  `this file <https://hg.mozilla.org/mozilla-central/file/tip/taskcluster/ci/toolchain/dist-toolchains.yml>`_.
+  For instance, to specify 1.37.0 rather than the current stable, run
+  ``rustup toolchain add 1.37.0`` and point to
+  ``~/.rustup/toolchains/1.37.0-x86_64-apple-darwin/bin/rustc`` in your
+  client config.
 
 * Add the following to your mozconfig::
 
@@ -71,29 +106,37 @@ Build servers must run linux and use bubblewrap 3.0+ for sandboxing of compile
 processes. This requires a kernel 4.6 or greater, so Ubuntu 18+, RHEL 8, or
 similar.
 
-* Acquire a recent build of sccache. ``./mach bootstrap`` or
-  ``./mach artifact toolchain --from-build linux64-sccache`` will provide this.
-  ``cargo install`` may also be used, but ensure the version for the ``sccache``
-  and ``sccache-dist`` binaries you end up using is 0.2.10 or above.
-  Alternatively, the source is available at https://github.com/mozilla/sccache
-  and should be built with the ``dist-server`` feature selected if building from
-  there.
+* Run ``./mach bootstrap`` or
+  ``./mach artifact toolchain --from-build linux64-sccache`` to acquire a recent
+  version of ``sccache-dist``. Please use a ``sccache-dist`` binary acquired in
+  this fashion to ensure compatibility with statically linked dependencies.
 
 * Collect the IP of your builder and request assignment of a static IP in a bug
   filed in
   `NetOps :: Other <https://bugzilla.mozilla.org/enter_bug.cgi?product=Infrastructure%20%26%20Operations&component=NetOps%3A%20Office%20Other>`_
-  cc sccache-admins@mozilla.com on this bug.
+  This bug should include your office (SFO, YVR, etc.), your MAC address, and a
+  description of why you want a static IP (“To serve as an sccache builder”
+  should be sufficient).
 
-* File a bug in
-  `Infrastructure :: Other <https://bugzilla.mozilla.org/enter_bug.cgi?product=Infrastructure+%26+Operations&component=Infrastructure%3A+Other>`_
-  asking for an sccache builder auth token to be generated for your builder.
-  The bug should include your name, office, where in the office the builder is
-  located (desk, closet, etc - so IT can physically find it if needed), the IP
-  address, and a secure method to reach you (gpg, keybase.io, etc). An auth
-  token will be generated and delivered to you.
+* Visit the ``sccache`` section of https://login.mozilla.com to generate an auth
+  token for your builder.
 
 * The instructions at https://github.com/mozilla/sccache/blob/master/docs/DistributedQuickstart.md#configure-a-build-server
   should contain everything else required to configure and run the server.
+
+  *NOTE* Port 10500 will be used by convention for builders in offices.
+  Please use port 10500 in the ``public_addr`` section of your builder config.
+
+  Extra logging may be helpful when setting up a server. To enable logging,
+  run your server with
+  ``sudo env RUST_LOG=sccache=trace ~/.mozbuild/sccache/sccache-dist server --config ~/.config/sccache/server.conf``
+  (or similar). *NOTE* ``sudo`` *must* come before setting environment variables
+  for this to work.
+
+  As when configuring a client, the scheduler url to use is:
+  ``https://sccache1.corpdmz.<OFFICE>.mozilla.com``, where <OFFICE> is an
+  office abbreviation found
+  `here <https://docs.google.com/spreadsheets/d/1alscUTcfFyu3L0vs_S_cGi9JxF4uPrfsmwJko9annWE/edit#gid=0>`_.
 
 
 Common questions/considerations

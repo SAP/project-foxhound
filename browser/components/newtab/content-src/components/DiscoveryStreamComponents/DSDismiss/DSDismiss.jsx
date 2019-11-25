@@ -56,10 +56,10 @@ export class DSDismiss extends React.PureComponent {
   }
 
   render() {
-    let className = "ds-dismiss";
-    if (this.state.hovering) {
-      className += " hovering";
-    }
+    let className = `ds-dismiss
+      ${this.state.hovering ? ` hovering` : ``}
+      ${this.props.extraClasses ? ` ${this.props.extraClasses}` : ``}`;
+
     return (
       <div className={className}>
         {this.props.children}
@@ -69,6 +69,7 @@ export class DSDismiss extends React.PureComponent {
           onClick={this.onDismissClick}
           onMouseEnter={this.onHover}
           onMouseLeave={this.offHover}
+          aria-label="dismiss"
         >
           <span className="icon icon-dismiss" />
         </button>

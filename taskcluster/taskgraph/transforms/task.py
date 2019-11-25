@@ -22,6 +22,7 @@ import attr
 from mozbuild.util import memoize
 from taskgraph.util.attributes import TRUNK_PROJECTS
 from taskgraph.util.hash import hash_path
+from taskgraph.util.taskcluster import get_root_url
 from taskgraph.util.treeherder import split_symbol
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.keyed_by import evaluate_keyed_by
@@ -47,6 +48,8 @@ from ..util import docker as dockerutil
 from ..util.workertypes import get_worker_type
 
 RUN_TASK = os.path.join(GECKO, 'taskcluster', 'scripts', 'run-task')
+
+SCCACHE_GCS_PROJECT = 'sccache-3'
 
 
 @memoize
@@ -252,6 +255,7 @@ UNKNOWN_GROUP_NAME = "Treeherder group {} (from {}) has no name; " \
 V2_ROUTE_TEMPLATES = [
     "index.{trust-domain}.v2.{project}.latest.{product}.{job-name}",
     "index.{trust-domain}.v2.{project}.pushdate.{build_date_long}.{product}.{job-name}",
+    "index.{trust-domain}.v2.{project}.pushdate.{build_date}.latest.{product}.{job-name}",
     "index.{trust-domain}.v2.{project}.pushlog-id.{pushlog_id}.{product}.{job-name}",
     "index.{trust-domain}.v2.{project}.revision.{branch_rev}.{product}.{job-name}",
 ]
@@ -536,7 +540,13 @@ def build_docker_worker_payload(config, task, task_def):
                 trust_domain=config.graph_config['trust-domain'],
                 level=config.params['level'])
         )
+        task_def['scopes'].append(
+            'auth:gcp:access-token:{project}/tc-l{level}*'.format(
+                project=SCCACHE_GCS_PROJECT,
+                level=config.params['level'])
+        )
         worker['env']['USE_SCCACHE'] = '1'
+        worker['env']['SCCACHE_GCS_PROJECT'] = SCCACHE_GCS_PROJECT
         # Disable sccache idle shutdown.
         worker['env']['SCCACHE_IDLE_TIMEOUT'] = '0'
     else:
@@ -767,6 +777,9 @@ def build_docker_worker_payload(config, task, task_def):
     Required('chain-of-trust'): bool,
     Optional('taskcluster-proxy'): bool,
 
+    # the exit status code(s) that indicates the task should be retried
+    Optional('retry-exit-status'): [int],
+
     # Wether any artifacts are assigned to this worker
     Optional('skip-artifacts'): bool,
 })
@@ -788,6 +801,9 @@ def build_generic_worker_payload(config, task, task_def):
                 3221225786,  # sigint (any interrupt)
             ]
         }
+    if 'retry-exit-status' in worker:
+        task_def['payload'].setdefault(
+            'onExitStatus', {}).setdefault('retry', []).extend(worker['retry-exit-status'])
 
     env = worker.get('env', {})
 
@@ -799,6 +815,7 @@ def build_generic_worker_payload(config, task, task_def):
                 level=config.params['level'])
         )
         env['USE_SCCACHE'] = '1'
+        worker['env']['SCCACHE_GCS_PROJECT'] = SCCACHE_GCS_PROJECT
         # Disable sccache idle shutdown.
         env['SCCACHE_IDLE_TIMEOUT'] = '0'
     else:
@@ -1462,6 +1479,8 @@ def add_generic_index_routes(config, task):
     subs['job-name'] = index['job-name']
     subs['build_date_long'] = time.strftime("%Y.%m.%d.%Y%m%d%H%M%S",
                                             time.gmtime(config.params['build_date']))
+    subs['build_date'] = time.strftime("%Y.%m.%d",
+                                       time.gmtime(config.params['build_date']))
     subs['product'] = index['product']
     subs['trust-domain'] = config.graph_config['trust-domain']
     subs['branch_rev'] = get_branch_rev(config)
@@ -1876,6 +1895,10 @@ def build_task(config, tasks):
             if payload:
                 env = payload.setdefault('env', {})
                 env['MOZ_AUTOMATION'] = '1'
+
+                # Set TASKCLUSTER_ROOT_URL on workers that don't set it
+                if provisioner_id == 'terraform-packet':
+                    env['TASKCLUSTER_ROOT_URL'] = get_root_url(False)
 
         yield {
             'label': task['label'],

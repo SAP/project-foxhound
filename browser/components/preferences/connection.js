@@ -232,7 +232,7 @@ var gConnectionsDialog = {
 
   updateReloadButton() {
     // Disable the "Reload PAC" button if the selected proxy type is not PAC or
-    // if the current value of the PAC textbox does not match the value stored
+    // if the current value of the PAC input does not match the value stored
     // in prefs.  Likewise, disable the reload button if PAC is not configured
     // in prefs.
 
@@ -370,7 +370,7 @@ var gConnectionsDialog = {
     return [
       ...controlGroup.querySelectorAll(":scope > radio"),
       ...controlGroup.querySelectorAll("label"),
-      ...controlGroup.querySelectorAll("textbox"),
+      ...controlGroup.querySelectorAll("input"),
       ...controlGroup.querySelectorAll("checkbox"),
       ...document.querySelectorAll("#networkProxySOCKSVersion > radio"),
       ...document.querySelectorAll("#ConnectionsDialogPane > checkbox"),
@@ -470,9 +470,7 @@ var gConnectionsDialog = {
       return;
     }
     let [menu, customInput] = this.getDnsOverHttpsControls();
-    let customContainer = document.getElementById(
-      "customDnsOverHttpsContainer"
-    );
+    let dohUIContainer = document.getElementById("dnsOverHttps-grid");
     let customURI = Preferences.get("network.trr.custom_uri").value;
     let currentURI = Preferences.get("network.trr.uri").value;
     let resolvers = this.dnsOverHttpsResolvers;
@@ -495,11 +493,11 @@ var gConnectionsDialog = {
     }
 
     if (!menu.disabled && isCustom) {
-      customContainer.hidden = false;
+      dohUIContainer.classList.remove("custom-container-hidden");
       customInput.disabled = false;
-      customContainer.scrollIntoView();
+      customInput.scrollIntoView();
     } else {
-      customContainer.hidden = true;
+      dohUIContainer.classList.add("custom-container-hidden");
       customInput.disabled = true;
     }
 

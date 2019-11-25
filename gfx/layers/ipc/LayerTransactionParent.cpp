@@ -632,7 +632,9 @@ bool LayerTransactionParent::SetLayerAttributes(
       refLayer->SetReferentId(specific.get_RefLayerAttributes().id());
       refLayer->SetEventRegionsOverride(
           specific.get_RefLayerAttributes().eventRegionsOverride());
-      UpdateHitTestingTree(layer, "event regions override changed");
+      refLayer->SetRemoteDocumentRect(
+          specific.get_RefLayerAttributes().remoteDocumentRect());
+      UpdateHitTestingTree(layer, "ref layer attributes changed");
       break;
     }
     case Specific::TImageLayerAttributes: {
@@ -750,16 +752,6 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvGetTransform(
   // to cancel it out.
   if (!layer->GetParent() || !layer->GetParent()->GetTransformIsPerspective()) {
     transform.PostTranslate(-scaledOrigin.x, -scaledOrigin.y, -scaledOrigin.z);
-  }
-
-  // This function is supposed to include the APZ transform, but if root scroll
-  // containers are enabled, then the APZ transform might not be on |layer| but
-  // instead would be on the parent of |layer|, if that is the root scrollable
-  // metrics. So we special-case that behaviour.
-  if (StaticPrefs::layout_scroll_root_frame_containers() &&
-      !layer->HasScrollableFrameMetrics() && layer->GetParent() &&
-      layer->GetParent()->HasRootScrollableFrameMetrics()) {
-    transform *= layer->GetParent()->AsHostLayer()->GetShadowBaseTransform();
   }
 
   *aTransform = Some(transform);

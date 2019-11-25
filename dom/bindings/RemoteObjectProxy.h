@@ -45,11 +45,6 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
   bool delete_(JSContext* aCx, JS::Handle<JSObject*> aProxy,
                JS::Handle<jsid> aId, JS::ObjectOpResult& aResult) const final;
 
-  bool getPrototype(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-                    JS::MutableHandle<JSObject*> aProtop) const final;
-  bool setPrototype(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-                    JS::Handle<JSObject*> aProto,
-                    JS::ObjectOpResult& aResult) const final;
   bool getPrototypeIfOrdinary(JSContext* aCx, JS::Handle<JSObject*> aProxy,
                               bool* aIsOrdinary,
                               JS::MutableHandle<JSObject*> aProtop) const final;
@@ -67,8 +62,6 @@ class RemoteObjectProxyBase : public js::BaseProxyHandler,
            JS::ObjectOpResult& aResult) const final;
 
   // SpiderMonkey extensions
-  bool hasOwn(JSContext* aCx, JS::Handle<JSObject*> aProxy,
-              JS::Handle<jsid> aId, bool* aBp) const override;
   bool getOwnEnumerablePropertyKeys(
       JSContext* aCx, JS::Handle<JSObject*> aProxy,
       JS::MutableHandleVector<jsid> aProps) const override;

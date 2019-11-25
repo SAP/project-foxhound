@@ -362,17 +362,23 @@
     }
 
     set browser(val) {
-      if (this._browser) {
-        if (this._browser.messageManager) {
-          this._browser.messageManager.removeMessageListener(
-            "Findbar:Keypress",
-            this
-          );
-          this._browser.messageManager.removeMessageListener(
-            "Findbar:Mouseup",
-            this
-          );
+      function setFindbarInActor(browser, findbar) {
+        if (!browser.frameLoader) {
+          return;
         }
+
+        let windowGlobal = browser.browsingContext.currentWindowGlobal;
+        if (windowGlobal) {
+          let findbarParent = windowGlobal.getActor("FindBar");
+          if (findbarParent) {
+            findbarParent.setFindbar(browser, findbar);
+          }
+        }
+      }
+
+      if (this._browser) {
+        setFindbarInActor(this._browser, null);
+
         let finder = this._browser.finder;
         if (finder) {
           finder.removeResultListener(this);
@@ -383,14 +389,9 @@
       if (this._browser) {
         // Need to do this to ensure the correct initial state.
         this._updateBrowserWithState();
-        this._browser.messageManager.addMessageListener(
-          "Findbar:Keypress",
-          this
-        );
-        this._browser.messageManager.addMessageListener(
-          "Findbar:Mouseup",
-          this
-        );
+
+        setFindbarInActor(this._browser, this);
+
         this._browser.finder.addResultListener(this);
 
         this._findField.value = this._browser._lastSearchString;
@@ -578,10 +579,12 @@
       if (typeof aHighlight != "boolean") {
         aHighlight = this._highlightAll;
       }
-      if (aHighlight !== this._highlightAll && !aFromPrefObserver) {
-        this._prefsvc.setBoolPref("findbar.highlightAll", aHighlight);
+      if (aHighlight !== this._highlightAll) {
+        this._highlightAll = aHighlight;
+        if (!aFromPrefObserver) {
+          this._prefsvc.setBoolPref("findbar.highlightAll", aHighlight);
+        }
       }
-      this._highlightAll = aHighlight;
       let checkbox = this.getElement("highlight");
       checkbox.checked = this._highlightAll;
     }
@@ -818,6 +821,12 @@
       return aString != aString.toLowerCase();
     }
 
+    onMouseUp() {
+      if (!this.hidden && this._findMode != this.FIND_NORMAL) {
+        this.close();
+      }
+    }
+
     /**
      * We get a fake event object through an IPC message when FAYT is being used
      * from within the browser. We then stuff that input in the find bar here.
@@ -868,34 +877,18 @@
       }
     }
 
-    /**
-     * See MessageListener
-     */
-    receiveMessage(aMessage) {
-      if (aMessage.target != this._browser) {
-        return undefined;
-      }
-      switch (aMessage.name) {
-        case "Findbar:Mouseup":
-          if (!this.hidden && this._findMode != this.FIND_NORMAL) {
-            this.close();
-          }
-          break;
-        case "Findbar:Keypress":
-          this._onBrowserKeypress(aMessage.data);
-          break;
-      }
-      return undefined;
-    }
-
     _updateBrowserWithState() {
-      if (this._browser && this._browser.messageManager) {
-        this._browser.messageManager.sendAsyncMessage("Findbar:UpdateState", {
-          findMode: this._findMode,
-          isOpenAndFocused:
-            !this.hidden && document.activeElement == this._findField,
-          hasQuickFindTimeout: !!this._quickFindTimeout,
-        });
+      if (this._browser) {
+        this._browser.sendMessageToActor(
+          "Findbar:UpdateState",
+          {
+            findMode: this._findMode,
+            isOpenAndFocused:
+              !this.hidden && document.activeElement == this._findField,
+            hasQuickFindTimeout: !!this._quickFindTimeout,
+          },
+          "FindBar"
+        );
       }
     }
 
@@ -1022,6 +1015,7 @@
 
     _findAgain(aFindPrevious) {
       this.browser.finder.findAgain(
+        this._findField.value,
         aFindPrevious,
         this._findMode == this.FIND_LINKS,
         this._findMode != this.FIND_NORMAL
@@ -1182,10 +1176,11 @@
     /* Fetches the currently selected text and sets that as the text to search
      next. This is a MacOS specific feature. */
     onFindSelectionCommand() {
-      let searchString = this.browser.finder.setSearchStringToSelection();
-      if (searchString) {
-        this._findField.value = searchString;
-      }
+      this.browser.finder.setSearchStringToSelection().then(searchInfo => {
+        if (searchInfo.selectedText) {
+          this._findField.value = searchInfo.selectedText;
+        }
+      });
     }
 
     _onFindFieldFocus() {

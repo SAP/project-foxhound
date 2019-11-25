@@ -11,13 +11,6 @@
 <?xml-stylesheet href="chrome://global/content/tabprompts.css" type="text/css"?>
 <?xml-stylesheet href="chrome://global/skin/tabprompts.css" type="text/css"?>
 
-<!DOCTYPE page [
-<!ENTITY % brandDTD SYSTEM "chrome://branding/locale/brand.dtd" >
-%brandDTD;
-<!ENTITY % extensionsDTD SYSTEM "chrome://mozapps/locale/extensions/extensions.dtd">
-%extensionsDTD;
-]>
-
 <!-- @CSP: Soon, about:addons will not be implemented using XUL anymore (see Bug 1558982).
    - Until then we have to whitelist the following things:
    - *) the 'oncommand' handler for cmd_focusSearch within extensions.xul, using
@@ -26,11 +19,11 @@
    -    sha512-kSDNX67wegjpcf8CSj/L6h46a0QUKm2CyijGxC5PhSWVvPU9gdd28QVBBFq9t8N5UGKUFdDcZsjYbGSlYG0y3g==
    - *) the extensions.webservice.discoverURL using data:, http:, and https:
    -->
-<page xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-      xmlns:xhtml="http://www.w3.org/1999/xhtml"
-      csp="default-src chrome:; frame-src chrome: data: http: https:; script-src chrome: 'sha512-4o5Uf4E4EG+90Mb820FH2YFDf4IuX4bfUwQC7reK1ZhgcXWJBKMK2330XIELaFJJ8HiPffS9mP60MPjuXMIrHA==' 'sha512-kSDNX67wegjpcf8CSj/L6h46a0QUKm2CyijGxC5PhSWVvPU9gdd28QVBBFq9t8N5UGKUFdDcZsjYbGSlYG0y3g==';"
-      id="addons-page" data-l10n-id="addons-window"
-      role="application" windowtype="Addons:Manager">
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        csp="default-src chrome:; frame-src chrome: data: http: https:; script-src chrome: 'sha512-4o5Uf4E4EG+90Mb820FH2YFDf4IuX4bfUwQC7reK1ZhgcXWJBKMK2330XIELaFJJ8HiPffS9mP60MPjuXMIrHA==' 'sha512-kSDNX67wegjpcf8CSj/L6h46a0QUKm2CyijGxC5PhSWVvPU9gdd28QVBBFq9t8N5UGKUFdDcZsjYbGSlYG0y3g=='; object-src 'none'"
+        id="addons-page" data-l10n-id="addons-window"
+        role="application" windowtype="Addons:Manager">
 
   <xhtml:link rel="shortcut icon"
               href="chrome://mozapps/skin/extensions/extensionGeneric-16.svg"/>
@@ -183,9 +176,9 @@
           <hbox id="header">
             <hbox id="header-inner" align="center" pack="end">
               <label id="search-label" control="header-search"/>
-              <textbox id="header-search" is="search-textbox" searchbutton="true"
+              <search-textbox id="header-search" searchbutton="true"
                        data-l10n-id="search-header"
-                       data-l10n-attrs="searchbuttonlabel" maxlength="100"/>
+                       data-l10n-attrs="placeholder, searchbuttonlabel" maxlength="100"/>
             </hbox>
           </hbox>
 
@@ -249,9 +242,6 @@
           </hbox>
 
           <deck id="headered-views-content" flex="1" selectedIndex="0">
-            <!-- extension shortcuts view -->
-            <browser id="shortcuts-view" type="content" flex="1" disablehistory="true"/>
-
             <vbox id="html-view" flex="1">
               <vbox class="alert-container html-alert-container" align="start">
                 <hbox class="global-warning-safemode message-bar"
@@ -303,4 +293,4 @@
   </hbox>
   <addon-abuse-report-xulframe hidden="true"></addon-abuse-report-xulframe>
   </stack>
-</page>
+</window>

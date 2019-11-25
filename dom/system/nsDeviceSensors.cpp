@@ -10,7 +10,6 @@
 #include "nsContentUtils.h"
 #include "nsDeviceSensors.h"
 
-#include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIServiceManager.h"
@@ -19,6 +18,7 @@
 #include "mozilla/StaticPrefs_device.h"
 #include "mozilla/Attributes.h"
 #include "nsIPermissionManager.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DeviceLightEvent.h"
 #include "mozilla/dom/DeviceOrientationEvent.h"
 #include "mozilla/dom/DeviceProximityEvent.h"
@@ -31,6 +31,8 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace hal;
+
+class nsIDOMWindow;
 
 #undef near
 
@@ -202,10 +204,16 @@ static bool WindowCannotReceiveSensorEvent(nsPIDOMWindowInner* aWindow) {
     return true;
   }
 
-  // Check to see if this window is a cross-origin iframe
-  nsCOMPtr<nsPIDOMWindowOuter> top = aWindow->GetInProcessScriptableTop();
+  // Check to see if this window is a cross-origin iframe:
+
+  auto topBC = aWindow->GetBrowsingContext()->Top();
+  if (!topBC->IsInProcess()) {
+    return true;
+  }
+
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
-  nsCOMPtr<nsIScriptObjectPrincipal> topSop = do_QueryInterface(top);
+  nsCOMPtr<nsIScriptObjectPrincipal> topSop =
+      do_QueryInterface(topBC->GetDOMWindow());
   if (!sop || !topSop) {
     return true;
   }
@@ -564,5 +572,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
     return true;
   }
 
-  return !nsContentUtils::ShouldResistFingerprinting(window->GetDocShell());
+  nsCOMPtr<nsIScriptObjectPrincipal> soPrincipal = do_QueryInterface(window);
+  return !nsContentUtils::ShouldResistFingerprinting(
+      soPrincipal->GetPrincipal());
 }

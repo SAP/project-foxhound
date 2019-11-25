@@ -773,9 +773,8 @@ void gfxFont::RunMetrics::CombineWith(const RunMetrics& aOther,
 
 gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
                  gfxFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
-                 AntialiasOption anAAOption, cairo_scaled_font_t* aScaledFont)
-    : mScaledFont(aScaledFont),
-      mFontEntry(aFontEntry),
+                 AntialiasOption anAAOption)
+    : mFontEntry(aFontEntry),
       mUnscaledFont(aUnscaledFont),
       mStyle(*aFontStyle),
       mAdjustedSize(0.0),
@@ -788,6 +787,10 @@ gfxFont::gfxFont(const RefPtr<UnscaledFont>& aUnscaledFont,
 #ifdef DEBUG_TEXT_RUN_STORAGE_METRICS
   ++gFontCount;
 #endif
+
+  if (MOZ_UNLIKELY(StaticPrefs::gfx_text_disable_aa_AtStartup())) {
+    mAntialiasOption = kAntialiasNone;
+  }
 
   // Turn off AA for Ahem for testing purposes when requested.
   if (MOZ_UNLIKELY(StaticPrefs::gfx_font_rendering_ahem_antialias_none() &&
@@ -818,95 +821,44 @@ gfxFont::~gfxFont() {
 //
 gfxFont::RoundingFlags gfxFont::GetRoundOffsetsToPixels(
     DrawTarget* aDrawTarget) {
-  RoundingFlags result = RoundingFlags(0);
-
   // Could do something fancy here for ScaleFactors of
   // AxisAlignedTransforms, but we leave things simple.
   // Not much point rounding if a matrix will mess things up anyway.
-  // Also return false for non-cairo contexts.
-  if (aDrawTarget->GetTransform().HasNonTranslation()) {
-    return result;
+  // Also check if the font already knows hint metrics is off...
+  if (aDrawTarget->GetTransform().HasNonTranslation() || !ShouldHintMetrics()) {
+    return RoundingFlags(0);
   }
 
-  // All raster backends snap glyphs to pixels vertically.
-  // Print backends set CAIRO_HINT_METRICS_OFF.
-  result |= RoundingFlags::kRoundY;
+  cairo_t* cr = static_cast<cairo_t*>(
+      aDrawTarget->GetNativeSurface(NativeSurfaceType::CAIRO_CONTEXT));
+  if (cr) {
+    cairo_surface_t* target = cairo_get_target(cr);
 
-  // If we can't set up the cairo font, bail out.
-  if (!SetupCairoFont(aDrawTarget)) {
-    return result;
+    // Check whether the cairo surface's font options hint metrics.
+    cairo_font_options_t* fontOptions = cairo_font_options_create();
+    cairo_surface_get_font_options(target, fontOptions);
+    cairo_hint_metrics_t hintMetrics =
+        cairo_font_options_get_hint_metrics(fontOptions);
+    cairo_font_options_destroy(fontOptions);
+
+    switch (hintMetrics) {
+      case CAIRO_HINT_METRICS_OFF:
+        return RoundingFlags(0);
+      case CAIRO_HINT_METRICS_ON:
+        return RoundingFlags::kRoundX | RoundingFlags::kRoundY;
+      default:
+        break;
+    }
   }
 
-  cairo_t* cr = gfxFont::RefCairo(aDrawTarget);
-  cairo_scaled_font_t* scaled_font = cairo_get_scaled_font(cr);
-
-  // bug 1198921 - this sometimes fails under Windows for whatver reason
-  NS_ASSERTION(scaled_font,
-               "null cairo scaled font should never be returned "
-               "by cairo_get_scaled_font");
-  if (!scaled_font) {
-    result |= RoundingFlags::kRoundX;  // default to the same as the fallback
-                                       // path below
-    return result;
+  if (ShouldRoundXOffset(cr)) {
+    return RoundingFlags::kRoundX | RoundingFlags::kRoundY;
+  } else {
+    return RoundingFlags::kRoundY;
   }
-
-  // Sometimes hint metrics gets set for us, most notably for printing.
-#ifdef MOZ_TREE_CAIRO
-  cairo_hint_metrics_t hint_metrics =
-      cairo_scaled_font_get_hint_metrics(scaled_font);
-#else
-  cairo_font_options_t* font_options = cairo_font_options_create();
-  cairo_scaled_font_get_font_options(scaled_font, font_options);
-  cairo_hint_metrics_t hint_metrics =
-      cairo_font_options_get_hint_metrics(font_options);
-  cairo_font_options_destroy(font_options);
-#endif
-
-  switch (hint_metrics) {
-    case CAIRO_HINT_METRICS_OFF:
-      result &= ~RoundingFlags::kRoundY;
-      return result;
-    case CAIRO_HINT_METRICS_DEFAULT:
-      // Here we mimic what cairo surface/font backends do.  Printing
-      // surfaces have already been handled by hint_metrics.  The
-      // fallback show_glyphs implementation composites pixel-aligned
-      // glyph surfaces, so we just pick surface/font combinations that
-      // override this.
-      switch (cairo_scaled_font_get_type(scaled_font)) {
-#if CAIRO_HAS_DWRITE_FONT  // dwrite backend is not in std cairo releases yet
-        case CAIRO_FONT_TYPE_DWRITE:
-          // show_glyphs is implemented on the font and so is used for
-          // all surface types; however, it may pixel-snap depending on
-          // the dwrite rendering mode
-          if (!cairo_dwrite_scaled_font_get_force_GDI_classic(scaled_font) &&
-              gfxWindowsPlatform::GetPlatform()->DWriteMeasuringMode() ==
-                  DWRITE_MEASURING_MODE_NATURAL) {
-            return result;
-          }
-          MOZ_FALLTHROUGH;
-#endif
-        case CAIRO_FONT_TYPE_QUARTZ:
-          // Quartz surfaces implement show_glyphs for Quartz fonts
-          if (cairo_surface_get_type(cairo_get_target(cr)) ==
-              CAIRO_SURFACE_TYPE_QUARTZ) {
-            return result;
-          }
-          break;
-        default:
-          break;
-      }
-      break;
-    case CAIRO_HINT_METRICS_ON:
-      break;
-  }
-  result |= RoundingFlags::kRoundX;
-  return result;
 }
 
 gfxFloat gfxFont::GetGlyphHAdvance(DrawTarget* aDrawTarget, uint16_t aGID) {
-  if (!SetupCairoFont(aDrawTarget)) {
-    return 0;
-  }
   if (ProvidesGlyphWidths()) {
     return GetGlyphWidth(aGID) / 65536.0;
   }
@@ -3392,38 +3344,6 @@ gfxFont* gfxFont::GetSubSuperscriptFont(int32_t aAppUnitsPerDevPixel) {
   return fe->FindOrMakeFont(&style, mUnicodeRangeMap);
 }
 
-static void DestroyRefCairo(void* aData) {
-  cairo_t* refCairo = static_cast<cairo_t*>(aData);
-  MOZ_ASSERT(refCairo);
-  cairo_destroy(refCairo);
-}
-
-/* static */
-cairo_t* gfxFont::RefCairo(DrawTarget* aDT) {
-  // DrawTargets that don't use a Cairo backend can be given a 1x1 "reference"
-  // |cairo_t*|, stored in the DrawTarget's user data, for doing font-related
-  // operations.
-  static UserDataKey sRefCairo;
-
-  cairo_t* refCairo = nullptr;
-  if (aDT->GetBackendType() == BackendType::CAIRO) {
-    refCairo = static_cast<cairo_t*>(
-        aDT->GetNativeSurface(NativeSurfaceType::CAIRO_CONTEXT));
-    if (refCairo) {
-      return refCairo;
-    }
-  }
-
-  refCairo = static_cast<cairo_t*>(aDT->GetUserData(&sRefCairo));
-  if (!refCairo) {
-    refCairo = cairo_create(
-        gfxPlatform::GetPlatform()->ScreenReferenceSurface()->CairoSurface());
-    aDT->AddUserData(&sRefCairo, refCairo, DestroyRefCairo);
-  }
-
-  return refCairo;
-}
-
 gfxGlyphExtents* gfxFont::GetOrCreateGlyphExtents(int32_t aAppUnitsPerDevUnit) {
   uint32_t i, count = mGlyphExtentsArray.Length();
   for (i = 0; i < count; ++i) {
@@ -3453,22 +3373,15 @@ void gfxFont::SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
     return;
   }
 
-  RefPtr<ScaledFont> sf = GetScaledFont(aDrawTarget);
-  uint16_t glyphIndex = aGlyphID;
-  GlyphMetrics metrics;
-  if (mAntialiasOption == kAntialiasNone) {
-    sf->GetGlyphDesignMetrics(&glyphIndex, 1, &metrics);
-  } else {
-    aDrawTarget->GetGlyphRasterizationMetrics(sf, &glyphIndex, 1, &metrics);
-  }
+  gfxRect bounds;
+  GetGlyphBounds(aGlyphID, &bounds, mAntialiasOption == kAntialiasNone);
 
   const Metrics& fontMetrics = GetMetrics(nsFontMetrics::eHorizontal);
   int32_t appUnitsPerDevUnit = aExtents->GetAppUnitsPerDevUnit();
-  if (!aNeedTight && metrics.mXBearing >= 0.0 &&
-      metrics.mYBearing >= -fontMetrics.maxAscent &&
-      metrics.mHeight + metrics.mYBearing <= fontMetrics.maxDescent) {
-    uint32_t appUnitsWidth = uint32_t(
-        ceil((metrics.mXBearing + metrics.mWidth) * appUnitsPerDevUnit));
+  if (!aNeedTight && bounds.x >= 0.0 && bounds.y >= -fontMetrics.maxAscent &&
+      bounds.height + bounds.y <= fontMetrics.maxDescent) {
+    uint32_t appUnitsWidth =
+        uint32_t(ceil((bounds.x + bounds.width) * appUnitsPerDevUnit));
     if (appUnitsWidth < gfxGlyphExtents::INVALID_WIDTH) {
       aExtents->SetContainedGlyphWidthAppUnits(aGlyphID,
                                                uint16_t(appUnitsWidth));
@@ -3482,9 +3395,9 @@ void gfxFont::SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
 #endif
 
   gfxFloat d2a = appUnitsPerDevUnit;
-  gfxRect bounds(metrics.mXBearing * d2a, metrics.mYBearing * d2a,
-                 metrics.mWidth * d2a, metrics.mHeight * d2a);
-  aExtents->SetTightGlyphExtents(aGlyphID, bounds);
+  aExtents->SetTightGlyphExtents(
+      aGlyphID, gfxRect(bounds.x * d2a, bounds.y * d2a, bounds.width * d2a,
+                        bounds.height * d2a));
 }
 
 // Try to initialize font metrics by reading sfnt tables directly;

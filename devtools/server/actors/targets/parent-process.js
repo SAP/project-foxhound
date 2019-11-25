@@ -67,7 +67,7 @@ parentProcessTargetPrototype.initialize = function(connection, window) {
   }
 
   // Default to any available top level window if there is no expected window
-  // (for example when we open firefox with -webide argument)
+  // eg when running ./mach run --chrome chrome://browser/content/aboutTabCrashed.xhtml --jsdebugger
   if (!window) {
     window = Services.wm.getMostRecentWindow(null);
   }
@@ -99,25 +99,6 @@ Object.defineProperty(parentProcessTargetPrototype, "docShells", {
     }
 
     return docShells;
-  },
-});
-
-/**
- * Getter for the list of all browsingContexts in the parent process.
- * We use specialized code in order to retrieve <browser>'s browsing context for
- * each browser's tab. BrowsingContext.getChildren method doesn't return the
- * tab's BrowsingContext because they are of "content" type, while the root
- * BrowsingContext of the parent process target is of "chrome" type.
- *
- * @return {Array}
- */
-Object.defineProperty(parentProcessTargetPrototype, "childBrowsingContexts", {
-  get: function() {
-    // Iterate over all `browser` elements that are remote, and return their
-    // browsing context.
-    return [
-      ...this.window.document.querySelectorAll(`browser[remote="true"]`),
-    ].map(browser => browser.browsingContext);
   },
 });
 

@@ -4,6 +4,7 @@
 
 "use strict";
 
+const { getAllPrefs } = require("devtools/client/webconsole/selectors/prefs");
 const { getAllUi } = require("devtools/client/webconsole/selectors/ui");
 const { getMessage } = require("devtools/client/webconsole/selectors/messages");
 
@@ -24,6 +25,12 @@ const {
   EDITOR_SET_WIDTH,
   EDITOR_ONBOARDING_DISMISS,
 } = require("devtools/client/webconsole/constants");
+
+function openLink(url, e) {
+  return ({ hud }) => {
+    return hud.openLink(url, e);
+  };
+}
 
 function persistToggle() {
   return ({ dispatch, getState, prefsService }) => {
@@ -48,17 +55,29 @@ function contentMessagesToggle() {
   };
 }
 
-function timestampsToggle(visible) {
-  return {
-    type: TIMESTAMPS_TOGGLE,
-    visible,
+function timestampsToggle() {
+  return ({ dispatch, getState, prefsService }) => {
+    dispatch({
+      type: TIMESTAMPS_TOGGLE,
+    });
+    const uiState = getAllUi(getState());
+    prefsService.setBoolPref(
+      PREFS.UI.MESSAGE_TIMESTAMP,
+      uiState.timestampsVisible
+    );
   };
 }
 
-function warningGroupsToggle(value) {
-  return {
-    type: WARNING_GROUPS_TOGGLE,
-    value,
+function warningGroupsToggle() {
+  return ({ dispatch, getState, prefsService }) => {
+    dispatch({
+      type: WARNING_GROUPS_TOGGLE,
+    });
+    const prefsState = getAllPrefs(getState());
+    prefsService.setBoolPref(
+      PREFS.FEATURES.GROUP_WARNINGS,
+      prefsState.groupWarnings
+    );
   };
 }
 
@@ -159,6 +178,18 @@ function filterBarDisplayModeSet(displayMode) {
   };
 }
 
+function openSidebar(messageId, rootActorId) {
+  return ({ dispatch }) => {
+    dispatch(showMessageObjectInSidebar(rootActorId, messageId));
+  };
+}
+
+function timeWarp(executionPoint) {
+  return ({ client }) => {
+    client.timeWarp(executionPoint);
+  };
+}
+
 module.exports = {
   contentMessagesToggle,
   editorOnboardingDismiss,
@@ -175,4 +206,7 @@ module.exports = {
   splitConsoleCloseButtonToggle,
   timestampsToggle,
   warningGroupsToggle,
+  openLink,
+  openSidebar,
+  timeWarp,
 };

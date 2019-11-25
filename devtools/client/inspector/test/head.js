@@ -52,6 +52,7 @@ var navigateTo = async function(inspector, url) {
   const markuploaded = inspector.once("markuploaded");
   const onNewRoot = inspector.once("new-root");
   const onUpdated = inspector.once("inspector-updated");
+  const onReloaded = inspector.once("reloaded");
 
   info("Navigating to: " + url);
   const target = inspector.toolbox.target;
@@ -65,6 +66,9 @@ var navigateTo = async function(inspector, url) {
 
   info("Waiting for inspector to update after new-root event.");
   await onUpdated;
+
+  info("Waiting for inspector updates after page reload");
+  await onReloaded;
 };
 
 /**
@@ -83,6 +87,16 @@ var startPicker = async function(toolbox, skipFocus) {
       content.focus();
     });
   }
+};
+
+/**
+ * Start the eye dropper tool.
+ * @param {Toolbox} toolbox
+ */
+var startEyeDropper = async function(toolbox) {
+  info("Start the eye dropper tool");
+  toolbox.win.focus();
+  await toolbox.getPanel("inspector").showEyeDropper();
 };
 
 /**
@@ -741,6 +755,35 @@ var waitForTab = async function() {
   info("The tab load completed");
   return tab;
 };
+
+/**
+ * Wait for a predicate to return a result.
+ *
+ * @param {Function} condition
+ *        Invoked once in a while until it returns a truthy value. This should be an
+ *        idempotent function, since we have to run it a second time after it returns
+ *        true in order to return the value.
+ * @param {String} message [optional]
+ *        A message to output if the condition fails.
+ * @param {Number} interval [optional]
+ *        How often the predicate is invoked, in milliseconds.
+ * @return {Object}
+ *         A promise that is resolved with the result of the condition.
+ */
+async function waitFor(
+  condition,
+  message = "waitFor",
+  interval = 10,
+  maxTries = 500
+) {
+  await BrowserTestUtils.waitForCondition(
+    condition,
+    message,
+    interval,
+    maxTries
+  );
+  return condition();
+}
 
 /**
  * Simulate the key input for the given input in the window.

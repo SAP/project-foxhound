@@ -202,7 +202,6 @@ class Assembler : public AssemblerMIPSShared {
 
   using AssemblerMIPSShared::bind;
 
-  void bind(RepatchLabel* label);
   static void Bind(uint8_t* rawCode, const CodeLabel& label);
 
   void processCodeLabels(uint8_t* rawCode);
@@ -216,7 +215,7 @@ class Assembler : public AssemblerMIPSShared {
 
   // Copy the assembly code to the given buffer, and perform any pending
   // relocations relying on the target address.
-  void executableCopy(uint8_t* buffer, bool flushICache = true);
+  void executableCopy(uint8_t* buffer);
 
   static uint32_t PatchWrite_NearCallSize();
 

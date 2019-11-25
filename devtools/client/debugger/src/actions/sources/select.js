@@ -19,6 +19,7 @@ import { closeActiveSearch, updateActiveFileSearch } from "../ui";
 import { togglePrettyPrint } from "./prettyPrint";
 import { addTab, closeTab } from "../tabs";
 import { loadSourceText } from "./loadSourceText";
+import { setBreakableLines } from ".";
 
 import { prefs } from "../../utils/prefs";
 import { isMinified } from "../../utils/source";
@@ -57,12 +58,13 @@ export const setSelectedLocation = (
 export const setPendingSelectedLocation = (
   cx: Context,
   url: string,
-  options: Object
+  options?: PartialPosition
 ) => ({
   type: "SET_PENDING_SELECTED_LOCATION",
   cx,
-  url: url,
-  line: options.location ? options.location.line : null,
+  url,
+  line: options ? options.line : null,
+  column: options ? options.column : null,
 });
 
 export const clearSelectedLocation = (cx: Context) => ({
@@ -84,7 +86,7 @@ export const clearSelectedLocation = (cx: Context) => ({
 export function selectSourceURL(
   cx: Context,
   url: string,
-  options: PartialPosition = {}
+  options?: PartialPosition
 ) {
   return async ({ dispatch, getState, sourceMaps }: ThunkArgs) => {
     const source = getSourceByURL(getState(), url);
@@ -162,6 +164,8 @@ export function selectLocation(
     dispatch(setSelectedLocation(cx, source, location));
 
     await dispatch(loadSourceText({ cx, source }));
+    await dispatch(setBreakableLines(cx, source.id));
+
     const loadedSource = getSource(getState(), source.id);
 
     if (!loadedSource) {

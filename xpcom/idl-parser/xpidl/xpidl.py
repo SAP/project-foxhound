@@ -679,7 +679,7 @@ class Interface(object):
         if self.attributes.function:
             has_method = False
             for member in self.members:
-                if member.kind is 'method':
+                if member.kind == 'method':
                     if has_method:
                         raise IDLError(
                             "interface '%s' has multiple methods, but marked 'function'" %
@@ -1243,7 +1243,7 @@ class Param(object):
             return self.realtype.nativeType(self.paramtype, **kwargs)
         except IDLError as e:
             raise IDLError(e.message, self.location)
-        except TypeError as e:
+        except TypeError:
             raise IDLError("Unexpected parameter attribute", self.location)
 
     def rustType(self):
@@ -1257,7 +1257,7 @@ class Param(object):
             return self.realtype.rustType(self.paramtype, **kwargs)
         except IDLError as e:
             raise IDLError(e.message, self.location)
-        except TypeError as e:
+        except TypeError:
             raise IDLError("Unexpected parameter attribute", self.location)
 
     def toIDL(self):

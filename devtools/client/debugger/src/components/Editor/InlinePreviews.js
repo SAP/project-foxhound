@@ -10,73 +10,85 @@ import {
   getSelectedFrame,
   getCurrentThread,
   getInlinePreviews,
-  visibleColumnBreakpoints,
 } from "../../selectors";
 
 import type { Frame } from "../../types";
-import type { ColumnBreakpoint as ColumnBreakpointType } from "../../selectors/visibleColumnBreakpoints";
 
+type OwnProps = {|
+  editor: Object,
+  selectedSource: Object,
+|};
 type Props = {
   editor: Object,
-  selectedFrame: Frame,
+  +selectedFrame: ?Frame,
   selectedSource: Object,
-  previews: Object,
-  columnBreakpoints: ColumnBreakpointType[],
+  +previews: ?Object,
 };
 
+function hasPreviews(previews: ?Object) {
+  return !!previews && Object.keys(previews).length > 0;
+}
+
 class InlinePreviews extends Component<Props> {
+  shouldComponentUpdate({ previews }: Props) {
+    return hasPreviews(previews);
+  }
+
   render() {
-    const {
-      editor,
-      selectedFrame,
-      selectedSource,
-      previews,
-      columnBreakpoints,
-    } = this.props;
+    const { editor, selectedFrame, selectedSource, previews } = this.props;
 
     // Render only if currently open file is the one where debugger is paused
     if (
       !selectedFrame ||
       selectedFrame.location.sourceId !== selectedSource.id ||
-      !previews
+      !hasPreviews(previews)
     ) {
       return null;
     }
+    const previewsObj: Object = previews;
 
-    return (
-      <div>
-        {Object.keys(previews).map((line: string) => {
-          const lineNum: number = parseInt(line, 10);
-          const numColumnBreakpoints = columnBreakpoints.filter(
-            bp => bp.location.line === lineNum + 1
-          ).length;
+    let inlinePreviewRows;
+    editor.codeMirror.operation(() => {
+      inlinePreviewRows = Object.keys(previewsObj).map((line: string) => {
+        const lineNum: number = parseInt(line, 10);
 
-          return (
-            <InlinePreviewRow
-              editor={editor}
-              key={line}
-              line={lineNum}
-              previews={previews[line]}
-              numColumnBreakpoints={numColumnBreakpoints}
-            />
-          );
-        })}
-      </div>
-    );
+        return (
+          <InlinePreviewRow
+            editor={editor}
+            key={line}
+            line={lineNum}
+            previews={previewsObj[line]}
+          />
+        );
+      });
+    });
+
+    return <div>{inlinePreviewRows}</div>;
   }
 }
 
-const mapStateToProps = state => {
+const mapStateToProps = (
+  state
+): {|
+  selectedFrame: ?Frame,
+  previews: ?Object,
+|} => {
   const thread = getCurrentThread(state);
   const selectedFrame = getSelectedFrame(state, thread);
 
-  if (!selectedFrame) return {};
+  if (!selectedFrame) {
+    return {
+      selectedFrame: null,
+      previews: null,
+    };
+  }
 
   return {
     selectedFrame,
     previews: getInlinePreviews(state, thread, selectedFrame.id),
-    columnBreakpoints: visibleColumnBreakpoints(state),
   };
 };
 
-export default connect(mapStateToProps)(InlinePreviews);
+export default connect<Props, OwnProps, _, _, _, _>(mapStateToProps)(
+  InlinePreviews
+);

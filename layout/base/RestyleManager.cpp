@@ -19,6 +19,7 @@
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSetInlines.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Unused.h"
 #include "mozilla/ViewportFrame.h"
 #include "mozilla/dom/ChildIterator.h"
@@ -540,7 +541,6 @@ nsCString RestyleManager::ChangeHintToString(nsChangeHint aHint) {
                          "ClearAncestorIntrinsics",
                          "ClearDescendantIntrinsics",
                          "NeedDirtyReflow",
-                         "SyncFrameView",
                          "UpdateCursor",
                          "UpdateEffects",
                          "UpdateOpacityLayer",
@@ -554,7 +554,6 @@ nsCString RestyleManager::ChangeHintToString(nsChangeHint aHint) {
                          "RecomputePosition",
                          "UpdateContainingBlock",
                          "BorderStyleNoneChange",
-                         "UpdateTextPath",
                          "SchedulePaint",
                          "NeutralChange",
                          "InvalidateRenderingObservers",
@@ -619,16 +618,11 @@ static bool gInApplyRenderingChangeToTree = false;
 #endif
 
 /**
- * Sync views on aFrame and all of aFrame's descendants (following
- * placeholders), if aChange has nsChangeHint_SyncFrameView. Calls
- * DoApplyRenderingChangeToTree on all aFrame's out-of-flow descendants
- * (following placeholders), if aChange has nsChangeHint_RepaintFrame.
- * aFrame should be some combination of nsChangeHint_SyncFrameView,
- * nsChangeHint_RepaintFrame, nsChangeHint_UpdateOpacityLayer and
- * nsChangeHint_SchedulePaint, nothing else.
+ * Sync views on the frame and all of it's descendants (following placeholders).
+ * The change hint should be some combination of nsChangeHint_RepaintFrame,
+ * nsChangeHint_UpdateOpacityLayer and nsChangeHint_SchedulePaint, nothing else.
  */
-static void SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
-                                              nsChangeHint aChange);
+static void SyncViewsAndInvalidateDescendants(nsIFrame*, nsChangeHint);
 
 static void StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint);
 
@@ -1033,7 +1027,6 @@ static void DoApplyRenderingChangeToTree(nsIFrame* aFrame,
     // transformed frame.
     SyncViewsAndInvalidateDescendants(
         aFrame, nsChangeHint(aChange & (nsChangeHint_RepaintFrame |
-                                        nsChangeHint_SyncFrameView |
                                         nsChangeHint_UpdateOpacityLayer |
                                         nsChangeHint_SchedulePaint)));
     // This must be set to true if the rendering change needs to
@@ -1058,19 +1051,6 @@ static void DoApplyRenderingChangeToTree(nsIFrame* aFrame,
       }
 
       ActiveLayerTracker::NotifyNeedsRepaint(aFrame);
-    }
-    if (aChange & nsChangeHint_UpdateTextPath) {
-      if (nsSVGUtils::IsInSVGTextSubtree(aFrame)) {
-        // Invalidate and reflow the entire SVGTextFrame:
-        NS_ASSERTION(aFrame->GetContent()->IsSVGElement(nsGkAtoms::textPath),
-                     "expected frame for a <textPath> element");
-        nsIFrame* text = nsLayoutUtils::GetClosestFrameOfType(
-            aFrame, LayoutFrameType::SVGText);
-        NS_ASSERTION(text, "expected to find an ancestor SVGTextFrame");
-        static_cast<SVGTextFrame*>(text)->NotifyGlyphMetricsChange();
-      } else {
-        MOZ_ASSERT(false, "unexpected frame got nsChangeHint_UpdateTextPath");
-      }
     }
     if (aChange & nsChangeHint_UpdateOpacityLayer) {
       // FIXME/bug 796697: we can get away with empty transactions for
@@ -1133,16 +1113,13 @@ static void SyncViewsAndInvalidateDescendants(nsIFrame* aFrame,
   MOZ_ASSERT(gInApplyRenderingChangeToTree,
              "should only be called within ApplyRenderingChangeToTree");
 
-  NS_ASSERTION(
-      nsChangeHint_size_t(aChange) ==
-          (aChange &
-           (nsChangeHint_RepaintFrame | nsChangeHint_SyncFrameView |
-            nsChangeHint_UpdateOpacityLayer | nsChangeHint_SchedulePaint)),
-      "Invalid change flag");
+  NS_ASSERTION(nsChangeHint_size_t(aChange) ==
+                   (aChange & (nsChangeHint_RepaintFrame |
+                               nsChangeHint_UpdateOpacityLayer |
+                               nsChangeHint_SchedulePaint)),
+               "Invalid change flag");
 
-  if (aChange & nsChangeHint_SyncFrameView) {
-    aFrame->SyncFrameViewProperties();
-  }
+  aFrame->SyncFrameViewProperties();
 
   nsIFrame::ChildListIterator lists(aFrame);
   for (; !lists.IsDone(); lists.Next()) {
@@ -1228,8 +1205,7 @@ static void ApplyRenderingChangeToTree(PresShell* aPresShell, nsIFrame* aFrame,
     // viewport. This is necessary for background and scrollbar colors
     // propagation.
     if (IsPrimaryFrameOfRootOrBodyElement(aFrame)) {
-      nsIFrame* rootFrame =
-          aFrame->PresShell()->FrameConstructor()->GetRootFrame();
+      nsIFrame* rootFrame = aPresShell->GetRootFrame();
       MOZ_ASSERT(rootFrame, "No root frame?");
       DoApplyRenderingChangeToTree(rootFrame, nsChangeHint_RepaintFrame);
       aChange &= ~nsChangeHint_RepaintFrame;
@@ -1279,6 +1255,10 @@ static void StyleChangeReflow(nsIFrame* aFrame, nsChangeHint aHint) {
     dirtyType = IntrinsicDirty::TreeChange;
   } else {
     dirtyType = IntrinsicDirty::Resize;
+  }
+
+  if (aHint & nsChangeHint_UpdateComputedBSize) {
+    aFrame->SetHasBSizeChange(true);
   }
 
   nsFrameState dirtyBits;
@@ -1684,8 +1664,8 @@ void RestyleManager::ProcessRestyledFrames(nsStyleChangeList& aChangeList) {
       }
 
       if (hint &
-          (nsChangeHint_RepaintFrame | nsChangeHint_SyncFrameView |
-           nsChangeHint_UpdateOpacityLayer | nsChangeHint_UpdateTransformLayer |
+          (nsChangeHint_RepaintFrame | nsChangeHint_UpdateOpacityLayer |
+           nsChangeHint_UpdateTransformLayer |
            nsChangeHint_ChildrenOnlyTransform | nsChangeHint_SchedulePaint)) {
         ApplyRenderingChangeToTree(presContext->PresShell(), frame, hint);
       }
@@ -2746,7 +2726,8 @@ bool RestyleManager::ProcessPostTraversal(Element* aElement,
   // XXXbholley: We should teach the frame constructor how to clear the dirty
   // descendants bit to avoid the traversal here.
   if (changeHint & nsChangeHint_ReconstructFrame) {
-    if (wasRestyled) {
+    if (wasRestyled &&
+        StaticPrefs::layout_css_scroll_anchoring_suppressions_enabled()) {
       const bool wasAbsPos =
           styleFrame &&
           styleFrame->StyleDisplay()->IsAbsolutelyPositionedStyle();

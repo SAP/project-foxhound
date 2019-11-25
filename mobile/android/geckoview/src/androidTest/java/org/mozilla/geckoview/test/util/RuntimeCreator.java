@@ -1,6 +1,5 @@
 package org.mozilla.geckoview.test.util;
 
-import org.mozilla.geckoview.GeckoResult;
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoRuntimeSettings;
 import org.mozilla.geckoview.RuntimeTelemetry;
@@ -35,9 +34,30 @@ public class RuntimeCreator {
         public RuntimeTelemetry.Delegate delegate = null;
 
         @Override
-        public void onTelemetryReceived(@NonNull RuntimeTelemetry.Metric metric) {
+        public void onHistogram(@NonNull RuntimeTelemetry.Histogram metric) {
             if (delegate != null) {
-                delegate.onTelemetryReceived(metric);
+                delegate.onHistogram(metric);
+            }
+        }
+
+        @Override
+        public void onBooleanScalar(@NonNull RuntimeTelemetry.Metric<Boolean> metric) {
+            if (delegate != null) {
+                delegate.onBooleanScalar(metric);
+            }
+        }
+
+        @Override
+        public void onStringScalar(@NonNull RuntimeTelemetry.Metric<String> metric) {
+            if (delegate != null) {
+                delegate.onStringScalar(metric);
+            }
+        }
+
+        @Override
+        public void onLongScalar(@NonNull RuntimeTelemetry.Metric<Long> metric) {
+            if (delegate != null) {
+                delegate.onLongScalar(metric);
             }
         }
     }

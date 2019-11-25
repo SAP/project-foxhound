@@ -117,7 +117,7 @@ export default class LoginItem extends HTMLElement {
       if (this._error.errorMessage.includes("This login already exists")) {
         document.l10n.setAttributes(
           this._errorMessageLink,
-          "about-logins-error-message-duplicate-login",
+          "about-logins-error-message-duplicate-login-with-link",
           {
             loginTitle: this._error.login.title,
           }
@@ -160,6 +160,7 @@ export default class LoginItem extends HTMLElement {
     }
 
     this._title.textContent = this._login.title;
+    this._title.title = this._login.title;
     this._originInput.defaultValue = this._login.origin || "";
     this._usernameInput.defaultValue = this._login.username || "";
     if (this._login.password) {
@@ -378,7 +379,7 @@ export default class LoginItem extends HTMLElement {
           return;
         }
         if (
-          classList.contains("error-message-link") &&
+          event.target.dataset.l10nName == "duplicate-link" &&
           event.currentTarget.dataset.errorGuid
         ) {
           let existingDuplicateLogin = {
@@ -727,6 +728,14 @@ export default class LoginItem extends HTMLElement {
   }
 
   _updatePasswordRevealState() {
+    if (
+      window.AboutLoginsUtils &&
+      window.AboutLoginsUtils.passwordRevealVisible === false
+    ) {
+      this._revealCheckbox.hidden = true;
+      return;
+    }
+
     let titleId = this._revealCheckbox.checked
       ? "login-item-password-reveal-checkbox-hide"
       : "login-item-password-reveal-checkbox-show";

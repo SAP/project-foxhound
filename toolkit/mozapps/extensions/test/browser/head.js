@@ -230,7 +230,7 @@ function run_next_test() {
     info("Test " + gTestsRun + " took " + (Date.now() - gTestStart) + "ms");
   }
 
-  if (gPendingTests.length == 0) {
+  if (!gPendingTests.length) {
     executeSoon(end_test);
     return;
   }
@@ -503,7 +503,7 @@ function get_string(aName, ...aArgs) {
   var bundle = Services.strings.createBundle(
     "chrome://mozapps/locale/extensions/extensions.properties"
   );
-  if (aArgs.length == 0) {
+  if (!aArgs.length) {
     return bundle.GetStringFromName(aName);
   }
   return bundle.formatStringFromName(aName, aArgs);
@@ -553,9 +553,9 @@ function promiseAddonsByIDs(aIDs) {
  *
  * The callback will receive the Addon for the installed add-on.
  */
-function install_addon(path, cb, pathPrefix = TESTROOT) {
-  let p = new Promise(async (resolve, reject) => {
-    let install = await AddonManager.getInstallForURL(pathPrefix + path);
+async function install_addon(path, cb, pathPrefix = TESTROOT) {
+  let install = await AddonManager.getInstallForURL(pathPrefix + path);
+  let p = new Promise((resolve, reject) => {
     install.addListener({
       onInstallEnded: () => resolve(install.addon),
     });
@@ -731,26 +731,19 @@ function addCertOverrides() {
 
 /** *** Mock Provider *****/
 
-function MockProvider(aUseAsyncCallbacks, aTypes) {
+function MockProvider() {
   this.addons = [];
   this.installs = [];
-  this.callbackTimers = [];
-  this.timerLocations = new Map();
-  this.useAsyncCallbacks =
-    aUseAsyncCallbacks === undefined ? true : aUseAsyncCallbacks;
-  this.types =
-    aTypes === undefined
-      ? [
-          {
-            id: "extension",
-            name: "Extensions",
-            uiPriority: 4000,
-            flags:
-              AddonManager.TYPE_UI_VIEW_LIST |
-              AddonManager.TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL,
-          },
-        ]
-      : aTypes;
+  this.types = [
+    {
+      id: "extension",
+      name: "Extensions",
+      uiPriority: 4000,
+      flags:
+        AddonManager.TYPE_UI_VIEW_LIST |
+        AddonManager.TYPE_SUPPORTS_UNDO_RESTARTLESS_UNINSTALL,
+    },
+  ];
 
   var self = this;
   registerCleanupFunction(function() {
@@ -767,9 +760,6 @@ MockProvider.prototype = {
   installs: null,
   started: null,
   apiDelay: 10,
-  callbackTimers: null,
-  timerLocations: null,
-  useAsyncCallbacks: null,
   types: null,
 
   /** *** Utility functions *****/
@@ -799,7 +789,7 @@ MockProvider.prototype = {
    */
   addAddon: function MP_addAddon(aAddon) {
     var oldAddons = this.addons.filter(aOldAddon => aOldAddon.id == aAddon.id);
-    var oldAddon = oldAddons.length > 0 ? oldAddons[0] : null;
+    var oldAddon = oldAddons.length ? oldAddons[0] : null;
 
     this.addons = this.addons.filter(aOldAddon => aOldAddon.id != aAddon.id);
 
@@ -968,26 +958,6 @@ MockProvider.prototype = {
    * Called when the provider should shutdown.
    */
   shutdown: function MP_shutdown() {
-    if (this.callbackTimers.length) {
-      info(
-        "MockProvider: pending callbacks at shutdown(): calling immediately"
-      );
-    }
-    while (this.callbackTimers.length > 0) {
-      // When we notify the callback timer, it removes itself from our array
-      let timer = this.callbackTimers[0];
-      try {
-        let setAt = this.timerLocations.get(timer);
-        info("Notifying timer set at " + (setAt || "unknown location"));
-        timer.callback.notify(timer);
-        timer.cancel();
-      } catch (e) {
-        info("Timer notify failed: " + e);
-      }
-    }
-    this.callbackTimers = [];
-    this.timerLocations = null;
-
     this.started = false;
   },
 
@@ -1015,7 +985,7 @@ MockProvider.prototype = {
    */
   async getAddonsByTypes(aTypes) {
     var addons = this.addons.filter(function(aAddon) {
-      if (aTypes && aTypes.length > 0 && !aTypes.includes(aAddon.type)) {
+      if (aTypes && !!aTypes.length && !aTypes.includes(aAddon.type)) {
         return false;
       }
       return true;
@@ -1036,7 +1006,7 @@ MockProvider.prototype = {
         return false;
       }
 
-      if (aTypes && aTypes.length > 0 && !aTypes.includes(aInstall.type)) {
+      if (aTypes && !!aTypes.length && !aTypes.includes(aInstall.type)) {
         return false;
       }
 
@@ -1752,4 +1722,8 @@ async function testUndoPendingUninstall(addonList, addon) {
     addon && !(addon.pendingOperations & AddonManager.PENDING_UNINSTALL),
     "The addon pending uninstall cancelled"
   );
+}
+
+function loadTestSubscript(filePath) {
+  Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
 }

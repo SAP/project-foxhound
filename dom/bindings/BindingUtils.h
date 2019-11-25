@@ -25,6 +25,7 @@
 #include "mozilla/dom/NonRefcountedDOMObject.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/PrototypeList.h"
+#include "mozilla/dom/RemoteObjectProxy.h"
 #include "mozilla/dom/RootedDictionary.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/SegmentedVector.h"
@@ -71,12 +72,6 @@ inline nsresult UnwrapArg(JSContext* cx, JS::Handle<JSObject*> src,
 
 nsresult UnwrapWindowProxyArg(JSContext* cx, JS::Handle<JSObject*> src,
                               WindowProxyHolder& ppArg);
-
-bool ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
-                      bool aSecurityError, const char* aInterfaceName);
-
-bool ThrowInvalidThis(JSContext* aCx, const JS::CallArgs& aArgs,
-                      bool aSecurityError, prototypes::ID aProtoId);
 
 // Returns true if the JSClass is used for DOM objects.
 inline bool IsDOMClass(const JSClass* clasp) {
@@ -227,6 +222,12 @@ MOZ_ALWAYS_INLINE nsresult UnwrapObjectInternal(V& obj, U& value,
 
   /* Maybe we have a security wrapper or outer window? */
   if (!mayBeWrapper || !js::IsWrapper(obj)) {
+    // For non-cross-origin-accessible methods and properties, remote object
+    // proxies should behave the same as opaque wrappers.
+    if (IsRemoteObjectProxy(obj)) {
+      return NS_ERROR_XPC_SECURITY_MANAGER_VETO;
+    }
+
     /* Not a DOM object, not a wrapper, just bail */
     return NS_ERROR_XPC_BAD_CONVERT_JS;
   }
@@ -265,6 +266,12 @@ MOZ_ALWAYS_INLINE nsresult UnwrapObjectInternal(V& obj, U& value,
   nsresult rv = UnwrapObjectInternal<T, false>(unwrappedObj, tempValue, protoID,
                                                protoDepth, nullptr);
   if (NS_SUCCEEDED(rv)) {
+    // Suppress a hazard related to keeping tempValue alive across
+    // UnwrapObjectInternal, because the analysis can't tell that this function
+    // will not GC if maybeWrapped=False and we've already gone through a level
+    // of unwrapping so unwrappedObj will be !IsWrapper.
+    JS::AutoSuppressGCAnalysis suppress;
+
     // It's very important to not update "obj" with the "unwrappedObj" value
     // until we know the unwrap has succeeded.  Otherwise, in a situation in
     // which we have an overload of object and primitive we could end up
@@ -707,9 +714,8 @@ struct NamedConstructor {
  *                underlying global.
  * unscopableNames if not null it points to a null-terminated list of const
  *                 char* names of the unscopable properties for this interface.
- * isGlobal if true, we're creating interface objects for a [Global] or
- *        [PrimaryGlobal] interface, and hence shouldn't define properties on
- *        the prototype object.
+ * isGlobal if true, we're creating interface objects for a [Global] interface,
+ *          and hence shouldn't define properties on the prototype object.
  * legacyWindowAliases if not null it points to a null-terminated list of const
  *                     char* names of the legacy window aliases for this
  *                     interface.
@@ -735,7 +741,7 @@ void CreateInterfaceObjects(
 /**
  * Define the properties (regular and chrome-only) on obj.
  *
- * obj the object to instal the properties on. This should be the interface
+ * obj the object to install the properties on. This should be the interface
  *     prototype object for regular interfaces and the instance object for
  *     interfaces marked with Global.
  * properties contains the methods, attributes and constants to be defined on
@@ -1516,12 +1522,16 @@ bool WrapObject(JSContext* cx, const WindowProxyHolder& p,
 template <typename T>
 static inline JSObject* WrapNativeISupports(JSContext* cx, T* p,
                                             nsWrapperCache* cache) {
-  xpcObjectHelper helper(ToSupports(p), cache);
-  JS::Rooted<JSObject*> scope(cx, JS::CurrentGlobalOrNull(cx));
-  JS::Rooted<JS::Value> v(cx);
-  return XPCOMObjectToJsval(cx, scope, helper, nullptr, false, &v)
-             ? v.toObjectOrNull()
-             : nullptr;
+  JS::Rooted<JSObject*> retval(cx);
+  {
+    xpcObjectHelper helper(ToSupports(p), cache);
+    JS::Rooted<JSObject*> scope(cx, JS::CurrentGlobalOrNull(cx));
+    JS::Rooted<JS::Value> v(cx);
+    retval = XPCOMObjectToJsval(cx, scope, helper, nullptr, false, &v)
+      ? v.toObjectOrNull()
+      : nullptr;
+  }
+  return retval;
 }
 
 // Wrapping of our native parent, for cases when it's a WebIDL object.
@@ -1755,17 +1765,6 @@ static inline bool AtomizeAndPinJSString(JSContext* cx, jsid& id,
 
 bool InitIds(JSContext* cx, const NativeProperties* properties);
 
-bool QueryInterface(JSContext* cx, unsigned argc, JS::Value* vp);
-
-template <class T>
-struct WantsQueryInterface {
-  static_assert(IsBaseOf<nsISupports, T>::value,
-                "QueryInterface can't work without an nsISupports.");
-  static bool Enabled(JSContext* aCx, JSObject* aGlobal) {
-    return NS_IsMainThread() && IsChromeOrXBL(aCx, aGlobal);
-  }
-};
-
 void GetInterfaceImpl(JSContext* aCx, nsIInterfaceRequestor* aRequestor,
                       nsWrapperCache* aCache, JS::Handle<JS::Value> aIID,
                       JS::MutableHandle<JS::Value> aRetval,
@@ -1799,6 +1798,14 @@ bool AppendNamedPropertyIds(JSContext* cx, JS::Handle<JSObject*> proxy,
                             JS::MutableHandleVector<jsid> props);
 
 enum StringificationBehavior { eStringify, eEmpty, eNull };
+
+static inline JSString* ConvertJSValueToJSString(JSContext* cx,
+                                                 JS::Handle<JS::Value> v) {
+  if (MOZ_LIKELY(v.isString())) {
+    return v.toString();
+  }
+  return JS::ToString(cx, v);
+}
 
 template <typename T>
 static inline bool ConvertJSValueToString(
@@ -2163,11 +2170,6 @@ class MOZ_STACK_CLASS NullableRootedUnion : public Nullable<T>,
     }
   }
 };
-
-inline bool IdEquals(jsid id, const char* string) {
-  return JSID_IS_STRING(id) &&
-         JS_FlatStringEqualsAscii(JSID_TO_FLAT_STRING(id), string);
-}
 
 inline bool AddStringToIDVector(JSContext* cx,
                                 JS::MutableHandleVector<jsid> vector,
@@ -2586,11 +2588,11 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
                                JS::PrivateValue(aNative));
       mNative = aNative;
       mReflector = aReflector;
-    }
 
-    if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
-      JS::AddAssociatedMemory(aReflector, mallocBytes,
-                              JS::MemoryUse::DOMBinding);
+      if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
+        JS::AddAssociatedMemory(aReflector, mallocBytes,
+                                JS::MemoryUse::DOMBinding);
+      }
     }
   }
 
@@ -2603,11 +2605,11 @@ class MOZ_STACK_CLASS BindingJSObjectCreator {
                           JS::PrivateValue(aNative));
       mNative = aNative;
       mReflector = aReflector;
-    }
 
-    if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
-      JS::AddAssociatedMemory(aReflector, mallocBytes,
-                              JS::MemoryUse::DOMBinding);
+      if (size_t mallocBytes = BindingJSObjectMallocBytes(aNative)) {
+        JS::AddAssociatedMemory(aReflector, mallocBytes,
+                                JS::MemoryUse::DOMBinding);
+      }
     }
   }
 
@@ -3121,6 +3123,43 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
 bool IsGetterEnabled(JSContext* aCx, JS::Handle<JSObject*> aObj,
                      JSJitGetterOp aGetter,
                      const Prefable<const JSPropertySpec>* aAttributes);
+
+// A class that can be used to examine the chars of a linear string.
+class StringIdChars {
+ public:
+  // Require a non-const ref to an AutoRequireNoGC to prevent callers
+  // from passing temporaries.
+  StringIdChars(JS::AutoRequireNoGC& nogc, JSLinearString* str) {
+    mIsLatin1 = js::LinearStringHasLatin1Chars(str);
+    if (mIsLatin1) {
+      mLatin1Chars = js::GetLatin1LinearStringChars(nogc, str);
+    } else {
+      mTwoByteChars = js::GetTwoByteLinearStringChars(nogc, str);
+    }
+#ifdef DEBUG
+    mLength = js::GetLinearStringLength(str);
+#endif  // DEBUG
+  }
+
+  MOZ_ALWAYS_INLINE char16_t operator[](size_t index) {
+    MOZ_ASSERT(index < mLength);
+    if (mIsLatin1) {
+      return mLatin1Chars[index];
+    }
+    return mTwoByteChars[index];
+  }
+
+ private:
+  bool mIsLatin1;
+  union {
+    const JS::Latin1Char* mLatin1Chars;
+    const char16_t* mTwoByteChars;
+  };
+#ifdef DEBUG
+  size_t mLength;
+#endif  // DEBUG
+};
+
 }  // namespace binding_detail
 
 }  // namespace dom

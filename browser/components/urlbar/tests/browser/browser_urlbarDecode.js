@@ -8,11 +8,6 @@
 // the urlbar also shows the URLs embedded in action URIs unescaped.  See bug
 // 1233672.
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
-});
-
 add_task(async function injectJSON() {
   let inputStrs = [
     'http://example.com/ ", "url": "bar',
@@ -63,7 +58,7 @@ add_task(async function actionURILosslessDecode() {
   // moz-action.
   do {
     EventUtils.synthesizeKey("KEY_ArrowDown");
-  } while (UrlbarTestUtils.getSelectedIndex(window) != 0);
+  } while (UrlbarTestUtils.getSelectedRowIndex(window) != 0);
 
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
 

@@ -439,8 +439,7 @@ class nsINode : public mozilla::dom::EventTarget {
   inline mozilla::dom::DocumentFragment* AsDocumentFragment();
   inline const mozilla::dom::DocumentFragment* AsDocumentFragment() const;
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) final;
 
   /**
    * Hook for constructing JS::ubi::Concrete specializations for memory
@@ -597,13 +596,15 @@ class nsINode : public mozilla::dom::EventTarget {
    *
    * For all other cases OwnerDoc and GetOwnerDocument behave identically.
    */
-  Document* OwnerDoc() const { return mNodeInfo->GetDocument(); }
+  Document* OwnerDoc() const MOZ_NONNULL_RETURN {
+    return mNodeInfo->GetDocument();
+  }
 
   /**
    * Return the "owner document" of this node as an nsINode*.  Implemented
    * in Document.h.
    */
-  inline nsINode* OwnerDocAsNode() const;
+  inline nsINode* OwnerDocAsNode() const MOZ_NONNULL_RETURN;
 
   /**
    * Returns true if the content has an ancestor that is a document.
@@ -743,6 +744,11 @@ class nsINode : public mozilla::dom::EventTarget {
     const bool isShadowRoot = IsInShadowTree() && !GetParentNode();
     MOZ_ASSERT_IF(isShadowRoot, IsDocumentFragment());
     return isShadowRoot;
+  }
+
+  bool IsHTMLHeadingElement() const {
+    return IsAnyOfHTMLElements(nsGkAtoms::h1, nsGkAtoms::h2, nsGkAtoms::h3,
+                               nsGkAtoms::h4, nsGkAtoms::h5, nsGkAtoms::h6);
   }
 
   /**

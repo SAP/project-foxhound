@@ -6,10 +6,11 @@
 
 EXTRA_JS_MODULES += [
     'AndroidLog.jsm',
+    'BrowserUsageTelemetry.jsm',
     'ContentCrashHandler.jsm',
     'DelayedInit.jsm',
-    'GeckoViewAccessibility.jsm',
-    'GeckoViewAutoFill.jsm',
+    'GeckoViewActorChild.jsm',
+    'GeckoViewAutofill.jsm',
     'GeckoViewChildModule.jsm',
     'GeckoViewConsole.jsm',
     'GeckoViewContent.jsm',
@@ -20,6 +21,7 @@ EXTRA_JS_MODULES += [
     'GeckoViewNavigation.jsm',
     'GeckoViewProcessHangMonitor.jsm',
     'GeckoViewProgress.jsm',
+    'GeckoViewPushController.jsm',
     'GeckoViewRemoteDebugger.jsm',
     'GeckoViewSettings.jsm',
     'GeckoViewStorageController.jsm',

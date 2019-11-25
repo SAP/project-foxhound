@@ -408,11 +408,15 @@ var SelectParentHelper = {
   ) {
     let element = menulist.menupopup;
 
+    let ariaOwns = "";
     for (let option of options) {
       let isOptGroup = option.tagName == "OPTGROUP";
       let item = element.ownerDocument.createXULElement(
         isOptGroup ? "menucaption" : "menuitem"
       );
+      if (isOptGroup) {
+        item.setAttribute("role", "group");
+      }
       let style = uniqueOptionStyles[option.styleIndex];
 
       item.setAttribute("label", option.textContent);
@@ -487,6 +491,16 @@ var SelectParentHelper = {
         item.removeAttribute("customoptionstyling");
       }
 
+      if (parentElement) {
+        // In the menupopup, the optgroup is a sibling of its contained options.
+        // For accessibility, we want to preserve the hierarchy such that the
+        // options are inside the optgroup. We do this using aria-owns on the
+        // parent.
+        item.id = "ContentSelectDropdownOption" + nthChildIndex;
+        item.setAttribute("aria-level", "2");
+        ariaOwns += item.id + " ";
+      }
+
       element.appendChild(item);
       nthChildIndex++;
 
@@ -536,6 +550,10 @@ var SelectParentHelper = {
       }
     }
 
+    if (parentElement && ariaOwns) {
+      parentElement.setAttribute("aria-owns", ariaOwns);
+    }
+
     // Check if search pref is enabled, if this is the first time iterating through
     // the dropdown, and if the list is long enough for a search element to be added.
     if (
@@ -544,9 +562,7 @@ var SelectParentHelper = {
       element.childElementCount > SEARCH_MINIMUM_ELEMENTS
     ) {
       // Add a search text field as the first element of the dropdown
-      let searchbox = element.ownerDocument.createXULElement("textbox", {
-        is: "search-textbox",
-      });
+      let searchbox = element.ownerDocument.createXULElement("search-textbox");
       searchbox.className = "contentSelectDropdown-searchbox";
       searchbox.addEventListener("input", this.onSearchInput);
       searchbox.inputField.addEventListener(

@@ -405,6 +405,31 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
             getSettings().mGeckoViewLogLevel.set(enable ? "Debug" : "Fatal");
             return this;
         }
+
+        /**
+         * Sets whether or not about:config should be enabled. This is a page that allows
+         * users to directly modify Gecko preferences. Modification of some preferences may
+         * cause the app to break in unpredictable ways -- crashes, performance issues, security
+         * vulnerabilities, etc.
+         *
+         * @param flag True if about:config should be enabled, false otherwise.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder aboutConfigEnabled(final boolean flag) {
+            getSettings().mAboutConfig.set(flag);
+            return this;
+        }
+
+        /**
+         * Sets whether or not pinch-zooming should be enabled when <code>user-scalable=no</code> is set on the viewport.
+         *
+         * @param flag True if force user scalable zooming should be enabled, false otherwise.
+         * @return This Builder instance.
+         */
+        public @NonNull Builder forceUserScalableEnabled(final boolean flag) {
+            getSettings().mForceUserScalable.set(flag);
+            return this;
+        }
     }
 
     private GeckoRuntime mRuntime;
@@ -449,6 +474,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
             "consoleservice.logcat", true);
     /* package */ final Pref<Boolean> mDevToolsConsoleToLogcat = new Pref<>(
             "devtools.console.stdout.chrome", true);
+    /* package */ final Pref<Boolean> mAboutConfig = new Pref<>(
+            "general.aboutConfig.enable", false);
+    /* package */ final Pref<Boolean> mForceUserScalable = new Pref<>(
+            "browser.ui.zoom.force-user-scalable", false);
 
     /* package */ boolean mDebugPause;
     /* package */ boolean mUseMaxScreenDepth;
@@ -1021,6 +1050,49 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
 
     public @Nullable RuntimeTelemetry.Delegate getTelemetryDelegate() {
         return mTelemetryProxy.getDelegate();
+    }
+
+    /**
+     * Gets whether about:config is enabled or not.
+     *
+     * @return True if about:config is enabled, false otherwise.
+     */
+    public boolean getAboutConfigEnabled() {
+        return mAboutConfig.get();
+    }
+
+    /**
+     * Sets whether or not about:config should be enabled. This is a page that allows
+     * users to directly modify Gecko preferences. Modification of some preferences may
+     * cause the app to break in unpredictable ways -- crashes, performance issues, security
+     * vulnerabilities, etc.
+     *
+     * @param flag True if about:config should be enabled, false otherwise.
+     * @return This GeckoRuntimeSettings instance.
+     */
+    public @NonNull GeckoRuntimeSettings setAboutConfigEnabled(final boolean flag) {
+        mAboutConfig.commit(flag);
+        return this;
+    }
+
+    /**
+     * Gets whether or not force user scalable zooming should be enabled or not.
+     *
+     * @return True if force user scalable zooming should be enabled, false otherwise.
+     */
+    public boolean getForceUserScalableEnabled() {
+        return mForceUserScalable.get();
+    }
+
+    /**
+     * Sets whether or not pinch-zooming should be enabled when <code>user-scalable=no</code> is set on the viewport.
+     *
+     * @param flag True if force user scalable zooming should be enabled, false otherwise.
+     * @return This GeckoRuntimeSettings instance.
+     */
+    public @NonNull GeckoRuntimeSettings setForceUserScalableEnabled(final boolean flag) {
+        mForceUserScalable.commit(flag);
+        return this;
     }
 
     @Override // Parcelable

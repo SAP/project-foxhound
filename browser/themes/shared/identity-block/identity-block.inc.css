@@ -4,10 +4,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 %endif
 
+%filter substitution
+%define identityBoxPaddingInline 6px
+%define identityBoxMarginInlineEnd 2px
+
 #identity-box {
-  padding-inline-start: 6px;
-  padding-inline-end: 6px;
-  margin-inline-end: 2px;
+  padding-inline: @identityBoxPaddingInline@;
+  margin-inline-end: @identityBoxMarginInlineEnd@;
 }
 
 #identity-box,
@@ -167,7 +170,8 @@
 #identity-box[pageproxystate="valid"].weakCipher > #identity-icon,
 #identity-box[pageproxystate="valid"].mixedDisplayContent > #identity-icon,
 #identity-box[pageproxystate="valid"].mixedDisplayContentLoadedActiveBlocked > #identity-icon,
-#identity-box[pageproxystate="valid"].certUserOverridden > #identity-icon {
+#identity-box[pageproxystate="valid"].certUserOverridden > #identity-icon,
+#identity-box[pageproxystate="valid"].certErrorPage > #identity-icon {
   list-style-image: url(chrome://browser/skin/connection-mixed-passive-loaded.svg);
   fill: unset;
 }
@@ -221,8 +225,7 @@
 /* TRACKING PROTECTION ICON */
 
 #tracking-protection-icon-container {
-  padding-inline-start: 6px;
-  padding-inline-end: 6px;
+  padding-inline: @identityBoxPaddingInline@;
   /* Separator */
   border-inline-end: 1px solid var(--urlbar-separator-color);
   border-image: linear-gradient(transparent 15%, var(--urlbar-separator-color) 15%, var(--urlbar-separator-color) 85%, transparent 85%);
@@ -248,6 +251,7 @@
 }
 
 #tracking-protection-icon-box > #tracking-protection-icon-animatable-box {
+  display: block;
   position: absolute;
   overflow: hidden;
   width: 16px;
@@ -255,6 +259,9 @@
 }
 
 #tracking-protection-icon-box:not([hasException])[active] #tracking-protection-icon-animatable-image {
+  /* Overrides the default 'display: -moz-box' to prevent icon shifting issue
+     with scaled text, see Bug 1591049 */
+  display: block;
   background-image: url(chrome://browser/skin/tracking-protection-animation.svg);
   transform: translateX(-256px);
   width: 272px;

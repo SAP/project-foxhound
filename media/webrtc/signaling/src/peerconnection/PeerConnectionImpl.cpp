@@ -35,7 +35,7 @@
 
 #include "AudioConduit.h"
 #include "VideoConduit.h"
-#include "MediaStreamGraph.h"
+#include "MediaTrackGraph.h"
 #include "runnable_utils.h"
 #include "PeerConnectionCtx.h"
 #include "PeerConnectionImpl.h"
@@ -98,7 +98,7 @@
 #include "AudioStreamTrack.h"
 #include "VideoStreamTrack.h"
 #include "nsIScriptGlobalObject.h"
-#include "MediaStreamGraph.h"
+#include "MediaTrackGraph.h"
 #include "DOMMediaStream.h"
 #include "WebrtcGlobalInformation.h"
 #include "mozilla/dom/Event.h"
@@ -106,7 +106,7 @@
 #include "mozilla/net/DataChannelProtocol.h"
 #include "MediaManager.h"
 
-#include "MediaStreamGraphImpl.h"
+#include "MediaTrackGraphImpl.h"
 
 #ifdef XP_WIN
 // We need to undef the MS macro again in case the windows include file
@@ -229,10 +229,23 @@ RTCStatsQuery::RTCStatsQuery(bool aInternal, bool aRecordTelemetry)
 
 RTCStatsQuery::~RTCStatsQuery() {}
 
+void PeerConnectionAutoTimer::AddRef() { mRefCnt++; }
+
+void PeerConnectionAutoTimer::Release() {
+  mRefCnt--;
+  if (mRefCnt == 0) {
+    Telemetry::Accumulate(
+        Telemetry::WEBRTC_CALL_DURATION,
+        static_cast<uint32_t>((TimeStamp::Now() - mStart).ToSeconds()));
+  }
+}
+
+bool PeerConnectionAutoTimer::IsStopped() { return mRefCnt == 0; }
+
 NS_IMPL_ISUPPORTS0(PeerConnectionImpl)
 
 already_AddRefed<PeerConnectionImpl> PeerConnectionImpl::Constructor(
-    const dom::GlobalObject& aGlobal, ErrorResult& rv) {
+    const dom::GlobalObject& aGlobal) {
   RefPtr<PeerConnectionImpl> pc = new PeerConnectionImpl(&aGlobal);
 
   CSFLogDebug(LOGTAG, "Created PeerConnection: %p", pc.get());
@@ -607,7 +620,7 @@ class CompareCodecPriority {
 class ConfigureCodec {
  public:
   explicit ConfigureCodec(nsCOMPtr<nsIPrefBranch>& branch)
-      : mHardwareH264Supported(false),
+      : mHardwareH264Enabled(false),
         mSoftwareH264Enabled(false),
         mH264Enabled(false),
         mVP9Enabled(true),
@@ -624,7 +637,12 @@ class ConfigureCodec {
         mDtmfEnabled(false) {
     mSoftwareH264Enabled = PeerConnectionCtx::GetInstance()->gmpHasH264();
 
-    mH264Enabled = mHardwareH264Supported || mSoftwareH264Enabled;
+    if (WebrtcVideoConduit::HasH264Hardware()) {
+      branch->GetBoolPref("media.webrtc.hw.h264.enabled",
+                          &mHardwareH264Enabled);
+    }
+
+    mH264Enabled = mHardwareH264Enabled || mSoftwareH264Enabled;
 
     branch->GetIntPref("media.navigator.video.h264.level", &mH264Level);
     mH264Level &= 0xFF;
@@ -697,7 +715,7 @@ class ConfigureCodec {
             videoCodec.mEnabled = false;
           }
 
-          if (mHardwareH264Supported) {
+          if (mHardwareH264Enabled) {
             videoCodec.mStronglyPreferred = true;
           }
         } else if (videoCodec.mName == "red") {
@@ -733,7 +751,7 @@ class ConfigureCodec {
   }
 
  private:
-  bool mHardwareH264Supported;
+  bool mHardwareH264Enabled;
   bool mSoftwareH264Enabled;
   bool mH264Enabled;
   bool mVP9Enabled;
@@ -862,67 +880,93 @@ nsresult PeerConnectionImpl::GetDatachannelParameters(
     uint32_t* channels, uint16_t* localport, uint16_t* remoteport,
     uint32_t* remotemaxmessagesize, bool* mmsset, std::string* transportId,
     bool* client) const {
-  for (const auto& transceiver : mJsepSession->GetTransceivers()) {
-    bool dataChannel =
-        transceiver->GetMediaType() == SdpMediaSection::kApplication;
-
-    if (dataChannel && transceiver->mSendTrack.GetNegotiatedDetails()) {
-      // This will release assert if there is no such index, and that's ok
-      const JsepTrackEncoding& encoding =
-          transceiver->mSendTrack.GetNegotiatedDetails()->GetEncoding(0);
-
-      if (encoding.GetCodecs().empty()) {
-        CSFLogError(LOGTAG,
-                    "%s: Negotiated m=application with no codec. "
-                    "This is likely to be broken.",
-                    __FUNCTION__);
-        return NS_ERROR_FAILURE;
-      }
-
-      for (const auto& codec : encoding.GetCodecs()) {
-        if (codec->mType != SdpMediaSection::kApplication) {
-          CSFLogError(LOGTAG,
-                      "%s: Codec type for m=application was %u, this "
-                      "is a bug.",
-                      __FUNCTION__, static_cast<unsigned>(codec->mType));
-          MOZ_ASSERT(false, "Codec for m=application was not \"application\"");
-          return NS_ERROR_FAILURE;
-        }
-
-        if (codec->mName != "webrtc-datachannel") {
-          CSFLogWarn(LOGTAG,
-                     "%s: Codec for m=application was not "
-                     "webrtc-datachannel (was instead %s). ",
-                     __FUNCTION__, codec->mName.c_str());
-          continue;
-        }
-
-        if (codec->mChannels) {
-          *channels = codec->mChannels;
-        } else {
-          *channels = WEBRTC_DATACHANNEL_STREAMS_DEFAULT;
-        }
-        const JsepApplicationCodecDescription* appCodec =
-            static_cast<const JsepApplicationCodecDescription*>(codec.get());
-        *localport = appCodec->mLocalPort;
-        *remoteport = appCodec->mRemotePort;
-        *remotemaxmessagesize = appCodec->mRemoteMaxMessageSize;
-        *mmsset = appCodec->mRemoteMMSSet;
-        MOZ_ASSERT(!transceiver->mTransport.mTransportId.empty());
-        *transportId = transceiver->mTransport.mTransportId;
-        *client = transceiver->mTransport.mDtls->GetRole() ==
-                  JsepDtlsTransport::kJsepDtlsClient;
-        return NS_OK;
-      }
-    }
-  }
-
+  // Clear, just in case we fail.
   *channels = 0;
   *localport = 0;
   *remoteport = 0;
   *remotemaxmessagesize = 0;
   *mmsset = false;
   transportId->clear();
+
+  RefPtr<JsepTransceiver> datachannelTransceiver;
+  for (const auto& transceiver : mJsepSession->GetTransceivers()) {
+    if ((transceiver->GetMediaType() == SdpMediaSection::kApplication) &&
+        transceiver->mSendTrack.GetNegotiatedDetails()) {
+      datachannelTransceiver = transceiver;
+      break;
+    }
+  }
+
+  if (!datachannelTransceiver) {
+    return NS_ERROR_FAILURE;
+  }
+
+  RefPtr<JsepTransceiver> transportTransceiver;
+  if (datachannelTransceiver->HasOwnTransport()) {
+    transportTransceiver = datachannelTransceiver;
+  } else if (datachannelTransceiver->HasBundleLevel()) {
+    // Find the actual transport.
+    for (const auto& transceiver : mJsepSession->GetTransceivers()) {
+      if (transceiver->HasLevel() &&
+          transceiver->GetLevel() == datachannelTransceiver->BundleLevel() &&
+          transceiver->HasOwnTransport()) {
+        transportTransceiver = transceiver;
+        break;
+      }
+    }
+  }
+
+  if (!transportTransceiver) {
+    return NS_ERROR_FAILURE;
+  }
+
+  // This will release assert if there is no such index, and that's ok
+  const JsepTrackEncoding& encoding =
+      datachannelTransceiver->mSendTrack.GetNegotiatedDetails()->GetEncoding(0);
+
+  if (NS_WARN_IF(encoding.GetCodecs().empty())) {
+    CSFLogError(LOGTAG,
+                "%s: Negotiated m=application with no codec. "
+                "This is likely to be broken.",
+                __FUNCTION__);
+    return NS_ERROR_FAILURE;
+  }
+
+  for (const auto& codec : encoding.GetCodecs()) {
+    if (codec->mType != SdpMediaSection::kApplication) {
+      CSFLogError(LOGTAG,
+                  "%s: Codec type for m=application was %u, this "
+                  "is a bug.",
+                  __FUNCTION__, static_cast<unsigned>(codec->mType));
+      MOZ_ASSERT(false, "Codec for m=application was not \"application\"");
+      return NS_ERROR_FAILURE;
+    }
+
+    if (codec->mName != "webrtc-datachannel") {
+      CSFLogWarn(LOGTAG,
+                 "%s: Codec for m=application was not "
+                 "webrtc-datachannel (was instead %s). ",
+                 __FUNCTION__, codec->mName.c_str());
+      continue;
+    }
+
+    if (codec->mChannels) {
+      *channels = codec->mChannels;
+    } else {
+      *channels = WEBRTC_DATACHANNEL_STREAMS_DEFAULT;
+    }
+    const JsepApplicationCodecDescription* appCodec =
+        static_cast<const JsepApplicationCodecDescription*>(codec.get());
+    *localport = appCodec->mLocalPort;
+    *remoteport = appCodec->mRemotePort;
+    *remotemaxmessagesize = appCodec->mRemoteMaxMessageSize;
+    *mmsset = appCodec->mRemoteMMSSet;
+    MOZ_ASSERT(!transportTransceiver->mTransport.mTransportId.empty());
+    *transportId = transportTransceiver->mTransport.mTransportId;
+    *client = transportTransceiver->mTransport.mDtls->GetRole() ==
+              JsepDtlsTransport::kJsepDtlsClient;
+    return NS_OK;
+  }
   return NS_ERROR_FAILURE;
 }
 
@@ -1028,6 +1072,10 @@ nsresult PeerConnectionImpl::InitializeDataChannel() {
 
   if (NS_FAILED(rv)) {
     CSFLogDebug(LOGTAG, "%s: We did not negotiate datachannel", __FUNCTION__);
+    if (mDataConnection) {
+      mDataConnection->Destroy();
+      mDataConnection = nullptr;
+    }
     return NS_OK;
   }
 
@@ -1798,32 +1846,29 @@ OwningNonNull<dom::MediaStreamTrack> PeerConnectionImpl::CreateReceiveTrack(
         NullPrincipal::CreateWithInheritedAttributes(doc->NodePrincipal());
   }
 
-  MediaStreamGraph* graph = MediaStreamGraph::GetInstance(
-      audio ? MediaStreamGraph::AUDIO_THREAD_DRIVER
-            : MediaStreamGraph::SYSTEM_THREAD_DRIVER,
-      GetWindow(), MediaStreamGraph::REQUEST_DEFAULT_SAMPLE_RATE);
+  MediaTrackGraph* graph = MediaTrackGraph::GetInstance(
+      audio ? MediaTrackGraph::AUDIO_THREAD_DRIVER
+            : MediaTrackGraph::SYSTEM_THREAD_DRIVER,
+      GetWindow(), MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE);
 
   RefPtr<MediaStreamTrack> track;
   RefPtr<RemoteTrackSource> trackSource;
-  RefPtr<SourceMediaStream> source = graph->CreateSourceStream();
   if (audio) {
+    RefPtr<SourceMediaTrack> source =
+        graph->CreateSourceTrack(MediaSegment::AUDIO);
     trackSource = new RemoteTrackSource(source, principal,
                                         NS_ConvertASCIItoUTF16("remote audio"));
-    track = new AudioStreamTrack(GetWindow(), source,
-                                 333,  // Use a constant TrackID. Dependents
-                                       // read this from the DOM track.
-                                 trackSource);
+    track = new AudioStreamTrack(GetWindow(), source, trackSource);
   } else {
+    RefPtr<SourceMediaTrack> source =
+        graph->CreateSourceTrack(MediaSegment::VIDEO);
     trackSource = new RemoteTrackSource(source, principal,
                                         NS_ConvertASCIItoUTF16("remote video"));
-    track = new VideoStreamTrack(GetWindow(), source,
-                                 666,  // Use a constant TrackID. Dependents
-                                       // read this from the DOM track.
-                                 trackSource);
+    track = new VideoStreamTrack(GetWindow(), source, trackSource);
   }
 
   CSFLogDebug(LOGTAG, "Created %s track %p, inner: %p",
-              audio ? "audio" : "video", track.get(), track->GetStream());
+              audio ? "audio" : "video", track.get(), track->GetTrack());
 
   // Spec says remote tracks start out muted.
   trackSource->SetMuted(true);
@@ -2145,6 +2190,20 @@ void PeerConnectionImpl::RecordEndOfCallTelemetry() const {
     type |= kDataChannelTypeMask;
   }
   Telemetry::Accumulate(Telemetry::WEBRTC_CALL_TYPE, type);
+
+  if (mWindow) {
+    nsCString spec;
+    nsresult rv = mWindow->GetDocumentURI()->GetSpec(spec);
+    if (NS_SUCCEEDED(rv)) {
+      auto itor = mAutoTimers.find(spec.BeginReading());
+      if (itor != mAutoTimers.end()) {
+        itor->second.Release();
+        if (itor->second.IsStopped()) {
+          mAutoTimers.erase(itor);
+        }
+      }
+    }
+  }
 }
 
 nsresult PeerConnectionImpl::CloseInt() {
@@ -2195,13 +2254,6 @@ void PeerConnectionImpl::ShutdownMedia() {
     if (track) {
       track->RemovePrincipalChangeObserver(this);
     }
-  }
-
-  // End of call to be recorded in Telemetry
-  if (!mStartTime.IsNull()) {
-    TimeDuration timeDelta = TimeStamp::Now() - mStartTime;
-    Telemetry::Accumulate(Telemetry::WEBRTC_CALL_DURATION,
-                          timeDelta.ToSeconds());
   }
 
   // Forget the reference so that we can transfer it to
@@ -2898,12 +2950,18 @@ void PeerConnectionImpl::RecordIceRestartStatistics(JsepSdpType type) {
 
 // Telemetry for when calls start
 void PeerConnectionImpl::startCallTelem() {
-  if (!mStartTime.IsNull()) {
-    return;
+  if (mWindow) {
+    nsCString spec;
+    nsresult rv = mWindow->GetDocumentURI()->GetSpec(spec);
+    if (NS_SUCCEEDED(rv)) {
+      auto itor = mAutoTimers.find(spec.BeginReading());
+      if (itor == mAutoTimers.end()) {
+        mAutoTimers.emplace(spec.BeginReading(), PeerConnectionAutoTimer());
+      } else {
+        itor->second.AddRef();
+      }
+    }
   }
-
-  // Start time for calls
-  mStartTime = TimeStamp::Now();
 
   // Increment session call counter
   // If we want to track Loop calls independently here, we need two histograms.
@@ -2971,4 +3029,5 @@ PeerConnectionImpl::DTMFState::~DTMFState() { StopPlayout(); }
 
 NS_IMPL_ISUPPORTS(PeerConnectionImpl::DTMFState, nsITimerCallback)
 
+std::map<std::string, PeerConnectionAutoTimer> PeerConnectionImpl::mAutoTimers;
 }  // namespace mozilla

@@ -20,7 +20,7 @@ namespace mozilla {
 namespace wr {
 
 wr::WrExternalImage wr_renderer_lock_external_image(
-    void* aObj, wr::WrExternalImageId aId, uint8_t aChannelIndex,
+    void* aObj, wr::ExternalImageId aId, uint8_t aChannelIndex,
     wr::ImageRendering aRendering) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
@@ -33,7 +33,7 @@ wr::WrExternalImage wr_renderer_lock_external_image(
   return texture->Lock(aChannelIndex, renderer->gl(), aRendering);
 }
 
-void wr_renderer_unlock_external_image(void* aObj, wr::WrExternalImageId aId,
+void wr_renderer_unlock_external_image(void* aObj, wr::ExternalImageId aId,
                                        uint8_t aChannelIndex) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
@@ -89,6 +89,7 @@ wr::WrExternalImageHandler RendererOGL::GetExternalImageHandler() {
 }
 
 void RendererOGL::Update() {
+  mCompositor->Update();
   if (mCompositor->MakeCurrent()) {
     wr_renderer_update(mRenderer);
   }
@@ -230,7 +231,7 @@ RefPtr<WebRenderPipelineInfo> RendererOGL::FlushPipelineInfo() {
 }
 
 RenderTextureHost* RendererOGL::GetRenderTexture(
-    wr::WrExternalImageId aExternalImageId) {
+    wr::ExternalImageId aExternalImageId) {
   return mThread->GetRenderTexture(aExternalImageId);
 }
 

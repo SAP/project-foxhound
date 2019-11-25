@@ -75,7 +75,9 @@
 <linkset>
   <html:link rel="localization" href="branding/brand.ftl"/>
   <html:link rel="localization" href="browser/branding/sync-brand.ftl"/>
+  <html:link rel="localization" href="browser/browser.ftl"/>
   <html:link rel="localization" href="browser/menubar.ftl"/>
+  <html:link rel="localization" href="browser/appmenu.ftl"/>
 </linkset>
 
 # All JS files which are needed by browser.xhtml and other top level windows to
@@ -482,12 +484,10 @@
 
     <menupopup id="autohide-context"
            onpopupshowing="FullScreen.getAutohide(this.firstChild);">
-      <menuitem type="checkbox" label="&fullScreenAutohide.label;"
-                accesskey="&fullScreenAutohide.accesskey;"
+      <menuitem type="checkbox" data-l10n-id="full-screen-autohide"
                 oncommand="FullScreen.setAutohide();"/>
       <menuseparator/>
-      <menuitem label="&fullScreenExit.label;"
-                accesskey="&fullScreenExit.accesskey;"
+      <menuitem data-l10n-id="full-screen-exit"
                 oncommand="BrowserFullScreen();"/>
     </menupopup>
 
@@ -567,21 +567,21 @@
     <menupopup id="pageActionContextMenu"
                onpopupshowing="BrowserPageActions.onContextMenuShowing(event, this);">
       <menuitem class="pageActionContextMenuItem builtInUnpinned"
-                label="&pageAction.addToUrlbar.label;"
-                oncommand="BrowserPageActions.togglePinningForContextAction();"/>
+                oncommand="BrowserPageActions.togglePinningForContextAction();"
+                data-l10n-id="page-action-add-to-urlbar"/>
       <menuitem class="pageActionContextMenuItem builtInPinned"
-                label="&pageAction.removeFromUrlbar.label;"
-                oncommand="BrowserPageActions.togglePinningForContextAction();"/>
+                oncommand="BrowserPageActions.togglePinningForContextAction();"
+                data-l10n-id="page-action-remove-from-urlbar"/>
       <menuitem class="pageActionContextMenuItem extensionUnpinned"
-                label="&pageAction.addToUrlbar.label;"
-                oncommand="BrowserPageActions.togglePinningForContextAction();"/>
+                oncommand="BrowserPageActions.togglePinningForContextAction();"
+                data-l10n-id="page-action-add-to-urlbar"/>
       <menuitem class="pageActionContextMenuItem extensionPinned"
-                label="&pageAction.removeFromUrlbar.label;"
-                oncommand="BrowserPageActions.togglePinningForContextAction();"/>
+                oncommand="BrowserPageActions.togglePinningForContextAction();"
+                data-l10n-id="page-action-remove-from-urlbar"/>
       <menuseparator class="pageActionContextMenuItem extensionPinned extensionUnpinned"/>
       <menuitem class="pageActionContextMenuItem extensionPinned extensionUnpinned"
-                label="&pageAction.manageExtension.label;"
-                oncommand="BrowserPageActions.openAboutAddonsForContextAction();"/>
+                oncommand="BrowserPageActions.openAboutAddonsForContextAction();"
+                data-l10n-id="page-action-manage-extension"/>
     </menupopup>
 
 #include ../../components/places/content/bookmarksHistoryTooltip.inc.xul
@@ -643,8 +643,7 @@
       <menuitem data-lazy-l10n-id="synced-tabs-context-manage-devices"
                 id="syncedTabsManageDevices"
                 oncommand="gSync.openDevicesManagementPage('syncedtabs-sidebar');"/>
-      <menuitem label="&syncSyncNowItem.label;"
-                accesskey="&syncSyncNowItem.accesskey;"
+      <menuitem data-lazy-l10n-id="synced-tabs-context-sync-now"
                 id="syncedTabsRefresh"/>
     </menupopup>
     <menupopup id="SyncedTabsSidebarTabsFilterContext"
@@ -670,8 +669,7 @@
                 accesskey="&selectAllCmd.accesskey;"
                 cmd="cmd_selectAll"/>
       <menuseparator/>
-      <menuitem label="&syncSyncNowItem.label;"
-                accesskey="&syncSyncNowItem.accesskey;"
+      <menuitem data-lazy-l10n-id="synced-tabs-context-sync-now"
                 id="syncedTabsRefreshFilter"/>
     </menupopup>
 
@@ -793,7 +791,7 @@
 
     <toolbar id="nav-bar"
              class="browser-toolbar"
-             aria-label="&navbarCmd.label;"
+             aria-label="&navbar.accessibleLabel;"
              fullscreentoolbar="true" mode="icons" customizable="true"
              customizationtarget="nav-bar-customization-target"
              overflowable="true"
@@ -861,6 +859,7 @@
                 defaultPlaceholder="&urlbar.placeholder2;"
                 focused="true"
                 pageproxystate="invalid">
+            <hbox id="urlbar-background"/>
             <hbox id="urlbar-input-container"
                   flex="1"
                   pageproxystate="invalid">
@@ -885,7 +884,7 @@
               </box>
               <box id="identity-box" role="button"
                    align="center"
-                   aria-label="&urlbar.viewSiteInfo.label;"
+                   data-l10n-id="urlbar-identity-button"
                    pageproxystate="invalid"
                    onclick="gIdentityHandler.handleIdentityButtonEvent(event);"
                    onkeypress="gIdentityHandler.handleIdentityButtonEvent(event);"
@@ -929,48 +928,47 @@
                      onmouseout="document.getElementById('identity-box').classList.remove('no-hover');"
                      align="center">
                   <image id="default-notification-icon" class="notification-anchor-icon" role="button"
-                         tooltiptext="&urlbar.defaultNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-default-notification-anchor"/>
                   <image id="geo-notification-icon" class="notification-anchor-icon geo-icon" role="button"
-                         tooltiptext="&urlbar.geolocationNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-geolocation-notification-anchor"/>
                   <image id="autoplay-media-notification-icon" class="notification-anchor-icon autoplay-media-icon" role="button"
-                         tooltiptext="&urlbar.autoplayNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-autoplay-notification-anchor"/>
                   <image id="addons-notification-icon" class="notification-anchor-icon install-icon" role="button"
-                         tooltiptext="&urlbar.addonsNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-addons-notification-anchor"/>
                   <image id="canvas-notification-icon" class="notification-anchor-icon" role="button"
-                         tooltiptext="&urlbar.canvasNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-canvas-notification-anchor"/>
                   <image id="indexedDB-notification-icon" class="notification-anchor-icon indexedDB-icon" role="button"
-                         tooltiptext="&urlbar.indexedDBNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-indexed-db-notification-anchor"/>
                   <image id="password-notification-icon" class="notification-anchor-icon login-icon" role="button"
-                         tooltiptext="&urlbar.passwordNotificationAnchor.tooltip;"/>
-                  <stack id="plugins-notification-icon" class="notification-anchor-icon" role="button" align="center"
-                         tooltiptext="&urlbar.pluginsNotificationAnchor.tooltip;">
+                         data-l10n-id="urlbar-password-notification-anchor"/>
+                  <stack id="plugins-notification-icon" class="notification-anchor-icon" role="button" align="center" data-l10n-id="urlbar-plugins-notification-anchor">
                     <image class="plugin-icon" />
                     <image id="plugin-icon-badge" />
                   </stack>
                   <image id="web-notifications-notification-icon" class="notification-anchor-icon desktop-notification-icon" role="button"
-                         tooltiptext="&urlbar.webNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-web-notification-anchor"/>
                   <image id="webRTC-shareDevices-notification-icon" class="notification-anchor-icon camera-icon" role="button"
-                         tooltiptext="&urlbar.webRTCShareDevicesNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-web-rtc-share-devices-notification-anchor"/>
                   <image id="webRTC-shareMicrophone-notification-icon" class="notification-anchor-icon microphone-icon" role="button"
-                         tooltiptext="&urlbar.webRTCShareMicrophoneNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-web-rtc-share-microphone-notification-anchor"/>
                   <image id="webRTC-shareScreen-notification-icon" class="notification-anchor-icon screen-icon" role="button"
-                         tooltiptext="&urlbar.webRTCShareScreenNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-web-rtc-share-screen-notification-anchor"/>
                   <image id="servicesInstall-notification-icon" class="notification-anchor-icon service-icon" role="button"
-                         tooltiptext="&urlbar.servicesNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-services-notification-anchor"/>
                   <image id="translate-notification-icon" class="notification-anchor-icon translation-icon" role="button"
-                         tooltiptext="&urlbar.translateNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-translate-notification-anchor"/>
                   <image id="translated-notification-icon" class="notification-anchor-icon translation-icon in-use" role="button"
-                         tooltiptext="&urlbar.translatedNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-translated-notification-anchor"/>
                   <image id="eme-notification-icon" class="notification-anchor-icon drm-icon" role="button"
-                         tooltiptext="&urlbar.emeNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-eme-notification-anchor"/>
                   <image id="persistent-storage-notification-icon" class="notification-anchor-icon persistent-storage-icon" role="button"
-                         tooltiptext="&urlbar.persistentStorageNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-persistent-storage-notification-anchor"/>
                   <image id="midi-notification-icon" class="notification-anchor-icon midi-icon" role="button"
-                         tooltiptext="&urlbar.midiNotificationAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-midi-notification-anchor"/>
                   <image id="webauthn-notification-icon" class="notification-anchor-icon" role="button"
-                         tooltiptext="&urlbar.webAuthnAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-web-authn-anchor"/>
                   <image id="storage-access-notification-icon" class="notification-anchor-icon storage-access-icon" role="button"
-                         tooltiptext="&urlbar.storageAccessAnchor.tooltip;"/>
+                         data-l10n-id="urlbar-storage-access-anchor"/>
                 </box>
                 <image id="remote-control-icon"
                        tooltiptext="&urlbar.remoteControlNotificationAnchor.tooltip;"/>
@@ -1136,13 +1134,12 @@
 
       <toolbaritem id="PanelUI-button"
                    removable="false">
-       <toolbarbutton id="whats-new-menu-button"
-                      class="toolbarbutton-1"
-                      hidden="true"
-                      badged="true"
-                      consumeanchor="PanelUI-button"
-                      onmousedown="PanelUI.showSubView('PanelUI-whatsNew', this, event);"
-                      onkeypress="PanelUI.showSubView('PanelUI-whatsNew', this, event);"/>
+        <toolbarbutton id="whats-new-menu-button"
+                       class="toolbarbutton-1"
+                       hidden="true"
+                       badged="true"
+                       onmousedown="PanelUI.showSubView('PanelUI-whatsNew', this, event);"
+                       onkeypress="PanelUI.showSubView('PanelUI-whatsNew', this, event);"/>
         <toolbarbutton id="PanelUI-menu-button"
                        class="toolbarbutton-1"
                        badged="true"
@@ -1181,6 +1178,7 @@
              class="browser-toolbar chromeclass-directories"
              context="toolbar-context-menu"
              toolbarname="&personalbarCmd.label;" accesskey="&personalbarCmd.accesskey;"
+             aria-label="&personalbar.accessibleLabel;"
              collapsed="true"
              customizable="true">
       <toolbartabstop skipintoolbarset="true"/>
@@ -1302,6 +1300,7 @@
             <menupopup id="BMB_bookmarksToolbarPopup"
                        is="places-popup"
                        placespopup="true"
+                       nofooterpopup="true"
                        context="placesContext"
                        onpopupshowing="if (!this.parentNode._placesView)
                                          new PlacesMenu(event, `place:parent=${PlacesUtils.bookmarks.toolbarGuid}`,
@@ -1322,6 +1321,7 @@
             <menupopup id="BMB_unsortedBookmarksPopup"
                        is="places-popup"
                        placespopup="true"
+                       nofooterpopup="true"
                        context="placesContext"
                        onpopupshowing="if (!this.parentNode._placesView)
                                          new PlacesMenu(event, `place:parent=${PlacesUtils.bookmarks.unfiledGuid}`,
@@ -1335,6 +1335,7 @@
             <menupopup id="BMB_mobileBookmarksPopup"
                        is="places-popup"
                        placespopup="true"
+                       nofooterpopup="true"
                        context="placesContext"
                        onpopupshowing="if (!this.parentNode._placesView)
                                          new PlacesMenu(event, `place:parent=${PlacesUtils.bookmarks.mobileGuid}`,
@@ -1411,4 +1412,6 @@
   <vbox id="browser-bottombox" layer="true" renderroot="content">
     <!-- gNotificationBox will be added here lazily. -->
   </vbox>
+
+  <html:div id="a11y-announcement" role="alert"/>
 </window>

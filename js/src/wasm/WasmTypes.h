@@ -213,24 +213,26 @@ static_assert(std::is_pod<PackedTypeCode>::value,
               "must be POD to be simply serialized/deserialized");
 
 const uint32_t NoTypeCode = 0xFF;          // Only use these
-const uint32_t NoRefTypeIndex = 0xFFFFFF;  //   with PackedTypeCode
-
-static inline PackedTypeCode InvalidPackedTypeCode() {
-  return PackedTypeCode((NoRefTypeIndex << 8) | NoTypeCode);
-}
-
-static inline PackedTypeCode PackTypeCode(TypeCode tc) {
-  MOZ_ASSERT(uint32_t(tc) <= 0xFF);
-  MOZ_ASSERT(tc != TypeCode::Ref);
-  return PackedTypeCode((NoRefTypeIndex << 8) | uint32_t(tc));
-}
+const uint32_t NoRefTypeIndex = 0x3FFFFF;  //   with PackedTypeCode
 
 static inline PackedTypeCode PackTypeCode(TypeCode tc, uint32_t refTypeIndex) {
   MOZ_ASSERT(uint32_t(tc) <= 0xFF);
   MOZ_ASSERT_IF(tc != TypeCode::Ref, refTypeIndex == NoRefTypeIndex);
   MOZ_ASSERT_IF(tc == TypeCode::Ref, refTypeIndex <= MaxTypes);
-  static_assert(MaxTypes < (1 << (32 - 8)), "enough bits");
+  // A PackedTypeCode should be representable in a single word, so in the
+  // smallest case, 32 bits.  However sometimes 2 bits of the word may be taken
+  // by a pointer tag; for that reason, limit to 30 bits; and then there's the
+  // 8-bit typecode, so 22 bits left for the type index.
+  static_assert(MaxTypes < (1 << (30 - 8)), "enough bits");
   return PackedTypeCode((refTypeIndex << 8) | uint32_t(tc));
+}
+
+static inline PackedTypeCode PackTypeCode(TypeCode tc) {
+  return PackTypeCode(tc, NoRefTypeIndex);
+}
+
+static inline PackedTypeCode InvalidPackedTypeCode() {
+  return PackedTypeCode(NoTypeCode);
 }
 
 static inline PackedTypeCode PackedTypeCodeFromBits(uint32_t bits) {
@@ -508,33 +510,39 @@ static inline jit::MIRType ToMIRType(ExprType et) {
   return IsVoid(et) ? jit::MIRType::None : ToMIRType(ValType(et));
 }
 
-static inline const char* ToCString(ExprType type) {
-  switch (type.code()) {
-    case ExprType::Void:
-      return "void";
-    case ExprType::I32:
-      return "i32";
-    case ExprType::I64:
-      return "i64";
-    case ExprType::F32:
-      return "f32";
-    case ExprType::F64:
-      return "f64";
-    case ExprType::AnyRef:
-      return "anyref";
-    case ExprType::FuncRef:
-      return "funcref";
-    case ExprType::NullRef:
-      return "nullref";
-    case ExprType::Ref:
-      return "ref";
-    case ExprType::Limit:;
-  }
-  MOZ_CRASH("bad expression type");
+static inline jit::MIRType ToMIRType(const Maybe<ValType>& t) {
+  return t ? ToMIRType(ValType(t.ref())) : jit::MIRType::None;
 }
 
 static inline const char* ToCString(ValType type) {
-  return ToCString(ExprType(type));
+  switch (type.code()) {
+    case ValType::I32:
+      return "i32";
+    case ValType::I64:
+      return "i64";
+    case ValType::F32:
+      return "f32";
+    case ValType::F64:
+      return "f64";
+    case ValType::AnyRef:
+      return "anyref";
+    case ValType::FuncRef:
+      return "funcref";
+    case ValType::NullRef:
+      return "nullref";
+    case ValType::Ref:
+      return "ref";
+    default:
+      MOZ_CRASH("bad value type");
+  }
+}
+
+static inline const char* ToCString(const Maybe<ValType>& type) {
+  return type ? ToCString(type.ref()) : "void";
+}
+
+static inline const char* ToCString(ExprType type) {
+  return ToCString(type == ExprType::Void ? Nothing() : Some(ValType(type)));
 }
 
 // An AnyRef is a boxed value that can represent any wasm reference type and any
@@ -789,52 +797,70 @@ typedef MutableHandle<ValVector> MutableHandleValVector;
 
 class FuncType {
   ValTypeVector args_;
-  ExprType ret_;
+  ValTypeVector results_;
 
  public:
-  FuncType() : args_(), ret_(ExprType::Void) {}
-  FuncType(ValTypeVector&& args, ExprType ret)
-      : args_(std::move(args)), ret_(ret) {}
+  FuncType() : args_(), results_() {}
+  FuncType(ValTypeVector&& args, ValTypeVector&& results)
+      : args_(std::move(args)), results_(std::move(results)) {}
 
   MOZ_MUST_USE bool clone(const FuncType& rhs) {
-    ret_ = rhs.ret_;
     MOZ_ASSERT(args_.empty());
-    return args_.appendAll(rhs.args_);
+    MOZ_ASSERT(results_.empty());
+    return args_.appendAll(rhs.args_) && results_.appendAll(rhs.results_);
   }
 
   ValType arg(unsigned i) const { return args_[i]; }
   const ValTypeVector& args() const { return args_; }
-  const ExprType& ret() const { return ret_; }
+  ValType result(unsigned i) const { return results_[i]; }
+  const ValTypeVector& results() const { return results_; }
+
+  // Transitional method, to be removed after multi-values (1401675).
+  Maybe<ValType> ret() const {
+    if (results_.length() == 0) {
+      return Nothing();
+    }
+    MOZ_ASSERT(results_.length() == 1);
+    return Some(result(0));
+  }
 
   HashNumber hash() const {
-    HashNumber hn = HashNumber(ret_.code());
+    HashNumber hn = 0;
     for (const ValType& vt : args_) {
+      hn = mozilla::AddToHash(hn, HashNumber(vt.code()));
+    }
+    for (const ValType& vt : results_) {
       hn = mozilla::AddToHash(hn, HashNumber(vt.code()));
     }
     return hn;
   }
   bool operator==(const FuncType& rhs) const {
-    return ret() == rhs.ret() && EqualContainers(args(), rhs.args());
+    return EqualContainers(args(), rhs.args()) &&
+           EqualContainers(results(), rhs.results());
   }
   bool operator!=(const FuncType& rhs) const { return !(*this == rhs); }
 
   bool hasI64ArgOrRet() const {
-    if (ret() == ExprType::I64) {
-      return true;
-    }
     for (ValType arg : args()) {
       if (arg == ValType::I64) {
+        return true;
+      }
+    }
+    for (ValType result : results()) {
+      if (result == ValType::I64) {
         return true;
       }
     }
     return false;
   }
   bool temporarilyUnsupportedAnyRef() const {
-    if (ret().isReference()) {
-      return true;
-    }
     for (ValType arg : args()) {
       if (arg.isReference()) {
+        return true;
+      }
+    }
+    for (ValType result : results()) {
+      if (result.isReference()) {
         return true;
       }
     }
@@ -847,7 +873,12 @@ class FuncType {
         return true;
       }
     }
-    return ret().isRef();
+    for (const ValType& result : results()) {
+      if (result.isRef()) {
+        return true;
+      }
+    }
+    return false;
   }
 #endif
 
@@ -1172,6 +1203,7 @@ struct ElemSegment : AtomicRefCounted<ElemSegment> {
 
   Kind kind;
   uint32_t tableIndex;
+  ValType elementType;
   Maybe<InitExpr> offsetIfActive;
   Uint32Vector elemFuncIndices;  // Element may be NullFuncIndex
 
@@ -1180,6 +1212,8 @@ struct ElemSegment : AtomicRefCounted<ElemSegment> {
   InitExpr offset() const { return *offsetIfActive; }
 
   size_t length() const { return elemFuncIndices.length(); }
+
+  ValType elemType() const { return elementType; }
 
   WASM_DECLARE_SERIALIZABLE(ElemSegment)
 };
@@ -2465,7 +2499,7 @@ class DebugFrame {
   // returnValue() can return a Handle to it.
 
   bool hasCachedReturnJSValue() const { return hasCachedReturnJSValue_; }
-  void updateReturnJSValue();
+  MOZ_MUST_USE bool updateReturnJSValue();
   HandleValue returnValue() const;
   void clearReturnJSValue();
 

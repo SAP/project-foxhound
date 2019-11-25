@@ -48,16 +48,9 @@ class VideoFrameContainer;
 class MediaFormatReader;
 class MediaDecoderStateMachine;
 struct MediaPlaybackEvent;
-struct SharedDummyStream;
+struct SharedDummyTrack;
 
 enum class Visibility : uint8_t;
-
-// GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
-// GetTickCount() and conflicts with MediaDecoder::GetCurrentTime
-// implementation.
-#  ifdef GetCurrentTime
-#    undef GetCurrentTime
-#  endif
 
 struct MOZ_STACK_CLASS MediaDecoderInit {
   MediaDecoderOwner* const mOwner;
@@ -168,7 +161,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // All MediaStream-related data is protected by mReentrantMonitor.
   // We have at most one DecodedStreamData per MediaDecoder. Its stream
-  // is used as the input for each ProcessedMediaStream created by calls to
+  // is used as the input for each ProcessedMediaTrack created by calls to
   // captureStream(UntilEnded). Seeking creates a new source stream, as does
   // replaying after the input as ended. In the latter case, the new source is
   // not connected to streams created by captureStreamUntilEnded.
@@ -176,8 +169,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // Add an output stream. All decoder output will be sent to the stream.
   // The stream is initially blocked. The decoder is responsible for unblocking
   // it while it is playing back.
-  void AddOutputStream(DOMMediaStream* aStream,
-                       SharedDummyStream* aDummyStream);
+  void AddOutputStream(DOMMediaStream* aStream, SharedDummyTrack* aDummyStream);
   // Remove an output stream added with AddOutputStream.
   void RemoveOutputStream(DOMMediaStream* aStream);
 

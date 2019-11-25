@@ -78,7 +78,7 @@ var snapshotFormatters = {
     if (data.updateChannel) {
       $("updatechannel-box").textContent = data.updateChannel;
     }
-    if (AppConstants.MOZ_UPDATER) {
+    if (AppConstants.MOZ_UPDATER && AppConstants.platform != "android") {
       $("update-dir-box").textContent = Services.dirsvc.get(
         "UpdRootD",
         Ci.nsIFile
@@ -642,7 +642,7 @@ var snapshotFormatters = {
         trs.push(buildRow(key, value));
       }
 
-      if (trs.length == 0) {
+      if (!trs.length) {
         $("graphics-" + id + "-tbody").style.display = "none";
         return;
       }
@@ -686,7 +686,7 @@ var snapshotFormatters = {
           }
 
           let contents;
-          if (entry.message.length > 0 && entry.message[0] == "#") {
+          if (entry.message.length && entry.message[0] == "#") {
             // This is a failure ID. See nsIGfxInfo.idl.
             let m = /#BLOCKLIST_FEATURE_FAILURE_BUG_(\d+)/.exec(entry.message);
             if (m) {
@@ -864,6 +864,56 @@ var snapshotFormatters = {
       $.append($("media-" + side + "-devices-tbody"), rows);
     }
 
+    function insertEnumerateDatabase() {
+      if (
+        !Services.prefs.getBoolPref("media.mediacapabilities.from-database")
+      ) {
+        $("media-capabilities-tbody").style.display = "none";
+        return;
+      }
+      let button = $("enumerate-database-button");
+      if (button) {
+        button.addEventListener("click", function(event) {
+          let { KeyValueService } = ChromeUtils.import(
+            "resource://gre/modules/kvstore.jsm"
+          );
+          let currProfDir = Services.dirsvc.get("ProfD", Ci.nsIFile);
+          currProfDir.append("mediacapabilities");
+          let path = currProfDir.path;
+
+          function enumerateDatabase(name) {
+            KeyValueService.getOrCreate(path, name)
+              .then(database => {
+                return database.enumerate();
+              })
+              .then(enumerator => {
+                var logs = [];
+                logs.push(`${name}:`);
+                while (enumerator.hasMoreElements()) {
+                  const { key, value } = enumerator.getNext();
+                  logs.push(`${key}: ${value}`);
+                }
+                $("enumerate-database-result").textContent +=
+                  logs.join("\n") + "\n";
+              })
+              .catch(err => {
+                $("enumerate-database-result").textContent += `${name}:\n`;
+              });
+          }
+
+          $("enumerate-database-result").style.display = "block";
+          $("enumerate-database-result").classList.remove("no-copy");
+          $("enumerate-database-result").textContent = "";
+
+          enumerateDatabase("video/av1");
+          enumerateDatabase("video/vp8");
+          enumerateDatabase("video/vp9");
+          enumerateDatabase("video/avc");
+          enumerateDatabase("video/theora");
+        });
+      }
+    }
+
     // Basic information
     insertBasicInfo("audio-backend", data.currentAudioBackend);
     insertBasicInfo("max-audio-channels", data.currentMaxAudioChannels);
@@ -874,6 +924,9 @@ var snapshotFormatters = {
 
     // Input devices information
     insertDeviceInfo("input", data.audioInputDevices);
+
+    // Media Capabilitites
+    insertEnumerateDatabase();
   },
 
   javaScript(data) {
@@ -1280,7 +1333,7 @@ Serializer.prototype = {
         colHeadings[i] = this._nodeText(col).trim();
       }
     }
-    let hasColHeadings = Object.keys(colHeadings).length > 0;
+    let hasColHeadings = !!Object.keys(colHeadings).length;
     if (!hasColHeadings) {
       tableHeadingElem = null;
     }
@@ -1442,11 +1495,11 @@ function setupEventListeners() {
     button = $("show-update-history-button");
     if (button) {
       button.addEventListener("click", function(event) {
-        let uri = "chrome://mozapps/content/update/history.xul";
-        let features =
-          "chrome,centerscreen,resizable=no,titlebar,toolbar=no," +
-          "dialog=yes,modal";
-        Services.ww.openWindow(window, uri, "Update:History", features, null);
+        window.docShell.rootTreeItem.domWindow.openDialog(
+          "chrome://mozapps/content/update/history.xul",
+          "Update:History",
+          "centerscreen,resizable=no,titlebar,modal"
+        );
       });
     }
   }

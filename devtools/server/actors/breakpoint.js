@@ -6,7 +6,10 @@
 
 "use strict";
 
-const { formatDisplayName } = require("devtools/server/actors/frame");
+const {
+  logEvent,
+  getThrownMessage,
+} = require("devtools/server/actors/utils/logEvent");
 
 /**
  * Set breakpoints on all the given entry points with the given
@@ -108,14 +111,18 @@ BreakpointActor.prototype = {
               lineNumber,
               columnNumber,
               executionPoint,
-              arguments: ["return" in rv ? rv.return : rv.throw],
+              arguments: rv,
               logpointId: options.logGroupId,
             };
             this.threadActor._parent._consoleActor.onConsoleAPICall(message);
           }
         );
       }
-      return;
+
+      // Treat `displayName` breakpoints as standard breakpoints
+      if (options.logValue != "displayName") {
+        return;
+      }
     }
 
     // In all other cases, this is used as a script breakpoint handler.
@@ -125,20 +132,6 @@ BreakpointActor.prototype = {
       script.clearBreakpoint(this, offset);
       script.setBreakpoint(offset, this);
     }
-  },
-
-  // Get a string message to display when a frame evaluation throws.
-  getThrownMessage(completion) {
-    try {
-      if (completion.throw.getOwnPropertyDescriptor) {
-        return completion.throw.getOwnPropertyDescriptor("message").value;
-      } else if (completion.toString) {
-        return completion.toString();
-      }
-    } catch (ex) {
-      // ignore
-    }
-    return "Unknown exception";
   },
 
   /**
@@ -162,7 +155,7 @@ BreakpointActor.prototype = {
         // The evaluation failed and threw
         return {
           result: true,
-          message: this.getThrownMessage(completion),
+          message: getThrownMessage(completion),
         };
       } else if (completion.yield) {
         assert(false, "Shouldn't ever get yield completions from an eval");
@@ -231,39 +224,14 @@ BreakpointActor.prototype = {
       }
     }
 
-    if (logValue) {
-      const displayName = formatDisplayName(frame);
-      const completion = frame.evalWithBindings(`[${logValue}]`, {
-        displayName,
+    // Replay logpoints are handled in _newOffsetsOrOptions
+    if (logValue && !this.threadActor.dbg.replaying) {
+      return logEvent({
+        threadActor: this.threadActor,
+        frame,
+        level: "logPoint",
+        expression: `[${logValue}]`,
       });
-      let value;
-      let level = "logPoint";
-
-      if (!completion) {
-        // The evaluation was killed (possibly by the slow script dialog).
-        value = ["Log value evaluation incomplete"];
-      } else if ("return" in completion) {
-        value = completion.return;
-      } else {
-        value = [this.getThrownMessage(completion)];
-        level = "logPointError";
-      }
-
-      if (value && typeof value.unsafeDereference === "function") {
-        value = value.unsafeDereference();
-      }
-
-      const message = {
-        filename: sourceActor.url,
-        lineNumber: line,
-        columnNumber: column,
-        arguments: value,
-        level,
-      };
-      this.threadActor._parent._consoleActor.onConsoleAPICall(message);
-
-      // Never stop at log points.
-      return undefined;
     }
 
     return this.threadActor._pauseAndRespond(frame, reason);

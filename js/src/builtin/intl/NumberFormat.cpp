@@ -42,6 +42,7 @@
 #include "unicode/ures.h"
 #include "unicode/utypes.h"
 #include "vm/BigIntType.h"
+#include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/SelfHosting.h"
 #include "vm/Stack.h"
@@ -60,7 +61,6 @@ using mozilla::SpecificNaN;
 using js::intl::CallICU;
 using js::intl::DateTimeFormatOptions;
 using js::intl::FieldType;
-using js::intl::GetAvailableLocales;
 using js::intl::IcuLocale;
 
 using JS::AutoStableStringChars;
@@ -76,8 +76,11 @@ const JSClassOps NumberFormatObject::classOps_ = {nullptr, /* addProperty */
 const JSClass NumberFormatObject::class_ = {
     js_Object_str,
     JSCLASS_HAS_RESERVED_SLOTS(NumberFormatObject::SLOT_COUNT) |
+        JSCLASS_HAS_CACHED_PROTO(JSProto_NumberFormat) |
         JSCLASS_FOREGROUND_FINALIZE,
-    &NumberFormatObject::classOps_};
+    &NumberFormatObject::classOps_, &NumberFormatObject::classSpec_};
+
+const JSClass& NumberFormatObject::protoClass_ = PlainObject::class_;
 
 static bool numberFormat_toSource(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -100,6 +103,18 @@ static const JSPropertySpec numberFormat_properties[] = {
     JS_SELF_HOSTED_GET("format", "$Intl_NumberFormat_format_get", 0),
     JS_STRING_SYM_PS(toStringTag, "Object", JSPROP_READONLY), JS_PS_END};
 
+static bool NumberFormat(JSContext* cx, unsigned argc, Value* vp);
+
+const ClassSpec NumberFormatObject::classSpec_ = {
+    GenericCreateConstructor<NumberFormat, 0, gc::AllocKind::FUNCTION>,
+    GenericCreatePrototype<NumberFormatObject>,
+    numberFormat_static_methods,
+    nullptr,
+    numberFormat_methods,
+    numberFormat_properties,
+    nullptr,
+    ClassSpec::DontDefineConstructor};
+
 /**
  * 11.2.1 Intl.NumberFormat([ locales [, options]])
  *
@@ -110,19 +125,13 @@ static bool NumberFormat(JSContext* cx, const CallArgs& args, bool construct) {
 
   // Step 2 (Inlined 9.1.14, OrdinaryCreateFromConstructor).
   RootedObject proto(cx);
-  if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_Null, &proto)) {
+  if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_NumberFormat,
+                                          &proto)) {
     return false;
   }
 
-  if (!proto) {
-    proto = GlobalObject::getOrCreateNumberFormatPrototype(cx, cx->global());
-    if (!proto) {
-      return false;
-    }
-  }
-
   Rooted<NumberFormatObject*> numberFormat(cx);
-  numberFormat = NewObjectWithGivenProto<NumberFormatObject>(cx, proto);
+  numberFormat = NewObjectWithClassProto<NumberFormatObject>(cx, proto);
   if (!numberFormat) {
     return false;
   }
@@ -166,60 +175,6 @@ void js::NumberFormatObject::finalize(JSFreeOp* fop, JSObject* obj) {
   if (formatted) {
     unumf_closeResult(formatted);
   }
-}
-
-JSObject* js::CreateNumberFormatPrototype(JSContext* cx, HandleObject Intl,
-                                          Handle<GlobalObject*> global,
-                                          MutableHandleObject constructor) {
-  RootedFunction ctor(cx);
-  ctor = GlobalObject::createConstructor(cx, &NumberFormat,
-                                         cx->names().NumberFormat, 0);
-  if (!ctor) {
-    return nullptr;
-  }
-
-  RootedObject proto(
-      cx, GlobalObject::createBlankPrototype<PlainObject>(cx, global));
-  if (!proto) {
-    return nullptr;
-  }
-
-  if (!LinkConstructorAndPrototype(cx, ctor, proto)) {
-    return nullptr;
-  }
-
-  // 11.3.2
-  if (!JS_DefineFunctions(cx, ctor, numberFormat_static_methods)) {
-    return nullptr;
-  }
-
-  // 11.4.4
-  if (!JS_DefineFunctions(cx, proto, numberFormat_methods)) {
-    return nullptr;
-  }
-
-  // 11.4.2 and 11.4.3
-  if (!JS_DefineProperties(cx, proto, numberFormat_properties)) {
-    return nullptr;
-  }
-
-  // 8.1
-  RootedValue ctorValue(cx, ObjectValue(*ctor));
-  if (!DefineDataProperty(cx, Intl, cx->names().NumberFormat, ctorValue, 0)) {
-    return nullptr;
-  }
-
-  constructor.set(ctor);
-  return proto;
-}
-
-bool js::intl_NumberFormat_availableLocales(JSContext* cx, unsigned argc,
-                                            Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  MOZ_ASSERT(args.length() == 0);
-
-  return GetAvailableLocales(cx, unum_countAvailable, unum_getAvailable,
-                             args.rval());
 }
 
 bool js::intl_numberingSystem(JSContext* cx, unsigned argc, Value* vp) {
@@ -379,7 +334,7 @@ struct MeasureUnit {
  *
  * The list must be kept in alphabetical order of the |subtype|.
  */
-const MeasureUnit simpleMeasureUnits[] = {
+static constexpr MeasureUnit simpleMeasureUnits[] = {
     // clang-format off
     {"area", "acre"},
     {"digital", "bit"},
@@ -621,7 +576,7 @@ static UNumberFormatter* NewUNumberFormatter(
       return nullptr;
     }
 
-    if (StringEqualsAscii(style, "currency")) {
+    if (StringEqualsLiteral(style, "currency")) {
       if (!GetProperty(cx, internals, internals, cx->names().currency,
                        &value)) {
         return nullptr;
@@ -647,14 +602,14 @@ static UNumberFormatter* NewUNumberFormatter(
       using CurrencyDisplay = intl::NumberFormatterSkeleton::CurrencyDisplay;
 
       CurrencyDisplay display;
-      if (StringEqualsAscii(currencyDisplay, "code")) {
+      if (StringEqualsLiteral(currencyDisplay, "code")) {
         display = CurrencyDisplay::Code;
-      } else if (StringEqualsAscii(currencyDisplay, "symbol")) {
+      } else if (StringEqualsLiteral(currencyDisplay, "symbol")) {
         display = CurrencyDisplay::Symbol;
-      } else if (StringEqualsAscii(currencyDisplay, "narrowSymbol")) {
+      } else if (StringEqualsLiteral(currencyDisplay, "narrowSymbol")) {
         display = CurrencyDisplay::NarrowSymbol;
       } else {
-        MOZ_ASSERT(StringEqualsAscii(currencyDisplay, "name"));
+        MOZ_ASSERT(StringEqualsLiteral(currencyDisplay, "name"));
         display = CurrencyDisplay::Name;
       }
 
@@ -671,16 +626,16 @@ static UNumberFormatter* NewUNumberFormatter(
         return nullptr;
       }
 
-      if (StringEqualsAscii(currencySign, "accounting")) {
+      if (StringEqualsLiteral(currencySign, "accounting")) {
         accountingSign = true;
       } else {
-        MOZ_ASSERT(StringEqualsAscii(currencySign, "standard"));
+        MOZ_ASSERT(StringEqualsLiteral(currencySign, "standard"));
       }
-    } else if (StringEqualsAscii(style, "percent")) {
+    } else if (StringEqualsLiteral(style, "percent")) {
       if (!skeleton.percent()) {
         return nullptr;
       }
-    } else if (StringEqualsAscii(style, "unit")) {
+    } else if (StringEqualsLiteral(style, "unit")) {
       if (!GetProperty(cx, internals, internals, cx->names().unit, &value)) {
         return nullptr;
       }
@@ -705,12 +660,12 @@ static UNumberFormatter* NewUNumberFormatter(
       using UnitDisplay = intl::NumberFormatterSkeleton::UnitDisplay;
 
       UnitDisplay display;
-      if (StringEqualsAscii(unitDisplay, "short")) {
+      if (StringEqualsLiteral(unitDisplay, "short")) {
         display = UnitDisplay::Short;
-      } else if (StringEqualsAscii(unitDisplay, "narrow")) {
+      } else if (StringEqualsLiteral(unitDisplay, "narrow")) {
         display = UnitDisplay::Narrow;
       } else {
-        MOZ_ASSERT(StringEqualsAscii(unitDisplay, "long"));
+        MOZ_ASSERT(StringEqualsLiteral(unitDisplay, "long"));
         display = UnitDisplay::Long;
       }
 
@@ -718,7 +673,7 @@ static UNumberFormatter* NewUNumberFormatter(
         return nullptr;
       }
     } else {
-      MOZ_ASSERT(StringEqualsAscii(style, "decimal"));
+      MOZ_ASSERT(StringEqualsLiteral(style, "decimal"));
     }
   }
 
@@ -802,14 +757,14 @@ static UNumberFormatter* NewUNumberFormatter(
     using Notation = intl::NumberFormatterSkeleton::Notation;
 
     Notation style;
-    if (StringEqualsAscii(notation, "standard")) {
+    if (StringEqualsLiteral(notation, "standard")) {
       style = Notation::Standard;
-    } else if (StringEqualsAscii(notation, "scientific")) {
+    } else if (StringEqualsLiteral(notation, "scientific")) {
       style = Notation::Scientific;
-    } else if (StringEqualsAscii(notation, "engineering")) {
+    } else if (StringEqualsLiteral(notation, "engineering")) {
       style = Notation::Engineering;
     } else {
-      MOZ_ASSERT(StringEqualsAscii(notation, "compact"));
+      MOZ_ASSERT(StringEqualsLiteral(notation, "compact"));
 
       if (!GetProperty(cx, internals, internals, cx->names().compactDisplay,
                        &value)) {
@@ -821,10 +776,10 @@ static UNumberFormatter* NewUNumberFormatter(
         return nullptr;
       }
 
-      if (StringEqualsAscii(compactDisplay, "short")) {
+      if (StringEqualsLiteral(compactDisplay, "short")) {
         style = Notation::CompactShort;
       } else {
-        MOZ_ASSERT(StringEqualsAscii(compactDisplay, "long"));
+        MOZ_ASSERT(StringEqualsLiteral(compactDisplay, "long"));
         style = Notation::CompactLong;
       }
     }
@@ -847,22 +802,22 @@ static UNumberFormatter* NewUNumberFormatter(
     using SignDisplay = intl::NumberFormatterSkeleton::SignDisplay;
 
     SignDisplay display;
-    if (StringEqualsAscii(signDisplay, "auto")) {
+    if (StringEqualsLiteral(signDisplay, "auto")) {
       if (accountingSign) {
         display = SignDisplay::Accounting;
       } else {
         display = SignDisplay::Auto;
       }
-    } else if (StringEqualsAscii(signDisplay, "never")) {
+    } else if (StringEqualsLiteral(signDisplay, "never")) {
       display = SignDisplay::Never;
-    } else if (StringEqualsAscii(signDisplay, "always")) {
+    } else if (StringEqualsLiteral(signDisplay, "always")) {
       if (accountingSign) {
         display = SignDisplay::AccountingAlways;
       } else {
         display = SignDisplay::Always;
       }
     } else {
-      MOZ_ASSERT(StringEqualsAscii(signDisplay, "exceptZero"));
+      MOZ_ASSERT(StringEqualsLiteral(signDisplay, "exceptZero"));
       if (accountingSign) {
         display = SignDisplay::AccountingExceptZero;
       } else {

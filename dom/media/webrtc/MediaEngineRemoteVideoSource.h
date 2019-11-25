@@ -25,8 +25,7 @@
 #include "MediaEngineSource.h"
 #include "VideoSegment.h"
 #include "AudioSegment.h"
-#include "StreamTracks.h"
-#include "MediaStreamGraph.h"
+#include "MediaTrackGraph.h"
 
 #include "MediaEngineWrapper.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
@@ -116,7 +115,7 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
                     const ipc::PrincipalInfo& aPrincipalInfo,
                     const char** aOutBadConstraint) override;
   nsresult Deallocate() override;
-  void SetTrack(const RefPtr<SourceMediaStream>& aStream, TrackID aTrackID,
+  void SetTrack(const RefPtr<SourceMediaTrack>& aTrack,
                 const PrincipalHandle& aPrincipal) override;
   nsresult Start() override;
   nsresult Reconfigure(const dom::MediaTrackConstraints& aConstraints,
@@ -174,22 +173,18 @@ class MediaEngineRemoteVideoSource : public MediaEngineSource,
   const bool mScary;
 
   // mMutex protects certain members on 3 threads:
-  // MediaManager, Cameras IPC and MediaStreamGraph.
+  // MediaManager, Cameras IPC and MediaTrackGraph.
   Mutex mMutex;
 
   // Current state of this source.
   // Set under mMutex on the owning thread. Accessed under one of the two.
   MediaEngineSourceState mState = kReleased;
 
-  // The source stream that we feed video data to.
+  // The source track that we feed video data to.
   // Set under mMutex on the owning thread. Accessed under one of the two.
-  RefPtr<SourceMediaStream> mStream;
+  RefPtr<SourceMediaTrack> mTrack;
 
-  // The TrackID in mStream that we feed video data to.
-  // Set under mMutex on the owning thread. Accessed under one of the two.
-  TrackID mTrackID = TRACK_NONE;
-
-  // The PrincipalHandle that gets attached to the frames we feed to mStream.
+  // The PrincipalHandle that gets attached to the frames we feed to mTrack.
   // Set under mMutex on the owning thread. Accessed under one of the two.
   PrincipalHandle mPrincipal = PRINCIPAL_HANDLE_NONE;
 

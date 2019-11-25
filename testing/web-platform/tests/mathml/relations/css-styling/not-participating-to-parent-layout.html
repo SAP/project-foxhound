@@ -22,7 +22,6 @@
         if (!FragmentHelper.isValidChildOfMrow(tag) ||
             FragmentHelper.isEmpty(tag))
             continue;
-        // TODO: Add floats too?
         ["display: none",
          "display: contents",
          "position: absolute",
@@ -37,6 +36,13 @@
             var elementContainer = div.firstElementChild;
             var elementContainerWidth = elementContainer.getBoundingClientRect().width;
             var element = FragmentHelper.element(elementContainer);
+            if (style === "display: contents" &&
+                !element.classList.contains("mathml-container")) {
+                // A "display: contents" MathML child is not participating to
+                // parent layout because its computed style is "display: none".
+                // If we cannot append a MathML child then skip that test.
+                return;
+            }
             FragmentHelper.forceNonEmptyElement(element);
             var allowInvalid = true;
             var child = FragmentHelper.appendChild(element, allowInvalid);
@@ -47,17 +53,13 @@
             var reference = FragmentHelper.element(referenceContainer);
             FragmentHelper.forceNonEmptyElement(reference);
 
-            var epsilon = 1;
-
             test(function() {
-                // FIXME(fwang): Feature detection should be done per-tag.
-                assert_true(MathMLFeatureDetection.has_mspace());
+                assert_true(MathMLFeatureDetection[`has_${tag}`](), `${tag} is supported`);
                 assert_approx_equals(elementContainerWidth, referenceContainerWidth, epsilon);
             }, `${tag} preferred width calculation is not affected by children with "${style}" style`);
 
             test(function() {
-                // FIXME(fwang): Feature detection should be done per-tag.
-                assert_true(MathMLFeatureDetection.has_mspace());
+                assert_true(MathMLFeatureDetection[`has_${tag}`](), `${tag} is supported`);
                 compareLayout(element, reference, epsilon);
             }, `${tag} layout is not affected by children with "${style}" style`);
 

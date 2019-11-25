@@ -80,8 +80,12 @@ serviceworker-empty-suggestions-debugger = Step through your Service Worker regi
 # Clicking on the link will open about:debugging in a new tab.
 serviceworker-empty-suggestions-aboutdebugging = Inspect Service Workers from other domains. <a>Open about:debugging</a>
 
-# Header for the view of Manifest displayed in the application panel for the current page.
+# Header for the Manifest page when we have an actual manifest
 manifest-view-header = App Manifest
+
+# Header for the Manifest page when there's no manifest to inspect
+# The link will open https://developer.mozilla.org/en-US/docs/Web/Manifest
+manifest-empty-intro = You need to add a web app Manifest to inspect it here. <a>Learn more</a>
 
 # Header for the Errors and Warnings section of Manifest inspection displayed in the application panel.
 manifest-item-warnings = Errors and Warnings
@@ -107,6 +111,38 @@ manifest-loaded-error = There was an error while loading the manifest:
 # Text displayed when the page has no manifest available
 manifest-non-existing = No manifest found to inspect.
 
+# Text displayed when the page has a manifest embedded in a Data URL and
+# thus we cannot link to it.
+manifest-json-link-data-url = The manifest is embedded in a Data URL.
+
+# Text displayed at manifest icons to label their purpose, as declared
+# in the manifest.
+manifest-icon-purpose = Purpose: <code>{$purpose}</code>
+
+# Text displayed as the alt attribute for <img> tags showing the icons in the
+# manifest.
+manifest-icon-img =
+  .alt = Icon
+
+# Text displayed as the title attribute for <img> tags showing the icons in the
+# manifest. `$sizes` is a user-dependent string that has been parsed as a
+# space-separated list of `<width>x<height>` sizes or the keyword `any`.
+manifest-icon-img-title = Icon with sizes: {$sizes}
+
+# Text displayed as the title attribute for <img> tags showing the icons in the
+# manifest, in case there's no icon size specified by the user
+manifest-icon-img-title-no-sizes = Unspecified size icon
+
+# Sidebar navigation item for Manifest sidebar item section
+sidebar-item-manifest = Manifest
+  .alt = Manifest Icon
+  .title = Manifest
+
+# Sidebar navigation item for Service Workers sidebar item section
+sidebar-item-service-workers = Service Workers
+  .alt = Service Workers Icon
+  .title = Service Workers
+
 # Text for the ALT and TITLE attributes of the warning icon
 icon-warning =
   .alt = Warning icon
@@ -116,3 +152,4 @@ icon-warning =
 icon-error =
   .alt = Error icon
   .title = Error
+

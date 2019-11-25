@@ -251,9 +251,13 @@
         <toolbaritem>
           <toolbarbutton id="appMenu-protection-report-button"
                class="subviewbutton subviewbutton-iconic"
-               oncommand="gProtectionsHandler.openProtections();">
+               oncommand="gProtectionsHandler.openProtections();"
+               data-l10n-id="appmenuitem-protection-report-tooltip">
             <image id="appMenu-protection-report-icon" class="toolbarbutton-icon"/>
-            <label id="appMenu-protection-report-text" class="toolbarbutton-text">Privacy Protections</label>
+            <label id="appMenu-protection-report-text"
+                   class="toolbarbutton-text"
+                   data-l10n-id="appmenuitem-protection-report-title">
+            </label>
           </toolbarbutton>
         </toolbaritem>
         <toolbarseparator id="appMenu-tp-separator"/>
@@ -392,11 +396,11 @@
                        label="&webDeveloperMenu.label;"
                        closemenu="none"
                        oncommand="PanelUI.showSubView('PanelUI-developer', this)"/>
-       <toolbarbutton id="appMenu-whatsnew-button"
-                      class="subviewbutton subviewbutton-iconic subviewbutton-nav"
-                      hidden="true"
-                      closemenu="none"
-                      oncommand="PanelUI.showSubView('PanelUI-whatsNew', this)"/>
+        <toolbarbutton id="appMenu-whatsnew-button"
+                       class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                       hidden="true"
+                       closemenu="none"
+                       oncommand="PanelUI.showSubView('PanelUI-whatsNew', this)"/>
         <toolbarbutton id="appMenu-help-button"
                        class="subviewbutton subviewbutton-iconic subviewbutton-nav"
                        label="&appMenuHelp.label;"
@@ -484,9 +488,11 @@
                            <observes element="sidebar-box" attribute="positionend"/>
             </toolbarbutton>
             <toolbarbutton id="PanelUI-remotetabs-syncnow"
-                           onmouseover="gSync.refreshSyncButtonsTooltip();"
-                           class="subviewbutton subviewbutton-iconic"
+                           data-l10n-id="fxa-toolbar-sync-now"
+                           syncinglabel="fxa-toolbar-sync-syncing-tabs"
+                           class="syncNowBtn subviewbutton subviewbutton-iconic"
                            oncommand="gSync.doSync();"
+                           onmouseover="gSync.refreshSyncButtonsTooltip();"
                            closemenu="none"/>
             <menuseparator id="PanelUI-remotetabs-separator"/>
           </vbox>
@@ -543,9 +549,21 @@
                 class="PanelUI-remotetabs-instruction-box"
                 hidden="true">
             <image class="fxaSyncIllustration"/>
-            <label class="PanelUI-remotetabs-instruction-label">&appMenuRemoteTabs.notsignedin.label;</label>
+            <label class="PanelUI-remotetabs-instruction-label">&appMenuRemoteTabs.welcome.label;</label>
             <toolbarbutton class="PanelUI-remotetabs-button"
-                           label="&appMenuRemoteTabs.signin.label;"
+                           label="&appMenuRemoteTabs.signintosync.label;"
+                           oncommand="gSync.openPrefs('synced-tabs');"/>
+          </vbox>
+          <!-- When Sync is not enabled -->
+          <vbox id="PanelUI-remotetabs-syncdisabled"
+                flex="1"
+                align="center"
+                class="PanelUI-remotetabs-instruction-box"
+                hidden="true">
+            <image class="fxaSyncIllustration"/>
+            <label class="PanelUI-remotetabs-instruction-label">&appMenuRemoteTabs.welcome.label;</label>
+            <toolbarbutton class="PanelUI-remotetabs-button"
+                           label="&appMenuRemoteTabs.turnonsync.label;"
                            oncommand="gSync.openPrefs('synced-tabs');"/>
           </vbox>
           <!-- When Sync needs re-authentication -->
@@ -555,9 +573,9 @@
                 class="PanelUI-remotetabs-instruction-box"
                 hidden="true">
             <image class="fxaSyncIllustrationIssue"/>
-            <label class="PanelUI-remotetabs-instruction-label">&appMenuRemoteTabs.notsignedin.label;</label>
+            <label class="PanelUI-remotetabs-instruction-label">&appMenuRemoteTabs.welcome.label;</label>
             <toolbarbutton class="PanelUI-remotetabs-button"
-                           label="&appMenuRemoteTabs.signin.label;"
+                           label="&appMenuRemoteTabs.signintosync.label;"
                            oncommand="gSync.openPrefs('synced-tabs');"/>
           </vbox>
           <!-- When Sync needs verification -->
@@ -622,9 +640,7 @@
       <vbox id="PanelUI-developerItems" class="panel-subview-body"/>
     </panelview>
 
-    <panelview id="PanelUI-profiler" flex="1">
-      <iframe id="PanelUI-profilerIframe" className="PanelUI-developer-iframe" />
-    </panelview>
+    <panelview id="PanelUI-profiler" flex="1"/>
 
     <panelview id="PanelUI-characterEncodingView" flex="1">
       <vbox class="panel-subview-body">
@@ -660,7 +676,7 @@
                        oncommand="PanelUI.showSubView('PanelUI-characterEncodingView', this)"/>
         <toolbarbutton id="appMenu-workoffline-button"
                        class="subviewbutton"
-                       label="&goOfflineCmd.label;"
+                       data-l10n-id="menu-file-go-offline"
                        type="checkbox"
                        command="cmd_toggleOfflineStatus"/>
       </vbox>
@@ -726,37 +742,45 @@
                         class="subviewbutton subviewbutton-iconic subviewbutton-nav"
                         closemenu="none"
                         oncommand="gSync.showSendToDeviceViewFromFxaMenu(this);"/>
-        <toolbarbutton id="PanelUI-fxa-menu-remotetabs-button"
-                        class="subviewbutton subviewbutton-iconic subviewbutton-nav"
-                        label="&appMenuRemoteTabs.label;"
-                        closemenu="none"
-                        oncommand="gSync.showRemoteTabsFromFxaMenu(this);"/>
+        <toolbarseparator/>
         <!-- The `Connect Another Device` button is disabled by default until the user logs into Sync. -->
         <toolbarbutton id="PanelUI-fxa-menu-connect-device-button"
                         class="subviewbutton subviewbutton-iconic"
                         label="&fxa.menu.connectAnotherDevice2.label;"
                         disabled="true"
                         oncommand="gSync.openConnectAnotherDeviceFromFxaMenu(this);"/>
-        <toolbarbutton id="PanelUI-fxa-menu-sync-prefs-button"
-                        class="subviewbutton subviewbutton-iconic"
-                        label="&fxa.menu.syncSettings.label;"
-                        oncommand="gSync.openPrefsFromFxaMenu('sync_settings', this);"/>
         <toolbarseparator/>
-        <!-- The `Sync Now` button is disabled by default until the user logs into Sync. -->
+        <!-- The `Sync Now` button is hidden by default until the user logs into Sync. -->
         <toolbarbutton id="PanelUI-fxa-menu-syncnow-button"
-                        label="&syncSyncNowItem.label;"
-                        syncinglabel="&syncSyncNowItemSyncing.label;"
-                        disabled="true"
-                        class="subviewbutton subviewbutton-iconic"
+                        data-l10n-id="fxa-toolbar-sync-now"
+                        syncinglabel="fxa-toolbar-sync-syncing"
+                        hidden="true"
+                        class="syncNowBtn subviewbutton subviewbutton-iconic"
+                        onmouseover="gSync.refreshSyncButtonsTooltip();"
                         oncommand="gSync.doSyncFromFxaMenu(this);"
                         closemenu="none"/>
+        <toolbarbutton id="PanelUI-fxa-menu-setup-sync-button"
+                        class="subviewbutton subviewbutton-iconic"
+                        label="&fxa.menu.setupSync.label;"
+                        oncommand="gSync.openPrefsFromFxaMenu('sync_settings', this);"/>
+        <toolbarbutton id="PanelUI-fxa-menu-remotetabs-button"
+                        class="subviewbutton subviewbutton-iconic subviewbutton-nav"
+                        label="&appMenuRemoteTabs.label;"
+                        closemenu="none"
+                        oncommand="gSync.showRemoteTabsFromFxaMenu(this);"/>
+        <toolbarbutton id="PanelUI-fxa-menu-sync-prefs-button"
+                        class="subviewbutton subviewbutton-iconic"
+                        label="&fxa.menu.syncSettings2.label;"
+                        hidden="true"
+                        oncommand="gSync.openPrefsFromFxaMenu('sync_settings', this);"/>
         <toolbarseparator/>
         <toolbarbutton id="PanelUI-fxa-menu-logins-button"
                         class="subviewbutton subviewbutton-iconic"
                         label="&logins.label;"
                         oncommand="LoginHelper.openPasswordManager(window, { entryPoint: 'fxamenu' })"/>
         <toolbarseparator id="fxa-menu-service-separator"/>
-        <label value="&fxa.menu.firefoxServices.label;"
+        <label id="fxa-menu-service-label"
+               value="&fxa.menu.firefoxServices.label;"
                class="subview-subheader"/>
         <toolbarbutton id="PanelUI-fxa-menu-monitor-button"
                        class="subviewbutton subviewbutton-iconic"
@@ -768,6 +792,27 @@
                        label="&sendFullName;"
                        type="open-to-new"
                        oncommand="gSync.openSendFromFxaMenu(this);"/>
+      </vbox>
+    </panelview>
+
+    <panelview id="PanelUI-fxa-menu-account-panel" flex="1" title="&fxa.menu.settings.label;" class="PanelUI-subView" descriptionheightworkaround="true">
+      <vbox class="panel-subview-body">
+        <toolbarbutton id="PanelUI-fxa-menu-account-settings-button"
+                      class="subviewbutton subviewbutton-iconic"
+                      label="&fxa.menu.accountSettings.label;"
+                      type="open-to-new"
+                      oncommand="gSync.openFxAManagePageFromFxaMenu(this)"/>
+        <toolbarseparator/>
+        <label id="fxa-menu-device-name-label" class="subview-subheader"/>
+        <toolbarbutton id="PanelUI-fxa-menu-account-devices-button"
+                       class="subviewbutton subviewbutton-iconic"
+                       label="&fxa.menu.deviceSettings.label;"
+                       oncommand="gSync.openPrefsFromFxaMenu('sync_settings', this);"/>
+        <toolbarseparator/>
+        <toolbarbutton id="PanelUI-fxa-menu-account-signout-button"
+                class="subviewbutton subviewbutton-iconic"
+                label="&fxa.menu.signOut.label;"
+                oncommand="gSync.disconnect();"/>
       </vbox>
     </panelview>
     <!-- This panelview is used to contain the dynamically created buttons for send tab to devices -->
@@ -785,7 +830,7 @@
         <toolbarbutton id="PanelUI-fxa-menu-sendtab-not-configured-button"
                        class="PanelUI-fxa-signin-button"
                        label="&fxa.menu.signin.label;"
-                       oncommand="gSync.openFxAEmailFirstPageFromFxaMenu(this);"/>
+                       oncommand="gSync.openPrefsFromFxaMenu('send_tab', this);"/>
       </vbox>
     </panelview>
     <panelview id="PanelUI-fxa-menu-sendtab-no-devices" flex="1" class="PanelUI-subView">
@@ -824,14 +869,9 @@
 
     <panelview id="PanelUI-whatsNew" class="PanelUI-subView">
       <vbox class="panel-subview-body">
-        <box id="PanelUI-whatsNew-title" class="panel-header">
-          <label/>
-        </box>
         <toolbaritem id="PanelUI-whatsNew-content"
                      orient="vertical"
-                     smoothscroll="false"
-                     flatList="true"
-                     tooltip="bhTooltip">
+                     smoothscroll="false">
           <html:div id="PanelUI-whatsNew-message-container" role="document">
             <!-- What's New messages will be rendered here -->
           </html:div>

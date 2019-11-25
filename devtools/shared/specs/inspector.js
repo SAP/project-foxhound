@@ -306,6 +306,14 @@ const walkerSpec = generateActorSpec({
         nodeFront: RetVal("nullable:disconnectedNode"),
       },
     },
+    getNodeActorFromContentDomReference: {
+      request: {
+        contentDomReference: Arg(0, "json"),
+      },
+      response: {
+        nodeFront: RetVal("nullable:disconnectedNode"),
+      },
+    },
     getStyleSheetOwnerNode: {
       request: {
         styleSheetActorID: Arg(0, "string"),
@@ -362,6 +370,14 @@ const walkerSpec = generateActorSpec({
       },
       response: {},
     },
+    getEmbedderElement: {
+      request: {
+        browsingContextID: Arg(0, "string"),
+      },
+      response: {
+        nodeFront: RetVal("disconnectedNode"),
+      },
+    },
   },
 });
 
@@ -398,6 +414,7 @@ const inspectorSpec = generateActorSpec({
     getHighlighter: {
       request: {
         autohide: Arg(0, "boolean"),
+        useNewBoxModelHighlighter: Arg(1, "nullable:boolean"),
       },
       response: {
         highligter: RetVal("highlighter"),

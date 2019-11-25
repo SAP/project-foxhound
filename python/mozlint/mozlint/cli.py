@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import sys
 from argparse import REMAINDER, ArgumentParser
@@ -40,6 +38,12 @@ class MozlintParser(ArgumentParser):
           'default': False,
           'action': 'store_true',
           'help': "Display and fail on warnings in addition to errors.",
+          }],
+        [['-v', '--verbose'],
+         {'dest': 'show_verbose',
+          'default': False,
+          'action': 'store_true',
+          'help': "Enable verbose logging.",
           }],
         [['-f', '--format'],
          {'dest': 'formats',
@@ -206,12 +210,22 @@ def run(paths, linters, formats, outgoing, workdir, edit,
     for formatter_name, path in formats:
         formatter = formatters.get(formatter_name)
 
-        # Encode output with 'replace' to avoid UnicodeEncodeErrors on
-        # environments that aren't using utf-8.
-        out = formatter(result).encode(sys.stdout.encoding or 'ascii', 'replace')
+        out = formatter(result)
         if out:
-            output_file = open(path, 'w') if path else sys.stdout
-            print(out, file=output_file)
+            fh = open(path, 'w') if path else sys.stdout
+
+            if not path and fh.encoding == 'ascii':
+                # If sys.stdout.encoding is ascii, printing output will fail
+                # due to the stylish formatter's use of unicode characters.
+                # Ideally the user should fix their environment by setting
+                # `LC_ALL=C.UTF-8` or similar. But this is a common enough
+                # problem that we help them out a little here by manually
+                # encoding and writing to the stdout buffer directly.
+                out += '\n'
+                fh.buffer.write(out.encode('utf-8', errors='replace'))
+                fh.buffer.flush()
+            else:
+                print(out, file=fh)
 
     return result.returncode
 

@@ -197,19 +197,21 @@ bool Sprinter::put(const char* s, size_t len) {
 bool Sprinter::putString(JSString* s) {
   InvariantChecker ic(this);
 
-  JSFlatString* flat = s->ensureFlat(context);
-  if (!flat) {
+  JSLinearString* linear = s->ensureLinear(context);
+  if (!linear) {
     return false;
   }
 
-  size_t length = JS::GetDeflatedUTF8StringLength(flat);
+  size_t length = JS::GetDeflatedUTF8StringLength(linear);
 
   char* buffer = reserve(length);
   if (!buffer) {
     return false;
   }
 
-  JS::DeflateStringToUTF8Buffer(flat, mozilla::RangedPtr<char>(buffer, length));
+  mozilla::DebugOnly<size_t> written =
+      JS::DeflateStringToUTF8Buffer(linear, mozilla::MakeSpan(buffer, length));
+  MOZ_ASSERT(written == length);
 
   buffer[length] = '\0';
   return true;

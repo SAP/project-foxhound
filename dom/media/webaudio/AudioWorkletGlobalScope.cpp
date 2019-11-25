@@ -7,12 +7,13 @@
 #include "AudioWorkletGlobalScope.h"
 
 #include "AudioNodeEngine.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 #include "AudioWorkletImpl.h"
 #include "jsapi.h"
 #include "mozilla/dom/AudioWorkletGlobalScopeBinding.h"
+#include "mozilla/dom/AudioWorkletProcessor.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
-#include "mozilla/dom/WorkletPrincipal.h"
+#include "mozilla/dom/WorkletPrincipals.h"
 #include "mozilla/dom/AudioParamDescriptorBinding.h"
 #include "nsPrintfCString.h"
 #include "nsTHashtable.h"
@@ -35,9 +36,9 @@ AudioWorkletGlobalScope::AudioWorkletGlobalScope(AudioWorkletImpl* aImpl)
 bool AudioWorkletGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
   JS::RealmOptions options;
+  JS::AutoHoldPrincipals principals(aCx, new WorkletPrincipals(mImpl));
   return AudioWorkletGlobalScope_Binding::Wrap(
-      aCx, this, this, options, WorkletPrincipal::GetWorkletPrincipal(), true,
-      aReflector);
+      aCx, this, this, options, principals.get(), true, aReflector);
 }
 
 void AudioWorkletGlobalScope::RegisterProcessor(
@@ -54,9 +55,8 @@ void AudioWorkletGlobalScope::RegisterProcessor(
   if (aName.IsEmpty()) {
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING(
-            "Argument 1 of AudioWorkletGlobalScope.registerProcessor "
-            "should not be an empty string."));
+        "Argument 1 of AudioWorkletGlobalScope.registerProcessor should not be "
+        "an empty string.");
     return;
   }
 
@@ -70,9 +70,8 @@ void AudioWorkletGlobalScope::RegisterProcessor(
     // Duplicate names are not allowed
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING(
-            "Argument 1 of AudioWorkletGlobalScope.registerProcessor "
-            "is invalid: a class with the same name is already registered."));
+        "Argument 1 of AudioWorkletGlobalScope.registerProcessor is invalid: a "
+        "class with the same name is already registered.");
     return;
   }
 
@@ -193,7 +192,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(
       "AudioWorkletGlobalScope: parameter descriptors",
       [impl = mImpl, name = nsString(aName), map = std::move(map)]() mutable {
         AudioNode* destinationNode =
-            impl->DestinationStream()->Engine()->NodeMainThread();
+            impl->DestinationTrack()->Engine()->NodeMainThread();
         if (!destinationNode) {
           return;
         }

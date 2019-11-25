@@ -4,11 +4,16 @@
 
 // @flow
 import { sortBy } from "lodash";
-import { getOriginalFrameScope, getGeneratedFrameScope } from "../../selectors";
+import {
+  getOriginalFrameScope,
+  getGeneratedFrameScope,
+  getInlinePreviews,
+} from "../../selectors";
 import { features } from "../../utils/prefs";
+import { validateThreadContext } from "../../utils/context";
 
 import type { OriginalScope } from "../../utils/pause/mapScopes";
-import type { ThreadId, Frame, Scope, Previews } from "../../types";
+import type { ThreadContext, Frame, Scope, Preview } from "../../types";
 import type { ThunkArgs } from "../types";
 
 // We need to display all variables in the current functional scope so
@@ -24,13 +29,18 @@ function getLocalScopeLevels(originalAstScopes): number {
   return levels;
 }
 
-export function generateInlinePreview(thread: ThreadId, frame: ?Frame) {
+export function generateInlinePreview(cx: ThreadContext, frame: ?Frame) {
   return async function({ dispatch, getState, parser, client }: ThunkArgs) {
     if (!frame || !features.inlinePreview) {
       return;
     }
 
-    const originalAstScopes = await parser.getScopes(frame.location);
+    const { thread } = cx;
+
+    // Avoid regenerating inline previews when we already have preview data
+    if (getInlinePreviews(getState(), thread, frame.id)) {
+      return;
+    }
 
     const originalFrameScopes = getOriginalFrameScope(
       getState(),
@@ -49,13 +59,18 @@ export function generateInlinePreview(thread: ThreadId, frame: ?Frame) {
       (originalFrameScopes && originalFrameScopes.scope) ||
       (generatedFrameScopes && generatedFrameScopes.scope);
 
-    if (!scopes || !scopes.bindings || !originalAstScopes) {
+    if (!scopes || !scopes.bindings) {
       return;
     }
 
-    const previews: Previews = {};
-    const pausedOnLine: number = frame.location.line;
+    const originalAstScopes = await parser.getScopes(frame.location);
+    validateThreadContext(getState(), cx);
+    if (!originalAstScopes) {
+      return;
+    }
 
+    const allPreviews = [];
+    const pausedOnLine: number = frame.location.line;
     const levels: number = getLocalScopeLevels(originalAstScopes);
 
     for (
@@ -69,20 +84,20 @@ export function generateInlinePreview(thread: ThreadId, frame: ?Frame) {
           bindings[key] = argument[key];
         });
       });
-      for (const name in bindings) {
+
+      const previewBindings = Object.keys(bindings).map(async name => {
         // We want to show values of properties of objects only and not
         // function calls on other data types like someArr.forEach etc..
         let properties = null;
         if (bindings[name].value.class === "Object") {
-          const root = {
-            name: name,
+          properties = await client.loadObjectProperties({
+            name,
             path: name,
             contents: { value: bindings[name].value },
-          };
-          properties = await client.loadObjectProperties(root);
+          });
         }
 
-        const preview: Previews = getBindingValues(
+        const previewsFromBindings: Array<Preview> = getBindingValues(
           originalAstScopes,
           pausedOnLine,
           name,
@@ -91,17 +106,24 @@ export function generateInlinePreview(thread: ThreadId, frame: ?Frame) {
           properties
         );
 
-        for (const line in preview) {
-          previews[line] = (previews[line] || []).concat(preview[line]);
-        }
-      }
+        allPreviews.push(...previewsFromBindings);
+      });
+      await Promise.all(previewBindings);
 
       scopes = scopes.parent;
     }
 
-    for (const line in previews) {
-      previews[line] = sortBy(previews[line], ["column"]);
-    }
+    const previews = {};
+    const sortedPreviews = sortBy(allPreviews, ["line", "column"]);
+
+    sortedPreviews.forEach(preview => {
+      const { line } = preview;
+      if (!previews[line]) {
+        previews[line] = [preview];
+      } else {
+        previews[line].push(preview);
+      }
+    });
 
     return dispatch({
       type: "ADD_INLINE_PREVIEW",
@@ -119,8 +141,8 @@ function getBindingValues(
   value: any,
   curLevel: number,
   properties: Array<Object> | null
-): Previews {
-  const previews: Previews = {};
+): Array<Preview> {
+  const previews = [];
 
   const binding =
     originalAstScopes[curLevel] && originalAstScopes[curLevel].bindings[name];
@@ -137,16 +159,12 @@ function getBindingValues(
   for (let i = binding.refs.length - 1; i >= 0; i--) {
     const ref = binding.refs[i];
     // Subtracting 1 from line as codemirror lines are 0 indexed
-    let line = ref.start.line - 1;
+    const line = ref.start.line - 1;
     const column: number = ref.start.column;
     // We don't want to render inline preview below the paused line
     if (line >= pausedOnLine - 1) {
       continue;
     }
-
-    // Converting to string as all iterators on object keys ( eg: Object.keys,
-    // for..in ) will return string
-    line = line.toString();
 
     const { displayName, displayValue } = getExpressionNameAndValue(
       name,
@@ -160,17 +178,13 @@ function getBindingValues(
     if (identifiers.has(displayName)) {
       continue;
     }
-
-    if (!previews[line]) {
-      previews[line] = [];
-    }
-
     identifiers.add(displayName);
 
-    previews[line].push({
+    previews.push({
+      line,
+      column,
       name: displayName,
       value: displayValue,
-      column,
     });
   }
   return previews;
@@ -199,14 +213,18 @@ function getExpressionNameAndValue(
         );
         displayValue = property && property.contents.value;
         displayName += `.${meta.property}`;
-      } else if (displayValue && displayValue.preview) {
+      } else if (
+        displayValue &&
+        displayValue.preview &&
+        displayValue.preview.ownProperties
+      ) {
         const { ownProperties } = displayValue.preview;
-        for (const prop in ownProperties) {
+        Object.keys(ownProperties).forEach(prop => {
           if (prop === meta.property) {
             displayValue = ownProperties[prop].value;
             displayName += `.${meta.property}`;
           }
-        }
+        });
       }
       meta = meta.parent;
     }

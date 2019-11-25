@@ -25,26 +25,26 @@ export async function onConnect(connection: any, actions: Object) {
     return;
   }
 
-  const supportsWasm =
-    features.wasm && !!debuggerClient.mainRoot.traits.wasmBinarySource;
-
   setupCommands({
     threadFront,
     tabTarget,
     debuggerClient,
-    supportsWasm,
   });
 
-  setupEvents({ threadFront, tabTarget, actions, supportsWasm });
+  setupEvents({ threadFront, tabTarget, actions, debuggerClient });
 
   tabTarget.on("will-navigate", actions.willNavigate);
   tabTarget.on("navigate", actions.navigated);
 
+  const wasmBinarySource =
+    features.wasm && !!debuggerClient.mainRoot.traits.wasmBinarySource;
+
   await threadFront.reconfigure({
     observeAsmJS: true,
     pauseWorkersUntilAttach: true,
-    wasmBinarySource: supportsWasm,
+    wasmBinarySource,
     skipBreakpoints: prefs.skipPausing,
+    logEventBreakpoints: prefs.logEventBreakpoints,
   });
 
   // Retrieve possible event listener breakpoints
@@ -54,32 +54,26 @@ export async function onConnect(connection: any, actions: Object) {
   // they are active once attached.
   actions.addEventListenerBreakpoints([]).catch(e => console.error(e));
 
+  const { traits } = tabTarget;
+  await actions.connect(
+    tabTarget.url,
+    threadFront.actor,
+    traits,
+    tabTarget.isWebExtension
+  );
+
+  // Fetch the sources for all the targets
+  //
   // In Firefox, we need to initially request all of the sources. This
   // usually fires off individual `newSource` notifications as the
   // debugger finds them, but there may be existing sources already in
   // the debugger (if it's paused already, or if loading the page from
   // bfcache) so explicity fire `newSource` events for all returned
   // sources.
-  const traits = tabTarget.traits;
-  await actions.connect(
-    tabTarget.url,
-    threadFront.actor,
-    traits && traits.canRewind,
-    tabTarget.isWebExtension
-  );
+  const sources = await clientCommands.fetchSources();
+  await actions.newGeneratedSources(sources);
 
-  const fetched = clientCommands
-    .fetchSources()
-    .then(sources => actions.newGeneratedSources(sources));
-
-  // If the threadFront is already paused, make sure to show a
-  // paused state.
-  const pausedPacket = threadFront.getLastPausePacket();
-  if (pausedPacket) {
-    clientEvents.paused(threadFront, pausedPacket);
-  }
-
-  return fetched;
+  await clientCommands.checkIfAlreadyPaused();
 }
 
 export { createObjectClient, clientCommands, clientEvents };

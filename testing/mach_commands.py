@@ -664,7 +664,14 @@ class TestInfoCommand(MachCommandBase):
     from datetime import date, timedelta
 
     @Command('test-info', category='testing',
-             description='Display historical test result summary.')
+             description='Display historical test results.')
+    def test_info(self):
+        """
+           All functions implemented as subcommands.
+        """
+
+    @SubCommand('test-info', 'tests',
+                description='Display historical test result summary for named tests.')
     @CommandArgument('test_names', nargs=argparse.REMAINDER,
                      help='Test(s) of interest.')
     @CommandArgument('--branches',
@@ -690,7 +697,7 @@ class TestInfoCommand(MachCommandBase):
                      help='Retrieve and display related Bugzilla bugs.')
     @CommandArgument('--verbose', action='store_true',
                      help='Enable debug logging.')
-    def test_info(self, **params):
+    def test_info_tests(self, **params):
         from mozbuild.base import MozbuildObject
         from mozfile import which
 
@@ -883,6 +890,22 @@ class TestInfoCommand(MachCommandBase):
                   self.test_name)
             self.activedata_test_name = self.test_name
 
+    def get_run_types(self, record):
+        types_label = ""
+        if 'run' in record and 'type' in record['run']:
+            run_types = record['run']['type']
+            run_types = run_types if isinstance(run_types, list) else [run_types]
+            fission = True if 'fis' in run_types else False
+            for run_type in run_types:
+                # chunked is not interesting
+                if run_type == 'chunked':
+                    continue
+                # fission implies e10s
+                if fission and run_type == 'e10s':
+                    continue
+                types_label += "-" + run_type
+        return types_label
+
     def get_platform(self, record):
         if 'platform' in record['build']:
             platform = record['build']['platform']
@@ -891,13 +914,7 @@ class TestInfoCommand(MachCommandBase):
         tp = record['build']['type']
         if type(tp) is list:
             tp = "-".join(tp)
-        e10s = ""
-        if 'run' in record and 'type' in record['run'] and 'e10s' in str(record['run']['type']):
-            e10s = "-e10s"
-        if 'run' in record and 'type' in record['run'] and 'fis' in str(record['run']['type']):
-            # fission implies e10s - keep the label simple
-            e10s = "-fis"
-        return "%s/%s%s:" % (platform, tp, e10s)
+        return "%s/%s%s:" % (platform, tp, self.get_run_types(record))
 
     def submit(self, query):
         import requests
@@ -1213,6 +1230,7 @@ class TestInfoCommand(MachCommandBase):
                     filter_values, filter_keys, show_components, output_file):
         import mozpack.path as mozpath
         import re
+        from mozbuild.build_commands import Build
         from moztest.resolve import TestResolver
 
         def matches_filters(test):
@@ -1246,6 +1264,13 @@ class TestInfoCommand(MachCommandBase):
         else:
             filter_values = []
 
+        try:
+            self.config_environment
+        except BuildEnvironmentNotFoundException:
+            print("Looks like configure has not run yet, running it now...")
+            builder = Build(self._mach_context)
+            builder.configure()
+
         print("Finding tests...")
         resolver = self._spawn(TestResolver)
         tests = list(resolver.resolve_tests(paths=paths, flavor=flavor,
@@ -1261,17 +1286,24 @@ class TestInfoCommand(MachCommandBase):
             by_component['manifests'] = {}
             manifest_paths = list(manifest_paths)
             manifest_paths.sort()
+            relpaths = []
             for manifest_path in manifest_paths:
                 relpath = mozpath.relpath(manifest_path, self.topsrcdir)
-                print("  {}".format(relpath))
                 if mozpath.commonprefix((manifest_path, self.topsrcdir)) != self.topsrcdir:
                     continue
-                reader = self.mozbuild_reader(config_mode='empty')
+                relpaths.append(relpath)
+            reader = self.mozbuild_reader(config_mode='empty')
+            files_info = reader.files_info(relpaths)
+            for manifest_path in manifest_paths:
+                relpath = mozpath.relpath(manifest_path, self.topsrcdir)
+                if mozpath.commonprefix((manifest_path, self.topsrcdir)) != self.topsrcdir:
+                    continue
+                print("  {}".format(relpath))
                 manifest_info = None
-                for info_path, info in reader.files_info([manifest_path]).items():
-                    bug_component = info.get('BUG_COMPONENT')
+                if relpath in files_info:
+                    bug_component = files_info[relpath].get('BUG_COMPONENT')
                     key = "{}::{}".format(bug_component.product, bug_component.component)
-                    if (info_path == relpath) and ((not components) or (key in components)):
+                    if (not components) or (key in components):
                         manifest_info = {
                             'manifest': relpath,
                             'tests': 0,
@@ -1282,7 +1314,6 @@ class TestInfoCommand(MachCommandBase):
                             by_component['manifests'][rkey].append(manifest_info)
                         else:
                             by_component['manifests'][rkey] = [manifest_info]
-                        break
                 if manifest_info:
                     for t in tests:
                         if t['manifest'] == manifest_path:
@@ -1300,16 +1331,21 @@ class TestInfoCommand(MachCommandBase):
             failed_count = 0
             skipped_count = 0
             component_set = set()
+            relpaths = []
             for t in tests:
-                reader = self.mozbuild_reader(config_mode='empty')
+                relpath = t.get('srcdir_relpath')
+                relpaths.append(relpath)
+            reader = self.mozbuild_reader(config_mode='empty')
+            files_info = reader.files_info(relpaths)
+            for t in tests:
                 if not matches_filters(t):
                     continue
                 test_count += 1
                 relpath = t.get('srcdir_relpath')
-                for info_path, info in reader.files_info([relpath]).items():
-                    bug_component = info.get('BUG_COMPONENT')
+                if relpath in files_info:
+                    bug_component = files_info[relpath].get('BUG_COMPONENT')
                     key = "{}::{}".format(bug_component.product, bug_component.component)
-                    if (info_path == relpath) and ((not components) or (key in components)):
+                    if (not components) or (key in components):
                         component_set.add(key)
                         test_info = {'test': relpath}
                         for test_key in ['skip-if', 'fail-if']:
@@ -1326,10 +1362,9 @@ class TestInfoCommand(MachCommandBase):
                                 by_component['tests'][rkey].append(test_info)
                             else:
                                 by_component['tests'][rkey] = [test_info]
-                        break
             if show_tests:
                 for key in by_component['tests']:
-                    by_component['tests'][key].sort()
+                    by_component['tests'][key].sort(key=lambda k: k['test'])
 
         if show_summary:
             by_component['summary'] = {}
