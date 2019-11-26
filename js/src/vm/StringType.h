@@ -428,12 +428,6 @@ class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
   // and its derived classes.
   void initTaint() { new (&d.taint_) StringTaint(); }
 
-  // Finalize this instance.
-  //
-  // Same as above, this can be used instead of the destructor. It guarantees
-  // that all owned resources of this instance are released.
-  void finalizeTaint() { d.taint_.~StringTaint(); }
-
   MOZ_ALWAYS_INLINE
   uint32_t flags() const { return flagsField(); }
 
@@ -601,6 +595,26 @@ class JSString : public js::gc::CellWithLengthAndFlags<js::gc::Cell> {
   /* Gets the number of bytes that the chars take on the heap. */
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf);
+
+  /* Encode as many scalar values of the string as UTF-8 as can fit
+   * into the caller-provided buffer replacing unpaired surrogates
+   * with the REPLACEMENT CHARACTER.
+   *
+   * Returns the number of code units read and the number of code units
+   * written.
+   *
+   * The semantics of this method match the semantics of
+   * TextEncoder.encodeInto().
+   *
+   * This function doesn't modify the representation -- rope, linear,
+   * flat, atom, etc. -- of this string. If this string is a rope,
+   * it also doesn't modify the representation of left or right halves
+   * of this string, or of those halves, and so on.
+   *
+   * Returns mozilla::Nothing on OOM.
+   */
+  mozilla::Maybe<mozilla::Tuple<size_t, size_t> > encodeUTF8Partial(
+      const JS::AutoRequireNoGC& nogc, mozilla::Span<char> buffer) const;
 
   /* TaintFox: taint property offset calculation. */
   static size_t offsetOfTaint() {

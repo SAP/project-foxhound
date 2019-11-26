@@ -224,8 +224,8 @@ public:
 
   /* Create a parser for the provided JSON data. */
   JSONParser(JSContext* cx, mozilla::Range<const CharT> data,
-             const StringTaint& taint, ErrorHandling errorHandling = RaiseError)
-      : JSONParserBase(cx, errorHandling),
+             const StringTaint& taint, ParseType parseType)
+      : JSONParserBase(cx, parseType),
         current(data.begin()),
         begin(current),
         end(data.end()),

@@ -3109,7 +3109,7 @@ extern JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSString* str);
 
 extern JS_PUBLIC_API const StringTaint&
-JS_GetStringTaint(const JSFlatString* str);
+JS_GetStringTaint(const JSLinearString* str);
 
 extern JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);

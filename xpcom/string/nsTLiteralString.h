@@ -45,12 +45,29 @@ class nsTLiteralString : public mozilla::detail::nsTStringRepr<T> {
    * constructor
    */
 
+  /**
+   * Taintfox:
+   *
+   * In order to ensure that nsLiteralStrings can be used in constexpr
+   * expressions, we need to explicitly define the nsTLiteralString constructor
+   * to call the nsTStringRepr base class constructor. This will create an object
+   * with StringTaint() constructor, which is a constexpr (as ranges_ = nullptr)
+   *
+   * Note this means we can't have literals which are tainted: the class is only
+   * a valid constexpr for the StringTaint() constructor, all other constructors
+   * create a pointer on the stack, which is not available at compile time.
+   *
+   * This is OK for nsLiteralStrings as they are all created at compile time and
+   * are constant, so will never be tainted.
+   */
+  constexpr nsTLiteralString(const nsTLiteralString& aStr)
+    : base_string_type(aStr.mData, aStr.mLength, aStr.mDataFlags, aStr.mClassFlags) {}
+
   template <size_type N>
   explicit constexpr nsTLiteralString(const char_type (&aStr)[N])
       : base_string_type(const_cast<char_type*>(aStr), N - 1,
                          DataFlags::TERMINATED | DataFlags::LITERAL,
-                         ClassFlags::NULL_TERMINATED,
-                         EmptyTaint) {}
+                         ClassFlags::NULL_TERMINATED) {}
 
   /**
    * For compatibility with existing code that requires const ns[C]String*.

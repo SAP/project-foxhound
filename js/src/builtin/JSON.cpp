@@ -1048,7 +1048,7 @@ bool js::ParseJSONWithReviver(JSContext* cx,
                               const StringTaint& taint) {
   /* 15.12.2 steps 2-3. */
   Rooted<JSONParser<CharT>> parser(
-      cx, JSONParser<CharT>(cx, chars, JSONParserBase::ParseType::JSONParse, taint));
+    cx, JSONParser<CharT>(cx, chars, taint, JSONParserBase::ParseType::JSONParse));
   if (!parser.parse(vp)) {
     return false;
   }

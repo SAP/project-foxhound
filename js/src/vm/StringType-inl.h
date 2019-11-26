@@ -477,7 +477,7 @@ MOZ_ALWAYS_INLINE void JSString::finalize(JSFreeOp* fop) {
   }
 
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
 inline void JSFlatString::finalize(JSFreeOp* fop) {
@@ -503,9 +503,8 @@ inline void JSFatInlineString::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(isInline());
 
-  // Nothing to do.
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
 inline void js::FatInlineAtom::finalize(JSFreeOp* fop) {
@@ -514,7 +513,7 @@ inline void js::FatInlineAtom::finalize(JSFreeOp* fop) {
 
   // Nothing to do.
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
 inline void JSExternalString::finalize(JSFreeOp* fop) {
@@ -532,7 +531,7 @@ inline void JSExternalString::finalize(JSFreeOp* fop) {
   fin->finalize(fin, const_cast<char16_t*>(rawTwoByteChars()));
 
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
 #endif /* vm_StringType_inl_h */

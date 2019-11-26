@@ -5962,7 +5962,7 @@ JS_GetStringTaint(const JSString* str)
 }
 
 JS_PUBLIC_API const StringTaint&
-JS_GetStringTaint(const JSFlatString* str)
+JS_GetStringTaint(const JSLinearString* str)
 {
   return str->taint();
 }

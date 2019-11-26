@@ -395,7 +395,7 @@ class StringTaint
   public:
 
     // Constructs an empty instance without any taint flows.
-    StringTaint();
+    explicit constexpr StringTaint() : ranges_(nullptr) { }
 
     // Constructs a new instance containing a single taint range.
     explicit StringTaint(TaintRange range);
@@ -407,7 +407,11 @@ class StringTaint
     // Construct taint information for a uniformly tainted string.
     explicit StringTaint(TaintFlow taint, uint32_t length);
 
-    ~StringTaint();
+    // Default destructor needed to allow the StringTaint class to
+    // act as a literal and appear in constexpr's, e.g. EmptyTaint
+    // This means that any instance of StringTaint needs to call
+    // clear() before the object goes out of scope.
+    ~StringTaint() = default;
 
     StringTaint(const StringTaint& other);
     StringTaint(StringTaint&& other);
@@ -561,6 +565,8 @@ static_assert(sizeof(StringTaint) == sizeof(void*), "Class StringTaint must be c
 // Empty taint instance for convenience.
 // Using a macro here (instead of an exported instance) should be slightly
 // faster since no memory accesses are required.
+// TODO: in c++17 it should be possible to use something like
+// inline constexpr const StringTaint& EmptyTaint = StringTaint();
 #define EmptyTaint (StringTaint())
 
 /*
@@ -591,6 +597,8 @@ static_assert(sizeof(StringTaint) == sizeof(void*), "Class StringTaint must be c
 class TaintableString {
   public:
     TaintableString() : taint_() { }
+
+    ~TaintableString() { taint_.clear(); }
 
     //TODO: Copy constructor
 
@@ -646,7 +654,7 @@ class TaintableString {
     //
     // Same as above, this can be used instead of the destructor. It guarantees
     // that all owned resources of this instance are released.
-    void finalize() { taint_.~StringTaint(); }
+    void finalize() { taint_.clear(); }
 
   protected:
     // Protected so child classes can do offset assertions (see js/src/vm/String.h).
