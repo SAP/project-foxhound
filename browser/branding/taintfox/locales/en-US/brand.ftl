@@ -12,8 +12,11 @@
 ##
 ## Reference: https://www.mozilla.org/styleguide/communications/translation/
 
--brand-short-name = Taintfox
--vendor-short-name = SAP
--brand-full-name = SAP Taintfox
 -brand-shorter-name = Taintfox
-trademarkInfo = { " " } 
+-brand-short-name = Taintfox
+-brand-full-name = SAP Taintfox
+# This brand name can be used in messages where the product name needs to
+# remain unchanged across different versions (Nightly, Beta, etc.).
+-brand-product-name = Taintfox
+-vendor-short-name = SAP
+trademarkInfo = Taintfox is the best taint-aware browser in the worldz.
