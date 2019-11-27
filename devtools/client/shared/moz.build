@@ -18,11 +18,11 @@ DIRS += [
     'source-map',
     'sourceeditor',
     'vendor',
-    'webpack',
     'widgets',
 ]
 
 DevToolsModules(
+    'async-store-helper.js',
     'autocomplete-popup.js',
     'browser-loader-mocks.js',
     'browser-loader.js',
@@ -39,7 +39,6 @@ DevToolsModules(
     'key-shortcuts.js',
     'keycodes.js',
     'link.js',
-    'natural-sort.js',
     'node-attribute-parser.js',
     'options-view.js',
     'output-parser.js',
@@ -53,6 +52,7 @@ DevToolsModules(
     'suggestion-picker.js',
     'telemetry.js',
     'theme.js',
+    'thread-utils.js',
     'undo.js',
     'unicode-url.js',
     'view-source.js',

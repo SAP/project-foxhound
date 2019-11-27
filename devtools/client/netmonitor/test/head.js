@@ -3,7 +3,7 @@
 
 /* import-globals-from ../../shared/test/shared-head.js */
 /* exported Toolbox, restartNetMonitor, teardown, waitForExplicitFinish,
-   verifyRequestItemTarget, waitFor, testFilterButtons,
+   verifyRequestItemTarget, waitFor, waitForDispatch, testFilterButtons,
    performRequestsInContent, waitForNetworkEvents, selectIndexAndWaitForSourceEditor,
    testColumnsAlignment, hideColumn, showColumn, performRequests, waitForRequestData */
 
@@ -48,6 +48,11 @@ const WS_URL = "ws://127.0.0.1:8888/browser/devtools/client/netmonitor/test/";
 const WS_HTTP_URL =
   "http://127.0.0.1:8888/browser/devtools/client/netmonitor/test/";
 
+const WS_BASE_URL =
+  "http://mochi.test:8888/browser/devtools/client/netmonitor/test/";
+const WS_PAGE_URL = WS_BASE_URL + "html_ws-test-page.html";
+const WS_PAGE_EARLY_CONNECTION_URL =
+  WS_BASE_URL + "html_ws-early-connection-page.html";
 const API_CALLS_URL = EXAMPLE_URL + "html_api-calls-test-page.html";
 const SIMPLE_URL = EXAMPLE_URL + "html_simple-test-page.html";
 const NAVIGATE_URL = EXAMPLE_URL + "html_navigate-test-page.html";
@@ -77,6 +82,7 @@ const SORTING_URL = EXAMPLE_URL + "html_sorting-test-page.html";
 const FILTERING_URL = EXAMPLE_URL + "html_filter-test-page.html";
 const INFINITE_GET_URL = EXAMPLE_URL + "html_infinite-get-page.html";
 const CUSTOM_GET_URL = EXAMPLE_URL + "html_custom-get-page.html";
+const HTTPS_CUSTOM_GET_URL = HTTPS_EXAMPLE_URL + "html_custom-get-page.html";
 const SINGLE_GET_URL = EXAMPLE_URL + "html_single-get-page.html";
 const STATISTICS_URL = EXAMPLE_URL + "html_statistics-test-page.html";
 const CURL_URL = EXAMPLE_URL + "html_copy-as-curl.html";
@@ -86,6 +92,7 @@ const CORS_URL = EXAMPLE_URL + "html_cors-test-page.html";
 const PAUSE_URL = EXAMPLE_URL + "html_pause-test-page.html";
 const OPEN_REQUEST_IN_TAB_URL = EXAMPLE_URL + "html_open-request-in-tab.html";
 const CSP_URL = EXAMPLE_URL + "html_csp-test-page.html";
+const CSP_RESEND_URL = EXAMPLE_URL + "html_csp-resend-test-page.html";
 
 const SIMPLE_SJS = EXAMPLE_URL + "sjs_simple-test-server.sjs";
 const SIMPLE_UNSORTED_COOKIES_SJS =
@@ -94,6 +101,8 @@ const CONTENT_TYPE_SJS = EXAMPLE_URL + "sjs_content-type-test-server.sjs";
 const WS_CONTENT_TYPE_SJS = WS_HTTP_URL + "sjs_content-type-test-server.sjs";
 const HTTPS_CONTENT_TYPE_SJS =
   HTTPS_EXAMPLE_URL + "sjs_content-type-test-server.sjs";
+const SERVER_TIMINGS_TYPE_SJS =
+  HTTPS_EXAMPLE_URL + "sjs_timings-test-server.sjs";
 const STATUS_CODES_SJS = EXAMPLE_URL + "sjs_status-codes-test-server.sjs";
 const SORTING_SJS = EXAMPLE_URL + "sjs_sorting-test-server.sjs";
 const HTTPS_REDIRECT_SJS = EXAMPLE_URL + "sjs_https-redirect-test-server.sjs";
@@ -103,6 +112,7 @@ const HSTS_SJS = EXAMPLE_URL + "sjs_hsts-test-server.sjs";
 const METHOD_SJS = EXAMPLE_URL + "sjs_method-test-server.sjs";
 const SLOW_SJS = EXAMPLE_URL + "sjs_slow-test-server.sjs";
 const SET_COOKIE_SAME_SITE_SJS = EXAMPLE_URL + "sjs_set-cookie-same-site.sjs";
+const SEARCH_SJS = EXAMPLE_URL + "sjs_search-test-server.sjs";
 
 const HSTS_BASE_URL = EXAMPLE_URL;
 const HSTS_PAGE_URL = CUSTOM_GET_URL;
@@ -154,10 +164,6 @@ Services.prefs.setCharPref(
 // Increase UI limit for responses rendered using CodeMirror in tests.
 Services.prefs.setIntPref("devtools.netmonitor.response.ui.limit", 1024 * 105);
 
-// Support for columns resizing is currently hidden behind this pref,
-// but testing is on
-Services.prefs.setBoolPref("devtools.netmonitor.features.resizeColumns", true);
-
 registerCleanupFunction(() => {
   info("finish() was called, cleaning up...");
 
@@ -167,7 +173,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.netmonitor.columnsData");
   Services.prefs.clearUserPref("devtools.netmonitor.response.ui.limit");
   Services.prefs.clearUserPref("devtools.netmonitor.visibleColumns");
-  Services.prefs.clearUserPref("devtools.netmonitor.features.resizeColumns");
   Services.cookies.removeAll();
 });
 
@@ -747,6 +752,27 @@ function waitFor(subject, eventName) {
 }
 
 /**
+ * Wait for an action of the provided type to be dispatched on the provided
+ * store.
+ *
+ * @param {Object} store
+ *        The redux store (wait-service middleware required).
+ * @param {String} type
+ *        Type of the action to wait for.
+ */
+function waitForDispatch(store, type) {
+  return new Promise(resolve => {
+    store.dispatch({
+      type: "@@service/waitUntil",
+      predicate: action => action.type === type,
+      run: (dispatch, getState, action) => {
+        resolve(action);
+      },
+    });
+  });
+}
+
+/**
  * Tests if a button for a filter of given type is the only one checked.
  *
  * @param string filterType
@@ -1109,4 +1135,21 @@ function validateRequests(requests, monitor) {
 function getContextMenuItem(monitor, id) {
   const Menu = require("devtools/client/framework/menu");
   return Menu.getMenuElementById(id, monitor.panelWin.document);
+}
+
+/**
+ * Wait for DOM being in specific state. But, do not wait
+ * for change if it's in the expected state already.
+ */
+async function waitForDOMIfNeeded(target, selector, expectedLength = 1) {
+  return new Promise(resolve => {
+    const elements = target.querySelectorAll(selector);
+    if (elements.length == expectedLength) {
+      resolve(elements);
+    } else {
+      waitForDOM(target, selector, expectedLength).then(elems => {
+        resolve(elems);
+      });
+    }
+  });
 }

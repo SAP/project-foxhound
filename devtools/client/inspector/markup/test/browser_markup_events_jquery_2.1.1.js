@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_events_test_runner.js */
@@ -21,7 +20,7 @@ const TEST_DATA = [
     expected: [
       {
         type: "load",
-        filename: TEST_URL + ":27",
+        filename: TEST_URL + ":27:38",
         attributes: [
           "Bubbling",
           "DOM2"
@@ -88,7 +87,7 @@ const TEST_DATA = [
     expected: [
       {
         type: "click",
-        filename: TEST_URL + ":34",
+        filename: TEST_URL + ":34:41",
         attributes: [
           "jQuery"
         ],
@@ -99,7 +98,7 @@ const TEST_DATA = [
       },
       {
         type: "click",
-        filename: TEST_URL + ":35",
+        filename: TEST_URL + ":35:41",
         attributes: [
           "jQuery"
         ],
@@ -110,7 +109,7 @@ const TEST_DATA = [
       },
       {
         type: "keydown",
-        filename: TEST_URL + ":36",
+        filename: TEST_URL + ":36:42",
         attributes: [
           "jQuery"
         ],
@@ -126,7 +125,7 @@ const TEST_DATA = [
     expected: [
       {
         type: "dragend",
-        filename: TEST_URL + ":31",
+        filename: TEST_URL + ":31:46",
         attributes: [
           "jQuery",
           "Live"
@@ -138,7 +137,7 @@ const TEST_DATA = [
       },
       {
         type: "dragleave",
-        filename: TEST_URL + ":30",
+        filename: TEST_URL + ":30:48",
         attributes: [
           "jQuery",
           "Live"
@@ -150,7 +149,7 @@ const TEST_DATA = [
       },
       {
         type: "dragover",
-        filename: TEST_URL + ":33",
+        filename: TEST_URL + ":33:47",
         attributes: [
           "jQuery",
           "Live"
@@ -162,7 +161,7 @@ const TEST_DATA = [
       },
       {
         type: "drop",
-        filename: TEST_URL + ":32",
+        filename: TEST_URL + ":32:43",
         attributes: [
           "jQuery",
           "Live"

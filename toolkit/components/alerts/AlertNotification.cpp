@@ -1,5 +1,7 @@
-/* This Source Code Form is subject to the terms of the Mozilla Pub
- * License, v. 2.0. If a copy of the MPL was not distributed with t
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/AlertNotification.h"
@@ -289,10 +291,9 @@ nsresult AlertImageRequest::Start() {
   int32_t loadFlags =
       mInPrivateBrowsing ? nsIRequest::LOAD_ANONYMOUS : nsIRequest::LOAD_NORMAL;
 
-  rv = il->LoadImageXPCOM(mURI, nullptr, nullptr, NS_LITERAL_STRING("default"),
-                          mPrincipal, nullptr, this, nullptr, loadFlags,
-                          nullptr, nsIContentPolicy::TYPE_INTERNAL_IMAGE,
-                          getter_AddRefs(mRequest));
+  rv = il->LoadImageXPCOM(
+      mURI, nullptr, nullptr, mPrincipal, nullptr, this, nullptr, loadFlags,
+      nullptr, nsIContentPolicy::TYPE_INTERNAL_IMAGE, getter_AddRefs(mRequest));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NotifyMissing();
   }

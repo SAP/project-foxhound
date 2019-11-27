@@ -1,61 +1,115 @@
-const { FilterExpressions } = ChromeUtils.import(
-  "resource://gre/modules/components-utils/FilterExpressions.jsm"
-);
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+const SEARCH_REGION_PREF = "browser.search.region";
+const FXA_ENABLED_PREF = "identity.fxaccounts.enabled";
+
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
 
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyModuleGetters(this, {
+  ASRouterPreferences: "resource://activity-stream/lib/ASRouterPreferences.jsm",
+  AddonManager: "resource://gre/modules/AddonManager.jsm",
+  NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
+  ProfileAge: "resource://gre/modules/ProfileAge.jsm",
+  ShellService: "resource:///modules/ShellService.jsm",
+  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.jsm",
+  AppConstants: "resource://gre/modules/AppConstants.jsm",
+  AttributionCode: "resource:///modules/AttributionCode.jsm",
+  FilterExpressions:
+    "resource://gre/modules/components-utils/FilterExpressions.jsm",
+  fxAccounts: "resource://gre/modules/FxAccounts.jsm",
+});
+
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "ASRouterPreferences",
-  "resource://activity-stream/lib/ASRouterPreferences.jsm"
+  "cfrFeaturesUserPref",
+  "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
+  true
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
+  "cfrAddonsUserPref",
+  "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
+  true
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "NewTabUtils",
-  "resource://gre/modules/NewTabUtils.jsm"
+  "isWhatsNewPanelEnabled",
+  "browser.messaging-system.whatsNewPanel.enabled",
+  false
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "ProfileAge",
-  "resource://gre/modules/ProfileAge.jsm"
+  "isFxABadgeEnabled",
+  "browser.messaging-system.fxatoolbarbadge.enabled",
+  true
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "ShellService",
-  "resource:///modules/ShellService.jsm"
+  "hasAccessedFxAPanel",
+  "identity.fxaccounts.toolbar.accessed",
+  false
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "TelemetryEnvironment",
-  "resource://gre/modules/TelemetryEnvironment.jsm"
+  "clientsDevicesDesktop",
+  "services.sync.clients.devices.desktop",
+  0
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "AppConstants",
-  "resource://gre/modules/AppConstants.jsm"
+  "clientsDevicesMobile",
+  "services.sync.clients.devices.mobile",
+  0
 );
-ChromeUtils.defineModuleGetter(
+XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "AttributionCode",
-  "resource:///modules/AttributionCode.jsm"
+  "syncNumClients",
+  "services.sync.numClients",
+  0
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "devtoolsSelfXSSCount",
+  "devtools.selfxss.count",
+  0
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "browserSearchRegion",
+  SEARCH_REGION_PREF,
+  ""
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "isFxAEnabled",
+  FXA_ENABLED_PREF,
+  true
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "isXPIInstallEnabled",
+  "xpinstall.enabled",
+  true
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  this,
+  "snippetsUserPref",
+  "browser.newtabpage.activity-stream.feeds.snippets",
+  true
 );
 XPCOMUtils.defineLazyServiceGetter(
   this,
-  "UpdateManager",
-  "@mozilla.org/updates/update-manager;1",
-  "nsIUpdateManager"
+  "TrackingDBService",
+  "@mozilla.org/tracking-db-service;1",
+  "nsITrackingDBService"
 );
 
 const FXA_USERNAME_PREF = "services.sync.username";
-const FXA_ENABLED_PREF = "identity.fxaccounts.enabled";
-const SEARCH_REGION_PREF = "browser.search.region";
 const MOZ_JEXL_FILEPATH = "mozjexl";
 
 const { activityStreamProvider: asProvider } = NewTabUtils;
@@ -84,20 +138,13 @@ function CachedTargetingGetter(
       this._lastUpdated = 0;
       this._value = null;
     },
-    get() {
-      return new Promise(async (resolve, reject) => {
-        const now = Date.now();
-        if (now - this._lastUpdated >= updateInterval) {
-          try {
-            this._value = await asProvider[property](options);
-            this._lastUpdated = now;
-          } catch (e) {
-            Cu.reportError(e);
-            reject(e);
-          }
-        }
-        resolve(this._value);
-      });
+    async get() {
+      const now = Date.now();
+      if (now - this._lastUpdated >= updateInterval) {
+        this._value = await asProvider[property](options);
+        this._lastUpdated = now;
+      }
+      return this._value;
     },
   };
 }
@@ -123,7 +170,7 @@ function CheckBrowserNeedsUpdate(
         const now = Date.now();
         const updateServiceListener = {
           onCheckComplete(request, updates) {
-            checker._value = updates.length > 0;
+            checker._value = !!updates.length;
             resolve(checker._value);
           },
           onError(request, update) {
@@ -165,6 +212,7 @@ const QueryCache = {
     }),
     TotalBookmarksCount: new CachedTargetingGetter("getTotalBookmarksCount"),
     CheckBrowserNeedsUpdate: new CheckBrowserNeedsUpdate(),
+    RecentBookmarks: new CachedTargetingGetter("getRecentBookmarks"),
   },
 };
 
@@ -279,24 +327,18 @@ const TargetingGetters = {
     return Services.prefs.prefHasUserValue(FXA_USERNAME_PREF);
   },
   get isFxAEnabled() {
-    return Services.prefs.getBoolPref(FXA_ENABLED_PREF, true);
+    return isFxAEnabled;
   },
   get sync() {
     return {
-      desktopDevices: Services.prefs.getIntPref(
-        "services.sync.clients.devices.desktop",
-        0
-      ),
-      mobileDevices: Services.prefs.getIntPref(
-        "services.sync.clients.devices.mobile",
-        0
-      ),
-      totalDevices: Services.prefs.getIntPref("services.sync.numClients", 0),
+      desktopDevices: clientsDevicesDesktop,
+      mobileDevices: clientsDevicesMobile,
+      totalDevices: syncNumClients,
     };
   },
   get xpinstallEnabled() {
     // This is needed for all add-on recommendations, to know if we allow xpi installs in the first place
-    return Services.prefs.getBoolPref("xpinstall.enabled", true);
+    return isXPIInstallEnabled;
   },
   get addonsInfo() {
     return AddonManager.getActiveAddons(["extension", "service"]).then(
@@ -344,7 +386,7 @@ const TargetingGetters = {
     return null;
   },
   get devToolsOpenedCount() {
-    return Services.prefs.getIntPref("devtools.selfxss.count");
+    return devtoolsSelfXSSCount;
   },
   get topFrecentSites() {
     return QueryCache.queries.TopFrecentSites.get().then(sites =>
@@ -355,6 +397,9 @@ const TargetingGetters = {
         lastVisitDate: site.lastVisitDate,
       }))
     );
+  },
+  get recentBookmarks() {
+    return QueryCache.queries.RecentBookmarks.get();
   },
   get pinnedSites() {
     return NewTabUtils.pinnedLinks.links.map(site =>
@@ -380,7 +425,7 @@ const TargetingGetters = {
     return parseInt(AppConstants.MOZ_APP_VERSION.match(/\d+/), 10);
   },
   get region() {
-    return Services.prefs.getStringPref(SEARCH_REGION_PREF, "");
+    return browserSearchRegion;
   },
   get needsUpdate() {
     return QueryCache.queries.CheckBrowserNeedsUpdate.get();
@@ -398,26 +443,29 @@ const TargetingGetters = {
     return false;
   },
   get hasAccessedFxAPanel() {
-    return Services.prefs.getBoolPref(
-      "identity.fxaccounts.toolbar.accessed",
-      true
-    );
+    return hasAccessedFxAPanel;
   },
   get isWhatsNewPanelEnabled() {
-    return Services.prefs.getBoolPref(
-      "browser.messaging-system.whatsNewPanel.enabled",
-      false
-    );
+    return isWhatsNewPanelEnabled;
   },
-  get earliestFirefoxVersion() {
-    if (UpdateManager.updateCount) {
-      const earliestFirefoxVersion = UpdateManager.getUpdateAt(
-        UpdateManager.updateCount - 1
-      ).previousAppVersion;
-      return parseInt(earliestFirefoxVersion.match(/\d+/), 10);
-    }
-
-    return null;
+  get isFxABadgeEnabled() {
+    return isFxABadgeEnabled;
+  },
+  get userPrefs() {
+    return {
+      cfrFeatures: cfrFeaturesUserPref,
+      cfrAddons: cfrAddonsUserPref,
+      snippets: snippetsUserPref,
+    };
+  },
+  get totalBlockedCount() {
+    return TrackingDBService.sumAllEvents();
+  },
+  get attachedFxAOAuthClients() {
+    return this.usesFirefoxSync ? fxAccounts.listAttachedOAuthClients() : [];
+  },
+  get platformName() {
+    return AppConstants.platform;
   },
 };
 
@@ -476,8 +524,13 @@ this.ASRouterTargeting = {
 
     return (
       (candidateMessageTrigger.params &&
+        trigger.param.host &&
         candidateMessageTrigger.params.includes(trigger.param.host)) ||
+      (candidateMessageTrigger.params &&
+        trigger.param.type &&
+        candidateMessageTrigger.params.includes(trigger.param.type)) ||
       (candidateMessageTrigger.patterns &&
+        trigger.param.url &&
         new MatchPatternSet(candidateMessageTrigger.patterns).matches(
           trigger.param.url
         ))
@@ -513,38 +566,76 @@ this.ASRouterTargeting = {
     return result;
   },
 
+  _getSortedMessages(messages) {
+    const weightSortedMessages = sortMessagesByWeightedRank([...messages]);
+    const sortedMessages = sortMessagesByTargeting(weightSortedMessages);
+    return sortMessagesByPriority(sortedMessages);
+  },
+
+  _getCombinedContext(trigger, context) {
+    const triggerContext = trigger ? trigger.context : {};
+    return this.combineContexts(context, triggerContext);
+  },
+
+  _isMessageMatch(message, trigger, context, onError) {
+    return (
+      message &&
+      (trigger
+        ? this.isTriggerMatch(trigger, message.trigger)
+        : !message.trigger) &&
+      // If a trigger expression was passed to this function, the message should match it.
+      // Otherwise, we should choose a message with no trigger property (i.e. a message that can show up at any time)
+      this.checkMessageTargeting(message, context, onError)
+    );
+  },
+
   /**
    * findMatchingMessage - Given an array of messages, returns one message
    *                       whos targeting expression evaluates to true
    *
    * @param {Array} messages An array of AS router messages
-   * @param {obj} impressions An object containing impressions, where keys are message ids
    * @param {trigger} string A trigger expression if a message for that trigger is desired
    * @param {obj|null} context A FilterExpression context. Defaults to TargetingGetters above.
+   * @param {func} onError A function to handle errors (takes two params; error, message)
    * @returns {obj} an AS router message
    */
   async findMatchingMessage({ messages, trigger, context, onError }) {
-    const weightSortedMessages = sortMessagesByWeightedRank([...messages]);
-    let sortedMessages = sortMessagesByTargeting(weightSortedMessages);
-    sortedMessages = sortMessagesByPriority(sortedMessages);
-    const triggerContext = trigger ? trigger.context : {};
-    const combinedContext = this.combineContexts(context, triggerContext);
+    const sortedMessages = this._getSortedMessages(messages);
+    const combinedContext = this._getCombinedContext(trigger, context);
 
     for (const candidate of sortedMessages) {
       if (
-        candidate &&
-        (trigger
-          ? this.isTriggerMatch(trigger, candidate.trigger)
-          : !candidate.trigger) &&
-        // If a trigger expression was passed to this function, the message should match it.
-        // Otherwise, we should choose a message with no trigger property (i.e. a message that can show up at any time)
-        (await this.checkMessageTargeting(candidate, combinedContext, onError))
+        await this._isMessageMatch(candidate, trigger, combinedContext, onError)
       ) {
         return candidate;
       }
     }
-
     return null;
+  },
+
+  /**
+   * findAllMatchingMessages - Given an array of messages, returns an array of
+   *                           messages that that match the targeting.
+   *
+   * @param {Array} messages An array of AS router messages.
+   * @param {trigger} string A trigger expression if a message for that trigger is desired.
+   * @param {obj|null} context A FilterExpression context. Defaults to TargetingGetters above.
+   * @param {func} onError A function to handle errors (takes two params; error, message)
+   * @returns {Array} An array of AS router messages that match.
+   */
+  async findAllMatchingMessages({ messages, trigger, context, onError }) {
+    const sortedMessages = this._getSortedMessages(messages);
+    const combinedContext = this._getCombinedContext(trigger, context);
+    const matchingMessages = [];
+
+    for (const candidate of sortedMessages) {
+      if (
+        await this._isMessageMatch(candidate, trigger, combinedContext, onError)
+      ) {
+        matchingMessages.push(candidate);
+      }
+    }
+    return matchingMessages;
   },
 };
 

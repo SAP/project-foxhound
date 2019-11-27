@@ -83,16 +83,13 @@ async function runTest(aSourceWindow, aDestWindow, aExpectSwitch, aCallback) {
   );
 
   // Wait for the Awesomebar popup to appear.
-  // Use a slice to workaround bug 1507755.
-  let searchString = UrlbarPrefs.get("quantumbar")
-    ? TEST_URL
-    : TEST_URL.slice(1);
+  let searchString = TEST_URL;
   await promiseAutocompleteResultPopup(searchString, aDestWindow);
 
   info(`awesomebar popup appeared. aExpectSwitch: ${aExpectSwitch}`);
   // Make sure the last match is selected.
   while (
-    UrlbarTestUtils.getSelectedIndex(aDestWindow) <
+    UrlbarTestUtils.getSelectedRowIndex(aDestWindow) <
     UrlbarTestUtils.getResultCount(aDestWindow) - 1
   ) {
     info("handling key navigation for DOM_VK_DOWN key");

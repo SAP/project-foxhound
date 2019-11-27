@@ -15,7 +15,6 @@ XPCOMUtils.defineLazyGetter(this, "FxAccountsCommon", function() {
 });
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  SyncDisconnect: "resource://services-sync/SyncDisconnect.jsm",
   UIState: "resource://services-sync/UIState.jsm",
 });
 
@@ -30,32 +29,9 @@ const FXA_LOGIN_UNVERIFIED = 1;
 // We are logged in locally, but the server rejected our credentials.
 const FXA_LOGIN_FAILED = 2;
 
-Preferences.addAll([
-  { id: "engine.addons", name: "services.sync.engine.addons", type: "bool" },
-  {
-    id: "engine.bookmarks",
-    name: "services.sync.engine.bookmarks",
-    type: "bool",
-  },
-  { id: "engine.history", name: "services.sync.engine.history", type: "bool" },
-  { id: "engine.tabs", name: "services.sync.engine.tabs", type: "bool" },
-  { id: "engine.prefs", name: "services.sync.engine.prefs", type: "bool" },
-  {
-    id: "engine.passwords",
-    name: "services.sync.engine.passwords",
-    type: "bool",
-  },
-  {
-    id: "engine.addresses",
-    name: "services.sync.engine.addresses",
-    type: "bool",
-  },
-  {
-    id: "engine.creditcards",
-    name: "services.sync.engine.creditcards",
-    type: "bool",
-  },
-]);
+// Indexes into the "sync status" deck.
+const SYNC_DISCONNECTED = 0;
+const SYNC_CONNECTED = 1;
 
 var gSyncPane = {
   get page() {
@@ -68,7 +44,7 @@ var gSyncPane = {
 
   init() {
     this._setupEventListeners();
-    this._adjustForPrefs();
+    this.setupEnginesUI();
 
     document
       .getElementById("weavePrefsDeck")
@@ -83,8 +59,8 @@ var gSyncPane = {
       return;
     }
 
-    // it may take some time before we can determine what provider to use
-    // and the state of that provider, so show the "please wait" page.
+    // it may take some time before all the promises we care about resolve, so
+    // pre-load what we can from synchronous sources.
     this._showLoadPage(xps);
 
     let onUnload = function() {
@@ -106,55 +82,26 @@ var gSyncPane = {
     xps.ensureLoaded();
   },
 
-  // make whatever tweaks we need based on preferences.
-  _adjustForPrefs() {
-    // These 2 engines are unique in that there are prefs that make the
-    // entire engine unavailable (which is distinct from "disabled").
-    let enginePrefs = [
-      ["services.sync.engine.addresses.available", "engine.addresses"],
-      ["services.sync.engine.creditcards.available", "engine.creditcards"],
-    ];
-    let numHidden = 0;
-    for (let [availablePref, prefName] of enginePrefs) {
-      if (!Services.prefs.getBoolPref(availablePref)) {
-        let checkbox = document.querySelector(
-          '[preference="' + prefName + '"]'
-        );
-        checkbox.hidden = true;
-        numHidden += 1;
-      }
-    }
-    // If we hid both, the list of prefs is unbalanced, so move "history" to
-    // the second column. (If we only moved one, it's still unbalanced, but
-    // there's an odd number of engines so that can't be avoided)
-    if (numHidden == 2) {
-      let history = document.querySelector('[preference="engine.history"]');
-      let addons = document.querySelector('[preference="engine.addons"]');
-      addons.parentNode.insertBefore(history, addons);
-    }
-  },
-
   _showLoadPage(xps) {
+    let maybeAcct = false;
     let username = Services.prefs.getCharPref("services.sync.username", "");
-    if (!username) {
-      this.page = FXA_PAGE_LOGGED_OUT;
-      return;
+    if (username) {
+      document.getElementById("fxaEmailAddress").textContent = username;
+      maybeAcct = true;
     }
 
-    // Use cached values while we wait for the up-to-date values
-    let cachedComputerName = Services.prefs.getCharPref(
-      "services.sync.client.name",
-      ""
+    let cachedComputerName = Services.prefs.getStringPref(
+      "identity.fxaccounts.account.device.name",
+      undefined
     );
-    document.getElementById("fxaEmailAddress").textContent = username;
-    this._populateComputerName(cachedComputerName);
-    this.page = FXA_PAGE_LOGGED_IN;
+    if (cachedComputerName) {
+      maybeAcct = true;
+      this._populateComputerName(cachedComputerName);
+    }
+    this.page = maybeAcct ? FXA_PAGE_LOGGED_IN : FXA_PAGE_LOGGED_OUT;
   },
 
   _init() {
-    // Add the observers now and remove them on unload
-    // XXXzpao This should use Services.obs.* but Weave's Obs does nice handling
-    //        of `this`. Fix in a followup. (bug 583347)
     Weave.Svc.Obs.add(UIState.ON_UPDATE, this.updateWeavePrefs, this);
 
     window.addEventListener("unload", () => {
@@ -167,17 +114,6 @@ var gSyncPane = {
       );
     });
 
-    // Links for mobile devices before the user is logged in.
-    let url =
-      Services.prefs.getCharPref("identity.mobilepromo.android") +
-      "sync-preferences";
-    document.getElementById("fxaMobilePromo-android").setAttribute("href", url);
-    url =
-      Services.prefs.getCharPref("identity.mobilepromo.ios") +
-      "sync-preferences";
-    document.getElementById("fxaMobilePromo-ios").setAttribute("href", url);
-
-    // Links for mobile devices shown after the user is logged in.
     FxAccounts.config
       .promiseConnectDeviceURI(this._getEntryPoint())
       .then(connectURI => {
@@ -185,21 +121,17 @@ var gSyncPane = {
           .getElementById("connect-another-device")
           .setAttribute("href", connectURI);
       });
-
-    FxAccounts.config
-      .promiseManageDevicesURI(this._getEntryPoint())
-      .then(manageURI => {
-        document
-          .getElementById("manage-devices")
-          .setAttribute("href", manageURI);
-      });
-
-    document
-      .getElementById("tosPP-small-ToS")
-      .setAttribute("href", Weave.Svc.Prefs.get("fxa.termsURL"));
-    document
-      .getElementById("tosPP-small-PP")
-      .setAttribute("href", Weave.Svc.Prefs.get("fxa.privacyURL"));
+    // Links for mobile devices.
+    for (let platform of ["android", "ios"]) {
+      let url =
+        Services.prefs.getCharPref(`identity.mobilepromo.${platform}`) +
+        "sync-preferences";
+      for (let elt of document.querySelectorAll(
+        `.fxaMobilePromo-${platform}`
+      )) {
+        elt.setAttribute("href", url);
+      }
+    }
 
     FxAccounts.config
       .promiseSignUpURI(this._getEntryPoint())
@@ -266,6 +198,16 @@ var gSyncPane = {
         .addEventListener(aEventType, aCallback.bind(gSyncPane));
     }
 
+    setEventListener("openChangeProfileImage", "click", function(event) {
+      gSyncPane.openChangeProfileImage(event);
+    });
+    setEventListener("openChangeProfileImage", "keypress", function(event) {
+      gSyncPane.openChangeProfileImage(event);
+    });
+    setEventListener("verifiedManage", "keypress", function(event) {
+      gSyncPane.openManageFirefoxAccount(event);
+    });
+
     setEventListener("fxaChangeDeviceName", "command", function() {
       this._toggleComputerNameControls(true);
       this._focusComputerNameTextbox();
@@ -314,6 +256,81 @@ var gSyncPane = {
         document.getElementById("fxaCancelChangeDeviceName").click();
       }
     });
+    setEventListener("syncSetup", "command", function() {
+      this._chooseWhatToSync(false);
+    });
+    setEventListener("syncChangeOptions", "command", function() {
+      this._chooseWhatToSync(true);
+    });
+    setEventListener("syncNow", "command", function() {
+      // syncing can take a little time to send the "started" notification, so
+      // pretend we already got it.
+      this._updateSyncNow(true);
+      Weave.Service.sync({ why: "aboutprefs" });
+    });
+    setEventListener("syncNow", "mouseover", function() {
+      const state = UIState.get();
+      // If we are currently syncing, just set the tooltip to the same as the
+      // button label (ie, "Syncing...")
+      let tooltiptext = state.syncing
+        ? document.getElementById("syncNow").getAttribute("label")
+        : window.docShell.rootTreeItem.domWindow.gSync.formatLastSyncDate(
+            state.lastSync
+          );
+      document
+        .getElementById("syncNow")
+        .setAttribute("tooltiptext", tooltiptext);
+    });
+  },
+
+  async _chooseWhatToSync(isAlreadySyncing) {
+    // Assuming another device is syncing and we're not,
+    // we update the engines selection so the correct
+    // checkboxes are pre-filed.
+    if (!isAlreadySyncing) {
+      try {
+        await Weave.Service.updateLocalEnginesState();
+      } catch (err) {
+        console.error("Error updating the local engines state", err);
+      }
+    }
+    let params = {};
+    if (isAlreadySyncing) {
+      // If we are already syncing then we also offer to disconnect.
+      params.disconnectFun = () => this.disconnectSync();
+    }
+    gSubDialog.open(
+      "chrome://browser/content/preferences/in-content/syncChooseWhatToSync.xul",
+      "" /* aFeatures */,
+      params /* aParams */,
+      event => {
+        /* aClosingCallback */
+        if (!isAlreadySyncing && event.detail.button == "accept") {
+          // We weren't syncing but the user has accepted the dialog - so we
+          // want to start!
+          Weave.Service.configure();
+        }
+      }
+    );
+  },
+
+  _updateSyncNow(syncing) {
+    let butSyncNow = document.getElementById("syncNow");
+    if (syncing) {
+      butSyncNow.setAttribute("label", butSyncNow.getAttribute("labelsyncing"));
+      butSyncNow.removeAttribute("accesskey");
+      butSyncNow.disabled = true;
+    } else {
+      butSyncNow.setAttribute(
+        "label",
+        butSyncNow.getAttribute("labelnotsyncing")
+      );
+      butSyncNow.setAttribute(
+        "accesskey",
+        butSyncNow.getAttribute("accesskeynotsyncing")
+      );
+      butSyncNow.disabled = false;
+    }
   },
 
   updateWeavePrefs() {
@@ -326,7 +343,7 @@ var gSyncPane = {
     );
     displayNameLabel.hidden = true;
 
-    // determine the fxa status...
+    // while we determine the fxa status pre-load what we can.
     this._showLoadPage(service);
 
     let state = UIState.get();
@@ -358,11 +375,9 @@ var gSyncPane = {
     document.getElementById("fxaEmailAddress").textContent = state.email;
 
     this._populateComputerName(Weave.Service.clientsEngine.localName);
-    let engines = document.getElementById("fxaSyncEngines");
-    for (let checkbox of engines.querySelectorAll("checkbox")) {
-      checkbox.disabled = !syncReady;
+    for (let elt of document.querySelectorAll("needs-account-ready")) {
+      elt.disabled = !syncReady;
     }
-    document.getElementById("fxaChangeDeviceName").disabled = !syncReady;
 
     // Clear the profile image (if any) of the previously logged in account.
     document
@@ -403,12 +418,13 @@ var gSyncPane = {
           .getElementById("verifiedManage")
           .setAttribute("href", accountsManageURI);
       });
-    let isUnverified = state.status == UIState.STATUS_NOT_VERIFIED;
-    // The mobile promo links - which one is shown depends on the number of devices.
-    let isMultiDevice = Weave.Service.clientsEngine.stats.numClients > 1;
-    document.getElementById("connect-another-device").hidden = isUnverified;
-    document.getElementById("manage-devices").hidden =
-      isUnverified || !isMultiDevice;
+    // and the actual sync state.
+    let eltSyncStatus = document.getElementById("syncStatus");
+    eltSyncStatus.hidden = !syncReady;
+    eltSyncStatus.selectedIndex = state.syncEnabled
+      ? SYNC_CONNECTED
+      : SYNC_DISCONNECTED;
+    this._updateSyncNow(state.syncing);
   },
 
   _getEntryPoint() {
@@ -527,28 +543,21 @@ var gSyncPane = {
 
     fxAccounts
       .resendVerificationEmail()
-      .then(fxAccounts.getSignedInUser, onError)
+      .then(() => fxAccounts.getSignedInUser(), onError)
       .then(onSuccess, onError);
   },
 
+  // Disconnect the account, including everything linked.
   unlinkFirefoxAccount(confirm) {
-    if (confirm) {
-      gSubDialog.open(
-        "chrome://browser/content/preferences/in-content/syncDisconnect.xul",
-        "resizable=no" /* aFeatures */,
-        null /* aParams */,
-        event => {
-          /* aClosingCallback */
-          if (event.detail.button == "accept") {
-            this.updateWeavePrefs();
-          }
-        }
-      );
-    } else {
-      // no confirmation implies no data removal, so just disconnect - but
-      // we still disconnect via the SyncDisconnect module for consistency.
-      SyncDisconnect.disconnect().finally(() => this.updateWeavePrefs());
-    }
+    window.docShell.rootTreeItem.domWindow.gSync.disconnect({ confirm });
+  },
+
+  // Disconnect sync, leaving the account connected.
+  disconnectSync() {
+    return window.docShell.rootTreeItem.domWindow.gSync.disconnect({
+      confirm: true,
+      disconnectAccount: false,
+    });
   },
 
   pairAnotherDevice() {
@@ -563,8 +572,34 @@ var gSyncPane = {
   _populateComputerName(value) {
     let textbox = document.getElementById("fxaSyncComputerName");
     if (!textbox.hasAttribute("placeholder")) {
-      textbox.setAttribute("placeholder", Weave.Utils.getDefaultDeviceName());
+      textbox.setAttribute(
+        "placeholder",
+        fxAccounts.device.getDefaultLocalName()
+      );
     }
     textbox.value = value;
+  },
+
+  // arranges to dynamically show or hide sync engine name elements based on the
+  // preferences used for this engines.
+  setupEnginesUI() {
+    let observe = (elt, prefName) => {
+      let enabled = Services.prefs.getBoolPref(prefName, false);
+      if (enabled) {
+        elt.removeAttribute("hidden");
+      } else {
+        elt.setAttribute("hidden", "true");
+      }
+    };
+
+    for (let elt of document.querySelectorAll("[engine_preference]")) {
+      let prefName = elt.getAttribute("engine_preference");
+      let obs = observe.bind(null, elt, prefName);
+      obs();
+      Services.prefs.addObserver(prefName, obs);
+      window.addEventListener("unload", () => {
+        Services.prefs.removeObserver(prefName, obs);
+      });
+    }
   },
 };

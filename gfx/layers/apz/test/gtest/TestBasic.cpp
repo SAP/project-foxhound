@@ -312,11 +312,6 @@ TEST_F(APZCBasicTester, OverScroll_Bug1152051a) {
   // the pan, which is 100 ms).
   SCOPED_GFX_PREF_FLOAT("apz.fling_friction", 0);
 
-  // To ensure the velocity after the first sample is 0, set the spring
-  // stiffness to the incoming velocity (4.9) divided by the overscroll
-  // (400 pixels) times the step duration (1 ms).
-  SCOPED_GFX_PREF_FLOAT("apz.overscroll.spring_stiffness", 0.01225f);
-
   TestOverscroll();
 }
 
@@ -344,12 +339,10 @@ TEST_F(APZCBasicTester, OverScroll_Bug1152051b) {
   // to schedule a new one since we're still overscrolled. We don't pan because
   // panning can trigger functions that clear the overscroll animation state
   // in other ways.
-  uint64_t blockId;
-  nsEventStatus status =
-      TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time(), &blockId);
+  APZEventResult result = TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time());
   if (StaticPrefs::layout_css_touch_action_enabled() &&
-      status != nsEventStatus_eConsumeNoDefault) {
-    SetDefaultAllowedTouchBehavior(apzc, blockId);
+      result.mStatus != nsEventStatus_eConsumeNoDefault) {
+    SetDefaultAllowedTouchBehavior(apzc, result.mInputBlockId);
   }
   TouchUp(apzc, ScreenIntPoint(10, 10), mcc->Time());
 

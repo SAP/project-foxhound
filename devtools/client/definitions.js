@@ -80,6 +80,11 @@ loader.lazyGetter(
 );
 loader.lazyGetter(
   this,
+  "WhatsNewPanel",
+  () => require("devtools/client/whats-new/panel").WhatsNewPanel
+);
+loader.lazyGetter(
+  this,
   "reloadAndRecordTab",
   () => require("devtools/client/webreplay/menu.js").reloadAndRecordTab
 );
@@ -99,8 +104,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "ResponsiveUIManager",
-  "devtools/client/responsive.html/manager",
-  true
+  "devtools/client/responsive/manager"
 );
 loader.lazyImporter(
   this,
@@ -108,11 +112,27 @@ loader.lazyImporter(
   "resource://devtools/client/scratchpad/scratchpad-manager.jsm"
 );
 
+loader.lazyRequireGetter(
+  this,
+  "AppConstants",
+  "resource://gre/modules/AppConstants.jsm",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "DevToolsFissionPrefs",
+  "devtools/client/devtools-fission-prefs"
+);
+
 const { MultiLocalizationHelper } = require("devtools/shared/l10n");
 const L10N = new MultiLocalizationHelper(
   "devtools/client/locales/startup.properties",
   "devtools/startup/locales/key-shortcuts.properties"
 );
+
+// URL to direct people to the deprecated tools panel
+const DEPRECATION_URL =
+  "https://developer.mozilla.org/docs/Tools/Deprecated_tools";
 
 var Tools = {};
 exports.Tools = Tools;
@@ -160,8 +180,11 @@ Tools.inspector = {
   inMenu: true,
 
   preventClosingOnKey: true,
+  // preventRaisingOnKey is used to keep the focus on the content window for shortcuts
+  // that trigger the element picker.
+  preventRaisingOnKey: true,
   onkey: function(panel, toolbox) {
-    toolbox.inspector.nodePicker.togglePicker();
+    toolbox.nodePicker.togglePicker();
   },
 
   isTargetSupported: function(target) {
@@ -217,7 +240,11 @@ Tools.jsdebugger = {
   label: l10n("ToolboxDebugger.label"),
   panelLabel: l10n("ToolboxDebugger.panelLabel"),
   get tooltip() {
-    return l10n("ToolboxDebugger.tooltip3");
+    return l10n(
+      "ToolboxDebugger.tooltip4",
+      (osString == "Darwin" ? "Cmd+Opt+" : "Ctrl+Shift+") +
+        l10n("jsdebugger.commandkey2")
+    );
   },
   inMenu: true,
   isTargetSupported: function() {
@@ -284,8 +311,8 @@ function switchPerformancePanel() {
       // the perf actor yet. Also this function is not async, so we can't initialize
       // the actor yet.
       // We don't display the new performance panel for remote context in the
-      // toolbox, because this has an overhead. Instead we should use WebIDE (or
-      // the coming about:debugging).
+      // toolbox, because this has an overhead. Instead we should use
+      // about:debugging.
       return target.isLocalTab;
     };
   } else {
@@ -386,6 +413,8 @@ Tools.storage = {
 
 Tools.scratchpad = {
   id: "scratchpad",
+  deprecated: true,
+  deprecationURL: `${DEPRECATION_URL}#Scratchpad`,
   ordinal: 12,
   visibilityswitch: "devtools.scratchpad.enabled",
   icon: "chrome://devtools/skin/images/tool-scratchpad.svg",
@@ -482,6 +511,44 @@ Tools.application = {
   },
 };
 
+Tools.whatsnew = {
+  id: "whatsnew",
+  ordinal: 12,
+  visibilityswitch: "devtools.whatsnew.enabled",
+  icon: "chrome://browser/skin/whatsnew.svg",
+  url: "chrome://devtools/content/whats-new/index.html",
+  // TODO: This panel is currently for english users only.
+  // This should be properly localized in Bug 1596038
+  label: "What’s New",
+  panelLabel: "What’s New",
+  tooltip: "What’s New",
+  inMenu: false,
+
+  isTargetSupported: function(target) {
+    // The panel is currently not localized and should only be displayed to
+    // english users. See Bug 1596038 for cleanup.
+    const isEnglishUser = Services.locale.negotiateLanguages(
+      ["en"],
+      [Services.locale.appLocaleAsBCP47]
+    ).length;
+
+    // In addition to the basic visibility switch preference, we also have a
+    // higher level preference to disable the whole panel regardless of other
+    // settings. Should be removed in Bug 1596037.
+    const isFeatureEnabled = Services.prefs.getBoolPref(
+      "devtools.whatsnew.feature-enabled",
+      false
+    );
+
+    // This panel should only be enabled for regular web toolboxes.
+    return target.isLocalTab && isEnglishUser && isFeatureEnabled;
+  },
+
+  build: function(iframeWindow, toolbox) {
+    return new WhatsNewPanel(iframeWindow, toolbox);
+  },
+};
+
 var defaultTools = [
   Tools.options,
   Tools.webConsole,
@@ -496,6 +563,7 @@ var defaultTools = [
   Tools.dom,
   Tools.accessibility,
   Tools.application,
+  Tools.whatsnew,
 ];
 
 exports.defaultTools = defaultTools;
@@ -544,22 +612,23 @@ exports.ToolboxButtons = [
   {
     id: "command-button-replay",
     description: l10n("toolbox.buttons.replay"),
-    isTargetSupported: target =>
-      Services.prefs.getBoolPref("devtools.recordreplay.mvp.enabled") &&
-      !target.canRewind &&
-      target.isLocalTab,
+    isTargetSupported: target => !target.canRewind && target.isLocalTab,
     onClick: () => reloadAndRecordTab(),
     isChecked: () => false,
   },
   {
     id: "command-button-stop-replay",
     description: l10n("toolbox.buttons.stopReplay"),
-    isTargetSupported: target =>
-      Services.prefs.getBoolPref("devtools.recordreplay.mvp.enabled") &&
-      target.canRewind &&
-      target.isLocalTab,
+    isTargetSupported: target => target.canRewind && target.isLocalTab,
     onClick: () => reloadAndStopRecordingTab(),
     isChecked: () => true,
+  },
+  {
+    id: "command-button-fission-prefs",
+    description: "DevTools Fission preferences",
+    isTargetSupported: target => !AppConstants.MOZILLA_OFFICIAL,
+    onClick: (event, toolbox) => DevToolsFissionPrefs.showTooltip(toolbox),
+    isChecked: () => DevToolsFissionPrefs.isAnyPreferenceEnabled(),
   },
   {
     id: "command-button-responsive",
@@ -616,8 +685,8 @@ function createHighlightButton(highlighterName, id) {
     description: l10n(`toolbox.buttons.${id}`),
     isTargetSupported: target => !target.chrome,
     async onClick(event, toolbox) {
-      await toolbox.initInspector();
-      const highlighter = await toolbox.inspector.getOrCreateHighlighterByType(
+      const inspectorFront = await toolbox.target.getFront("inspector");
+      const highlighter = await inspectorFront.getOrCreateHighlighterByType(
         highlighterName
       );
       if (highlighter.isShown()) {
@@ -631,11 +700,7 @@ function createHighlightButton(highlighterName, id) {
     isChecked(toolbox) {
       // if the inspector doesn't exist, then the highlighter has not yet been connected
       // to the front end.
-      // TODO: we are using target._inspector here, but we should be using
-      // target.getCachedFront. This is a temporary solution until the inspector no
-      // longer relies on the toolbox and can be destroyed the same way any other
-      // front would be. Related: #1487677
-      const inspectorFront = toolbox.target._inspector;
+      const inspectorFront = toolbox.target.getCachedFront("inspector");
       if (!inspectorFront) {
         // initialize the inspector front asyncronously. There is a potential for buggy
         // behavior here, but we need to change how the buttons get data (have them

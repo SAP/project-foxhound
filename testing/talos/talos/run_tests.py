@@ -56,7 +56,7 @@ def set_tp_preferences(test, browser_config):
                 test[cycle_var] = 2
 
     CLI_bool_options = ['tpchrome', 'tphero', 'tpmozafterpaint', 'tploadnocache', 'tpscrolltest',
-                        'fnbpaint']
+                        'fnbpaint', 'pdfpaint']
     CLI_options = ['tpcycles', 'tppagecycles', 'tptimeout', 'tpmanifest']
     for key in CLI_bool_options:
         _pref_name = "talos.%s" % key
@@ -137,6 +137,11 @@ def run_tests(config, browser_config):
     # Pass subtests filter argument via a preference
     if browser_config['subtests']:
         browser_config['preferences']['talos.subtests'] = browser_config['subtests']
+
+    if browser_config.get('enable_fission', False):
+        browser_config['preferences']['fission.autostart'] = True
+        browser_config['preferences']['dom.serviceWorkers.parent_intercept'] = True
+        browser_config['preferences']['browser.tabs.documentchannel'] = True
 
     # If --code-coverage files are expected, set flag in browser config so ffsetup knows
     # that it needs to delete any ccov files resulting from browser initialization

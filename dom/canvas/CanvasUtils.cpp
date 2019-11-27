@@ -11,10 +11,10 @@
 #include "nsIConsoleService.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsIHTMLCollection.h"
-#include "mozilla/dom/HTMLCanvasElement.h"
 #include "mozilla/dom/BrowserChild.h"
-#include "mozilla/EventStateManager.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/dom/UserActivation.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsIPrincipal.h"
 
 #include "nsGfxCIID.h"
@@ -76,8 +76,7 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
   docURI->GetSpec(docURISpec);
 
   // Allow local files to extract canvas data.
-  bool isFileURL;
-  if (NS_SUCCEEDED(docURI->SchemeIs("file", &isFileURL)) && isFileURL) {
+  if (docURI->SchemeIs("file")) {
     return true;
   }
 
@@ -143,7 +142,7 @@ bool IsImageExtractionAllowed(Document* aDocument, JSContext* aCx,
   bool isAutoBlockCanvas =
       StaticPrefs::
           privacy_resistFingerprinting_autoDeclineNoUserInputCanvasPrompts() &&
-      !EventStateManager::IsHandlingUserInput();
+      !UserActivation::IsHandlingUserInput();
 
   if (isAutoBlockCanvas) {
     nsAutoString message;

@@ -54,6 +54,7 @@ const INITIAL_STATE = {
     config: { enabled: false, layout_endpoint: "" },
     layout: [],
     lastUpdated: null,
+    isPrivacyInfoModalVisible: false,
     feeds: {
       data: {
         // "https://foo.com/feed1": {lastUpdated: 123, data: []}
@@ -62,11 +63,13 @@ const INITIAL_STATE = {
     },
     spocs: {
       spocs_endpoint: "",
+      spocs_per_domain: 1,
       lastUpdated: null,
       data: {}, // {spocs: []}
       loaded: false,
       frequency_caps: [],
       blocked: [],
+      placements: [],
     },
   },
   Search: {
@@ -305,7 +308,7 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
       });
       // Otherwise, append it
       if (!hasMatch) {
-        const initialized = !!(action.data.rows && action.data.rows.length > 0);
+        const initialized = !!(action.data.rows && !!action.data.rows.length);
         const section = Object.assign(
           { title: "", rows: [], enabled: false },
           action.data,
@@ -325,7 +328,7 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
           // Disabling a section (SECTION_UPDATE with empty rows) does not retain pinned cards.
           if (
             action.data.rows &&
-            action.data.rows.length > 0 &&
+            !!action.data.rows.length &&
             section.rows.find(card => card.pinned)
           ) {
             const rows = Array.from(action.data.rows);
@@ -520,15 +523,33 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
   const isNotReady = () =>
     !action.data || !prevState.spocs.loaded || !prevState.feeds.loaded;
 
+  const handlePlacements = handleSites => {
+    const { data, placements } = prevState.spocs;
+    const result = {};
+
+    const forPlacement = placement => {
+      const placementSpocs = data[placement.name];
+
+      if (!placementSpocs || !placementSpocs.length) {
+        return;
+      }
+
+      result[placement.name] = handleSites(placementSpocs);
+    };
+
+    if (!placements || !placements.length) {
+      [{ name: "spocs" }].forEach(forPlacement);
+    } else {
+      placements.forEach(forPlacement);
+    }
+    return result;
+  };
+
   const nextState = handleSites => ({
     ...prevState,
     spocs: {
       ...prevState.spocs,
-      data: prevState.spocs.data.spocs
-        ? {
-            spocs: handleSites(prevState.spocs.data.spocs),
-          }
-        : {},
+      data: handlePlacements(handleSites),
     },
     feeds: {
       ...prevState.feeds,
@@ -551,7 +572,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
 
   switch (action.type) {
     case at.DISCOVERY_STREAM_CONFIG_CHANGE:
-    // The reason this is a separate action is so it doesn't trigger a listener update on init
+    // Fall through to a separate action is so it doesn't trigger a listener update on init
     case at.DISCOVERY_STREAM_CONFIG_SETUP:
       return { ...prevState, config: action.data || {} };
     case at.DISCOVERY_STREAM_LAYOUT_UPDATE:
@@ -559,6 +580,16 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         ...prevState,
         lastUpdated: action.data.lastUpdated || null,
         layout: action.data.layout || [],
+      };
+    case at.HIDE_PRIVACY_INFO:
+      return {
+        ...prevState,
+        isPrivacyInfoModalVisible: false,
+      };
+    case at.SHOW_PRIVACY_INFO:
+      return {
+        ...prevState,
+        isPrivacyInfoModalVisible: true,
       };
     case at.DISCOVERY_STREAM_LAYOUT_RESET:
       return { ...INITIAL_STATE.DiscoveryStream, config: prevState.config };
@@ -597,7 +628,21 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
         spocs: {
           ...INITIAL_STATE.DiscoveryStream.spocs,
           spocs_endpoint:
-            action.data || INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint,
+            action.data.url ||
+            INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint,
+          spocs_per_domain:
+            action.data.spocs_per_domain ||
+            INITIAL_STATE.DiscoveryStream.spocs.spocs_per_domain,
+        },
+      };
+    case at.DISCOVERY_STREAM_SPOCS_PLACEMENTS:
+      return {
+        ...prevState,
+        spocs: {
+          ...prevState.spocs,
+          placements:
+            action.data.placements ||
+            INITIAL_STATE.DiscoveryStream.spocs.placements,
         },
       };
     case at.DISCOVERY_STREAM_SPOCS_UPDATE:
@@ -634,6 +679,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           return Object.assign({}, item, {
             open_url: action.data.open_url,
             pocket_id: action.data.pocket_id,
+            context_type: "pocket",
           });
         }
         return item;
@@ -658,6 +704,7 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
             bookmarkGuid,
             bookmarkTitle,
             bookmarkDateCreated: dateAdded,
+            context_type: "bookmark",
           });
         }
         return item;
@@ -673,6 +720,9 @@ function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
           delete newSite.bookmarkGuid;
           delete newSite.bookmarkTitle;
           delete newSite.bookmarkDateCreated;
+          if (!newSite.context_type || newSite.context_type === "bookmark") {
+            newSite.context_type = "removedBookmark";
+          }
           return newSite;
         }
         return item;

@@ -8,6 +8,7 @@
 
 #include <limits>
 #include "base/histogram.h"
+#include "geckoview/streaming/GeckoViewStreamingTelemetry.h"
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -42,6 +43,7 @@ using mozilla::Telemetry::KeyedHistogramAccumulation;
 using mozilla::Telemetry::ProcessID;
 using mozilla::Telemetry::Common::CanRecordDataset;
 using mozilla::Telemetry::Common::CanRecordProduct;
+using mozilla::Telemetry::Common::GetCurrentProduct;
 using mozilla::Telemetry::Common::GetIDForProcessName;
 using mozilla::Telemetry::Common::GetNameForProcessID;
 using mozilla::Telemetry::Common::IsExpiredVersion;
@@ -691,6 +693,15 @@ nsresult internal_HistogramAdd(const StaticMutexAutoLock& aLock,
 
   // Don't record if the current platform is not enabled
   if (!CanRecordProduct(gHistogramInfos[id].products)) {
+    return NS_OK;
+  }
+
+  if (&histogram != gExpiredHistogram &&
+      GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    const HistogramInfo& info = gHistogramInfos[id];
+    GeckoViewStreamingTelemetry::HistogramAccumulate(
+        nsDependentCString(info.name()),
+        info.histogramType == nsITelemetry::HISTOGRAM_CATEGORICAL, value);
     return NS_OK;
   }
 
@@ -2419,11 +2430,6 @@ void TelemetryHistogram::InitializeGlobalState(bool canRecordBase,
       "following in Histograms.json: GC_MINOR_REASON, GC_MINOR_REASON_LONG, "
       "GC_REASON_2");
 
-  static_assert((mozilla::StartupTimeline::MAX_EVENT_ID + 1) ==
-      gHistogramInfos[mozilla::Telemetry::STARTUP_MEASUREMENT_ERRORS].bucketCount,
-      "MAX_EVENT_ID is assumed to be a fixed value in Histograms.json.  If this"
-      " was an intentional change, update the n_values for the following in "
-      "Histograms.json: STARTUP_MEASUREMENT_ERRORS");
   // clang-format on
 
   gInitDone = true;
@@ -2489,9 +2495,7 @@ void TelemetryHistogram::InitHistogramRecordingEnabled() {
     mozilla::Telemetry::HistogramID id = mozilla::Telemetry::HistogramID(i);
     bool canRecordInProcess =
         CanRecordInProcess(h.record_in_processes, processType);
-    bool canRecordProduct = CanRecordProduct(h.products);
-    internal_SetHistogramRecordingEnabled(
-        locker, id, canRecordInProcess && canRecordProduct);
+    internal_SetHistogramRecordingEnabled(locker, id, canRecordInProcess);
   }
 
   for (auto recordingInitiallyDisabledID : kRecordingInitiallyDisabledIDs) {

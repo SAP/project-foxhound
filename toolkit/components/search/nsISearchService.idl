@@ -213,14 +213,20 @@ interface nsISearchService : nsISupports
    * This method should only be called when you need or want to wait for the
    * full initialization of the search service, which may include waiting for
    * outbound service requests.
+   *
+   * @param skipRegionCheck
+   *        Flag to avoid SearchService from waiting on the results
+   *        of the region lookups before completing initialisation.
+   *        Exposed for testing only.
    */
-  Promise init();
+  Promise init([optional] in boolean skipRegionCheck);
 
   /**
    * Exposed for testing.
    */
   void reInit([optional] in boolean skipRegionCheck);
   void reset();
+  Promise makeEnginesFromConfig(in jsval config);
   Promise ensureBuiltinExtension(in AString id,
                                 [optional] in jsval locales);
 
@@ -342,6 +348,16 @@ interface nsISearchService : nsISupports
   Promise addEnginesFromExtension(in jsval extension);
 
   /**
+   * Returns an engine object given a search WebExtension.
+   *
+   * @returns an array of nsISearchEngine objects.
+   */
+  Promise getEngineParams(in jsval extension,
+                          in jsval manifest,
+                          in AString locale,
+                          in jsval params);
+
+  /**
    * Un-hides all engines in the set of engines returned by getDefaultEngines.
    */
   void restoreDefaultEngines();
@@ -435,6 +451,12 @@ interface nsISearchService : nsISupports
   readonly attribute nsISearchEngine originalDefaultEngine;
 
   /**
+   * The original Engine object that is the default for this region when in
+   * private browsing mode, ignoring changes the user may have subsequently made.
+   */
+  readonly attribute nsISearchEngine originalPrivateDefaultEngine;
+
+  /**
    * The currently active search engine.
    * Unless the application doesn't ship any search plugin, this should never
    * be null. If the currently active engine is removed, this attribute will
@@ -460,8 +482,22 @@ interface nsISearchService : nsISupports
    * Gets a representation of the default engine in an anonymized JSON
    * string suitable for recording in the Telemetry environment.
    *
-   * @return an object containing anonymized info about the default engine:
-   *         name, loadPath, submissionURL (for default engines).
+   * @return {object} result
+   *   contains anonymized info about the default engine(s).
+   * @return {string} result.defaultSearchEngine
+   *   contains the telemetry id of the default engine.
+   * @return {object} result.defaultSearchEngineData
+   *   contains information about the default engine:
+   *     name, loadPath, original submissionURL
+   * @return {string} [result.defaultPrivateSearchEngine]
+   *   only returned if the preference for having a separate engine in private
+   *   mode is turned on.
+   *   contains the telemetry id of the default engine for private browsing mode.
+   * @return {object} [result.defaultPrivateSearchEngineData]
+   *   only returned if the preference for having a separate engine in private
+   *   mode is turned on.
+   *   contains information about the default engine for private browsing mode:
+   *     name, loadPath, original submissionURL
    */
   Promise getDefaultEngineInfo();
 

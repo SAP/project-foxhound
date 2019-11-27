@@ -19,9 +19,12 @@ ChromeUtils.defineModuleGetter(
 Preferences.addAll([
   { id: "browser.search.suggest.enabled", type: "bool" },
   { id: "browser.urlbar.suggest.searches", type: "bool" },
+  { id: "browser.search.suggest.enabled.private", type: "bool" },
   { id: "browser.search.hiddenOneOffs", type: "unichar" },
   { id: "browser.search.widget.inNavBar", type: "bool" },
   { id: "browser.urlbar.matchBuckets", type: "string" },
+  { id: "browser.search.separatePrivateDefault", type: "bool" },
+  { id: "browser.search.separatePrivateDefault.ui.enabled", type: "bool" },
 ]);
 
 const ENGINE_FLAVOR = "text/x-moz-search-engine";
@@ -43,7 +46,7 @@ var gSearchPane = {
   init() {
     gEngineView = new EngineView(new EngineStore());
     document.getElementById("engineList").view = gEngineView;
-    this.buildDefaultEngineDropDown();
+    this.buildDefaultEngineDropDowns().catch(console.error);
 
     if (
       Services.policies &&
@@ -74,6 +77,9 @@ var gSearchPane = {
 
     let suggestsPref = Preferences.get("browser.search.suggest.enabled");
     let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
+    let privateSuggestsPref = Preferences.get(
+      "browser.search.suggest.enabled.private"
+    );
     let updateSuggestionCheckboxes = this._updateSuggestionCheckboxes.bind(
       this
     );
@@ -83,9 +89,72 @@ var gSearchPane = {
     urlbarSuggests.addEventListener("command", () => {
       urlbarSuggestsPref.value = urlbarSuggests.checked;
     });
+    let privateWindowCheckbox = document.getElementById(
+      "showSearchSuggestionsPrivateWindows"
+    );
+    privateWindowCheckbox.addEventListener("command", () => {
+      privateSuggestsPref.value = privateWindowCheckbox.checked;
+    });
 
+    setEventListener(
+      "browserSeparateDefaultEngine",
+      "command",
+      this._onBrowserSeparateDefaultEngineChange.bind(this)
+    );
+    setEventListener("openLocationBarPrivacyPreferences", "click", function(
+      event
+    ) {
+      if (event.button == 0) {
+        gotoPref("privacy-locationBar");
+      }
+    });
+
+    this._initDefaultEngines();
     this._initShowSearchSuggestionsFirst();
     this._updateSuggestionCheckboxes();
+  },
+
+  /**
+   * Initialize the default engine handling. This will hide the private default
+   * options if they are not enabled yet.
+   */
+  _initDefaultEngines() {
+    this._separatePrivateDefaultEnabledPref = Preferences.get(
+      "browser.search.separatePrivateDefault.ui.enabled"
+    );
+
+    this._separatePrivateDefaultPref = Preferences.get(
+      "browser.search.separatePrivateDefault"
+    );
+
+    const checkbox = document.getElementById("browserSeparateDefaultEngine");
+    checkbox.checked = !this._separatePrivateDefaultPref.value;
+
+    this._updatePrivateEngineDisplayBoxes();
+
+    const listener = () => {
+      this._updatePrivateEngineDisplayBoxes();
+      this.buildDefaultEngineDropDowns().catch(console.error);
+    };
+
+    this._separatePrivateDefaultEnabledPref.on("change", listener);
+    this._separatePrivateDefaultPref.on("change", listener);
+  },
+
+  _updatePrivateEngineDisplayBoxes() {
+    const separateEnabled = this._separatePrivateDefaultEnabledPref.value;
+    document.getElementById(
+      "browserSeparateDefaultEngine"
+    ).hidden = !separateEnabled;
+
+    const separateDefault = this._separatePrivateDefaultPref.value;
+
+    const vbox = document.getElementById("browserPrivateEngineSelection");
+    vbox.hidden = !separateEnabled || !separateDefault;
+  },
+
+  _onBrowserSeparateDefaultEngineChange(event) {
+    this._separatePrivateDefaultPref.value = !event.target.checked;
   },
 
   _initShowSearchSuggestionsFirst() {
@@ -140,8 +209,18 @@ var gSearchPane = {
     let positionCheckbox = document.getElementById(
       "showSearchSuggestionsFirstCheckbox"
     );
+    let privateWindowCheckbox = document.getElementById(
+      "showSearchSuggestionsPrivateWindows"
+    );
 
     urlbarSuggests.disabled = !suggestsPref.value || permanentPB;
+    privateWindowCheckbox.disabled = !suggestsPref.value;
+    privateWindowCheckbox.checked = Preferences.get(
+      "browser.search.suggest.enabled.private"
+    ).value;
+    if (privateWindowCheckbox.disabled) {
+      privateWindowCheckbox.checked = false;
+    }
 
     let urlbarSuggestsPref = Preferences.get("browser.urlbar.suggest.searches");
     urlbarSuggests.checked = urlbarSuggestsPref.value;
@@ -163,12 +242,37 @@ var gSearchPane = {
     permanentPBLabel.hidden = urlbarSuggests.hidden || !permanentPB;
   },
 
-  async buildDefaultEngineDropDown() {
-    // This is called each time something affects the list of engines.
-    let list = document.getElementById("defaultEngine");
-    // Set selection to the current default engine.
-    let currentEngine = (await Services.search.getDefault()).name;
+  /**
+   * Builds the default and private engines drop down lists. This is called
+   * each time something affects the list of engines.
+   */
+  async buildDefaultEngineDropDowns() {
+    await this._buildEngineDropDown(
+      document.getElementById("defaultEngine"),
+      (await Services.search.getDefault()).name,
+      false
+    );
 
+    if (this._separatePrivateDefaultEnabledPref.value) {
+      await this._buildEngineDropDown(
+        document.getElementById("defaultPrivateEngine"),
+        (await Services.search.getDefaultPrivate()).name,
+        true
+      );
+    }
+  },
+
+  /**
+   * Builds a drop down menu of search engines.
+   *
+   * @param {DOMMenuList} list
+   *   The menu list element to attach the list of engines.
+   * @param {string} currentEngine
+   *   The name of the current default engine.
+   * @param {boolean} isPrivate
+   *   True if we are dealing with the default engine for private mode.
+   */
+  async _buildEngineDropDown(list, currentEngine, isPrivate) {
     // If the current engine isn't in the list any more, select the first item.
     let engines = gEngineView._engineStore._engines;
     if (!engines.length) {
@@ -194,6 +298,12 @@ var gSearchPane = {
         list.selectedItem = item;
       }
     });
+
+    // We don't currently support overriding the engine for private mode with
+    // extensions.
+    if (isPrivate) {
+      return;
+    }
 
     handleControllingExtension(SEARCH_TYPE, SEARCH_KEY);
     let searchEngineListener = {
@@ -241,10 +351,15 @@ var gSearchPane = {
           case "":
             if (
               aEvent.target.parentNode &&
-              aEvent.target.parentNode.parentNode &&
-              aEvent.target.parentNode.parentNode.id == "defaultEngine"
+              aEvent.target.parentNode.parentNode
             ) {
-              gSearchPane.setDefaultEngine();
+              if (aEvent.target.parentNode.parentNode.id == "defaultEngine") {
+                gSearchPane.setDefaultEngine();
+              } else if (
+                aEvent.target.parentNode.parentNode.id == "defaultPrivateEngine"
+              ) {
+                gSearchPane.setDefaultPrivateEngine();
+              }
             }
             break;
           case "restoreDefaultSearchEngines":
@@ -291,7 +406,7 @@ var gSearchPane = {
         case "engine-added":
           gEngineView._engineStore.addEngine(aEngine);
           gEngineView.rowCountChanged(gEngineView.lastIndex, 1);
-          gSearchPane.buildDefaultEngineDropDown();
+          gSearchPane.buildDefaultEngineDropDowns();
           break;
         case "engine-changed":
           gEngineView._engineStore.reloadIcons();
@@ -300,16 +415,34 @@ var gSearchPane = {
         case "engine-removed":
           gSearchPane.remove(aEngine);
           break;
-        case "engine-default":
+        case "engine-default": {
           // If the user is going through the drop down using up/down keys, the
           // dropdown may still be open (eg. on Windows) when engine-default is
           // fired, so rebuilding the list unconditionally would get in the way.
           let selectedEngine = document.getElementById("defaultEngine")
             .selectedItem.engine;
           if (selectedEngine.name != aEngine.name) {
-            gSearchPane.buildDefaultEngineDropDown();
+            gSearchPane.buildDefaultEngineDropDowns();
           }
           break;
+        }
+        case "engine-default-private": {
+          if (
+            this._separatePrivateDefaultEnabledPref.value &&
+            this._separatePrivateDefaultPref.value
+          ) {
+            // If the user is going through the drop down using up/down keys, the
+            // dropdown may still be open (eg. on Windows) when engine-default is
+            // fired, so rebuilding the list unconditionally would get in the way.
+            const selectedEngine = document.getElementById(
+              "defaultPrivateEngine"
+            ).selectedItem.engine;
+            if (selectedEngine.name != aEngine.name) {
+              gSearchPane.buildDefaultEngineDropDowns();
+            }
+          }
+          break;
+        }
       }
     }
   },
@@ -453,6 +586,12 @@ var gSearchPane = {
     );
     ExtensionSettingsStore.setByUser(SEARCH_TYPE, SEARCH_KEY);
   },
+
+  async setDefaultPrivateEngine() {
+    await Services.search.setDefaultPrivate(
+      document.getElementById("defaultPrivateEngine").selectedItem.engine
+    );
+  },
 };
 
 function onDragEngineStart(event) {
@@ -480,7 +619,7 @@ function EngineStore() {
       gEngineView.rowCountChanged(gEngineView.lastIndex, 1);
     }
     this._defaultEngines = defaultEngines.map(this._cloneEngine, this);
-    gSearchPane.buildDefaultEngineDropDown();
+    gSearchPane.buildDefaultEngineDropDowns();
 
     // check if we need to disable the restore defaults button
     var someHidden = this._defaultEngines.some(e => e.hidden);
@@ -563,7 +702,7 @@ EngineStore.prototype = {
     if (this._defaultEngines.some(this._isSameEngine, removedEngine)) {
       gSearchPane.showRestoreDefaults(true);
     }
-    gSearchPane.buildDefaultEngineDropDown();
+    gSearchPane.buildDefaultEngineDropDowns();
     return index;
   },
 
@@ -592,7 +731,7 @@ EngineStore.prototype = {
     }
     Services.search.resetToOriginalDefaultEngine();
     gSearchPane.showRestoreDefaults(false);
-    gSearchPane.buildDefaultEngineDropDown();
+    gSearchPane.buildDefaultEngineDropDowns();
     return added;
   },
 
@@ -720,7 +859,7 @@ EngineView.prototype = {
 
     await this._engineStore.moveEngine(sourceEngine, dropIndex);
     gSearchPane.showRestoreDefaults(true);
-    gSearchPane.buildDefaultEngineDropDown();
+    gSearchPane.buildDefaultEngineDropDowns();
 
     // Redraw, and adjust selection
     this.invalidate();
@@ -792,7 +931,4 @@ EngineView.prototype = {
         });
     }
   },
-  performAction(action) {},
-  performActionOnRow(action, index) {},
-  performActionOnCell(action, index, column) {},
 };

@@ -86,6 +86,11 @@ JSObject* TransplantObjectRetainingXrayExpandos(JSContext* cx,
                                                 JS::HandleObject origobj,
                                                 JS::HandleObject target);
 
+// If origObj has an xray waiver, nuke it before transplant.
+JSObject* TransplantObjectNukingXrayWaiver(JSContext* cx,
+                                           JS::HandleObject origObj,
+                                           JS::HandleObject target);
+
 bool IsContentXBLCompartment(JS::Compartment* compartment);
 bool IsContentXBLScope(JS::Realm* realm);
 bool IsInContentXBLScope(JSObject* obj);
@@ -682,15 +687,13 @@ inline bool AreNonLocalConnectionsDisabled() {
   return disabledForTest;
 }
 
+void CacheAutomationPref(bool* aPref);
+
 inline bool IsInAutomation() {
-  static bool sAutomationPrefIsSet;
+  static bool sAutomationPrefIsSet = false;
   static bool sPrefCacheAdded = false;
   if (!sPrefCacheAdded) {
-    mozilla::Preferences::AddBoolVarCache(
-        &sAutomationPrefIsSet,
-        "security.turn_off_all_security_so_that_viruses_can_take_over_this_"
-        "computer",
-        false);
+    CacheAutomationPref(&sAutomationPrefIsSet);
     sPrefCacheAdded = true;
   }
   return sAutomationPrefIsSet && AreNonLocalConnectionsDisabled();

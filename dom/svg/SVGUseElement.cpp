@@ -19,7 +19,6 @@
 #include "mozilla/URLExtraData.h"
 #include "SVGObserverUtils.h"
 #include "nsSVGUseFrame.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
@@ -237,25 +236,47 @@ void SVGUseElement::NodeWillBeDestroyed(const nsINode* aNode) {
   UnlinkSource();
 }
 
-bool SVGUseElement::IsCyclicReferenceTo(const Element& aTarget) const {
+// Returns whether this node could ever be displayed.
+static bool NodeCouldBeRendered(const nsINode& aNode) {
+  if (aNode.IsSVGElement(nsGkAtoms::symbol)) {
+    // Only <symbol> elements in the root of a <svg:use> shadow tree are
+    // displayed.
+    auto* shadowRoot = ShadowRoot::FromNodeOrNull(aNode.GetParentNode());
+    return shadowRoot && shadowRoot->Host()->IsSVGElement(nsGkAtoms::use);
+  }
+  // TODO: Do we have other cases we can optimize out easily?
+  return true;
+}
+
+// Circular loop detection, plus detection of whether this shadow tree is
+// rendered at all.
+auto SVGUseElement::ScanAncestors(const Element& aTarget) const -> ScanResult {
   if (&aTarget == this) {
-    return true;
+    return ScanResult::CyclicReference;
   }
-  if (mOriginal && mOriginal->IsCyclicReferenceTo(aTarget)) {
-    return true;
+  if (mOriginal &&
+      mOriginal->ScanAncestors(aTarget) == ScanResult::CyclicReference) {
+    return ScanResult::CyclicReference;
   }
-  for (nsINode* parent = GetParentOrHostNode(); parent;
-       parent = parent->GetParentOrHostNode()) {
+  auto result = ScanResult::Ok;
+  for (nsINode* parent = GetParentOrShadowHostNode(); parent;
+       parent = parent->GetParentOrShadowHostNode()) {
     if (parent == &aTarget) {
-      return true;
+      return ScanResult::CyclicReference;
     }
     if (auto* use = SVGUseElement::FromNode(*parent)) {
       if (mOriginal && use->mOriginal == mOriginal) {
-        return true;
+        return ScanResult::CyclicReference;
       }
     }
+    // Do we have other similar cases we can optimize out easily?
+    if (!NodeCouldBeRendered(*parent)) {
+      // NOTE(emilio): We can't just return here. If we're cyclic, we need to
+      // know.
+      result = ScanResult::Invisible;
+    }
   }
-  return false;
+  return result;
 }
 
 //----------------------------------------------------------------------
@@ -301,9 +322,7 @@ void SVGUseElement::UpdateShadowTree() {
     return;
   }
 
-  // circular loop detection
-
-  if (IsCyclicReferenceTo(*targetElement)) {
+  if (ScanAncestors(*targetElement) != ScanResult::Ok) {
     return;
   }
 
@@ -336,11 +355,13 @@ void SVGUseElement::UpdateShadowTree() {
                                mLengthAttributes[ATTR_HEIGHT]);
   }
 
-  // The specs do not say which referrer policy we should use, pass RP_Unset for
-  // now
-  mContentURLData = new URLExtraData(
-      baseURI.forget(), do_AddRef(OwnerDoc()->GetDocumentURI()),
-      do_AddRef(NodePrincipal()), mozilla::net::RP_Unset);
+  // Bug 1415044 the specs do not say which referrer information we should use.
+  // This may change if there's any spec comes out.
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new mozilla::dom::ReferrerInfo();
+  referrerInfo->InitWithNode(this);
+
+  mContentURLData = new URLExtraData(baseURI.forget(), referrerInfo.forget(),
+                                     do_AddRef(NodePrincipal()));
 
   targetElement->AddMutationObserver(this);
 }
@@ -422,10 +443,10 @@ void SVGUseElement::LookupHref() {
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
                                             GetComposedDoc(), baseURI);
-  // Bug 1415044 to investigate which referrer we should use
-  mReferencedElementTracker.ResetToURIFragmentID(
-      this, targetURI, OwnerDoc()->GetDocumentURI(),
-      OwnerDoc()->GetReferrerPolicy());
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      ReferrerInfo::CreateForSVGResources(OwnerDoc());
+
+  mReferencedElementTracker.ResetToURIFragmentID(this, targetURI, referrerInfo);
 }
 
 void SVGUseElement::TriggerReclone() {

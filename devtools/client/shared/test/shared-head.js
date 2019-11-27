@@ -1,8 +1,8 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
+
+/* import-globals-from ../../inspector/test/shared-head.js */
 
 "use strict";
 
@@ -25,8 +25,9 @@ if (DEBUG_ALLOCATIONS) {
   const { DevToolsLoader } = ChromeUtils.import(
     "resource://devtools/shared/Loader.jsm"
   );
-  const loader = new DevToolsLoader();
-  loader.invisibleToDebugger = true;
+  const loader = new DevToolsLoader({
+    invisibleToDebugger: true,
+  });
 
   const { allocationTracker } = loader.require(
     "devtools/shared/test-helpers/allocation-tracker"
@@ -156,8 +157,29 @@ registerCleanupFunction(() => {
 });
 
 registerCleanupFunction(async function cleanup() {
+  // Close any tab opened by the test.
+  // There should be only one tab opened by default when firefox starts the test.
   while (gBrowser.tabs.length > 1) {
     await closeTabAndToolbox(gBrowser.selectedTab);
+  }
+
+  // Note that this will run before cleanup functions registered by tests or other head.js files.
+  // So all connections must be cleaned up by the test when the test ends,
+  // before the harness starts invoking the cleanup functions
+  await waitForTick();
+
+  // All connections must be cleaned up by the test when the test ends.
+  const { DebuggerServer } = require("devtools/server/debugger-server");
+  ok(
+    !DebuggerServer.hasConnection(),
+    "The main process DebuggerServer has no pending connection when the test ends"
+  );
+  // If there is still open connection, close all of them so that following tests
+  // could pass.
+  if (DebuggerServer.hasConnection()) {
+    for (const conn of Object.values(DebuggerServer._connections)) {
+      conn.close();
+    }
   }
 });
 
@@ -230,6 +252,24 @@ var refreshTab = async function(tab = gBrowser.selectedTab) {
   await finished;
   info("Tab finished refreshing.");
 };
+
+/**
+ * Open the inspector in a tab with given URL.
+ * @param {string} url  The URL to open.
+ * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
+ * @return A promise that is resolved once the tab and inspector have loaded
+ *         with an object: { tab, toolbox, inspector }.
+ */
+var openInspectorForURL = async function(url, hostType) {
+  const tab = await addTab(url);
+  const { inspector, toolbox, testActor } = await openInspector(hostType);
+  return { tab, inspector, toolbox, testActor };
+};
+
+async function getActiveInspector() {
+  const target = await TargetFactory.forTab(gBrowser.selectedTab);
+  return gDevTools.getToolbox(target).getPanel("inspector");
+}
 
 /**
  * Simulate a key event from a <key> element.
@@ -404,7 +444,7 @@ function loadHelperScript(filePath) {
  * @return {Promise}
  */
 function waitForTick() {
-  return new Promise(resolve => executeSoon(resolve));
+  return new Promise(resolve => DevToolsUtils.executeSoon(resolve));
 }
 
 /**
@@ -580,7 +620,7 @@ function waitForContextMenu(popup, button, onShown, onHidden) {
 
       // Use executeSoon() to get out of the popupshown event.
       popup.addEventListener("popuphidden", onPopupHidden);
-      executeSoon(() => popup.hidePopup());
+      DevToolsUtils.executeSoon(() => popup.hidePopup());
     }
     function onPopupHidden() {
       info("onPopupHidden");
@@ -675,9 +715,9 @@ function isWindows() {
  */
 function waitForTitleChange(toolbox) {
   return new Promise(resolve => {
-    toolbox.win.parent.addEventListener("message", function onmessage(event) {
+    toolbox.topWindow.addEventListener("message", function onmessage(event) {
       if (event.data.name == "set-host-title") {
-        toolbox.win.parent.removeEventListener("message", onmessage);
+        toolbox.topWindow.removeEventListener("message", onmessage);
         resolve();
       }
     });
@@ -711,63 +751,6 @@ function createTestHTTPServer() {
 
   server.start(-1);
   return server;
-}
-
-/**
- * Inject `EventUtils` helpers into ContentTask scope.
- *
- * This helper is automatically exposed to mochitest browser tests,
- * but is missing from content task scope.
- * You should call this method only once per <browser> tag
- *
- * @param {xul:browser} browser
- *        Reference to the browser in which we load content task
- */
-async function injectEventUtilsInContentTask(browser) {
-  await ContentTask.spawn(browser, {}, async function() {
-    if ("EventUtils" in this) {
-      return;
-    }
-
-    const EventUtils = (this.EventUtils = {});
-
-    EventUtils.window = {};
-    EventUtils.parent = EventUtils.window;
-    /* eslint-disable camelcase */
-    EventUtils._EU_Ci = Ci;
-    EventUtils._EU_Cc = Cc;
-    /* eslint-enable camelcase */
-    // EventUtils' `sendChar` function relies on the navigator to synthetize events.
-    EventUtils.navigator = content.navigator;
-    EventUtils.KeyboardEvent = content.KeyboardEvent;
-
-    EventUtils.synthesizeClick = element =>
-      new Promise(resolve => {
-        element.addEventListener(
-          "click",
-          function() {
-            resolve();
-          },
-          { once: true }
-        );
-
-        EventUtils.synthesizeMouseAtCenter(
-          element,
-          { type: "mousedown", isSynthesized: false },
-          content
-        );
-        EventUtils.synthesizeMouseAtCenter(
-          element,
-          { type: "mouseup", isSynthesized: false },
-          content
-        );
-      });
-
-    Services.scriptloader.loadSubScript(
-      "chrome://mochikit/content/tests/SimpleTest/EventUtils.js",
-      EventUtils
-    );
-  });
 }
 
 /*

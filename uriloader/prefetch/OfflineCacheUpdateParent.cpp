@@ -72,7 +72,8 @@ void OfflineCacheUpdateParent::ActorDestroy(ActorDestroyReason why) {
 
 nsresult OfflineCacheUpdateParent::Schedule(
     const URIParams& aManifestURI, const URIParams& aDocumentURI,
-    const PrincipalInfo& aLoadingPrincipalInfo, const bool& stickDocument) {
+    const PrincipalInfo& aLoadingPrincipalInfo, const bool& stickDocument,
+    const CookieSettingsArgs& aCookieSettingsArgs) {
   LOG(("OfflineCacheUpdateParent::RecvSchedule [%p]", this));
 
   nsresult rv;
@@ -90,8 +91,7 @@ nsresult OfflineCacheUpdateParent::Schedule(
 
   bool offlinePermissionAllowed = false;
 
-  rv = service->OfflineAppAllowed(mLoadingPrincipal, nullptr,
-                                  &offlinePermissionAllowed);
+  rv = service->OfflineAppAllowed(mLoadingPrincipal, &offlinePermissionAllowed);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!offlinePermissionAllowed) return NS_ERROR_DOM_SECURITY_ERR;
@@ -116,6 +116,8 @@ nsresult OfflineCacheUpdateParent::Schedule(
     rv = update->Init(manifestURI, documentURI, mLoadingPrincipal, nullptr,
                       nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
+
+    update->SetCookieSettingsArgs(aCookieSettingsArgs);
 
     // Must add before Schedule() call otherwise we would miss
     // oncheck event notification.
@@ -238,14 +240,6 @@ OfflineCacheUpdateParent::GetUseRemoteSubframes(bool* aUseRemoteSubframes) {
 NS_IMETHODIMP
 OfflineCacheUpdateParent::SetRemoteSubframes(bool aUseRemoteSubframes) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-OfflineCacheUpdateParent::GetIsInIsolatedMozBrowserElement(
-    bool* aIsInIsolatedMozBrowserElement) {
-  NS_ENSURE_TRUE(mLoadingPrincipal, NS_ERROR_UNEXPECTED);
-  return mLoadingPrincipal->GetIsInIsolatedMozBrowserElement(
-      aIsInIsolatedMozBrowserElement);
 }
 
 NS_IMETHODIMP

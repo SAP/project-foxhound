@@ -43,7 +43,7 @@
 #define PREF_CUBEB_BACKEND "media.cubeb.backend"
 #define PREF_CUBEB_OUTPUT_DEVICE "media.cubeb.output_device"
 #define PREF_CUBEB_LATENCY_PLAYBACK "media.cubeb_latency_playback_ms"
-#define PREF_CUBEB_LATENCY_MSG "media.cubeb_latency_msg_frames"
+#define PREF_CUBEB_LATENCY_MTG "media.cubeb_latency_mtg_frames"
 // Allows to get something non-default for the preferred sample-rate, to allow
 // troubleshooting in the field and testing.
 #define PREF_CUBEB_FORCE_SAMPLE_RATE "media.cubeb.force_sample_rate"
@@ -74,44 +74,18 @@ struct AudioIpcInitParams {
 };
 
 // These functions are provided by audioipc-server crate
-extern void* audioipc_server_start();
+extern void* audioipc_server_start(const char*, const char*);
 extern mozilla::ipc::FileDescriptor::PlatformHandleType
 audioipc_server_new_client(void*);
 extern void audioipc_server_stop(void*);
 // These functions are provided by audioipc-client crate
 extern int audioipc_client_init(cubeb**, const char*,
                                 const AudioIpcInitParams*);
-#ifdef XP_LINUX
-extern void audioipc_init_threads(const AudioIpcInitParams*);
-#endif
 }
 
 namespace mozilla {
 
 namespace {
-
-#ifdef MOZ_CUBEB_REMOTING
-////////////////////////////////////////////////////////////////////////////////
-// Cubeb Sound Server Thread
-void* sServerHandle = nullptr;
-
-// Initialized during early startup, protected by sMutex.
-StaticAutoPtr<ipc::FileDescriptor> sIPCConnection;
-
-static bool StartSoundServer() {
-  sServerHandle = audioipc_server_start();
-  return sServerHandle != nullptr;
-}
-
-static void ShutdownSoundServer() {
-  if (!sServerHandle) return;
-
-  audioipc_server_stop(sServerHandle);
-  sServerHandle = nullptr;
-}
-#endif  // MOZ_CUBEB_REMOTING
-
-////////////////////////////////////////////////////////////////////////////////
 
 LazyLogModule gCubebLog("cubeb");
 
@@ -135,13 +109,13 @@ enum class CubebState {
 cubeb* sCubebContext;
 double sVolumeScale = 1.0;
 uint32_t sCubebPlaybackLatencyInMilliseconds = 100;
-uint32_t sCubebMSGLatencyInFrames = 512;
+uint32_t sCubebMTGLatencyInFrames = 512;
 // If sCubebForcedSampleRate is zero, PreferredSampleRate will return the
 // preferred sample-rate for the audio backend in use. Otherwise, it will be
 // used as the preferred sample-rate.
 uint32_t sCubebForcedSampleRate = 0;
 bool sCubebPlaybackLatencyPrefSet = false;
-bool sCubebMSGLatencyPrefSet = false;
+bool sCubebMTGLatencyPrefSet = false;
 bool sAudioStreamInitEverSucceeded = false;
 bool sCubebForceNullContext = false;
 bool sCubebDisableDeviceSwitching = true;
@@ -188,6 +162,27 @@ const int CUBEB_BACKEND_UNKNOWN = CUBEB_BACKEND_INIT_FAILURE_FIRST + 2;
 // visible on the querying thread/CPU.
 uint32_t sPreferredSampleRate;
 
+#ifdef MOZ_CUBEB_REMOTING
+// AudioIPC server handle
+void* sServerHandle = nullptr;
+
+// Initialized during early startup, protected by sMutex.
+StaticAutoPtr<ipc::FileDescriptor> sIPCConnection;
+
+static bool StartAudioIPCServer() {
+  sServerHandle = audioipc_server_start(sBrandName, sCubebBackendName);
+  return sServerHandle != nullptr;
+}
+
+static void ShutdownAudioIPCServer() {
+  if (!sServerHandle) {
+    return;
+  }
+
+  audioipc_server_stop(sServerHandle);
+  sServerHandle = nullptr;
+}
+#endif  // MOZ_CUBEB_REMOTING
 }  // namespace
 
 static const uint32_t CUBEB_NORMAL_LATENCY_MS = 100;
@@ -228,15 +223,15 @@ void PrefChanged(const char* aPref, void* aClosure) {
     uint32_t value = Preferences::GetUint(aPref, CUBEB_NORMAL_LATENCY_MS);
     sCubebPlaybackLatencyInMilliseconds =
         std::min<uint32_t>(std::max<uint32_t>(value, 1), 1000);
-  } else if (strcmp(aPref, PREF_CUBEB_LATENCY_MSG) == 0) {
+  } else if (strcmp(aPref, PREF_CUBEB_LATENCY_MTG) == 0) {
     StaticMutexAutoLock lock(sMutex);
-    sCubebMSGLatencyPrefSet = Preferences::HasUserValue(aPref);
+    sCubebMTGLatencyPrefSet = Preferences::HasUserValue(aPref);
     uint32_t value = Preferences::GetUint(aPref, CUBEB_NORMAL_LATENCY_FRAMES);
     // 128 is the block size for the Web Audio API, which limits how low the
     // latency can be here.
     // We don't want to limit the upper limit too much, so that people can
     // experiment.
-    sCubebMSGLatencyInFrames =
+    sCubebMTGLatencyInFrames =
         std::min<uint32_t>(std::max<uint32_t>(value, 128), 1e6);
   } else if (strcmp(aPref, PREF_CUBEB_FORCE_SAMPLE_RATE) == 0) {
     StaticMutexAutoLock lock(sMutex);
@@ -280,11 +275,6 @@ void PrefChanged(const char* aPref, void* aClosure) {
     sCubebSandbox = Preferences::GetBool(aPref);
     MOZ_LOG(gCubebLog, LogLevel::Verbose,
             ("%s: %s", PREF_CUBEB_SANDBOX, sCubebSandbox ? "true" : "false"));
-
-    if (sCubebSandbox && !sServerHandle && XRE_IsParentProcess()) {
-      MOZ_LOG(gCubebLog, LogLevel::Debug, ("Starting cubeb server..."));
-      StartSoundServer();
-    }
   } else if (strcmp(aPref, PREF_AUDIOIPC_POOL_SIZE) == 0) {
     StaticMutexAutoLock lock(sMutex);
     sAudioIPCPoolSize = Preferences::GetUint(PREF_AUDIOIPC_POOL_SIZE,
@@ -423,6 +413,14 @@ void InitAudioIPCConnection() {
 
 ipc::FileDescriptor CreateAudioIPCConnection() {
 #ifdef MOZ_CUBEB_REMOTING
+  MOZ_ASSERT(sCubebSandbox && XRE_IsParentProcess());
+  if (!sServerHandle) {
+    MOZ_LOG(gCubebLog, LogLevel::Debug, ("Starting cubeb server..."));
+    if (!StartAudioIPCServer()) {
+      MOZ_LOG(gCubebLog, LogLevel::Error, ("audioipc_server_start failed"));
+      return ipc::FileDescriptor();
+    }
+  }
   MOZ_ASSERT(sServerHandle);
   ipc::FileDescriptor::PlatformHandleType rawFD =
       audioipc_server_new_client(sServerHandle);
@@ -443,18 +441,6 @@ ipc::FileDescriptor CreateAudioIPCConnection() {
   return ipc::FileDescriptor();
 #endif
 }
-
-#if defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
-void InitAudioThreads() {
-  AudioIpcInitParams initParams;
-  initParams.mPoolSize = sAudioIPCPoolSize;
-  initParams.mStackSize = sAudioIPCStackSize;
-  initParams.mThreadCreateCallback = [](const char* aName) {
-    PROFILER_REGISTER_THREAD(aName);
-  };
-  audioipc_init_threads(&initParams);
-}
-#endif
 
 cubeb* GetCubebContextUnlocked() {
   sMutex.AssertCurrentThreadOwns();
@@ -522,7 +508,7 @@ cubeb* GetCubebContextUnlocked() {
 #ifdef XP_WIN
     mozilla::mscom::EnsureMTA([&]() -> void {
 #endif
-      rv = cubeb_init(&sCubebContext, sBrandName, sCubebBackendName.get());
+      rv = cubeb_init(&sCubebContext, sBrandName, sCubebBackendName);
 #ifdef XP_WIN
     });
 #endif
@@ -579,16 +565,16 @@ bool CubebPlaybackLatencyPrefSet() {
   return sCubebPlaybackLatencyPrefSet;
 }
 
-bool CubebMSGLatencyPrefSet() {
+bool CubebMTGLatencyPrefSet() {
   StaticMutexAutoLock lock(sMutex);
-  return sCubebMSGLatencyPrefSet;
+  return sCubebMTGLatencyPrefSet;
 }
 
-uint32_t GetCubebMSGLatencyInFrames(cubeb_stream_params* params) {
+uint32_t GetCubebMTGLatencyInFrames(cubeb_stream_params* params) {
   StaticMutexAutoLock lock(sMutex);
-  if (sCubebMSGLatencyPrefSet) {
-    MOZ_ASSERT(sCubebMSGLatencyInFrames > 0);
-    return sCubebMSGLatencyInFrames;
+  if (sCubebMTGLatencyPrefSet) {
+    MOZ_ASSERT(sCubebMTGLatencyInFrames > 0);
+    return sCubebMTGLatencyInFrames;
   }
 
 #ifdef MOZ_WIDGET_ANDROID
@@ -596,12 +582,12 @@ uint32_t GetCubebMSGLatencyInFrames(cubeb_stream_params* params) {
 #else
   cubeb* context = GetCubebContextUnlocked();
   if (!context) {
-    return sCubebMSGLatencyInFrames;  // default 512
+    return sCubebMTGLatencyInFrames;  // default 512
   }
   uint32_t latency_frames = 0;
   if (cubeb_get_min_latency(context, params, &latency_frames) != CUBEB_OK) {
     NS_WARNING("Could not get minimal latency from cubeb.");
-    return sCubebMSGLatencyInFrames;  // default 512
+    return sCubebMTGLatencyInFrames;  // default 512
   }
   return latency_frames;
 #endif
@@ -609,7 +595,7 @@ uint32_t GetCubebMSGLatencyInFrames(cubeb_stream_params* params) {
 
 static const char* gInitCallbackPrefs[] = {
     PREF_VOLUME_SCALE,           PREF_CUBEB_OUTPUT_DEVICE,
-    PREF_CUBEB_LATENCY_PLAYBACK, PREF_CUBEB_LATENCY_MSG,
+    PREF_CUBEB_LATENCY_PLAYBACK, PREF_CUBEB_LATENCY_MTG,
     PREF_CUBEB_BACKEND,          PREF_CUBEB_FORCE_NULL_CONTEXT,
     PREF_CUBEB_SANDBOX,          PREF_AUDIOIPC_POOL_SIZE,
     PREF_AUDIOIPC_STACK_SIZE,    nullptr,
@@ -666,7 +652,7 @@ void ShutdownLibrary() {
 
 #ifdef MOZ_CUBEB_REMOTING
   sIPCConnection = nullptr;
-  ShutdownSoundServer();
+  ShutdownAudioIPCServer();
 #endif
 }
 

@@ -14,7 +14,6 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/OfflineResourceListBinding.h"
 #include "nsIDocumentLoader.h"
-#include "nsIDOMWindow.h"
 #include "mozilla/dom/Document.h"
 #include "nsIObserverService.h"
 #include "nsIURL.h"
@@ -155,8 +154,7 @@ nsresult nsManifestCheck::Begin() {
   NS_ENSURE_SUCCESS(rv, rv);
   rv = NS_NewChannel(getter_AddRefs(mChannel), mURI, mLoadingPrincipal,
                      nsILoadInfo::SEC_REQUIRE_SAME_ORIGIN_DATA_IS_BLOCKED,
-                     nsIContentPolicy::TYPE_OTHER,
-                     nullptr,  // nsICookieSettings
+                     nsIContentPolicy::TYPE_OTHER, mUpdate->CookieSettings(),
                      nullptr,  // PerformanceStorage
                      nullptr,  // loadGroup
                      nullptr,  // aCallbacks
@@ -323,8 +321,7 @@ nsresult nsOfflineCacheUpdateItem::OpenChannel(nsOfflineCacheUpdate* aUpdate) {
 
   rv = NS_NewChannel(getter_AddRefs(mChannel), mURI, mLoadingPrincipal,
                      nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     nsIContentPolicy::TYPE_OTHER,
-                     nullptr,  // nsICookieSettings
+                     nsIContentPolicy::TYPE_OTHER, aUpdate->CookieSettings(),
                      nullptr,  // PerformanceStorage
                      nullptr,  // aLoadGroup
                      this,     // aCallbacks
@@ -509,8 +506,7 @@ nsOfflineCacheUpdateItem::AsyncOnChannelRedirect(
   nsAutoCString oldScheme;
   mURI->GetScheme(oldScheme);
 
-  bool match;
-  if (NS_FAILED(newURI->SchemeIs(oldScheme.get(), &match)) || !match) {
+  if (!newURI->SchemeIs(oldScheme.get())) {
     LOG(("rejected: redirected to a different scheme\n"));
     return NS_ERROR_ABORT;
   }
@@ -841,8 +837,9 @@ nsresult nsOfflineManifestItem::HandleManifestLine(
       uri->GetScheme(scheme);
 
       // Manifest URIs must have the same scheme as the manifest.
-      bool match;
-      if (NS_FAILED(mURI->SchemeIs(scheme.get(), &match)) || !match) break;
+      if (!mURI->SchemeIs(scheme.get())) {
+        break;
+      }
 
       mExplicitURIs.AppendObject(uri);
 
@@ -934,8 +931,9 @@ nsresult nsOfflineManifestItem::HandleManifestLine(
 
       nsAutoCString scheme;
       bypassURI->GetScheme(scheme);
-      bool equals;
-      if (NS_FAILED(mURI->SchemeIs(scheme.get(), &equals)) || !equals) break;
+      if (!mURI->SchemeIs(scheme.get())) {
+        break;
+      }
       if (NS_FAILED(DropReferenceFromURL(bypassURI))) break;
       nsCString spec;
       if (NS_FAILED(bypassURI->GetAsciiSpec(spec))) break;
@@ -1142,14 +1140,8 @@ nsresult nsOfflineCacheUpdate::InitInternal(nsIURI* aManifestURI,
   nsresult rv;
 
   // Only http and https applications are supported.
-  bool match;
-  rv = aManifestURI->SchemeIs("http", &match);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!match) {
-    rv = aManifestURI->SchemeIs("https", &match);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!match) return NS_ERROR_ABORT;
+  if (!aManifestURI->SchemeIs("http") && !aManifestURI->SchemeIs("https")) {
+    return NS_ERROR_ABORT;
   }
 
   mManifestURI = aManifestURI;
@@ -1189,6 +1181,10 @@ nsresult nsOfflineCacheUpdate::Init(nsIURI* aManifestURI, nsIURI* aDocumentURI,
 
   mDocumentURI = aDocumentURI;
 
+  if (aDocument) {
+    mCookieSettings = aDocument->CookieSettings();
+  }
+
   if (aCustomProfileDir) {
     rv = cacheService->BuildGroupIDForSuffix(aManifestURI, originSuffix,
                                              mGroupID);
@@ -1223,7 +1219,7 @@ nsresult nsOfflineCacheUpdate::Init(nsIURI* aManifestURI, nsIURI* aDocumentURI,
   }
 
   rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(aDocumentURI,
-                                                           nullptr, &mPinned);
+                                                           &mPinned);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mState = STATE_INITIALIZED;
@@ -1270,7 +1266,7 @@ nsresult nsOfflineCacheUpdate::InitForUpdateCheck(
   mApplicationCache = mPreviousApplicationCache;
 
   rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(aManifestURI,
-                                                           nullptr, &mPinned);
+                                                           &mPinned);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mUpdateAvailableObserver = aObserver;
@@ -1283,7 +1279,8 @@ nsresult nsOfflineCacheUpdate::InitForUpdateCheck(
 nsresult nsOfflineCacheUpdate::InitPartial(nsIURI* aManifestURI,
                                            const nsACString& clientID,
                                            nsIURI* aDocumentURI,
-                                           nsIPrincipal* aLoadingPrincipal) {
+                                           nsIPrincipal* aLoadingPrincipal,
+                                           nsICookieSettings* aCookieSettings) {
   nsresult rv;
 
   // Make sure the service has been initialized
@@ -1327,8 +1324,10 @@ nsresult nsOfflineCacheUpdate::InitPartial(nsIURI* aManifestURI,
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(aDocumentURI,
-                                                           nullptr, &mPinned);
+                                                           &mPinned);
   NS_ENSURE_SUCCESS(rv, rv);
+
+  mCookieSettings = aCookieSettings;
 
   mState = STATE_INITIALIZED;
   return NS_OK;
@@ -1631,6 +1630,8 @@ void nsOfflineCacheUpdate::ManifestCheckCompleted(
     // document instances.
     newUpdate->Init(mManifestURI, mDocumentURI, mLoadingPrincipal, nullptr,
                     mCustomProfileDir);
+
+    newUpdate->SetCookieSettings(mCookieSettings);
 
     // In a rare case the manifest will not be modified on the next refetch
     // transfer all master document URIs to the new update to ensure that
@@ -1938,7 +1939,7 @@ nsresult nsOfflineCacheUpdate::ScheduleImplicit() {
   }
 
   rv = update->InitPartial(mManifestURI, clientID, mDocumentURI,
-                           mLoadingPrincipal);
+                           mLoadingPrincipal, mCookieSettings);
   NS_ENSURE_SUCCESS(rv, rv);
 
   for (int32_t i = 0; i < mDocumentURIs.Count(); i++) {
@@ -2038,8 +2039,7 @@ static nsresult EvictOneOfCacheGroups(nsIApplicationCacheService* cacheService,
     if (NS_FAILED(rv) || !cache) continue;
 
     bool pinned;
-    rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(uri, nullptr,
-                                                             &pinned);
+    rv = nsOfflineCacheUpdateService::OfflineAppPinnedForURI(uri, &pinned);
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (!pinned) {
@@ -2109,6 +2109,14 @@ nsOfflineCacheUpdate::GetManifestURI(nsIURI** aManifestURI) {
 }
 
 NS_IMETHODIMP
+nsOfflineCacheUpdate::GetLoadingPrincipal(nsIPrincipal** aLoadingPrincipal) {
+  NS_ENSURE_TRUE(mState >= STATE_INITIALIZED, NS_ERROR_NOT_INITIALIZED);
+
+  NS_IF_ADDREF(*aLoadingPrincipal = mLoadingPrincipal);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsOfflineCacheUpdate::GetSucceeded(bool* aSucceeded) {
   NS_ENSURE_TRUE(mState == STATE_FINISHED, NS_ERROR_NOT_AVAILABLE);
 
@@ -2136,9 +2144,9 @@ nsresult nsOfflineCacheUpdate::AddURI(nsIURI* aURI, uint32_t aType,
   nsAutoCString scheme;
   aURI->GetScheme(scheme);
 
-  bool match;
-  if (NS_FAILED(mManifestURI->SchemeIs(scheme.get(), &match)) || !match)
+  if (!mManifestURI->SchemeIs(scheme.get())) {
     return NS_ERROR_FAILURE;
+  }
 
   // Don't fetch the same URI twice.
   for (uint32_t i = 0; i < mItems.Length(); i++) {
@@ -2290,6 +2298,19 @@ nsOfflineCacheUpdate::UpdateStateChanged(nsIOfflineCacheUpdate* aUpdate,
     aUpdate->RemoveObserver(this);
 
   return NS_OK;
+}
+
+void nsOfflineCacheUpdate::SetCookieSettings(
+    nsICookieSettings* aCookieSettings) {
+  mCookieSettings = aCookieSettings;
+}
+
+void nsOfflineCacheUpdate::SetCookieSettingsArgs(
+    const CookieSettingsArgs& aCookieSettingsArgs) {
+  MOZ_ASSERT(!mCookieSettings);
+
+  CookieSettings::Deserialize(aCookieSettingsArgs,
+                              getter_AddRefs(mCookieSettings));
 }
 
 NS_IMETHODIMP

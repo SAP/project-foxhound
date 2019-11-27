@@ -3,16 +3,14 @@
 
 "use strict";
 
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonManager",
-  "resource://gre/modules/AddonManager.jsm"
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "ExtensionSettingsStore",
-  "resource://gre/modules/ExtensionSettingsStore.jsm"
-);
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  AddonManager: "resource://gre/modules/AddonManager.jsm",
+  ExtensionSettingsStore: "resource://gre/modules/ExtensionSettingsStore.jsm",
+});
 
 // Named this way so they correspond to the extensions
 const HOME_URI_2 = "http://example.com/";
@@ -387,6 +385,8 @@ add_task(async function test_doorhanger_homepage_button() {
   popupnotification.secondaryButton.click();
   await popupHidden;
   await prefPromise;
+
+  await BrowserTestUtils.waitForLocationChange(gBrowser, defaultHomePage);
 
   is(getHomePageURL(), defaultHomePage, "The homepage is set back to default");
 

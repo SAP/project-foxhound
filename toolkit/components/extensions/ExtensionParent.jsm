@@ -27,6 +27,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
   E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
+  ExtensionActivityLog: "resource://gre/modules/ExtensionActivityLog.jsm",
   GeckoViewConnection: "resource://gre/modules/GeckoViewWebExtension.jsm",
   MessageChannel: "resource://gre/modules/MessageChannel.jsm",
   MessageManagerProxy: "resource://gre/modules/MessageManagerProxy.jsm",
@@ -134,14 +135,14 @@ let apiManager = new (class extends SchemaAPIManager {
     let disabledIds = AddonManager.getStartupChanges(
       AddonManager.STARTUP_CHANGE_DISABLED
     );
-    if (disabledIds.length > 0) {
+    if (disabledIds.length) {
       this._callHandlers(disabledIds, "disable", "onDisable");
     }
 
     let uninstalledIds = AddonManager.getStartupChanges(
       AddonManager.STARTUP_CHANGE_UNINSTALLED
     );
-    if (uninstalledIds.length > 0) {
+    if (uninstalledIds.length) {
       this._callHandlers(uninstalledIds, "uninstall", "onUninstall");
     }
   }
@@ -506,7 +507,7 @@ ProxyMessenger = {
       apiManager.global.tabGetSender(extension, target, sender);
     }
 
-    let promise1 = MessageChannel.sendMessage(receiverMM, messageName, data, {
+    let promise = MessageChannel.sendMessage(receiverMM, messageName, data, {
       sender,
       recipient,
       responseType,
@@ -531,7 +532,7 @@ ProxyMessenger = {
           receiverMM
         );
         port.register();
-        promise1.catch(() => {
+        promise.catch(() => {
           port.unregister();
         });
       }
@@ -542,49 +543,7 @@ ProxyMessenger = {
       }
     }
 
-    if (!(recipient.toProxyScript && extension.remote)) {
-      return promise1;
-    }
-
-    // Proxy scripts run in the parent process so we need to dispatch
-    // the message to both the parent and extension process and merge
-    // the results.
-    // Once proxy scripts are gone (bug 1443259) we can remove this
-    let promise2 = MessageChannel.sendMessage(
-      Services.ppmm.getChildAt(0),
-      messageName,
-      data,
-      {
-        sender,
-        recipient,
-        responseType,
-      }
-    );
-
-    let result = undefined;
-    let failures = 0;
-    let tryPromise = async promise => {
-      try {
-        let res = await promise;
-        if (result === undefined) {
-          result = res;
-        }
-      } catch (e) {
-        if (e.result === MessageChannel.RESULT_NO_RESPONSE) {
-          // Ignore.
-        } else if (e.result === MessageChannel.RESULT_NO_HANDLER) {
-          failures++;
-        } else {
-          throw e;
-        }
-      }
-    };
-
-    await Promise.all([tryPromise(promise1), tryPromise(promise2)]);
-    if (failures == 2) {
-      return Promise.reject(noHandlerError);
-    }
-    return result;
+    return promise;
   },
 
   /**
@@ -705,11 +664,7 @@ GlobalManager = {
 
   _onExtensionBrowser(type, browser, additionalData = {}) {
     browser.messageManager.loadFrameScript(
-      `data:,
-      Components.utils.import("resource://gre/modules/Services.jsm");
-
-      Services.obs.notifyObservers(this, "tab-content-frameloader-created", "");
-    `,
+      "resource://gre/modules/onExtensionBrowser.js",
       false,
       true
     );
@@ -772,6 +727,11 @@ class ProxyContextParent extends BaseContext {
     } finally {
       this.pendingEventBrowser = savedBrowser;
     }
+  }
+
+  logActivity(type, name, data) {
+    // The base class will throw so we catch any subclasses that do not implement.
+    // We do not want to throw here, but we also do not log here.
   }
 
   get cloneScope() {
@@ -1089,18 +1049,33 @@ ParentAPIManager = {
     return PerformanceCounters.getData();
   },
 
-  async withTiming(data, callable) {
-    if (!gTimingEnabled) {
-      return callable();
+  /**
+   * Call the given function and also log the call as appropriate
+   * (i.e., with PerformanceCounters and/or activity logging)
+   *
+   * @param {BaseContext} context The context making this call.
+   * @param {object} data Additional data about the call.
+   * @param {function} callable The actual implementation to invoke.
+   */
+  async callAndLog(context, data, callable) {
+    let { id } = context.extension;
+    // If we were called via callParentAsyncFunction we don't want
+    // to log again, check for the flag.
+    const { alreadyLogged } = data.options || {};
+    if (!alreadyLogged) {
+      ExtensionActivityLog.log(id, context.viewType, "api_call", data.path, {
+        args: data.args,
+      });
     }
-    let childId = data.childId;
-    let webExtId = childId.slice(0, childId.lastIndexOf("."));
+
     let start = Cu.now() * 1000;
     try {
       return callable();
     } finally {
-      let end = Cu.now() * 1000;
-      PerformanceCounters.storeExecutionTime(webExtId, data.path, end - start);
+      if (gTimingEnabled) {
+        let end = Cu.now() * 1000;
+        PerformanceCounters.storeExecutionTime(id, data.path, end - start);
+      }
     }
   },
 
@@ -1135,7 +1110,7 @@ ParentAPIManager = {
       let args = data.args;
       let pendingBrowser = context.pendingEventBrowser;
       let fun = await context.apiCan.asyncFindAPIPath(data.path);
-      let result = this.withTiming(data, () => {
+      let result = this.callAndLog(context, data, () => {
         return context.withPendingBrowser(pendingBrowser, () => fun(...args));
       });
 
@@ -1198,7 +1173,15 @@ ParentAPIManager = {
           }
         )
         .then(result => {
-          return result && result.deserialize(global);
+          let rv = result && result.deserialize(global);
+          ExtensionActivityLog.log(
+            context.extension.id,
+            context.viewType,
+            "api_event",
+            data.path,
+            { args: listenerArgs, result: rv }
+          );
+          return rv;
         });
     }
 
@@ -1223,6 +1206,13 @@ ParentAPIManager = {
       handlingUserInput = true;
     }
     handler.addListener(listener, ...args);
+    ExtensionActivityLog.log(
+      context.extension.id,
+      context.viewType,
+      "api_call",
+      `${data.path}.addListener`,
+      { args }
+    );
   },
 
   async removeListener(data) {
@@ -1285,7 +1275,7 @@ class HiddenXULWindow {
   }
 
   /**
-   * Private helper that create a XULDocument in a windowless browser.
+   * Private helper that create a HTMLDocument in a windowless browser.
    *
    * @returns {Promise<void>}
    *          A promise which resolves when the windowless browser is ready.

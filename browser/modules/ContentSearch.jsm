@@ -208,6 +208,7 @@ var ContentSearch = {
         if (data != "init-complete") {
           break;
         }
+      // fall through
       case "nsPref:changed":
       case "browser-search-engine-modified":
         this._eventQueue.push({
@@ -362,10 +363,11 @@ var ContentSearch = {
     return true;
   },
 
-  async currentStateObj() {
+  async currentStateObj(window) {
     let state = {
       engines: [],
-      currentEngine: await this._currentEngineObj(),
+      currentEngine: await this._currentEngineObj(false),
+      currentPrivateEngine: await this._currentEngineObj(true),
     };
 
     let pref = Services.prefs.getCharPref("browser.search.hiddenOneOffs");
@@ -381,6 +383,13 @@ var ContentSearch = {
         identifier: engine.identifier,
       });
     }
+
+    if (window) {
+      state.isPrivateWindow = PrivateBrowsingUtils.isContentWindowPrivate(
+        window
+      );
+    }
+
     return state;
   },
 
@@ -439,7 +448,7 @@ var ContentSearch = {
   },
 
   _onMessageGetState(msg, data) {
-    return this.currentStateObj().then(state => {
+    return this.currentStateObj(msg.target.ownerGlobal).then(state => {
       this._reply(msg, "State", state);
     });
   },
@@ -500,8 +509,11 @@ var ContentSearch = {
 
   async _onObserve(data) {
     if (data === "engine-default") {
-      let engine = await this._currentEngineObj();
+      let engine = await this._currentEngineObj(false);
       this._broadcast("CurrentEngine", engine);
+    } else if (data === "engine-default-private") {
+      let engine = await this._currentEngineObj(true);
+      this._broadcast("CurrentPrivateEngine", engine);
     } else {
       let state = await this.currentStateObj();
       this._broadcast("CurrentState", state);
@@ -544,8 +556,9 @@ var ContentSearch = {
     ];
   },
 
-  async _currentEngineObj() {
-    let engine = Services.search.defaultEngine;
+  async _currentEngineObj(usePrivate) {
+    let engine =
+      Services.search[usePrivate ? "defaultPrivateEngine" : "defaultEngine"];
     let favicon = engine.getIconURLBySize(16, 16);
     let placeholder = this._stringBundle.formatStringFromName(
       "searchWithEngine",
@@ -565,7 +578,7 @@ var ContentSearch = {
     }
 
     // The uri received here can be of two types
-    // 1 - resource://search-plugins/images/foo.ico
+    // 1 - moz-extension://[uuid]/path/to/icon.ico
     // 2 - data:image/x-icon;base64,VERY-LONG-STRING
     //
     // If the URI is not a data: URI, there's no point in converting

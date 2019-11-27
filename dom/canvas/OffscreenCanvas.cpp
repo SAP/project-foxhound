@@ -57,8 +57,7 @@ JSObject* OffscreenCanvas::WrapObject(JSContext* aCx,
 
 /* static */
 already_AddRefed<OffscreenCanvas> OffscreenCanvas::Constructor(
-    const GlobalObject& aGlobal, uint32_t aWidth, uint32_t aHeight,
-    ErrorResult& aRv) {
+    const GlobalObject& aGlobal, uint32_t aWidth, uint32_t aHeight) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<OffscreenCanvas> offscreenCanvas = new OffscreenCanvas(
       global, aWidth, aHeight, layers::LayersBackend::LAYERS_NONE, nullptr);
@@ -230,12 +229,16 @@ already_AddRefed<Promise> OffscreenCanvas::ToBlob(JSContext* aCx,
         : mGlobal(aGlobal), mPromise(aPromise) {}
 
     // This is called on main thread.
-    nsresult ReceiveBlob(already_AddRefed<Blob> aBlob) override {
-      RefPtr<Blob> blob = aBlob;
+    nsresult ReceiveBlobImpl(already_AddRefed<BlobImpl> aBlobImpl) override {
+      RefPtr<BlobImpl> blobImpl = aBlobImpl;
 
       if (mPromise) {
-        RefPtr<Blob> newBlob = Blob::Create(mGlobal, blob->Impl());
-        mPromise->MaybeResolve(newBlob);
+        RefPtr<Blob> blob = Blob::Create(mGlobal, blobImpl);
+        if (NS_WARN_IF(!blob)) {
+          mPromise->MaybeReject(NS_ERROR_FAILURE);
+        } else {
+          mPromise->MaybeResolve(blob);
+        }
       }
 
       mGlobal = nullptr;

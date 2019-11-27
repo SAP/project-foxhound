@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
@@ -19,8 +18,10 @@ Object.defineProperty(this, "NetworkHelper", {
 
 const wpl = Ci.nsIWebProgressListener;
 
+// This *cannot* be used as an nsITransportSecurityInfo (since that interface is
+// builtinclass) but the methods being tested aren't defined by XPCOM and aren't
+// calling QueryInterface, so this usage is fine.
 const MockSecurityInfo = {
-  QueryInterface: ChromeUtils.generateQI([Ci.nsITransportSecurityInfo]),
   securityState: wpl.STATE_IS_SECURE,
   errorCode: 0,
   cipherName: "TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256",

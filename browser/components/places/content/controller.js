@@ -585,11 +585,25 @@ PlacesController.prototype = {
    *     visibility state is "auto-detected."
    *  8) The "hideifprivatebrowsing" attribute may be set on a menu-item to
    *     true if it should be hidden inside the private browsing mode
+   *  9) The "forcehideintabbrowser" attribute may be set on a menu-item if
+   *     it should be hidden when we're in a tabbed browsing window.
    * @param   aPopup
    *          The menupopup to build children into.
    * @return true if at least one item is visible, false otherwise.
    */
   buildContextMenu: function PC_buildContextMenu(aPopup) {
+    // In tabbed browsing windows, ensure the plain 'open' item gets hidden,
+    // unless we open in tabs by default, in which case we want it visible
+    // so users can use the context menu to force the bookmark to open in
+    // the current tab.
+    if (window.top.gBrowser) {
+      var openInCurrentTab = document.getElementById("placesContext_open");
+      if (!PlacesUIUtils.loadBookmarksInTabs) {
+        openInCurrentTab.setAttribute("forcehideintabbrowser", "true");
+      } else {
+        openInCurrentTab.removeAttribute("forcehideintabbrowser");
+      }
+    }
     var metadata = this._buildSelectionMetadata();
     var ip = this._view.insertionPoint;
     var noIp = !ip || ip.isTag;
@@ -608,11 +622,15 @@ PlacesController.prototype = {
           item.getAttribute("hideifnoinsertionpoint") == "true" &&
           noIp &&
           !(ip && ip.isTag && item.id == "placesContext_paste");
+        var hideIfInTabBrowser =
+          item.getAttribute("forcehideintabbrowser") == "true" &&
+          window.top.gBrowser;
         var hideIfPrivate =
           item.getAttribute("hideifprivatebrowsing") == "true" &&
           PrivateBrowsingUtils.isWindowPrivate(window);
         var shouldHideItem =
           hideIfNoIP ||
+          hideIfInTabBrowser ||
           hideIfPrivate ||
           !this._shouldShowMenuItem(item, metadata);
         item.hidden = item.disabled = shouldHideItem;
@@ -921,7 +939,7 @@ PlacesController.prototype = {
       );
     }
 
-    if (transactions.length > 0) {
+    if (transactions.length) {
       await PlacesUIUtils.batchUpdatesForNode(
         this._view.result,
         totalItems,
@@ -1096,7 +1114,7 @@ PlacesController.prototype = {
   },
 
   _releaseClipboardOwnership: function PC__releaseClipboardOwnership() {
-    if (this.cutNodes.length > 0) {
+    if (this.cutNodes.length) {
       // This clears the logical clipboard, doesn't remove data.
       this.clipboard.emptyClipboard(Ci.nsIClipboard.kGlobalClipboard);
     }
@@ -1157,7 +1175,7 @@ PlacesController.prototype = {
     // This order matters here!  It controls how this and other applications
     // select data to be inserted based on type.
     contents.forEach(function(content) {
-      if (content.entries.length > 0) {
+      if (content.entries.length) {
         hasData = true;
         let glue =
           content.type == PlacesUtils.TYPE_X_MOZ_PLACE ? "," : PlacesUtils.endl;
@@ -1291,7 +1309,7 @@ PlacesController.prototype = {
       this._clearClipboard();
     }
 
-    if (itemsToSelect.length > 0) {
+    if (itemsToSelect.length) {
       this._view.selectItems(itemsToSelect, false);
     }
   },

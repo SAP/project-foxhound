@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 
 const _OpenInPrivateWindow = site => ({
@@ -18,6 +22,14 @@ const _OpenInPrivateWindow = site => ({
 export const LinkMenuOptions = {
   Separator: () => ({ type: "separator" }),
   EmptyItem: () => ({ type: "empty" }),
+  ShowPrivacyInfo: site => ({
+    id: "newtab-menu-show-privacy-info",
+    icon: "info",
+    action: {
+      type: at.SHOW_PRIVACY_INFO,
+    },
+    userEvent: "SHOW_PRIVACY_INFO",
+  }),
   RemoveBookmark: site => ({
     id: "newtab-menu-remove-bookmark",
     icon: "bookmark-added",
@@ -49,12 +61,20 @@ export const LinkMenuOptions = {
     }),
     userEvent: "OPEN_NEW_WINDOW",
   }),
+  // This blocks the url for regular stories,
+  // but also sends a message to DiscoveryStream with campaign_id.
+  // If DiscoveryStream sees this message for a campaign_id
+  // it also blocks it on the campaign_id.
   BlockUrl: (site, index, eventSource) => ({
     id: "newtab-menu-dismiss",
     icon: "dismiss",
     action: ac.AlsoToMain({
       type: at.BLOCK_URL,
-      data: { url: site.open_url || site.url, pocket_id: site.pocket_id },
+      data: {
+        url: site.open_url || site.url,
+        pocket_id: site.pocket_id,
+        ...(site.campaign_id ? { campaign_id: site.campaign_id } : {}),
+      },
     }),
     impression: ac.ImpressionStats({
       source: eventSource,
@@ -156,6 +176,18 @@ export const LinkMenuOptions = {
       type: at.REMOVE_DOWNLOAD_FILE,
       data: { url: site.url },
     }),
+  }),
+  PinSpocTopSite: (site, index) => ({
+    id: "newtab-menu-pin",
+    icon: "pin",
+    action: ac.AlsoToMain({
+      type: at.TOP_SITES_PIN,
+      data: {
+        site,
+        index,
+      },
+    }),
+    userEvent: "PIN",
   }),
   PinTopSite: ({ url, searchTopSite, label }, index) => ({
     id: "newtab-menu-pin",

@@ -14,9 +14,8 @@
 #include "MediaEnginePrefs.h"
 #include "MediaEngineSource.h"
 #include "MediaEngineWrapper.h"
-#include "MediaStreamGraph.h"
+#include "MediaTrackGraph.h"
 #include "NullTransport.h"
-#include "StreamTracks.h"
 #include "VideoSegment.h"
 #include "VideoUtils.h"
 #include "CubebDeviceEnumerator.h"
@@ -59,7 +58,7 @@ class MediaEngineWebRTC : public MediaEngine {
   // before invoking Shutdown on this class.
   void Shutdown() override;
 
-  // Returns whether the host supports duplex audio stream.
+  // Returns whether the host supports duplex audio track.
   bool SupportsDuplex();
 
   void EnumerateDevices(uint64_t aWindowId, dom::MediaSourceEnum, MediaSinkEnum,
@@ -77,7 +76,6 @@ class MediaEngineWebRTC : public MediaEngine {
 
   // gUM runnables can e.g. Enumerate from multiple threads
   Mutex mMutex;
-  RefPtr<mozilla::CubebDeviceEnumerator> mEnumerator;
   const bool mDelayAgnostic;
   const bool mExtendedFilter;
   // This also is set in the ctor and then never changed, but we can't make it

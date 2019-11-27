@@ -4,58 +4,46 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "GMPService.h"
-#include "GMPServiceParent.h"
-#include "GMPServiceChild.h"
-#include "GMPContentParent.h"
-#include "prio.h"
-#include "mozilla/Logging.h"
-#include "GMPParent.h"
-#include "GMPVideoDecoderParent.h"
-#include "nsIObserverService.h"
+
 #include "GeckoChildProcessHost.h"
+#include "GMPLog.h"
+#include "GMPParent.h"
 #include "GMPProcessParent.h"
+#include "GMPServiceChild.h"
+#include "GMPServiceParent.h"
+#include "GMPVideoDecoderParent.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/SyncRunnable.h"
-#include "nsXPCOMPrivate.h"
-#include "mozilla/Services.h"
-#include "nsNativeCharsetUtils.h"
-#include "nsIXULAppInfo.h"
-#include "nsIConsoleService.h"
-#include "mozilla/Unused.h"
-#include "nsComponentManagerUtils.h"
-#include "runnable_utils.h"
-#include "VideoUtils.h"
+#include "mozilla/dom/PluginCrashedEvent.h"
+#include "mozilla/EventDispatcher.h"
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxInfo.h"
 #endif
-#include "nsAppDirectoryServiceDefs.h"
-#include "nsDirectoryServiceUtils.h"
-#include "nsDirectoryServiceDefs.h"
-#include "nsHashKeys.h"
-#include "nsIFile.h"
-#include "nsISimpleEnumerator.h"
-#include "nsThreadUtils.h"
-#include "GMPCrashHelper.h"
-
-#include "MediaResult.h"
-#include "mozilla/dom/PluginCrashedEvent.h"
-#include "mozilla/EventDispatcher.h"
-#include "mozilla/Attributes.h"
+#include "mozilla/Services.h"
+#include "mozilla/SyncRunnable.h"
 #include "mozilla/SystemGroup.h"
+#include "mozilla/Unused.h"
+#include "nsAppDirectoryServiceDefs.h"
+#include "nsComponentManagerUtils.h"
+#include "nsDirectoryServiceDefs.h"
+#include "nsDirectoryServiceUtils.h"
+#include "nsHashKeys.h"
+#include "nsIConsoleService.h"
+#include "nsIFile.h"
+#include "nsIObserverService.h"
+#include "nsISimpleEnumerator.h"
+#include "nsIXULAppInfo.h"
+#include "nsNativeCharsetUtils.h"
+#include "nsXPCOMPrivate.h"
+#include "prio.h"
+#include "runnable_utils.h"
+#include "VideoUtils.h"
 
 namespace mozilla {
-
-#ifdef LOG
-#  undef LOG
-#endif
 
 LogModule* GetGMPLog() {
   static LazyLogModule sLog("GMP");
   return sLog;
 }
-
-#define LOGD(msg) MOZ_LOG(GetGMPLog(), mozilla::LogLevel::Debug, msg)
-#define LOG(level, msg) MOZ_LOG(GetGMPLog(), (level), msg)
 
 #ifdef __CLASS__
 #  undef __CLASS__
@@ -152,8 +140,9 @@ GeckoMediaPluginService::GeckoMediaPluginService()
     nsAutoCString buildID;
     if (NS_SUCCEEDED(appInfo->GetVersion(version)) &&
         NS_SUCCEEDED(appInfo->GetAppBuildID(buildID))) {
-      LOGD(("GeckoMediaPluginService created; Gecko version=%s buildID=%s",
-            version.get(), buildID.get()));
+      GMP_LOG_DEBUG(
+          "GeckoMediaPluginService created; Gecko version=%s buildID=%s",
+          version.get(), buildID.get());
     }
   }
 }
@@ -164,7 +153,7 @@ NS_IMETHODIMP
 GeckoMediaPluginService::RunPluginCrashCallbacks(
     uint32_t aPluginId, const nsACString& aPluginName) {
   MOZ_ASSERT(NS_IsMainThread());
-  LOGD(("%s::%s(%i)", __CLASS__, __FUNCTION__, aPluginId));
+  GMP_LOG_DEBUG("%s::%s(%i)", __CLASS__, __FUNCTION__, aPluginId);
 
   nsAutoPtr<nsTArray<RefPtr<GMPCrashHelper>>> helpers;
   {
@@ -172,8 +161,8 @@ GeckoMediaPluginService::RunPluginCrashCallbacks(
     mPluginCrashHelpers.Remove(aPluginId, &helpers);
   }
   if (!helpers) {
-    LOGD(("%s::%s(%i) No crash helpers, not handling crash.", __CLASS__,
-          __FUNCTION__, aPluginId));
+    GMP_LOG_DEBUG("%s::%s(%i) No crash helpers, not handling crash.", __CLASS__,
+                  __FUNCTION__, aPluginId);
     return NS_OK;
   }
 
@@ -274,7 +263,7 @@ RefPtr<GetCDMParentPromise> GeckoMediaPluginService::GetCDM(
 }
 
 void GeckoMediaPluginService::ShutdownGMPThread() {
-  LOGD(("%s::%s", __CLASS__, __FUNCTION__));
+  GMP_LOG_DEBUG("%s::%s", __CLASS__, __FUNCTION__);
   nsCOMPtr<nsIThread> gmpThread;
   {
     MutexAutoLock lock(mMutex);
@@ -459,3 +448,5 @@ void GeckoMediaPluginService::DisconnectCrashHelper(GMPCrashHelper* aHelper) {
 
 }  // namespace gmp
 }  // namespace mozilla
+
+#undef __CLASS__

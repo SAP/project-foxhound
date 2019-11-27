@@ -9,7 +9,10 @@
 #include "mozilla/dom/HTMLMetaElement.h"
 #include "mozilla/dom/HTMLMetaElementBinding.h"
 #include "mozilla/dom/nsCSPService.h"
+#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/ViewportMetaData.h"
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "nsContentUtils.h"
 #include "nsStyleConsts.h"
 #include "nsIContentSecurityPolicy.h"
@@ -40,7 +43,7 @@ void HTMLMetaElement::SetMetaReferrer(Document* aDocument) {
   GetContent(content);
 
   Element* headElt = aDocument->GetHeadElement();
-  if (headElt && nsContentUtils::ContentIsDescendantOf(this, headElt)) {
+  if (headElt && IsInclusiveDescendantOf(headElt)) {
     content = nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
         content);
     aDocument->UpdateReferrerInfoFromMeta(content, false);
@@ -57,9 +60,15 @@ nsresult HTMLMetaElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
     if (aName == nsGkAtoms::content) {
       if (document && AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
                                   nsGkAtoms::viewport, eIgnoreCase)) {
-        nsAutoString content;
-        GetContent(content);
-        nsContentUtils::ProcessViewportInfo(document, content);
+        ProcessViewportContent(document);
+      }
+      CreateAndDispatchEvent(document, NS_LITERAL_STRING("DOMMetaChanged"));
+    } else if (document && aName == nsGkAtoms::name) {
+      if (aValue && aValue->Equals(nsGkAtoms::viewport, eIgnoreCase)) {
+        ProcessViewportContent(document);
+      } else if (aOldValue &&
+                 aOldValue->Equals(nsGkAtoms::viewport, eIgnoreCase)) {
+        DiscardViewportContent(document);
       }
       CreateAndDispatchEvent(document, NS_LITERAL_STRING("DOMMetaChanged"));
     }
@@ -80,51 +89,31 @@ nsresult HTMLMetaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   Document& doc = aContext.OwnerDoc();
   if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::name, nsGkAtoms::viewport,
                   eIgnoreCase)) {
-    nsAutoString content;
-    GetContent(content);
-    nsContentUtils::ProcessViewportInfo(&doc, content);
+    ProcessViewportContent(&doc);
   }
 
-  if (StaticPrefs::security_csp_enable() && !doc.IsLoadedAsData() &&
-      AttrValueIs(kNameSpaceID_None, nsGkAtoms::httpEquiv, nsGkAtoms::headerCSP,
+  if (AttrValueIs(kNameSpaceID_None, nsGkAtoms::httpEquiv, nsGkAtoms::headerCSP,
                   eIgnoreCase)) {
     // only accept <meta http-equiv="Content-Security-Policy" content=""> if it
     // appears in the <head> element.
     Element* headElt = doc.GetHeadElement();
-    if (headElt && nsContentUtils::ContentIsDescendantOf(this, headElt)) {
+    if (headElt && IsInclusiveDescendantOf(headElt)) {
       nsAutoString content;
       GetContent(content);
-      content =
-          nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
-              content);
 
-      if (nsCOMPtr<nsIContentSecurityPolicy> csp = doc.GetCsp()) {
-        if (LOG_ENABLED()) {
-          nsAutoCString documentURIspec;
-          if (nsIURI* documentURI = doc.GetDocumentURI()) {
-            documentURI->GetAsciiSpec(documentURIspec);
-          }
-
-          LOG(
-              ("HTMLMetaElement %p sets CSP '%s' on document=%p, "
-               "document-uri=%s",
-               this, NS_ConvertUTF16toUTF8(content).get(), &doc,
-               documentURIspec.get()));
+      if (LOG_ENABLED()) {
+        nsAutoCString documentURIspec;
+        if (nsIURI* documentURI = doc.GetDocumentURI()) {
+          documentURI->GetAsciiSpec(documentURIspec);
         }
 
-        // Multiple CSPs (delivered through either header of meta tag) need to
-        // be joined together, see:
-        // https://w3c.github.io/webappsec/specs/content-security-policy/#delivery-html-meta-element
-        rv =
-            csp->AppendPolicy(content,
-                              false,  // csp via meta tag can not be report only
-                              true);  // delivered through the meta tag
-        NS_ENSURE_SUCCESS(rv, rv);
-        if (nsPIDOMWindowInner* inner = doc.GetInnerWindow()) {
-          inner->SetCsp(csp);
-        }
-        doc.ApplySettingsFromCSP(false);
+        LOG(
+            ("HTMLMetaElement %p sets CSP '%s' on document=%p, "
+             "document-uri=%s",
+             this, NS_ConvertUTF16toUTF8(content).get(), &doc,
+             documentURIspec.get()));
       }
+      CSP_ApplyMetaCSPToDoc(doc, content);
     }
   }
 
@@ -137,6 +126,10 @@ nsresult HTMLMetaElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
 void HTMLMetaElement::UnbindFromTree(bool aNullParent) {
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
+  if (oldDoc && AttrValueIs(kNameSpaceID_None, nsGkAtoms::name,
+                            nsGkAtoms::viewport, eIgnoreCase)) {
+    DiscardViewportContent(oldDoc);
+  }
   CreateAndDispatchEvent(oldDoc, NS_LITERAL_STRING("DOMMetaRemoved"));
   nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
@@ -153,6 +146,20 @@ void HTMLMetaElement::CreateAndDispatchEvent(Document* aDoc,
 JSObject* HTMLMetaElement::WrapNode(JSContext* aCx,
                                     JS::Handle<JSObject*> aGivenProto) {
   return HTMLMetaElement_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+void HTMLMetaElement::ProcessViewportContent(Document* aDocument) {
+  nsAutoString content;
+  GetContent(content);
+
+  aDocument->SetHeaderData(nsGkAtoms::viewport, content);
+
+  ViewportMetaData data(content);
+  aDocument->AddMetaViewportElement(this, std::move(data));
+}
+
+void HTMLMetaElement::DiscardViewportContent(Document* aDocument) {
+  aDocument->RemoveMetaViewportElement(this);
 }
 
 }  // namespace dom

@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import platform
+import signal
 import socket
 import sys
 import threading
@@ -45,6 +46,15 @@ def replace_end(s, old, new):
     """
     assert s.endswith(old)
     return s[:-len(old)] + new
+
+
+def domains_are_distinct(a, b):
+    a_parts = a.split(".")
+    b_parts = b.split(".")
+    min_length = min(len(a_parts), len(b_parts))
+    slice_index = -1 * min_length
+
+    return a_parts[slice_index:] != b_parts[slice_index:]
 
 
 class WrapperHandler(object):
@@ -574,13 +584,11 @@ def start_http2_server(host, port, paths, routes, bind_address, config, **kwargs
 
 
 class WebSocketDaemon(object):
-    def __init__(self, host, port, doc_root, handlers_root, log_level, bind_address,
-                 ssl_config):
+    def __init__(self, host, port, doc_root, handlers_root, bind_address, ssl_config):
         self.host = host
         cmd_args = ["-p", port,
                     "-d", doc_root,
-                    "-w", handlers_root,
-                    "--log-level", log_level]
+                    "-w", handlers_root]
 
         if ssl_config is not None:
             # This is usually done through pywebsocket.main, however we're
@@ -604,20 +612,6 @@ class WebSocketDaemon(object):
         opts, args = pywebsocket._parse_args_and_config(cmd_args)
         opts.cgi_directories = []
         opts.is_executable_method = None
-
-        # Logging needs to be configured both before and after reloading,
-        # because some modules store loggers as global variables.
-        # GECKO PATCH: disable logging from pywebsocket until it interops
-        # correctly with mozlog
-        # pywebsocket._configure_logging(opts)
-        # Ensure that when we start this in a new process we have the global
-        # lock in the logging module unlocked.
-        reload_module(logging)
-        release_mozlog_lock()
-        # GECKO PATCH: disable logging from pywebsocket until it interops
-        # correctly with mozlog
-        # pywebsocket._configure_logging(opts)
-        # DO NOT LOG BEFORE THIS LINE.
 
         self.server = pywebsocket.WebSocketServer(opts)
         ports = [item[0].getsockname()[1] for item in self.server._sockets]
@@ -665,21 +659,27 @@ def release_mozlog_lock():
 
 
 def start_ws_server(host, port, paths, routes, bind_address, config, **kwargs):
+    # Ensure that when we start this in a new process we have the global lock
+    # in the logging module unlocked
+    reload_module(logging)
+    release_mozlog_lock()
     return WebSocketDaemon(host,
                            str(port),
                            repo_root,
                            config.paths["ws_doc_root"],
-                           config.log_level.lower(),
                            bind_address,
                            ssl_config=None)
 
 
 def start_wss_server(host, port, paths, routes, bind_address, config, **kwargs):
+    # Ensure that when we start this in a new process we have the global lock
+    # in the logging module unlocked
+    reload_module(logging)
+    release_mozlog_lock()
     return WebSocketDaemon(host,
                            str(port),
                            repo_root,
                            config.paths["ws_doc_root"],
-                           config.log_level.lower(),
                            bind_address,
                            config.ssl_config)
 
@@ -808,6 +808,14 @@ class ConfigBuilder(config.ConfigBuilder):
             *args,
             **kwargs
         )
+        with self as c:
+            browser_host = c.get("browser_host")
+            alternate_host = c.get("alternate_hosts", {}).get("alt")
+
+            if not domains_are_distinct(browser_host, alternate_host):
+                raise ValueError(
+                    "Alternate host must be distinct from browser host"
+                )
 
     def _get_ws_doc_root(self, data):
         if data["ws_doc_root"] is not None:
@@ -845,11 +853,19 @@ def get_parser():
 
 
 def run(**kwargs):
+    received_signal = threading.Event()
+
     with build_config(os.path.join(repo_root, "config.json"),
                       **kwargs) as config:
         global logger
         logger = config.logger
         set_logger(logger)
+        # Configure the root logger to cover third-party libraries.
+        logging.getLogger().setLevel(config.log_level)
+
+        def handle_signal(signum, frame):
+            logger.debug("Received signal %s. Shutting down.", signum)
+            received_signal.set()
 
         bind_address = config["bind_address"]
 
@@ -872,20 +888,19 @@ def run(**kwargs):
 
         with stash.StashServer(stash_address, authkey=str(uuid.uuid4())):
             servers = start(config, build_routes(config["aliases"]), **kwargs)
+            signal.signal(signal.SIGTERM, handle_signal)
+            signal.signal(signal.SIGINT, handle_signal)
 
-            try:
-                while all(item.is_alive() for item in iter_procs(servers)):
-                    for item in iter_procs(servers):
-                        item.join(1)
-                exited = [item for item in iter_procs(servers) if not item.is_alive()]
-                subject = "subprocess" if len(exited) == 1 else "subprocesses"
-
-                logger.info("%s %s exited:" % (len(exited), subject))
-
+            while all(item.is_alive() for item in iter_procs(servers)) and not received_signal.is_set():
                 for item in iter_procs(servers):
-                    logger.info("Status of %s:\t%s" % (item.name, "running" if item.is_alive() else "not running"))
-            except KeyboardInterrupt:
-                logger.info("Shutting down")
+                    item.join(1)
+            exited = [item for item in iter_procs(servers) if not item.is_alive()]
+            subject = "subprocess" if len(exited) == 1 else "subprocesses"
+
+            logger.info("%s %s exited:" % (len(exited), subject))
+
+            for item in iter_procs(servers):
+                logger.info("Status of %s:\t%s" % (item.name, "running" if item.is_alive() else "not running"))
 
 
 def main():

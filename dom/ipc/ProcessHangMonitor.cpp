@@ -22,6 +22,7 @@
 #include "mozilla/Monitor.h"
 #include "mozilla/plugins/PluginBridge.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
 
@@ -112,8 +113,7 @@ class HangMonitorChild : public PProcessHangMonitorChild,
   mozilla::ipc::IPCResult RecvEndStartingDebugger() override;
 
   mozilla::ipc::IPCResult RecvPaintWhileInterruptingJS(
-      const TabId& aTabId, const bool& aForceRepaint,
-      const LayersObserverEpoch& aEpoch) override;
+      const TabId& aTabId, const LayersObserverEpoch& aEpoch) override;
 
   mozilla::ipc::IPCResult RecvCancelContentJSExecutionIfRunning(
       const TabId& aTabId, const nsIRemoteTab::NavigationType& aNavigationType,
@@ -156,7 +156,6 @@ class HangMonitorChild : public PProcessHangMonitorChild,
   bool mStartDebugger;
   bool mFinishedStartingDebugger;
   bool mPaintWhileInterruptingJS;
-  bool mPaintWhileInterruptingJSForce;
   TabId mPaintWhileInterruptingJSTab;
   MOZ_INIT_OUTSIDE_CTOR LayersObserverEpoch mPaintWhileInterruptingJSEpoch;
   bool mCancelContentJS;
@@ -247,7 +246,6 @@ class HangMonitorParent : public PProcessHangMonitorParent,
   void Shutdown();
 
   void PaintWhileInterruptingJS(dom::BrowserParent* aBrowserParent,
-                                bool aForceRepaint,
                                 const LayersObserverEpoch& aEpoch);
   void CancelContentJSExecutionIfRunning(
       dom::BrowserParent* aBrowserParent,
@@ -279,7 +277,7 @@ class HangMonitorParent : public PProcessHangMonitorParent,
 
   void ClearHangNotification();
 
-  void PaintWhileInterruptingJSOnThread(TabId aTabId, bool aForceRepaint,
+  void PaintWhileInterruptingJSOnThread(TabId aTabId,
                                         const LayersObserverEpoch& aEpoch);
   void CancelContentJSExecutionIfRunningOnThread(
       TabId aTabId, nsIRemoteTab::NavigationType aNavigationType,
@@ -305,11 +303,7 @@ class HangMonitorParent : public PProcessHangMonitorParent,
   nsDataHashtable<nsUint32HashKey, nsString> mBrowserCrashDumpIds;
   Mutex mBrowserCrashDumpHashLock;
   mozilla::ipc::TaskFactory<HangMonitorParent> mMainThreadTaskFactory;
-
-  static bool sShouldPaintWhileInterruptingJS;
 };
-
-bool HangMonitorParent::sShouldPaintWhileInterruptingJS = true;
 
 }  // namespace
 
@@ -326,7 +320,6 @@ HangMonitorChild::HangMonitorChild(ProcessHangMonitor* aMonitor)
       mStartDebugger(false),
       mFinishedStartingDebugger(false),
       mPaintWhileInterruptingJS(false),
-      mPaintWhileInterruptingJSForce(false),
       mCancelContentJS(false),
       mCancelContentJSNavigationType(nsIRemoteTab::NAVIGATE_BACK),
       mCancelContentJSNavigationIndex(0),
@@ -356,15 +349,20 @@ bool HangMonitorChild::InterruptCallback() {
     return true;
   }
 
+  // Don't start painting if we're not in a good place to run script. We run
+  // chrome script during layout and such, and it wouldn't be good to interrupt
+  // painting code from there.
+  if (!nsContentUtils::IsSafeToRunScript()) {
+    return true;
+  }
+
   bool paintWhileInterruptingJS;
-  bool paintWhileInterruptingJSForce;
   TabId paintWhileInterruptingJSTab;
   LayersObserverEpoch paintWhileInterruptingJSEpoch;
 
   {
     MonitorAutoLock lock(mMonitor);
     paintWhileInterruptingJS = mPaintWhileInterruptingJS;
-    paintWhileInterruptingJSForce = mPaintWhileInterruptingJSForce;
     paintWhileInterruptingJSTab = mPaintWhileInterruptingJSTab;
     paintWhileInterruptingJSEpoch = mPaintWhileInterruptingJSEpoch;
 
@@ -376,8 +374,7 @@ bool HangMonitorChild::InterruptCallback() {
         BrowserChild::FindBrowserChild(paintWhileInterruptingJSTab);
     if (browserChild) {
       js::AutoAssertNoContentJS nojs(mContext);
-      browserChild->PaintWhileInterruptingJS(paintWhileInterruptingJSEpoch,
-                                             paintWhileInterruptingJSForce);
+      browserChild->PaintWhileInterruptingJS(paintWhileInterruptingJSEpoch);
     }
   }
 
@@ -528,15 +525,13 @@ mozilla::ipc::IPCResult HangMonitorChild::RecvEndStartingDebugger() {
 }
 
 mozilla::ipc::IPCResult HangMonitorChild::RecvPaintWhileInterruptingJS(
-    const TabId& aTabId, const bool& aForceRepaint,
-    const LayersObserverEpoch& aEpoch) {
+    const TabId& aTabId, const LayersObserverEpoch& aEpoch) {
   MOZ_RELEASE_ASSERT(IsOnThread());
 
   {
     MonitorAutoLock lock(mMonitor);
     MaybeStartPaintWhileInterruptingJS();
     mPaintWhileInterruptingJS = true;
-    mPaintWhileInterruptingJSForce = aForceRepaint;
     mPaintWhileInterruptingJSTab = aTabId;
     mPaintWhileInterruptingJSEpoch = aEpoch;
   }
@@ -710,13 +705,6 @@ HangMonitorParent::HangMonitorParent(ProcessHangMonitor* aMonitor)
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   mReportHangs =
       mozilla::Preferences::GetBool("dom.ipc.reportProcessHangs", false);
-
-  static bool sInited = false;
-  if (!sInited) {
-    sInited = true;
-    Preferences::AddBoolVarCache(&sShouldPaintWhileInterruptingJS,
-                                 "browser.tabs.remote.force-paint", true);
-  }
 }
 
 HangMonitorParent::~HangMonitorParent() {
@@ -765,24 +753,22 @@ void HangMonitorParent::ShutdownOnThread() {
 }
 
 void HangMonitorParent::PaintWhileInterruptingJS(
-    dom::BrowserParent* aTab, bool aForceRepaint,
-    const LayersObserverEpoch& aEpoch) {
+    dom::BrowserParent* aTab, const LayersObserverEpoch& aEpoch) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  if (sShouldPaintWhileInterruptingJS) {
+  if (StaticPrefs::browser_tabs_remote_force_paint()) {
     TabId id = aTab->GetTabId();
-    Dispatch(NewNonOwningRunnableMethod<TabId, bool, LayersObserverEpoch>(
+    Dispatch(NewNonOwningRunnableMethod<TabId, LayersObserverEpoch>(
         "HangMonitorParent::PaintWhileInterruptingJSOnThread", this,
-        &HangMonitorParent::PaintWhileInterruptingJSOnThread, id, aForceRepaint,
-        aEpoch));
+        &HangMonitorParent::PaintWhileInterruptingJSOnThread, id, aEpoch));
   }
 }
 
 void HangMonitorParent::PaintWhileInterruptingJSOnThread(
-    TabId aTabId, bool aForceRepaint, const LayersObserverEpoch& aEpoch) {
+    TabId aTabId, const LayersObserverEpoch& aEpoch) {
   MOZ_RELEASE_ASSERT(IsOnThread());
 
   if (mIPCOpen) {
-    Unused << SendPaintWhileInterruptingJS(aTabId, aForceRepaint, aEpoch);
+    Unused << SendPaintWhileInterruptingJS(aTabId, aEpoch);
   }
 }
 
@@ -1395,10 +1381,10 @@ void ProcessHangMonitor::ClearHang() {
 /* static */
 void ProcessHangMonitor::PaintWhileInterruptingJS(
     PProcessHangMonitorParent* aParent, dom::BrowserParent* aBrowserParent,
-    bool aForceRepaint, const layers::LayersObserverEpoch& aEpoch) {
+    const layers::LayersObserverEpoch& aEpoch) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   auto parent = static_cast<HangMonitorParent*>(aParent);
-  parent->PaintWhileInterruptingJS(aBrowserParent, aForceRepaint, aEpoch);
+  parent->PaintWhileInterruptingJS(aBrowserParent, aEpoch);
 }
 
 /* static */

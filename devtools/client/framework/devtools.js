@@ -25,8 +25,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "HUDService",
-  "devtools/client/webconsole/hudservice",
+  "BrowserConsoleManager",
+  "devtools/client/webconsole/browser-console-manager",
   true
 );
 loader.lazyRequireGetter(this, "Telemetry", "devtools/client/shared/telemetry");
@@ -428,7 +428,7 @@ DevTools.prototype = {
    *                 A SessionStore state object that gets modified by reference
    */
   saveDevToolsSession: function(state) {
-    state.browserConsole = HUDService.getBrowserConsoleSessionState();
+    state.browserConsole = BrowserConsoleManager.getBrowserConsoleSessionState();
     state.browserToolbox = BrowserToolboxProcess.getBrowserToolboxSessionState();
 
     // Check if the module is loaded to avoid loading ScratchpadManager for no reason.
@@ -458,8 +458,8 @@ DevTools.prototype = {
       BrowserToolboxProcess.init();
     }
 
-    if (browserConsole && !HUDService.getBrowserConsole()) {
-      HUDService.toggleBrowserConsole();
+    if (browserConsole && !BrowserConsoleManager.getBrowserConsole()) {
+      BrowserConsoleManager.toggleBrowserConsole();
     }
   },
 
@@ -490,6 +490,8 @@ DevTools.prototype = {
    *        opening started. This is a `Cu.now()` timing.
    * @param {string} reason
    *        Reason the tool was opened
+   * @param {boolean} shouldRaiseToolbox
+   *        Whether we need to raise the toolbox or not.
    *
    * @return {Toolbox} toolbox
    *        The toolbox that was opened
@@ -500,7 +502,8 @@ DevTools.prototype = {
     hostType,
     hostOptions,
     startTime,
-    reason = "toolbox_show"
+    reason = "toolbox_show",
+    shouldRaiseToolbox = true
   ) {
     let toolbox = this._toolboxes.get(target);
 
@@ -515,7 +518,9 @@ DevTools.prototype = {
         await toolbox.selectTool(toolId, reason);
       }
 
-      toolbox.raise();
+      if (shouldRaiseToolbox) {
+        toolbox.raise();
+      }
     } else {
       // As toolbox object creation is async, we have to be careful about races
       // Check for possible already in process of loading toolboxes before
@@ -629,6 +634,13 @@ DevTools.prototype = {
       this._toolboxes.delete(target);
       this.emit("toolbox-destroyed", target);
     });
+    // If the document navigates to another process, the current target will be
+    // destroyed in favor of a new one. So acknowledge this swap here.
+    toolbox.on("switch-target", newTarget => {
+      this._toolboxes.delete(target);
+      this._toolboxes.set(newTarget, toolbox);
+      target = newTarget;
+    });
 
     await toolbox.open();
     this.emit("toolbox-ready", toolbox);
@@ -705,8 +717,10 @@ DevTools.prototype = {
    * toolkit/components/extensions/ext-c-toolkit.js
    */
   openBrowserConsole: function() {
-    const { HUDService } = require("devtools/client/webconsole/hudservice");
-    HUDService.openBrowserConsoleOrFocus();
+    const {
+      BrowserConsoleManager,
+    } = require("devtools/client/webconsole/browser-console-manager");
+    BrowserConsoleManager.openBrowserConsoleOrFocus();
   },
 
   /**
@@ -820,7 +834,11 @@ DevTools.prototype = {
       null,
       startTime
     );
-    const nodeFront = await this.findNodeFront(toolbox.walker, nodeSelectors);
+    const inspectorFront = await toolbox.target.getFront("inspector");
+    const nodeFront = await this.findNodeFront(
+      inspectorFront.walker,
+      nodeSelectors
+    );
     // Select the accessible object in the panel and wait for the event that
     // tells us it has been done.
     const a11yPanel = toolbox.getCurrentPanel();

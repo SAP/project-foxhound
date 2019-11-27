@@ -33,6 +33,7 @@
 #include "nsIRaceCacheWithNetwork.h"
 #include "mozilla/extensions/PStreamFilterParent.h"
 #include "mozilla/Mutex.h"
+#include "nsIProcessSwitchRequestor.h"
 #include "nsIRemoteTab.h"
 
 class nsDNSPrefetch;
@@ -46,17 +47,7 @@ namespace net {
 
 class nsChannelClassifier;
 class Http2PushedStream;
-
-class HttpChannelSecurityWarningReporter : public nsISupports {
- public:
-  virtual MOZ_MUST_USE nsresult ReportSecurityMessage(
-      const nsAString& aMessageTag, const nsAString& aMessageCategory) = 0;
-  virtual MOZ_MUST_USE nsresult LogBlockedCORSRequest(
-      const nsAString& aMessage, const nsACString& aCategory) = 0;
-  virtual MOZ_MUST_USE nsresult
-  LogMimeTypeMismatch(const nsACString& aMessageName, bool aWarning,
-                      const nsAString& aURL, const nsAString& aContentType) = 0;
-};
+class HttpChannelSecurityWarningReporter;
 
 //-----------------------------------------------------------------------------
 // nsHttpChannel
@@ -88,7 +79,8 @@ class nsHttpChannel final : public HttpBaseChannel,
                             public nsIChannelWithDivertableParentListener,
                             public nsIRaceCacheWithNetwork,
                             public nsIRequestTailUnblockCallback,
-                            public nsITimerCallback {
+                            public nsITimerCallback,
+                            public nsIProcessSwitchRequestor {
  public:
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_NSIREQUESTOBSERVER
@@ -110,6 +102,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_DECL_NSIRACECACHEWITHNETWORK
   NS_DECL_NSITIMERCALLBACK
   NS_DECL_NSIREQUESTTAILUNBLOCKCALLBACK
+  NS_DECL_NSIPROCESSSWITCHREQUESTOR
 
   // nsIHttpAuthenticableChannel. We can't use
   // NS_DECL_NSIHTTPAUTHENTICABLECHANNEL because it duplicates cancel() and
@@ -160,9 +153,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   NS_IMETHOD AsyncOpen(nsIStreamListener* aListener) override;
   // nsIHttpChannel
   NS_IMETHOD GetEncodedBodySize(uint64_t* aEncodedBodySize) override;
-  NS_IMETHOD SwitchProcessTo(mozilla::dom::Promise* aBrowserParent,
-                             uint64_t aIdentifier) override;
-  NS_IMETHOD HasCrossOriginOpenerPolicyMismatch(bool* aMismatch) override;
   // nsIHttpChannelInternal
   NS_IMETHOD SetupFallbackChannel(const char* aFallbackKey) override;
   NS_IMETHOD SetChannelIsForDownload(bool aChannelIsForDownload) override;
@@ -286,7 +276,8 @@ class nsHttpChannel final : public HttpBaseChannel,
   }
   TransactionObserver* GetTransactionObserver() { return mTransactionObserver; }
 
-  typedef MozPromise<uint64_t, nsresult, false> ContentProcessIdPromise;
+  typedef MozPromise<uint64_t, nsresult, true /* exclusive */>
+      ContentProcessIdPromise;
   already_AddRefed<ContentProcessIdPromise>
   TakeRedirectContentProcessIdPromise() {
     return mRedirectContentProcessIdPromise.forget();
@@ -316,13 +307,13 @@ class nsHttpChannel final : public HttpBaseChannel,
 
   // Connections will only be established in this function.
   // (including DNS prefetch and speculative connection.)
-  nsresult BeginConnectActual();
+  nsresult MaybeResolveProxyAndBeginConnect();
   void MaybeStartDNSPrefetch();
 
-  // We might synchronously or asynchronously call BeginConnectActual,
+  // We might synchronously or asynchronously call BeginConnect,
   // which includes DNS prefetch and speculative connection, according to
   // whether an async tracker lookup is required. If the tracker lookup
-  // is required, this funciton will just return NS_OK and BeginConnectActual()
+  // is required, this funciton will just return NS_OK and BeginConnect()
   // will be called when callback. See Bug 1325054 for more information.
   nsresult BeginConnect();
   MOZ_MUST_USE nsresult ContinueBeginConnectWithResult();
@@ -480,9 +471,7 @@ class nsHttpChannel final : public HttpBaseChannel,
    */
   void ProcessSecurityReport(nsresult status);
 
-  nsresult GetResponseCrossOriginPolicy(
-      nsILoadInfo::CrossOriginPolicy* aResponseCrossOriginPolicy);
-  nsresult ProcessCrossOriginHeader();
+  nsresult ProcessCrossOriginEmbedderPolicyHeader();
   nsresult ProcessCrossOriginResourcePolicyHeader();
 
   nsresult ComputeCrossOriginOpenerPolicyMismatch();
@@ -515,6 +504,8 @@ class nsHttpChannel final : public HttpBaseChannel,
            rv == NS_ERROR_PORT_ACCESS_NOT_ALLOWED;
   }
 
+  void ReportContentTypeTelemetryForCrossOriginStylesheets();
+
   // Report net vs cache time telemetry
   void ReportNetVSCacheTelemetry();
   int64_t ComputeTelemetryBucketNumber(int64_t difftime_ms);
@@ -544,8 +535,6 @@ class nsHttpChannel final : public HttpBaseChannel,
   void SetPushedStream(Http2PushedStreamWrapper* stream);
 
   void MaybeWarnAboutAppCache();
-
-  void SetLoadGroupUserAgentOverride();
 
   void SetOriginHeader();
   void SetDoNotTrack();
@@ -587,7 +576,7 @@ class nsHttpChannel final : public HttpBaseChannel,
   // nsChannelClassifier checks this channel's URI against
   // the URI classifier service.
   // nsChannelClassifier will be invoked twice in InitLocalBlockList() and
-  // BeginConnectActual(), so save the nsChannelClassifier here to keep the
+  // BeginConnect(), so save the nsChannelClassifier here to keep the
   // state of whether tracking protection is enabled or not.
   RefPtr<nsChannelClassifier> mChannelClassifier;
 

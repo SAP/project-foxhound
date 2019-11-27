@@ -337,7 +337,7 @@ MOZ_ALWAYS_INLINE JSFlatString* JSFlatString::new_(
   return str;
 }
 
-inline js::PropertyName* JSFlatString::toPropertyName(JSContext* cx) {
+inline js::PropertyName* JSLinearString::toPropertyName(JSContext* cx) {
 #ifdef DEBUG
   uint32_t dummy;
   MOZ_ASSERT(!isIndex(&dummy));
@@ -444,7 +444,6 @@ MOZ_ALWAYS_INLINE JSExternalString* JSExternalString::new_(
   }
   str->init(chars, length, fin);
   size_t nbytes = (length + 1) * sizeof(char16_t);
-  cx->updateMallocCounter(nbytes);
 
   MOZ_ASSERT(str->isTenured());
   js::AddCellMemory(str, nbytes, js::MemoryUse::StringContents);
@@ -466,7 +465,7 @@ inline JSLinearString* js::StaticStrings::getUnitStringForElement(
   return js::NewInlineString<CanGC>(cx, mozilla::Range<const char16_t>(&c, 1));
 }
 
-MOZ_ALWAYS_INLINE void JSString::finalize(js::FreeOp* fop) {
+MOZ_ALWAYS_INLINE void JSString::finalize(JSFreeOp* fop) {
   /* FatInline strings are in a different arena. */
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_ATOM);
@@ -478,10 +477,10 @@ MOZ_ALWAYS_INLINE void JSString::finalize(js::FreeOp* fop) {
   }
 
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
-inline void JSFlatString::finalize(js::FreeOp* fop) {
+inline void JSFlatString::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(getAllocKind() != js::gc::AllocKind::FAT_INLINE_ATOM);
 
@@ -500,25 +499,24 @@ inline size_t JSFlatString::allocSize() const {
   return (count + 1) * charSize;
 }
 
-inline void JSFatInlineString::finalize(js::FreeOp* fop) {
+inline void JSFatInlineString::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_STRING);
   MOZ_ASSERT(isInline());
 
-  // Nothing to do.
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
-inline void js::FatInlineAtom::finalize(js::FreeOp* fop) {
+inline void js::FatInlineAtom::finalize(JSFreeOp* fop) {
   MOZ_ASSERT(JSString::isAtom());
   MOZ_ASSERT(getAllocKind() == js::gc::AllocKind::FAT_INLINE_ATOM);
 
   // Nothing to do.
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
-inline void JSExternalString::finalize(js::FreeOp* fop) {
+inline void JSExternalString::finalize(JSFreeOp* fop) {
   if (!JSString::isExternal()) {
     // This started out as an external string, but was turned into a
     // non-external string by JSExternalString::ensureFlat.
@@ -527,13 +525,13 @@ inline void JSExternalString::finalize(js::FreeOp* fop) {
   }
 
   size_t nbytes = (length() + 1) * sizeof(char16_t);
-  js::RemoveCellMemory(this, nbytes, js::MemoryUse::StringContents);
+  fop->removeCellMemory(this, nbytes, js::MemoryUse::StringContents);
 
   const JSStringFinalizer* fin = externalFinalizer();
   fin->finalize(fin, const_cast<char16_t*>(rawTwoByteChars()));
 
   // TaintFox
-  finalizeTaint();
+  clearTaint();
 }
 
 #endif /* vm_StringType_inl_h */

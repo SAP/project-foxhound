@@ -11,6 +11,7 @@
 
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/FloatingPoint.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Range.h"
 #include "mozilla/RangedPtr.h"
@@ -53,7 +54,6 @@
 
 /************************************************************************/
 
-struct JSFreeOp;
 struct JSFunctionSpec;
 struct JSPropertySpec;
 
@@ -190,9 +190,12 @@ typedef JSObject* (*JSWrapObjectCallback)(JSContext* cx,
 /**
  * Callback used by the wrap hook to ask the embedding to prepare an object
  * for wrapping in a context. This might include unwrapping other wrappers
- * or even finding a more suitable object for the new compartment.
+ * or even finding a more suitable object for the new compartment. If |origObj|
+ * is non-null, then it is the original object we are going to swap into during
+ * a transplant.
  */
 typedef void (*JSPreWrapCallback)(JSContext* cx, JS::HandleObject scope,
+                                  JS::HandleObject origObj,
                                   JS::HandleObject obj,
                                   JS::HandleObject objectPassedToWrap,
                                   JS::MutableHandleObject retObj);
@@ -336,8 +339,7 @@ extern JS_PUBLIC_API bool JS_IsBuiltinFunctionConstructor(JSFunction* fun);
 
 // Create a new context (and runtime) for this thread.
 extern JS_PUBLIC_API JSContext* JS_NewContext(
-    uint32_t maxbytes, uint32_t maxNurseryBytes = JS::DefaultNurseryBytes,
-    JSRuntime* parentRuntime = nullptr);
+    uint32_t maxbytes, JSRuntime* parentRuntime = nullptr);
 
 // The methods below for controlling the active context in a cooperatively
 // multithreaded runtime are not threadsafe, and the caller must ensure they
@@ -393,6 +395,20 @@ JS_PUBLIC_API bool InitSelfHostedCode(JSContext* cx);
  * thread's context.
  */
 JS_PUBLIC_API void AssertObjectBelongsToCurrentThread(JSObject* obj);
+
+/**
+ * Install a process-wide callback to validate script filenames. The JS engine
+ * will invoke this callback for each JS script it parses or XDR decodes.
+ *
+ * If the callback returns |false|, an exception is thrown and parsing/decoding
+ * will be aborted.
+ *
+ * See also CompileOptions::setSkipFilenameValidation to opt-out of the callback
+ * for specific parse jobs.
+ */
+using FilenameValidationCallback = bool (*)(const char* filename,
+                                            bool isSystemRealm);
+JS_PUBLIC_API void SetFilenameValidationCallback(FilenameValidationCallback cb);
 
 } /* namespace JS */
 
@@ -1975,16 +1991,6 @@ extern JS_PUBLIC_API JSScript* DecodeBinAST(
     JSContext* cx, const ReadOnlyCompileOptions& options, const uint8_t* buf,
     size_t length);
 
-extern JS_PUBLIC_API bool CanDecodeBinASTOffThread(
-    JSContext* cx, const ReadOnlyCompileOptions& options, size_t length);
-
-extern JS_PUBLIC_API bool DecodeBinASTOffThread(
-    JSContext* cx, const ReadOnlyCompileOptions& options, const uint8_t* buf,
-    size_t length, OffThreadCompileCallback callback, void* callbackData);
-
-extern JS_PUBLIC_API JSScript* FinishOffThreadBinASTDecode(
-    JSContext* cx, OffThreadToken* token);
-
 } /* namespace JS */
 
 #endif /* JS_BUILD_BINAST */
@@ -2279,9 +2285,22 @@ extern JS_PUBLIC_API JSString* JS_AtomizeAndPinUCString(JSContext* cx,
 extern JS_PUBLIC_API bool JS_CompareStrings(JSContext* cx, JSString* str1,
                                             JSString* str2, int32_t* result);
 
-extern JS_PUBLIC_API bool JS_StringEqualsAscii(JSContext* cx, JSString* str,
-                                               const char* asciiBytes,
-                                               bool* match);
+extern JS_PUBLIC_API MOZ_MUST_USE bool JS_StringEqualsAscii(
+    JSContext* cx, JSString* str, const char* asciiBytes, bool* match);
+
+// Same as above, but when the length of asciiBytes (excluding the
+// trailing null, if any) is known.
+extern JS_PUBLIC_API MOZ_MUST_USE bool JS_StringEqualsAscii(
+    JSContext* cx, JSString* str, const char* asciiBytes, size_t length,
+    bool* match);
+
+template <size_t N>
+MOZ_MUST_USE bool JS_StringEqualsLiteral(JSContext* cx, JSString* str,
+                                         const char (&asciiBytes)[N],
+                                         bool* match) {
+  MOZ_ASSERT(asciiBytes[N - 1] == '\0');
+  return JS_StringEqualsAscii(cx, str, asciiBytes, N - 1, match);
+}
 
 extern JS_PUBLIC_API size_t JS_PutEscapedString(JSContext* cx, char* buffer,
                                                 size_t size, JSString* str,
@@ -2297,28 +2316,28 @@ extern JS_PUBLIC_API size_t JS_PutEscapedString(JSContext* cx, char* buffer,
  * The first case is for strings that have been atomized, e.g. directly by
  * JS_AtomizeAndPinString or implicitly because it is stored in a jsid.
  *
- * The second case is "flat" strings that have been explicitly prepared in a
- * fallible context by JS_FlattenString. To catch errors, a separate opaque
- * JSFlatString type is returned by JS_FlattenString and expected by
- * JS_GetFlatStringChars. Note, though, that this is purely a syntactic
- * distinction: the input and output of JS_FlattenString are the same actual
- * GC-thing. If a JSString is known to be flat, JS_ASSERT_STRING_IS_FLAT can be
- * used to make a debug-checked cast. Example:
+ * The second case is "linear" strings that have been explicitly prepared in a
+ * fallible context by JS_EnsureLinearString. To catch errors, a separate opaque
+ * JSLinearString type is returned by JS_EnsureLinearString and expected by
+ * JS_Get{Latin1,TwoByte}StringCharsAndLength. Note, though, that this is purely
+ * a syntactic distinction: the input and output of JS_EnsureLinearString are
+ * the same actual GC-thing. If a JSString is known to be linear,
+ * JS_ASSERT_STRING_IS_LINEAR can be used to make a debug-checked cast. Example:
  *
- *   // in a fallible context
- *   JSFlatString* fstr = JS_FlattenString(cx, str);
- *   if (!fstr) {
+ *   // In a fallible context.
+ *   JSLinearString* lstr = JS_EnsureLinearString(cx, str);
+ *   if (!lstr) {
  *     return false;
  *   }
- *   MOZ_ASSERT(fstr == JS_ASSERT_STRING_IS_FLAT(str));
+ *   MOZ_ASSERT(lstr == JS_ASSERT_STRING_IS_LINEAR(str));
  *
- *   // in an infallible context, for the same 'str'
+ *   // In an infallible context, for the same 'str'.
  *   AutoCheckCannotGC nogc;
- *   const char16_t* chars = JS_GetTwoByteFlatStringChars(nogc, fstr)
+ *   const char16_t* chars = JS_GetTwoByteLinearStringChars(nogc, lstr)
  *   MOZ_ASSERT(chars);
  *
- * Flat strings and interned strings are always null-terminated, so
- * JS_FlattenString can be used to get a null-terminated string.
+ * Note: JS strings (including linear strings and atoms) are not
+ * null-terminated!
  *
  * Additionally, string characters are stored as either Latin1Char (8-bit)
  * or char16_t (16-bit). Clients can use JS_StringHasLatin1Chars and can then
@@ -2329,7 +2348,7 @@ extern JS_PUBLIC_API size_t JS_PutEscapedString(JSContext* cx, char* buffer,
 
 extern JS_PUBLIC_API size_t JS_GetStringLength(JSString* str);
 
-extern JS_PUBLIC_API bool JS_StringIsFlat(JSString* str);
+extern JS_PUBLIC_API bool JS_StringIsLinear(JSString* str);
 
 /** Returns true iff the string's characters are stored as Latin1. */
 extern JS_PUBLIC_API bool JS_StringHasLatin1Chars(JSString* str);
@@ -2345,8 +2364,8 @@ extern JS_PUBLIC_API const char16_t* JS_GetTwoByteStringCharsAndLength(
 extern JS_PUBLIC_API bool JS_GetStringCharAt(JSContext* cx, JSString* str,
                                              size_t index, char16_t* res);
 
-extern JS_PUBLIC_API char16_t JS_GetFlatStringCharAt(JSFlatString* str,
-                                                     size_t index);
+extern JS_PUBLIC_API char16_t JS_GetLinearStringCharAt(JSLinearString* str,
+                                                       size_t index);
 
 extern JS_PUBLIC_API const char16_t* JS_GetTwoByteExternalStringChars(
     JSString* str);
@@ -2355,40 +2374,59 @@ extern JS_PUBLIC_API bool JS_CopyStringChars(JSContext* cx,
                                              mozilla::Range<char16_t> dest,
                                              JSString* str);
 
-extern JS_PUBLIC_API JSFlatString* JS_FlattenString(JSContext* cx,
-                                                    JSString* str);
+/**
+ * Copies the string's characters to a null-terminated char16_t buffer.
+ *
+ * Returns nullptr on OOM.
+ */
+extern JS_PUBLIC_API JS::UniqueTwoByteChars JS_CopyStringCharsZ(JSContext* cx,
+                                                                JSString* str);
 
-extern JS_PUBLIC_API const JS::Latin1Char* JS_GetLatin1FlatStringChars(
-    const JS::AutoRequireNoGC& nogc, JSFlatString* str);
+extern JS_PUBLIC_API JSLinearString* JS_EnsureLinearString(JSContext* cx,
+                                                           JSString* str);
 
-extern JS_PUBLIC_API const char16_t* JS_GetTwoByteFlatStringChars(
-    const JS::AutoRequireNoGC& nogc, JSFlatString* str);
+extern JS_PUBLIC_API const JS::Latin1Char* JS_GetLatin1LinearStringChars(
+    const JS::AutoRequireNoGC& nogc, JSLinearString* str);
 
-static MOZ_ALWAYS_INLINE JSFlatString* JSID_TO_FLAT_STRING(jsid id) {
+extern JS_PUBLIC_API const char16_t* JS_GetTwoByteLinearStringChars(
+    const JS::AutoRequireNoGC& nogc, JSLinearString* str);
+
+static MOZ_ALWAYS_INLINE JSLinearString* JSID_TO_LINEAR_STRING(jsid id) {
   MOZ_ASSERT(JSID_IS_STRING(id));
-  return (JSFlatString*)JSID_TO_STRING(id);
+  return reinterpret_cast<JSLinearString*>(JSID_TO_STRING(id));
 }
 
-static MOZ_ALWAYS_INLINE JSFlatString* JS_ASSERT_STRING_IS_FLAT(JSString* str) {
-  MOZ_ASSERT(JS_StringIsFlat(str));
-  return (JSFlatString*)str;
+static MOZ_ALWAYS_INLINE JSLinearString* JS_ASSERT_STRING_IS_LINEAR(
+    JSString* str) {
+  MOZ_ASSERT(JS_StringIsLinear(str));
+  return reinterpret_cast<JSLinearString*>(str);
 }
 
-static MOZ_ALWAYS_INLINE JSString* JS_FORGET_STRING_FLATNESS(
-    JSFlatString* fstr) {
-  return (JSString*)fstr;
+static MOZ_ALWAYS_INLINE JSString* JS_FORGET_STRING_LINEARNESS(
+    JSLinearString* str) {
+  return reinterpret_cast<JSString*>(str);
 }
 
 /*
- * Additional APIs that avoid fallibility when given a flat string.
+ * Additional APIs that avoid fallibility when given a linear string.
  */
 
-extern JS_PUBLIC_API bool JS_FlatStringEqualsAscii(JSFlatString* str,
-                                                   const char* asciiBytes);
+extern JS_PUBLIC_API bool JS_LinearStringEqualsAscii(JSLinearString* str,
+                                                     const char* asciiBytes);
+extern JS_PUBLIC_API bool JS_LinearStringEqualsAscii(JSLinearString* str,
+                                                     const char* asciiBytes,
+                                                     size_t length);
 
-extern JS_PUBLIC_API size_t JS_PutEscapedFlatString(char* buffer, size_t size,
-                                                    JSFlatString* str,
-                                                    char quote);
+template <size_t N>
+bool JS_LinearStringEqualsLiteral(JSLinearString* str,
+                                  const char (&asciiBytes)[N]) {
+  MOZ_ASSERT(asciiBytes[N - 1] == '\0');
+  return JS_LinearStringEqualsAscii(str, asciiBytes, N - 1);
+}
+
+extern JS_PUBLIC_API size_t JS_PutEscapedLinearString(char* buffer, size_t size,
+                                                      JSLinearString* str,
+                                                      char quote);
 
 /**
  * Create a dependent string, i.e., a string that owns no character storage,
@@ -2443,6 +2481,34 @@ MOZ_MUST_USE JS_PUBLIC_API bool JS_EncodeStringToBuffer(JSContext* cx,
                                                         JSString* str,
                                                         char* buffer,
                                                         size_t length);
+
+/**
+ * Encode as many scalar values of the string as UTF-8 as can fit
+ * into the caller-provided buffer replacing unpaired surrogates
+ * with the REPLACEMENT CHARACTER.
+ *
+ * If JS_StringHasLatin1Chars(str) returns true, the function
+ * is guaranteed to convert the entire string if
+ * buffer.Length() >= 2 * JS_GetStringLength(str). Otherwise,
+ * the function is guaranteed to convert the entire string if
+ * buffer.Length() >= 3 * JS_GetStringLength(str).
+ *
+ * This function does not alter the representation of |str| or
+ * any |JSString*| substring that is a constituent part of it.
+ * Returns mozilla::Nothing() on OOM, without reporting an error;
+ * some data may have been written to |buffer| when this happens.
+ *
+ * If there's no OOM, returns the number of code units read and
+ * the number of code units written.
+ *
+ * The semantics of this method match the semantics of
+ * TextEncoder.encodeInto().
+ *
+ * The function does not store an additional zero byte.
+ */
+JS_PUBLIC_API mozilla::Maybe<mozilla::Tuple<size_t, size_t> >
+JS_EncodeStringToUTF8BufferPartial(JSContext* cx, JSString* str,
+                                   mozilla::Span<char> buffer);
 
 namespace JS {
 
@@ -2871,6 +2937,7 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
 
 // clang-format off
 #define JIT_COMPILER_OPTIONS(Register) \
+  Register(BASELINE_INTERPRETER_WARMUP_TRIGGER, "blinterp.warmup.trigger") \
   Register(BASELINE_WARMUP_TRIGGER, "baseline.warmup.trigger") \
   Register(ION_NORMAL_WARMUP_TRIGGER, "ion.warmup.trigger") \
   Register(ION_FULL_WARMUP_TRIGGER, "ion.full.warmup.trigger") \
@@ -2879,13 +2946,14 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(ION_ENABLE, "ion.enable") \
   Register(ION_CHECK_RANGE_ANALYSIS, "ion.check-range-analysis") \
   Register(ION_FREQUENT_BAILOUT_THRESHOLD, "ion.frequent-bailout-threshold") \
+  Register(BASELINE_INTERPRETER_ENABLE, "blinterp.enable") \
   Register(BASELINE_ENABLE, "baseline.enable") \
-  Register(OFFTHREAD_COMPILATION_ENABLE, "offthread-compilation.enable") \
+  Register(OFFTHREAD_COMPILATION_ENABLE, "offthread-compilation.enable")  \
   Register(FULL_DEBUG_CHECKS, "jit.full-debug-checks") \
   Register(JUMP_THRESHOLD, "jump-threshold") \
-  Register(TRACK_OPTIMIZATIONS, "jit.track-optimizations")\
-  Register(UNBOXED_OBJECTS, "unboxed_objects") \
-  Register(SIMULATOR_ALWAYS_INTERRUPT, "simulator.always-interrupt") \
+  Register(TRACK_OPTIMIZATIONS, "jit.track-optimizations") \
+  Register(NATIVE_REGEXP_ENABLE, "native_regexp.enable") \
+  Register(SIMULATOR_ALWAYS_INTERRUPT, "simulator.always-interrupt")      \
   Register(SPECTRE_INDEX_MASKING, "spectre.index-masking") \
   Register(SPECTRE_OBJECT_MITIGATIONS_BARRIERS, "spectre.object-mitigations.barriers") \
   Register(SPECTRE_OBJECT_MITIGATIONS_MISC, "spectre.object-mitigations.misc") \
@@ -2893,7 +2961,10 @@ extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
   Register(SPECTRE_VALUE_MASKING, "spectre.value-masking") \
   Register(SPECTRE_JIT_TO_CXX_CALLS, "spectre.jit-to-C++-calls") \
   Register(WASM_FOLD_OFFSETS, "wasm.fold-offsets") \
-  Register(WASM_DELAY_TIER2, "wasm.delay-tier2")
+  Register(WASM_DELAY_TIER2, "wasm.delay-tier2") \
+  Register(WASM_JIT_BASELINE, "wasm.baseline") \
+  Register(WASM_JIT_CRANELIFT, "wasm.cranelift") \
+  Register(WASM_JIT_ION, "wasm.ion")
 // clang-format on
 
 typedef enum JSJitCompilerOption {
@@ -3038,7 +3109,7 @@ extern JS_PUBLIC_API const StringTaint&
 JS_GetStringTaint(const JSString* str);
 
 extern JS_PUBLIC_API const StringTaint&
-JS_GetStringTaint(const JSFlatString* str);
+JS_GetStringTaint(const JSLinearString* str);
 
 extern JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);
@@ -3103,12 +3174,12 @@ extern JS_PUBLIC_API bool IsWasmModuleObject(HandleObject obj);
 extern JS_PUBLIC_API RefPtr<WasmModule> GetWasmModule(HandleObject obj);
 
 /**
- * This function will be removed when bug 1487479 expunges the last remaining
- * bits of wasm IDB support.
+ * Attempt to disable Wasm's usage of reserving a large virtual memory
+ * allocation to avoid bounds checking overhead. This must be called before any
+ * Wasm module or memory is created in this process, or else this function will
+ * fail.
  */
-
-extern JS_PUBLIC_API RefPtr<WasmModule> DeserializeWasmModule(
-    const uint8_t* bytecode, size_t bytecodeLength);
+extern JS_PUBLIC_API MOZ_MUST_USE bool DisableWasmHugeMemory();
 
 /**
  * If a large allocation fails when calling pod_{calloc,realloc}CanGC, the JS

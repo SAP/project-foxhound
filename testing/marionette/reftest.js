@@ -324,11 +324,20 @@ max-width: ${width}px; max-height: ${height}px`;
           extras
         );
       } catch (e) {
-        comparison = { lhs: null, rhs: null, passed: false, error: e };
+        comparison = {
+          lhs: null,
+          rhs: null,
+          passed: false,
+          error: e,
+          msg: null,
+        };
+      }
+      if (comparison.msg) {
+        result.message += `${comparison.msg}\n`;
       }
       if (comparison.error !== null) {
         result.status = STATUS.ERROR;
-        result.message = String(comparison.error);
+        result.message += String(comparison.error);
         result.stack = comparison.error.stack;
       }
 
@@ -350,7 +359,7 @@ max-width: ${width}px; max-height: ${height}px`;
         if (references.length) {
           for (let i = references.length - 1; i >= 0; i--) {
             let item = references[i];
-            stack.push([rhsUrl, item[0], item[1], item[2]]);
+            stack.push([rhsUrl, ...item]);
           }
         } else {
           // Reached a leaf node so all of one reference chain passed
@@ -412,6 +421,7 @@ max-width: ${width}px; max-height: ${height}px`;
     let error = null;
     let pixelsDifferent = null;
     let maxDifferences = {};
+    let msg = null;
 
     try {
       pixelsDifferent = this.windowUtils.compareCanvases(
@@ -433,10 +443,9 @@ max-width: ${width}px; max-height: ${height}px`;
       switch (relation) {
         case "==":
           if (!passed) {
-            logger.info(
+            msg =
               `Found ${pixelsDifferent} pixels different, ` +
-                `maximum difference per channel ${maxDifferences.value}`
-            );
+              `maximum difference per channel ${maxDifferences.value}`;
           }
           break;
         case "!=":
@@ -448,7 +457,7 @@ max-width: ${width}px; max-height: ${height}px`;
           );
       }
     }
-    return { lhs, rhs, passed, error };
+    return { lhs, rhs, passed, error, msg };
   }
 
   isAcceptableDifference(maxDifference, pixelsDifferent, allowed) {
@@ -554,13 +563,14 @@ browserRect.height: ${browserRect.height}`);
       this.ensureFocus(win);
       await this.driver.listener.reftestWait(url, this.remote);
 
-      canvas = capture.canvas(
+      canvas = await capture.canvas(
         win,
+        win.docShell.browsingContext,
         0, // left
         0, // top
         browserRect.width,
         browserRect.height,
-        { canvas, flags }
+        { canvas, flags, readback: true }
       );
     }
     if (

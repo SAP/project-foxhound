@@ -15,7 +15,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -179,7 +179,7 @@ bool IsValidSelectionPoint(nsFrameSelection* aFrameSel, nsINode* aNode) {
   }
 
   limiter = aFrameSel->GetAncestorLimiter();
-  return !limiter || nsContentUtils::ContentIsDescendantOf(aNode, limiter);
+  return !limiter || aNode->IsInclusiveDescendantOf(limiter);
 }
 
 namespace mozilla {
@@ -1276,9 +1276,8 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
       if (htmlEditor) {
         nsINode* cellparent = GetCellParent(aNewFocus);
         nsCOMPtr<nsINode> editorHostNode = htmlEditor->GetActiveEditingHost();
-        editableCell =
-            cellparent && editorHostNode &&
-            nsContentUtils::ContentIsDescendantOf(cellparent, editorHostNode);
+        editableCell = cellparent && editorHostNode &&
+                       cellparent->IsInclusiveDescendantOf(editorHostNode);
         if (editableCell) {
           mCellParent = cellparent;
 #ifdef DEBUG_TABLE_SELECTION
@@ -1623,7 +1622,7 @@ nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
       if (scrollStyles.mVertical == StyleOverflow::Hidden) {
         continue;
       }
-      uint32_t directions = scrollableFrame->GetPerceivedScrollingDirections();
+      uint32_t directions = scrollableFrame->GetAvailableScrollingDirections();
       if (directions & nsIScrollableFrame::VERTICAL) {
         // If there is sub scrollable frame, let's use its page size to select.
         return frame;

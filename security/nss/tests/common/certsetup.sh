@@ -51,13 +51,20 @@ make_cert() {
         type_args=(-q nistp256 --extGeneric 1.3.6.1.4.1.44363.44:not-critical:empty.txt)
         type=ec
         ;;
+    delegator_rsae2048)
+        touch empty.txt
+        type_args=(-g 2048 --extGeneric 1.3.6.1.4.1.44363.44:not-critical:empty.txt)
+        type=rsa
+        ;;
   esac
   msg="create certificate: $@"
   shift 2
   counter=$(($counter + 1))
-  certscript $@ | ${BINDIR}/certutil -S \
+  cmd=(${BINDIR}/certutil -S \
     -z "$R_NOISE_FILE" -d "$PROFILEDIR" \
     -n $name -s "CN=$name" -t "$trust" "${sign[@]}" -m "$counter" \
-    -w -2 -v 120 -k "$type" "${type_args[@]}" "${sighash[@]}" -1 -2
+    -w -2 -v 120 -k "$type" "${type_args[@]}" "${sighash[@]}" -1 -2)
+  echo "${cmd[@]}"
+  certscript $@ | "${cmd[@]}"
   html_msg $? 0 "$msg"
 }

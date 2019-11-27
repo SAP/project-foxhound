@@ -15,10 +15,6 @@ Protocol`_ (CDP).
 .. _Remote Debugging Protocol: https://docs.firefox-dev.tools/backend/protocol.html
 .. _Chrome DevTools Protocol: https://chromedevtools.github.io/devtools-protocol/
 
-
-Users
-=====
-
 .. toctree::
   :maxdepth: 1
 
@@ -26,8 +22,8 @@ Users
   Prefs.md
 
 
-Developers
-==========
+Internals
+=========
 
 .. toctree::
   :maxdepth: 1
@@ -35,16 +31,19 @@ Developers
   Building.md
   Debugging.md
   Testing.md
+  Architecture.md
   Prefs.md
   CodeStyle.md
+  PuppeteerVendor.md
+  Security.md
 
 
 Bugs
 ====
 
-Bugs are tracked under the `Remote Protocol`_ product.
+Bugs are tracked under the `Remote Protocol product`_.
 
-.. _Remote Protocol: https://bugzilla.mozilla.org/describecomponents.cgi?product=Remote%20Protocol
+.. _Remote Protocol product: https://bugzilla.mozilla.org/describecomponents.cgi?product=Remote%20Protocol
 
 
 Communication

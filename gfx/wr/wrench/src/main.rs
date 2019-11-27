@@ -2,42 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate base64;
-extern crate bincode;
-extern crate byteorder;
 #[macro_use]
 extern crate clap;
-#[cfg(target_os = "macos")]
-extern crate core_foundation;
-#[cfg(target_os = "macos")]
-extern crate core_graphics;
-extern crate crossbeam;
-#[cfg(target_os = "windows")]
-extern crate dwrote;
-#[cfg(feature = "env_logger")]
-extern crate env_logger;
-extern crate euclid;
-#[cfg(all(unix, not(target_os = "android")))]
-extern crate font_loader;
-extern crate gleam;
-extern crate glutin;
-extern crate image;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[cfg(target_os = "windows")]
-extern crate mozangle;
-#[cfg(feature = "headless")]
-extern crate osmesa_sys;
-extern crate ron;
 #[macro_use]
 extern crate serde;
-extern crate serde_json;
-extern crate time;
-extern crate webrender;
-extern crate winit;
-extern crate yaml_rust;
 
 mod angle;
 mod binary_frame_reader;
@@ -61,7 +33,6 @@ mod cgfont_to_data;
 
 use crate::binary_frame_reader::BinaryFrameReader;
 use gleam::gl;
-use glutin::GlContext;
 use crate::perf::PerfHarness;
 use crate::png::save_flipped;
 use crate::rawtest::RawtestHarness;
@@ -164,7 +135,7 @@ impl HeadlessContext {
 }
 
 pub enum WindowWrapper {
-    Window(glutin::GlWindow, Rc<dyn gl::Gl>),
+    WindowedContext(glutin::WindowedContext<glutin::PossiblyCurrent>, Rc<dyn gl::Gl>),
     Angle(winit::Window, angle::Context, Rc<dyn gl::Gl>),
     Headless(HeadlessContext, Rc<dyn gl::Gl>),
 }
@@ -174,7 +145,9 @@ pub struct HeadlessEventIterater;
 impl WindowWrapper {
     fn swap_buffers(&self) {
         match *self {
-            WindowWrapper::Window(ref window, _) => window.swap_buffers().unwrap(),
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                windowed_context.swap_buffers().unwrap()
+            }
             WindowWrapper::Angle(_, ref context, _) => context.swap_buffers().unwrap(),
             WindowWrapper::Headless(_, _) => {}
         }
@@ -189,7 +162,9 @@ impl WindowWrapper {
             DeviceIntSize::new(size.width as i32, size.height as i32)
         }
         match *self {
-            WindowWrapper::Window(ref window, _) => inner_size(window.window()),
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                inner_size(windowed_context.window())
+            }
             WindowWrapper::Angle(ref window, ..) => inner_size(window),
             WindowWrapper::Headless(ref context, _) => DeviceIntSize::new(context.width, context.height),
         }
@@ -197,7 +172,9 @@ impl WindowWrapper {
 
     fn hidpi_factor(&self) -> f32 {
         match *self {
-            WindowWrapper::Window(ref window, _) => window.get_hidpi_factor() as f32,
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                windowed_context.window().get_hidpi_factor() as f32
+            }
             WindowWrapper::Angle(ref window, ..) => window.get_hidpi_factor() as f32,
             WindowWrapper::Headless(_, _) => 1.0,
         }
@@ -205,8 +182,9 @@ impl WindowWrapper {
 
     fn resize(&mut self, size: DeviceIntSize) {
         match *self {
-            WindowWrapper::Window(ref mut window, _) => {
-                window.set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
+            WindowWrapper::WindowedContext(ref mut windowed_context, _) => {
+                windowed_context.window()
+                    .set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
             },
             WindowWrapper::Angle(ref mut window, ..) => {
                 window.set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
@@ -217,7 +195,9 @@ impl WindowWrapper {
 
     fn set_title(&mut self, title: &str) {
         match *self {
-            WindowWrapper::Window(ref window, _) => window.set_title(title),
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                windowed_context.window().set_title(title)
+            }
             WindowWrapper::Angle(ref window, ..) => window.set_title(title),
             WindowWrapper::Headless(_, _) => (),
         }
@@ -225,7 +205,7 @@ impl WindowWrapper {
 
     pub fn gl(&self) -> &dyn gl::Gl {
         match *self {
-            WindowWrapper::Window(_, ref gl) |
+            WindowWrapper::WindowedContext(_, ref gl) |
             WindowWrapper::Angle(_, _, ref gl) |
             WindowWrapper::Headless(_, ref gl) => &**gl,
         }
@@ -233,7 +213,7 @@ impl WindowWrapper {
 
     pub fn clone_gl(&self) -> Rc<dyn gl::Gl> {
         match *self {
-            WindowWrapper::Window(_, ref gl) |
+            WindowWrapper::WindowedContext(_, ref gl) |
             WindowWrapper::Angle(_, _, ref gl) |
             WindowWrapper::Headless(_, ref gl) => gl.clone(),
         }
@@ -258,35 +238,54 @@ fn make_window(
                 .with_multitouch()
                 .with_dimensions(LogicalSize::new(size.width as f64, size.height as f64));
 
-            let init = |context: &dyn glutin::GlContext| {
-                unsafe {
-                    context
-                        .make_current()
-                        .expect("unable to make context current!");
-                }
-
-                match context.get_api() {
-                    glutin::Api::OpenGl => unsafe {
-                        gl::GlFns::load_with(|symbol| context.get_proc_address(symbol) as *const _)
-                    },
-                    glutin::Api::OpenGlEs => unsafe {
-                        gl::GlesFns::load_with(|symbol| context.get_proc_address(symbol) as *const _)
-                    },
-                    glutin::Api::WebGl => unimplemented!(),
-                }
-            };
-
             if angle {
                 let (_window, _context) = angle::Context::with_window(
                     window_builder, context_builder, events_loop
                 ).unwrap();
-                let gl = init(&_context);
+
+                unsafe {
+                    _context
+                        .make_current()
+                        .expect("unable to make context current!");
+                }
+
+                let gl = match _context.get_api() {
+                    glutin::Api::OpenGl => unsafe {
+                        gl::GlFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
+                    },
+                    glutin::Api::OpenGlEs => unsafe {
+                        gl::GlesFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
+                    },
+                    glutin::Api::WebGl => unimplemented!(),
+                };
+
                 WindowWrapper::Angle(_window, _context, gl)
             } else {
-                let window = glutin::GlWindow::new(window_builder, context_builder, events_loop)
+                let windowed_context = context_builder
+                    .build_windowed(window_builder, events_loop)
                     .unwrap();
-                let gl = init(&window);
-                WindowWrapper::Window(window, gl)
+
+                let windowed_context = unsafe {
+                    windowed_context
+                        .make_current()
+                        .expect("unable to make context current!")
+                };
+
+                let gl = match windowed_context.get_api() {
+                    glutin::Api::OpenGl => unsafe {
+                        gl::GlFns::load_with(
+                            |symbol| windowed_context.get_proc_address(symbol) as *const _
+                        )
+                    },
+                    glutin::Api::OpenGlEs => unsafe {
+                        gl::GlesFns::load_with(
+                            |symbol| windowed_context.get_proc_address(symbol) as *const _
+                        )
+                    },
+                    glutin::Api::WebGl => unimplemented!(),
+                };
+
+                WindowWrapper::WindowedContext(windowed_context, gl)
             }
         }
         None => {
@@ -397,6 +396,17 @@ fn main() {
     #[cfg(feature = "env_logger")]
     env_logger::init();
 
+    #[cfg(target_os = "macos")]
+    {
+        use core_foundation::{self as cf, base::TCFType};
+        let i = cf::bundle::CFBundle::main_bundle().info_dictionary();
+        let mut i = unsafe { i.to_mutable() };
+        i.set(
+            cf::string::CFString::new("NSSupportsAutomaticGraphicsSwitching"),
+            cf::boolean::CFBoolean::true_value().into_CFType(),
+        );
+    }
+
     let args_yaml = load_yaml!("args.yaml");
     let clap = clap::App::from_yaml(args_yaml)
         .setting(clap::AppSettings::ArgRequiredElseHelp);
@@ -461,15 +471,23 @@ fn main() {
     let zoom_factor = args.value_of("zoom").map(|z| z.parse::<f32>().unwrap());
     let chase_primitive = match args.value_of("chase") {
         Some(s) => {
-            let items = s
-                .split(',')
-                .map(|s| s.parse::<f32>().unwrap())
-                .collect::<Vec<_>>();
-            let rect = LayoutRect::new(
-                LayoutPoint::new(items[0], items[1]),
-                LayoutSize::new(items[2], items[3]),
-            );
-            webrender::ChasePrimitive::LocalRect(rect)
+            match s.find(',') {
+                Some(_) => {
+                    let items = s
+                        .split(',')
+                        .map(|s| s.parse::<f32>().unwrap())
+                        .collect::<Vec<_>>();
+                    let rect = LayoutRect::new(
+                        LayoutPoint::new(items[0], items[1]),
+                        LayoutSize::new(items[2], items[3]),
+                    );
+                    webrender::ChasePrimitive::LocalRect(rect)
+                }
+                None => {
+                    let id = s.parse::<usize>().unwrap();
+                    webrender::ChasePrimitive::Id(webrender::PrimitiveDebugId(id))
+                }
+            }
         },
         None => webrender::ChasePrimitive::Nothing,
     };
@@ -550,6 +568,7 @@ fn main() {
 
     if let Some(subargs) = args.subcommand_matches("show") {
         let no_block = args.is_present("no_block");
+        let no_batch = args.is_present("no_batch");
         render(
             &mut wrench,
             &mut window,
@@ -557,6 +576,7 @@ fn main() {
             &mut events_loop,
             subargs,
             no_block,
+            no_batch,
         );
     } else if let Some(subargs) = args.subcommand_matches("png") {
         let surface = match subargs.value_of("surface") {
@@ -601,6 +621,7 @@ fn render<'a>(
     events_loop: &mut Option<winit::EventsLoop>,
     subargs: &clap::ArgMatches<'a>,
     no_block: bool,
+    no_batch: bool,
 ) {
     let input_path = subargs.value_of("INPUT").map(PathBuf::from).unwrap();
 
@@ -638,6 +659,7 @@ fn render<'a>(
     thing.do_frame(wrench);
 
     let mut debug_flags = DebugFlags::empty();
+    debug_flags.set(DebugFlags::DISABLE_BATCHING, no_batch);
 
     // Default the profile overlay on for android.
     if cfg!(target_os = "android") {

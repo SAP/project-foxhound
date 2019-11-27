@@ -11,7 +11,7 @@
 #include "VorbisDecoder.h"
 #include "WAVDecoder.h"
 #include "mozilla/Logging.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #ifdef MOZ_AV1
 #  include "AOMDecoder.h"
@@ -23,12 +23,21 @@ namespace mozilla {
 bool AgnosticDecoderModule::SupportsMimeType(
     const nsACString& aMimeType, DecoderDoctorDiagnostics* aDiagnostics) const {
   bool supports =
-      VPXDecoder::IsVPX(aMimeType) || OpusDataDecoder::IsOpus(aMimeType) ||
-      WaveDataDecoder::IsWave(aMimeType) || TheoraDecoder::IsTheora(aMimeType);
+      VPXDecoder::IsVPX(aMimeType) || TheoraDecoder::IsTheora(aMimeType);
   if (!StaticPrefs::media_rdd_vorbis_enabled() ||
       !StaticPrefs::media_rdd_process_enabled() ||
       !BrowserTabsRemoteAutostart()) {
     supports |= VorbisDataDecoder::IsVorbis(aMimeType);
+  }
+  if (!StaticPrefs::media_rdd_wav_enabled() ||
+      !StaticPrefs::media_rdd_process_enabled() ||
+      !BrowserTabsRemoteAutostart()) {
+    supports |= WaveDataDecoder::IsWave(aMimeType);
+  }
+  if (!StaticPrefs::media_rdd_opus_enabled() ||
+      !StaticPrefs::media_rdd_process_enabled() ||
+      !BrowserTabsRemoteAutostart()) {
+    supports |= OpusDataDecoder::IsOpus(aMimeType);
   }
 #ifdef MOZ_AV1
   // We remove support for decoding AV1 here if RDD is enabled so that
@@ -79,7 +88,14 @@ already_AddRefed<MediaDataDecoder> AgnosticDecoderModule::CreateAudioDecoder(
   if (VorbisDataDecoder::IsVorbis(config.mMimeType)) {
     m = new VorbisDataDecoder(aParams);
   } else if (OpusDataDecoder::IsOpus(config.mMimeType)) {
-    m = new OpusDataDecoder(aParams);
+    CreateDecoderParams params(aParams);
+    // Check IsDefaultPlaybackDeviceMono here and set the option in
+    // mOptions so OpusDataDecoder doesn't have to do it later (in case
+    // it is running on RDD).
+    if (IsDefaultPlaybackDeviceMono()) {
+      params.mOptions += CreateDecoderParams::Option::DefaultPlaybackDeviceMono;
+    }
+    m = new OpusDataDecoder(params);
   } else if (WaveDataDecoder::IsWave(config.mMimeType)) {
     m = new WaveDataDecoder(aParams);
   }

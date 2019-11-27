@@ -18,6 +18,7 @@
 #include "mozilla/net/WebSocketChannelParent.h"
 #include "mozilla/net/WebSocketEventListenerParent.h"
 #include "mozilla/net/DataChannelParent.h"
+#include "mozilla/net/DocumentChannelParent.h"
 #include "mozilla/net/SimpleChannelParent.h"
 #include "mozilla/net/AltDataOutputStreamParent.h"
 #include "mozilla/Unused.h"
@@ -31,7 +32,7 @@
 #include "mozilla/net/PSocketProcessBridgeParent.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/net/StunAddrsRequestParent.h"
-#  include "mozilla/net/WebrtcProxyChannelParent.h"
+#  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
 #include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ContentParent.h"
@@ -171,24 +172,23 @@ const char* NeckoParent::GetValidatedOriginAttributes(
     return "SerializedLoadContext from child is null";
   }
 
-  nsTArray<TabContext> contextArray =
-      static_cast<ContentParent*>(aContent)->GetManagedTabContext();
-
   nsAutoCString serializedSuffix;
   aSerialized.mOriginAttributes.CreateAnonymizedSuffix(serializedSuffix);
 
   nsAutoCString debugString;
-  for (uint32_t i = 0; i < contextArray.Length(); i++) {
-    const TabContext& tabContext = contextArray[i];
+  const auto& browsers = aContent->ManagedPBrowserParent();
+  for (auto iter = browsers.ConstIter(); !iter.Done(); iter.Next()) {
+    auto* browserParent = BrowserParent::GetFrom(iter.Get()->GetKey());
 
     if (!ChromeUtils::IsOriginAttributesEqual(
-            aSerialized.mOriginAttributes, tabContext.OriginAttributesRef())) {
+            aSerialized.mOriginAttributes,
+            browserParent->OriginAttributesRef())) {
       debugString.AppendLiteral("(");
       debugString.Append(serializedSuffix);
       debugString.AppendLiteral(",");
 
       nsAutoCString tabSuffix;
-      tabContext.OriginAttributesRef().CreateAnonymizedSuffix(tabSuffix);
+      browserParent->OriginAttributesRef().CreateAnonymizedSuffix(tabSuffix);
       debugString.Append(tabSuffix);
 
       debugString.AppendLiteral(")");
@@ -270,7 +270,7 @@ void NeckoParent::ActorDestroy(ActorDestroyReason aWhy) {
   // non-refcounted class.
 }
 
-PHttpChannelParent* NeckoParent::AllocPHttpChannelParent(
+already_AddRefed<PHttpChannelParent> NeckoParent::AllocPHttpChannelParent(
     const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
     const HttpChannelCreationArgs& aOpenArgs) {
   nsCOMPtr<nsIPrincipal> requestingPrincipal =
@@ -288,16 +288,9 @@ PHttpChannelParent* NeckoParent::AllocPHttpChannelParent(
   }
   PBOverrideStatus overrideStatus =
       PBOverrideStatusFromLoadContext(aSerialized);
-  HttpChannelParent* p =
+  RefPtr<HttpChannelParent> p =
       new HttpChannelParent(aBrowser, loadContext, overrideStatus);
-  p->AddRef();
-  return p;
-}
-
-bool NeckoParent::DeallocPHttpChannelParent(PHttpChannelParent* channel) {
-  HttpChannelParent* p = static_cast<HttpChannelParent*>(channel);
-  p->Release();
-  return true;
+  return p.forget();
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPHttpChannelConstructor(
@@ -330,10 +323,10 @@ bool NeckoParent::DeallocPStunAddrsRequestParent(
   return true;
 }
 
-PWebrtcProxyChannelParent* NeckoParent::AllocPWebrtcProxyChannelParent(
-    const TabId& aTabId) {
+PWebrtcTCPSocketParent* NeckoParent::AllocPWebrtcTCPSocketParent(
+    const Maybe<TabId>& aTabId) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent = new WebrtcProxyChannelParent(aTabId);
+  WebrtcTCPSocketParent* parent = new WebrtcTCPSocketParent(aTabId);
   parent->AddRef();
   return parent;
 #else
@@ -341,11 +334,10 @@ PWebrtcProxyChannelParent* NeckoParent::AllocPWebrtcProxyChannelParent(
 #endif
 }
 
-bool NeckoParent::DeallocPWebrtcProxyChannelParent(
-    PWebrtcProxyChannelParent* aActor) {
+bool NeckoParent::DeallocPWebrtcTCPSocketParent(
+    PWebrtcTCPSocketParent* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent =
-      static_cast<WebrtcProxyChannelParent*>(aActor);
+  WebrtcTCPSocketParent* parent = static_cast<WebrtcTCPSocketParent*>(aActor);
   parent->Release();
 #endif
   return true;
@@ -415,6 +407,37 @@ mozilla::ipc::IPCResult NeckoParent::RecvPFTPChannelConstructor(
   return IPC_OK();
 }
 
+already_AddRefed<PDocumentChannelParent>
+NeckoParent::AllocPDocumentChannelParent(
+    const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+    const DocumentChannelCreationArgs& args) {
+  nsCOMPtr<nsIPrincipal> requestingPrincipal =
+      GetRequestingPrincipal(Some(args.loadInfo()));
+
+  nsCOMPtr<nsILoadContext> loadContext;
+  const char* error = CreateChannelLoadContext(
+      aBrowser, Manager(), aSerialized, requestingPrincipal, loadContext);
+  if (error) {
+    return nullptr;
+  }
+  PBOverrideStatus overrideStatus =
+      PBOverrideStatusFromLoadContext(aSerialized);
+  RefPtr<DocumentChannelParent> p =
+      new DocumentChannelParent(aBrowser, loadContext, overrideStatus);
+  return p.forget();
+}
+
+mozilla::ipc::IPCResult NeckoParent::RecvPDocumentChannelConstructor(
+    PDocumentChannelParent* aActor, const PBrowserOrId& aBrowser,
+    const SerializedLoadContext& aSerialized,
+    const DocumentChannelCreationArgs& aArgs) {
+  DocumentChannelParent* p = static_cast<DocumentChannelParent*>(aActor);
+  if (!p->Init(aArgs)) {
+    return IPC_FAIL_NO_REASON(this);
+  }
+  return IPC_OK();
+}
+
 PCookieServiceParent* NeckoParent::AllocPCookieServiceParent() {
   return new CookieServiceParent();
 }
@@ -468,16 +491,10 @@ bool NeckoParent::DeallocPWebSocketEventListenerParent(
   return true;
 }
 
-PDataChannelParent* NeckoParent::AllocPDataChannelParent(
+already_AddRefed<PDataChannelParent> NeckoParent::AllocPDataChannelParent(
     const uint32_t& channelId) {
   RefPtr<DataChannelParent> p = new DataChannelParent();
-  return p.forget().take();
-}
-
-bool NeckoParent::DeallocPDataChannelParent(PDataChannelParent* actor) {
-  RefPtr<DataChannelParent> p =
-      dont_AddRef(static_cast<DataChannelParent*>(actor));
-  return true;
+  return p.forget();
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPDataChannelConstructor(
@@ -507,16 +524,10 @@ mozilla::ipc::IPCResult NeckoParent::RecvPSimpleChannelConstructor(
   return IPC_OK();
 }
 
-PFileChannelParent* NeckoParent::AllocPFileChannelParent(
+already_AddRefed<PFileChannelParent> NeckoParent::AllocPFileChannelParent(
     const uint32_t& channelId) {
   RefPtr<FileChannelParent> p = new FileChannelParent();
-  return p.forget().take();
-}
-
-bool NeckoParent::DeallocPFileChannelParent(PFileChannelParent* actor) {
-  RefPtr<FileChannelParent> p =
-      dont_AddRef(static_cast<FileChannelParent*>(actor));
-  return true;
+  return p.forget();
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPFileChannelConstructor(
@@ -905,14 +916,16 @@ mozilla::ipc::IPCResult NeckoParent::RecvGetExtensionFD(
 }
 
 PClassifierDummyChannelParent* NeckoParent::AllocPClassifierDummyChannelParent(
-    nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
-    const Maybe<LoadInfoArgs>& aLoadInfo) {
+    nsIURI* aURI, nsIURI* aTopWindowURI,
+    nsIPrincipal* aContentBlockingAllowListPrincipal,
+    const nsresult& aTopWindowURIResult, const Maybe<LoadInfoArgs>& aLoadInfo) {
   RefPtr<ClassifierDummyChannelParent> c = new ClassifierDummyChannelParent();
   return c.forget().take();
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPClassifierDummyChannelConstructor(
     PClassifierDummyChannelParent* aActor, nsIURI* aURI, nsIURI* aTopWindowURI,
+    nsIPrincipal* aContentBlockingAllowListPrincipal,
     const nsresult& aTopWindowURIResult, const Maybe<LoadInfoArgs>& aLoadInfo) {
   ClassifierDummyChannelParent* p =
       static_cast<ClassifierDummyChannelParent*>(aActor);
@@ -927,7 +940,8 @@ mozilla::ipc::IPCResult NeckoParent::RecvPClassifierDummyChannelConstructor(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  p->Init(aURI, aTopWindowURI, aTopWindowURIResult, loadInfo);
+  p->Init(aURI, aTopWindowURI, aContentBlockingAllowListPrincipal,
+          aTopWindowURIResult, loadInfo);
   return IPC_OK();
 }
 
@@ -982,7 +996,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvEnsureHSTSData(
   };
   RefPtr<HSTSDataCallbackWrapper> wrapper =
       new HSTSDataCallbackWrapper(std::move(callback));
-  gHttpHandler->EnsureHSTSDataReadyNative(wrapper.forget());
+  gHttpHandler->EnsureHSTSDataReadyNative(wrapper);
   return IPC_OK();
 }
 

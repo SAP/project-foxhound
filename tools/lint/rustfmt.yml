@@ -3,6 +3,9 @@ rust:
     description: Reformat rust
     include:
         - js/src/wasm/cranelift/
+        - testing/geckodriver/
+        - testing/mozbase/rust/
+        - testing/webdriver/
     extensions:
         - rs
     support-files:

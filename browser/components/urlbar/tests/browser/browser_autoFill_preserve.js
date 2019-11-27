@@ -197,13 +197,6 @@ add_task(async function backspaceNoAutofill() {
   Assert.equal(gURLBar.selectionEnd, "ExA".length);
 
   let heuristicValue = "ExA";
-  if (!UrlbarPrefs.get("quantumbar")) {
-    heuristicValue = PlacesUtils.mozActionURI("searchengine", {
-      engineName: "Google",
-      searchQuery: "ExA",
-      input: "ExA",
-    });
-  }
 
   checkKeys([
     ["KEY_ArrowDown", "http://example.com/", 1],
@@ -222,8 +215,8 @@ add_task(async function backspaceNoAutofill() {
 function checkKeys(testTuples) {
   for (let [key, value, selectedIndex] of testTuples) {
     EventUtils.synthesizeKey(key);
-    Assert.equal(UrlbarTestUtils.getSelectedIndex(window), selectedIndex);
-    Assert.equal(gURLBar.value, value);
+    Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), selectedIndex);
+    Assert.equal(gURLBar.untrimmedValue, value);
   }
 }
 

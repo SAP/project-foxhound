@@ -23,14 +23,14 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 project('dav1d', ['c'],
-    version: '0.3.1',
+    version: '0.4.0',
     default_options: ['c_std=c99',
                       'warning_level=2',
                       'buildtype=release',
                       'b_ndebug=if-release'],
     meson_version: '>= 0.47.0')
 
-dav1d_soname_version       = '2.0.0'
+dav1d_soname_version       = '3.0.0'
 dav1d_api_version_array    = dav1d_soname_version.split('.')
 dav1d_api_version_major    = dav1d_api_version_array[0]
 dav1d_api_version_minor    = dav1d_api_version_array[1]
@@ -61,14 +61,15 @@ foreach bitdepth : ['8', '16']
 endforeach
 
 # ASM option
-is_asm_enabled = (get_option('build_asm') == true and
+is_asm_enabled = (get_option('enable_asm') == true and
     (host_machine.cpu_family().startswith('x86') or
      host_machine.cpu_family() == 'aarch64'      or
-     host_machine.cpu_family().startswith('arm')))
+     host_machine.cpu_family().startswith('arm') or
+     host_machine.cpu() == 'ppc64le'))
 cdata.set10('HAVE_ASM', is_asm_enabled)
 
 if is_asm_enabled and get_option('b_sanitize') == 'memory'
-    error('asm causes false positive with memory sanitizer. Use \'-Dbuild_asm=false\'.')
+    error('asm causes false positive with memory sanitizer. Use \'-Denable_asm=false\'.')
 endif
 
 # Logging option
@@ -84,8 +85,13 @@ test_args = []
 optional_arguments = []
 
 # Define _POSIX_C_SOURCE to POSIX.1–2001 (IEEE Std 1003.1-2001)
-test_args  += '-D_POSIX_C_SOURCE=200112L'
+test_args += '-D_POSIX_C_SOURCE=200112L'
 add_project_arguments('-D_POSIX_C_SOURCE=200112L', language: 'c')
+
+if host_machine.system() == 'darwin'
+    test_args += '-D_DARWIN_C_SOURCE'
+    add_project_arguments('-D_DARWIN_C_SOURCE', language: 'c')
+endif
 
 if host_machine.system() == 'windows'
     cdata.set('_WIN32_WINNT',           '0x0601')
@@ -160,7 +166,8 @@ elif cc.has_function('memalign', prefix : '#include <malloc.h>', args : test_arg
 endif
 
 if (host_machine.cpu_family() == 'aarch64' or
-    host_machine.cpu_family().startswith('arm'))
+    host_machine.cpu_family().startswith('arm') or
+    host_machine.cpu() == 'ppc64le')
     if cc.has_function('getauxval', prefix : '#include <sys/auxv.h>', args : test_args)
         cdata.set('HAVE_GETAUXVAL', 1)
     endif
@@ -293,25 +300,17 @@ if (is_asm_enabled and
     endif
 endif
 
+cdata.set10('ARCH_X86', host_machine.cpu_family().startswith('x86'))
+cdata.set10('ARCH_X86_64', host_machine.cpu_family() == 'x86_64')
+cdata.set10('ARCH_X86_32', host_machine.cpu_family() == 'x86')
+
 if host_machine.cpu_family().startswith('x86')
-    cdata.set10('ARCH_X86', true)
-    if host_machine.cpu_family() == 'x86_64'
-        cdata_asm.set10('ARCH_X86_64', true)
-        cdata.set10('ARCH_X86_64', true)
-        cdata_asm.set10('ARCH_X86_32', false)
-        cdata.set10('ARCH_X86_32', false)
-    else
-        cdata_asm.set10('ARCH_X86_64', false)
-        cdata.set10('ARCH_X86_64', false)
-        cdata_asm.set10('ARCH_X86_32', true)
-        cdata.set10('ARCH_X86_32', true)
-        cdata_asm.set10('PIC', true)
-    endif
-else
-    cdata.set10('ARCH_X86', false)
-    cdata.set10('ARCH_X86_64', false)
-    cdata.set10('ARCH_X86_32', false)
+    cdata_asm.set10('ARCH_X86_64', host_machine.cpu_family() == 'x86_64')
+    cdata_asm.set10('ARCH_X86_32', host_machine.cpu_family() == 'x86')
+    cdata_asm.set10('PIC', true)
 endif
+
+cdata.set10('ARCH_PPC64LE', host_machine.cpu() == 'ppc64le')
 
 if cc.symbols_have_underscore_prefix()
     cdata.set10('PREFIX', true)
@@ -394,5 +393,7 @@ subdir('doc')
 subdir('src')
 
 subdir('tools')
+
+subdir('examples')
 
 subdir('tests')

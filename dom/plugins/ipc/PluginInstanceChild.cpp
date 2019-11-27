@@ -44,7 +44,6 @@ using namespace mozilla::plugins;
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
-using namespace std;
 
 #ifdef MOZ_WIDGET_GTK
 
@@ -120,10 +119,10 @@ static RefPtr<DrawTarget> CreateDrawTargetForSurface(gfxASurface* aSurface) {
 
 bool PluginInstanceChild::sIsIMEComposing = false;
 
-PluginInstanceChild::PluginInstanceChild(
-    const NPPluginFuncs* aPluginIface, const nsCString& aMimeType,
-    const InfallibleTArray<nsCString>& aNames,
-    const InfallibleTArray<nsCString>& aValues)
+PluginInstanceChild::PluginInstanceChild(const NPPluginFuncs* aPluginIface,
+                                         const nsCString& aMimeType,
+                                         const nsTArray<nsCString>& aNames,
+                                         const nsTArray<nsCString>& aValues)
     : mPluginIface(aPluginIface),
       mMimeType(aMimeType),
       mNames(aNames),
@@ -273,9 +272,10 @@ NPError PluginInstanceChild::InternalGetNPObjectForValue(NPNVariable aValue,
   switch (aValue) {
     case NPNVWindowNPObject:
       if (!(actor = mCachedWindowActor)) {
+        result = NPERR_GENERIC_ERROR;
         PPluginScriptableObjectChild* actorProtocol;
-        CallNPN_GetValue_NPNVWindowNPObject(&actorProtocol, &result);
-        if (result == NPERR_NO_ERROR) {
+        if (CallNPN_GetValue_NPNVWindowNPObject(&actorProtocol, &result) &&
+            (result == NPERR_NO_ERROR)) {
           actor = mCachedWindowActor =
               static_cast<PluginScriptableObjectChild*>(actorProtocol);
           NS_ASSERTION(actor, "Null actor!");
@@ -290,9 +290,10 @@ NPError PluginInstanceChild::InternalGetNPObjectForValue(NPNVariable aValue,
 
     case NPNVPluginElementNPObject:
       if (!(actor = mCachedElementActor)) {
+        result = NPERR_GENERIC_ERROR;
         PPluginScriptableObjectChild* actorProtocol;
-        CallNPN_GetValue_NPNVPluginElementNPObject(&actorProtocol, &result);
-        if (result == NPERR_NO_ERROR) {
+        if (CallNPN_GetValue_NPNVPluginElementNPObject(&actorProtocol, &result) &&
+            (result == NPERR_NO_ERROR)) {
           actor = mCachedElementActor =
               static_cast<PluginScriptableObjectChild*>(actorProtocol);
           NS_ASSERTION(actor, "Null actor!");
@@ -306,6 +307,7 @@ NPError PluginInstanceChild::InternalGetNPObjectForValue(NPNVariable aValue,
       break;
 
     default:
+      result = NPERR_GENERIC_ERROR;
       MOZ_ASSERT_UNREACHABLE(
           "Don't know what to do with this value "
           "type!");
@@ -401,6 +403,7 @@ NPError PluginInstanceChild::NPN_GetValue(NPNVariable aVar, void* aValue) {
     case NPNVWindowNPObject:  // Intentional fall-through
     case NPNVPluginElementNPObject: {
       NPObject* object;
+      *((NPObject**)aValue) = nullptr;
       NPError result = InternalGetNPObjectForValue(aVar, &object);
       if (result == NPERR_NO_ERROR) {
         *((NPObject**)aValue) = object;
@@ -807,6 +810,32 @@ NPError PluginInstanceChild::AudioDeviceStateChanged(
   return mPluginIface->setvalue(GetNPP(), NPNVaudioDeviceStateChanged,
                                 (void*)&aDeviceState);
 }
+
+void SetMouseEventWParam(NPEvent* aEvent) {
+  // Fill in potentially missing key state info.  See
+  // nsPluginInstanceOwner::ProcessEvent for circumstances where this happens.
+  const auto kMouseMessages =
+      mozilla::Array<int,9>(WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN,
+                            WM_LBUTTONUP, WM_MBUTTONUP, WM_RBUTTONUP,
+                            WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOUSEHWHEEL);
+
+  bool isInvalidWParam =
+      (aEvent->wParam == NPAPI_INVALID_WPARAM) &&
+      (std::find(kMouseMessages.begin(), kMouseMessages.end(),
+                 static_cast<int>(aEvent->event)) != kMouseMessages.end());
+
+  if (!isInvalidWParam) {
+    return;
+  }
+
+  aEvent->wParam = (::GetKeyState(VK_CONTROL) ? MK_CONTROL : 0) |
+                   (::GetKeyState(VK_SHIFT) ? MK_SHIFT : 0) |
+                   (::GetKeyState(VK_LBUTTON) ? MK_LBUTTON : 0) |
+                   (::GetKeyState(VK_MBUTTON) ? MK_MBUTTON : 0) |
+                   (::GetKeyState(VK_RBUTTON) ? MK_RBUTTON : 0) |
+                   (::GetKeyState(VK_XBUTTON1) ? MK_XBUTTON1 : 0) |
+                   (::GetKeyState(VK_XBUTTON2) ? MK_XBUTTON2 : 0);
+}
 #endif
 
 mozilla::ipc::IPCResult PluginInstanceChild::AnswerNPP_HandleEvent(
@@ -849,6 +878,7 @@ mozilla::ipc::IPCResult PluginInstanceChild::AnswerNPP_HandleEvent(
   // FIXME/bug 567645: temporarily drop the "dummy event" on the floor
   if (WM_NULL == evcopy.event) return IPC_OK();
 
+  SetMouseEventWParam(&evcopy);
   *handled = WinlessHandleEvent(evcopy);
   return IPC_OK();
 #endif
@@ -2501,7 +2531,7 @@ void PluginInstanceChild::NPN_URLRedirectResponse(void* notifyData,
     return;
   }
 
-  InfallibleTArray<PStreamNotifyChild*> notifyStreams;
+  nsTArray<PStreamNotifyChild*> notifyStreams;
   ManagedPStreamNotifyChild(notifyStreams);
   uint32_t notifyStreamCount = notifyStreams.Length();
   for (uint32_t i = 0; i < notifyStreamCount; i++) {
@@ -3959,7 +3989,7 @@ void PluginInstanceChild::Destroy() {
   SetProp(mPluginWindowHWND, kPluginIgnoreSubclassProperty, (HANDLE)1);
 #endif
 
-  InfallibleTArray<PBrowserStreamChild*> streams;
+  nsTArray<PBrowserStreamChild*> streams;
   ManagedPBrowserStreamChild(streams);
 
   // First make sure none of these streams become deleted

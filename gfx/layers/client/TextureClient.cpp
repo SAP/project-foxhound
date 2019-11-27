@@ -11,7 +11,8 @@
 #include "gfxPlatform.h"  // for gfxPlatform
 #include "MainThreadUtils.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/ipc/SharedMemory.h"  // for SharedMemory, etc
 #include "mozilla/layers/CompositableForwarder.h"
@@ -48,6 +49,12 @@
 #ifdef MOZ_X11
 #  include "mozilla/layers/TextureClientX11.h"
 #  include "GLXLibrary.h"
+#endif
+#ifdef MOZ_WAYLAND
+#  include <gtk/gtkx.h>
+#  include "mozilla/widget/nsWaylandDisplay.h"
+#  include "mozilla/layers/WaylandDMABUFTextureClientOGL.h"
+#  include "gfxPlatformGtk.h"
 #endif
 
 #ifdef XP_MACOSX
@@ -110,7 +117,8 @@ class TextureChild final : PTextureChild {
         mMainThreadOnly(false),
         mIPCOpen(false),
         mOwnsTextureData(false),
-        mOwnerCalledDestroy(false) {}
+        mOwnerCalledDestroy(false),
+        mUsesImageBridge(false) {}
 
   mozilla::ipc::IPCResult Recv__delete__() override { return IPC_OK(); }
 
@@ -121,15 +129,13 @@ class TextureChild final : PTextureChild {
   bool IPCOpen() const { return mIPCOpen; }
 
   void Lock() const {
-    if (mCompositableForwarder &&
-        mCompositableForwarder->GetTextureForwarder()->UsesImageBridge()) {
+    if (mUsesImageBridge) {
       mLock.Enter();
     }
   }
 
   void Unlock() const {
-    if (mCompositableForwarder &&
-        mCompositableForwarder->GetTextureForwarder()->UsesImageBridge()) {
+    if (mUsesImageBridge) {
       mLock.Leave();
     }
   }
@@ -232,6 +238,7 @@ class TextureChild final : PTextureChild {
   bool mIPCOpen;
   bool mOwnsTextureData;
   bool mOwnerCalledDestroy;
+  bool mUsesImageBridge;
 
   friend class TextureClient;
   friend void DeallocateTextureClient(TextureDeallocParams params);
@@ -275,6 +282,15 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
   }
 #endif
 
+#ifdef MOZ_WAYLAND
+  if ((aLayersBackend == LayersBackend::LAYERS_OPENGL ||
+       aLayersBackend == LayersBackend::LAYERS_WR) &&
+      gfxPlatformGtk::GetPlatform()->UseWaylandDMABufSurfaces() &&
+      aFormat != SurfaceFormat::A8) {
+    return TextureType::WaylandDMABUF;
+  }
+#endif
+
 #ifdef MOZ_X11
   gfxSurfaceType type =
       gfxPlatform::GetPlatform()->ScreenReferenceSurface()->GetType();
@@ -291,13 +307,13 @@ static TextureType GetTextureType(gfx::SurfaceFormat aFormat,
 #endif
 
 #ifdef XP_MACOSX
-  if (StaticPrefs::gfx_use_iosurface_textures()) {
+  if (StaticPrefs::gfx_use_iosurface_textures_AtStartup()) {
     return TextureType::MacIOSurface;
   }
 #endif
 
 #ifdef MOZ_WIDGET_ANDROID
-  if (StaticPrefs::gfx_use_surfacetexture_textures()) {
+  if (StaticPrefs::gfx_use_surfacetexture_textures_AtStartup()) {
     return TextureType::AndroidNativeWindow;
   }
 #endif
@@ -353,6 +369,12 @@ TextureData* TextureData::Create(TextureForwarder* aAllocator,
     case TextureType::DIB:
       return DIBTextureData::Create(aSize, aFormat, aAllocator);
 #endif
+
+#ifdef MOZ_WAYLAND
+    case TextureType::WaylandDMABUF:
+      return WaylandDMABUFTextureData::Create(aSize, aFormat, moz2DBackend);
+#endif
+
 #ifdef MOZ_X11
     case TextureType::X11:
       return X11TextureData::Create(aSize, aFormat, aTextureFlags, aAllocator);
@@ -1033,6 +1055,7 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
         }
       }
       mActor->mCompositableForwarder = aForwarder;
+      mActor->mUsesImageBridge = aForwarder->GetTextureForwarder()->UsesImageBridge();
     }
     return true;
   }
@@ -1334,7 +1357,7 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
     KnowsCompositor* aAllocator, gfx::IntSize aYSize, uint32_t aYStride,
     gfx::IntSize aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
   if (!aAllocator || !aAllocator->GetLayersIPCActor()->IPCOpen()) {
     return nullptr;
   }
@@ -1345,7 +1368,7 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
 
   TextureData* data = BufferTextureData::CreateForYCbCr(
       aAllocator, aYSize, aYStride, aCbCrSize, aCbCrStride, aStereoMode,
-      aColorDepth, aYUVColorSpace, aTextureFlags);
+      aColorDepth, aYUVColorSpace, aColorRange, aTextureFlags);
   if (!data) {
     return nullptr;
   }

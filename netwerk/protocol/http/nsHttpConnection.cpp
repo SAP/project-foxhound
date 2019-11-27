@@ -703,12 +703,15 @@ npnComplete:
 
   if (ssl) {
     // Telemetry for tls failure rate with and without esni;
-    bool esni;
-    mSocketTransport->GetEsniUsed(&esni);
-    Telemetry::Accumulate(
-        Telemetry::ESNI_NOESNI_TLS_SUCCESS_RATE,
-        (esni) ? ((handshakeSucceeded) ? ESNI_SUCCESSFUL : ESNI_FAILED)
-               : ((handshakeSucceeded) ? NO_ESNI_SUCCESSFUL : NO_ESNI_FAILED));
+    bool esni = false;
+    rv = mSocketTransport->GetEsniUsed(&esni);
+    if (NS_SUCCEEDED(rv)) {
+      Telemetry::Accumulate(
+          Telemetry::ESNI_NOESNI_TLS_SUCCESS_RATE,
+          (esni)
+              ? ((handshakeSucceeded) ? ESNI_SUCCESSFUL : ESNI_FAILED)
+              : ((handshakeSucceeded) ? NO_ESNI_SUCCESSFUL : NO_ESNI_FAILED));
+    }
   }
 
   if (rv == psm::GetXPCOMFromNSSError(
@@ -1700,8 +1703,7 @@ nsresult nsHttpConnection::ResumeRecv() {
   mLastReadTime = PR_IntervalNow();
 
   if (mSocketIn) {
-    if (!mTLSFilter || !mTLSFilter->HasDataToRecv() ||
-        NS_FAILED(ForceRecv())) {
+    if (!mTLSFilter || !mTLSFilter->HasDataToRecv() || NS_FAILED(ForceRecv())) {
       return mSocketIn->AsyncWait(this, 0, 0, nullptr);
     }
     return NS_OK;
@@ -1818,7 +1820,7 @@ void nsHttpConnection::CloseTransaction(nsAHttpTransaction* trans,
     mSpdySession = nullptr;
   }
 
-  if (!mTransaction && mTLSFilter) {
+  if (!mTransaction && mTLSFilter && gHttpHandler->Bug1556491()) {
     // In case of a race when the transaction is being closed before the tunnel
     // is established we need to carry closing status on the proxied
     // transaction.

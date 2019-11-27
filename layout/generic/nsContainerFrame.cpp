@@ -118,6 +118,7 @@ void nsContainerFrame::AppendFrames(ChildListID aListID,
 }
 
 void nsContainerFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                    const nsLineList::iterator* aPrevFrameLine,
                                     nsFrameList& aFrameList) {
   MOZ_ASSERT(aListID == kPrincipalList || aListID == kNoReflowPrincipalList,
              "unexpected child list");
@@ -568,22 +569,7 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
   if (aView != rootView) return;
 
   Element* rootElement = aPresContext->Document()->GetRootElement();
-  if (!rootElement || !rootElement->IsXULElement()) {
-    // Scrollframes use native widgets which don't work well with
-    // translucent windows, at least in Windows XP. So if the document
-    // has a root scrollrame it's useless to try to make it transparent,
-    // we'll just get something broken.
-    // nsCSSFrameConstructor::ConstructRootFrame constructs root
-    // scrollframes whenever the root element is not a XUL element, so
-    // we test for that here. We can't just call
-    // presShell->GetRootScrollFrame() since that might not have
-    // been constructed yet.
-    // We can change this to allow translucent toplevel HTML documents
-    // (e.g. to do something like Dashboard widgets), once we
-    // have broad support for translucent scrolled documents, but be
-    // careful because apparently some Firefox extensions expect
-    // openDialog("something.html") to produce an opaque window
-    // even if the HTML doesn't have a background-color set.
+  if (!rootElement) {
     return;
   }
 
@@ -599,12 +585,24 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
   RefPtr<nsPresContext> kungFuDeathGrip(aPresContext);
   AutoWeakFrame weak(rootFrame);
 
-  nsTransparencyMode mode =
-      nsLayoutUtils::GetFrameTransparency(aFrame, rootFrame);
-  int32_t shadow = rootFrame->StyleUIReset()->mWindowShadow;
-  nsCOMPtr<nsIWidget> viewWidget = aView->GetWidget();
-  viewWidget->SetTransparencyMode(mode);
-  windowWidget->SetWindowShadowStyle(shadow);
+  if (!aPresContext->PresShell()->GetRootScrollFrame()) {
+    // Scrollframes use native widgets which don't work well with
+    // translucent windows, at least in Windows XP. So if the document
+    // has a root scrollrame it's useless to try to make it transparent,
+    // we'll just get something broken.
+    // We can change this to allow translucent toplevel HTML documents
+    // (e.g. to do something like Dashboard widgets), once we
+    // have broad support for translucent scrolled documents, but be
+    // careful because apparently some Firefox extensions expect
+    // openDialog("something.html") to produce an opaque window
+    // even if the HTML doesn't have a background-color set.
+    nsTransparencyMode mode =
+        nsLayoutUtils::GetFrameTransparency(aFrame, rootFrame);
+    int32_t shadow = rootFrame->StyleUIReset()->mWindowShadow;
+    nsCOMPtr<nsIWidget> viewWidget = aView->GetWidget();
+    viewWidget->SetTransparencyMode(mode);
+    windowWidget->SetWindowShadowStyle(shadow);
+  }
 
   if (!aRC) return;
 
@@ -612,10 +610,27 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
     return;
   }
 
-  nsBoxLayoutState aState(aPresContext, aRC);
-  nsSize minSize = rootFrame->GetXULMinSize(aState);
-  nsSize maxSize = rootFrame->GetXULMaxSize(aState);
-
+  nsSize minSize(0, 0);
+  nsSize maxSize(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
+  if (rootElement->IsXULElement()) {
+    nsBoxLayoutState aState(aPresContext, aRC);
+    minSize = rootFrame->GetXULMinSize(aState);
+    maxSize = rootFrame->GetXULMaxSize(aState);
+  } else {
+    auto* pos = rootFrame->StylePosition();
+    if (pos->mMinWidth.ConvertsToLength()) {
+      minSize.width = pos->mMinWidth.ToLength();
+    }
+    if (pos->mMinHeight.ConvertsToLength()) {
+      minSize.height = pos->mMinHeight.ToLength();
+    }
+    if (pos->mMaxWidth.ConvertsToLength()) {
+      maxSize.width = pos->mMaxWidth.ToLength();
+    }
+    if (pos->mMaxHeight.ConvertsToLength()) {
+      maxSize.height = pos->mMaxHeight.ToLength();
+    }
+  }
   SetSizeConstraints(aPresContext, windowWidget, minSize, maxSize);
 #endif
 }
@@ -661,17 +676,17 @@ void nsContainerFrame::SetSizeConstraints(nsPresContext* aPresContext,
 
 void nsContainerFrame::SyncFrameViewAfterReflow(
     nsPresContext* aPresContext, nsIFrame* aFrame, nsView* aView,
-    const nsRect& aVisualOverflowArea, uint32_t aFlags) {
+    const nsRect& aVisualOverflowArea, ReflowChildFlags aFlags) {
   if (!aView) {
     return;
   }
 
   // Make sure the view is sized and positioned correctly
-  if (0 == (aFlags & NS_FRAME_NO_MOVE_VIEW)) {
+  if (!(aFlags & ReflowChildFlags::NoMoveView)) {
     PositionFrameView(aFrame);
   }
 
-  if (0 == (aFlags & NS_FRAME_NO_SIZE_VIEW)) {
+  if (!(aFlags & ReflowChildFlags::NoSizeView)) {
     nsViewManager* vm = aView->GetViewManager();
 
     vm->ResizeView(aView, aVisualOverflowArea, true);
@@ -869,8 +884,8 @@ void nsContainerFrame::ReflowChild(
     nsIFrame* aKidFrame, nsPresContext* aPresContext,
     ReflowOutput& aDesiredSize, const ReflowInput& aReflowInput,
     const WritingMode& aWM, const LogicalPoint& aPos,
-    const nsSize& aContainerSize, uint32_t aFlags, nsReflowStatus& aStatus,
-    nsOverflowContinuationTracker* aTracker) {
+    const nsSize& aContainerSize, ReflowChildFlags aFlags,
+    nsReflowStatus& aStatus, nsOverflowContinuationTracker* aTracker) {
   MOZ_ASSERT(aReflowInput.mFrame == aKidFrame, "bad reflow input");
   if (aWM.IsVerticalRL() || (!aWM.IsVertical() && !aWM.IsBidiLTR())) {
     NS_ASSERTION(aContainerSize.width != NS_UNCONSTRAINEDSIZE,
@@ -881,11 +896,12 @@ void nsContainerFrame::ReflowChild(
              "please reset the overflow areas before calling ReflowChild");
 
   // Position the child frame and its view if requested.
-  if (NS_FRAME_NO_MOVE_FRAME != (aFlags & NS_FRAME_NO_MOVE_FRAME)) {
+  if (ReflowChildFlags::NoMoveFrame !=
+      (aFlags & ReflowChildFlags::NoMoveFrame)) {
     aKidFrame->SetPosition(aWM, aPos, aContainerSize);
   }
 
-  if (0 == (aFlags & NS_FRAME_NO_MOVE_VIEW)) {
+  if (!(aFlags & ReflowChildFlags::NoMoveView)) {
     PositionFrameView(aKidFrame);
     PositionChildViews(aKidFrame);
   }
@@ -894,9 +910,9 @@ void nsContainerFrame::ReflowChild(
   aKidFrame->Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 
   // If the child frame is complete, delete any next-in-flows,
-  // but only if the NO_DELETE_NEXT_IN_FLOW flag isn't set.
+  // but only if the NoDeleteNextInFlowChild flag isn't set.
   if (!aStatus.IsInlineBreakBefore() && aStatus.IsFullyComplete() &&
-      !(aFlags & NS_FRAME_NO_DELETE_NEXT_IN_FLOW_CHILD)) {
+      !(aFlags & ReflowChildFlags::NoDeleteNextInFlowChild)) {
     nsIFrame* kidNextInFlow = aKidFrame->GetNextInFlow();
     if (kidNextInFlow) {
       // Remove all of the childs next-in-flows. Make sure that we ask
@@ -914,17 +930,18 @@ void nsContainerFrame::ReflowChild(nsIFrame* aKidFrame,
                                    nsPresContext* aPresContext,
                                    ReflowOutput& aDesiredSize,
                                    const ReflowInput& aReflowInput, nscoord aX,
-                                   nscoord aY, uint32_t aFlags,
+                                   nscoord aY, ReflowChildFlags aFlags,
                                    nsReflowStatus& aStatus,
                                    nsOverflowContinuationTracker* aTracker) {
   MOZ_ASSERT(aReflowInput.mFrame == aKidFrame, "bad reflow input");
 
   // Position the child frame and its view if requested.
-  if (NS_FRAME_NO_MOVE_FRAME != (aFlags & NS_FRAME_NO_MOVE_FRAME)) {
+  if (ReflowChildFlags::NoMoveFrame !=
+      (aFlags & ReflowChildFlags::NoMoveFrame)) {
     aKidFrame->SetPosition(nsPoint(aX, aY));
   }
 
-  if (0 == (aFlags & NS_FRAME_NO_MOVE_VIEW)) {
+  if (!(aFlags & ReflowChildFlags::NoMoveView)) {
     PositionFrameView(aKidFrame);
     PositionChildViews(aKidFrame);
   }
@@ -933,9 +950,9 @@ void nsContainerFrame::ReflowChild(nsIFrame* aKidFrame,
   aKidFrame->Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 
   // If the child frame is complete, delete any next-in-flows,
-  // but only if the NO_DELETE_NEXT_IN_FLOW flag isn't set.
+  // but only if the NoDeleteNextInFlowChild flag isn't set.
   if (aStatus.IsFullyComplete() &&
-      !(aFlags & NS_FRAME_NO_DELETE_NEXT_IN_FLOW_CHILD)) {
+      !(aFlags & ReflowChildFlags::NoDeleteNextInFlowChild)) {
     nsIFrame* kidNextInFlow = aKidFrame->GetNextInFlow();
     if (kidNextInFlow) {
       // Remove all of the childs next-in-flows. Make sure that we ask
@@ -991,11 +1008,11 @@ void nsContainerFrame::PositionChildViews(nsIFrame* aFrame) {
  * - invoked the DidReflow() function
  *
  * Flags:
- * NS_FRAME_NO_MOVE_FRAME - don't move the frame. aX and aY are ignored in this
- *    case. Also implies NS_FRAME_NO_MOVE_VIEW
- * NS_FRAME_NO_MOVE_VIEW - don't position the frame's view. Set this if you
- *    don't want to automatically sync the frame and view
- * NS_FRAME_NO_SIZE_VIEW - don't size the frame's view
+ * ReflowChildFlags::NoMoveFrame - don't move the frame. aX and aY are ignored
+ *    in this case. Also implies ReflowChildFlags::NoMoveView
+ * ReflowChildFlags::NoMoveView - don't position the frame's view. Set this if
+ *    you don't want to automatically sync the frame and view
+ * ReflowChildFlags::NoSizeView - don't size the frame's view
  */
 
 /**
@@ -1009,7 +1026,12 @@ void nsContainerFrame::FinishReflowChild(
     nsIFrame* aKidFrame, nsPresContext* aPresContext,
     const ReflowOutput& aDesiredSize, const ReflowInput* aReflowInput,
     const WritingMode& aWM, const LogicalPoint& aPos,
-    const nsSize& aContainerSize, uint32_t aFlags) {
+    const nsSize& aContainerSize, nsIFrame::ReflowChildFlags aFlags) {
+  MOZ_ASSERT(!aReflowInput || aReflowInput->mFrame == aKidFrame);
+  MOZ_ASSERT(aReflowInput || aKidFrame->IsFrameOfType(eMathML) ||
+                 aKidFrame->IsTableCellFrame(),
+             "aReflowInput should be passed in almost all cases");
+
   if (aWM.IsVerticalRL() || (!aWM.IsVertical() && !aWM.IsBidiLTR())) {
     NS_ASSERTION(aContainerSize.width != NS_UNCONSTRAINEDSIZE,
                  "FinishReflowChild with unconstrained container width!");
@@ -1019,9 +1041,19 @@ void nsContainerFrame::FinishReflowChild(
   WritingMode outerWM = aDesiredSize.GetWritingMode();
   LogicalSize convertedSize =
       aDesiredSize.Size(outerWM).ConvertTo(aWM, outerWM);
+  LogicalPoint pos(aPos);
 
-  if (NS_FRAME_NO_MOVE_FRAME != (aFlags & NS_FRAME_NO_MOVE_FRAME)) {
-    aKidFrame->SetRect(aWM, LogicalRect(aWM, aPos, convertedSize),
+  if (aFlags & ReflowChildFlags::ApplyRelativePositioning) {
+    MOZ_ASSERT(aReflowInput, "caller must have passed reflow input");
+    // ApplyRelativePositioning in right-to-left writing modes needs to know
+    // the updated frame width to set the normal position correctly.
+    aKidFrame->SetSize(aWM, convertedSize);
+    aReflowInput->ApplyRelativePositioning(&pos, aContainerSize);
+  }
+
+  if (ReflowChildFlags::NoMoveFrame !=
+      (aFlags & ReflowChildFlags::NoMoveFrame)) {
+    aKidFrame->SetRect(aWM, LogicalRect(aWM, pos, convertedSize),
                        aContainerSize);
   } else {
     aKidFrame->SetSize(aWM, convertedSize);
@@ -1036,7 +1068,7 @@ void nsContainerFrame::FinishReflowChild(
   }
 
   nsPoint newOrigin = aKidFrame->GetPosition();
-  if (!(aFlags & NS_FRAME_NO_MOVE_VIEW) && curOrigin != newOrigin) {
+  if (!(aFlags & ReflowChildFlags::NoMoveView) && curOrigin != newOrigin) {
     if (!aKidFrame->HasView()) {
       // If the frame has moved, then we need to make sure any child views are
       // correctly positioned
@@ -1057,14 +1089,20 @@ void nsContainerFrame::FinishReflowChild(nsIFrame* aKidFrame,
                                          const ReflowOutput& aDesiredSize,
                                          const ReflowInput* aReflowInput,
                                          nscoord aX, nscoord aY,
-                                         uint32_t aFlags) {
-  nsPoint curOrigin = aKidFrame->GetPosition();
+                                         ReflowChildFlags aFlags) {
+  MOZ_ASSERT(!(aFlags & ReflowChildFlags::ApplyRelativePositioning),
+             "only the logical version supports ApplyRelativePositioning "
+             "since ApplyRelativePositioning requires the container size");
 
-  if (NS_FRAME_NO_MOVE_FRAME != (aFlags & NS_FRAME_NO_MOVE_FRAME)) {
-    aKidFrame->SetRect(
-        nsRect(aX, aY, aDesiredSize.Width(), aDesiredSize.Height()));
+  nsPoint curOrigin = aKidFrame->GetPosition();
+  nsPoint pos(aX, aY);
+  nsSize size(aDesiredSize.PhysicalSize());
+
+  if (ReflowChildFlags::NoMoveFrame !=
+      (aFlags & ReflowChildFlags::NoMoveFrame)) {
+    aKidFrame->SetRect(nsRect(pos, size));
   } else {
-    aKidFrame->SetSize(nsSize(aDesiredSize.Width(), aDesiredSize.Height()));
+    aKidFrame->SetSize(size);
   }
 
   if (aKidFrame->HasView()) {
@@ -1075,8 +1113,7 @@ void nsContainerFrame::FinishReflowChild(nsIFrame* aKidFrame,
                              aDesiredSize.VisualOverflow(), aFlags);
   }
 
-  if (!(aFlags & NS_FRAME_NO_MOVE_VIEW) &&
-      (curOrigin.x != aX || curOrigin.y != aY)) {
+  if (!(aFlags & ReflowChildFlags::NoMoveView) && curOrigin != pos) {
     if (!aKidFrame->HasView()) {
       // If the frame has moved, then we need to make sure any child views are
       // correctly positioned
@@ -1089,8 +1126,8 @@ void nsContainerFrame::FinishReflowChild(nsIFrame* aKidFrame,
 
 void nsContainerFrame::ReflowOverflowContainerChildren(
     nsPresContext* aPresContext, const ReflowInput& aReflowInput,
-    nsOverflowAreas& aOverflowRects, uint32_t aFlags, nsReflowStatus& aStatus,
-    ChildFrameMerger aMergeFunc) {
+    nsOverflowAreas& aOverflowRects, ReflowChildFlags aFlags,
+    nsReflowStatus& aStatus, ChildFrameMerger aMergeFunc) {
   MOZ_ASSERT(aPresContext, "null pointer");
 
   nsFrameList* overflowContainers =
@@ -1707,6 +1744,26 @@ uint16_t nsContainerFrame::CSSAlignmentForAbsPosChild(
   return NS_STYLE_ALIGN_START;
 }
 
+#ifdef ACCESSIBILITY
+void nsContainerFrame::GetSpokenMarkerText(nsAString& aText) const {
+  aText.Truncate();
+  const nsStyleList* myList = StyleList();
+  if (myList->GetListStyleImage()) {
+    char16_t kDiscCharacter = 0x2022;
+    aText.Assign(kDiscCharacter);
+    aText.Append(' ');
+    return;
+  }
+  if (nsIFrame* marker = nsLayoutUtils::GetMarkerFrame(GetContent())) {
+    if (nsBulletFrame* bullet = do_QueryFrame(marker)) {
+      bullet->GetSpokenText(aText);
+    } else {
+      marker->GetContent()->GetTextContent(aText, IgnoreErrors());
+    }
+  }
+}
+#endif
+
 nsOverflowContinuationTracker::nsOverflowContinuationTracker(
     nsContainerFrame* aFrame, bool aWalkOOFFrames,
     bool aSkipOverflowContainerChildren)
@@ -1890,11 +1947,11 @@ nsresult nsOverflowContinuationTracker::Insert(nsIFrame* aOverflowCont,
       "OverflowContTracker in unexpected state");
 
   if (addToList) {
-    // Convert all non-overflow-container continuations of aOverflowCont
+    // Convert all non-overflow-container next-in-flows of aOverflowCont
     // into overflow containers and move them to our overflow
-    // tracker. This preserves the invariant that the next-continuations
+    // tracker. This preserves the invariant that the next-in-flows
     // of an overflow container are also overflow containers.
-    nsIFrame* f = aOverflowCont->GetNextContinuation();
+    nsIFrame* f = aOverflowCont->GetNextInFlow();
     if (f && (!(f->GetStateBits() & NS_FRAME_IS_OVERFLOW_CONTAINER) ||
               (!reparented && f->GetParent() == mParent) ||
               (reparented && f->GetParent() != mParent))) {

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac } from "common/Actions.jsm";
 import { connect } from "react-redux";
 import { ContextMenu } from "content-src/components/ContextMenu/ContextMenu";
@@ -81,6 +85,7 @@ export class _LinkMenu extends React.PureComponent {
         onUpdate={this.props.onUpdate}
         onShow={this.props.onShow}
         options={this.getOptions()}
+        keyboardAccess={this.props.keyboardAccess}
       />
     );
   }

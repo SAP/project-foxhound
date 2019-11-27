@@ -11,7 +11,7 @@
 #include "MediaFormatReader.h"
 #include "BaseMediaResource.h"
 #include "MediaShutdownManager.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "VideoUtils.h"
 
 namespace mozilla {
@@ -177,11 +177,6 @@ already_AddRefed<ChannelMediaDecoder> ChannelMediaDecoder::Create(
   if (DecoderTraits::IsSupportedType(type)) {
     decoder = new ChannelMediaDecoder(aInit);
     return decoder.forget();
-  }
-
-  if (DecoderTraits::IsHttpLiveStreamingType(type)) {
-    // We don't have an HLS decoder.
-    Telemetry::Accumulate(Telemetry::MEDIA_HLS_DECODER_SUCCESS, false);
   }
 
   return nullptr;

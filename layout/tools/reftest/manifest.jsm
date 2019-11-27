@@ -266,7 +266,7 @@ function ReadManifest(aURL, aFilter)
             }
         }
 
-        var principal = secMan.createCodebasePrincipal(aURL, {});
+        var principal = secMan.createContentPrincipal(aURL, {});
 
         if (items[0] == "include") {
             if (items.length != 2)
@@ -442,6 +442,8 @@ function BuildConditionSandbox(aURL) {
     sandbox.contentSameGfxBackendAsCanvas = contentBackend == canvasBackend
                                             || (contentBackend == "none" && canvasBackend == "cairo");
 
+    sandbox.remoteCanvas = prefs.getBoolPref("gfx.canvas.remote") && sandbox.d2d && sandbox.gpuProcess;
+
     sandbox.layersGPUAccelerated =
       g.windowUtils.layerManagerType != "Basic";
     sandbox.d3d11 =
@@ -461,10 +463,12 @@ function BuildConditionSandbox(aURL) {
     sandbox.retainedDisplayList =
       prefs.getBoolPref("layout.display-list.retain");
 
+    sandbox.usesOverlayScrollbars = g.windowUtils.usesOverlayScrollbars;
+
     // Shortcuts for widget toolkits.
     sandbox.Android = xr.OS == "Android";
     sandbox.cocoaWidget = xr.widgetToolkit == "cocoa";
-    sandbox.gtkWidget = xr.widgetToolkit == "gtk3";
+    sandbox.gtkWidget = xr.widgetToolkit == "gtk";
     sandbox.qtWidget = xr.widgetToolkit == "qt";
     sandbox.winWidget = xr.widgetToolkit == "windows";
 
@@ -475,7 +479,7 @@ function BuildConditionSandbox(aURL) {
     sandbox.geckoview = (sandbox.Android && g.browserIsRemote);
 
     // Scrollbars that are semi-transparent. See bug 1169666.
-    sandbox.transparentScrollbars = xr.widgetToolkit == "gtk3";
+    sandbox.transparentScrollbars = xr.widgetToolkit == "gtk";
 
     if (sandbox.Android) {
         var sysInfo = Cc["@mozilla.org/system-info;1"].getService(Ci.nsIPropertyBag2);
@@ -495,6 +499,12 @@ function BuildConditionSandbox(aURL) {
     sandbox.webrtc = true;
 #else
     sandbox.webrtc = false;
+#endif
+
+#if MOZ_XBL
+    sandbox.xbl = true;
+#else
+    sandbox.xbl = false;
 #endif
 
 let retainedDisplayListsEnabled = prefs.getBoolPref("layout.display-list.retain", false);
@@ -532,7 +542,7 @@ sandbox.compareRetainedDisplayLists = g.compareRetainedDisplayLists;
     sandbox.windowsDefaultTheme = g.containingWindow.matchMedia("(-moz-windows-default-theme)").matches;
 
     try {
-        sandbox.nativeThemePref = !prefs.getBoolPref("mozilla.widget.disable-native-theme");
+        sandbox.nativeThemePref = !prefs.getBoolPref("widget.disable-native-theme");
     } catch (e) {
         sandbox.nativeThemePref = true;
     }
@@ -643,9 +653,10 @@ function ServeTestBase(aURL, depth) {
 
     var testbase = g.ioService.newURI("http://localhost:" + g.httpServerPort +
                                      path + dirPath);
+    var testBasePrincipal = secMan.createContentPrincipal(testbase, {});
 
     // Give the testbase URI access to XUL and XBL
-    Services.perms.add(testbase, "allowXULXBL", Services.perms.ALLOW_ACTION);
+    Services.perms.addFromPrincipal(testBasePrincipal, "allowXULXBL", Services.perms.ALLOW_ACTION);
     return testbase;
 }
 
@@ -667,7 +678,7 @@ function CreateUrls(test) {
         var testURI = g.ioService.newURI(file, null, testbase);
         let isChrome = testURI.scheme == "chrome";
         let principal = isChrome ? secMan.getSystemPrincipal() :
-                                   secMan.createCodebasePrincipal(manifestURL, {});
+                                   secMan.createContentPrincipal(manifestURL, {});
         secMan.checkLoadURIWithPrincipal(principal, testURI,
                                          Ci.nsIScriptSecurityManager.DISALLOW_SCRIPT);
         return testURI;

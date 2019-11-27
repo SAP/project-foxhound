@@ -7,6 +7,7 @@
 #ifndef GFX_VR_MANAGER_H
 #define GFX_VR_MANAGER_H
 
+#include "nsIObserver.h"
 #include "nsTArray.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
@@ -20,6 +21,7 @@ class VRLayerParent;
 class VRManagerParent;
 class VRServiceHost;
 class VRThread;
+class VRShMem;
 
 enum class VRManagerState : uint32_t {
   Disabled,  // All VRManager activity is stopped
@@ -28,10 +30,11 @@ enum class VRManagerState : uint32_t {
   Active        // VR hardware is active
 };
 
-class VRManager {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::gfx::VRManager)
-
+class VRManager : nsIObserver {
  public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIOBSERVER
+
   static void ManagerInit();
   static VRManager* Get();
 
@@ -53,7 +56,7 @@ class VRManager {
                         const TimeDuration& aTimeout);
   void Shutdown();
 #if !defined(MOZ_WIDGET_ANDROID)
-  bool RunPuppet(const InfallibleTArray<uint64_t>& aBuffer,
+  bool RunPuppet(const nsTArray<uint64_t>& aBuffer,
                  VRManagerParent* aManagerParent);
   void ResetPuppet(VRManagerParent* aManagerParent);
 #endif
@@ -68,7 +71,7 @@ class VRManager {
 
  private:
   VRManager();
-  ~VRManager();
+  virtual ~VRManager();
   void Destroy();
   void StartTasks();
   void StopTasks();
@@ -131,7 +134,6 @@ class VRManager {
   bool mVRDisplaysRequestedNonFocus;
   bool mVRControllersRequested;
   bool mFrameStarted;
-  volatile VRExternalShmem* mExternalShmem;
   uint32_t mTaskInterval;
   RefPtr<nsITimer> mTaskTimer;
   mozilla::Monitor mCurrentSubmitTaskMonitor;
@@ -139,14 +141,14 @@ class VRManager {
   uint64_t mLastSubmittedFrameId;
   uint64_t mLastStartedFrame;
   bool mEnumerationCompleted;
-#if defined(XP_MACOSX)
-  int mShmemFD;
-#elif defined(XP_WIN)
-  base::ProcessHandle mShmemFile;
-  HANDLE mMutex;
-#endif
-#if !defined(MOZ_WIDGET_ANDROID)
+  bool mAppPaused;
+
+  // Note: mShmem doesn't support RefPtr; thus, do not share this private
+  // pointer so that its lifetime can still be controlled by VRManager
+  VRShMem* mShmem;
   bool mVRProcessEnabled;
+
+#if !defined(MOZ_WIDGET_ANDROID)
   RefPtr<VRServiceHost> mServiceHost;
 #endif
 

@@ -856,7 +856,7 @@ var PlacesUtils = {
   _shutdownFunctions: [],
   registerShutdownFunction: function PU_registerShutdownFunction(aFunc) {
     // If this is the first registered function, add the shutdown observer.
-    if (this._shutdownFunctions.length == 0) {
+    if (!this._shutdownFunctions.length) {
       Services.obs.addObserver(this, this.TOPIC_SHUTDOWN);
     }
     this._shutdownFunctions.push(aFunc);
@@ -867,7 +867,7 @@ var PlacesUtils = {
     switch (aTopic) {
       case this.TOPIC_SHUTDOWN:
         Services.obs.removeObserver(this, this.TOPIC_SHUTDOWN);
-        while (this._shutdownFunctions.length > 0) {
+        while (this._shutdownFunctions.length) {
           this._shutdownFunctions.shift().apply(this);
         }
         break;
@@ -1502,6 +1502,13 @@ var PlacesUtils = {
   promiseLargeCacheDBConnection: () => gAsyncDBLargeCacheConnPromised,
 
   /**
+   * Returns a Sqlite.jsm wrapper for the main Places connection. Most callers
+   * should prefer `withConnectionWrapper`, which ensures that all database
+   * operations finish before the connection is closed.
+   */
+  promiseUnsafeWritableDBConnection: () => gAsyncDBWrapperPromised,
+
+  /**
    * Performs a read/write operation on the Places database through a Sqlite.jsm
    * wrapped connection to the Places database.
    *
@@ -1629,6 +1636,13 @@ var PlacesUtils = {
    */
   invalidateCachedGuidFor(aItemId) {
     GuidHelper.invalidateCacheForItemId(aItemId);
+  },
+
+  /**
+   * Invalidates the entire GUID cache.
+   */
+  invalidateCachedGuids() {
+    GuidHelper.invalidateCache();
   },
 
   /**
@@ -1788,7 +1802,7 @@ var PlacesUtils = {
          FROM moz_bookmarks b2
          JOIN descendants ON b2.parent = descendants.id AND b2.id <> :tags_folder)
        SELECT d.level, d.id, d.guid, d.parent, d.parentGuid, d.type,
-              d.position AS [index], IFNULL(d.title, "") AS title, d.dateAdded,
+              d.position AS [index], IFNULL(d.title, '') AS title, d.dateAdded,
               d.lastModified, h.url, (SELECT icon_url FROM moz_icons i
                       JOIN moz_icons_to_pages ON icon_id = i.id
                       JOIN moz_pages_w_icons pi ON page_id = pi.id
@@ -1892,6 +1906,32 @@ var PlacesUtils = {
     }
 
     return rootItem;
+  },
+
+  /**
+   * Returns a generator that iterates over `array` and yields slices of no
+   * more than `chunkLength` elements at a time.
+   *
+   * @param  {Array} array An array containing zero or more elements.
+   * @param  {number} chunkLength The maximum number of elements in each chunk.
+   * @yields {Array} A chunk of the array.
+   * @throws if `chunkLength` is negative or not an integer.
+   */
+  *chunkArray(array, chunkLength) {
+    if (chunkLength <= 0 || !Number.isInteger(chunkLength)) {
+      throw new TypeError("Chunk length must be a positive integer");
+    }
+    if (!array.length) {
+      return;
+    }
+    if (array.length <= chunkLength) {
+      yield array;
+      return;
+    }
+    let startIndex = 0;
+    while (startIndex < array.length) {
+      yield array.slice(startIndex, (startIndex += chunkLength));
+    }
   },
 };
 
@@ -2810,7 +2850,7 @@ var GuidHelper = {
           "SELECT b.id, b.guid from moz_bookmarks b WHERE b.guid = :guid LIMIT 1",
           { guid: aGuid }
         );
-        if (rows.length == 0) {
+        if (!rows.length) {
           throw new Error("no item found for the given GUID");
         }
 
@@ -2865,7 +2905,7 @@ var GuidHelper = {
           "SELECT b.id, b.guid from moz_bookmarks b WHERE b.id = :id LIMIT 1",
           { id: aItemId }
         );
-        if (rows.length == 0) {
+        if (!rows.length) {
           throw new Error("no item found for the given itemId");
         }
 
@@ -2901,6 +2941,11 @@ var GuidHelper = {
     let guid = this.guidsForIds.get(aItemId);
     this.guidsForIds.delete(aItemId);
     this.idsForGuids.delete(guid);
+  },
+
+  invalidateCache() {
+    this.guidsForIds.clear();
+    this.idsForGuids.clear();
   },
 
   ensureObservingRemovedItems() {

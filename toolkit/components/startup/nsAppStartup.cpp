@@ -277,6 +277,11 @@ nsAppStartup::Run(void) {
     if (NS_FAILED(rv)) return rv;
   }
 
+  // Make sure that the appropriate quit notifications have been dispatched
+  // regardless of whether the event loop has spun or not. Note that this call
+  // is a no-op if Quit has already been called previously.
+  Quit(eForceQuit);
+
   nsresult retval = NS_OK;
   if (mRestart) {
     retval = NS_SUCCESS_RESTART_APP;
@@ -715,11 +720,6 @@ nsAppStartup::GetStartupInfo(JSContext* aCx,
 
     procTime = TimeStamp::ProcessCreation(&error);
 
-    if (error) {
-      Telemetry::Accumulate(Telemetry::STARTUP_MEASUREMENT_ERRORS,
-                            StartupTimeline::PROCESS_CREATION);
-    }
-
     StartupTimeline::Record(StartupTimeline::PROCESS_CREATION, procTime);
   }
 
@@ -732,8 +732,6 @@ nsAppStartup::GetStartupInfo(JSContext* aCx,
       // Always define main to aid with bug 689256.
       stamp = procTime;
       MOZ_ASSERT(!stamp.IsNull());
-      Telemetry::Accumulate(Telemetry::STARTUP_MEASUREMENT_ERRORS,
-                            StartupTimeline::MAIN);
     }
 
     if (!stamp.IsNull()) {
@@ -743,8 +741,6 @@ nsAppStartup::GetStartupInfo(JSContext* aCx,
             aCx, JS::NewDateObject(aCx, JS::TimeClip(prStamp)));
         JS_DefineProperty(aCx, obj, StartupTimeline::Describe(ev), date,
                           JSPROP_ENUMERATE);
-      } else {
-        Telemetry::Accumulate(Telemetry::STARTUP_MEASUREMENT_ERRORS, ev);
       }
     }
   }
@@ -993,8 +989,10 @@ nsAppStartup::CreateInstanceWithProfile(nsIToolkitProfile* aProfile) {
     return rv;
   }
 
-  const char* args[] = {"-no-remote", "-P", profileName.get()};
-  rv = process->Run(false, args, 3);
+  NS_ConvertUTF8toUTF16 wideName(profileName);
+
+  const char16_t* args[] = {u"-no-remote", u"-P", wideName.get()};
+  rv = process->Runw(false, args, 3);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

@@ -50,10 +50,21 @@ const BEHAVIOR_LIMIT_FOREIGN = Ci.nsICookieService.BEHAVIOR_LIMIT_FOREIGN;
 const BEHAVIOR_REJECT_FOREIGN = Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN;
 const BEHAVIOR_REJECT_TRACKER = Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
 
+let originalRequestLongerTimeout = requestLongerTimeout;
+// eslint-disable-next-line no-global-assign
+requestLongerTimeout = function AntiTrackingRequestLongerTimeout(factor) {
+  let ccovMultiplier = AppConstants.MOZ_CODE_COVERAGE ? 2 : 1;
+  originalRequestLongerTimeout(ccovMultiplier * factor);
+};
+
 requestLongerTimeout(3);
 
 const { UrlClassifierTestUtils } = ChromeUtils.import(
   "resource://testing-common/UrlClassifierTestUtils.jsm"
+);
+
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
 );
 
 Services.scriptloader.loadSubScript(

@@ -130,9 +130,23 @@ const nodeSpec = generateActorSpec({
         value: RetVal("string"),
       },
     },
+    getBackgroundColor: {
+      request: {},
+      response: RetVal("json"),
+    },
     getOwnerGlobalDimensions: {
       request: {},
       response: RetVal("windowDimensions"),
+    },
+    connectToRemoteFrame: {
+      request: {},
+      // We are passing a target actor form here.
+      // As we are manually fetching the form JSON via frame-connector.js connectToFrame,
+      // we are not instanciating a protocol.js front class and can't use proper type
+      // here and have automatic marshalling.
+      //
+      // Alex: Can we do something to address that??
+      response: RetVal("json"),
     },
   },
 });

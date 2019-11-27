@@ -9,10 +9,17 @@ const {
   createElement,
 } = require("devtools/client/shared/vendor/react");
 
-const reps = require("devtools/client/shared/components/reps/reps");
-const { REPS, MODE, objectInspector } = reps;
-const ObjectInspector = createFactory(objectInspector.ObjectInspector);
-const { Grip } = REPS;
+loader.lazyGetter(this, "REPS", function() {
+  return require("devtools/client/shared/components/reps/reps").REPS;
+});
+loader.lazyGetter(this, "MODE", function() {
+  return require("devtools/client/shared/components/reps/reps").MODE;
+});
+loader.lazyGetter(this, "ObjectInspector", function() {
+  const reps = require("devtools/client/shared/components/reps/reps");
+  return createFactory(reps.objectInspector.ObjectInspector);
+});
+
 loader.lazyRequireGetter(
   this,
   "SmartTrace",
@@ -41,7 +48,9 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
     onDOMNodeMouseOver = serviceContainer.highlightDomElement
       ? object => serviceContainer.highlightDomElement(object)
       : null;
-    onDOMNodeMouseOut = serviceContainer.unHighlightDomElement;
+    onDOMNodeMouseOut = serviceContainer.unHighlightDomElement
+      ? object => serviceContainer.unHighlightDomElement(object)
+      : null;
     onInspectIconClick = serviceContainer.openNodeInInspector
       ? (object, e) => {
           // Stop the event propagation so we don't trigger ObjectInspector expand/collapse.
@@ -60,8 +69,10 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
     onViewSourceInDebugger: serviceContainer.onViewSourceInDebugger,
     recordTelemetryEvent: serviceContainer.recordTelemetryEvent,
     openLink: serviceContainer.openLink,
+    sourceMapService: serviceContainer.sourceMapService,
     renderStacktrace: stacktrace =>
       createElement(SmartTrace, {
+        key: "stacktrace",
         stacktrace,
         onViewSourceInDebugger: serviceContainer
           ? serviceContainer.onViewSourceInDebugger ||
@@ -84,7 +95,7 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
       onDOMNodeMouseOver,
       onDOMNodeMouseOut,
       onInspectIconClick,
-      defaultRep: Grip,
+      defaultRep: REPS.Grip,
     });
   }
 
@@ -100,7 +111,7 @@ function getObjectInspector(grip, serviceContainer, override = {}) {
 function createRootsFromGrip(grip) {
   return [
     {
-      path: Symbol((grip && grip.actor) || JSON.stringify(grip)),
+      path: (grip && grip.actor) || JSON.stringify(grip),
       contents: { value: grip },
     },
   ];

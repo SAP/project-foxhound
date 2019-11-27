@@ -356,7 +356,7 @@ impl<'a> PrefTokenizer<'a> {
         for _ in 0..hex_chars {
             match self.get_char() {
                 Some(x) => {
-                    value = value << 4;
+                    value <<= 4;
                     match x {
                         '0'..='9' => value += x as u32 - '0' as u32,
                         'a'..='f' => value += x as u32 - 'a' as u32,
@@ -1025,7 +1025,8 @@ pub fn serialize<W: Write>(prefs: &Preferences, output: &mut W) -> io::Result<()
             "sticky_pref("
         } else {
             "user_pref("
-        }.as_bytes();
+        }
+        .as_bytes();
         output.write_all(func)?;
         output.write_all(b"\"")?;
         output.write_all(escape_quote(key).as_bytes())?;

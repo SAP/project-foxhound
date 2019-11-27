@@ -103,16 +103,22 @@ def print_line(prefix, m):
     now = datetime.datetime.utcnow().isoformat().encode('utf-8')
     # slice microseconds to 3 decimals.
     now = now[:-3] if now[-7:-6] == b'.' else now
-    sys.stdout.buffer.write(b'[%s %sZ] %s' % (prefix, now, m))
+    bytes = b'[%s %sZ] %s' % (prefix, now, m)
+    written = 0
+    while written < len(bytes):
+        written += (sys.stdout.buffer.write(bytes[written:]) or 0)
     sys.stdout.buffer.flush()
 
 
-def run_and_prefix_output(prefix, args, extra_env=None):
+def run_and_prefix_output(prefix, args, *, extra_env=None, cwd=None):
     """Runs a process and prefixes its output with the time.
 
     Returns the process exit code.
     """
-    print_line(prefix, b'executing %r\n' % args)
+    print_line(
+        prefix,
+        b"executing %r%s\n" % (args, b"in %s" % (cwd.encode("utf-8"),) if cwd else b""),
+    )
 
     env = dict(os.environ)
     env.update(extra_env or {})
@@ -136,7 +142,8 @@ def run_and_prefix_output(prefix, args, extra_env=None):
                          stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT,
                          stdin=sys.stdin.fileno(),
-                         env=env)
+                         env=env,
+                         cwd=cwd)
 
     stdout = io.TextIOWrapper(p.stdout, encoding='latin1')
 
@@ -508,8 +515,10 @@ def fetch_artifacts():
         sys.exit(1)
 
     cmd = [sys.executable, '-u', fetch_content, 'task-artifacts']
-    print_line(b'fetches', b'executing %r\n' % cmd)
-    subprocess.run(cmd, check=True, env=os.environ)
+    res = run_and_prefix_output(b'fetches', cmd)
+    if res:
+        sys.exit(res)
+
     print_line(b'fetches', b'finished fetching artifacts\n')
 
 
@@ -669,6 +678,7 @@ def main(args):
     parser = argparse.ArgumentParser()
     parser.add_argument('--user', default='worker', help='user to run as')
     parser.add_argument('--group', default='worker', help='group to run as')
+    parser.add_argument('--task-cwd', help='directory to run the provided command in')
 
     add_vcs_arguments(parser, 'gecko', 'Firefox')
     add_vcs_arguments(parser, 'comm', 'Comm')
@@ -829,13 +839,19 @@ def main(args):
     vcs_checkout_from_args(args, 'comm')
 
     try:
-        if 'GECKO_PATH' in os.environ:
-            os.environ['GECKO_PATH'] = os.path.abspath(os.environ['GECKO_PATH'])
+        for k in ('GECKO_PATH', 'MOZ_FETCHES_DIR', 'UPLOAD_DIR'):
+            if k in os.environ:
+                # Normalize paths to use forward slashes. Some shell scripts
+                # tolerate that better on Windows.
+                os.environ[k] = os.path.abspath(os.environ[k]).replace(os.sep, '/')
+                print_line(b'setup', b'%s is %s\n' % (
+                    k.encode('utf-8'),
+                    os.environ[k].encode('utf-8')))
 
         if 'MOZ_FETCHES' in os.environ:
             fetch_artifacts()
 
-        return run_and_prefix_output(b'task', task_args)
+        return run_and_prefix_output(b'task', task_args, cwd=args.task_cwd)
     finally:
         fetches_dir = os.environ.get('MOZ_FETCHES_DIR')
         if fetches_dir and os.path.isdir(fetches_dir):

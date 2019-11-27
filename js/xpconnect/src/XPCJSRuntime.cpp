@@ -47,6 +47,7 @@
 #include "jsapi.h"
 #include "js/BuildId.h"  // JS::BuildIdCharVector, JS::SetProcessBuildIdOp
 #include "js/experimental/SourceHook.h"  // js::{,Set}SourceHook
+#include "js/GCAPI.h"
 #include "js/MemoryFunctions.h"
 #include "js/MemoryMetrics.h"
 #include "js/UbiNode.h"
@@ -227,7 +228,7 @@ RealmPrivate::RealmPrivate(JS::Realm* realm) : scriptability(realm) {
 /* static */
 void RealmPrivate::Init(HandleObject aGlobal, const SiteIdentifier& aSite) {
   MOZ_ASSERT(aGlobal);
-  DebugOnly<const js::Class*> clasp = js::GetObjectClass(aGlobal);
+  DebugOnly<const JSClass*> clasp = js::GetObjectClass(aGlobal);
   MOZ_ASSERT(clasp->flags &
                  (JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_HAS_PRIVATE) ||
              dom::IsDOMClass(clasp));
@@ -397,21 +398,11 @@ static bool PrincipalImmuneToScriptPolicy(nsIPrincipal* aPrincipal) {
 
   // Check whether our URI is an "about:" URI that allows scripts.  If it is,
   // we need to allow JS to run.
-  nsCOMPtr<nsIURI> principalURI;
-  aPrincipal->GetURI(getter_AddRefs(principalURI));
-  MOZ_ASSERT(principalURI);
-
-  bool isAbout;
-  nsresult rv = principalURI->SchemeIs("about", &isAbout);
-  if (NS_SUCCEEDED(rv) && isAbout) {
-    nsCOMPtr<nsIAboutModule> module;
-    rv = NS_GetAboutModule(principalURI, getter_AddRefs(module));
-    if (NS_SUCCEEDED(rv)) {
-      uint32_t flags;
-      rv = module->GetURIFlags(principalURI, &flags);
-      if (NS_SUCCEEDED(rv) && (flags & nsIAboutModule::ALLOW_SCRIPT)) {
-        return true;
-      }
+  if (aPrincipal->SchemeIs("about")) {
+    uint32_t flags;
+    nsresult rv = aPrincipal->GetAboutModuleFlags(&flags);
+    if (NS_SUCCEEDED(rv) && (flags & nsIAboutModule::ALLOW_SCRIPT)) {
+      return true;
     }
   }
 
@@ -468,7 +459,7 @@ Scriptability::Scriptability(JS::Realm* realm)
   nsIPrincipal* prin = nsJSPrincipals::get(JS::GetRealmPrincipals(realm));
   mImmuneToScriptPolicy = PrincipalImmuneToScriptPolicy(prin);
 
-  // If we're not immune, we should have a real principal with a codebase URI.
+  // If we're not immune, we should have a real principal with a URI.
   // Check the URI against the new-style domain policy.
   if (!mImmuneToScriptPolicy) {
     nsCOMPtr<nsIURI> codebase;
@@ -1134,13 +1125,12 @@ void DispatchOffThreadTask(RunnableTask* task) {
 }
 
 void XPCJSRuntime::Shutdown(JSContext* cx) {
-  // This destructor runs before ~CycleCollectedJSContext, which does the
-  // actual JS_DestroyContext() call. But destroying the context triggers
-  // one final GC, which can call back into the context with various
-  // callbacks if we aren't careful. Null out the relevant callbacks.
+  // This destructor runs before ~CycleCollectedJSContext, which does the actual
+  // JS_DestroyContext() call. But destroying the context triggers one final GC,
+  // which can call back into the context with various callbacks if we aren't
+  // careful. Remove the relevant callbacks, but leave the weak pointer
+  // callbacks to clear out any remaining table entries.
   JS_RemoveFinalizeCallback(cx, FinalizeCallback);
-  JS_RemoveWeakPointerZonesCallback(cx, WeakPointerZonesCallback);
-  JS_RemoveWeakPointerCompartmentCallback(cx, WeakPointerCompartmentCallback);
   xpc_DelocalizeRuntime(JS_GetRuntime(cx));
 
   JS::SetGCSliceCallback(cx, mPrevGCSliceCallback);
@@ -1149,11 +1139,8 @@ void XPCJSRuntime::Shutdown(JSContext* cx) {
   gHelperThreads->Shutdown();
   gHelperThreads = nullptr;
 
-  // clean up and destroy maps...
-  mWrappedJSMap->ShutdownMarker();
-  delete mWrappedJSMap;
-  mWrappedJSMap = nullptr;
-
+  // Clean up and destroy maps. Any remaining entries in mWrappedJSMap will be
+  // cleaned up by the weak pointer callbacks.
   delete mIID2NativeInterfaceMap;
   mIID2NativeInterfaceMap = nullptr;
 
@@ -1174,6 +1161,7 @@ void XPCJSRuntime::Shutdown(JSContext* cx) {
 
 XPCJSRuntime::~XPCJSRuntime() {
   MOZ_COUNT_DTOR_INHERITED(XPCJSRuntime, CycleCollectedJSRuntime);
+  delete mWrappedJSMap;
 }
 
 // If |*anonymizeID| is non-zero and this is a user realm, the name will
@@ -1501,6 +1489,10 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
                  zStats.cachedCFG,
                  "The cached CFG to construct Ion code out of it.");
 
+  ZRREPORT_BYTES(pathPrefix + NS_LITERAL_CSTRING("script-counts-map"),
+                 zStats.scriptCountsMap,
+                 "Profiling-related information for scripts.");
+
   size_t stringsNotableAboutMemoryGCHeap = 0;
   size_t stringsNotableAboutMemoryMallocHeap = 0;
 
@@ -1518,7 +1510,7 @@ static void ReportZoneStats(const JS::ZoneStats& zStats,
     // required for notable string detection is high.
     MOZ_ASSERT(!anonymize);
 
-    nsDependentCString notableString(info.buffer);
+    nsDependentCString notableString(info.buffer.get());
 
     // Viewing about:memory generates many notable strings which contain
     // "string(length=".  If we report these as notable, then we'll create
@@ -1803,7 +1795,7 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
 
     nsCString classPath =
         realmJSPathPrefix +
-        nsPrintfCString("classes/class(%s)/", classInfo.className_);
+        nsPrintfCString("classes/class(%s)/", classInfo.className_.get());
 
     ReportClassStats(classInfo, classPath, handleReport, data, gcTotal);
   }
@@ -1892,10 +1884,6 @@ static void ReportRealmStats(const JS::RealmStats& realmStats,
 
   ZRREPORT_BYTES(realmJSPathPrefix + NS_LITERAL_CSTRING("jit-realm"),
                  realmStats.jitRealm, "The JIT realm.");
-
-  ZRREPORT_BYTES(realmJSPathPrefix + NS_LITERAL_CSTRING("script-counts-map"),
-                 realmStats.scriptCountsMap,
-                 "Profiling-related information for scripts.");
 
   if (sundriesGCHeap > 0) {
     // We deliberately don't use ZRREPORT_GC_BYTES here.
@@ -2027,7 +2015,7 @@ void ReportJSRuntimeExplicitTreeStats(const JS::RuntimeStats& rtStats,
     if (anonymize) {
       escapedFilename.AppendPrintf("<anonymized-source-%d>", int(i));
     } else {
-      nsDependentCString filename(scriptSourceInfo.filename_);
+      nsDependentCString filename(scriptSourceInfo.filename_.get());
       escapedFilename.Append(filename);
       escapedFilename.ReplaceSubstring("/", "\\");
     }
@@ -2651,10 +2639,10 @@ static nsresult JSSizeOfTab(JSObject* objArg, size_t* jsObjectsSize,
       JS::AddSizeOfTab(cx, obj, moz_malloc_size_of, &orphanReporter, &sizes),
       NS_ERROR_OUT_OF_MEMORY);
 
-  *jsObjectsSize = sizes.objects;
-  *jsStringsSize = sizes.strings;
+  *jsObjectsSize = sizes.objects_;
+  *jsStringsSize = sizes.strings_;
   *jsPrivateSize = sizes.private_;
-  *jsOtherSize = sizes.other;
+  *jsOtherSize = sizes.other_;
   return NS_OK;
 }
 
@@ -2751,6 +2739,9 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_GC_NURSERY_PROMOTION_RATE:
       Telemetry::Accumulate(Telemetry::GC_NURSERY_PROMOTION_RATE, sample);
       break;
+    case JS_TELEMETRY_GC_TENURED_SURVIVAL_RATE:
+      Telemetry::Accumulate(Telemetry::GC_TENURED_SURVIVAL_RATE, sample);
+      break;
     case JS_TELEMETRY_GC_MARK_RATE:
       Telemetry::Accumulate(Telemetry::GC_MARK_RATE, sample);
       break;
@@ -2763,6 +2754,9 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_GC_SLICE_COUNT:
       Telemetry::Accumulate(Telemetry::GC_SLICE_COUNT, sample);
       break;
+    case JS_TELEMETRY_GC_EFFECTIVENESS:
+      Telemetry::Accumulate(Telemetry::GC_EFFECTIVENESS, sample);
+      break;
     case JS_TELEMETRY_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS:
       Telemetry::Accumulate(
           Telemetry::JS_PRIVILEGED_PARSER_COMPILE_LAZY_AFTER_MS, sample);
@@ -2770,9 +2764,6 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
     case JS_TELEMETRY_WEB_PARSER_COMPILE_LAZY_AFTER_MS:
       Telemetry::Accumulate(Telemetry::JS_WEB_PARSER_COMPILE_LAZY_AFTER_MS,
                             sample);
-      break;
-    case JS_TELEMETRY_DEPRECATED_ARRAY_GENERICS:
-      Telemetry::Accumulate(Telemetry::JS_DEPRECATED_ARRAY_GENERICS, sample);
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected JS_TELEMETRY id");
@@ -2782,10 +2773,10 @@ static void AccumulateTelemetryCallback(int id, uint32_t sample,
 static void SetUseCounterCallback(JSObject* obj, JSUseCounter counter) {
   switch (counter) {
     case JSUseCounter::ASMJS:
-      SetDocumentAndPageUseCounter(obj, eUseCounter_custom_JS_asmjs);
+      SetUseCounter(obj, eUseCounter_custom_JS_asmjs);
       break;
     case JSUseCounter::WASM:
-      SetDocumentAndPageUseCounter(obj, eUseCounter_custom_JS_wasm);
+      SetUseCounter(obj, eUseCounter_custom_JS_wasm);
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected JSUseCounter id");
@@ -2903,10 +2894,9 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
     ptr += bytesRead;
   }
 
-  size_t bytesAllocated;
   if (utf8Source) {
     // |buf| is already UTF-8, so we can directly return it.
-    *len = bytesAllocated = rawLen;
+    *len = rawLen;
     *utf8Source = buf.release();
   } else {
     MOZ_ASSERT(twoByteSource != nullptr);
@@ -2922,8 +2912,6 @@ static nsresult ReadSourceFromFilename(JSContext* cx, const char* filename,
     if (!*twoByteSource) {
       return NS_ERROR_FAILURE;
     }
-
-    bytesAllocated = *len * sizeof(char16_t);
   }
 
   return NS_OK;
@@ -3019,20 +3007,23 @@ js::UniquePtr<EdgeRange> ReflectorNode::edges(JSContext* cx,
   if (!range) {
     return nullptr;
   }
-  // UNWRAP_OBJECT assumes the object is completely initialized, but ours
-  // may not be.  Luckily, UnwrapDOMObjectToISupports checks for the
-  // uninitialized case (and returns null if uninitialized), so we can use
-  // that to guard against uninitialized objects.
+  // UNWRAP_NON_WRAPPER_OBJECT assumes the object is completely initialized,
+  // but ours may not be. Luckily, UnwrapDOMObjectToISupports checks for the
+  // uninitialized case (and returns null if uninitialized), so we can use that
+  // to guard against uninitialized objects.
   nsISupports* supp = UnwrapDOMObjectToISupports(&get());
   if (supp) {
-    nsCOMPtr<nsINode> node;
-    UNWRAP_OBJECT(Node, &get(), node);
-    if (node) {
+    JS::AutoSuppressGCAnalysis nogc;  // bug 1582326
+
+    nsINode* node;
+    // UnwrapDOMObjectToISupports can only return non-null if its argument is
+    // an actual DOM object, not a cross-compartment wrapper.
+    if (NS_SUCCEEDED(UNWRAP_NON_WRAPPER_OBJECT(Node, &get(), node))) {
       char16_t* edgeName = nullptr;
       if (wantNames) {
         edgeName = NS_xstrdup(u"Reflected Node");
       }
-      if (!range->addEdge(Edge(edgeName, node.get()))) {
+      if (!range->addEdge(Edge(edgeName, node))) {
         return nullptr;
       }
     }
@@ -3154,7 +3145,7 @@ bool XPCJSRuntime::InitializeStrings(JSContext* cx) {
   return true;
 }
 
-bool XPCJSRuntime::DescribeCustomObjects(JSObject* obj, const js::Class* clasp,
+bool XPCJSRuntime::DescribeCustomObjects(JSObject* obj, const JSClass* clasp,
                                          char (&name)[72]) const {
   if (clasp != &XPC_WN_Proto_JSClass) {
     return false;
@@ -3173,7 +3164,7 @@ bool XPCJSRuntime::DescribeCustomObjects(JSObject* obj, const js::Class* clasp,
 }
 
 bool XPCJSRuntime::NoteCustomGCThingXPCOMChildren(
-    const js::Class* clasp, JSObject* obj,
+    const JSClass* clasp, JSObject* obj,
     nsCycleCollectionTraversalCallback& cb) const {
   if (clasp != &XPC_WN_Tearoff_JSClass) {
     return false;
@@ -3278,34 +3269,39 @@ JSObject* XPCJSRuntime::GetUAWidgetScope(JSContext* cx,
   MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(principal),
              "Running UA Widget in chrome");
 
-  RefPtr<BasePrincipal> key = BasePrincipal::Cast(principal);
-  if (Principal2JSObjectMap::Ptr p = mUAWidgetScopeMap.lookup(key)) {
-    return p->value();
-  }
+  RootedObject scope(cx);
+  do {
+    RefPtr<BasePrincipal> key = BasePrincipal::Cast(principal);
+    if (Principal2JSObjectMap::Ptr p = mUAWidgetScopeMap.lookup(key)) {
+      scope = p->value();
+      break;  // Need ~RefPtr to run, and potentially GC, before returning.
+    }
 
-  SandboxOptions options;
-  options.sandboxName.AssignLiteral("UA Widget Scope");
-  options.wantXrays = false;
-  options.wantComponents = false;
-  options.isUAWidgetScope = true;
+    SandboxOptions options;
+    options.sandboxName.AssignLiteral("UA Widget Scope");
+    options.wantXrays = false;
+    options.wantComponents = false;
+    options.isUAWidgetScope = true;
 
-  // Use an ExpandedPrincipal to create asymmetric security.
-  MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(principal));
-  nsTArray<nsCOMPtr<nsIPrincipal>> principalAsArray(1);
-  principalAsArray.AppendElement(principal);
-  RefPtr<ExpandedPrincipal> ep = ExpandedPrincipal::Create(
-      principalAsArray, principal->OriginAttributesRef());
+    // Use an ExpandedPrincipal to create asymmetric security.
+    MOZ_ASSERT(!nsContentUtils::IsExpandedPrincipal(principal));
+    nsTArray<nsCOMPtr<nsIPrincipal>> principalAsArray(1);
+    principalAsArray.AppendElement(principal);
+    RefPtr<ExpandedPrincipal> ep = ExpandedPrincipal::Create(
+        principalAsArray, principal->OriginAttributesRef());
 
-  // Create the sandbox.
-  RootedValue v(cx);
-  nsresult rv = CreateSandboxObject(
-      cx, &v, static_cast<nsIExpandedPrincipal*>(ep), options);
-  NS_ENSURE_SUCCESS(rv, nullptr);
-  JSObject* scope = &v.toObject();
+    // Create the sandbox.
+    RootedValue v(cx);
+    nsresult rv = CreateSandboxObject(
+        cx, &v, static_cast<nsIExpandedPrincipal*>(ep), options);
+    NS_ENSURE_SUCCESS(rv, nullptr);
+    scope = &v.toObject();
 
-  MOZ_ASSERT(xpc::IsInUAWidgetScope(js::UncheckedUnwrap(scope)));
+    JSObject* unwrapped = js::UncheckedUnwrap(scope);
+    MOZ_ASSERT(xpc::IsInUAWidgetScope(unwrapped));
 
-  MOZ_ALWAYS_TRUE(mUAWidgetScopeMap.putNew(key, scope));
+    MOZ_ALWAYS_TRUE(mUAWidgetScopeMap.putNew(key, unwrapped));
+  } while (false);
 
   return scope;
 }
@@ -3368,6 +3364,17 @@ HelperThreadPool::HelperThreadPool() {
   mPool = new nsThreadPool();
   mPool->SetName(NS_LITERAL_CSTRING("JSHelperThreads"));
   mPool->SetThreadLimit(GetAndClampCPUCount());
+  // Helper threads need a larger stack size than the default nsThreadPool stack
+  // size. These values are described in detail in HelperThreads.cpp.
+  const uint32_t kDefaultHelperStackSize = 2048 * 1024 - 2 * 4096;
+
+#if defined(MOZ_TSAN)
+  const uint32_t HELPER_STACK_SIZE = 2 * kDefaultHelperStackSize;
+#else
+  const uint32_t HELPER_STACK_SIZE = kDefaultHelperStackSize;
+#endif
+
+  mPool->SetThreadStackSize(HELPER_STACK_SIZE);
 }
 
 void HelperThreadPool::Shutdown() { mPool->Shutdown(); }

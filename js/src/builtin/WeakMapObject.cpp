@@ -178,7 +178,7 @@ static void WeakCollection_trace(JSTracer* trc, JSObject* obj) {
   }
 }
 
-static void WeakCollection_finalize(FreeOp* fop, JSObject* obj) {
+static void WeakCollection_finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->maybeOnHelperThread());
   if (ObjectValueMap* map = obj->as<WeakCollectionObject>().getMap()) {
     fop->delete_(obj, map, MemoryUse::WeakMapObject);
@@ -255,17 +255,17 @@ bool WeakMapObject::construct(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-const ClassOps WeakCollectionObject::classOps_ = {nullptr, /* addProperty */
-                                                  nullptr, /* delProperty */
-                                                  nullptr, /* enumerate */
-                                                  nullptr, /* newEnumerate */
-                                                  nullptr, /* resolve */
-                                                  nullptr, /* mayResolve */
-                                                  WeakCollection_finalize,
-                                                  nullptr, /* call */
-                                                  nullptr, /* hasInstance */
-                                                  nullptr, /* construct */
-                                                  WeakCollection_trace};
+const JSClassOps WeakCollectionObject::classOps_ = {nullptr, /* addProperty */
+                                                    nullptr, /* delProperty */
+                                                    nullptr, /* enumerate */
+                                                    nullptr, /* newEnumerate */
+                                                    nullptr, /* resolve */
+                                                    nullptr, /* mayResolve */
+                                                    WeakCollection_finalize,
+                                                    nullptr, /* call */
+                                                    nullptr, /* hasInstance */
+                                                    nullptr, /* construct */
+                                                    WeakCollection_trace};
 
 const ClassSpec WeakMapObject::classSpec_ = {
     GenericCreateConstructor<WeakMapObject::construct, 0,
@@ -277,13 +277,13 @@ const ClassSpec WeakMapObject::classSpec_ = {
     WeakMapObject::properties,
 };
 
-const Class WeakMapObject::class_ = {
+const JSClass WeakMapObject::class_ = {
     "WeakMap",
     JSCLASS_HAS_PRIVATE | JSCLASS_HAS_CACHED_PROTO(JSProto_WeakMap) |
         JSCLASS_BACKGROUND_FINALIZE,
     &WeakCollectionObject::classOps_, &WeakMapObject::classSpec_};
 
-const Class WeakMapObject::protoClass_ = {
+const JSClass WeakMapObject::protoClass_ = {
     js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_WeakMap), JS_NULL_CLASS_OPS,
     &WeakMapObject::classSpec_};
 

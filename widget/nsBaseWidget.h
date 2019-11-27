@@ -13,6 +13,7 @@
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/CompositorOptions.h"
+#include "mozilla/layers/NativeLayer.h"
 #include "nsRect.h"
 #include "nsIWidget.h"
 #include "nsWidgetsCID.h"
@@ -59,6 +60,7 @@ class CompositorBridgeParent;
 class IAPZCTreeManager;
 class GeckoContentController;
 class APZEventState;
+struct APZEventResult;
 class CompositorSession;
 class ImageContainer;
 struct ScrollableLayerGuid;
@@ -166,6 +168,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual nsSizeMode SizeMode() override { return mSizeMode; }
+  virtual bool IsTiled() const override { return mIsTiled; }
 
   virtual bool IsFullyOccluded() const override { return mIsFullyOccluded; }
 
@@ -434,12 +437,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
                         const ScreenIntSize& aSize) override{};
 #endif
 
-  /**
-   * Whether context menus should only appear on mouseup instead of mousedown,
-   * on OSes where they normally appear on mousedown (macOS, *nix).
-   */
-  static bool ShowContextMenuAfterMouseUp();
-
  protected:
   // These are methods for CompositorWidgetWrapper, and should only be
   // accessed from that class. Derived widgets can choose which methods to
@@ -448,9 +445,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return true;
   }
   virtual void PostRender(mozilla::widget::WidgetRenderingContext* aContext) {}
-  virtual void DrawWindowUnderlay(
-      mozilla::widget::WidgetRenderingContext* aContext,
-      LayoutDeviceIntRect aRect) {}
+  virtual RefPtr<mozilla::layers::NativeLayerRoot> GetNativeLayerRoot() {
+    return nullptr;
+  }
   virtual void DrawWindowOverlay(
       mozilla::widget::WidgetRenderingContext* aContext,
       LayoutDeviceIntRect aRect) {}
@@ -460,8 +457,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return StartRemoteDrawing();
   }
   virtual void EndRemoteDrawing() {}
-  virtual void EndRemoteDrawingInRegion(DrawTarget* aDrawTarget,
-                                        LayoutDeviceIntRegion& aInvalidRegion) {
+  virtual void EndRemoteDrawingInRegion(
+      DrawTarget* aDrawTarget, const LayoutDeviceIntRegion& aInvalidRegion) {
     EndRemoteDrawing();
   }
   virtual void CleanupRemoteDrawing() {}
@@ -470,6 +467,10 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return true;
   }
   virtual uint32_t GetGLFrameBufferFormat();
+  virtual bool CompositorInitiallyPaused() { return false; }
+#ifdef XP_MACOSX
+  virtual LayoutDeviceIntRegion GetOpaqueWidgetRegion() { return {}; }
+#endif
 
  protected:
   void ResolveIconName(const nsAString& aIconName, const nsAString& aIconSuffix,
@@ -483,10 +484,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   CreateRootContentController();
 
   // Dispatch an event that has already been routed through APZ.
-  nsEventStatus ProcessUntransformedAPZEvent(mozilla::WidgetInputEvent* aEvent,
-                                             const ScrollableLayerGuid& aGuid,
-                                             uint64_t aInputBlockId,
-                                             nsEventStatus aApzResponse);
+  nsEventStatus ProcessUntransformedAPZEvent(
+      mozilla::WidgetInputEvent* aEvent,
+      const mozilla::layers::APZEventResult& aApzResult);
 
   const LayoutDeviceIntRegion RegionFromArray(
       const nsTArray<LayoutDeviceIntRect>& aRects);
@@ -692,6 +692,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   mozilla::UniquePtr<LayoutDeviceIntRect[]> mClipRects;
   uint32_t mClipRectCount;
   nsSizeMode mSizeMode;
+  bool mIsTiled;
   nsPopupLevel mPopupLevel;
   nsPopupType mPopupType;
   SizeConstraints mSizeConstraints;

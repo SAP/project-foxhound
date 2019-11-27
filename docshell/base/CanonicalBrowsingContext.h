@@ -8,7 +8,9 @@
 #define mozilla_dom_CanonicalBrowsingContext_h
 
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/MediaController.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/MozPromise.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 #include "nsTHashtable.h"
@@ -20,6 +22,7 @@ namespace mozilla {
 namespace dom {
 
 class WindowGlobalParent;
+class BrowserParent;
 
 // CanonicalBrowsingContext is a BrowsingContext living in the parent
 // process, with whatever extra data that a BrowsingContext in the
@@ -40,6 +43,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void SetOwnerProcessId(uint64_t aProcessId);
 
+  void SetInFlightProcessId(uint64_t aProcessId);
+  uint64_t GetInFlightProcessId() const { return mInFlightProcessId; }
+
   void GetWindowGlobals(nsTArray<RefPtr<WindowGlobalParent>>& aWindows);
 
   // Called by WindowGlobalParent to register and unregister window globals.
@@ -52,20 +58,10 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   }
   void SetCurrentWindowGlobal(WindowGlobalParent* aGlobal);
 
-  WindowGlobalParent* GetEmbedderWindowGlobal() const {
-    return mEmbedderWindowGlobal;
-  }
-  void SetEmbedderWindowGlobal(WindowGlobalParent* aGlobal);
+  already_AddRefed<WindowGlobalParent> GetEmbedderWindowGlobal() const;
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
-
-  // This functions would set/reset its user gesture activation flag and then
-  // notify other browsing contexts which are not the one related with the
-  // current window global to set/reset the flag. (the corresponding browsing
-  // context of the current global window has been set/reset before calling this
-  // function)
-  void NotifySetUserGestureActivationFromIPC(bool aIsUserGestureActivation);
 
   // This function is used to start the autoplay media which are delayed to
   // start. If needed, it would also notify the content browsing context which
@@ -78,14 +74,19 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // other top level windows in other processes.
   void NotifyMediaMutedChanged(bool aMuted);
 
-  // Validate that the given process is allowed to perform the given
-  // transaction. aSource is |nullptr| if set in the parent process.
-  bool ValidateTransaction(const Transaction& aTransaction,
-                           ContentParent* aSource);
+  // This function would update the media action for the current outer window
+  // and propogate the action to other browsing contexts in content processes.
+  void UpdateMediaAction(MediaControlActions aAction);
 
-  void SetFieldEpochsForChild(ContentParent* aChild,
-                              const FieldEpochs& aEpochs);
-  const FieldEpochs& GetFieldEpochsForChild(ContentParent* aChild);
+  using RemotenessPromise = MozPromise<RefPtr<BrowserParent>, nsresult, false>;
+  RefPtr<RemotenessPromise> ChangeFrameRemoteness(const nsAString& aRemoteType,
+                                                  uint64_t aPendingSwitchId);
+
+  // Helper version for WebIDL - resolves to the PID where the load is being
+  // resumed.
+  already_AddRefed<Promise> ChangeFrameRemoteness(const nsAString& aRemoteType,
+                                                  uint64_t aPendingSwitchId,
+                                                  ErrorResult& aRv);
 
  protected:
   void Traverse(nsCycleCollectionTraversalCallback& cb);
@@ -100,18 +101,44 @@ class CanonicalBrowsingContext final : public BrowsingContext {
  private:
   friend class BrowsingContext;
 
+  class PendingRemotenessChange {
+   public:
+    NS_INLINE_DECL_REFCOUNTING(PendingRemotenessChange)
+
+    PendingRemotenessChange(CanonicalBrowsingContext* aTarget,
+                            RemotenessPromise::Private* aPromise,
+                            uint64_t aPendingSwitchId)
+        : mTarget(aTarget),
+          mPromise(aPromise),
+          mPendingSwitchId(aPendingSwitchId) {}
+
+    void Cancel(nsresult aRv);
+    void Complete(ContentParent* aContentParent);
+
+   private:
+    ~PendingRemotenessChange();
+    void Clear();
+
+    RefPtr<CanonicalBrowsingContext> mTarget;
+    RefPtr<RemotenessPromise::Private> mPromise;
+
+    uint64_t mPendingSwitchId;
+  };
+
   // XXX(farre): Store a ContentParent pointer here rather than mProcessId?
   // Indicates which process owns the docshell.
   uint64_t mProcessId;
 
+  // The ID of the former owner process during an ownership change, which may
+  // have in-flight messages that assume it is still the owner.
+  uint64_t mInFlightProcessId = 0;
+
   // All live window globals within this browsing context.
   nsTHashtable<nsRefPtrHashKey<WindowGlobalParent>> mWindowGlobals;
   RefPtr<WindowGlobalParent> mCurrentWindowGlobal;
-  RefPtr<WindowGlobalParent> mEmbedderWindowGlobal;
 
-  // Generation information for each content process which has interacted with
-  // this CanonicalBrowsingContext, by ChildID.
-  nsDataHashtable<nsUint64HashKey, FieldEpochs> mChildFieldEpochs;
+  // The current remoteness change which is in a pending state.
+  RefPtr<PendingRemotenessChange> mPendingRemotenessChange;
 };
 
 }  // namespace dom

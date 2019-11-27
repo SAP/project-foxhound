@@ -213,24 +213,26 @@ static_assert(std::is_pod<PackedTypeCode>::value,
               "must be POD to be simply serialized/deserialized");
 
 const uint32_t NoTypeCode = 0xFF;          // Only use these
-const uint32_t NoRefTypeIndex = 0xFFFFFF;  //   with PackedTypeCode
-
-static inline PackedTypeCode InvalidPackedTypeCode() {
-  return PackedTypeCode((NoRefTypeIndex << 8) | NoTypeCode);
-}
-
-static inline PackedTypeCode PackTypeCode(TypeCode tc) {
-  MOZ_ASSERT(uint32_t(tc) <= 0xFF);
-  MOZ_ASSERT(tc != TypeCode::Ref);
-  return PackedTypeCode((NoRefTypeIndex << 8) | uint32_t(tc));
-}
+const uint32_t NoRefTypeIndex = 0x3FFFFF;  //   with PackedTypeCode
 
 static inline PackedTypeCode PackTypeCode(TypeCode tc, uint32_t refTypeIndex) {
   MOZ_ASSERT(uint32_t(tc) <= 0xFF);
   MOZ_ASSERT_IF(tc != TypeCode::Ref, refTypeIndex == NoRefTypeIndex);
   MOZ_ASSERT_IF(tc == TypeCode::Ref, refTypeIndex <= MaxTypes);
-  static_assert(MaxTypes < (1 << (32 - 8)), "enough bits");
+  // A PackedTypeCode should be representable in a single word, so in the
+  // smallest case, 32 bits.  However sometimes 2 bits of the word may be taken
+  // by a pointer tag; for that reason, limit to 30 bits; and then there's the
+  // 8-bit typecode, so 22 bits left for the type index.
+  static_assert(MaxTypes < (1 << (30 - 8)), "enough bits");
   return PackedTypeCode((refTypeIndex << 8) | uint32_t(tc));
+}
+
+static inline PackedTypeCode PackTypeCode(TypeCode tc) {
+  return PackTypeCode(tc, NoRefTypeIndex);
+}
+
+static inline PackedTypeCode InvalidPackedTypeCode() {
+  return PackedTypeCode(NoTypeCode);
 }
 
 static inline PackedTypeCode PackedTypeCodeFromBits(uint32_t bits) {
@@ -508,33 +510,39 @@ static inline jit::MIRType ToMIRType(ExprType et) {
   return IsVoid(et) ? jit::MIRType::None : ToMIRType(ValType(et));
 }
 
-static inline const char* ToCString(ExprType type) {
-  switch (type.code()) {
-    case ExprType::Void:
-      return "void";
-    case ExprType::I32:
-      return "i32";
-    case ExprType::I64:
-      return "i64";
-    case ExprType::F32:
-      return "f32";
-    case ExprType::F64:
-      return "f64";
-    case ExprType::AnyRef:
-      return "anyref";
-    case ExprType::FuncRef:
-      return "funcref";
-    case ExprType::NullRef:
-      return "nullref";
-    case ExprType::Ref:
-      return "ref";
-    case ExprType::Limit:;
-  }
-  MOZ_CRASH("bad expression type");
+static inline jit::MIRType ToMIRType(const Maybe<ValType>& t) {
+  return t ? ToMIRType(ValType(t.ref())) : jit::MIRType::None;
 }
 
 static inline const char* ToCString(ValType type) {
-  return ToCString(ExprType(type));
+  switch (type.code()) {
+    case ValType::I32:
+      return "i32";
+    case ValType::I64:
+      return "i64";
+    case ValType::F32:
+      return "f32";
+    case ValType::F64:
+      return "f64";
+    case ValType::AnyRef:
+      return "anyref";
+    case ValType::FuncRef:
+      return "funcref";
+    case ValType::NullRef:
+      return "nullref";
+    case ValType::Ref:
+      return "ref";
+    default:
+      MOZ_CRASH("bad value type");
+  }
+}
+
+static inline const char* ToCString(const Maybe<ValType>& type) {
+  return type ? ToCString(type.ref()) : "void";
+}
+
+static inline const char* ToCString(ExprType type) {
+  return ToCString(type == ExprType::Void ? Nothing() : Some(ValType(type)));
 }
 
 // An AnyRef is a boxed value that can represent any wasm reference type and any
@@ -789,52 +797,70 @@ typedef MutableHandle<ValVector> MutableHandleValVector;
 
 class FuncType {
   ValTypeVector args_;
-  ExprType ret_;
+  ValTypeVector results_;
 
  public:
-  FuncType() : args_(), ret_(ExprType::Void) {}
-  FuncType(ValTypeVector&& args, ExprType ret)
-      : args_(std::move(args)), ret_(ret) {}
+  FuncType() : args_(), results_() {}
+  FuncType(ValTypeVector&& args, ValTypeVector&& results)
+      : args_(std::move(args)), results_(std::move(results)) {}
 
   MOZ_MUST_USE bool clone(const FuncType& rhs) {
-    ret_ = rhs.ret_;
     MOZ_ASSERT(args_.empty());
-    return args_.appendAll(rhs.args_);
+    MOZ_ASSERT(results_.empty());
+    return args_.appendAll(rhs.args_) && results_.appendAll(rhs.results_);
   }
 
   ValType arg(unsigned i) const { return args_[i]; }
   const ValTypeVector& args() const { return args_; }
-  const ExprType& ret() const { return ret_; }
+  ValType result(unsigned i) const { return results_[i]; }
+  const ValTypeVector& results() const { return results_; }
+
+  // Transitional method, to be removed after multi-values (1401675).
+  Maybe<ValType> ret() const {
+    if (results_.length() == 0) {
+      return Nothing();
+    }
+    MOZ_ASSERT(results_.length() == 1);
+    return Some(result(0));
+  }
 
   HashNumber hash() const {
-    HashNumber hn = HashNumber(ret_.code());
+    HashNumber hn = 0;
     for (const ValType& vt : args_) {
+      hn = mozilla::AddToHash(hn, HashNumber(vt.code()));
+    }
+    for (const ValType& vt : results_) {
       hn = mozilla::AddToHash(hn, HashNumber(vt.code()));
     }
     return hn;
   }
   bool operator==(const FuncType& rhs) const {
-    return ret() == rhs.ret() && EqualContainers(args(), rhs.args());
+    return EqualContainers(args(), rhs.args()) &&
+           EqualContainers(results(), rhs.results());
   }
   bool operator!=(const FuncType& rhs) const { return !(*this == rhs); }
 
   bool hasI64ArgOrRet() const {
-    if (ret() == ExprType::I64) {
-      return true;
-    }
     for (ValType arg : args()) {
       if (arg == ValType::I64) {
+        return true;
+      }
+    }
+    for (ValType result : results()) {
+      if (result == ValType::I64) {
         return true;
       }
     }
     return false;
   }
   bool temporarilyUnsupportedAnyRef() const {
-    if (ret().isReference()) {
-      return true;
-    }
     for (ValType arg : args()) {
       if (arg.isReference()) {
+        return true;
+      }
+    }
+    for (ValType result : results()) {
+      if (result.isReference()) {
         return true;
       }
     }
@@ -847,7 +873,12 @@ class FuncType {
         return true;
       }
     }
-    return ret().isRef();
+    for (const ValType& result : results()) {
+      if (result.isRef()) {
+        return true;
+      }
+    }
+    return false;
   }
 #endif
 
@@ -1164,15 +1195,25 @@ typedef Vector<GlobalDesc, 0, SystemAllocPolicy> GlobalDescVector;
 // individually atomically ref-counted.
 
 struct ElemSegment : AtomicRefCounted<ElemSegment> {
+  enum class Kind {
+    Active,
+    Passive,
+    Declared,
+  };
+
+  Kind kind;
   uint32_t tableIndex;
+  ValType elementType;
   Maybe<InitExpr> offsetIfActive;
   Uint32Vector elemFuncIndices;  // Element may be NullFuncIndex
 
-  bool active() const { return !!offsetIfActive; }
+  bool active() const { return kind == Kind::Active; }
 
   InitExpr offset() const { return *offsetIfActive; }
 
   size_t length() const { return elemFuncIndices.length(); }
+
+  ValType elemType() const { return elementType; }
 
   WASM_DECLARE_SERIALIZABLE(ElemSegment)
 };
@@ -1721,10 +1762,14 @@ extern const CodeRange* LookupInSorted(const CodeRangeVector& codeRanges,
 // adds the function index of the callee.
 
 class CallSiteDesc {
-  uint32_t lineOrBytecode_ : 29;
+  static constexpr size_t LINE_OR_BYTECODE_BITS_SIZE = 29;
+  uint32_t lineOrBytecode_ : LINE_OR_BYTECODE_BITS_SIZE;
   uint32_t kind_ : 3;
 
  public:
+  static constexpr uint32_t MAX_LINE_OR_BYTECODE_VALUE =
+      (1 << LINE_OR_BYTECODE_BITS_SIZE) - 1;
+
   enum Kind {
     Func,        // pc-relative call to a specific function
     Dynamic,     // dynamic callee called via register
@@ -1888,6 +1933,7 @@ enum class SymbolicAddress {
   TableInit,
   TableSet,
   TableSize,
+  FuncRef,
   PostBarrier,
   PostBarrierFiltering,
   StructNew,
@@ -2281,26 +2327,28 @@ static const unsigned PageSize = 64 * 1024;
 
 static const unsigned MaxMemoryAccessSize = LitVal::sizeofLargestValue();
 
-#ifdef WASM_HUGE_MEMORY
+#ifdef WASM_SUPPORTS_HUGE_MEMORY
 
-// On WASM_HUGE_MEMORY platforms, every asm.js or WebAssembly memory
+// On WASM_SUPPORTS_HUGE_MEMORY platforms, every asm.js or WebAssembly memory
 // unconditionally allocates a huge region of virtual memory of size
 // wasm::HugeMappedSize. This allows all memory resizing to work without
 // reallocation and provides enough guard space for all offsets to be folded
 // into memory accesses.
 
-static const uint64_t IndexRange = uint64_t(UINT32_MAX) + 1;
-static const uint64_t OffsetGuardLimit = uint64_t(INT32_MAX) + 1;
-static const uint64_t UnalignedGuardPage = PageSize;
+static const uint64_t HugeIndexRange = uint64_t(UINT32_MAX) + 1;
+static const uint64_t HugeOffsetGuardLimit = uint64_t(INT32_MAX) + 1;
+static const uint64_t HugeUnalignedGuardPage = PageSize;
 static const uint64_t HugeMappedSize =
-    IndexRange + OffsetGuardLimit + UnalignedGuardPage;
+    HugeIndexRange + HugeOffsetGuardLimit + HugeUnalignedGuardPage;
 
-static_assert(MaxMemoryAccessSize <= UnalignedGuardPage,
+static_assert(MaxMemoryAccessSize <= HugeUnalignedGuardPage,
               "rounded up to static page size");
+static_assert(HugeOffsetGuardLimit < UINT32_MAX,
+              "checking for overflow against OffsetGuardLimit is enough.");
 
-#else  // !WASM_HUGE_MEMORY
+#endif
 
-// On !WASM_HUGE_MEMORY platforms:
+// On !WASM_SUPPORTS_HUGE_MEMORY platforms:
 //  - To avoid OOM in ArrayBuffer::prepareForAsmJS, asm.js continues to use the
 //    original ArrayBuffer allocation which has no guard region at all.
 //  - For WebAssembly memories, an additional GuardSize is mapped after the
@@ -2310,6 +2358,25 @@ static_assert(MaxMemoryAccessSize <= UnalignedGuardPage,
 
 static const size_t OffsetGuardLimit = PageSize - MaxMemoryAccessSize;
 static const size_t GuardSize = PageSize;
+
+static_assert(MaxMemoryAccessSize < GuardSize,
+              "Guard page handles partial out-of-bounds");
+static_assert(OffsetGuardLimit < UINT32_MAX,
+              "checking for overflow against OffsetGuardLimit is enough.");
+
+static constexpr size_t GetOffsetGuardLimit(bool hugeMemory) {
+#ifdef WASM_SUPPORTS_HUGE_MEMORY
+  return hugeMemory ? HugeOffsetGuardLimit : OffsetGuardLimit;
+#else
+  return OffsetGuardLimit;
+#endif
+}
+
+#ifdef WASM_SUPPORTS_HUGE_MEMORY
+static const size_t MaxOffsetGuardLimit = HugeOffsetGuardLimit;
+#else
+static const size_t MaxOffsetGuardLimit = OffsetGuardLimit;
+#endif
 
 // Return whether the given immediate satisfies the constraints of the platform
 // (viz. that, on ARM, IsValidARMImmediate).
@@ -2323,8 +2390,6 @@ extern bool IsValidBoundsCheckImmediate(uint32_t i);
 //   IsValidBoundsCheckImmediate(boundsCheckLimit)
 
 extern size_t ComputeMappedSize(uint32_t maxSize);
-
-#endif  // WASM_HUGE_MEMORY
 
 // wasm::Frame represents the bytes pushed by the call instruction and the fixed
 // prologue generated by wasm::GenerateCallablePrologue.
@@ -2434,7 +2499,7 @@ class DebugFrame {
   // returnValue() can return a Handle to it.
 
   bool hasCachedReturnJSValue() const { return hasCachedReturnJSValue_; }
-  void updateReturnJSValue();
+  MOZ_MUST_USE bool updateReturnJSValue();
   HandleValue returnValue() const;
   void clearReturnJSValue();
 
@@ -2509,6 +2574,8 @@ bool IsCodegenDebugEnabled(DebugChannel channel);
 
 void DebugCodegen(DebugChannel channel, const char* fmt, ...)
     MOZ_FORMAT_PRINTF(2, 3);
+
+typedef void (*PrintCallback)(const char* text);
 
 }  // namespace wasm
 }  // namespace js

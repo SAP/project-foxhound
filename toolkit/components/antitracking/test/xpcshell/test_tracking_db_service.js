@@ -1,7 +1,16 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// Note: This test may cause intermittents if run at exactly midnight.
+
 "use strict";
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { TestUtils } = ChromeUtils.import(
+  "resource://testing-common/TestUtils.jsm"
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 const { Sqlite } = ChromeUtils.import("resource://gre/modules/Sqlite.jsm");
@@ -60,12 +69,20 @@ const LOG = {
   "https://7.example.com": [
     [Ci.nsIWebProgressListener.STATE_COOKIES_LOADED, true, 1],
   ],
-  // Cookie blocked for other reason (not a tracker)
+  // Tracker cookie loaded but not blocked.
   "https://8.example.com": [
+    [Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_TRACKER, true, 1],
+  ],
+  // Social tracker cookie loaded but not blocked.
+  "https://9.example.com": [
+    [Ci.nsIWebProgressListener.STATE_COOKIES_LOADED_SOCIALTRACKER, true, 1],
+  ],
+  // Cookie blocked for other reason (not a tracker)
+  "https://10.example.com": [
     [Ci.nsIWebProgressListener.STATE_COOKIES_BLOCKED_BY_PERMISSION, true, 2],
   ],
   // Fingerprinters set to block, but this one has an exception
-  "https://9.example.com": [
+  "https://11.example.com": [
     [Ci.nsIWebProgressListener.STATE_BLOCKED_FINGERPRINTING_CONTENT, false, 1],
   ],
 };
@@ -264,5 +281,191 @@ add_task(async function test_timestamp_aggragation() {
   rows = await db.execute(SQL.selectAll);
   equal(rows.length, 0, "length is 0");
   await db.close();
+  Services.prefs.clearUserPref("browser.contentblocking.database.enabled");
+});
+
+let addEventsToDB = async db => {
+  let d = new Date(1521009000000);
+  let date = d.toISOString();
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.CRYPTOMINERS_ID,
+    count: 3,
+    timestamp: date,
+  });
+
+  date = new Date(d - 2 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.TRACKERS_ID,
+    count: 2,
+    timestamp: date,
+  });
+
+  date = new Date(d - 3 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.TRACKING_COOKIES_ID,
+    count: 2,
+    timestamp: date,
+  });
+
+  date = new Date(d - 4 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.TRACKING_COOKIES_ID,
+    count: 2,
+    timestamp: date,
+  });
+
+  date = new Date(d - 9 * 24 * 60 * 60 * 1000).toISOString();
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.FINGERPRINTERS_ID,
+    count: 2,
+    timestamp: date,
+  });
+};
+
+// This tests that TrackingDBService.getEventsByDateRange can accept two timestamps in unix epoch time
+// and return entries that occur within the timestamps, rounded to the nearest day and inclusive.
+add_task(async function test_getEventsByDateRange() {
+  Services.prefs.setBoolPref("browser.contentblocking.database.enabled", true);
+  // This creates the schema.
+  await TrackingDBService.saveEvents(JSON.stringify({}));
+  let db = await Sqlite.openConnection({ path: DB_PATH });
+  await addEventsToDB(db);
+
+  let d = new Date(1521009000000);
+  let daysBefore1 = new Date(d - 24 * 60 * 60 * 1000);
+  let daysBefore4 = new Date(d - 4 * 24 * 60 * 60 * 1000);
+  let daysBefore9 = new Date(d - 9 * 24 * 60 * 60 * 1000);
+
+  let events = await TrackingDBService.getEventsByDateRange(daysBefore1, d);
+  equal(
+    events.length,
+    1,
+    "There is 1 event entry between the date and one day before, inclusive"
+  );
+
+  events = await TrackingDBService.getEventsByDateRange(daysBefore4, d);
+  equal(
+    events.length,
+    4,
+    "There is 4 event entries between the date and four days before, inclusive"
+  );
+
+  events = await TrackingDBService.getEventsByDateRange(
+    daysBefore9,
+    daysBefore4
+  );
+  equal(
+    events.length,
+    2,
+    "There is 2 event entries between nine and four days before, inclusive"
+  );
+
+  await TrackingDBService.clearAll();
+  await db.close();
+  Services.prefs.clearUserPref("browser.contentblocking.database.enabled");
+});
+
+// This tests that TrackingDBService.sumAllEvents returns the number of
+// tracking events in the database, and can handle 0 entries.
+add_task(async function test_sumAllEvents() {
+  Services.prefs.setBoolPref("browser.contentblocking.database.enabled", true);
+  // This creates the schema.
+  await TrackingDBService.saveEvents(JSON.stringify({}));
+  let db = await Sqlite.openConnection({ path: DB_PATH });
+
+  let sum = await TrackingDBService.sumAllEvents();
+  equal(sum, 0, "There have been 0 events recorded");
+
+  // populate the database
+  await addEventsToDB(db);
+
+  sum = await TrackingDBService.sumAllEvents();
+  equal(sum, 11, "There have been 11 events recorded");
+
+  await TrackingDBService.clearAll();
+  await db.close();
+  Services.prefs.clearUserPref("browser.contentblocking.database.enabled");
+});
+
+// This tests that TrackingDBService.getEarliestRecordedDate returns the
+// earliest date recorded and can handle 0 entries.
+add_task(async function test_getEarliestRecordedDate() {
+  Services.prefs.setBoolPref("browser.contentblocking.database.enabled", true);
+  // This creates the schema.
+  await TrackingDBService.saveEvents(JSON.stringify({}));
+  let db = await Sqlite.openConnection({ path: DB_PATH });
+
+  let timestamp = await TrackingDBService.getEarliestRecordedDate();
+  equal(timestamp, null, "There is no earliest recorded date");
+
+  // populate the database
+  await addEventsToDB(db);
+  let d = new Date(1521009000000);
+  let daysBefore9 = new Date(d - 9 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
+
+  timestamp = await TrackingDBService.getEarliestRecordedDate();
+  let date = new Date(timestamp).toISOString().split("T")[0];
+  equal(date, daysBefore9, "The earliest recorded event is nine days before.");
+
+  await TrackingDBService.clearAll();
+  await db.close();
+  Services.prefs.clearUserPref("browser.contentblocking.database.enabled");
+});
+
+// This tests that a message to CFR is sent when the amount of saved trackers meets a milestone
+add_task(async function test_sendMilestoneNotification() {
+  Services.prefs.setBoolPref("browser.contentblocking.database.enabled", true);
+  Services.prefs.setBoolPref(
+    "browser.contentblocking.cfr-milestone.enabled",
+    true
+  );
+  Services.prefs.setIntPref(
+    "browser.contentblocking.cfr-milestone.update-interval",
+    0
+  );
+  Services.prefs.setStringPref(
+    "browser.contentblocking.cfr-milestone.milestones",
+    "[1000, 5000, 10000, 25000, 100000, 500000]"
+  );
+  let milestones = JSON.parse(
+    Services.prefs.getStringPref(
+      "browser.contentblocking.cfr-milestone.milestones"
+    )
+  );
+  // This creates the schema.
+  await TrackingDBService.saveEvents(JSON.stringify({}));
+  let db = await Sqlite.openConnection({ path: DB_PATH });
+  // save number of trackers equal to the first milestone
+  await db.execute(SQL.insertCustomTimeEvent, {
+    type: TrackingDBService.CRYPTOMINERS_ID,
+    count: milestones[0],
+    timestamp: new Date().toISOString(),
+  });
+
+  let awaitNotification = TestUtils.topicObserved(
+    "SiteProtection:ContentBlockingMilestone"
+  );
+
+  // trigger a "save" event to compare the trackers with the milestone.
+  await TrackingDBService.saveEvents(
+    JSON.stringify({
+      "https://1.example.com": [
+        [Ci.nsIWebProgressListener.STATE_BLOCKED_TRACKING_CONTENT, true, 1],
+      ],
+    })
+  );
+  await awaitNotification;
+
+  await TrackingDBService.clearAll();
+  await db.close();
+  Services.prefs.clearUserPref("browser.contentblocking.cfr-milestone.enabled");
+  Services.prefs.clearUserPref(
+    "browser.contentblocking.cfr-milestone.update-interval"
+  );
+  Services.prefs.clearUserPref(
+    "browser.contentblocking.cfr-milestone.milestones"
+  );
   Services.prefs.clearUserPref("browser.contentblocking.database.enabled");
 });

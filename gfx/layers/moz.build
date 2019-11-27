@@ -228,6 +228,7 @@ EXPORTS.mozilla.layers += [
     'mlgpu/MLGPUScreenshotGrabber.h',
     'mlgpu/ShaderDefinitionsMLGPU.h',
     'mlgpu/UtilityMLGPU.h',
+    'NativeLayer.h',
     'opengl/CompositingRenderTargetOGL.h',
     'opengl/CompositorOGL.h',
     'opengl/MacIOSurfaceTextureClientOGL.h',
@@ -270,7 +271,6 @@ EXPORTS.mozilla.layers += [
     'wr/WebRenderScrollData.h',
     'wr/WebRenderScrollDataWrapper.h',
     'wr/WebRenderTextureHost.h',
-    'wr/WebRenderTextureHostWrapper.h',
     'wr/WebRenderUserData.h',
     'ZoomConstraints.h',
 ]
@@ -292,8 +292,19 @@ if CONFIG['MOZ_X11']:
         'opengl/X11TextureSourceOGL.cpp',
     ]
 
+if CONFIG['MOZ_WAYLAND']:
+    EXPORTS.mozilla.layers += [
+        'opengl/WaylandDMABUFTextureClientOGL.h',
+        'opengl/WaylandDMABUFTextureHostOGL.h',
+    ]
+    SOURCES += [
+        'opengl/WaylandDMABUFTextureClientOGL.cpp',
+        'opengl/WaylandDMABUFTextureHostOGL.cpp',
+    ]
+
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
     EXPORTS.mozilla.layers += [
+        'NativeLayerCA.h',
         'opengl/GLManager.h',
         'TextureSync.h',
     ]
@@ -302,6 +313,7 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'MacIOSurfaceImage.h',
     ]
     UNIFIED_SOURCES += [
+        'NativeLayerCA.mm',
         'opengl/GLManager.cpp',
         'TextureSync.cpp',
     ]
@@ -309,6 +321,9 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
         'ipc/ShadowLayerUtilsMac.cpp',
         'MacIOSurfaceHelpers.cpp',
         'MacIOSurfaceImage.cpp',
+    ]
+    OS_LIBS += [
+        '-framework IOSurface',
     ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
@@ -368,7 +383,6 @@ UNIFIED_SOURCES += [
     'AxisPhysicsMSDModel.cpp',
     'basic/BasicCanvasLayer.cpp',
     'basic/BasicColorLayer.cpp',
-    'basic/BasicCompositor.cpp',
     'basic/BasicContainerLayer.cpp',
     'basic/BasicImages.cpp',
     'basic/BasicLayerManager.cpp',
@@ -521,13 +535,13 @@ UNIFIED_SOURCES += [
     'wr/WebRenderLayerManager.cpp',
     'wr/WebRenderLayersLogging.cpp',
     'wr/WebRenderScrollData.cpp',
-    'wr/WebRenderTextureHostWrapper.cpp',
     'wr/WebRenderUserData.cpp',
     # XXX here are some unified build error.
     #'wr/WebRenderTextureHost.cpp'
 ]
 
 SOURCES += [
+    'basic/BasicCompositor.cpp',
     'basic/BasicImageLayer.cpp',
     'ImageContainer.cpp',
     'PersistentBufferProvider.cpp',
@@ -566,17 +580,10 @@ IPDL_SOURCES += [
 include('/ipc/chromium/chromium-config.mozbuild')
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
-  GENERATED_FILES = [
-      'CompositorD3D11Shaders.h',
-      'MLGShaders.h',
-  ]
-
-  d3d11_shaders = GENERATED_FILES['CompositorD3D11Shaders.h']
-  d3d11_shaders.script = 'd3d11/genshaders.py'
-  d3d11_shaders.inputs = ['d3d11/shaders.manifest']
-  mlg_shaders = GENERATED_FILES['MLGShaders.h']
-  mlg_shaders.script = 'd3d11/genshaders.py'
-  mlg_shaders.inputs = ['d3d11/mlgshaders/shaders.manifest']
+  GeneratedFile('CompositorD3D11Shaders.h', script='d3d11/genshaders.py',
+                inputs=['d3d11/shaders.manifest'])
+  GeneratedFile('MLGShaders.h', script='d3d11/genshaders.py',
+                inputs=['d3d11/mlgshaders/shaders.manifest'])
 
 LOCAL_INCLUDES += [
     '/docshell/base',  # for nsDocShell.h

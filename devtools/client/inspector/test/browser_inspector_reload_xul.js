@@ -1,9 +1,6 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
-/* globals getTestActorWithoutToolbox */
 "use strict";
 
 // Tests for inspecting a node on a XUL document, spanning a tab reload.
@@ -23,7 +20,7 @@ async function testToolboxInitialization(tab, inspector, toolbox) {
   ok(true, "Inspector started, and notification received.");
   ok(inspector, "Inspector instance is accessible.");
   ok(inspector.isReady, "Inspector instance is ready.");
-  is(inspector.target.tab, tab, "Valid target.");
+  is(inspector.currentTarget.tab, tab, "Valid target.");
 
   await selectNode("#p", inspector);
   await testMarkupView("#p", inspector);

@@ -2,6 +2,9 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+#include <numeric>
+#include <vector>
+#include <algorithm>
 
 #include <sys/socket.h>
 #include <sys/sysctl.h>
@@ -20,13 +23,14 @@
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "nsCRT.h"
+#include "nsNetCID.h"
+#include "nsThreadUtils.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Telemetry.h"
 #include "nsNetworkLinkService.h"
-#include "MainThreadUtils.h"
 #include "../../base/IPv6Utils.h"
 
 #import <Cocoa/Cocoa.h>
@@ -38,6 +42,11 @@ using namespace mozilla;
 
 static LazyLogModule gNotifyAddrLog("nsNotifyAddr");
 #define LOG(args) MOZ_LOG(gNotifyAddrLog, mozilla::LogLevel::Debug, args)
+
+// See bug 1584165. Sometimes the ARP table is empty or doesn't have
+// the entry of gateway after the network change, so we'd like to delay
+// the calaulation of network id.
+static const uint32_t kNetworkIdDelayAfterChange = 3000;
 
 // If non-successful, extract the error code and return it.  This
 // error code dance is inspired by
@@ -71,7 +80,6 @@ NS_IMPL_ISUPPORTS(nsNetworkLinkService, nsINetworkLinkService, nsIObserver)
 nsNetworkLinkService::nsNetworkLinkService()
     : mLinkUp(true),
       mStatusKnown(false),
-      mAllowChangedEvent(true),
       mReachability(nullptr),
       mCFRunLoop(nullptr),
       mRunLoopSource(nullptr),
@@ -108,6 +116,11 @@ nsNetworkLinkService::GetNetworkID(nsACString& aNetworkID) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsNetworkLinkService::GetDnsSuffixList(nsTArray<nsCString>& aDnsSuffixList) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 #ifndef SA_SIZE
 #  define SA_SIZE(sa)                                 \
     ((!(sa) || ((struct sockaddr*)(sa))->sa_len == 0) \
@@ -115,19 +128,18 @@ nsNetworkLinkService::GetNetworkID(nsACString& aNetworkID) {
          : 1 + ((((struct sockaddr*)(sa))->sa_len - 1) | (sizeof(uint32_t) - 1)))
 #endif
 
-static char* getMac(struct sockaddr_dl* sdl, char* buf, size_t bufsize) {
-  char* cp;
-  int n, p = 0;
+static bool getMac(struct sockaddr_dl* sdl, char* buf, size_t bufsize) {
+  unsigned char* mac;
+  mac = (unsigned char*)LLADDR(sdl);
 
-  buf[0] = 0;
-  cp = (char*)LLADDR(sdl);
-  n = sdl->sdl_alen;
-  if (n > 0) {
-    while (--n >= 0) {
-      p += snprintf(&buf[p], bufsize - p, "%02x%s", *cp++ & 0xff, n > 0 ? ":" : "");
-    }
+  if (sdl->sdl_alen != 6) {
+    LOG(("networkid: unexpected MAC size %u", sdl->sdl_alen));
+    return false;
   }
-  return buf;
+
+  snprintf(buf, bufsize, "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1], mac[2], mac[3], mac[4],
+           mac[5]);
+  return true;
 }
 
 /* If the IP matches, get the MAC and return true */
@@ -135,8 +147,9 @@ static bool matchIp(struct sockaddr_dl* sdl, struct sockaddr_inarp* addr, char* 
                     size_t bufsize) {
   if (sdl->sdl_alen) {
     if (!strcmp(inet_ntoa(addr->sin_addr), ip)) {
-      getMac(sdl, buf, bufsize);
-      return true; /* done! */
+      if (getMac(sdl, buf, bufsize)) {
+        return true; /* done! */
+      }
     }
   }
   return false; /* continue */
@@ -200,6 +213,12 @@ static bool scanArp(char* ip, char* mac, size_t maclen) {
   return false;
 }
 
+/*
+ * Fetch the routing table and only return the first gateway,
+ * Which is the default gateway.
+ *
+ * Returns 0 if the default gateway's IP has been found.
+ */
 static int routingTable(char* gw, size_t aGwLen) {
   size_t needed;
   int mib[6];
@@ -223,6 +242,8 @@ static int routingTable(char* gw, size_t aGwLen) {
     return 3;
   }
 
+  // There's no need to iterate over the routing table
+  // We're only looking for the first (default) gateway
   rtm = reinterpret_cast<struct rt_msghdr*>(&buf[0]);
   sa = reinterpret_cast<struct sockaddr*>(rtm + 1);
   sa = reinterpret_cast<struct sockaddr*>(SA_SIZE(sa) + (char*)sa);
@@ -240,28 +261,46 @@ static int routingTable(char* gw, size_t aGwLen) {
 // information leakage).
 //
 static bool ipv4NetworkId(SHA1Sum* sha1) {
-  char hw[MAXHOSTNAMELEN];
-  if (!routingTable(hw, sizeof(hw))) {
-    char mac[256];  // big enough for a printable MAC address
-    if (scanArp(hw, mac, sizeof(mac))) {
-      LOG(("networkid: MAC %s\n", hw));
-      nsAutoCString mac(hw);
-      sha1->update(mac.get(), mac.Length());
+  char gw[INET_ADDRSTRLEN];
+  if (!routingTable(gw, sizeof(gw))) {
+    char mac[18];  // big enough for a printable MAC address
+    if (scanArp(gw, mac, sizeof(mac))) {
+      LOG(("networkid: MAC %s\n", mac));
+      sha1->update(mac, strlen(mac));
       return true;
     }
   }
   return false;
 }
 
-static bool ipv6NetworkId(SHA1Sum* sha1) {
-  const int kMaxPrefixes = 8;
-  struct ifaddrs* ifap;
-  struct in6_addr prefixStore[kMaxPrefixes];
-  struct in6_addr netmaskStore[kMaxPrefixes];
-  int prefixCount = 0;
+//
+// Sort and hash the prefixes and netmasks
+//
+void nsNetworkLinkService::HashSortedPrefixesAndNetmasks(
+    std::vector<prefix_and_netmask> prefixAndNetmaskStore, SHA1Sum* sha1) {
+  // getifaddrs does not guarantee the interfaces will always be in the same order.
+  // We want to make sure the hash remains consistent Regardless of the interface order.
+  std::sort(prefixAndNetmaskStore.begin(), prefixAndNetmaskStore.end(),
+            [](prefix_and_netmask a, prefix_and_netmask b) {
+              // compare prefixStore
+              int comparedPrefix = memcmp(&a.first, &b.first, sizeof(in6_addr));
+              if (comparedPrefix == 0) {
+                // compare netmaskStore
+                return memcmp(&a.second, &b.second, sizeof(in6_addr)) < 0;
+              }
+              return comparedPrefix < 0;
+            });
 
-  memset(prefixStore, 0, sizeof(prefixStore));
-  memset(netmaskStore, 0, sizeof(netmaskStore));
+  for (const auto& prefixAndNetmask : prefixAndNetmaskStore) {
+    sha1->update(&prefixAndNetmask.first, sizeof(in6_addr));
+    sha1->update(&prefixAndNetmask.second, sizeof(in6_addr));
+  }
+}
+
+static bool ipv6NetworkId(SHA1Sum* sha1) {
+  struct ifaddrs* ifap;
+  std::vector<prefix_and_netmask> prefixAndNetmaskStore;
+
   if (!getifaddrs(&ifap)) {
     struct ifaddrs* ifa;
     for (ifa = ifap; ifa; ifa = ifa->ifa_next) {
@@ -284,48 +323,72 @@ static bool ipv6NetworkId(SHA1Sum* sha1) {
                   sin_addr->sin6_addr.s6_addr[i] & sin_netmask->sin6_addr.s6_addr[i];
             }
 
-            int match = 0;
-            // check if prefix was already found
-            for (int i = 0; i < prefixCount; i++) {
-              if (!memcmp(&prefixStore[i], &prefix, sizeof(prefix)) &&
-                  !memcmp(&netmaskStore[i], &sin_netmask->sin6_addr,
-                          sizeof(sin_netmask->sin6_addr))) {
-                // a match
-                match = 1;
-                break;
-              }
-            }
-            if (match) {
-              // prefix already found
+            // check if prefix and netmask was already found
+            auto prefixAndNetmask = std::make_pair(prefix, sin_netmask->sin6_addr);
+            auto foundPosition = std::find_if(
+                prefixAndNetmaskStore.begin(), prefixAndNetmaskStore.end(),
+                [&prefixAndNetmask](prefix_and_netmask current) {
+                  return memcmp(&prefixAndNetmask.first, &current.first, sizeof(in6_addr)) == 0 &&
+                         memcmp(&prefixAndNetmask.second, &current.second, sizeof(in6_addr)) == 0;
+                });
+            if (foundPosition != prefixAndNetmaskStore.end()) {
               continue;
             }
-            memcpy(&prefixStore[prefixCount], &prefix, sizeof(prefix));
-            memcpy(&netmaskStore[prefixCount], &sin_netmask->sin6_addr,
-                   sizeof(sin_netmask->sin6_addr));
-            prefixCount++;
-            if (prefixCount == kMaxPrefixes) {
-              // reach maximum number of prefixes
-              break;
-            }
+            prefixAndNetmaskStore.push_back(prefixAndNetmask);
           }
         }
       }
     }
     freeifaddrs(ifap);
   }
-  if (!prefixCount) {
+  if (prefixAndNetmaskStore.empty()) {
     return false;
   }
-  for (int i = 0; i < prefixCount; i++) {
-    sha1->update(&prefixStore[i], sizeof(prefixStore[i]));
-    sha1->update(&netmaskStore[i], sizeof(netmaskStore[i]));
-  }
+
+  nsNetworkLinkService::HashSortedPrefixesAndNetmasks(prefixAndNetmaskStore, sha1);
+
   return true;
 }
 
-void nsNetworkLinkService::calculateNetworkId(void) {
+void nsNetworkLinkService::calculateNetworkIdWithDelay(uint32_t aDelay) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  if (aDelay) {
+    if (mNetworkIdTimer) {
+      LOG(("Restart the network id timer."));
+      mNetworkIdTimer->Cancel();
+    } else {
+      LOG(("Create the network id timer."));
+      mNetworkIdTimer = NS_NewTimer();
+    }
+    mNetworkIdTimer->InitWithCallback(this, aDelay, nsITimer::TYPE_ONE_SHOT);
+    return;
+  }
+
+  nsCOMPtr<nsIEventTarget> target = do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
+  if (!target) {
+    return;
+  }
+
+  MOZ_ALWAYS_SUCCEEDS(
+      target->Dispatch(NewRunnableMethod("nsNetworkLinkService::calculateNetworkIdInternal", this,
+                                         &nsNetworkLinkService::calculateNetworkIdInternal),
+                       NS_DISPATCH_NORMAL));
+}
+
+NS_IMETHODIMP
+nsNetworkLinkService::Notify(nsITimer* aTimer) {
+  MOZ_ASSERT(aTimer == mNetworkIdTimer);
+
+  mNetworkIdTimer = nullptr;
+  calculateNetworkIdWithDelay(0);
+  return NS_OK;
+}
+
+void nsNetworkLinkService::calculateNetworkIdInternal(void) {
   MOZ_ASSERT(!NS_IsMainThread(), "Should not be called on the main thread");
   SHA1Sum sha1;
+  bool idChanged = false;
   bool found4 = ipv4NetworkId(&sha1);
   bool found6 = ipv6NetworkId(&sha1);
 
@@ -352,6 +415,7 @@ void nsNetworkLinkService::calculateNetworkId(void) {
         Telemetry::Accumulate(Telemetry::NETWORK_ID2, 4);  // Both!
       }
       mNetworkId = output;
+      idChanged = true;
     } else {
       // same id
       LOG(("Same network id"));
@@ -361,9 +425,23 @@ void nsNetworkLinkService::calculateNetworkId(void) {
     // no id
     LOG(("No network id"));
     MutexAutoLock lock(mMutex);
-    mNetworkId.Truncate();
-    Telemetry::Accumulate(Telemetry::NETWORK_ID2, 0);
+    if (!mNetworkId.IsEmpty()) {
+      mNetworkId.Truncate();
+      idChanged = true;
+      Telemetry::Accumulate(Telemetry::NETWORK_ID2, 0);
+    }
   }
+
+  // Don't report network change if this is the first time we calculate the id.
+  static bool initialIDCalculation = true;
+  if (idChanged && !initialIDCalculation) {
+    RefPtr<nsNetworkLinkService> self = this;
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "nsNetworkLinkService::calculateNetworkIdInternal",
+        [self]() { self->SendEvent(true); }));
+  }
+
+  initialIDCalculation = false;
 }
 
 NS_IMETHODIMP
@@ -378,8 +456,9 @@ nsNetworkLinkService::Observe(nsISupports* subject, const char* topic, const cha
 /* static */
 void nsNetworkLinkService::IPConfigChanged(SCDynamicStoreRef aStoreREf, CFArrayRef aChangedKeys,
                                            void* aInfo) {
+  LOG(("nsNetworkLinkService::IPConfigChanged"));
   nsNetworkLinkService* service = static_cast<nsNetworkLinkService*>(aInfo);
-  service->SendEvent(true);
+  service->calculateNetworkIdWithDelay(kNetworkIdDelayAfterChange);
 }
 
 nsresult nsNetworkLinkService::Init(void) {
@@ -391,8 +470,6 @@ nsresult nsNetworkLinkService::Init(void) {
 
   rv = observerService->AddObserver(this, "xpcom-shutdown", false);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  Preferences::AddBoolVarCache(&mAllowChangedEvent, NETWORK_NOTIFY_CHANGED_PREF, true);
 
   // If the network reachability API can reach 0.0.0.0 without
   // requiring a connection, there is a network interface available.
@@ -486,6 +563,8 @@ nsresult nsNetworkLinkService::Init(void) {
 
   UpdateReachability();
 
+  calculateNetworkIdWithDelay(0);
+
   return NS_OK;
 }
 
@@ -509,6 +588,11 @@ nsresult nsNetworkLinkService::Shutdown() {
   ::CFRelease(mRunLoopSource);
   mRunLoopSource = nullptr;
 
+  if (mNetworkIdTimer) {
+    mNetworkIdTimer->Cancel();
+    mNetworkIdTimer = nullptr;
+  }
+
   return NS_OK;
 }
 
@@ -531,6 +615,8 @@ void nsNetworkLinkService::UpdateReachability() {
 }
 
 void nsNetworkLinkService::SendEvent(bool aNetworkChanged) {
+  MOZ_ASSERT(NS_IsMainThread());
+
   nsCOMPtr<nsIObserverService> observerService = do_GetService("@mozilla.org/observer-service;1");
   if (!observerService) {
     return;
@@ -538,10 +624,16 @@ void nsNetworkLinkService::SendEvent(bool aNetworkChanged) {
 
   const char* event;
   if (aNetworkChanged) {
-    if (!mAllowChangedEvent) {
+    if (!StaticPrefs::network_notify_changed()) {
       return;
     }
     event = NS_NETWORK_LINK_DATA_CHANGED;
+
+    if (!mNetworkChangeTime.IsNull()) {
+      Telemetry::AccumulateTimeDelta(Telemetry::NETWORK_TIME_BETWEEN_NETWORK_CHANGE_EVENTS,
+                                     mNetworkChangeTime);
+    }
+    mNetworkChangeTime = TimeStamp::Now();
   } else if (!mStatusKnown) {
     event = NS_NETWORK_LINK_DATA_UNKNOWN;
   } else {
@@ -556,9 +648,10 @@ void nsNetworkLinkService::SendEvent(bool aNetworkChanged) {
 /* static */
 void nsNetworkLinkService::ReachabilityChanged(SCNetworkReachabilityRef target,
                                                SCNetworkConnectionFlags flags, void* info) {
+  LOG(("nsNetworkLinkService::ReachabilityChanged"));
   nsNetworkLinkService* service = static_cast<nsNetworkLinkService*>(info);
 
   service->UpdateReachability();
   service->SendEvent(false);
-  service->calculateNetworkId();
+  service->calculateNetworkIdWithDelay(kNetworkIdDelayAfterChange);
 }

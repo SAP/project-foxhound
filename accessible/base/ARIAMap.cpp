@@ -80,8 +80,8 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // banner
     nsGkAtoms::banner,
-    roles::NOTHING,
-    kUseNativeRole,
+    roles::LANDMARK,
+    kUseMapRole,
     eNoValue,
     eNoAction,
     eNoLiveAttr,
@@ -166,8 +166,8 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // complementary
     nsGkAtoms::complementary,
-    roles::NOTHING,
-    kUseNativeRole,
+    roles::LANDMARK,
+    kUseMapRole,
     eNoValue,
     eNoAction,
     eNoLiveAttr,
@@ -176,13 +176,22 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // contentinfo
     nsGkAtoms::contentinfo,
-    roles::NOTHING,
-    kUseNativeRole,
+    roles::LANDMARK,
+    kUseMapRole,
     eNoValue,
     eNoAction,
     eNoLiveAttr,
     eLandmark,
     kNoReqStates
+  },
+  { // deletion
+    nsGkAtoms::deletion,
+    roles::CONTENT_DELETION,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
   },
   { // dialog
     nsGkAtoms::dialog,
@@ -721,6 +730,15 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
     kGenericAccType,
     kNoReqStates
   },
+  { // insertion
+    nsGkAtoms::insertion,
+    roles::CONTENT_INSERTION,
+    kUseMapRole,
+    eNoValue,
+    eNoAction,
+    eNoLiveAttr,
+    kGenericAccType,
+  },
   { // key
     nsGkAtoms::key,
     roles::KEY,
@@ -788,8 +806,8 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // main
     nsGkAtoms::main,
-    roles::NOTHING,
-    kUseNativeRole,
+    roles::LANDMARK,
+    kUseMapRole,
     eNoValue,
     eNoAction,
     eNoLiveAttr,
@@ -875,8 +893,8 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // navigation
     nsGkAtoms::navigation,
-    roles::NOTHING,
-    kUseNativeRole,
+    roles::LANDMARK,
+    kUseMapRole,
     eNoValue,
     eNoAction,
     eNoLiveAttr,
@@ -1025,8 +1043,8 @@ static const nsRoleMapEntry sWAIRoleMaps[] = {
   },
   { // search
     nsGkAtoms::search,
-    roles::NOTHING,
-    kUseNativeRole,
+    roles::LANDMARK,
+    kUseMapRole,
     eNoValue,
     eNoAction,
     eNoLiveAttr,

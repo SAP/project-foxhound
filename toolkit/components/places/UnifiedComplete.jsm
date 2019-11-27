@@ -159,9 +159,9 @@ const SQL_AUTOFILL_WITH = `
   WITH
   frecency_stats(count, sum, squares) AS (
     SELECT
-      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = "origin_frecency_count") AS REAL),
-      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = "origin_frecency_sum") AS REAL),
-      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = "origin_frecency_sum_of_squares") AS REAL)
+      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = 'origin_frecency_count') AS REAL),
+      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = 'origin_frecency_sum') AS REAL),
+      CAST((SELECT IFNULL(value, 0.0) FROM moz_meta WHERE key = 'origin_frecency_sum_of_squares') AS REAL)
   ),
   autofill_frecency_threshold(value) AS (
     SELECT
@@ -178,7 +178,7 @@ const SQL_AUTOFILL_FRECENCY_THRESHOLD = `(
   SELECT value FROM autofill_frecency_threshold
 )`;
 
-function originQuery(conditions = "") {
+function originQuery({ select = "", where = "", having = "" }) {
   return `${SQL_AUTOFILL_WITH}
           SELECT :query_type,
                  fixed_up_host || '/',
@@ -195,12 +195,13 @@ function originQuery(conditions = "") {
                      FROM moz_places
                      WHERE moz_places.origin_id = moz_origins.id
                    ) AS bookmarked
+                   ${select}
             FROM moz_origins
             WHERE host BETWEEN :searchString AND :searchString || X'FFFF'
-                  ${conditions}
+                  ${where}
             GROUP BY host
             HAVING host_frecency >= ${SQL_AUTOFILL_FRECENCY_THRESHOLD}
-                   OR bookmarked
+                   ${having}
             UNION ALL
             SELECT host,
                    fixup_url(host) AS fixed_up_host,
@@ -210,44 +211,62 @@ function originQuery(conditions = "") {
                      FROM moz_places
                      WHERE moz_places.origin_id = moz_origins.id
                    ) AS bookmarked
+                   ${select}
             FROM moz_origins
             WHERE host BETWEEN 'www.' || :searchString AND 'www.' || :searchString || X'FFFF'
-                  ${conditions}
+                  ${where}
             GROUP BY host
             HAVING host_frecency >= ${SQL_AUTOFILL_FRECENCY_THRESHOLD}
-                   OR bookmarked
+                   ${having}
           ) AS grouped_hosts
           JOIN moz_origins ON moz_origins.host = grouped_hosts.host
           ORDER BY frecency DESC, id DESC
           LIMIT 1 `;
 }
 
-const SQL_ORIGIN_QUERY = originQuery();
+const QUERY_ORIGIN_HISTORY_BOOKMARK = originQuery({
+  having: `OR bookmarked`,
+});
 
-const SQL_ORIGIN_PREFIX_QUERY = originQuery(
-  `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`
-);
+const QUERY_ORIGIN_PREFIX_HISTORY_BOOKMARK = originQuery({
+  where: `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`,
+  having: `OR bookmarked`,
+});
 
-const SQL_ORIGIN_NOT_BOOKMARKED_QUERY = originQuery(`AND NOT bookmarked`);
+const QUERY_ORIGIN_HISTORY = originQuery({
+  select: `, (
+    SELECT TOTAL(visit_count) > 0
+    FROM moz_places
+    WHERE moz_places.origin_id = moz_origins.id
+   ) AS visited`,
+  having: `AND (visited OR NOT bookmarked)`,
+});
 
-const SQL_ORIGIN_PREFIX_NOT_BOOKMARKED_QUERY = originQuery(
-  `AND NOT bookmarked
-   AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`
-);
+const QUERY_ORIGIN_PREFIX_HISTORY = originQuery({
+  select: `, (
+    SELECT TOTAL(visit_count) > 0
+    FROM moz_places
+    WHERE moz_places.origin_id = moz_origins.id
+   ) AS visited`,
+  where: `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`,
+  having: `AND (visited OR NOT bookmarked)`,
+});
 
-const SQL_ORIGIN_BOOKMARKED_QUERY = originQuery(`AND bookmarked`);
+const QUERY_ORIGIN_BOOKMARK = originQuery({
+  having: `AND bookmarked`,
+});
 
-const SQL_ORIGIN_PREFIX_BOOKMARKED_QUERY = originQuery(
-  `AND bookmarked
-   AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`
-);
+const QUERY_ORIGIN_PREFIX_BOOKMARK = originQuery({
+  where: `AND prefix BETWEEN :prefix AND :prefix || X'FFFF'`,
+  having: `AND bookmarked`,
+});
 
 // Result row indexes for urlQuery()
 const QUERYINDEX_URL_URL = 1;
 const QUERYINDEX_URL_STRIPPED_URL = 2;
 const QUERYINDEX_URL_FRECENCY = 3;
 
-function urlQuery(conditions1, conditions2) {
+function urlQuery(where1, where2) {
   // We limit the search to places that are either bookmarked or have a frecency
   // over some small, arbitrary threshold (20) in order to avoid scanning as few
   // rows as possible.  Keep in mind that we run this query every time the user
@@ -258,58 +277,66 @@ function urlQuery(conditions1, conditions2) {
                  :strippedURL,
                  frecency,
                  foreign_count > 0 AS bookmarked,
+                 visit_count > 0 AS visited,
                  id
           FROM moz_places
           WHERE rev_host = :revHost
-                AND (bookmarked OR frecency > 20)
-                ${conditions1}
+                ${where1}
           UNION ALL
           SELECT :query_type,
                  url,
                  :strippedURL,
                  frecency,
                  foreign_count > 0 AS bookmarked,
+                 visit_count > 0 AS visited,
                  id
           FROM moz_places
           WHERE rev_host = :revHost || 'www.'
-                AND (bookmarked OR frecency > 20)
-                ${conditions2}
+                ${where2}
           ORDER BY frecency DESC, id DESC
           LIMIT 1 `;
 }
 
-const SQL_URL_QUERY = urlQuery(
-  `AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
-  `AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
-);
-
-const SQL_URL_PREFIX_QUERY = urlQuery(
-  `AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
-  `AND url BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
-);
-
-const SQL_URL_NOT_BOOKMARKED_QUERY = urlQuery(
-  `AND NOT bookmarked
+const QUERY_URL_HISTORY_BOOKMARK = urlQuery(
+  `AND (bookmarked OR frecency > 20)
    AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
-  `AND NOT bookmarked
+  `AND (bookmarked OR frecency > 20)
    AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
 );
 
-const SQL_URL_PREFIX_NOT_BOOKMARKED_QUERY = urlQuery(
-  `AND NOT bookmarked
+const QUERY_URL_PREFIX_HISTORY_BOOKMARK = urlQuery(
+  `AND (bookmarked OR frecency > 20)
    AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
-  `AND NOT bookmarked
+  `AND (bookmarked OR frecency > 20)
    AND url BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
 );
 
-const SQL_URL_BOOKMARKED_QUERY = urlQuery(
+const QUERY_URL_HISTORY = urlQuery(
+  `AND (visited OR NOT bookmarked)
+   AND frecency > 20
+   AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
+  `AND (visited OR NOT bookmarked)
+   AND frecency > 20
+   AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
+);
+
+const QUERY_URL_PREFIX_HISTORY = urlQuery(
+  `AND (visited OR NOT bookmarked)
+   AND frecency > 20
+   AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
+  `AND (visited OR NOT bookmarked)
+   AND frecency > 20
+   AND url BETWEEN :prefix || 'www.' || :strippedURL AND :prefix || 'www.' || :strippedURL || X'FFFF'`
+);
+
+const QUERY_URL_BOOKMARK = urlQuery(
   `AND bookmarked
    AND strip_prefix_and_userinfo(url) BETWEEN :strippedURL AND :strippedURL || X'FFFF'`,
   `AND bookmarked
    AND strip_prefix_and_userinfo(url) BETWEEN 'www.' || :strippedURL AND 'www.' || :strippedURL || X'FFFF'`
 );
 
-const SQL_URL_PREFIX_BOOKMARKED_QUERY = urlQuery(
+const QUERY_URL_PREFIX_BOOKMARK = urlQuery(
   `AND bookmarked
    AND url BETWEEN :prefix || :strippedURL AND :prefix || :strippedURL || X'FFFF'`,
   `AND bookmarked
@@ -529,7 +556,7 @@ function looksLikeUrl(str, ignoreAlphanumericHosts = false) {
     !REGEXP_SPACES.test(str) &&
     (["/", "@", ":", "["].some(c => str.includes(c)) ||
       (ignoreAlphanumericHosts
-        ? /^([\[\]A-Z0-9.:-]+[\.:]){3,}[\[\]A-Z0-9.:-]+$/i.test(str)
+        ? /^([\[\]A-Z0-9.-]+\.){3,}[^.]+$/i.test(str)
         : str.includes(".")))
   );
 }
@@ -647,7 +674,7 @@ function Search(
 
   // This allows to handle leading or trailing restriction characters specially.
   this._leadingRestrictionToken = null;
-  if (tokens.length > 0) {
+  if (tokens.length) {
     if (
       UrlbarTokenizer.isRestrictionToken(tokens[0]) &&
       (tokens.length > 1 ||
@@ -672,7 +699,7 @@ function Search(
   // keyword, a search engine alias, an extension keyword, or simply a URL or
   // part of the search string the user has typed.  We won't know until we
   // create the heuristic result.
-  let firstToken = this._searchTokens.length > 0 && this._searchTokens[0].value;
+  let firstToken = !!this._searchTokens.length && this._searchTokens[0].value;
   this._heuristicToken =
     firstToken && this._trimmedOriginalSearchString.startsWith(firstToken)
       ? firstToken
@@ -1016,7 +1043,8 @@ Search.prototype = {
     if (
       this._enableActions &&
       this.hasBehavior("search") &&
-      !this._inPrivateWindow
+      (!this._inPrivateWindow ||
+        UrlbarPrefs.get("browser.search.suggest.enabled.private"))
     ) {
       let query = this._searchEngineAliasMatch
         ? this._searchEngineAliasMatch.query
@@ -1033,7 +1061,9 @@ Search.prototype = {
           if (this._searchEngineAliasMatch) {
             engine = this._searchEngineAliasMatch.engine;
           } else {
-            engine = await PlacesSearchAutocompleteProvider.currentEngine();
+            engine = await PlacesSearchAutocompleteProvider.currentEngine(
+              this._inPrivateWindow
+            );
             if (!this.pending) {
               return;
             }
@@ -1337,7 +1367,7 @@ Search.prototype = {
     // We always try to make the first result a special "heuristic" result.  The
     // heuristics below determine what type of result it will be, if any.
 
-    let hasSearchTerms = this._searchTokens.length > 0;
+    let hasSearchTerms = !!this._searchTokens.length;
 
     if (hasSearchTerms) {
       // It may be a keyword registered by an extension.
@@ -1595,8 +1625,8 @@ Search.prototype = {
       keyword
     ).trim();
 
-    let url = null,
-      postData = null;
+    let url = null;
+    let postData = null;
     try {
       [url, postData] = await BrowserUtils.parseUrlAndPostData(
         entry.url.href,
@@ -1619,18 +1649,21 @@ Search.prototype = {
         postData,
       });
     }
-    // The title will end up being "host: queryString"
-    let comment = entry.url.host;
 
-    this._addMatch({
+    let match = {
       value,
-      comment,
       // Don't use the url with replaced strings, since the icon doesn't change
       // but the string does, it may cause pointless icon flicker on typing.
       icon: iconHelper(entry.url),
       style,
       frecency: Infinity,
-    });
+    };
+    // If there is a query string, the title will be "host: queryString".
+    if (this._searchTokens.length > 1) {
+      match.comment = entry.url.host;
+    }
+
+    this._addMatch(match);
     if (!this._keywordSubstitute) {
       this._keywordSubstitute = entry.url.host;
     }
@@ -1727,7 +1760,9 @@ Search.prototype = {
   },
 
   async _matchCurrentSearchEngine() {
-    let engine = await PlacesSearchAutocompleteProvider.currentEngine();
+    let engine = await PlacesSearchAutocompleteProvider.currentEngine(
+      this._inPrivateWindow
+    );
     if (!engine || !this.pending) {
       return false;
     }
@@ -1863,7 +1898,8 @@ Search.prototype = {
       return;
     }
     let matches = await PlacesRemoteTabsAutocompleteProvider.getMatches(
-      this._originalSearchString
+      this._originalSearchString,
+      this._maxResults
     );
     for (let { url, title, icon, deviceName, lastUsed } of matches) {
       // It's rare that Sync supplies the icon for the page (but if it does, it
@@ -1911,6 +1947,9 @@ Search.prototype = {
     let flags =
       Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS |
       Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+    if (this._inPrivateWindow) {
+      flags |= Ci.nsIURIFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
+    }
     let fixupInfo = null;
     let searchUrl = this._trimmedOriginalSearchString;
     try {
@@ -2038,7 +2077,7 @@ Search.prototype = {
     // when searching for "Firefox".
     let terms = parseResult.terms.toLowerCase();
     if (
-      this._searchTokens.length > 0 &&
+      this._searchTokens.length &&
       this._searchTokens.every(token => !terms.includes(token.value))
     ) {
       return;
@@ -2205,7 +2244,7 @@ Search.prototype = {
       // This requires walking the previous matches and marking their existence
       // into the current buckets, so that, when we'll add the new matches to
       // the buckets, we can either append or replace a match.
-      if (this._previousSearchMatchTypes.length > 0) {
+      if (this._previousSearchMatchTypes.length) {
         for (let type of this._previousSearchMatchTypes) {
           for (let bucket of this._buckets) {
             if (type == bucket.type && bucket.count < bucket.available) {
@@ -2250,7 +2289,7 @@ Search.prototype = {
    *        Whether to notify a result change.
    */
   _cleanUpNonCurrentMatches(type, notify = true) {
-    if (this._previousSearchMatchTypes.length == 0 || !this.pending) {
+    if (!this._previousSearchMatchTypes.length || !this.pending) {
       return;
     }
 
@@ -2291,10 +2330,7 @@ Search.prototype = {
    * If in restrict mode, cleanups non current matches for all the empty types.
    */
   cleanUpRestrictNonCurrentMatches() {
-    if (
-      this.hasBehavior("restrict") &&
-      this._previousSearchMatchTypes.length > 0
-    ) {
+    if (this.hasBehavior("restrict") && this._previousSearchMatchTypes.length) {
       for (let type of new Set(this._previousSearchMatchTypes)) {
         if (this._counts[type] == 0) {
           // Don't notify, since we are about to notify completion.
@@ -2382,9 +2418,8 @@ Search.prototype = {
   },
 
   _addFilteredQueryMatch(row) {
-    let match = {};
-    match.placeId = row.getResultByIndex(QUERYINDEX_PLACEID);
-    let escapedURL = row.getResultByIndex(QUERYINDEX_URL);
+    let placeId = row.getResultByIndex(QUERYINDEX_PLACEID);
+    let url = row.getResultByIndex(QUERYINDEX_URL);
     let openPageCount = row.getResultByIndex(QUERYINDEX_SWITCHTAB) || 0;
     let historyTitle = row.getResultByIndex(QUERYINDEX_TITLE) || "";
     let bookmarked = row.getResultByIndex(QUERYINDEX_BOOKMARKED);
@@ -2394,69 +2429,38 @@ Search.prototype = {
     let tags = row.getResultByIndex(QUERYINDEX_TAGS) || "";
     let frecency = row.getResultByIndex(QUERYINDEX_FRECENCY);
 
-    // If actions are enabled and the page is open, add only the switch-to-tab
-    // result.  Otherwise, add the normal result.
-    let url = escapedURL;
-    let action = null;
+    let match = {
+      placeId,
+      value: url,
+      comment: bookmarkTitle || historyTitle,
+      icon: iconHelper(url),
+      frecency: frecency || FRECENCY_DEFAULT,
+    };
+
     if (
       this._enableActions &&
       openPageCount > 0 &&
       this.hasBehavior("openpage")
     ) {
-      url = PlacesUtils.mozActionURI("switchtab", { url: escapedURL });
-      action = "switchtab";
-      if (frecency == null) {
-        frecency = FRECENCY_DEFAULT;
-      }
-    }
-
-    // Always prefer the bookmark title unless it is empty
-    let title = bookmarkTitle || historyTitle;
-
-    // Return tags as part of the title, unless the match has an action, like
-    // switch-to-tab, that doesn't care about them.
-    let showTags = !!tags && !action;
-
-    // We'll act as if the page is not bookmarked when the user wants
-    // only history and not bookmarks and there are no tags.
-    if (
+      // Actions are enabled and the page is open.  Add a switch-to-tab result.
+      match.value = PlacesUtils.mozActionURI("switchtab", { url: match.value });
+      match.style = "action switchtab";
+    } else if (
       this.hasBehavior("history") &&
       !this.hasBehavior("bookmark") &&
-      !showTags
+      !tags
     ) {
-      showTags = false;
+      // The consumer wants only history and not bookmarks and there are no
+      // tags.  We'll act as if the page is not bookmarked.
       match.style = "favicon";
+    } else if (tags) {
+      // Store the tags in the title.  It's up to the consumer to extract them.
+      match.comment += UrlbarUtils.TITLE_TAGS_SEPARATOR + tags;
+      // If we're not suggesting bookmarks, then this shouldn't display as one.
+      match.style = this.hasBehavior("bookmark") ? "bookmark-tag" : "tag";
+    } else if (bookmarked) {
+      match.style = "bookmark";
     }
-
-    // If we have tags and should show them, we need to add them to the title.
-    if (showTags) {
-      title += UrlbarUtils.TITLE_TAGS_SEPARATOR + tags;
-    }
-
-    // We have to determine the right style to display.  Tags show the tag icon,
-    // bookmarks get the bookmark icon, and keywords get the keyword icon.  If
-    // the result does not fall into any of those, it just gets the favicon.
-    if (!match.style) {
-      // It is possible that we already have a style set (from a keyword
-      // search or because of the user's preferences), so only set it if we
-      // haven't already done so.
-      if (showTags) {
-        // If we're not suggesting bookmarks, then this shouldn't
-        // display as one.
-        match.style = this.hasBehavior("bookmark") ? "bookmark-tag" : "tag";
-      } else if (bookmarked) {
-        match.style = "bookmark";
-      }
-    }
-
-    if (action) {
-      match.style = "action " + action;
-    }
-
-    match.value = url;
-    match.comment = title;
-    match.icon = iconHelper(escapedURL);
-    match.frecency = frecency;
 
     this._addMatch(match);
   },
@@ -2609,7 +2613,7 @@ Search.prototype = {
       return false;
     }
 
-    if (this._searchString.length == 0) {
+    if (!this._searchString.length) {
       return false;
     }
 
@@ -2646,23 +2650,25 @@ Search.prototype = {
 
     if (this.hasBehavior("history") && this.hasBehavior("bookmark")) {
       return [
-        this._strippedPrefix ? SQL_ORIGIN_PREFIX_QUERY : SQL_ORIGIN_QUERY,
+        this._strippedPrefix
+          ? QUERY_ORIGIN_PREFIX_HISTORY_BOOKMARK
+          : QUERY_ORIGIN_HISTORY_BOOKMARK,
         opts,
       ];
     }
     if (this.hasBehavior("history")) {
       return [
         this._strippedPrefix
-          ? SQL_ORIGIN_PREFIX_NOT_BOOKMARKED_QUERY
-          : SQL_ORIGIN_NOT_BOOKMARKED_QUERY,
+          ? QUERY_ORIGIN_PREFIX_HISTORY
+          : QUERY_ORIGIN_HISTORY,
         opts,
       ];
     }
     if (this.hasBehavior("bookmark")) {
       return [
         this._strippedPrefix
-          ? SQL_ORIGIN_PREFIX_BOOKMARKED_QUERY
-          : SQL_ORIGIN_BOOKMARKED_QUERY,
+          ? QUERY_ORIGIN_PREFIX_BOOKMARK
+          : QUERY_ORIGIN_BOOKMARK,
         opts,
       ];
     }
@@ -2716,23 +2722,21 @@ Search.prototype = {
 
     if (this.hasBehavior("history") && this.hasBehavior("bookmark")) {
       return [
-        this._strippedPrefix ? SQL_URL_PREFIX_QUERY : SQL_URL_QUERY,
+        this._strippedPrefix
+          ? QUERY_URL_PREFIX_HISTORY_BOOKMARK
+          : QUERY_URL_HISTORY_BOOKMARK,
         opts,
       ];
     }
     if (this.hasBehavior("history")) {
       return [
-        this._strippedPrefix
-          ? SQL_URL_PREFIX_NOT_BOOKMARKED_QUERY
-          : SQL_URL_NOT_BOOKMARKED_QUERY,
+        this._strippedPrefix ? QUERY_URL_PREFIX_HISTORY : QUERY_URL_HISTORY,
         opts,
       ];
     }
     if (this.hasBehavior("bookmark")) {
       return [
-        this._strippedPrefix
-          ? SQL_URL_PREFIX_BOOKMARKED_QUERY
-          : SQL_URL_BOOKMARKED_QUERY,
+        this._strippedPrefix ? QUERY_URL_PREFIX_BOOKMARK : QUERY_URL_BOOKMARK,
         opts,
       ];
     }
@@ -2827,20 +2831,14 @@ UnifiedComplete.prototype = {
       this._promiseDatabase = (async () => {
         let conn = await PlacesUtils.promiseLargeCacheDBConnection();
 
-        try {
-          Sqlite.shutdown.addBlocker(
-            "Places UnifiedComplete.js closing",
-            () => {
-              // Break a possible cycle through the
-              // previous result, the controller and
-              // ourselves.
-              this._currentSearch = null;
-            }
-          );
-        } catch (ex) {
-          // It's too late to block shutdown.
-          throw ex;
-        }
+        // We don't catch exceptions here as it is too late to block shutdown.
+        Sqlite.shutdown.addBlocker("Places UnifiedComplete.js closing", () => {
+          // Break a possible cycle through the
+          // previous result, the controller and
+          // ourselves.
+          this._currentSearch = null;
+        });
+
         await UrlbarProviderOpenTabs.promiseDb();
         return conn;
       })().catch(ex => {
@@ -2905,8 +2903,8 @@ UnifiedComplete.prototype = {
       // that may leave exposed unrelated matches for a longer time.
       let previousSearchString = result.searchString;
       let stringsRelated =
-        previousSearchString.length > 0 &&
-        searchString.length > 0 &&
+        !!previousSearchString.length &&
+        !!searchString.length &&
         (previousSearchString.includes(searchString) ||
           searchString.includes(previousSearchString));
       if (insertMethod == UrlbarUtils.INSERTMETHOD.MERGE || stringsRelated) {

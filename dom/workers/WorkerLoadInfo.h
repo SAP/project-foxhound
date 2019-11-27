@@ -11,7 +11,7 @@
 #include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/ServiceWorkerRegistrationDescriptor.h"
 #include "mozilla/dom/WorkerCommon.h"
-#include "mozilla/net/ReferrerPolicy.h"
+
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadContext.h"
 #include "nsIRequest.h"
@@ -113,6 +113,8 @@ struct WorkerLoadInfoData {
 
   Maybe<ServiceWorkerDescriptor> mParentController;
 
+  nsID mAgentClusterId;
+
   ChannelInfo mChannelInfo;
   nsLoadFlags mLoadFlags;
 
@@ -124,6 +126,7 @@ struct WorkerLoadInfoData {
   bool mReportCSPViolations;
   bool mXHRParamsAllowed;
   bool mPrincipalIsSystem;
+  bool mPrincipalIsAddonOrExpandedAddon;
   bool mWatchedByDevtools;
   StorageAccess mStorageAccess;
   bool mFirstPartyStorageAccessGranted;

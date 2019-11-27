@@ -81,11 +81,10 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    */
   virtual uint32_t GetScrollbarVisibility() const = 0;
   /**
-   * Returns the directions in which scrolling is perceived to be allowed.
-   * A direction is perceived to be allowed if there is a visible scrollbar
-   * for that direction or if the scroll range is at least one device pixel.
+   * Returns the directions in which scrolling is allowed (if the scroll range
+   * is at least one device pixel in that direction).
    */
-  uint32_t GetPerceivedScrollingDirections() const;
+  uint32_t GetAvailableScrollingDirections() const;
   /**
    * Return the actual sizes of all possible scrollbars. Returns 0 for scrollbar
    * positions that don't have a scrollbar or where the scrollbar is not
@@ -470,11 +469,6 @@ class nsIScrollableFrame : public nsIScrollbarMediator {
    * this, paint skipping is disabled for such scroll frames.
    */
   virtual void SetHasOutOfFlowContentInsideFilter() = 0;
-
-  /**
-   * Whether or not this frame uses containerful scrolling.
-   */
-  virtual bool UsesContainerScrolling() const = 0;
 
   /**
    * Determine if we should build a scrollable layer for this scroll frame and

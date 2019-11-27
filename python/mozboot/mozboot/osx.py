@@ -267,7 +267,8 @@ class OSXBootstrapper(BaseBootstrapper):
                 print(INSTALL_XCODE_COMMAND_LINE_TOOLS_STEPS)
                 sys.exit(1)
 
-            output = self.check_output(['/usr/bin/clang', '--version'])
+            output = self.check_output(['/usr/bin/clang', '--version'],
+                                       universal_newlines=True)
             match = RE_CLANG_VERSION.search(output)
             if match is None:
                 raise Exception('Could not determine Clang version.')
@@ -295,7 +296,8 @@ class OSXBootstrapper(BaseBootstrapper):
         self._ensure_homebrew_found()
         cmd = [self.brew] + extra_brew_args
 
-        installed = self.check_output(cmd + ['list']).split()
+        installed = self.check_output(cmd + ['list'],
+                                      universal_newlines=True).split()
 
         printed = False
 
@@ -314,9 +316,18 @@ class OSXBootstrapper(BaseBootstrapper):
     def _ensure_homebrew_casks(self, casks):
         self._ensure_homebrew_found()
 
-        # Ensure that we can access old versions of packages.  This is
-        # idempotent, so no need to avoid repeat invocation.
-        self.check_output([self.brew, 'tap', 'homebrew/cask-versions'])
+        known_taps = self.check_output([self.brew, 'tap'])
+
+        # Ensure that we can access old versions of packages.
+        if b'homebrew/cask-versions' not in known_taps:
+            self.check_output([self.brew, 'tap', 'homebrew/cask-versions'])
+
+        # "caskroom/versions" has been renamed to "homebrew/cask-versions", so
+        # it is safe to remove the old tap. Removing the old tap is necessary
+        # to avoid the error "Cask [name of cask] exists in multiple taps".
+        # See https://bugzilla.mozilla.org/show_bug.cgi?id=1544981
+        if b'caskroom/versions' in known_taps:
+            self.check_output([self.brew, 'untap', 'caskroom/versions'])
 
         # Change |brew install cask| into |brew cask install cask|.
         return self._ensure_homebrew_packages(casks, extra_brew_args=['cask'])
@@ -386,7 +397,10 @@ class OSXBootstrapper(BaseBootstrapper):
         self.port = self.which('port')
         assert self.port is not None
 
-        installed = set(self.check_output([self.port, 'installed']).split())
+        installed = set(
+            self.check_output(
+                [self.port, 'installed'],
+                universal_newlines=True).split())
 
         missing = [package for package in packages if package not in installed]
         if missing:
@@ -407,7 +421,10 @@ class OSXBootstrapper(BaseBootstrapper):
 
         self._ensure_macports_packages(packages)
 
-        pythons = set(self.check_output([self.port, 'select', '--list', 'python']).split('\n'))
+        pythons = set(
+            self.check_output(
+                [self.port, 'select', '--list', 'python'],
+                universal_newlines=True).split('\n'))
         active = ''
         for python in pythons:
             if 'active' in python:
@@ -459,7 +476,7 @@ class OSXBootstrapper(BaseBootstrapper):
         one.
         '''
         installed = []
-        for name, cmd in PACKAGE_MANAGER.iteritems():
+        for name, cmd in PACKAGE_MANAGER.items():
             if self.which(cmd) is not None:
                 installed.append(name)
 
@@ -512,6 +529,12 @@ class OSXBootstrapper(BaseBootstrapper):
         from mozboot import sccache
 
         self.install_toolchain_artifact(state_dir, checkout_root, sccache.MACOS_SCCACHE)
+        self.install_toolchain_artifact(state_dir, checkout_root,
+                                        sccache.RUSTC_DIST_TOOLCHAIN,
+                                        no_unpack=True)
+        self.install_toolchain_artifact(state_dir, checkout_root,
+                                        sccache.CLANG_DIST_TOOLCHAIN,
+                                        no_unpack=True)
 
     def ensure_stylo_packages(self, state_dir, checkout_root):
         from mozboot import stylo

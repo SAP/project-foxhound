@@ -8,7 +8,7 @@ import sys
 
 def create_parser_wpt():
     from wptrunner import wptcommandline
-    return wptcommandline.create_parser(["fennec", "firefox", "chrome", "edge", "servo"])
+    return wptcommandline.create_parser(["firefox", "firefox_android", "chrome", "edge", "servo"])
 
 
 class WebPlatformTestsRunner(object):
@@ -19,7 +19,8 @@ class WebPlatformTestsRunner(object):
 
     def setup_logging(self, **kwargs):
         from tools.wpt import run
-        return run.setup_logging(kwargs, {self.setup.default_log_type: sys.stdout})
+        return run.setup_logging(kwargs, {self.setup.default_log_type: sys.stdout},
+                                 formatter_defaults={"screenshot": True})
 
     def run(self, logger, **kwargs):
         from wptrunner import wptrunner
@@ -30,7 +31,7 @@ class WebPlatformTestsRunner(object):
 
         if kwargs["product"] in ["firefox", None]:
             kwargs = self.setup.kwargs_firefox(kwargs)
-        elif kwargs["product"] == "fennec":
+        elif kwargs["product"] == "firefox_android":
             from wptrunner import wptcommandline
             kwargs = wptcommandline.check_args(self.setup.kwargs_common(kwargs))
         elif kwargs["product"] in ("chrome", "edge", "servo"):
@@ -38,7 +39,7 @@ class WebPlatformTestsRunner(object):
         else:
             raise ValueError("Unknown product %s" % kwargs["product"])
         result = wptrunner.start(**kwargs)
-        return int(not result)
+        return int(result)
 
     def update_manifest(self, logger, **kwargs):
         import manifestupdate

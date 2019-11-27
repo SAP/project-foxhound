@@ -633,12 +633,12 @@ gfxFont* gfxDWriteFontEntry::CreateFontInstance(
   RefPtr<UnscaledFontDWrite> unscaledFont(unscaledFontPtr);
   if (!unscaledFont) {
     RefPtr<IDWriteFontFace> fontFace;
-    nsresult rv = CreateFontFace(getter_AddRefs(fontFace), aFontStyle, sims);
+    nsresult rv = CreateFontFace(getter_AddRefs(fontFace), nullptr, sims);
     if (NS_FAILED(rv)) {
       return nullptr;
     }
     unscaledFont =
-        new UnscaledFontDWrite(fontFace, mIsSystemFont ? mFont : nullptr, sims);
+        new UnscaledFontDWrite(fontFace, mIsSystemFont ? mFont : nullptr);
     unscaledFontPtr = unscaledFont;
   }
   RefPtr<IDWriteFontFace> fontFace;
@@ -940,11 +940,42 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
       mSystemFonts;
 #endif
   RefPtr<IDWriteFontFamily> family;
-  collection->GetFontFamily(aFamily->Index(), getter_AddRefs(family));
+  HRESULT hr = collection->GetFontFamily(aFamily->Index(), getter_AddRefs(family));
+  // Check that the family name is what we expected; if not, fall back to search by name.
+  // It's sad we have to do this, but it is possible for Windows to have given different versions
+  // of the system font collection to the parent and child processes.
+  bool foundFamily = false;
+  const nsCString& familyName = aFamily->DisplayName().AsString(SharedFontList());
+  if (SUCCEEDED(hr) && family) {
+    RefPtr<IDWriteLocalizedStrings> names;
+    hr = family->GetFamilyNames(getter_AddRefs(names));
+    if (SUCCEEDED(hr) && names) {
+      nsAutoCString name;
+      if (GetEnglishOrFirstName(name, names)) {
+        foundFamily = name.Equals(familyName);
+      }
+    }
+  }
+  if (!foundFamily) {
+    // Try to get family by name instead of index (to deal with the case of collection mismatch).
+    UINT32 index;
+    BOOL exists;
+    NS_ConvertUTF8toUTF16 name16(familyName);
+    hr = collection->FindFamilyName(reinterpret_cast<const WCHAR*>(name16.BeginReading()), &index, &exists);
+    if (SUCCEEDED(hr) && exists && index != UINT_MAX) {
+      hr = collection->GetFontFamily(index, getter_AddRefs(family));
+      if (FAILED(hr) || !family) {
+        return nullptr;
+      }
+    }
+  }
   RefPtr<IDWriteFont> font;
   family->GetFont(aFace->mIndex, getter_AddRefs(font));
+  if (!font) {
+    return nullptr;
+  }
   nsAutoCString faceName;
-  HRESULT hr = GetDirectWriteFontName(font, faceName);
+  hr = GetDirectWriteFontName(font, faceName);
   if (FAILED(hr)) {
     return nullptr;
   }
@@ -954,7 +985,7 @@ gfxFontEntry* gfxDWriteFontList::CreateFontEntry(
   fe->mWeightRange = aFace->mWeight;
   fe->mShmemFace = aFace;
   fe->mIsBadUnderlineFont = aFamily->IsBadUnderlineFamily();
-  fe->mFamilyName = aFamily->DisplayName().AsString(SharedFontList());
+  fe->mFamilyName = familyName;
   fe->mForceGDIClassic = aFamily->IsForceClassic();
   return fe;
 }
@@ -1001,7 +1032,7 @@ void gfxDWriteFontList::GetFacesInitDataForFamily(
   for (unsigned i = 0; i < family->GetFontCount(); ++i) {
     RefPtr<IDWriteFont> dwFont;
     family->GetFont(i, getter_AddRefs(dwFont));
-    if (dwFont->GetSimulations() != DWRITE_FONT_SIMULATIONS_NONE) {
+    if (!dwFont || dwFont->GetSimulations() != DWRITE_FONT_SIMULATIONS_NONE) {
       continue;
     }
     DWRITE_FONT_STYLE dwstyle = dwFont->GetStyle();
@@ -1163,8 +1194,11 @@ void gfxDWriteFontList::ReadFaceNamesForFamily(
     gfxFontUtils::ReadOtherFamilyNamesForFace(familyName, data, size,
                                               otherFamilyNames, false);
     for (const auto& alias : otherFamilyNames) {
-      auto af = mAliasTable.LookupOrAdd(alias);
-      af->AppendElement(facePtrs[i]);
+      nsAutoCString key(alias);
+      ToLowerCase(key);
+      auto aliasData = mAliasTable.LookupOrAdd(key);
+      aliasData->InitFromFamily(aFamily);
+      aliasData->mFaces.AppendElement(facePtrs[i]);
     }
 
     nsAutoCString psname, fullname;

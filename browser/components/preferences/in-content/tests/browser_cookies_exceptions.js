@@ -138,7 +138,11 @@ add_task(async function testAdd() {
   await runTest(
     async (params, observeAllPromise, apply) => {
       let uri = Services.io.newURI("http://test.com");
-      Services.perms.add(uri, "popup", Ci.nsIPermissionManager.DENY_ACTION);
+      PermissionTestUtils.add(
+        uri,
+        "popup",
+        Ci.nsIPermissionManager.DENY_ACTION
+      );
 
       info("Adding unrelated permission should not change display.");
       assertListContents(params, []);
@@ -146,7 +150,7 @@ add_task(async function testAdd() {
       apply();
       await observeAllPromise;
 
-      Services.perms.remove(uri, "popup");
+      PermissionTestUtils.remove(uri, "popup");
     },
     params => {
       return [
@@ -412,7 +416,11 @@ add_task(async function testSort() {
 
       for (let URL of ["http://a", "http://z", "http://b"]) {
         let URI = Services.io.newURI(URL);
-        Services.perms.add(URI, "cookie", Ci.nsIPermissionManager.ALLOW_ACTION);
+        PermissionTestUtils.add(
+          URI,
+          "cookie",
+          Ci.nsIPermissionManager.ALLOW_ACTION
+        );
       }
 
       assertListContents(params, [
@@ -439,7 +447,7 @@ add_task(async function testSort() {
 
       for (let URL of ["http://a", "http://z", "http://b"]) {
         let uri = Services.io.newURI(URL);
-        Services.perms.remove(uri, "cookie");
+        PermissionTestUtils.remove(uri, "cookie");
       }
     },
     params => {
@@ -538,7 +546,7 @@ function createObserveAllPromise(observances) {
           return;
         }
 
-        if (observances.length == 0) {
+        if (!observances.length) {
           // Should fail here as we are not expecting a notification, but we
           // don't. See bug 1063410.
           return;
@@ -568,7 +576,7 @@ function createObserveAllPromise(observances) {
           );
         }
 
-        if (observances.length == 0) {
+        if (!observances.length) {
           Services.obs.removeObserver(permObserver, "perm-changed");
           executeSoon(resolve);
         }

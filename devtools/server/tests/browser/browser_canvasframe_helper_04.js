@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -14,7 +13,6 @@ const TEST_URL_2 =
 
 add_task(async function() {
   const browser = await addTab(TEST_URL_1);
-  await injectEventUtilsInContentTask(browser);
   await ContentTask.spawn(browser, TEST_URL_2, async function(url2) {
     const { require } = ChromeUtils.import(
       "resource://devtools/shared/Loader.jsm"

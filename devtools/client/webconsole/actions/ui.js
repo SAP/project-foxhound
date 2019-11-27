@@ -1,11 +1,10 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
+const { getAllPrefs } = require("devtools/client/webconsole/selectors/prefs");
 const { getAllUi } = require("devtools/client/webconsole/selectors/ui");
 const { getMessage } = require("devtools/client/webconsole/selectors/messages");
 
@@ -23,7 +22,15 @@ const {
   WARNING_GROUPS_TOGGLE,
   FILTERBAR_DISPLAY_MODE_SET,
   EDITOR_TOGGLE,
+  EDITOR_SET_WIDTH,
+  EDITOR_ONBOARDING_DISMISS,
 } = require("devtools/client/webconsole/constants");
+
+function openLink(url, e) {
+  return ({ hud }) => {
+    return hud.openLink(url, e);
+  };
+}
 
 function persistToggle() {
   return ({ dispatch, getState, prefsService }) => {
@@ -48,17 +55,29 @@ function contentMessagesToggle() {
   };
 }
 
-function timestampsToggle(visible) {
-  return {
-    type: TIMESTAMPS_TOGGLE,
-    visible,
+function timestampsToggle() {
+  return ({ dispatch, getState, prefsService }) => {
+    dispatch({
+      type: TIMESTAMPS_TOGGLE,
+    });
+    const uiState = getAllUi(getState());
+    prefsService.setBoolPref(
+      PREFS.UI.MESSAGE_TIMESTAMP,
+      uiState.timestampsVisible
+    );
   };
 }
 
-function warningGroupsToggle(value) {
-  return {
-    type: WARNING_GROUPS_TOGGLE,
-    value,
+function warningGroupsToggle() {
+  return ({ dispatch, getState, prefsService }) => {
+    dispatch({
+      type: WARNING_GROUPS_TOGGLE,
+    });
+    const prefsState = getAllPrefs(getState());
+    prefsService.setBoolPref(
+      PREFS.FEATURES.GROUP_WARNINGS,
+      prefsState.groupWarnings
+    );
   };
 }
 
@@ -95,6 +114,25 @@ function editorToggle() {
     });
     const uiState = getAllUi(getState());
     prefsService.setBoolPref(PREFS.UI.EDITOR, uiState.editor);
+  };
+}
+
+function editorOnboardingDismiss() {
+  return ({ dispatch, prefsService }) => {
+    dispatch({
+      type: EDITOR_ONBOARDING_DISMISS,
+    });
+    prefsService.setBoolPref(PREFS.UI.EDITOR_ONBOARDING, false);
+  };
+}
+
+function setEditorWidth(width) {
+  return ({ dispatch, prefsService }) => {
+    dispatch({
+      type: EDITOR_SET_WIDTH,
+      width,
+    });
+    prefsService.setIntPref(PREFS.UI.EDITOR_WIDTH, width);
   };
 }
 
@@ -140,18 +178,35 @@ function filterBarDisplayModeSet(displayMode) {
   };
 }
 
+function openSidebar(messageId, rootActorId) {
+  return ({ dispatch }) => {
+    dispatch(showMessageObjectInSidebar(rootActorId, messageId));
+  };
+}
+
+function timeWarp(executionPoint) {
+  return ({ client }) => {
+    client.timeWarp(executionPoint);
+  };
+}
+
 module.exports = {
   contentMessagesToggle,
+  editorOnboardingDismiss,
   editorToggle,
   filterBarDisplayModeSet,
   initialize,
   persistToggle,
   reverseSearchInputToggle,
   selectNetworkMessageTab,
+  setEditorWidth,
   showMessageObjectInSidebar,
   showObjectInSidebar,
   sidebarClose,
   splitConsoleCloseButtonToggle,
   timestampsToggle,
   warningGroupsToggle,
+  openLink,
+  openSidebar,
+  timeWarp,
 };

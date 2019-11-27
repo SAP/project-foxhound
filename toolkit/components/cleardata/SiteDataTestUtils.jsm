@@ -43,7 +43,7 @@ var SiteDataTestUtils = {
    */
   persist(origin, value = Services.perms.ALLOW_ACTION) {
     return new Promise(resolve => {
-      let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+      let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
         origin
       );
       Services.perms.addFromPrincipal(principal, "persistent-storage", value);
@@ -61,7 +61,7 @@ var SiteDataTestUtils = {
    */
   addToIndexedDB(origin, size = 1024) {
     return new Promise(resolve => {
-      let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+      let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
         origin
       );
       let request = indexedDB.openForPrincipal(principal, "TestDatabase", 1);
@@ -90,7 +90,7 @@ var SiteDataTestUtils = {
    * @param {String} value [optional] - the cookie value
    */
   addToCookies(origin, name = "foo", value = "bar") {
-    let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       origin
     );
     Services.cookies.add(
@@ -135,6 +135,40 @@ var SiteDataTestUtils = {
           }
         });
       });
+    });
+  },
+
+  hasCookies(origin) {
+    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      origin
+    );
+    for (let cookie of Services.cookies.enumerator) {
+      if (
+        ChromeUtils.isOriginAttributesEqual(
+          principal.originAttributes,
+          cookie.originAttributes
+        ) &&
+        cookie.host.includes(principal.URI.host)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  },
+
+  hasIndexedDB(origin) {
+    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
+      origin
+    );
+    return new Promise(resolve => {
+      let data = true;
+      let request = indexedDB.openForPrincipal(principal, "TestDatabase", 1);
+      request.onupgradeneeded = function(e) {
+        data = false;
+      };
+      request.onsuccess = function(e) {
+        resolve(data);
+      };
     });
   },
 
@@ -265,7 +299,7 @@ var SiteDataTestUtils = {
    */
   getQuotaUsage(origin) {
     return new Promise(resolve => {
-      let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+      let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
         origin
       );
       Services.qms.getUsageForPrincipal(principal, request =>

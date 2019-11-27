@@ -13,7 +13,6 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/DynamicallyLinkedFunctionPtr.h"
 #include "mozilla/glue/Debug.h"
-#include "mozilla/LauncherResult.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/SafeMode.h"
 #include "mozilla/UniquePtr.h"
@@ -25,7 +24,7 @@
 #include <windows.h>
 #include <processthreadsapi.h>
 
-#include "DllBlocklistWin.h"
+#include "DllBlocklistInit.h"
 #include "ErrorHandler.h"
 #include "LaunchUnelevated.h"
 #include "ProcThreadAttributes.h"
@@ -140,6 +139,10 @@ static bool DoLauncherProcessChecks(int& argc, wchar_t** argv) {
   bool result = false;
 
 #if defined(MOZ_LAUNCHER_PROCESS)
+  // We still prefer to compare file ids.  Comparing NT paths i.e. passing
+  // CompareNtPathsOnly to IsSameBinaryAsParentProcess is much faster, but
+  // we're not 100% sure that NT path comparison perfectly prevents the
+  // launching loop of the launcher process.
   mozilla::LauncherResult<bool> isSame = mozilla::IsSameBinaryAsParentProcess();
   if (isSame.isOk()) {
     result = !isSame.unwrap();
@@ -160,7 +163,12 @@ static bool DoLauncherProcessChecks(int& argc, wchar_t** argv) {
   return result;
 }
 
+#if defined(MOZ_LAUNCHER_PROCESS)
+static mozilla::Maybe<bool> RunAsLauncherProcess(
+    mozilla::LauncherRegistryInfo& aRegInfo, int& argc, wchar_t** argv) {
+#else
 static mozilla::Maybe<bool> RunAsLauncherProcess(int& argc, wchar_t** argv) {
+#endif  // defined(MOZ_LAUNCHER_PROCESS)
   // return fast when we're a child process.
   // (The remainder of this function has some side effects that are
   // undesirable for content processes)
@@ -187,9 +195,8 @@ static mozilla::Maybe<bool> RunAsLauncherProcess(int& argc, wchar_t** argv) {
       forceLauncher ? mozilla::LauncherRegistryInfo::CheckOption::Force
                     : mozilla::LauncherRegistryInfo::CheckOption::Default;
 
-  mozilla::LauncherRegistryInfo regInfo;
   mozilla::LauncherResult<mozilla::LauncherRegistryInfo::ProcessType>
-      runAsType = regInfo.Check(desiredType, checkOption);
+      runAsType = aRegInfo.Check(desiredType, checkOption);
 
   if (runAsType.isErr()) {
     mozilla::HandleLauncherError(runAsType);
@@ -213,7 +220,9 @@ namespace mozilla {
 
 Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
                         const StaticXREAppData& aAppData) {
-  EnsureCommandlineSafe(argc, argv);
+  // Note: keep in sync with nsBrowserApp.
+  const wchar_t* acceptableParams[] = {L"url", nullptr};
+  EnsureCommandlineSafe(argc, argv, acceptableParams);
 
   SetLauncherErrorAppData(aAppData);
 
@@ -223,14 +232,27 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
     SetLauncherErrorForceEventLog();
   }
 
+#if defined(MOZ_LAUNCHER_PROCESS)
+  LauncherRegistryInfo regInfo;
+  Maybe<bool> runAsLauncher = RunAsLauncherProcess(regInfo, argc, argv);
+#else
   Maybe<bool> runAsLauncher = RunAsLauncherProcess(argc, argv);
+#endif  // defined(MOZ_LAUNCHER_PROCESS)
   if (!runAsLauncher || !runAsLauncher.value()) {
+#if defined(MOZ_LAUNCHER_PROCESS)
+    // Update the registry as Browser
+    LauncherVoidResult commitResult = regInfo.Commit();
+    if (commitResult.isErr()) {
+      mozilla::HandleLauncherError(commitResult);
+    }
+#endif  // defined(MOZ_LAUNCHER_PROCESS)
     return Nothing();
   }
 
   // Make sure that the launcher process itself has image load policies set
   if (IsWin10AnniversaryUpdateOrLater()) {
-    const DynamicallyLinkedFunctionPtr<decltype(&SetProcessMitigationPolicy)>
+    static const StaticDynamicallyLinkedFunctionPtr<decltype(
+        &SetProcessMitigationPolicy)>
         pSetProcessMitigationPolicy(L"kernel32.dll",
                                     "SetProcessMitigationPolicy");
     if (pSetProcessMitigationPolicy) {
@@ -276,6 +298,15 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
 
     return Some(0);
   }
+
+#if defined(MOZ_LAUNCHER_PROCESS)
+  // Update the registry as Launcher
+  LauncherVoidResult commitResult = regInfo.Commit();
+  if (commitResult.isErr()) {
+    mozilla::HandleLauncherError(commitResult);
+    return Nothing();
+  }
+#endif  // defined(MOZ_LAUNCHER_PROCESS)
 
   // Now proceed with setting up the parameters for process creation
   UniquePtr<wchar_t[]> cmdLine(MakeCommandLine(argc, argv));

@@ -423,7 +423,7 @@ struct MathGlyphVariantRecord
   }
 
   protected:
-  GlyphID variantGlyph;       /* Glyph ID for the variant. */
+  HBGlyphID variantGlyph;       /* Glyph ID for the variant. */
   HBUINT16  advanceMeasurement; /* Advance width/height, in design units, of the
 				 * variant, in the direction of requested
 				 * glyph extension. */
@@ -453,14 +453,14 @@ struct MathGlyphPartRecord
   }
 
   void extract (hb_ot_math_glyph_part_t &out,
-		int scale,
+		int64_t mult,
 		hb_font_t *font) const
   {
     out.glyph			= glyph;
 
-    out.start_connector_length	= font->em_scale (startConnectorLength, scale);
-    out.end_connector_length	= font->em_scale (endConnectorLength, scale);
-    out.full_advance		= font->em_scale (fullAdvance, scale);
+    out.start_connector_length	= font->em_mult (startConnectorLength, mult);
+    out.end_connector_length	= font->em_mult (endConnectorLength, mult);
+    out.full_advance		= font->em_mult (fullAdvance, mult);
 
     static_assert ((unsigned int) HB_OT_MATH_GLYPH_PART_FLAG_EXTENDER ==
 		   (unsigned int) PartFlags::Extender, "");
@@ -471,7 +471,7 @@ struct MathGlyphPartRecord
   }
 
   protected:
-  GlyphID   glyph;		  /* Glyph ID for the part. */
+  HBGlyphID   glyph;		  /* Glyph ID for the part. */
   HBUINT16    startConnectorLength; /* Advance width/ height of the straight bar
 				   * connector material, in design units, is at
 				   * the beginning of the glyph, in the
@@ -508,11 +508,11 @@ struct MathGlyphAssembly
   {
     if (parts_count)
     {
-      int scale = font->dir_scale (direction);
+      int64_t mult = font->dir_mult (direction);
       hb_array_t<const MathGlyphPartRecord> arr = partRecords.sub_array (start_offset, parts_count);
       unsigned int count = arr.length;
       for (unsigned int i = 0; i < count; i++)
-	arr[i].extract (parts[i], scale, font);
+	arr[i].extract (parts[i], mult, font);
     }
 
     if (italics_correction)
@@ -553,13 +553,13 @@ struct MathGlyphConstruction
   {
     if (variants_count)
     {
-      int scale = font->dir_scale (direction);
+      int64_t mult = font->dir_mult (direction);
       hb_array_t<const MathGlyphVariantRecord> arr = mathGlyphVariantRecord.sub_array (start_offset, variants_count);
       unsigned int count = arr.length;
       for (unsigned int i = 0; i < count; i++)
       {
 	variants[i].glyph = arr[i].variantGlyph;
-	variants[i].advance = font->em_scale (arr[i].advanceMeasurement, scale);
+	variants[i].advance = font->em_mult (arr[i].advanceMeasurement, mult);
       }
     }
     return mathGlyphVariantRecord.len;

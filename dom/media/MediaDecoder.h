@@ -16,10 +16,8 @@
 #  include "MediaPromiseDefs.h"
 #  include "MediaResource.h"
 #  include "MediaStatistics.h"
-#  include "MediaStreamGraph.h"
 #  include "SeekTarget.h"
 #  include "TimeUnits.h"
-#  include "TrackID.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/CDMProxy.h"
 #  include "mozilla/MozPromise.h"
@@ -33,6 +31,7 @@
 #  include "nsISupports.h"
 #  include "nsITimer.h"
 
+class AudioDeviceInfo;
 class nsIPrincipal;
 
 namespace mozilla {
@@ -43,20 +42,15 @@ class MediaMemoryInfo;
 
 class AbstractThread;
 class DOMMediaStream;
+class DecoderBenchmark;
 class FrameStatistics;
 class VideoFrameContainer;
 class MediaFormatReader;
 class MediaDecoderStateMachine;
 struct MediaPlaybackEvent;
+struct SharedDummyTrack;
 
 enum class Visibility : uint8_t;
-
-// GetCurrentTime is defined in winbase.h as zero argument macro forwarding to
-// GetTickCount() and conflicts with MediaDecoder::GetCurrentTime
-// implementation.
-#  ifdef GetCurrentTime
-#    undef GetCurrentTime
-#  endif
 
 struct MOZ_STACK_CLASS MediaDecoderInit {
   MediaDecoderOwner* const mOwner;
@@ -167,27 +161,20 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // All MediaStream-related data is protected by mReentrantMonitor.
   // We have at most one DecodedStreamData per MediaDecoder. Its stream
-  // is used as the input for each ProcessedMediaStream created by calls to
+  // is used as the input for each ProcessedMediaTrack created by calls to
   // captureStream(UntilEnded). Seeking creates a new source stream, as does
   // replaying after the input as ended. In the latter case, the new source is
   // not connected to streams created by captureStreamUntilEnded.
 
-  // Sets the CORSMode for MediaStreamTracks that will be created by us.
-  void SetOutputStreamCORSMode(CORSMode aCORSMode);
-
   // Add an output stream. All decoder output will be sent to the stream.
   // The stream is initially blocked. The decoder is responsible for unblocking
   // it while it is playing back.
-  void AddOutputStream(DOMMediaStream* aStream);
+  void AddOutputStream(DOMMediaStream* aStream, SharedDummyTrack* aDummyStream);
   // Remove an output stream added with AddOutputStream.
   void RemoveOutputStream(DOMMediaStream* aStream);
 
-  // Set the TrackID to be used as the initial id by the next DecodedStream
-  // sink.
-  void SetNextOutputStreamTrackID(TrackID aNextTrackID);
-  // Get the next TrackID to be allocated by DecodedStream,
-  // or the last set TrackID if there is no DecodedStream sink.
-  TrackID GetNextOutputStreamTrackID();
+  // Update the principal for any output streams and their tracks.
+  void SetOutputStreamPrincipal(nsIPrincipal* aPrincipal);
 
   // Return the duration of the video in seconds.
   virtual double GetDuration();
@@ -482,6 +469,8 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   void OnNextFrameStatus(MediaDecoderOwner::NextFrameStatus);
 
+  void OnStoreDecoderBenchmark(const VideoInfo& aInfo);
+
   void FinishShutdown();
 
   void ConnectMirrors(MediaDecoderStateMachine* aObject);
@@ -501,7 +490,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
  protected:
   void NotifyReaderDataArrived();
   void DiscardOngoingSeekIfExists();
-  virtual void CallSeek(const SeekTarget& aTarget);
+  void CallSeek(const SeekTarget& aTarget);
 
   // Called by MediaResource when the principal of the resource has
   // changed. Called on main thread only.
@@ -523,6 +512,9 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // Counters related to decode and presentation of frames.
   const RefPtr<FrameStatistics> mFrameStats;
+
+  // Store a benchmark of the decoder based on FrameStatistics.
+  RefPtr<DecoderBenchmark> mDecoderBenchmark;
 
   RefPtr<VideoFrameContainer> mVideoFrameContainer;
 
@@ -583,6 +575,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   MediaEventListener mOnWaitingForKey;
   MediaEventListener mOnDecodeWarning;
   MediaEventListener mOnNextFrameStatus;
+  MediaEventListener mOnStoreDecoderBenchmark;
 
   // True if we have suspended video decoding.
   bool mIsVideoDecodingSuspended = false;
@@ -628,7 +621,7 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
 
   // True if the media is same-origin with the element. Data can only be
   // passed to MediaStreams when this is true.
-  Canonical<bool> mSameOriginMedia;
+  bool mSameOriginMedia;
 
   // We can allow video decoding in background when we match some special
   // conditions, eg. when the cursor is hovering over the tab. This observer is
@@ -646,9 +639,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   }
   AbstractCanonical<bool>* CanonicalLooping() { return &mLooping; }
   AbstractCanonical<PlayState>* CanonicalPlayState() { return &mPlayState; }
-  AbstractCanonical<bool>* CanonicalSameOriginMedia() {
-    return &mSameOriginMedia;
-  }
 
  private:
   // Notify owner when the audible state changed

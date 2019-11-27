@@ -4,8 +4,6 @@
  * http://creativecommons.org/publicdomain/zero/1.0/
  */
 
-const PREF_POSTUPDATE = "app.update.postupdate";
-const PREF_PAGE = "browser.startup.page";
 const PREF_MSTONE = "browser.startup.homepage_override.mstone";
 const PREF_OVERRIDE_URL = "startup.homepage_override_url";
 
@@ -36,12 +34,10 @@ const XML_SUFFIX =
 const BCH_TESTS = [
   {
     description: "no mstone change and no update",
-    noPostUpdatePref: true,
     noMstoneChange: true,
   },
   {
     description: "mstone changed and no update",
-    noPostUpdatePref: true,
     prefURL: DEFAULT_PREF_URL,
   },
   {
@@ -83,67 +79,31 @@ const BCH_TESTS = [
   },
 ];
 
-var gOriginalPage;
-var gOriginalMStone;
-var gOriginalOverrideURL;
-
-function test() {
-  waitForExplicitFinish();
-
+add_task(async function test_bug538331() {
   // Reset the startup page pref since it may have been set by other tests
   // and we will assume it is (non-test) default.
-  gOriginalPage = Services.prefs.getIntPref(PREF_PAGE);
-  Services.prefs.clearUserPref(PREF_PAGE);
+  await SpecialPowers.pushPrefEnv({
+    clear: [["browser.startup.page"]],
+  });
 
-  if (Services.prefs.prefHasUserValue(PREF_MSTONE)) {
-    gOriginalMStone = Services.prefs.getCharPref(PREF_MSTONE);
-  }
+  let originalMstone = Services.prefs.getCharPref(PREF_MSTONE);
 
-  if (Services.prefs.prefHasUserValue(PREF_OVERRIDE_URL)) {
-    gOriginalOverrideURL = Services.prefs.getCharPref(PREF_OVERRIDE_URL);
-  }
+  // Set the preferences needed for the test: they will be cleared up
+  // after it runs.
+  await SpecialPowers.pushPrefEnv({
+    set: [[PREF_MSTONE, originalMstone], [PREF_OVERRIDE_URL, DEFAULT_PREF_URL]],
+  });
 
-  testDefaultArgs();
-}
+  registerCleanupFunction(async () => {
+    let activeUpdateFile = getActiveUpdateFile();
+    activeUpdateFile.remove(false);
+    reloadUpdateManagerData(true);
+  });
 
-function finish_test() {
-  Services.prefs.setIntPref(PREF_PAGE, gOriginalPage);
-
-  // Reset browser.startup.homepage_override.mstone to the original value or
-  // clear it if it didn't exist.
-  if (gOriginalMStone) {
-    Services.prefs.setCharPref(PREF_MSTONE, gOriginalMStone);
-  } else if (Services.prefs.prefHasUserValue(PREF_MSTONE)) {
-    Services.prefs.clearUserPref(PREF_MSTONE);
-  }
-
-  // Reset startup.homepage_override_url to the original value or clear it if
-  // it didn't exist.
-  if (gOriginalOverrideURL) {
-    Services.prefs.setCharPref(PREF_OVERRIDE_URL, gOriginalOverrideURL);
-  } else if (Services.prefs.prefHasUserValue(PREF_OVERRIDE_URL)) {
-    Services.prefs.clearUserPref(PREF_OVERRIDE_URL);
-  }
-
-  writeUpdatesToXMLFile(XML_EMPTY);
-  reloadUpdateManagerData();
-
-  finish();
-}
-
-// Test the defaultArgs returned by nsBrowserContentHandler after an update
-function testDefaultArgs() {
   // Clear any pre-existing override in defaultArgs that are hanging around.
   // This will also set the browser.startup.homepage_override.mstone preference
   // if it isn't already set.
   Cc["@mozilla.org/browser/clh;1"].getService(Ci.nsIBrowserHandler).defaultArgs;
-
-  let originalMstone = Services.prefs.getCharPref(PREF_MSTONE);
-
-  Services.prefs.setCharPref(PREF_OVERRIDE_URL, DEFAULT_PREF_URL);
-
-  writeUpdatesToXMLFile(XML_EMPTY);
-  reloadUpdateManagerData();
 
   for (let i = 0; i < BCH_TESTS.length; i++) {
     let testCase = BCH_TESTS[i];
@@ -162,7 +122,7 @@ function testDefaultArgs() {
       writeUpdatesToXMLFile(XML_EMPTY);
     }
 
-    reloadUpdateManagerData();
+    reloadUpdateManagerData(false);
 
     let noOverrideArgs = Cc["@mozilla.org/browser/clh;1"].getService(
       Ci.nsIBrowserHandler
@@ -185,10 +145,6 @@ function testDefaultArgs() {
       Services.prefs.setCharPref(PREF_MSTONE, "PreviousMilestone");
     }
 
-    if (testCase.noPostUpdatePref == undefined) {
-      Services.prefs.setBoolPref(PREF_POSTUPDATE, true);
-    }
-
     let defaultArgs = Cc["@mozilla.org/browser/clh;1"].getService(
       Ci.nsIBrowserHandler
     ).defaultArgs;
@@ -202,23 +158,52 @@ function testDefaultArgs() {
         "preference " + PREF_MSTONE + " should have been updated"
       );
     }
-
-    if (Services.prefs.prefHasUserValue(PREF_POSTUPDATE)) {
-      Services.prefs.clearUserPref(PREF_POSTUPDATE);
-    }
   }
+});
 
-  finish_test();
+/**
+ * Removes the updates.xml file and returns the nsIFile for the
+ * active-update.xml file.
+ *
+ * @return  The nsIFile for the active-update.xml file.
+ */
+function getActiveUpdateFile() {
+  let updateRootDir = Services.dirsvc.get("UpdRootD", Ci.nsIFile);
+  let updatesFile = updateRootDir.clone();
+  updatesFile.append("updates.xml");
+  if (updatesFile.exists()) {
+    // The following is non-fatal.
+    try {
+      updatesFile.remove(false);
+    } catch (e) {}
+  }
+  let activeUpdateFile = updateRootDir.clone();
+  activeUpdateFile.append("active-update.xml");
+  return activeUpdateFile;
 }
 
-/* Reloads the update metadata from disk */
-function reloadUpdateManagerData() {
+/**
+ * Reloads the update xml files.
+ *
+ * @param  skipFiles (optional)
+ *         If true, the update xml files will not be read and the metadata will
+ *         be reset. If false (the default), the update xml files will be read
+ *         to populate the update metadata.
+ */
+function reloadUpdateManagerData(skipFiles = false) {
   Cc["@mozilla.org/updates/update-manager;1"]
     .getService(Ci.nsIUpdateManager)
     .QueryInterface(Ci.nsIObserver)
-    .observe(null, "um-reload-update-data", "");
+    .observe(null, "um-reload-update-data", skipFiles ? "skip-files" : "");
 }
 
+/**
+ * Writes the updates specified to the active-update.xml file.
+ *
+ * @param  aText
+ *         The updates represented as a string to write to the active-update.xml
+ *         file.
+ */
 function writeUpdatesToXMLFile(aText) {
   const PERMS_FILE = 0o644;
 
@@ -226,15 +211,15 @@ function writeUpdatesToXMLFile(aText) {
   const MODE_CREATE = 0x08;
   const MODE_TRUNCATE = 0x20;
 
-  let file = Services.dirsvc.get("UpdRootD", Ci.nsIFile);
-  file.append("updates.xml");
+  let activeUpdateFile = getActiveUpdateFile();
+  if (!activeUpdateFile.exists()) {
+    activeUpdateFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
+  }
   let fos = Cc["@mozilla.org/network/file-output-stream;1"].createInstance(
     Ci.nsIFileOutputStream
   );
-  if (!file.exists()) {
-    file.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
-  }
-  fos.init(file, MODE_WRONLY | MODE_CREATE | MODE_TRUNCATE, PERMS_FILE, 0);
+  let flags = MODE_WRONLY | MODE_CREATE | MODE_TRUNCATE;
+  fos.init(activeUpdateFile, flags, PERMS_FILE, 0);
   fos.write(aText, aText.length);
   fos.close();
 }

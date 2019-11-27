@@ -7,9 +7,11 @@ DIRS += [
     'components',
     'modules',
     'reducers',
+    'types',
 ]
 
 DevToolsModules(
+	'base.css',
     'constants.js',
     'create-store.js',
 )

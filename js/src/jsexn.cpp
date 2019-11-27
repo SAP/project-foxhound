@@ -45,7 +45,7 @@
 
 using namespace js;
 
-static void exn_finalize(FreeOp* fop, JSObject* obj);
+static void exn_finalize(JSFreeOp* fop, JSObject* obj);
 
 static bool exn_toSource(JSContext* cx, unsigned argc, Value* vp);
 
@@ -56,7 +56,7 @@ static bool exn_toSource(JSContext* cx, unsigned argc, Value* vp);
         &ErrorObject::classSpecs[JSProto_##name - JSProto_Error] \
   }
 
-const Class ErrorObject::protoClasses[JSEXN_ERROR_LIMIT] = {
+const JSClass ErrorObject::protoClasses[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_PROTO_CLASS(Error),
 
     IMPLEMENT_ERROR_PROTO_CLASS(InternalError),
@@ -141,7 +141,7 @@ const ClassSpec ErrorObject::classSpecs[JSEXN_ERROR_LIMIT] = {
         &ErrorObject::classSpecs[JSProto_##name - JSProto_Error]      \
   }
 
-static const ClassOps ErrorObjectClassOps = {
+static const JSClassOps ErrorObjectClassOps = {
     nullptr,               /* addProperty */
     nullptr,               /* delProperty */
     nullptr,               /* enumerate */
@@ -154,7 +154,7 @@ static const ClassOps ErrorObjectClassOps = {
     nullptr,               /* trace       */
 };
 
-const Class ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
+const JSClass ErrorObject::classes[JSEXN_ERROR_LIMIT] = {
     IMPLEMENT_ERROR_CLASS(Error), IMPLEMENT_ERROR_CLASS(InternalError),
     IMPLEMENT_ERROR_CLASS(EvalError), IMPLEMENT_ERROR_CLASS(RangeError),
     IMPLEMENT_ERROR_CLASS(ReferenceError), IMPLEMENT_ERROR_CLASS(SyntaxError),
@@ -337,10 +337,11 @@ JSString* js::ComputeStackString(JSContext* cx) {
   return str.get();
 }
 
-static void exn_finalize(FreeOp* fop, JSObject* obj) {
+static void exn_finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->maybeOnHelperThread());
   if (JSErrorReport* report = obj->as<ErrorObject>().getErrorReport()) {
-    fop->delete_(report);
+    // Bug 1560019: This allocation is not currently tracked.
+    fop->deleteUntracked(report);
   }
 }
 
@@ -581,7 +582,7 @@ JSObject* ErrorObject::createConstructor(JSContext* cx, JSProtoKey key) {
     }
 
     ctor = NewFunctionWithProto(
-        cx, Error, 1, JSFunction::NATIVE_CTOR, nullptr, ClassName(key, cx),
+        cx, Error, 1, FunctionFlags::NATIVE_CTOR, nullptr, ClassName(key, cx),
         proto, gc::AllocKind::FUNCTION_EXTENDED, SingletonObject);
   }
 
@@ -593,8 +594,8 @@ JSObject* ErrorObject::createConstructor(JSContext* cx, JSProtoKey key) {
   return ctor;
 }
 
-JS_FRIEND_API JSFlatString* js::GetErrorTypeName(JSContext* cx,
-                                                 int16_t exnType) {
+JS_FRIEND_API JSLinearString* js::GetErrorTypeName(JSContext* cx,
+                                                   int16_t exnType) {
   /*
    * JSEXN_INTERNALERR returns null to prevent that "InternalError: "
    * is prepended before "uncaught exception: "
@@ -741,7 +742,7 @@ static JSString* ErrorReportToString(JSContext* cx, JSErrorReport* reportp) {
    * message without prefixing it with anything.
    */
   if (str) {
-    RootedString separator(cx, JS_NewUCStringCopyN(cx, u": ", 2));
+    RootedString separator(cx, JS_NewStringCopyN(cx, ": ", 2));
     if (!separator) {
       return nullptr;
     }
@@ -764,9 +765,9 @@ static JSString* ErrorReportToString(JSContext* cx, JSErrorReport* reportp) {
 }
 
 ErrorReport::ErrorReport(JSContext* cx)
-    : reportp(nullptr), str(cx), strChars(cx), exnObject(cx) {}
+    : reportp(nullptr), exnObject(cx) {}
 
-ErrorReport::~ErrorReport() {}
+ErrorReport::~ErrorReport() = default;
 
 bool ErrorReport::init(JSContext* cx, HandleValue exn,
                        SniffingBehavior sniffingBehavior) {
@@ -783,6 +784,7 @@ bool ErrorReport::init(JSContext* cx, HandleValue exn,
   // Be careful not to invoke ToString if we've already successfully extracted
   // an error report, since the exception might be wrapped in a security
   // wrapper, and ToString-ing it might throw.
+  RootedString str(cx);
   if (reportp) {
     str = ErrorReportToString(cx, reportp);
   } else if (exn.isSymbol()) {
@@ -896,11 +898,8 @@ bool ErrorReport::init(JSContext* cx, HandleValue exn,
       // historically done for duck-typed error objects.
       //
       // If only this stuff could get specced one day...
-      char* utf8;
-      if (str->ensureFlat(cx) && strChars.initTwoByte(cx, str) &&
-          (utf8 =
-               JS::CharsToNewUTF8CharsZ(cx, strChars.twoByteRange()).c_str())) {
-        ownedReport.initOwnedMessage(utf8);
+      if (auto utf8 = JS_EncodeStringToUTF8(cx, str)) {
+        ownedReport.initOwnedMessage(utf8.release());
       } else {
         cx->clearPendingException();
         str = nullptr;

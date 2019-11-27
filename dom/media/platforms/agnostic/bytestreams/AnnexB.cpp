@@ -205,6 +205,29 @@ static Result<Ok, nsresult> FindStartCode(BufferReader& aBr,
   return Ok();
 }
 
+/* static */
+void AnnexB::ParseNALEntries(const Span<const uint8_t>& aSpan,
+                             nsTArray<AnnexB::NALEntry>& aEntries) {
+  BufferReader reader(aSpan.data(), aSpan.Length());
+  size_t startSize;
+  auto rv = FindStartCode(reader, startSize);
+  size_t startOffset = reader.Offset();
+  if (rv.isOk()) {
+    while (FindStartCode(reader, startSize).isOk()) {
+      int64_t offset = reader.Offset();
+      int64_t sizeNAL = offset - startOffset - startSize;
+      aEntries.AppendElement(AnnexB::NALEntry(startOffset, sizeNAL));
+      reader.Seek(startOffset);
+      reader.Read(sizeNAL + startSize);
+      startOffset = offset;
+    }
+  }
+  int64_t sizeNAL = reader.Remaining();
+  if (sizeNAL) {
+    aEntries.AppendElement(AnnexB::NALEntry(startOffset, sizeNAL));
+  }
+}
+
 static Result<mozilla::Ok, nsresult> ParseNALUnits(ByteWriter<BigEndian>& aBw,
                                                    BufferReader& aBr) {
   size_t startSize;
@@ -232,7 +255,8 @@ static Result<mozilla::Ok, nsresult> ParseNALUnits(ByteWriter<BigEndian>& aBw,
   return Ok();
 }
 
-bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample) {
+bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample,
+                                 const RefPtr<MediaByteBuffer>& aAVCCHeader) {
   if (IsAVCC(aSample)) {
     return ConvertSampleTo4BytesAVCC(aSample).isOk();
   }
@@ -252,8 +276,14 @@ bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample) {
   if (!samplewriter->Replace(nalu.Elements(), nalu.Length())) {
     return false;
   }
+
+  if (aAVCCHeader) {
+    aSample->mExtraData = aAVCCHeader;
+    return true;
+  }
+
   // Create the AVCC header.
-  RefPtr<mozilla::MediaByteBuffer> extradata = new mozilla::MediaByteBuffer;
+  auto extradata = MakeRefPtr<mozilla::MediaByteBuffer>();
   static const uint8_t kFakeExtraData[] = {
       1 /* version */,
       0x64 /* profile (High) */,
@@ -266,7 +296,7 @@ bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample) {
   if (!extradata->AppendElements(kFakeExtraData, ArrayLength(kFakeExtraData))) {
     return false;
   }
-  aSample->mExtraData = extradata;
+  aSample->mExtraData = std::move(extradata);
   return true;
 }
 

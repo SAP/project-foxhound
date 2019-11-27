@@ -19,7 +19,6 @@
 #include "imgIRequest.h"
 #include "imgINotificationObserver.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 class imgIContainer;
 class nsIFrame;
@@ -84,8 +83,6 @@ class ImageLoader final : public imgINotificationObserver {
   //
   // May be called from any thread.
   static void DeregisterCSSImageFromAllLoaders(const StyleLoadData&);
-
-  void FlushUseCounters();
 
  private:
   // This callback is used to unblock document onload after a reflow

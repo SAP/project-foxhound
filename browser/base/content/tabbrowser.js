@@ -68,9 +68,6 @@
       }
       messageManager.addMessageListener("RefreshBlocker:Blocked", this);
 
-      // To correctly handle keypresses for potential FindAsYouType, while
-      // the tab's find bar is not yet initialized.
-      messageManager.addMessageListener("Findbar:Keypress", this);
       this._setFindbarData();
 
       XPCOMUtils.defineLazyModuleGetters(this, {
@@ -988,14 +985,25 @@
       // XXX https://bugzilla.mozilla.org/show_bug.cgi?id=22183#c239
       try {
         if (docElement.getAttribute("chromehidden").includes("location")) {
-          var uri = Services.uriFixup.createExposableURI(aBrowser.currentURI);
-          if (uri.scheme == "about") {
-            newTitle = uri.spec + sep + newTitle;
+          const uri = Services.uriFixup.createExposableURI(aBrowser.currentURI);
+          if (uri.scheme === "about") {
+            newTitle = `${uri.spec}${sep}${newTitle}`;
+          } else if (uri.scheme === "moz-extension") {
+            const ext = WebExtensionPolicy.getByHostname(uri.host);
+            if (ext && ext.name) {
+              const prefix = document.querySelector("#urlbar-label-extension")
+                .value;
+              newTitle = `${prefix} (${ext.name})${sep}${newTitle}`;
+            } else {
+              newTitle = `${uri.prePath}${sep}${newTitle}`;
+            }
           } else {
-            newTitle = uri.prePath + sep + newTitle;
+            newTitle = `${uri.prePath}${sep}${newTitle}`;
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        // ignored
+      }
 
       return newTitle;
     },
@@ -1201,7 +1209,7 @@
 
         this._startMultiSelectChange();
         this._multiSelectChangeSelected = true;
-        this.clearMultiSelectedTabs(true);
+        this.clearMultiSelectedTabs({ isLastMultiSelectChange: true });
 
         if (oldBrowser != newBrowser && oldBrowser.getInPermitUnload) {
           oldBrowser.getInPermitUnload(inPermitUnload => {
@@ -1324,9 +1332,6 @@
       // In full screen mode, only bother making the location bar visible
       // if the tab is a blank one.
       if (newBrowser._urlbarFocused && gURLBar) {
-        // Explicitly close the popup if the URL bar retains focus
-        gURLBar.closePopup();
-
         // If the user happened to type into the URL bar for this browser
         // by the time we got here, focusing will cause the text to be
         // selected which could cause them to overwrite what they've
@@ -1403,21 +1408,36 @@
       aTab.dispatchEvent(event);
     },
 
-    setBrowserSharing(aBrowser, aState) {
+    resetBrowserSharing(aBrowser) {
       let tab = this.getTabForBrowser(aBrowser);
       if (!tab) {
         return;
       }
+      tab._sharingState = {};
+      tab.removeAttribute("sharing");
+      this._tabAttrModified(tab, ["sharing"]);
+      if (aBrowser == this.selectedBrowser) {
+        gIdentityHandler.updateSharingIndicator();
+      }
+    },
 
-      if (aState.sharing) {
-        tab._sharingState = aState;
-        if (aState.paused) {
+    updateBrowserSharing(aBrowser, aState) {
+      let tab = this.getTabForBrowser(aBrowser);
+      if (!tab) {
+        return;
+      }
+      if (tab._sharingState == null) {
+        tab._sharingState = {};
+      }
+      tab._sharingState = Object.assign(tab._sharingState, aState);
+      if (aState.webRTC && aState.webRTC.sharing) {
+        if (aState.webRTC.paused) {
           tab.removeAttribute("sharing");
         } else {
-          tab.setAttribute("sharing", aState.sharing);
+          tab.setAttribute("sharing", aState.webRTC.sharing);
         }
       } else {
-        tab._sharingState = null;
+        tab._sharingState.webRTC = null;
         tab.removeAttribute("sharing");
       }
       this._tabAttrModified(tab, ["sharing"]);
@@ -1429,7 +1449,10 @@
 
     getTabSharingState(aTab) {
       // Normalize the state object for consumers (ie.extensions).
-      let state = Object.assign({}, aTab._sharingState);
+      let state = Object.assign(
+        {},
+        aTab._sharingState && aTab._sharingState.webRTC
+      );
       return {
         camera: !!state.camera,
         microphone: !!state.microphone,
@@ -1586,6 +1609,7 @@
       var aFocusUrlBar;
       var aName;
       var aCsp;
+      var aSkipLoad;
       if (
         arguments.length == 2 &&
         typeof arguments[1] == "object" &&
@@ -1616,6 +1640,7 @@
         aFocusUrlBar = params.focusUrlBar;
         aName = params.name;
         aCsp = params.csp;
+        aSkipLoad = params.skipLoad;
       }
 
       // all callers of loadOneTab need to pass a valid triggeringPrincipal.
@@ -1656,6 +1681,7 @@
         focusUrlBar: aFocusUrlBar,
         name: aName,
         csp: aCsp,
+        skipLoad: aSkipLoad,
       });
       if (!bgLoad) {
         this.selectedTab = tab;
@@ -1881,12 +1907,11 @@
       // Make sure the browser is destroyed so it unregisters from observer notifications
       aBrowser.destroy();
       // Only remove the node if we're not rebuilding the frameloader via nsFrameLoaderOwner.
-      if (
-        !Services.prefs.getBoolPref(
-          "fission.rebuild_frameloaders_on_remoteness_change",
-          false
-        )
-      ) {
+      let rebuildFrameLoaders =
+        Services.prefs.getBoolPref(
+          "fission.rebuild_frameloaders_on_remoteness_change"
+        ) || window.docShell.nsILoadContext.useRemoteSubframes;
+      if (!rebuildFrameLoaders) {
         aBrowser.remove();
       }
 
@@ -1931,12 +1956,7 @@
         aBrowser.removeAttribute("remoteType");
       }
 
-      if (
-        !Services.prefs.getBoolPref(
-          "fission.rebuild_frameloaders_on_remoteness_change",
-          false
-        )
-      ) {
+      if (!rebuildFrameLoaders) {
         parent.appendChild(aBrowser);
       } else {
         // This call actually switches out our frameloaders. Do this as late as
@@ -2074,6 +2094,7 @@
       sameProcessAsFrameLoader,
       uriIsAboutBlank,
       userContextId,
+      skipLoad,
     } = {}) {
       let b = document.createXULElement("browser");
       // Use the JSM global to create the permanentKey, so that if the
@@ -2190,7 +2211,7 @@
 
       // Prevent the superfluous initial load of a blank document
       // if we're going to load something other than about:blank.
-      if (!uriIsAboutBlank) {
+      if (!uriIsAboutBlank || skipLoad) {
         b.setAttribute("nodefaultsrc", "true");
       }
 
@@ -2445,9 +2466,9 @@
         return false;
       }
 
-      // Reset webrtc sharing state.
+      // Reset sharing state.
       if (aTab._sharingState) {
-        this.setBrowserSharing(browser, {});
+        this.resetBrowserSharing(browser);
       }
       webrtcUI.forgetStreamsFromBrowser(browser);
 
@@ -2557,6 +2578,7 @@
         recordExecution,
         replayExecution,
         csp,
+        skipLoad,
       } = {}
     ) {
       // all callers of addTab that pass a params object need to pass
@@ -2790,6 +2812,7 @@
             name,
             recordExecution,
             replayExecution,
+            skipLoad,
           });
         }
 
@@ -2883,7 +2906,8 @@
       // then let's just continue loading the page normally.
       if (
         !usingPreloadedContent &&
-        (!uriIsAboutBlank || !allowInheritPrincipal)
+        (!uriIsAboutBlank || !allowInheritPrincipal) &&
+        !skipLoad
       ) {
         // pretend the user typed this so it'll be available till
         // the document successfully loads
@@ -3309,11 +3333,7 @@
         // Closing the tab and replacing it with a blank one is notably slower
         // than closing the window right away. If the caller opts in, take
         // the fast path.
-        if (
-          closeWindow &&
-          closeWindowFastpath &&
-          this._removingTabs.length == 0
-        ) {
+        if (closeWindow && closeWindowFastpath && !this._removingTabs.length) {
           // This call actually closes the window, unless the user
           // cancels the operation.  We are finished here in both cases.
           this._windowIsClosing = window.closeWindow(
@@ -4032,31 +4052,33 @@
 
     hideTab(aTab, aSource) {
       if (
-        !aTab.hidden &&
-        !aTab.pinned &&
-        !aTab.selected &&
-        !aTab.closing &&
-        !aTab._sharingState
+        aTab.hidden ||
+        aTab.pinned ||
+        aTab.selected ||
+        aTab.closing ||
+        // Tabs that are sharing the screen, microphone or camera cannot be hidden.
+        (aTab._sharingState && aTab._sharingState.webRTC)
       ) {
-        aTab.setAttribute("hidden", "true");
-        this._invalidateCachedTabs();
+        return;
+      }
+      aTab.setAttribute("hidden", "true");
+      this._invalidateCachedTabs();
 
-        this.tabContainer._updateCloseButtons();
-        this.tabContainer._updateHiddenTabsStatus();
+      this.tabContainer._updateCloseButtons();
+      this.tabContainer._updateHiddenTabsStatus();
 
-        this.tabContainer._setPositionalAttributes();
+      this.tabContainer._setPositionalAttributes();
 
-        // Splice this tab out of any lines of succession before any events are
-        // dispatched.
-        this.replaceInSuccession(aTab, aTab.successor);
-        this.setSuccessor(aTab, null);
+      // Splice this tab out of any lines of succession before any events are
+      // dispatched.
+      this.replaceInSuccession(aTab, aTab.successor);
+      this.setSuccessor(aTab, null);
 
-        let event = document.createEvent("Events");
-        event.initEvent("TabHide", true, false);
-        aTab.dispatchEvent(event);
-        if (aSource) {
-          SessionStore.setCustomTabValue(aTab, "hiddenBy", aSource);
-        }
+      let event = document.createEvent("Events");
+      event.initEvent("TabHide", true, false);
+      aTab.dispatchEvent(event);
+      if (aSource) {
+        SessionStore.setCustomTabValue(aTab, "hiddenBy", aSource);
       }
     },
 
@@ -4364,7 +4386,7 @@
       return SessionStore.duplicateTab(window, aTab, 0, aRestoreTabImmediately);
     },
 
-    addToMultiSelectedTabs(aTab, multiSelectMayChangeMore) {
+    addToMultiSelectedTabs(aTab, { isLastMultiSelectChange = false } = {}) {
       if (aTab.multiselected) {
         return;
       }
@@ -4379,10 +4401,12 @@
         this._multiSelectChangeAdditions.add(aTab);
       }
 
-      if (!multiSelectMayChangeMore) {
+      if (isLastMultiSelectChange) {
         let { selectedTab } = this;
         if (!selectedTab.multiselected) {
-          this.addToMultiSelectedTabs(selectedTab, true);
+          this.addToMultiSelectedTabs(selectedTab, {
+            isLastMultiSelectChange: false,
+          });
         }
         this.tabContainer._setPositionalAttributes();
       }
@@ -4406,12 +4430,17 @@
           : [indexOfTab2, indexOfTab1];
 
       for (let i = lowerIndex; i <= higherIndex; i++) {
-        this.addToMultiSelectedTabs(tabs[i], true);
+        this.addToMultiSelectedTabs(tabs[i], {
+          isLastMultiSelectChange: false,
+        });
       }
       this.tabContainer._setPositionalAttributes();
     },
 
-    removeFromMultiSelectedTabs(aTab, isLastMultiSelectChange) {
+    removeFromMultiSelectedTabs(
+      aTab,
+      { isLastMultiSelectChange = false } = {}
+    ) {
       if (!aTab.multiselected) {
         return;
       }
@@ -4433,7 +4462,7 @@
       }
     },
 
-    clearMultiSelectedTabs(isLastMultiSelectChange) {
+    clearMultiSelectedTabs({ isLastMultiSelectChange = false } = {}) {
       if (this._clearMultiSelectionLocked) {
         if (this._clearMultiSelectionLockedOnce) {
           this._clearMultiSelectionLockedOnce = false;
@@ -4447,7 +4476,9 @@
       }
 
       for (let tab of this.selectedTabs) {
-        this.removeFromMultiSelectedTabs(tab, false);
+        this.removeFromMultiSelectedTabs(tab, {
+          isLastMultiSelectChange: false,
+        });
       }
       this._lastMultiSelectedTabRef = null;
       if (isLastMultiSelectChange) {
@@ -4508,7 +4539,7 @@
      */
     avoidSingleSelectedTab() {
       if (this.multiSelectedTabsCount == 1) {
-        this.clearMultiSelectedTabs();
+        this.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
       }
     },
 
@@ -4535,11 +4566,13 @@
     },
 
     set selectedTabs(tabs) {
-      this.clearMultiSelectedTabs(false);
+      this.clearMultiSelectedTabs({ isLastMultiSelectChange: false });
       this.selectedTab = tabs[0];
       if (tabs.length > 1) {
         for (let tab of tabs) {
-          this.addToMultiSelectedTabs(tab, true);
+          this.addToMultiSelectedTabs(tab, {
+            isLastMultiSelectChange: false,
+          });
         }
       }
       this.tabContainer._setPositionalAttributes();
@@ -4745,6 +4778,40 @@
       }
     },
 
+    getTabTooltip(tab, includeLabel = true) {
+      let label = "";
+      if (includeLabel) {
+        label = tab._fullLabel || tab.getAttribute("label");
+      }
+      if (AppConstants.NIGHTLY_BUILD) {
+        if (tab.linkedBrowser) {
+          // On Nightly builds, show the PID of the content process, and if
+          // we're running with fission enabled, try to include PIDs for
+          // every remote subframe.
+          let [contentPid, ...framePids] = E10SUtils.getBrowserPids(
+            tab.linkedBrowser,
+            gFissionBrowser
+          );
+          if (contentPid) {
+            label += " (pid " + contentPid + ")";
+            if (gFissionBrowser) {
+              label += " [F " + framePids.join(", ") + "]";
+            }
+          }
+        }
+      }
+      if (tab.userContextId) {
+        label = gTabBrowserBundle.formatStringFromName(
+          "tabs.containers.tooltip",
+          [
+            label,
+            ContextualIdentityService.getUserContextLabel(tab.userContextId),
+          ]
+        );
+      }
+      return label;
+    },
+
     createTooltip(event) {
       event.stopPropagation();
       let tab = document.tooltipNode
@@ -4809,42 +4876,7 @@
           ).replace("#1", affectedTabsLength);
         }
       } else {
-        label = tab._fullLabel || tab.getAttribute("label");
-        if (AppConstants.NIGHTLY_BUILD) {
-          if (
-            tab.linkedBrowser &&
-            tab.linkedBrowser.isRemoteBrowser &&
-            tab.linkedBrowser.frameLoader
-          ) {
-            label +=
-              " (pid " + tab.linkedBrowser.frameLoader.remoteTab.osPid + ")";
-
-            // If we're running with fission enabled, try to include PID
-            // information for every remote subframe.
-            if (gFissionBrowser) {
-              let pids = new Set();
-              let stack = [tab.linkedBrowser.browsingContext];
-              while (stack.length) {
-                let bc = stack.pop();
-                stack.push(...bc.getChildren());
-                if (bc.currentWindowGlobal) {
-                  pids.add(bc.currentWindowGlobal.osPid);
-                }
-              }
-
-              label += " [F " + Array.from(pids).join(", ") + "]";
-            }
-          }
-        }
-        if (tab.userContextId) {
-          label = gTabBrowserBundle.formatStringFromName(
-            "tabs.containers.tooltip",
-            [
-              label,
-              ContextualIdentityService.getUserContextLabel(tab.userContextId),
-            ]
-          );
-        }
+        label = this.getTabTooltip(tab);
       }
 
       event.target.setAttribute("label", label);
@@ -4917,16 +4949,6 @@
             { isAppTab: tab.pinned },
             "BrowserTab"
           );
-          break;
-        }
-        case "Findbar:Keypress": {
-          let tab = this.getTabForBrowser(browser);
-          if (!this.isFindBarInitialized(tab)) {
-            let fakeEvent = data;
-            this.getFindBar(tab).then(findbar => {
-              findbar._onBrowserKeypress(fakeEvent);
-            });
-          }
           break;
         }
         case "RefreshBlocker:Blocked": {
@@ -5239,12 +5261,6 @@
           return;
         }
 
-        if (!event.isTopFrame) {
-          let bc = BrowsingContext.get(event.browsingContextId);
-          SubframeCrashHandler.onSubframeCrash(bc);
-          return;
-        }
-
         let browser = event.originalTarget;
 
         // Preloaded browsers do not actually have any tabs. If one crashes,
@@ -5375,8 +5391,8 @@
           return;
         }
 
-        SitePermissions.set(
-          event.detail.url,
+        SitePermissions.setForPrincipal(
+          browser.contentPrincipal,
           "autoplay-media",
           SitePermissions.BLOCK,
           SitePermissions.SCOPE_GLOBAL,
@@ -6002,6 +6018,9 @@ var StatusPanel = {
   },
 
   update() {
+    if (BrowserHandler.kiosk) {
+      return;
+    }
     let text;
     let type;
     let types = ["overLink"];
@@ -6264,8 +6283,9 @@ var TabContextMenu = {
 
     // Disable "Close Tabs to the Right" if there are no tabs
     // following it.
-    document.getElementById("context_closeTabsToTheEnd").disabled =
-      gBrowser.getTabsToTheEndFrom(this.contextTab).length == 0;
+    document.getElementById(
+      "context_closeTabsToTheEnd"
+    ).disabled = !gBrowser.getTabsToTheEndFrom(this.contextTab).length;
 
     // Disable "Close other Tabs" if there are no unpinned tabs.
     let unpinnedTabsToClose = multiselectionContext
@@ -6395,7 +6415,7 @@ var TabContextMenu = {
       }
 
       /* Create a triggering principal that is able to load the new tab
-         For codebase principals that are about: chrome: or resource: we need system to load them.
+         For content principals that are about: chrome: or resource: we need system to load them.
          Anything other than system principal needs to have the new userContextId.
       */
       let triggeringPrincipal;
@@ -6422,8 +6442,8 @@ var TabContextMenu = {
         triggeringPrincipal = Services.scriptSecurityManager.createNullPrincipal(
           { userContextId }
         );
-      } else if (triggeringPrincipal.isCodebasePrincipal) {
-        triggeringPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      } else if (triggeringPrincipal.isContentPrincipal) {
+        triggeringPrincipal = Services.scriptSecurityManager.createContentPrincipal(
           triggeringPrincipal.URI,
           { userContextId }
         );

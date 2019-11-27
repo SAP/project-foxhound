@@ -10,7 +10,7 @@ The Activity Stream system add-on sends various types of pings to the backend (H
 
 Schema definitions/validations that can be used for tests can be found in `system-addon/test/schemas/pings.js`.
 
-# Example Activity Stream `health` log
+## Example Activity Stream `health` log
 
 ```js
 {
@@ -30,7 +30,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-# Example Activity Stream `session` Log
+## Example Activity Stream `session` Log
 
 ```js
 {
@@ -54,7 +54,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-# Example Activity Stream `user_event` Log
+## Example Activity Stream `user_event` Log
 
 ```js
 {
@@ -79,7 +79,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-# Example Activity Stream `performance` Log
+## Example Activity Stream `performance` Log
 
 ```js
 {
@@ -103,7 +103,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-# Example Activity Stream `undesired event` Log
+## Example Activity Stream `undesired event` Log
 
 ```js
 {
@@ -124,7 +124,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
   "date": "2016-03-07"
 }
 ```
-# Example Activity Stream `impression_stats` Logs
+## Example Activity Stream `impression_stats` Logs
 
 ```js
 {
@@ -162,7 +162,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-# Example Discovery Stream `SPOCS Fill` log
+## Example Discovery Stream `SPOCS Fill` log
 
 ```js
 {
@@ -186,7 +186,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 }
 ```
 
-# Example Activity Stream `Router` Pings
+## Example Activity Stream `Router` Pings
 
 ```js
 {
@@ -208,7 +208,7 @@ Schema definitions/validations that can be used for tests can be found in `syste
 | `action` | [Required] Either `activity_stream_event`, `activity_stream_session`, or `activity_stream_performance`. | :one:
 | `addon_version` | [Required] Firefox build ID, i.e. `Services.appinfo.appBuildID`. | :one:
 | `client_id` | [Required] An identifier for this client. | :one:
-| `card_type` | [Optional] ("bookmark", "pocket", "trending", "pinned", "search") | :one:
+| `card_type` | [Optional] ("bookmark", "pocket", "trending", "pinned", "search", "spoc") | :one:
 | `search_vendor` | [Optional] the vendor of the search shortcut, one of ("google", "amazon", "wikipedia", "duckduckgo", "bing", etc.). This field only exists when `card_type = "search"` | :one:
 | `date` | [Auto populated by Onyx] The date in YYYY-MM-DD format. | :three:
 | `experiment_id` | [Optional] The unique identifier for a specific experiment. | :one:
@@ -256,7 +256,7 @@ and losing focus. | :one:
 | `pocket` | [Optional] An integer to record the 0-based index when user saves a Pocket tile to Pocket. | :one:
 | `user_prefs` | [Required] The encoded integer of user's preferences. | :one: & :four:
 | `is_preloaded` | [Required] A boolean to signify whether the page is preloaded or not | :one:
-| `icon_type` | [Optional] ("tippytop", "rich_icon", "screenshot_with_icon", "screenshot", "no_image") | :one:
+| `icon_type` | [Optional] ("tippytop", "rich_icon", "screenshot_with_icon", "screenshot", "no_image", "custom_screenshot") | :one:
 | `region` | [Optional] A string maps to pref "browser.search.region", which is essentially the two letter ISO 3166-1 country code populated by the Firefox search service. Note that: 1). it reports "OTHER" for those regions with smaller Firefox user base (less than 10000) so that users cannot be uniquely identified; 2). it reports "UNSET" if this pref is missing; 3). it reports "EMPTY" if the value of this pref is an empty string. | :one:
 | `profile_creation_date` | [Optional] An integer to record the age of the Firefox profile as the total number of days since the UNIX epoch. | :one:
 | `message_id` | [required] A string identifier of the message in Activity Stream Router. | :one:
@@ -284,17 +284,33 @@ but will likely be added in future versions:
 }
 ```
 
+## Encoding and decoding of `user_prefs`
+
 This encoding mapping was defined in `system-addon/lib/TelemetryFeed.jsm`
 
-| Preference | Encoded value |
-| --- | --- |
-| `showSearch` | 1 |
-| `showTopSites` | 2 |
-| `showTopStories` | 4 |
-| `showHighlights` | 8 |
-| `showSnippets`   | 16 |
-| `showSponsored`  | 32 |
-| `showCFRAddons`  | 64 |
-| `showCFRFeatures` | 128 |
+| Preference | Encoded value (binary) |
+| --- | ---: |
+| `showSearch` | 1 (00000001) |
+| `showTopSites` | 2 (00000010) |
+| `showTopStories` | 4 (00000100) |
+| `showHighlights` | 8 (00001000) |
+| `showSnippets`   | 16 (00010000) |
+| `showSponsored`  | 32 (00100000) |
+| `showCFRAddons`  | 64 (01000000) |
+| `showCFRFeatures` | 128 (10000000) |
 
-Each item above could be combined with other items through bitwise OR operation
+Each item above could be combined with other items through bitwise OR (`|`) operation.
+
+Examples:
+
+* Everything is on, `user_prefs = 1 | 2 | 4 | 8 | 16 | 32 | 64 | 128 = 255`
+* Everything is off, `user_prefs = 0`
+* Only show search and Top Stories, `user_prefs = 1 | 4 = 5`
+* Everything except Highlights, `user_prefs = 1 | 2 | 4 | 16 | 32 | 64 | 128 = 247`
+
+Likewise, one can use bitwise AND (`&`) for decoding.
+
+* Check if everything is shown, `user_prefs & (1 | 2 | 4 | 8 | 16 | 32 | 64 | 128)` or `user_prefs == 255`
+* Check if everything is off, `user_prefs == 0`
+* Check if search is shown, `user_prefs & 1`
+* Check if both Top Sites and Top Stories are shown, `(user_prefs & 2) && (user_prefs & 4)`, or  `(user_prefs & (2 | 4)) == (2 | 4)`

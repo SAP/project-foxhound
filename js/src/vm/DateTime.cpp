@@ -157,21 +157,41 @@ static int32_t UTCToLocalStandardOffsetSeconds() {
   return local_secs - (utc_secs + SecondsPerDay);
 }
 
-bool js::DateTimeInfo::internalUpdateTimeZoneAdjustment(
-    ResetTimeZoneMode mode) {
+void js::DateTimeInfo::internalResetTimeZone(ResetTimeZoneMode mode) {
+  // Nothing to do when an update request is already enqueued.
+  if (timeZoneStatus_ == TimeZoneStatus::NeedsUpdate) {
+    return;
+  }
+
+  // Mark the state as needing an update, but defer the actual update until it's
+  // actually needed to delay any system calls to the last possible moment. This
+  // is beneficial when this method is called during start-up, because it avoids
+  // main-thread I/O blocking the process.
+  if (mode == ResetTimeZoneMode::ResetEvenIfOffsetUnchanged) {
+    timeZoneStatus_ = TimeZoneStatus::NeedsUpdate;
+  } else {
+    timeZoneStatus_ = TimeZoneStatus::UpdateIfChanged;
+  }
+}
+
+void js::DateTimeInfo::updateTimeZone() {
+  MOZ_ASSERT(timeZoneStatus_ != TimeZoneStatus::Valid);
+
+  bool updateIfChanged = timeZoneStatus_ == TimeZoneStatus::UpdateIfChanged;
+
+  timeZoneStatus_ = TimeZoneStatus::Valid;
+
   /*
    * The difference between local standard time and UTC will never change for
    * a given time zone.
    */
-  utcToLocalStandardOffsetSeconds_ = UTCToLocalStandardOffsetSeconds();
+  int32_t newOffset = UTCToLocalStandardOffsetSeconds();
 
-  int32_t newTZA = utcToLocalStandardOffsetSeconds_ * msPerSecond;
-  if (mode == ResetTimeZoneMode::DontResetIfOffsetUnchanged &&
-      newTZA == localTZA_) {
-    return false;
+  if (updateIfChanged && newOffset == utcToLocalStandardOffsetSeconds_) {
+    return;
   }
 
-  localTZA_ = newTZA;
+  utcToLocalStandardOffsetSeconds_ = newOffset;
 
   dstRange_.reset();
 
@@ -191,12 +211,21 @@ bool js::DateTimeInfo::internalUpdateTimeZoneAdjustment(
   daylightSavingsName_ = nullptr;
 #endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
 
-  return true;
+  // Propagate the time zone change to ICU, too.
+  {
+    // Tell the analysis calling into ICU cannot GC.
+    JS::AutoSuppressGCAnalysis nogc;
+
+    internalResyncICUDefaultTimeZone();
+  }
 }
 
 js::DateTimeInfo::DateTimeInfo() {
-  internalUpdateTimeZoneAdjustment(
-      ResetTimeZoneMode::ResetEvenIfOffsetUnchaged);
+  // Set the time zone status into the invalid state, so we compute the actual
+  // defaults on first access. We don't yet want to initialize neither <ctime>
+  // nor ICU's time zone classes, because that may cause I/O operations slowing
+  // down the JS engine initialization, which we're currently in the middle of.
+  timeZoneStatus_ = TimeZoneStatus::NeedsUpdate;
 }
 
 js::DateTimeInfo::~DateTimeInfo() = default;
@@ -477,11 +506,6 @@ bool js::DateTimeInfo::internalTimeZoneDisplayName(char16_t* buf, size_t buflen,
 
 icu::TimeZone* js::DateTimeInfo::timeZone() {
   if (!timeZone_) {
-    // The current default might be stale, because JS::ResetTimeZone()
-    // doesn't immediately update ICU's default time zone. So perform an
-    // update if needed.
-    js::ResyncICUDefaultTimeZone();
-
     timeZone_.reset(icu::TimeZone::createDefault());
     MOZ_ASSERT(timeZone_);
   }
@@ -492,58 +516,26 @@ icu::TimeZone* js::DateTimeInfo::timeZone() {
 
 /* static */ js::ExclusiveData<js::DateTimeInfo>* js::DateTimeInfo::instance;
 
-/* static */ js::ExclusiveData<js::IcuTimeZoneStatus>* js::IcuTimeZoneState;
-
 bool js::InitDateTimeState() {
   MOZ_ASSERT(!DateTimeInfo::instance, "we should be initializing only once");
 
   DateTimeInfo::instance =
       js_new<ExclusiveData<DateTimeInfo>>(mutexid::DateTimeInfoMutex);
-  if (!DateTimeInfo::instance) {
-    return false;
-  }
-
-  MOZ_ASSERT(!IcuTimeZoneState, "we should be initializing only once");
-
-  // Set the ICU time zone status into the invalid state, so we compute the
-  // actual defaults on first access. We don't yet want to initialize ICU's
-  // time zone classes, because that may cause I/O operations slowing down
-  // the JS engine initialization, which we're currently in the middle of.
-  IcuTimeZoneState = js_new<ExclusiveData<IcuTimeZoneStatus>>(
-      mutexid::IcuTimeZoneStateMutex, IcuTimeZoneStatus::NeedsUpdate);
-  if (!IcuTimeZoneState) {
-    js_delete(DateTimeInfo::instance);
-    DateTimeInfo::instance = nullptr;
-    return false;
-  }
-
-  return true;
+  return !!DateTimeInfo::instance;
 }
 
 /* static */
 void js::FinishDateTimeState() {
-  js_delete(IcuTimeZoneState);
-  IcuTimeZoneState = nullptr;
-
   js_delete(DateTimeInfo::instance);
   DateTimeInfo::instance = nullptr;
 }
 
 void js::ResetTimeZoneInternal(ResetTimeZoneMode mode) {
-  bool needsUpdate = js::DateTimeInfo::updateTimeZoneAdjustment(mode);
-
-#if ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT)
-  if (needsUpdate) {
-    auto guard = js::IcuTimeZoneState->lock();
-    guard.get() = js::IcuTimeZoneStatus::NeedsUpdate;
-  }
-#else
-  mozilla::Unused << needsUpdate;
-#endif
+  js::DateTimeInfo::resetTimeZone(mode);
 }
 
 JS_PUBLIC_API void JS::ResetTimeZone() {
-  js::ResetTimeZoneInternal(js::ResetTimeZoneMode::ResetEvenIfOffsetUnchaged);
+  js::ResetTimeZoneInternal(js::ResetTimeZoneMode::ResetEvenIfOffsetUnchanged);
 }
 
 #if defined(XP_WIN)
@@ -735,53 +727,51 @@ static icu::UnicodeString ReadTimeZoneLink(const char* tz) {
 #endif /* ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT) */
 
 void js::ResyncICUDefaultTimeZone() {
-#if ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT)
-  auto guard = IcuTimeZoneState->lock();
-  if (guard.get() == IcuTimeZoneStatus::NeedsUpdate) {
-    bool recreate = true;
+  js::DateTimeInfo::resyncICUDefaultTimeZone();
+}
 
-    if (const char* tz = std::getenv("TZ")) {
-      icu::UnicodeString tzid;
+void js::DateTimeInfo::internalResyncICUDefaultTimeZone() {
+#if ENABLE_INTL_API && defined(ICU_TZ_HAS_RECREATE_DEFAULT)
+  bool recreate = true;
+
+  if (const char* tz = std::getenv("TZ")) {
+    icu::UnicodeString tzid;
 
 #  if defined(XP_WIN)
-      // If TZ is set and its value is valid under Windows' and IANA's
-      // time zone identifier rules, update the ICU default time zone to
-      // use this value.
-      if (IsOlsonCompatibleWindowsTimeZoneId(tz)) {
-        tzid.setTo(icu::UnicodeString(tz, -1, US_INV));
-      } else {
-        // If |tz| isn't a supported time zone identifier, use the
-        // default Windows time zone for ICU.
-        // TODO: Handle invalid time zone identifiers (bug 342068).
-      }
+    // If TZ is set and its value is valid under Windows' and IANA's time zone
+    // identifier rules, update the ICU default time zone to use this value.
+    if (IsOlsonCompatibleWindowsTimeZoneId(tz)) {
+      tzid.setTo(icu::UnicodeString(tz, -1, US_INV));
+    } else {
+      // If |tz| isn't a supported time zone identifier, use the default Windows
+      // time zone for ICU.
+      // TODO: Handle invalid time zone identifiers (bug 342068).
+    }
 #  else
-      // The TZ environment variable allows both absolute and
-      // relative paths, optionally beginning with a colon (':').
-      // (Relative paths, without the colon, are just Olson time
-      // zone names.)  We need to handle absolute paths ourselves,
-      // including handling that they might be symlinks.
-      // <https://unicode-org.atlassian.net/browse/ICU-13694>
-      if (const char* tzlink = TZContainsAbsolutePath(tz)) {
-        tzid.setTo(ReadTimeZoneLink(tzlink));
-      }
+    // The TZ environment variable allows both absolute and relative paths,
+    // optionally beginning with a colon (':'). (Relative paths, without the
+    // colon, are just Olson time zone names.)  We need to handle absolute paths
+    // ourselves, including handling that they might be symlinks.
+    // <https://unicode-org.atlassian.net/browse/ICU-13694>
+    if (const char* tzlink = TZContainsAbsolutePath(tz)) {
+      tzid.setTo(ReadTimeZoneLink(tzlink));
+    }
 #  endif /* defined(XP_WIN) */
 
-      if (!tzid.isEmpty()) {
-        mozilla::UniquePtr<icu::TimeZone> newTimeZone(
-            icu::TimeZone::createTimeZone(tzid));
-        MOZ_ASSERT(newTimeZone);
-        if (*newTimeZone != icu::TimeZone::getUnknown()) {
-          // adoptDefault() takes ownership of the time zone.
-          icu::TimeZone::adoptDefault(newTimeZone.release());
-          recreate = false;
-        }
+    if (!tzid.isEmpty()) {
+      mozilla::UniquePtr<icu::TimeZone> newTimeZone(
+          icu::TimeZone::createTimeZone(tzid));
+      MOZ_ASSERT(newTimeZone);
+      if (*newTimeZone != icu::TimeZone::getUnknown()) {
+        // adoptDefault() takes ownership of the time zone.
+        icu::TimeZone::adoptDefault(newTimeZone.release());
+        recreate = false;
       }
     }
+  }
 
-    if (recreate) {
-      icu::TimeZone::recreateDefault();
-    }
-    guard.get() = IcuTimeZoneStatus::Valid;
+  if (recreate) {
+    icu::TimeZone::recreateDefault();
   }
 #endif
 }

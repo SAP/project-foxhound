@@ -12,6 +12,7 @@
 #include "jit/arm/Assembler-arm.h"
 #include "jit/JitFrames.h"
 #include "jit/MoveResolver.h"
+#include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"
 
 namespace js {
@@ -727,11 +728,12 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
 
   void jump(Label* label) { as_b(label); }
   void jump(JitCode* code) { branch(code); }
-  void jump(TrampolinePtr code) {
+  void jump(ImmPtr ptr) {
     ScratchRegisterScope scratch(asMasm());
-    movePtr(ImmPtr(code.value), scratch);
+    movePtr(ptr, scratch);
     ma_bx(scratch);
   }
+  void jump(TrampolinePtr code) { jump(ImmPtr(code.value)); }
   void jump(Register reg) { ma_bx(reg); }
   void jump(const Address& addr) {
     ScratchRegisterScope scratch(asMasm());
@@ -861,7 +863,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void unboxDouble(const BaseIndex& src, FloatRegister dest);
 
   void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType type);
-  void unboxPrivate(const ValueOperand& src, Register dest);
 
   // See comment in MacroAssembler-x64.h.
   void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
@@ -922,8 +923,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   void boolValueToFloat32(const ValueOperand& operand, FloatRegister dest);
   void int32ValueToFloat32(const ValueOperand& operand, FloatRegister dest);
   void loadConstantFloat32(float f, FloatRegister dest);
-
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label);
 
   void loadUnboxedValue(Address address, MIRType type, AnyRegister dest) {
     if (dest.isFloat()) {
@@ -1259,8 +1258,6 @@ class MacroAssemblerARMCompat : public MacroAssemblerARM {
   bool buildOOLFakeExitFrame(void* fakeReturnAddr);
 
  public:
-  CodeOffset labelForPatch() { return CodeOffset(nextOffset().getOffset()); }
-
   void computeEffectiveAddress(const Address& address, Register dest) {
     ScratchRegisterScope scratch(asMasm());
     ma_add(address.base, Imm32(address.offset), dest, scratch, LeaveCC);

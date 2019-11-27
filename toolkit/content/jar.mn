@@ -31,9 +31,9 @@ toolkit.jar:
    content/global/aboutUrlClassifier.js
    content/global/aboutUrlClassifier.xhtml
    content/global/aboutUrlClassifier.css
-   content/global/directionDetector.html
    content/global/plugins.html
    content/global/plugins.css
+   content/global/plugins.js
    content/global/browser-child.js
    content/global/browser-content.js
 *   content/global/buildconfig.html
@@ -61,19 +61,14 @@ toolkit.jar:
    content/global/viewZoomOverlay.js
 #endif
    content/global/widgets.css
-   content/global/bindings/autocomplete.xml    (widgets/autocomplete.xml)
    content/global/bindings/calendar.js         (widgets/calendar.js)
    content/global/bindings/datekeeper.js       (widgets/datekeeper.js)
    content/global/bindings/datepicker.js       (widgets/datepicker.js)
    content/global/bindings/datetimebox.css     (widgets/datetimebox.css)
-   content/global/bindings/general.xml         (widgets/general.xml)
-   content/global/bindings/popup.xml           (widgets/popup.xml)
-   content/global/bindings/richlistbox.xml     (widgets/richlistbox.xml)
-   content/global/bindings/scrollbox.xml       (widgets/scrollbox.xml)
    content/global/bindings/spinner.js          (widgets/spinner.js)
-*  content/global/bindings/textbox.xml         (widgets/textbox.xml)
    content/global/bindings/timekeeper.js       (widgets/timekeeper.js)
    content/global/bindings/timepicker.js       (widgets/timepicker.js)
+   content/global/elements/autocomplete-input.js              (widgets/autocomplete-input.js)
    content/global/elements/autocomplete-popup.js              (widgets/autocomplete-popup.js)
    content/global/elements/autocomplete-richlistitem.js       (widgets/autocomplete-richlistitem.js)
    content/global/elements/browser-custom-element.js          (widgets/browser-custom-element.js)
@@ -87,6 +82,7 @@ toolkit.jar:
    content/global/elements/menu.js             (widgets/menu.js)
    content/global/elements/menupopup.js        (widgets/menupopup.js)
    content/global/elements/notificationbox.js  (widgets/notificationbox.js)
+   content/global/elements/panel.js            (widgets/panel.js)
    content/global/elements/pluginProblem.js    (widgets/pluginProblem.js)
    content/global/elements/radio.js            (widgets/radio.js)
    content/global/elements/richlistbox.js      (widgets/richlistbox.js)
@@ -94,6 +90,7 @@ toolkit.jar:
    content/global/elements/marquee.js          (widgets/marquee.js)
    content/global/elements/menulist.js         (widgets/menulist.js)
    content/global/elements/popupnotification.js  (widgets/popupnotification.js)
+   content/global/elements/arrowscrollbox.js     (widgets/arrowscrollbox.js)
    content/global/elements/search-textbox.js     (widgets/search-textbox.js)
    content/global/elements/stringbundle.js     (widgets/stringbundle.js)
    content/global/elements/tabbox.js           (widgets/tabbox.js)

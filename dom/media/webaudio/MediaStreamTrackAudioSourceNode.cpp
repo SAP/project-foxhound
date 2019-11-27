@@ -7,10 +7,9 @@
 #include "MediaStreamTrackAudioSourceNode.h"
 #include "mozilla/dom/MediaStreamTrackAudioSourceNodeBinding.h"
 #include "AudioNodeEngine.h"
-#include "AudioNodeExternalInputStream.h"
+#include "AudioNodeExternalInputTrack.h"
 #include "AudioStreamTrack.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/CORSMode.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 
@@ -50,7 +49,8 @@ MediaStreamTrackAudioSourceNode::Create(
     return nullptr;
   }
 
-  if (aAudioContext.Graph() != aOptions.mMediaStreamTrack->Graph()) {
+  if (!aOptions.mMediaStreamTrack->Ended() &&
+      aAudioContext.Graph() != aOptions.mMediaStreamTrack->Graph()) {
     nsCOMPtr<nsPIDOMWindowInner> pWindow = aAudioContext.GetParentObject();
     Document* document = pWindow ? pWindow->GetExtantDoc() : nullptr;
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
@@ -77,22 +77,27 @@ void MediaStreamTrackAudioSourceNode::Init(MediaStreamTrack* aMediaStreamTrack,
   MOZ_ASSERT(aMediaStreamTrack);
 
   if (!aMediaStreamTrack->AsAudioStreamTrack()) {
-    mTrackListener.NotifyEnded(nullptr);
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
 
-  MediaStreamGraph* graph = Context()->Graph();
+  if (aMediaStreamTrack->Ended()) {
+    // The track is ended and will never produce any data. Pretend like this is
+    // fine.
+    return;
+  }
+
+  MediaTrackGraph* graph = Context()->Graph();
 
   AudioNodeEngine* engine = new MediaStreamTrackAudioSourceNodeEngine(this);
-  mStream = AudioNodeExternalInputStream::Create(graph, engine);
+  mTrack = AudioNodeExternalInputTrack::Create(graph, engine);
 
-  MOZ_ASSERT(mStream);
+  MOZ_ASSERT(mTrack);
 
   mInputTrack = aMediaStreamTrack;
-  ProcessedMediaStream* outputStream =
-      static_cast<ProcessedMediaStream*>(mStream.get());
-  mInputPort = mInputTrack->ForwardTrackContentsTo(outputStream);
+  ProcessedMediaTrack* outputTrack =
+      static_cast<ProcessedMediaTrack*>(mTrack.get());
+  mInputPort = mInputTrack->ForwardTrackContentsTo(outputTrack);
   PrincipalChanged(mInputTrack);  // trigger enabling/disabling of the connector
   mInputTrack->AddPrincipalChangeObserver(this);
 
@@ -101,11 +106,11 @@ void MediaStreamTrackAudioSourceNode::Init(MediaStreamTrack* aMediaStreamTrack,
 
 void MediaStreamTrackAudioSourceNode::Destroy() {
   if (mInputTrack) {
+    mTrackListener.NotifyEnded(mInputTrack);
     mInputTrack->RemovePrincipalChangeObserver(this);
     mInputTrack->RemoveConsumer(&mTrackListener);
     mInputTrack = nullptr;
   }
-  mTrackListener.NotifyEnded(mInputTrack);
 
   if (mInputPort) {
     mInputPort->Destroy();
@@ -119,15 +124,15 @@ MediaStreamTrackAudioSourceNode::~MediaStreamTrackAudioSourceNode() {
 
 /**
  * Changes the principal. Note that this will be called on the main thread, but
- * changes will be enacted on the MediaStreamGraph thread. If the principal
- * change results in the document principal losing access to the stream, then
+ * changes will be enacted on the MediaTrackGraph thread. If the principal
+ * change results in the document principal losing access to the track, then
  * there needs to be other measures in place to ensure that any media that is
- * governed by the new stream principal is not available to the MediaStreamGraph
+ * governed by the new track principal is not available to the MediaTrackGraph
  * before this change completes. Otherwise, a site could get access to
  * media that they are not authorized to receive.
  *
  * One solution is to block the altered content, call this method, then dispatch
- * another change request to the MediaStreamGraph thread that allows the content
+ * another change request to the MediaTrackGraph thread that allows the content
  * under the new principal to flow. This might be unnecessary if the principal
  * change is changing to be the document principal.
  */
@@ -148,10 +153,10 @@ void MediaStreamTrackAudioSourceNode::PrincipalChanged(
       }
     }
   }
-  auto stream = static_cast<AudioNodeExternalInputStream*>(mStream.get());
-  bool enabled = subsumes || aMediaStreamTrack->GetCORSMode() != CORS_NONE;
-  stream->SetInt32Parameter(MediaStreamTrackAudioSourceNodeEngine::ENABLE,
-                            enabled);
+  auto track = static_cast<AudioNodeExternalInputTrack*>(mTrack.get());
+  bool enabled = subsumes;
+  track->SetInt32Parameter(MediaStreamTrackAudioSourceNodeEngine::ENABLE,
+                           enabled);
   fprintf(stderr, "NOW: %s", enabled ? "enabled" : "disabled");
 
   if (!enabled && doc) {
@@ -175,12 +180,12 @@ size_t MediaStreamTrackAudioSourceNode::SizeOfIncludingThis(
   return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }
 
-void MediaStreamTrackAudioSourceNode::DestroyMediaStream() {
+void MediaStreamTrackAudioSourceNode::DestroyMediaTrack() {
   if (mInputPort) {
     mInputPort->Destroy();
     mInputPort = nullptr;
   }
-  AudioNode::DestroyMediaStream();
+  AudioNode::DestroyMediaTrack();
 }
 
 JSObject* MediaStreamTrackAudioSourceNode::WrapObject(

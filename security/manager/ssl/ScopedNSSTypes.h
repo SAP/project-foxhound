@@ -229,11 +229,6 @@ inline void SECOID_DestroyAlgorithmID_true(SECAlgorithmID* a) {
   return SECOID_DestroyAlgorithmID(a, true);
 }
 
-inline void SECKEYEncryptedPrivateKeyInfo_true(
-    SECKEYEncryptedPrivateKeyInfo* epki) {
-  return SECKEY_DestroyEncryptedPrivateKeyInfo(epki, PR_TRUE);
-}
-
 inline void VFY_DestroyContext_true(VFYContext* ctx) {
   VFY_DestroyContext(ctx, true);
 }
@@ -307,6 +302,9 @@ MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECItem, SECItem,
                                       internal::SECITEM_FreeItem_true)
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECKEYPrivateKey, SECKEYPrivateKey,
                                       SECKEY_DestroyPrivateKey)
+MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECKEYPrivateKeyList,
+                                      SECKEYPrivateKeyList,
+                                      SECKEY_DestroyPrivateKeyList)
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECKEYPublicKey, SECKEYPublicKey,
                                       SECKEY_DestroyPublicKey)
 MOZ_TYPE_SPECIFIC_UNIQUE_PTR_TEMPLATE(UniqueSECMODModule, SECMODModule,

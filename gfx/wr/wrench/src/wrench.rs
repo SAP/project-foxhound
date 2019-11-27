@@ -249,6 +249,7 @@ impl Wrench {
             None,
             size,
         ).unwrap();
+
         let api = sender.create_api();
         let document_id = api.add_document(size, 0);
 
@@ -615,7 +616,7 @@ impl Wrench {
     }
 
     pub fn shut_down(self, rx: Receiver<NotifierEvent>) {
-        self.api.shut_down();
+        self.api.shut_down(true);
 
         loop {
             match rx.recv() {

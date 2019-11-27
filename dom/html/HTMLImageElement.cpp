@@ -23,10 +23,10 @@
 #include "nsNodeInfoManager.h"
 #include "mozilla/MouseEvents.h"
 #include "nsContentPolicyUtils.h"
-#include "nsIDOMWindow.h"
 #include "nsFocusManager.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/UserActivation.h"
 #include "nsAttrValueOrString.h"
 #include "imgLoader.h"
 #include "Image.h"
@@ -41,11 +41,11 @@
 #include "imgRequestProxy.h"
 
 #include "nsILoadGroup.h"
+#include "mozilla/CycleCollectedJSContext.h"
 
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MappedDeclarations.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 #include "nsLayoutUtils.h"
 
@@ -75,11 +75,11 @@ namespace dom {
 // Calls LoadSelectedImage on host element unless it has been superseded or
 // canceled -- this is the synchronous section of "update the image data".
 // https://html.spec.whatwg.org/multipage/embedded-content.html#update-the-image-data
-class ImageLoadTask : public Runnable {
+class ImageLoadTask : public MicroTaskRunnable {
  public:
   ImageLoadTask(HTMLImageElement* aElement, bool aAlwaysLoad,
                 bool aUseUrgentStartForChannel)
-      : Runnable("dom::ImageLoadTask"),
+      : MicroTaskRunnable(),
         mElement(aElement),
         mAlwaysLoad(aAlwaysLoad),
         mUseUrgentStartForChannel(aUseUrgentStartForChannel) {
@@ -87,14 +87,18 @@ class ImageLoadTask : public Runnable {
     mDocument->BlockOnload();
   }
 
-  NS_IMETHOD Run() override {
+  virtual void Run(AutoSlowOperation& aAso) override {
     if (mElement->mPendingImageLoadTask == this) {
       mElement->mPendingImageLoadTask = nullptr;
       mElement->mUseUrgentStartForChannel = mUseUrgentStartForChannel;
       mElement->LoadSelectedImage(true, true, mAlwaysLoad);
     }
     mDocument->UnblockOnload(false);
-    return NS_OK;
+  }
+
+  virtual bool Suppressed() override {
+    nsIGlobalObject* global = mElement->GetOwnerGlobal();
+    return global && global->IsInSyncOperation();
   }
 
   bool AlwaysLoad() { return mAlwaysLoad; }
@@ -160,11 +164,17 @@ bool HTMLImageElement::Draggable() const {
 }
 
 bool HTMLImageElement::Complete() {
-  if (!mCurrentRequest) {
-    return true;
+  // It is still not clear what value should img.complete return in various
+  // cases, see https://github.com/whatwg/html/issues/4884
+
+  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::srcset)) {
+    nsAutoString src;
+    if (!GetAttr(kNameSpaceID_None, nsGkAtoms::src, src) || src.IsEmpty()) {
+      return true;
+    }
   }
 
-  if (mPendingRequest) {
+  if (!mCurrentRequest || mPendingRequest) {
     return false;
   }
 
@@ -223,11 +233,11 @@ bool HTMLImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
 void HTMLImageElement::MapAttributesIntoRule(
     const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  nsGenericHTMLElement::MapImageAlignAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageBorderAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageMarginAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageSizeAttributesInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
+  MapImageAlignAttributeInto(aAttributes, aDecls);
+  MapImageBorderAttributeInto(aAttributes, aDecls);
+  MapImageMarginAttributeInto(aAttributes, aDecls);
+  MapImageSizeAttributesInto(aAttributes, aDecls, MapAspectRatio::Yes);
+  MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 nsChangeHint HTMLImageElement::GetAttributeChangeHint(const nsAtom* aAttribute,
@@ -306,7 +316,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aName == nsGkAtoms::src && aNameSpaceID == kNameSpaceID_None && !aValue) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     // SetAttr handles setting src since it needs to catch img.src =
     // img.src, so we only need to handle the unset case
@@ -322,7 +332,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   } else if (aName == nsGkAtoms::srcset && aNameSpaceID == kNameSpaceID_None) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     mSrcsetTriggeringPrincipal = aMaybeScriptedPrincipal;
 
@@ -330,7 +340,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   } else if (aName == nsGkAtoms::sizes && aNameSpaceID == kNameSpaceID_None) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     PictureSourceSizesChanged(this, attrVal.String(), aNotify);
   } else if (aName == nsGkAtoms::decoding &&
@@ -373,7 +383,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
         this, aValue.String(), aMaybeScriptedPrincipal);
@@ -418,7 +428,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   } else if (aName == nsGkAtoms::referrerpolicy &&
              aNamespaceID == kNameSpaceID_None && aNotify) {
     ReferrerPolicy referrerPolicy = GetImageReferrerPolicy();
-    if (!InResponsiveMode() && referrerPolicy != RP_Unset &&
+    if (!InResponsiveMode() && referrerPolicy != ReferrerPolicy::_empty &&
         aValueMaybeChanged &&
         referrerPolicy != ReferrerPolicyFromAttr(aOldValue)) {
       // XXX: Bug 1076583 - We still use the older synchronous algorithm
@@ -436,7 +446,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   if (forceReload) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     if (InResponsiveMode()) {
       // per spec, full selection runs when this changes, even though
@@ -508,7 +518,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     // Run selection algorithm when an img element is inserted into a document
     // in order to react to changes in the environment. See note of
@@ -524,7 +534,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     // We still act synchronously for the non-responsive case (Bug
     // 1076583), but still need to delay if it is unsafe to run
@@ -712,7 +722,7 @@ nsresult HTMLImageElement::CopyInnerTo(HTMLImageElement* aDest) {
         aDest->OwnerDoc()->ShouldLoadImages()) {
       // Mark channel as urgent-start before load image if the image load is
       // initaiated by a user interaction.
-      mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+      mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
       nsContentUtils::AddScriptRunner(NewRunnableMethod<bool>(
           "dom::HTMLImageElement::MaybeLoadImage", aDest,
@@ -790,7 +800,7 @@ void HTMLImageElement::QueueImageLoadTask(bool aAlwaysLoad) {
   // The task checks this to determine if it was the last
   // queued event, and so earlier tasks are implicitly canceled.
   mPendingImageLoadTask = task;
-  nsContentUtils::RunInStableState(task.forget());
+  CycleCollectedJSContext::Get()->DispatchToMicroTask(task.forget());
 }
 
 bool HTMLImageElement::HaveSrcsetOrInPicture() {
@@ -1202,16 +1212,6 @@ void HTMLImageElement::DestroyContent() {
 
 void HTMLImageElement::MediaFeatureValuesChanged() {
   QueueImageLoadTask(false);
-}
-
-void HTMLImageElement::FlushUseCounters() {
-  nsCOMPtr<imgIRequest> request;
-  GetRequest(CURRENT_REQUEST, getter_AddRefs(request));
-
-  nsCOMPtr<imgIContainer> container;
-  request->GetImage(getter_AddRefs(container));
-
-  static_cast<image::Image*>(container.get())->ReportUseCounters();
 }
 
 }  // namespace dom

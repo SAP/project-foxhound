@@ -66,8 +66,10 @@ struct CraneliftStaticEnvironment {
   bool hasBmi1;
   bool hasBmi2;
   bool hasLzcnt;
+  bool platformIsWindows;
   size_t staticMemoryBound;
   size_t memoryGuardSize;
+  size_t memoryBaseTlsOffset;
   size_t instanceTlsOffset;
   size_t interruptTlsOffset;
   size_t cxTlsOffset;
@@ -214,7 +216,8 @@ size_t table_tlsOffset(const js::wasm::TableDesc*);
 
 size_t funcType_numArgs(const js::wasm::FuncTypeWithId*);
 const BD_ValType* funcType_args(const js::wasm::FuncTypeWithId*);
-js::wasm::TypeCode funcType_retType(const js::wasm::FuncTypeWithId*);
+size_t funcType_numResults(const js::wasm::FuncTypeWithId*);
+const BD_ValType* funcType_results(const js::wasm::FuncTypeWithId*);
 js::wasm::FuncTypeIdDescKind funcType_idKind(const js::wasm::FuncTypeWithId*);
 size_t funcType_idImmediate(const js::wasm::FuncTypeWithId*);
 size_t funcType_idTlsOffset(const js::wasm::FuncTypeWithId*);

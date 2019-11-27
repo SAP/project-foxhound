@@ -469,8 +469,7 @@ Object.defineProperty(exports, "assert", {
  */
 exports.defineLazyModuleGetter = function(object, name, resource, symbol) {
   this.defineLazyGetter(object, name, function() {
-    const temp = {};
-    ChromeUtils.import(resource, temp);
+    const temp = ChromeUtils.import(resource);
     return temp[symbol || name];
   });
 };
@@ -501,7 +500,7 @@ DevToolsUtils.defineLazyGetter(this, "NetworkHelper", () => {
  *        - window: the window to get the loadGroup from
  *        - charset: the charset to use if the channel doesn't provide one
  *        - principal: the principal to use, if omitted, the request is loaded
- *                     with a codebase principal corresponding to the url being
+ *                     with a content principal corresponding to the url being
  *                     loaded, using the origin attributes of the window, if any.
  *        - cacheKey: when loading from cache, use this key to retrieve a cache
  *                    specific to a given SHEntry. (Allows loading POST
@@ -544,14 +543,16 @@ function mainThreadFetch(
       ? channel.LOAD_FROM_CACHE
       : channel.LOAD_BYPASS_CACHE;
 
-    // When loading from cache, the cacheKey allows us to target a specific
-    // SHEntry and offer ways to restore POST requests from cache.
-    if (
-      aOptions.loadFromCache &&
-      aOptions.cacheKey != 0 &&
-      channel instanceof Ci.nsICacheInfoChannel
-    ) {
-      channel.cacheKey = aOptions.cacheKey;
+    if (aOptions.loadFromCache && channel instanceof Ci.nsICacheInfoChannel) {
+      // If DevTools intents to load the content from the cache,
+      // we make the LOAD_FROM_CACHE flag preferred over LOAD_BYPASS_CACHE.
+      channel.preferCacheLoadOverBypass = true;
+
+      // When loading from cache, the cacheKey allows us to target a specific
+      // SHEntry and offer ways to restore POST requests from cache.
+      if (aOptions.cacheKey != 0) {
+        channel.cacheKey = aOptions.cacheKey;
+      }
     }
 
     if (aOptions.window) {
@@ -561,6 +562,7 @@ function mainThreadFetch(
       ).loadGroup;
     }
 
+    /* eslint-disable complexity */
     const onResponse = (stream, status, request) => {
       if (!components.isSuccessCode(status)) {
         reject(new Error(`Failed to fetch ${url}. Code ${status}.`));
@@ -626,9 +628,21 @@ function mainThreadFetch(
         }
         const unicodeSource = NetworkHelper.convertToUnicode(source, charset);
 
+        // Look for any source map URL in the response.
+        let sourceMapURL;
+        try {
+          sourceMapURL = request.getResponseHeader("SourceMap");
+        } catch (e) {}
+        if (!sourceMapURL) {
+          try {
+            sourceMapURL = request.getResponseHeader("X-SourceMap");
+          } catch (e) {}
+        }
+
         resolve({
           content: unicodeSource,
           contentType: request.contentType,
+          sourceMapURL,
         });
       } catch (ex) {
         const uri = request.originalURI;
@@ -718,7 +732,7 @@ function newChannelForURL(
     // and it may not be correct.
     let prin = principal;
     if (!prin) {
-      prin = Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
+      prin = Services.scriptSecurityManager.createContentPrincipal(uri, {});
     }
 
     channelOptions.loadingPrincipal = prin;
@@ -873,6 +887,12 @@ errorOnFlag(exports, "wantVerbose");
 // where unsafeDereference will return an opaque security wrapper to the
 // referent.
 function callPropertyOnObject(object, name, ...args) {
+  // When replaying, the result of the call may already be known, which avoids
+  // having to communicate with the replaying process.
+  if (isReplaying && args.length == 0 && object.replayHasCallResult(name)) {
+    return object.replayCallResult(name);
+  }
+
   // Find the property.
   let descriptor;
   let proto = object;

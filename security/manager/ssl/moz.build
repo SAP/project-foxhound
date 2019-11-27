@@ -59,6 +59,7 @@ EXTRA_JS_MODULES.psm += [
 ]
 
 EXPORTS += [
+    'CommonSocketControl.h',
     'CryptoTask.h',
     'EnterpriseRoots.h',
     'nsClientAuthRemember.h',
@@ -74,6 +75,7 @@ EXPORTS += [
     'RootCertificateTelemetryUtils.h',
     'ScopedNSSTypes.h',
     'SharedCertVerifier.h',
+    'TransportSecurityInfo.h',
 ]
 
 EXPORTS.mozilla += [
@@ -84,6 +86,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.psm += [
     'PSMContentListener.h',
+    'TransportSecurityInfo.h',
 ]
 
 EXPORTS.ipc += [
@@ -91,6 +94,7 @@ EXPORTS.ipc += [
 ]
 
 UNIFIED_SOURCES += [
+    'CommonSocketControl.cpp',
     'ContentSignatureVerifier.cpp',
     'CryptoTask.cpp',
     'CSTrustDomain.cpp',
@@ -126,7 +130,6 @@ UNIFIED_SOURCES += [
     'nsSSLSocketProvider.cpp',
     'nsTLSSocketProvider.cpp',
     'OSKeyStore.cpp',
-    'OSReauthenticator.cpp',
     'PKCS11ModuleDB.cpp',
     'PSMContentListener.cpp',
     'PSMRunnable.cpp',
@@ -138,7 +141,19 @@ UNIFIED_SOURCES += [
     'TransportSecurityInfo.cpp',
 ]
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['OS_ARCH'] == 'WINNT':
+    # On Windows this file includes ntsecapi.h, which contains definitions that
+    # conflict with headers included in remaining source files. We compile this
+    # one independently to prevent that interferance.
+    SOURCES += [
+        'OSReauthenticator.cpp',
+    ]
+else:
+    UNIFIED_SOURCES += [
+        'OSReauthenticator.cpp',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     UNIFIED_SOURCES += [
         'LibSecret.cpp',
     ]
@@ -196,6 +211,7 @@ FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
     '/dom/base',
     '/dom/crypto',
+    '/netwerk/base',
     '/security/certverifier',
 ]
 
@@ -203,12 +219,9 @@ LOCAL_INCLUDES += [
     '!/dist/public/nss',
 ]
 
-GENERATED_FILES = [
-    'nsSTSPreloadList.h',
-]
-dafsa_data = GENERATED_FILES['nsSTSPreloadList.h']
-dafsa_data.script = '../../../xpcom/ds/tools/make_dafsa.py'
-dafsa_data.inputs = ['nsSTSPreloadList.inc']
+GeneratedFile('nsSTSPreloadList.h',
+              script='../../../xpcom/ds/tools/make_dafsa.py',
+              inputs=['nsSTSPreloadList.inc'])
 
 if CONFIG['NSS_DISABLE_DBM']:
     DEFINES['NSS_DISABLE_DBM'] = '1'

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -17,6 +15,15 @@ registerCleanupFunction(() => {
 });
 
 add_task(async function checkMenuEntryStates() {
+  // We have to disable CSP for this test otherwise the CSP of
+  // about:devtools-toolbox will block the data: url.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["security.csp.enable", false],
+      ["csp.skip_about_page_has_csp_assert", true],
+    ],
+  });
+
   info("Checking the state of edit menuitems with an empty clipboard");
   const toolbox = await openNewTabAndToolbox(URL, "inspector");
 
@@ -60,6 +67,15 @@ add_task(async function checkMenuEntryStates() {
 });
 
 add_task(async function automaticallyBindTexbox() {
+  // We have to disable CSP for this test otherwise the CSP of
+  // about:devtools-toolbox will block the data: url.
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      ["security.csp.enable", false],
+      ["csp.skip_about_page_has_csp_assert", true],
+    ],
+  });
+
   info(
     "Registering a tool with an input field and making sure the context menu works"
   );

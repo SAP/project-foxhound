@@ -1,19 +1,17 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const { Cc, Ci, Cu } = require("chrome");
+const { Cu } = require("chrome");
 const Services = require("Services");
 const { Pool } = require("devtools/shared/protocol");
 const {
   LazyPool,
   createExtraActors,
 } = require("devtools/shared/protocol/lazy-pool");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 
 loader.lazyRequireGetter(
   this,
@@ -23,14 +21,14 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "ContentProcessTargetActor",
-  "devtools/server/actors/targets/content-process",
+  "ProcessDescriptorActor",
+  "devtools/server/actors/descriptors/process",
   true
 );
 loader.lazyRequireGetter(
   this,
-  "ParentProcessTargetActor",
-  "devtools/server/actors/targets/parent-process",
+  "FrameDescriptorActor",
+  "devtools/server/actors/descriptors/frame",
   true
 );
 
@@ -121,9 +119,6 @@ function RootActor(connection, parameters) {
   this._extraActors = {};
 
   this._globalActorPool = new LazyPool(this.conn);
-
-  this._parentProcessTargetActor = null;
-  this._processActors = new Map();
 }
 
 RootActor.prototype = {
@@ -177,9 +172,6 @@ RootActor.prototype = {
     // Whether or not the timeline actor can emit DOMContentLoaded and Load
     // markers, currently in use by the network monitor. Fx45+
     documentLoadingMarkers: true,
-    // Whether or not the webextension addon actor have to be connected
-    // to retrieve the extension child process target actors.
-    webExtensionAddonConnect: true,
     // Version of perf actor. Fx65+
     // Version 1 - Firefox 65: Introduces a duration-based buffer. It can be controlled
     // by adding a `duration` property (in seconds) to the options passed to
@@ -189,6 +181,8 @@ RootActor.prototype = {
     // Supports native log points and modifying the condition/log of an existing
     // breakpoints. Fx66+
     nativeLogpoints: true,
+    // Supports watchpoints in the server for Fx71+
+    watchpoints: true,
     // support older browsers for Fx69+
     hasThreadFront: true,
   },
@@ -241,6 +235,9 @@ RootActor.prototype = {
     if (this._tabTargetActorPool) {
       this._tabTargetActorPool.destroy();
     }
+    if (this._processDescriptorActorPool) {
+      this._processDescriptorActorPool.destroy();
+    }
     if (this._globalActorPool) {
       this._globalActorPool.destroy();
     }
@@ -253,6 +250,10 @@ RootActor.prototype = {
     if (this._workerTargetActorPool) {
       this._workerTargetActorPool.destroy();
     }
+    if (this._frameDescriptorActorPool) {
+      this._frameDescriptorActorPool.destroy();
+    }
+
     if (this._serviceWorkerRegistrationActorPool) {
       this._serviceWorkerRegistrationActorPool.destroy();
     }
@@ -262,8 +263,6 @@ RootActor.prototype = {
     this._globalActorPool = null;
     this._chromeWindowActorPool = null;
     this._parameters = null;
-    this._parentProcessTargetActor = null;
-    this._processActors.clear();
   },
 
   /**
@@ -560,8 +559,28 @@ RootActor.prototype = {
       };
     }
     processList.onListChanged = this._onProcessListChanged;
+    const processes = processList.getList();
+    const pool = new Pool(this.conn);
+    for (const metadata of processes) {
+      let processDescriptor = this._getKnownDescriptor(
+        metadata.id,
+        this._processDescriptorActorPool
+      );
+      if (!processDescriptor) {
+        processDescriptor = new ProcessDescriptorActor(this.conn, metadata);
+      }
+      pool.manage(processDescriptor);
+    }
+    // Do not destroy the pool before transfering ownership to the newly created
+    // pool, so that we do not accidently destroy actors that are still in use.
+    if (this._processDescriptorActorPool) {
+      this._processDescriptorActorPool.destroy();
+    }
+    this._processDescriptorActorPool = pool;
+    // extract the values in the processActors map
+    const processActors = [...this._processDescriptorActorPool.poolChildren()];
     return {
-      processes: processList.getList(),
+      processes: processActors.map(actor => actor.form()),
     };
   },
 
@@ -585,65 +604,138 @@ RootActor.prototype = {
     }
     // If the request doesn't contains id parameter or id is 0
     // (id == 0, based on onListProcesses implementation)
-    if (!("id" in request) || request.id === 0) {
-      // Check if we are running on xpcshell.
-      // When running on xpcshell, there is no valid browsing context to attach to
-      // and so ParentProcessTargetActor doesn't make sense as it inherits from
-      // BrowsingContextTargetActor. So instead use ContentProcessTargetActor, which
-      // matches xpcshell needs.
-      const env = Cc["@mozilla.org/process/environment;1"].getService(
-        Ci.nsIEnvironment
-      );
-      const isXpcshell = env.exists("XPCSHELL_TEST_PROFILE_DIR");
+    const id = request.id || 0;
 
-      if (
-        !isXpcshell &&
-        this._parentProcessTargetActor &&
-        (!this._parentProcessTargetActor.docShell ||
-          this._parentProcessTargetActor.docShell.isBeingDestroyed)
-      ) {
-        this._parentProcessTargetActor.destroy();
-        this._parentProcessTargetActor = null;
-      }
-      if (!this._parentProcessTargetActor) {
-        // Create the target actor for the parent process
-        if (isXpcshell) {
-          this._parentProcessTargetActor = new ContentProcessTargetActor(
-            this.conn
-          );
-        } else {
-          this._parentProcessTargetActor = new ParentProcessTargetActor(
-            this.conn
-          );
-        }
-        this._globalActorPool.manage(this._parentProcessTargetActor);
-      }
+    this._processDescriptorActorPool =
+      this._processDescriptorActorPool || new Pool(this.conn);
 
-      return { form: this._parentProcessTargetActor.form() };
-    }
-
-    const { id } = request;
-    const mm = Services.ppmm.getChildAt(id);
-    if (!mm) {
-      return {
-        error: "noProcess",
-        message: "There is no process with id '" + id + "'.",
-      };
-    }
-    let form = this._processActors.get(id);
-    if (form) {
-      return { form };
-    }
-    const onDestroy = () => {
-      this._processActors.delete(id);
-    };
-    form = await DebuggerServer.connectToContentProcess(
-      this.conn,
-      mm,
-      onDestroy
+    let processDescriptor = this._getKnownDescriptor(
+      id,
+      this._processDescriptorActorPool
     );
-    this._processActors.set(id, form);
-    return { form };
+    if (!processDescriptor) {
+      const options = { id, parent: id === 0 };
+      processDescriptor = new ProcessDescriptorActor(this.conn, options);
+      this._processDescriptorActorPool.manage(processDescriptor);
+    }
+    return { form: processDescriptor.form() };
+  },
+
+  async _getChildBrowsingContexts(id) {
+    // If we have the id of the parent, then we need to get the child
+    // contexts in a special way. We have a method on the descriptor
+    // to take care of this.
+    const window = Services.wm.getMostRecentWindow(
+      DebuggerServer.chromeWindowType
+    );
+    if (window.docShell.browsingContext.id === id) {
+      return [
+        ...window.document.querySelectorAll(`browser[remote="true"]`),
+      ].map(browser => browser.browsingContext);
+    }
+    // for all other contexts, since we do not need to get contexts of
+    // a different type, we can just get the children directly from
+    // the BrowsingContext.
+    const parentBrowsingContext = BrowsingContext.get(id);
+    return parentBrowsingContext.getChildren();
+  },
+
+  async onListRemoteFrames({ id }) {
+    const frames = [];
+    const contextsToWalk = await this._getChildBrowsingContexts(id);
+
+    if (contextsToWalk.length == 0) {
+      return { frames };
+    }
+
+    const pool = new Pool(this.conn);
+    while (contextsToWalk.length) {
+      const currentContext = contextsToWalk.pop();
+      let frameDescriptor = this._getKnownDescriptor(
+        currentContext.id,
+        this._frameDescriptorActorPool
+      );
+      if (!frameDescriptor) {
+        frameDescriptor = new FrameDescriptorActor(this.conn, currentContext);
+      }
+      pool.manage(frameDescriptor);
+      frames.push(frameDescriptor);
+      contextsToWalk.push(...currentContext.getChildren());
+    }
+    // Do not destroy the pool before transfering ownership to the newly created
+    // pool, so that we do not accidently destroy actors that are still in use.
+    if (this._frameDescriptorActorPool) {
+      this._frameDescriptorActorPool.destroy();
+    }
+
+    this._frameDescriptorActorPool = pool;
+
+    // TODO: determine why we cannot return frames without a cyclical object value
+    return { frames: frames.map(f => f.form()) };
+  },
+
+  _getKnownDescriptor(id, pool) {
+    // if there is no pool, then we do not have any descriptors
+    if (!pool) {
+      return null;
+    }
+    for (const descriptor of pool.poolChildren()) {
+      if (descriptor.id === id) {
+        return descriptor;
+      }
+    }
+    return null;
+  },
+
+  _getParentProcessDescriptor() {
+    if (!this._processDescriptorActorPool) {
+      this._processDescriptorActorPool = new Pool(this.conn);
+      const options = { id: 0, parent: true };
+      const descriptor = new ProcessDescriptorActor(this.conn, options);
+      this._processDescriptorActorPool.manage(descriptor);
+      return descriptor;
+    }
+    for (const descriptor of this._processDescriptorActorPool.poolChildren()) {
+      if (descriptor.isParent) {
+        return descriptor;
+      }
+    }
+    return null;
+  },
+
+  _isParentBrowsingContext(id) {
+    // TODO: We may stop making the parent process codepath so special
+    const window = Services.wm.getMostRecentWindow(
+      DebuggerServer.chromeWindowType
+    );
+    return id == window.docShell.browsingContext.id;
+  },
+
+  onGetBrowsingContextDescriptor({ id }) {
+    // since the id for frame descriptors is the same as the browsing
+    // context id, we can get the associated descriptor using
+    // _getKnownDescriptor.
+    const frameDescriptor = this._getKnownDescriptor(
+      id,
+      this._frameDescriptorActorPool
+    );
+    if (frameDescriptor) {
+      return frameDescriptor.form();
+    }
+    // if the descriptor cannot be found in the frames, it is probably
+    // the main process, which is a process descriptor
+
+    if (this._isParentBrowsingContext(id)) {
+      const parentProcessDescriptor = this._getParentProcessDescriptor();
+      return parentProcessDescriptor.form();
+    }
+    const context = BrowsingContext.get(id);
+    const newFrameDescriptor = new FrameDescriptorActor(this.conn, context);
+    if (!this._frameDescriptorActorPool) {
+      this._frameDescriptorActorPool = new Pool(this.conn);
+    }
+    this._frameDescriptorActorPool.manage(newFrameDescriptor);
+    return newFrameDescriptor.form();
   },
 
   /* This is not in the spec, but it's used by tests. */
@@ -692,6 +784,9 @@ RootActor.prototype.requestTypes = {
     RootActor.prototype.onListServiceWorkerRegistrations,
   listProcesses: RootActor.prototype.onListProcesses,
   getProcess: RootActor.prototype.onGetProcess,
+  getBrowsingContextDescriptor:
+    RootActor.prototype.onGetBrowsingContextDescriptor,
+  listRemoteFrames: RootActor.prototype.onListRemoteFrames,
   echo: RootActor.prototype.onEcho,
   protocolDescription: RootActor.prototype.onProtocolDescription,
 };

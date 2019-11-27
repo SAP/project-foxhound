@@ -13,8 +13,10 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/PromiseNativeHandler.h"
 #include "nsRefPtrHashtable.h"
+#include "nsIXPConnect.h"
 
 class nsIGlobalObject;
+class nsQueryActor;
 
 namespace mozilla {
 namespace dom {
@@ -39,18 +41,16 @@ class JSWindowActor : public nsISupports, public nsWrapperCache {
   JSWindowActor();
 
   enum class Type { Parent, Child };
-  enum class DestroyCallbackFunction { WillDestroy, DidDestroy };
+  enum class CallbackFunction { WillDestroy, DidDestroy, ActorCreated };
 
   const nsString& Name() const { return mName; }
 
   void SendAsyncMessage(JSContext* aCx, const nsAString& aMessageName,
-                        JS::Handle<JS::Value> aObj,
-                        JS::Handle<JS::Value> aTransfers, ErrorResult& aRv);
+                        JS::Handle<JS::Value> aObj, ErrorResult& aRv);
 
   already_AddRefed<Promise> SendQuery(JSContext* aCx,
                                       const nsAString& aMessageName,
                                       JS::Handle<JS::Value> aObj,
-                                      JS::Handle<JS::Value> aTransfers,
                                       ErrorResult& aRv);
 
   void ReceiveRawMessage(const JSWindowActorMessageMeta& aMetadata,
@@ -76,9 +76,13 @@ class JSWindowActor : public nsISupports, public nsWrapperCache {
 
   void AfterDestroy();
 
-  void DestroyCallback(DestroyCallbackFunction willDestroy);
+  void InvokeCallback(CallbackFunction willDestroy);
 
  private:
+  friend class ::nsQueryActor;  // for QueryInterfaceActor
+
+  nsresult QueryInterfaceActor(const nsIID& aIID, void** aPtr);
+
   void ReceiveMessageOrQuery(JSContext* aCx,
                              const JSWindowActorMessageMeta& aMetadata,
                              JS::Handle<JS::Value> aData, ErrorResult& aRv);
@@ -114,6 +118,7 @@ class JSWindowActor : public nsISupports, public nsWrapperCache {
     uint64_t mQueryId;
   };
 
+  nsCOMPtr<nsISupports> mWrappedJS;
   nsString mName;
   nsRefPtrHashtable<nsUint64HashKey, Promise> mPendingQueries;
   uint64_t mNextQueryId;

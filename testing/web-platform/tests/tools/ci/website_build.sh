@@ -2,7 +2,7 @@
 
 set -ex
 
-neutral_status=78
+neutral_status=0
 source_revision=$(git rev-parse HEAD)
 # The token available in the `GITHUB_TOKEN` variable may be used to push to the
 # repository, but GitHub Pages will not rebuild the website in response to such
@@ -31,18 +31,6 @@ function modifies_relevant_files {
   git diff --name-only ${base_revision} | \
     grep -E --silent '^(docs|tools)/'
 }
-
-if is_pull_request ; then
-  echo Submission comes from a pull request. Exiting without building.
-
-  exit ${neutral_status}
-fi
-
-if ! targets_master ; then
-  echo Submission does not target the 'master' branch. Exiting without building.
-
-  exit ${neutral_status}
-fi
 
 if ! modifies_relevant_files ; then
   echo No files related to the website have been modified. Exiting without
@@ -77,6 +65,18 @@ touch .nojekyll
 
 # Publish the website by pushing the built contents to the `gh-pages` branch
 git add .
+
+if is_pull_request ; then
+  echo Submission comes from a pull request. Exiting without publishing.
+
+  exit ${neutral_status}
+fi
+
+if ! targets_master ; then
+  echo Submission does not target the 'master' branch. Exiting without publishing.
+
+  exit ${neutral_status}
+fi
 
 if git diff --exit-code --quiet --staged ; then
   echo No change to the website contents. Exiting without publishing.

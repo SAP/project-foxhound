@@ -39,6 +39,14 @@ add_task(async function test_doAutocompleteSearch_generated_noLogins() {
     messageManager: {
       sendAsyncMessage: sendMessageStub,
     },
+    ownerGlobal: {
+      docShell: {
+        // eslint-disable-next-line mozilla/use-chromeutils-generateqi
+        QueryInterface() {
+          return { usePrivateBrowsing: false };
+        },
+      },
+    },
   };
 
   sinon
@@ -47,7 +55,7 @@ add_task(async function test_doAutocompleteSearch_generated_noLogins() {
     .callsFake(() => {
       return {
         currentWindowGlobal: {
-          documentPrincipal: Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          documentPrincipal: Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             "https://www.example.com^userContextId=1"
           ),
         },
@@ -60,7 +68,11 @@ add_task(async function test_doAutocompleteSearch_generated_noLogins() {
   equal(msg1.requestId, arg1.requestId, "requestId matches");
   equal(msg1.logins.length, 0, "no logins");
   ok(msg1.generatedPassword, "has a generated password");
-  equal(msg1.generatedPassword.length, 15, "generated password length");
+  equal(
+    msg1.generatedPassword.length,
+    LoginTestUtils.generation.LENGTH,
+    "generated password length"
+  );
   sendMessageStub.resetHistory();
 
   info("repeat the search and ensure the same password was used");

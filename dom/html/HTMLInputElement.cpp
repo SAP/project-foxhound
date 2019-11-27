@@ -15,9 +15,11 @@
 #include "mozilla/dom/HTMLFormSubmission.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/GetFilesHelper.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WheelEventBinding.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/TextUtils.h"
 #include "nsAttrValueInlines.h"
 #include "nsCRTGlue.h"
 #include "nsQueryObject.h"
@@ -195,6 +197,14 @@ static const nsAttrValue::EnumTable kInputInputmodeTable[] = {
 static const nsAttrValue::EnumTable* kInputDefaultInputmode =
     &kInputInputmodeTable[0];
 
+static const nsAttrValue::EnumTable kCaptureTable[] = {
+    {"user", static_cast<int16_t>(nsIFilePicker::captureUser)},
+    {"environment", static_cast<int16_t>(nsIFilePicker::captureEnv)},
+    {"", static_cast<int16_t>(nsIFilePicker::captureDefault)},
+    {nullptr, static_cast<int16_t>(nsIFilePicker::captureNone)}};
+
+static const nsAttrValue::EnumTable* kCaptureDefault = &kCaptureTable[2];
+
 const Decimal HTMLInputElement::kStepScaleFactorDate = Decimal(86400000);
 const Decimal HTMLInputElement::kStepScaleFactorNumberRange = Decimal(1);
 const Decimal HTMLInputElement::kStepScaleFactorTime = Decimal(1000);
@@ -233,12 +243,19 @@ class DispatchChangeEventCallback final : public GetFilesCallback {
     MOZ_ASSERT(aInputElement);
   }
 
-  virtual void Callback(nsresult aStatus,
-                        const Sequence<RefPtr<File>>& aFiles) override {
+  virtual void Callback(
+      nsresult aStatus,
+      const FallibleTArray<RefPtr<BlobImpl>>& aBlobImpls) override {
     nsTArray<OwningFileOrDirectory> array;
-    for (uint32_t i = 0; i < aFiles.Length(); ++i) {
+    for (uint32_t i = 0; i < aBlobImpls.Length(); ++i) {
       OwningFileOrDirectory* element = array.AppendElement();
-      element->SetAsFile() = aFiles[i];
+      RefPtr<File> file =
+          File::Create(mInputElement->GetOwnerGlobal(), aBlobImpls[i]);
+      if (NS_WARN_IF(!file)) {
+        break;
+      }
+
+      element->SetAsFile() = file;
     }
 
     mInputElement->SetFilesOrDirectories(array, true);
@@ -725,15 +742,15 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
   nsAutoString title;
   nsAutoString okButtonLabel;
   if (aType == FILE_PICKER_DIRECTORY) {
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "DirectoryUpload", title);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "DirectoryUpload", title);
 
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "DirectoryPickerOkButtonLabel",
-                                       okButtonLabel);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF,
+        "DirectoryPickerOkButtonLabel", okButtonLabel);
   } else {
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "FileUpload", title);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "FileUpload", title);
   }
 
   nsCOMPtr<nsIFilePicker> filePicker =
@@ -762,6 +779,14 @@ nsresult HTMLInputElement::InitFilePicker(FilePickerType aType) {
   if (HasAttr(kNameSpaceID_None, nsGkAtoms::accept) &&
       aType != FILE_PICKER_DIRECTORY) {
     SetFilePickerFiltersFromAccept(filePicker);
+
+    if (StaticPrefs::dom_capture_enabled()) {
+      const nsAttrValue* captureVal =
+          GetParsedAttr(nsGkAtoms::capture, kNameSpaceID_None);
+      if (captureVal) {
+        filePicker->SetCapture(captureVal->GetEnumValue());
+      }
+    }
   } else {
     filePicker->AppendFilters(nsIFilePicker::filterAll);
   }
@@ -1181,7 +1206,7 @@ nsresult HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
         if (aValue) {
           // Mark channel as urgent-start before load image if the image load is
           // initiated by a user interaction.
-          mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+          mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
           LoadImage(aValue->GetStringValue(), true, aNotify,
                     eImageLoadType_Normal, mSrcTriggeringPrincipal);
@@ -1313,6 +1338,25 @@ nsresult HTMLInputElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
       mAutocompleteAttrState = nsContentUtils::eAutocompleteAttrState_Unknown;
       mAutocompleteInfoState = nsContentUtils::eAutocompleteAttrState_Unknown;
     }
+
+    if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
+        !IsExperimentalMobileType(mType)) {
+      if (aName == nsGkAtoms::value || aName == nsGkAtoms::readonly ||
+          aName == nsGkAtoms::tabindex || aName == nsGkAtoms::required ||
+          aName == nsGkAtoms::disabled) {
+        // If original target is this and not the inner text control, we should
+        // pass the focus to the inner text control.
+        if (Element* dateTimeBoxElement = GetDateTimeBoxElement()) {
+          AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
+              dateTimeBoxElement,
+              aName == nsGkAtoms::value
+                  ? NS_LITERAL_STRING("MozDateTimeValueChanged")
+                  : NS_LITERAL_STRING("MozDateTimeAttributeChanged"),
+              CanBubble::eNo, ChromeOnlyDispatch::eNo);
+          dispatcher->RunDOMEventWhenSafe();
+        }
+      }
+    }
   }
 
   return nsGenericHTMLFormElementWithState::AfterSetAttr(
@@ -1357,6 +1401,10 @@ void HTMLInputElement::GetAutocompleteInfo(Nullable<AutocompleteInfo>& aInfo) {
   const nsAttrValue* attributeVal = GetParsedAttr(nsGkAtoms::autocomplete);
   mAutocompleteInfoState = nsContentUtils::SerializeAutocompleteAttribute(
       attributeVal, aInfo.SetValue(), mAutocompleteInfoState, true);
+}
+
+void HTMLInputElement::GetCapture(nsAString& aValue) {
+  GetEnumAttr(nsGkAtoms::capture, kCaptureDefault->tag, aValue);
 }
 
 void HTMLInputElement::GetFormEnctype(nsAString& aValue) {
@@ -1508,7 +1556,7 @@ int32_t HTMLInputElement::MonthsSinceJan1970(uint32_t aYear,
 
 /* static */
 Decimal HTMLInputElement::StringToDecimal(const nsAString& aValue) {
-  if (!IsASCII(aValue)) {
+  if (!IsAscii(aValue)) {
     return Decimal::nan();
   }
   NS_LossyConvertUTF16toASCII asciiString(aValue);
@@ -1934,12 +1982,6 @@ bool HTMLInputElement::IsDateTimeInputType(uint8_t aType) {
          aType == NS_FORM_INPUT_DATETIME_LOCAL;
 }
 
-void HTMLInputElement::FlushFrames() {
-  if (GetComposedDoc()) {
-    GetComposedDoc()->FlushPendingNotifications(FlushType::Frames);
-  }
-}
-
 void HTMLInputElement::MozGetFileNameArray(nsTArray<nsString>& aArray,
                                            ErrorResult& aRv) {
   if (NS_WARN_IF(mType != NS_FORM_INPUT_FILE)) {
@@ -1974,7 +2016,9 @@ void HTMLInputElement::MozSetFileArray(
   nsTArray<OwningFileOrDirectory> files;
   for (uint32_t i = 0; i < aFiles.Length(); ++i) {
     RefPtr<File> file = File::Create(global, aFiles[i].get()->Impl());
-    MOZ_ASSERT(file);
+    if (NS_WARN_IF(!file)) {
+      return;
+    }
 
     OwningFileOrDirectory* element = files.AppendElement();
     element->SetAsFile() = file;
@@ -2022,6 +2066,10 @@ void HTMLInputElement::MozSetFileNameArray(const Sequence<nsString>& aFileNames,
     }
 
     RefPtr<File> domFile = File::CreateFromFile(global, file);
+    if (NS_WARN_IF(!domFile)) {
+      aRv.Throw(NS_ERROR_FAILURE);
+      return;
+    }
 
     OwningFileOrDirectory* element = files.AppendElement();
     element->SetAsFile() = domFile;
@@ -2048,7 +2096,7 @@ void HTMLInputElement::MozSetDirectory(const nsAString& aDirectoryPath,
     return;
   }
 
-  RefPtr<Directory> directory = Directory::Create(window, file);
+  RefPtr<Directory> directory = Directory::Create(window->AsGlobal(), file);
   MOZ_ASSERT(directory);
 
   nsTArray<OwningFileOrDirectory> array;
@@ -2346,21 +2394,24 @@ void HTMLInputElement::GetDisplayFileName(nsAString& aValue) const {
     if ((StaticPrefs::dom_input_dirpicker() && Allowdirs()) ||
         (StaticPrefs::dom_webkitBlink_dirPicker_enabled() &&
          HasAttr(kNameSpaceID_None, nsGkAtoms::webkitdirectory))) {
-      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                         "NoDirSelected", value);
+      nsContentUtils::GetLocalizedString(
+          nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "NoDirSelected", value);
     } else if (HasAttr(kNameSpaceID_None, nsGkAtoms::multiple)) {
-      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                         "NoFilesSelected", value);
+      nsContentUtils::GetLocalizedString(
+          nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "NoFilesSelected",
+          value);
     } else {
-      nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                         "NoFileSelected", value);
+      nsContentUtils::GetLocalizedString(
+          nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "NoFileSelected",
+          value);
     }
   } else {
     nsString count;
     count.AppendInt(int(mFileData->mFilesOrDirectories.Length()));
 
     nsContentUtils::FormatLocalizedString(
-        value, nsContentUtils::eFORMS_PROPERTIES, "XFilesSelected", count);
+        value, nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "XFilesSelected",
+        count);
   }
 
   aValue = value;
@@ -3358,6 +3409,8 @@ void HTMLInputElement::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   // Stop the event if the related target's first non-native ancestor is the
   // same as the original target's first non-native ancestor (we are moving
   // inside of the same element).
+  //
+  // FIXME(emilio): Is this still needed now that we use Shadow DOM for this?
   if ((mType == NS_FORM_INPUT_TIME || mType == NS_FORM_INPUT_DATE) &&
       !IsExperimentalMobileType(mType) && aVisitor.mEvent->IsTrusted() &&
       (aVisitor.mEvent->mMessage == eFocus ||
@@ -4292,7 +4345,7 @@ nsresult HTMLInputElement::BindToTree(BindContext& aContext, nsINode& aParent) {
     if (HasAttr(kNameSpaceID_None, nsGkAtoms::src)) {
       // Mark channel as urgent-start before load image if the image load is
       // initaiated by a user interaction.
-      mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+      mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
       nsContentUtils::AddScriptRunner(
           NewRunnableMethod("dom::HTMLInputElement::MaybeLoadImage", this,
@@ -4564,7 +4617,7 @@ void HTMLInputElement::HandleTypeChange(uint8_t aNewType, bool aNotify) {
       if (GetAttr(kNameSpaceID_None, nsGkAtoms::src, src)) {
         // Mark channel as urgent-start before load image if the image load is
         // initaiated by a user interaction.
-        mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+        mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
         LoadImage(src, false, aNotify, eImageLoadType_Normal,
                   mSrcTriggeringPrincipal);
@@ -5222,6 +5275,10 @@ bool HTMLInputElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
     if (aAttribute == nsGkAtoms::inputmode) {
       return aResult.ParseEnumValue(aValue, kInputInputmodeTable, false);
     }
+    if (aAttribute == nsGkAtoms::capture) {
+      return aResult.ParseEnumValue(aValue, kCaptureTable, false,
+                                    kCaptureDefault);
+    }
     if (ParseImageAttribute(aAttribute, aValue, aResult)) {
       // We have to call |ParseImageAttribute| unconditionally since we
       // don't know if we're going to have a type="image" attribute yet,
@@ -5789,8 +5846,8 @@ HTMLInputElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
       !HasAttr(kNameSpaceID_None, nsGkAtoms::value)) {
     // Get our default value, which is the same as our default label
     nsAutoString defaultValue;
-    nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                       "Submit", defaultValue);
+    nsContentUtils::GetLocalizedString(
+        nsContentUtils::eFORMS_PROPERTIES_MAYBESPOOF, "Submit", defaultValue);
     value = defaultValue;
   }
 
@@ -6075,8 +6132,10 @@ static nsTArray<OwningFileOrDirectory> RestoreFileContentData(
         continue;
       }
 
-      RefPtr<File> file = File::Create(aWindow, it.get_BlobImpl());
-      MOZ_ASSERT(file);
+      RefPtr<File> file = File::Create(aWindow->AsGlobal(), it.get_BlobImpl());
+      if (NS_WARN_IF(!file)) {
+        continue;
+      }
 
       OwningFileOrDirectory* element = res.AppendElement();
       element->SetAsFile() = file;
@@ -6089,7 +6148,8 @@ static nsTArray<OwningFileOrDirectory> RestoreFileContentData(
         continue;
       }
 
-      RefPtr<Directory> directory = Directory::Create(aWindow, file);
+      RefPtr<Directory> directory =
+          Directory::Create(aWindow->AsGlobal(), file);
       MOZ_ASSERT(directory);
 
       OwningFileOrDirectory* element = res.AppendElement();
@@ -6553,7 +6613,7 @@ bool HTMLInputElement::HasTypeMismatch() const {
   return mInputType->HasTypeMismatch();
 }
 
-bool HTMLInputElement::HasPatternMismatch() const {
+Maybe<bool> HTMLInputElement::HasPatternMismatch() const {
   return mInputType->HasPatternMismatch();
 }
 
@@ -6643,7 +6703,11 @@ void HTMLInputElement::UpdateTypeMismatchValidityState() {
 }
 
 void HTMLInputElement::UpdatePatternMismatchValidityState() {
-  SetValidityState(VALIDITY_STATE_PATTERN_MISMATCH, HasPatternMismatch());
+  Maybe<bool> hasMismatch = HasPatternMismatch();
+  // Don't update if the JS engine failed to evaluate it.
+  if (hasMismatch.isSome()) {
+    SetValidityState(VALIDITY_STATE_PATTERN_MISMATCH, hasMismatch.value());
+  }
 }
 
 void HTMLInputElement::UpdateRangeOverflowValidityState() {
@@ -7094,17 +7158,10 @@ GetFilesHelper* HTMLInputElement::GetOrCreateGetFilesHelper(bool aRecursiveFlag,
                                                             ErrorResult& aRv) {
   MOZ_ASSERT(mFileData);
 
-  nsCOMPtr<nsIGlobalObject> global = OwnerDoc()->GetScopeObject();
-  MOZ_ASSERT(global);
-  if (!global) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
-
   if (aRecursiveFlag) {
     if (!mFileData->mGetFilesRecursiveHelper) {
       mFileData->mGetFilesRecursiveHelper = GetFilesHelper::Create(
-          global, GetFilesOrDirectoriesInternal(), aRecursiveFlag, aRv);
+          GetFilesOrDirectoriesInternal(), aRecursiveFlag, aRv);
       if (NS_WARN_IF(aRv.Failed())) {
         return nullptr;
       }
@@ -7115,7 +7172,7 @@ GetFilesHelper* HTMLInputElement::GetOrCreateGetFilesHelper(bool aRecursiveFlag,
 
   if (!mFileData->mGetFilesNonRecursiveHelper) {
     mFileData->mGetFilesNonRecursiveHelper = GetFilesHelper::Create(
-        global, GetFilesOrDirectoriesInternal(), aRecursiveFlag, aRv);
+        GetFilesOrDirectoriesInternal(), aRecursiveFlag, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }

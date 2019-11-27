@@ -143,13 +143,13 @@ struct hb_vector_t
   operator writer_t ()       { return writer (); }
 
   hb_array_t<const Type> sub_array (unsigned int start_offset, unsigned int count) const
-  { return as_array ().sub_array (start_offset, count);}
+  { return as_array ().sub_array (start_offset, count); }
   hb_array_t<const Type> sub_array (unsigned int start_offset, unsigned int *count = nullptr /* IN/OUT */) const
-  { return as_array ().sub_array (start_offset, count);}
+  { return as_array ().sub_array (start_offset, count); }
   hb_array_t<Type> sub_array (unsigned int start_offset, unsigned int count)
-  { return as_array ().sub_array (start_offset, count);}
+  { return as_array ().sub_array (start_offset, count); }
   hb_array_t<Type> sub_array (unsigned int start_offset, unsigned int *count = nullptr /* IN/OUT */)
-  { return as_array ().sub_array (start_offset, count);}
+  { return as_array ().sub_array (start_offset, count); }
 
   hb_sorted_array_t<Type> as_sorted_array ()
   { return hb_sorted_array (arrayZ, length); }
@@ -290,7 +290,7 @@ struct hb_sorted_vector_t : hb_vector_t<Type>
   typedef hb_sorted_array_t<      Type>       iter_t;
   const_iter_t  iter () const { return as_array (); }
   const_iter_t citer () const { return as_array (); }
-        iter_t  iter ()       { return as_array (); }
+	iter_t  iter ()       { return as_array (); }
   operator       iter_t ()       { return iter (); }
   operator const_iter_t () const { return iter (); }
 

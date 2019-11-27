@@ -10,18 +10,8 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "Utils",
-  "resource://gre/modules/sessionstore/Utils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "E10SUtils",
-  "resource://gre/modules/E10SUtils.jsm"
 );
 
 function RemoteWebNavigation() {
@@ -98,6 +88,12 @@ RemoteWebNavigation.prototype = {
         aURI,
         aLoadURIOptions.loadFlags
       );
+      let isBrowserPrivate = PrivateBrowsingUtils.isBrowserPrivate(
+        this._browser
+      );
+      if (isBrowserPrivate) {
+        fixupFlags |= Services.uriFixup.FIXUP_FLAG_PRIVATE_CONTEXT;
+      }
       uri = fixup.createFixupURI(aURI, fixupFlags);
 
       // We know the url is going to be loaded, let's start requesting network
@@ -113,13 +109,9 @@ RemoteWebNavigation.prototype = {
         if (!principal || principal.isSystemPrincipal) {
           let attrs = {
             userContextId: this._browser.getAttribute("usercontextid") || 0,
-            privateBrowsingId: PrivateBrowsingUtils.isBrowserPrivate(
-              this._browser
-            )
-              ? 1
-              : 0,
+            privateBrowsingId: isBrowserPrivate ? 1 : 0,
           };
-          principal = Services.scriptSecurityManager.createCodebasePrincipal(
+          principal = Services.scriptSecurityManager.createContentPrincipal(
             uri,
             attrs
           );
@@ -136,28 +128,8 @@ RemoteWebNavigation.prototype = {
       Ci.nsIRemoteTab.NAVIGATE_URL,
       { uri, epoch: cancelContentJSEpoch }
     );
-    this._sendMessage("WebNavigation:LoadURI", {
-      uri: aURI,
-      loadFlags: aLoadURIOptions.loadFlags,
-      referrerInfo: E10SUtils.serializeReferrerInfo(
-        aLoadURIOptions.referrerInfo
-      ),
-      postData: aLoadURIOptions.postData
-        ? Utils.serializeInputStream(aLoadURIOptions.postData)
-        : null,
-      headers: aLoadURIOptions.headers
-        ? Utils.serializeInputStream(aLoadURIOptions.headers)
-        : null,
-      baseURI: aLoadURIOptions.baseURI ? aLoadURIOptions.baseURI.spec : null,
-      triggeringPrincipal: E10SUtils.serializePrincipal(
-        aLoadURIOptions.triggeringPrincipal ||
-          Services.scriptSecurityManager.createNullPrincipal({})
-      ),
-      csp: aLoadURIOptions.csp
-        ? E10SUtils.serializeCSP(aLoadURIOptions.csp)
-        : null,
-      cancelContentJSEpoch,
-    });
+    aLoadURIOptions.cancelContentJSEpoch = cancelContentJSEpoch;
+    this._browser.frameLoader.browsingContext.loadURI(aURI, aLoadURIOptions);
   },
   setOriginAttributesBeforeLoading(aOriginAttributes) {
     this._sendMessage("WebNavigation:SetOriginAttributes", {

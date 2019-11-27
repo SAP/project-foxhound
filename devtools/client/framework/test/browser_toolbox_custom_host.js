@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -39,7 +37,7 @@ add_task(async function() {
     options
   );
 
-  is(toolbox.win.top, window, "Toolbox is included in browser.xhtml");
+  is(toolbox.topWindow, window, "Toolbox is included in browser.xhtml");
   is(toolbox.doc, iframe.contentDocument, "Toolbox is in the custom iframe");
 
   iframe.remove();

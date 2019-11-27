@@ -72,16 +72,10 @@ RelatedAccIterator::RelatedAccIterator(DocAccessible* aDocument,
     : mDocument(aDocument),
       mRelAttr(aRelAttr),
       mProviders(nullptr),
-      mBindingParent(nullptr),
       mIndex(0) {
-  mBindingParent = aDependentContent->IsInAnonymousSubtree()
-                       ? aDependentContent->GetBindingParent()
-                       : nullptr;
-  nsAtom* IDAttr = mBindingParent ? nsGkAtoms::anonid : nsGkAtoms::id;
-
   nsAutoString id;
   if (aDependentContent->IsElement() &&
-      aDependentContent->AsElement()->GetAttr(kNameSpaceID_None, IDAttr, id)) {
+      aDependentContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::id, id)) {
     mProviders = mDocument->GetRelProviders(aDependentContent->AsElement(), id);
   }
 }
@@ -92,22 +86,17 @@ Accessible* RelatedAccIterator::Next() {
   while (mIndex < mProviders->Length()) {
     DocAccessible::AttrRelProvider* provider = (*mProviders)[mIndex++];
 
-    // Return related accessible for the given attribute and if the provider
-    // content is in the same binding in the case of XBL usage.
+    // Return related accessible for the given attribute.
     if (provider->mRelAttr == mRelAttr) {
-      nsIContent* bindingParent = provider->mContent->IsInAnonymousSubtree()
-                                      ? provider->mContent->GetBindingParent()
-                                      : nullptr;
-      bool inScope = mBindingParent == bindingParent ||
-                     mBindingParent == provider->mContent;
+      Accessible* related = mDocument->GetAccessible(provider->mContent);
+      if (related) {
+        return related;
+      }
 
-      if (inScope) {
-        Accessible* related = mDocument->GetAccessible(provider->mContent);
-        if (related) return related;
-
-        // If the document content is pointed by relation then return the
-        // document itself.
-        if (provider->mContent == mDocument->GetContent()) return mDocument;
+      // If the document content is pointed by relation then return the
+      // document itself.
+      if (provider->mContent == mDocument->GetContent()) {
+        return mDocument;
       }
     }
   }
@@ -255,38 +244,25 @@ nsIContent* IDRefsIterator::NextElem() {
   return nullptr;
 }
 
-nsIContent* IDRefsIterator::GetElem(const nsDependentSubstring& aID) {
+dom::Element* IDRefsIterator::GetElem(nsIContent* aContent,
+                                      const nsAString& aID) {
   // Get elements in DOM tree by ID attribute if this is an explicit content.
   // In case of bound element check its anonymous subtree.
-  if (!mContent->IsInAnonymousSubtree()) {
+  if (!aContent->IsInAnonymousSubtree()) {
     dom::DocumentOrShadowRoot* docOrShadowRoot =
-        mContent->GetUncomposedDocOrConnectedShadowRoot();
+        aContent->GetUncomposedDocOrConnectedShadowRoot();
     if (docOrShadowRoot) {
       dom::Element* refElm = docOrShadowRoot->GetElementById(aID);
-      if (refElm || !mContent->GetXBLBinding()) return refElm;
+      if (refElm) {
+        return refElm;
+      }
     }
   }
-
-  // If content is in anonymous subtree or an element having anonymous subtree
-  // then use "anonid" attribute to get elements in anonymous subtree.
-
-  // Check inside the binding the element is contained in.
-  nsIContent* bindingParent = mContent->GetBindingParent();
-  if (bindingParent) {
-    nsIContent* refElm =
-        bindingParent->OwnerDoc()->GetAnonymousElementByAttribute(
-            bindingParent, nsGkAtoms::anonid, aID);
-
-    if (refElm) return refElm;
-  }
-
-  // Check inside the binding of the element.
-  if (mContent->GetXBLBinding()) {
-    return mContent->OwnerDoc()->GetAnonymousElementByAttribute(
-        mContent, nsGkAtoms::anonid, aID);
-  }
-
   return nullptr;
+}
+
+dom::Element* IDRefsIterator::GetElem(const nsDependentSubstring& aID) {
+  return GetElem(mContent, aID);
 }
 
 Accessible* IDRefsIterator::Next() {

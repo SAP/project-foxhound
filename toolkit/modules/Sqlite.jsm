@@ -769,7 +769,7 @@ ConnectionData.prototype = Object.freeze({
 
     if (Array.isArray(params)) {
       // It's an array of separate params.
-      if (params.length && typeof params[0] == "object") {
+      if (params.length && typeof params[0] == "object" && params[0] !== null) {
         let paramsArray = statement.newBindingParamsArray();
         for (let p of params) {
           let bindings = paramsArray.newBindingParams();
@@ -1350,6 +1350,16 @@ OpenedConnection.prototype = Object.freeze({
   },
 
   /**
+   * Returns the maximum number of bound parameters for statements executed
+   * on this connection.
+   *
+   * @type {number}
+   */
+  get variableLimit() {
+    return this.unsafeRawConnection.variableLimit;
+  },
+
+  /**
    * The integer schema version of the database.
    *
    * This is 0 if not schema version has been set.
@@ -1584,7 +1594,7 @@ OpenedConnection.prototype = Object.freeze({
         "WHERE type = 'table' AND name=?",
       [name]
     ).then(function onResult(rows) {
-      return Promise.resolve(rows.length > 0);
+      return Promise.resolve(!!rows.length);
     });
   },
 
@@ -1603,7 +1613,7 @@ OpenedConnection.prototype = Object.freeze({
         "WHERE type = 'index' AND name=?",
       [name]
     ).then(function onResult(rows) {
-      return Promise.resolve(rows.length > 0);
+      return Promise.resolve(!!rows.length);
     });
   },
 

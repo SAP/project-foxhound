@@ -93,17 +93,17 @@ var BrowserUtils = {
   },
 
   /**
-   * Return or create a principal with the codebase of one, and the originAttributes
+   * Return or create a principal with the content of one, and the originAttributes
    * of an existing principal (e.g. on a docshell, where the originAttributes ought
    * not to change, that is, we should keep the userContextId, privateBrowsingId,
    * etc. the same when changing the principal).
    *
    * @param principal
-   *        The principal whose codebase/null/system-ness we want.
+   *        The principal whose content/null/system-ness we want.
    * @param existingPrincipal
    *        The principal whose originAttributes we want, usually the current
    *        principal of a docshell.
-   * @return an nsIPrincipal that matches the codebase/null/system-ness of the first
+   * @return an nsIPrincipal that matches the content/null/system-ness of the first
    *         param, and the originAttributes of the second.
    */
   principalWithMatchingOA(principal, existingPrincipal) {
@@ -118,8 +118,8 @@ var BrowserUtils = {
     }
 
     let secMan = Services.scriptSecurityManager;
-    if (principal.isCodebasePrincipal) {
-      return secMan.createCodebasePrincipal(
+    if (principal.isContentPrincipal) {
+      return secMan.createContentPrincipal(
         principal.URI,
         existingPrincipal.originAttributes
       );
@@ -798,6 +798,12 @@ var BrowserUtils = {
     }
     let urlWithoutProtocol = url.substring(7);
 
+    // It doesn't really matter which search engine is used here, thus it's ok
+    // to ignore whether we are in a private context. The keyword lookup is only
+    // used to differentiate between whitelisted and not whitelisted hosts.
+    // For example, if "someword" is not a whitelisted host, setting the urlbar
+    // value to "http://someword" should not trim it, because otherwise
+    // confirming the urlbar value would end up searching for "someword".
     let flags =
       Services.uriFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP |
       Services.uriFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS;

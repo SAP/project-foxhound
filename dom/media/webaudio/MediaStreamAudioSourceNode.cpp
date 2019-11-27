@@ -7,10 +7,9 @@
 #include "MediaStreamAudioSourceNode.h"
 #include "mozilla/dom/MediaStreamAudioSourceNodeBinding.h"
 #include "AudioNodeEngine.h"
-#include "AudioNodeExternalInputStream.h"
+#include "AudioNodeExternalInputTrack.h"
 #include "AudioStreamTrack.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/CORSMode.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
 #include "nsID.h"
@@ -53,18 +52,6 @@ already_AddRefed<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::Create(
     return nullptr;
   }
 
-  if (aAudioContext.Graph() !=
-      aOptions.mMediaStream->GetPlaybackStream()->Graph()) {
-    nsCOMPtr<nsPIDOMWindowInner> pWindow = aAudioContext.GetParentObject();
-    Document* document = pWindow ? pWindow->GetExtantDoc() : nullptr;
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                    NS_LITERAL_CSTRING("Web Audio"), document,
-                                    nsContentUtils::eDOM_PROPERTIES,
-                                    "MediaStreamAudioSourceNodeDifferentRate");
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return nullptr;
-  }
-
   RefPtr<MediaStreamAudioSourceNode> node =
       new MediaStreamAudioSourceNode(&aAudioContext, LockOnTrackPicked);
 
@@ -83,16 +70,9 @@ void MediaStreamAudioSourceNode::Init(DOMMediaStream* aMediaStream,
     return;
   }
 
-  MediaStream* inputStream = aMediaStream->GetPlaybackStream();
-  MediaStreamGraph* graph = Context()->Graph();
-  if (NS_WARN_IF(graph != inputStream->Graph())) {
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
-    return;
-  }
-
   mInputStream = aMediaStream;
   AudioNodeEngine* engine = new MediaStreamAudioSourceNodeEngine(this);
-  mStream = AudioNodeExternalInputStream::Create(graph, engine);
+  mTrack = AudioNodeExternalInputTrack::Create(Context()->Graph(), engine);
   mInputStream->AddConsumerToKeepAlive(ToSupports(this));
 
   mInputStream->RegisterTrackListener(this);
@@ -113,18 +93,30 @@ void MediaStreamAudioSourceNode::Destroy() {
 MediaStreamAudioSourceNode::~MediaStreamAudioSourceNode() { Destroy(); }
 
 void MediaStreamAudioSourceNode::AttachToTrack(
-    const RefPtr<MediaStreamTrack>& aTrack) {
+    const RefPtr<MediaStreamTrack>& aTrack, ErrorResult& aRv) {
   MOZ_ASSERT(!mInputTrack);
   MOZ_ASSERT(aTrack->AsAudioStreamTrack());
+  MOZ_DIAGNOSTIC_ASSERT(!aTrack->Ended());
 
-  if (!mStream) {
+  if (!mTrack) {
+    return;
+  }
+
+  if (NS_WARN_IF(Context()->Graph() != aTrack->Graph())) {
+    nsCOMPtr<nsPIDOMWindowInner> pWindow = Context()->GetParentObject();
+    Document* document = pWindow ? pWindow->GetExtantDoc() : nullptr;
+    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
+                                    NS_LITERAL_CSTRING("Web Audio"), document,
+                                    nsContentUtils::eDOM_PROPERTIES,
+                                    "MediaStreamAudioSourceNodeDifferentRate");
+    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
     return;
   }
 
   mInputTrack = aTrack;
-  ProcessedMediaStream* outputStream =
-      static_cast<ProcessedMediaStream*>(mStream.get());
-  mInputPort = mInputTrack->ForwardTrackContentsTo(outputStream);
+  ProcessedMediaTrack* outputTrack =
+      static_cast<ProcessedMediaTrack*>(mTrack.get());
+  mInputPort = mInputTrack->ForwardTrackContentsTo(outputTrack);
   PrincipalChanged(mInputTrack);  // trigger enabling/disabling of the connector
   mInputTrack->AddPrincipalChangeObserver(this);
 }
@@ -171,8 +163,10 @@ void MediaStreamAudioSourceNode::AttachToRightTrack(
       }
     }
 
-    AttachToTrack(track);
-    MarkActive();
+    if (!track->Ended()) {
+      AttachToTrack(track, aRv);
+      MarkActive();
+    }
     return;
   }
 
@@ -193,7 +187,7 @@ void MediaStreamAudioSourceNode::NotifyTrackAdded(
     return;
   }
 
-  AttachToTrack(aTrack);
+  AttachToTrack(aTrack, IgnoreErrors());
 }
 
 void MediaStreamAudioSourceNode::NotifyTrackRemoved(
@@ -215,15 +209,15 @@ void MediaStreamAudioSourceNode::NotifyActive() {
 
 /**
  * Changes the principal. Note that this will be called on the main thread, but
- * changes will be enacted on the MediaStreamGraph thread. If the principal
+ * changes will be enacted on the MediaTrackGraph thread. If the principal
  * change results in the document principal losing access to the stream, then
  * there needs to be other measures in place to ensure that any media that is
- * governed by the new stream principal is not available to the MediaStreamGraph
+ * governed by the new stream principal is not available to the MediaTrackGraph
  * before this change completes. Otherwise, a site could get access to
  * media that they are not authorized to receive.
  *
  * One solution is to block the altered content, call this method, then dispatch
- * another change request to the MediaStreamGraph thread that allows the content
+ * another change request to the MediaTrackGraph thread that allows the content
  * under the new principal to flow. This might be unnecessary if the principal
  * change is changing to be the document principal.
  */
@@ -244,9 +238,9 @@ void MediaStreamAudioSourceNode::PrincipalChanged(
       }
     }
   }
-  auto stream = static_cast<AudioNodeExternalInputStream*>(mStream.get());
-  bool enabled = subsumes || aMediaStreamTrack->GetCORSMode() != CORS_NONE;
-  stream->SetInt32Parameter(MediaStreamAudioSourceNodeEngine::ENABLE, enabled);
+  auto track = static_cast<AudioNodeExternalInputTrack*>(mTrack.get());
+  bool enabled = subsumes;
+  track->SetInt32Parameter(MediaStreamAudioSourceNodeEngine::ENABLE, enabled);
 
   if (!enabled && doc) {
     nsContentUtils::ReportToConsole(
@@ -271,12 +265,12 @@ size_t MediaStreamAudioSourceNode::SizeOfIncludingThis(
   return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }
 
-void MediaStreamAudioSourceNode::DestroyMediaStream() {
+void MediaStreamAudioSourceNode::DestroyMediaTrack() {
   if (mInputPort) {
     mInputPort->Destroy();
     mInputPort = nullptr;
   }
-  AudioNode::DestroyMediaStream();
+  AudioNode::DestroyMediaTrack();
 }
 
 JSObject* MediaStreamAudioSourceNode::WrapObject(

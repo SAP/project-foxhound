@@ -764,7 +764,11 @@ class LifoAlloc {
     detail::BumpChunk::Mark chunk;
     detail::BumpChunk::Mark oversize;
   };
-  Mark mark();
+
+  // Note: MOZ_NEVER_INLINE is a work around for a Clang 9 (PGO) miscompilation.
+  // See bug 1583907.
+  MOZ_NEVER_INLINE Mark mark();
+
   void release(Mark mark);
 
  private:
@@ -969,6 +973,13 @@ class MOZ_NON_TEMPORARY_CLASS LifoAllocScope {
   ~LifoAllocScope() {
     if (shouldRelease) {
       lifoAlloc->release(mark);
+
+      /*
+       * The parser can allocate enormous amounts of memory for large functions.
+       * Eagerly free the memory now (which otherwise won't be freed until the
+       * next GC) to avoid unnecessary OOMs.
+       */
+      lifoAlloc->freeAllIfHugeAndUnused();
     }
   }
 

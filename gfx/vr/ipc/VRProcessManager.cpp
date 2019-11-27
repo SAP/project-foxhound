@@ -69,7 +69,7 @@ void VRProcessManager::LaunchVRProcess() {
 }
 
 void VRProcessManager::DisableVRProcess(const char* aMessage) {
-  if (!StaticPrefs::dom_vr_process_enabled()) {
+  if (!StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     return;
   }
 
@@ -154,6 +154,11 @@ bool VRProcessManager::CreateGPUBridges(
 bool VRProcessManager::CreateGPUVRManager(
     base::ProcessId aOtherProcess,
     mozilla::ipc::Endpoint<PVRGPUChild>* aOutEndpoint) {
+  if (mProcess && !mProcess->IsConnected()) {
+    NS_WARNING("VR process haven't connected with the parent process yet");
+    return false;
+  }
+
   base::ProcessId vrparentPid = mProcess
                                     ? mProcess->OtherPid()  // VR process id.
                                     : base::GetCurrentProcId();

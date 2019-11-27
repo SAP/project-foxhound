@@ -391,9 +391,9 @@ var PlacesUIUtils = {
     if (
       node.localName == "menu" &&
       !node._placesNode &&
-      node.lastChild._placesView
+      node.menupopup._placesView
     ) {
-      return node.lastChild._placesView;
+      return node.menupopup._placesView;
     }
 
     while (Element.isInstance(node)) {
@@ -920,7 +920,7 @@ var PlacesUIUtils = {
           return Ci.nsINavHistoryResultNode.RESULT_TYPE_FOLDER;
         }
 
-        if (this.uri.length == 0) {
+        if (!this.uri.length) {
           throw new Error("Unexpected item type");
         }
 

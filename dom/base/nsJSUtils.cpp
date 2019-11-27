@@ -30,9 +30,11 @@
 #include "xpcpublic.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
-#include "nsXBLPrototypeBinding.h"
+#ifdef MOZ_XBL
+#  include "nsXBLPrototypeBinding.h"
+#endif
 #include "mozilla/CycleCollectedJSContext.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Date.h"
 #include "mozilla/dom/Element.h"
@@ -618,6 +620,7 @@ bool nsJSUtils::GetScopeChainForElement(
   return true;
 }
 
+#ifdef MOZ_XBL
 /* static */
 bool nsJSUtils::GetScopeChainForXBL(
     JSContext* aCx, Element* aElement,
@@ -640,6 +643,7 @@ bool nsJSUtils::GetScopeChainForXBL(
   }
   return true;
 }
+#endif
 
 /* static */
 void nsJSUtils::ResetTimeZone() { JS::ResetTimeZone(); }

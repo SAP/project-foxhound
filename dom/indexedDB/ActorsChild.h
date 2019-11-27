@@ -30,10 +30,6 @@
 class nsIEventTarget;
 struct nsID;
 
-namespace JS {
-struct WasmModule;
-}  // namespace JS
-
 namespace mozilla {
 namespace ipc {
 
@@ -214,7 +210,7 @@ class BackgroundFactoryRequestChild final
   friend class PermissionRequestChild;
   friend class PermissionRequestParent;
 
-  RefPtr<IDBFactory> mFactory;
+  const RefPtr<IDBFactory> mFactory;
 
   // Normally when opening of a database is successful, we receive a database
   // actor in request response, so we can use it to call ReleaseDOMObject()
@@ -570,9 +566,9 @@ class BackgroundRequestChild final : public BackgroundRequestChildBase,
 
   RefPtr<IDBTransaction> mTransaction;
   nsTArray<RefPtr<PreprocessHelper>> mPreprocessHelpers;
-  nsTArray<nsTArray<RefPtr<JS::WasmModule>>> mModuleSets;
+  nsTArray<UniquePtr<JSStructuredCloneData>> mCloneDatas;
   uint32_t mRunningPreprocessHelpers;
-  uint32_t mCurrentModuleSetIndex;
+  uint32_t mCurrentCloneDataIndex;
   nsresult mPreprocessResultCode;
   bool mGetAll;
 
@@ -586,13 +582,12 @@ class BackgroundRequestChild final : public BackgroundRequestChildBase,
 
   void MaybeSendContinue();
 
-  void OnPreprocessFinished(uint32_t aModuleSetIndex,
-                            nsTArray<RefPtr<JS::WasmModule>>& aModuleSet);
+  void OnPreprocessFinished(uint32_t aCloneDataIndex,
+                            UniquePtr<JSStructuredCloneData> aCloneData);
 
   void OnPreprocessFailed(uint32_t aModuleSetIndex, nsresult aErrorCode);
 
-  const nsTArray<RefPtr<JS::WasmModule>>* GetNextModuleSet(
-      const StructuredCloneReadInfo& aInfo);
+  UniquePtr<JSStructuredCloneData> GetNextCloneData();
 
   void HandleResponse(nsresult aResponse);
 
@@ -609,10 +604,9 @@ class BackgroundRequestChild final : public BackgroundRequestChildBase,
 
   void HandleResponse(uint64_t aResponse);
 
-  nsresult HandlePreprocess(const WasmModulePreprocessInfo& aPreprocessInfo);
+  nsresult HandlePreprocess(const PreprocessInfo& aPreprocessInfo);
 
-  nsresult HandlePreprocess(
-      const nsTArray<WasmModulePreprocessInfo>& aPreprocessInfos);
+  nsresult HandlePreprocess(const nsTArray<PreprocessInfo>& aPreprocessInfos);
 
   // IPDL methods are only called by IPDL.
   virtual void ActorDestroy(ActorDestroyReason aWhy) override;
@@ -655,7 +649,8 @@ class BackgroundCursorChild final : public PBackgroundIDBCursorChild {
     NS_ASSERT_OWNINGTHREAD(BackgroundCursorChild);
   }
 
-  void SendContinueInternal(const CursorRequestParams& aParams);
+  void SendContinueInternal(const CursorRequestParams& aParams,
+                            const Key& aCurrentKey);
 
   void SendDeleteMeInternal();
 
@@ -706,8 +701,10 @@ class BackgroundCursorChild final : public PBackgroundIDBCursorChild {
   virtual mozilla::ipc::IPCResult RecvResponse(
       const CursorResponse& aResponse) override;
 
+ public:
   // Force callers to use SendContinueInternal.
-  bool SendContinue(const CursorRequestParams& aParams) = delete;
+  bool SendContinue(const CursorRequestParams& aParams,
+                    const Key& aCurrentKey) = delete;
 
   bool SendDeleteMe() = delete;
 };

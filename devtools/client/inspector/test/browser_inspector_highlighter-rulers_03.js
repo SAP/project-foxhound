@@ -17,7 +17,7 @@ var { Toolbox } = require("devtools/client/framework/toolbox");
 
 add_task(async function() {
   const { inspector, testActor } = await openInspectorForURL(TEST_URL);
-  const front = inspector.inspector;
+  const front = inspector.inspectorFront;
 
   const highlighter = await front.getHighlighterByType("RulersHighlighter");
 
@@ -56,7 +56,7 @@ async function hasRightLabelsContent(highlighterFront, inspector, testActor) {
   const windowDimensions = await testActor.getWindowDimensions();
   const windowHeight = Math.round(windowDimensions.height);
   const windowWidth = Math.round(windowDimensions.width);
-  const windowText = windowHeight + "px \u00D7 " + windowWidth + "px";
+  const windowText = windowWidth + "px \u00D7 " + windowHeight + "px";
 
   is(dimensionText, windowText, "Dimension text was created successfully");
 }

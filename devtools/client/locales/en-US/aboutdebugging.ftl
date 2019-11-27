@@ -215,7 +215,7 @@ about-debugging-runtime-profile-button2 = Profile performance
 about-debugging-runtime-service-workers-not-compatible = Your browser configuration is not compatible with Service Workers. <a>Learn more</a>
 
 # This string is displayed in the runtime page if the remote browser version is too old.
-# "Troubleshooting" link points to https://developer.mozilla.org/docs/Tools/WebIDE/Troubleshooting
+# "Troubleshooting" link points to https://developer.mozilla.org/docs/Tools/about:debugging#Troubleshooting
 # { $runtimeVersion } is the version of the remote browser (for instance "67.0a1")
 # { $minVersion } is the minimum version that is compatible with the current Firefox instance (same format)
 about-debugging-browser-version-too-old = The connected browser has an old version ({ $runtimeVersion }). The minimum supported version is ({ $minVersion }). This is an unsupported setup and may cause DevTools to fail. Please update the connected browser. <a>Troubleshooting</a>
@@ -229,7 +229,7 @@ about-debugging-browser-version-too-old = The connected browser has an old versi
 about-debugging-browser-version-too-old-67-debugger = The Debugger panel may not work with the connected browser. Please use Firefox { $runtimeVersion } if you need to use the Debugger with this browser.
 
 # This string is displayed in the runtime page if the remote browser version is too recent.
-# "Troubleshooting" link points to https://developer.mozilla.org/en-US/docs/Tools/WebIDE/Troubleshooting
+# "Troubleshooting" link points to https://developer.mozilla.org/docs/Tools/about:debugging#Troubleshooting
 # { $runtimeID } is the build ID of the remote browser (for instance "20181231", format is yyyyMMdd)
 # { $localID } is the build ID of the current Firefox instance (same format)
 # { $runtimeVersion } is the version of the remote browser (for instance "67.0a1")
@@ -318,12 +318,14 @@ about-debugging-extension-id =
 
 # This string is displayed as a label of the button that pushes a test payload
 # to a service worker.
-# Notes, this relates to the "Push" API, which is normally not localized so it is
+# Note this relates to the "Push" API, which is normally not localized so it is
 # probably better to not localize it.
-about-debugging-worker-action-push = Push
+about-debugging-worker-action-push2 = Push
+  .disabledTitle = Service Worker push is currently disabled for multiprocess { -brand-shorter-name }
 
 # This string is displayed as a label of the button that starts a service worker.
-about-debugging-worker-action-start = Start
+about-debugging-worker-action-start2 = Start
+  .disabledTitle = Service Worker start is currently disabled for multiprocess { -brand-shorter-name }
 
 # This string is displayed as a label of the button that unregisters a service worker.
 about-debugging-worker-action-unregister = Unregister
@@ -356,6 +358,10 @@ about-debugging-worker-scope =
 # of a worker
 about-debugging-worker-push-service =
   .label = Push Service
+
+# Displayed as title of the inspect button when service worker debugging is disabled.
+about-debugging-worker-inspect-action-disabled =
+  .title = Service Worker inspection is currently disabled for multiprocess { -brand-shorter-name }
 
 # Displayed as name for the Main Process debug target in the Processes category. Only for
 # remote runtimes, if `devtools.aboutdebugging.process-debugging` is true.

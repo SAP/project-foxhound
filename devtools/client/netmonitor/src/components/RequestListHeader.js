@@ -4,7 +4,6 @@
 
 "use strict";
 
-const Services = require("Services");
 const {
   createRef,
   Component,
@@ -27,7 +26,7 @@ const {
   MIN_COLUMN_WIDTH,
   DEFAULT_COLUMN_WIDTH,
 } = require("../constants");
-const { getWaterfallScale } = require("../selectors/index");
+const { getColumns, getWaterfallScale } = require("../selectors/index");
 const { getFormattedTime } = require("../utils/format-utils");
 const { L10N } = require("../utils/l10n");
 const RequestListHeaderContextMenu = require("../widgets/RequestListHeaderContextMenu");
@@ -37,11 +36,6 @@ const Draggable = createFactory(
 );
 
 const { div, button } = dom;
-
-// Support for columns resizing is currently hidden behind this pref.
-const RESIZE_COLUMNS = Services.prefs.getBoolPref(
-  "devtools.netmonitor.features.resizeColumns"
-);
 
 /**
  * Render the request list header with sorting arrows for columns.
@@ -545,19 +539,18 @@ class RequestListHeader extends Component {
     };
 
     // Support for columns resizing is currently hidden behind a pref.
-    const draggable = RESIZE_COLUMNS
-      ? Draggable({
-          className: "column-resizer ",
-          onStart: () => this.onStartMove(),
-          onStop: () => this.onStopMove(),
-          onMove: x => this.onMove(name, x),
-        })
-      : undefined;
+    const draggable = Draggable({
+      className: "column-resizer ",
+      onStart: () => this.onStartMove(),
+      onStop: () => this.onStopMove(),
+      onMove: x => this.onMove(name, x),
+    });
 
-    return dom.td(
+    return dom.th(
       {
         id: `requests-list-${boxName}-header-box`,
         className: `requests-list-column requests-list-${boxName}`,
+        scope: "col",
         style: columnStyle,
         key: name,
         ref: `${name}Header`,
@@ -591,7 +584,7 @@ class RequestListHeader extends Component {
 
   render() {
     return dom.thead(
-      { className: "devtools-toolbar requests-list-headers-group" },
+      { className: "requests-list-headers-group" },
       dom.tr(
         {
           className: "requests-list-headers",
@@ -608,9 +601,9 @@ class RequestListHeader extends Component {
 
 module.exports = connect(
   state => ({
-    columns: state.ui.columns,
+    columns: getColumns(state),
     columnsData: state.ui.columnsData,
-    firstRequestStartedMillis: state.requests.firstStartedMillis,
+    firstRequestStartedMs: state.requests.firstStartedMs,
     scale: getWaterfallScale(state),
     sort: state.sort,
     timingMarkers: state.timingMarkers,

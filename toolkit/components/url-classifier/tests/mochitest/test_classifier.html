@@ -94,12 +94,12 @@ function testService() {
       let test = testURLs.shift();
       let tables = "test-malware-simple,test-unwanted-simple,moztest-phish-simple,test-block-simple,test-harmful-simple";
       let uri = SpecialPowers.Services.io.newURI(test.url);
-      let prin = SpecialPowers.Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
+      let prin = SpecialPowers.Services.scriptSecurityManager.createContentPrincipal(uri, {});
       SpecialPowers.doUrlClassify(prin, null, function(errorCode) {
         is(errorCode, test.result,
            `Successful asynchronous classification of ${test.url}`);
         SpecialPowers.doUrlClassifyLocal(uri, tables, function(results) {
-          if (results.length == 0) {
+          if (!results.length) {
             is(test.table, "",
                `Successful asynchronous local classification of ${test.url}`);
           } else {

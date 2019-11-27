@@ -45,8 +45,7 @@ static const char SandboxPolicyFlash[] = R"SANDBOX_LITERAL(
   (allow file-read-metadata
          (literal "/etc")
          (literal "/tmp")
-         (literal "/var")
-         (literal "/private/etc/localtime"))
+         (literal "/var"))
   (allow file-read*
          (literal "/dev/autofs_nowait")
          (literal "/dev/random")
@@ -59,6 +58,13 @@ static const char SandboxPolicyFlash[] = R"SANDBOX_LITERAL(
          file-write-data
          file-ioctl
          (literal "/dev/dtracehelper"))
+
+  ; Timezone
+  (allow file-read*
+    (subpath "/private/var/db/timezone")
+    (subpath "/usr/share/zoneinfo")
+    (subpath "/usr/share/zoneinfo.default")
+    (literal "/private/etc/localtime"))
 
   ; Graphics
   (allow user-preference-read
@@ -267,6 +273,11 @@ static const char SandboxPolicyFlash[] = R"SANDBOX_LITERAL(
   ; bug 1475707
   (if (= macosMinorVersion 9)
      (allow mach-lookup (global-name "com.apple.xpcd")))
+  (if (>= macosMinorVersion 15)
+     (allow mach-lookup
+      (global-name "com.apple.ViewBridgeAuxiliary")
+      (global-name "com.apple.appkit.xpc.openAndSavePanelService")
+      (global-name "com.apple.MTLCompilerService")))
 
   ; Fonts
   (allow file-read*

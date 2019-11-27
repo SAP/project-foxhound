@@ -11,7 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsDocShellLoadTypes.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 class nsIContentSecurityPolicy;
 class nsIInputStream;
@@ -36,10 +35,16 @@ class nsDocShellLoadState final {
   NS_INLINE_DECL_REFCOUNTING(nsDocShellLoadState);
 
   explicit nsDocShellLoadState(nsIURI* aURI);
-  explicit nsDocShellLoadState(mozilla::dom::DocShellLoadStateInit& aLoadState);
+  explicit nsDocShellLoadState(
+      const mozilla::dom::DocShellLoadStateInit& aLoadState);
 
   static nsresult CreateFromPendingChannel(nsIChildChannel* aPendingChannel,
                                            nsDocShellLoadState** aResult);
+
+  static nsresult CreateFromLoadURIOptions(
+      nsISupports* aConsumer, nsIURIFixup* aURIFixup, const nsAString& aURI,
+      const mozilla::dom::LoadURIOptions& aLoadURIOptions,
+      nsDocShellLoadState** aResult);
 
   // Getters and Setters
 
@@ -98,6 +103,10 @@ class nsDocShellLoadState final {
   bool OriginalFrameSrc() const;
 
   void SetOriginalFrameSrc(bool aOriginalFrameSrc);
+
+  bool IsFormSubmission() const;
+
+  void SetIsFormSubmission(bool aIsFormSubmission);
 
   uint32_t LoadType() const;
 
@@ -186,6 +195,20 @@ class nsDocShellLoadState final {
 
   nsIChildChannel* GetPendingRedirectedChannel() {
     return mPendingRedirectedChannel;
+  }
+
+  void SetOriginalURIString(const nsCString& aOriginalURI) {
+    mOriginalURIString.emplace(aOriginalURI);
+  }
+  const mozilla::Maybe<nsCString>& GetOriginalURIString() const {
+    return mOriginalURIString;
+  }
+
+  void SetCancelContentJSEpoch(int32_t aCancelEpoch) {
+    mCancelContentJSEpoch.emplace(aCancelEpoch);
+  }
+  const mozilla::Maybe<int32_t>& GetCancelContentJSEpoch() const {
+    return mCancelContentJSEpoch;
   }
 
   // When loading a document through nsDocShell::LoadURI(), a special set of
@@ -278,6 +301,11 @@ class nsDocShellLoadState final {
   // element loading its original src (or srcdoc) attribute.
   bool mOriginalFrameSrc;
 
+  // If this attribute is true, then the load was initiated by a
+  // form submission. This is important to know for the CSP directive
+  // navigate-to.
+  bool mIsFormSubmission;
+
   // Contains a load type as specified by the nsDocShellLoadTypes::load*
   // constants
   uint32_t mLoadType;
@@ -329,6 +357,15 @@ class nsDocShellLoadState final {
   // If set, a pending cross-process redirected channel should be used to
   // perform the load. The channel will be stored in this value.
   nsCOMPtr<nsIChildChannel> mPendingRedirectedChannel;
+
+  // An optional string representation of mURI, before any
+  // fixups were applied, so that we can send it to a search
+  // engine service if needed.
+  mozilla::Maybe<nsCString> mOriginalURIString;
+
+  // An optional value to pass to nsIDocShell::setCancelJSEpoch
+  // when initiating the load.
+  mozilla::Maybe<int32_t> mCancelContentJSEpoch;
 };
 
 #endif /* nsDocShellLoadState_h__ */

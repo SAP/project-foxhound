@@ -159,6 +159,22 @@ jobs:
                              -e "s/__DATE__/$(date --rfc-2822)/" \
                              -e "s/__CODENAME__/stretch/" debian/changelog
 
+    deb10-mercurial:
+        description: "Modern Mercurial for Debian buster"
+        treeherder:
+            symbol: Deb10(hg)
+        run:
+            using: debian-package
+            dist: buster
+            tarball:
+                url: https://www.mercurial-scm.org/release/mercurial-4.8.1.tar.gz
+                sha256: 48a45f5cde9104fbc2daf310d710d4ebf286d879b89fa327d24b005434b0fa21
+            pre-build-command: >-
+                cp -r contrib/packaging/debian debian &&
+                sed -i -e "s/__VERSION__/$(awk -F\" '$2 {print $2}' mercurial/__version__.py)-1.deb10moz1/" \
+                             -e "s/__DATE__/$(date --rfc-2822)/" \
+                             -e "s/__CODENAME__/stretch/" debian/changelog
+
     deb7-git:
         description: "Modern git for Debian wheezy"
         treeherder:
@@ -176,8 +192,8 @@ jobs:
         run:
             using: debian-package
             dsc:
-                url: http://snapshot.debian.org/archive/debian/20181115T045552Z/pool/main/v/valgrind/valgrind_3.14.0-1.dsc
-                sha256: 6709e2fe4e8251ee32f3cfbf2c6ee106a5cfa3e8dc672cf1dd5f2b26e72b64ee
+                url: http://snapshot.debian.org/archive/debian/20190714T155055Z/pool/main/v/valgrind/valgrind_3.15.0-1.dsc
+                sha256: 2bd467ec486302060ed4e91452231b2c0a09afcd51c25d4ba8d3028218328681
             patch: valgrind-wheezy.diff
 
     deb7-dh-python:
@@ -268,8 +284,9 @@ jobs:
         run:
             using: debian-package
             tarball:
-                url: https://github.com/indygreg/python-zstandard/releases/download/0.9.1/python-zstandard-0.9.1.tar.gz
-                sha256: 59c7d6f1f85cebb5124abb50d8ec281c5311e0812e18785e28b197cf1515dd3b
+                url: https://github.com/indygreg/python-zstandard/archive/0.11.1.tar.gz
+                sha256: 2df90698e22f0da49cdd360438479f363e58eb8c3ac6e8bac84d831cf8e7baf4
+            name: python-zstandard
             patch: python-zstandard-wheezy.diff
             packages:
                 - deb7-dh-python
@@ -285,8 +302,23 @@ jobs:
             using: debian-package
             dist: stretch
             tarball:
-                url: https://github.com/indygreg/python-zstandard/releases/download/0.9.1/python-zstandard-0.9.1.tar.gz
-                sha256: 59c7d6f1f85cebb5124abb50d8ec281c5311e0812e18785e28b197cf1515dd3b
+                url: https://github.com/indygreg/python-zstandard/archive/0.11.1.tar.gz
+                sha256: 2df90698e22f0da49cdd360438479f363e58eb8c3ac6e8bac84d831cf8e7baf4
+            name: python-zstandard
+            pre-build-command: debchange -v 0.11.1-1.deb9moz --distribution stretch "Mozilla backport for stretch"
+
+    deb10-python-zstandard:
+        description: "python-zstandard for Debian buster"
+        treeherder:
+            symbol: Deb10(python-zstandard)
+        run:
+            using: debian-package
+            dist: buster
+            tarball:
+                url: https://github.com/indygreg/python-zstandard/archive/0.11.1.tar.gz
+                sha256: 2df90698e22f0da49cdd360438479f363e58eb8c3ac6e8bac84d831cf8e7baf4
+            name: python-zstandard
+            pre-build-command: debchange -v 0.11.1-1.deb10moz --distribution buster "Mozilla backport for buster"
 
     deb7-pcre3:
         description: "pcre3 8.31 for Debian Wheezy"

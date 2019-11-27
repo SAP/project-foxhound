@@ -10,7 +10,8 @@
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_mousewheel.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
@@ -18,6 +19,10 @@
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsPrintfCString.h"
+
+#if defined(XP_WIN)
+#include "npapi.h"
+#endif
 
 namespace mozilla {
 
@@ -396,6 +401,15 @@ bool WidgetEvent::CanBeSentToRemoteProcess() const {
     case eDragExit:
     case eDrop:
       return true;
+#if defined(XP_WIN)
+    case ePluginInputEvent:
+      {
+        auto evt = static_cast<const NPEvent*>(AsPluginEvent()->mPluginEvent);
+        return evt && evt->event == WM_SETTINGCHANGE &&
+            (evt->wParam == SPI_SETWHEELSCROLLLINES ||
+             evt->wParam == SPI_SETWHEELSCROLLCHARS);
+      }
+#endif
     default:
       return false;
   }
@@ -1009,7 +1023,7 @@ Modifiers WidgetKeyboardEvent::ModifiersForAccessKeyMatching() const {
 
 /* static */
 Modifiers WidgetKeyboardEvent::AccessKeyModifiers(AccessKeyType aType) {
-  switch (GenericAccessModifierKeyPref()) {
+  switch (StaticPrefs::ui_key_generalAccessKey()) {
     case -1:
       break;  // use the individual prefs
     case NS_VK_SHIFT:
@@ -1028,51 +1042,12 @@ Modifiers WidgetKeyboardEvent::AccessKeyModifiers(AccessKeyType aType) {
 
   switch (aType) {
     case AccessKeyType::eChrome:
-      return PrefFlagsToModifiers(ChromeAccessModifierMaskPref());
+      return PrefFlagsToModifiers(StaticPrefs::ui_key_chromeAccess());
     case AccessKeyType::eContent:
-      return PrefFlagsToModifiers(ContentAccessModifierMaskPref());
+      return PrefFlagsToModifiers(StaticPrefs::ui_key_contentAccess());
     default:
       return MODIFIER_NONE;
   }
-}
-
-/* static */
-int32_t WidgetKeyboardEvent::GenericAccessModifierKeyPref() {
-  static bool sInitialized = false;
-  static int32_t sValue = -1;
-  if (!sInitialized) {
-    nsresult rv =
-        Preferences::AddIntVarCache(&sValue, "ui.key.generalAccessKey", sValue);
-    sInitialized = NS_SUCCEEDED(rv);
-    MOZ_ASSERT(sInitialized);
-  }
-  return sValue;
-}
-
-/* static */
-int32_t WidgetKeyboardEvent::ChromeAccessModifierMaskPref() {
-  static bool sInitialized = false;
-  static int32_t sValue = 0;
-  if (!sInitialized) {
-    nsresult rv =
-        Preferences::AddIntVarCache(&sValue, "ui.key.chromeAccess", sValue);
-    sInitialized = NS_SUCCEEDED(rv);
-    MOZ_ASSERT(sInitialized);
-  }
-  return sValue;
-}
-
-/* static */
-int32_t WidgetKeyboardEvent::ContentAccessModifierMaskPref() {
-  static bool sInitialized = false;
-  static int32_t sValue = 0;
-  if (!sInitialized) {
-    nsresult rv =
-        Preferences::AddIntVarCache(&sValue, "ui.key.contentAccess", sValue);
-    sInitialized = NS_SUCCEEDED(rv);
-    MOZ_ASSERT(sInitialized);
-  }
-  return sValue;
 }
 
 /* static */

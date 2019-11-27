@@ -146,6 +146,13 @@ def check_path_length(repo_root, path):
     return []
 
 
+def check_file_type(repo_root, path):
+    # type: (str, str) -> List[rules.Error]
+    if os.path.islink(path):
+        return [rules.FileType.error(path, (path, "symlink"))]
+    return []
+
+
 def check_worker_collision(repo_root, path):
     # type: (str, str) -> List[rules.Error]
     endings = [(".any.html", ".any.js"),
@@ -382,6 +389,7 @@ regexps = [item() for item in  # type: ignore
             rules.GenerateTestsRegexp,
             rules.PrintRegexp,
             rules.LayoutTestsRegexp,
+            rules.MissingDepsRegexp,
             rules.SpecialPowersRegexp]]
 
 def check_regexp_line(repo_root, path, f):
@@ -672,6 +680,24 @@ def check_script_metadata(repo_root, path, f):
     return errors
 
 
+ahem_font_re = re.compile(b"font.*:.*ahem", flags=re.IGNORECASE)
+# Ahem can appear either in the global location or in the support
+# directory for legacy Mozilla imports
+ahem_stylesheet_re = re.compile(b"\/fonts\/ahem\.css|support\/ahem.css",
+                                flags=re.IGNORECASE)
+
+
+def check_ahem_system_font(repo_root, path, f):
+    # type: (str, str, IO[bytes]) -> List[rules.Error]
+    if not path.endswith((".html", ".htm", ".xht", ".xhtml")):
+        return []
+    contents = f.read()
+    errors = []
+    if ahem_font_re.search(contents) and not ahem_stylesheet_re.search(contents):
+        errors.append(rules.AhemSystemFont.error(path))
+    return errors
+
+
 def check_path(repo_root, path):
     # type: (str, str) -> List[rules.Error]
     """
@@ -907,9 +933,11 @@ def lint(repo_root, paths, output_format):
                 logger.info(line)
     return sum(itervalues(error_count))
 
-path_lints = [check_path_length, check_worker_collision, check_ahem_copy, check_gitignore_file]
+path_lints = [check_file_type, check_path_length, check_worker_collision, check_ahem_copy,
+              check_gitignore_file]
 all_paths_lints = [check_css_globally_unique]
-file_lints = [check_regexp_line, check_parsed, check_python_ast, check_script_metadata]
+file_lints = [check_regexp_line, check_parsed, check_python_ast, check_script_metadata,
+              check_ahem_system_font]
 
 # Don't break users of the lint that don't have git installed.
 try:

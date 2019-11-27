@@ -13,127 +13,129 @@ const CONTAINER_PAGE =
 const TPC_PREF = "network.cookie.cookieBehavior";
 
 add_task(async function setup() {
-  let oldCanRecord = Services.telemetry.canRecordExtended;
-  Services.telemetry.canRecordExtended = true;
-
-  // Avoid the content blocking tour interfering with our tests by popping up.
-  await SpecialPowers.pushPrefEnv({
-    set: [[ContentBlocking.prefIntroCount, ContentBlocking.MAX_INTROS]],
-  });
   await UrlClassifierTestUtils.addTestTrackers();
 
   registerCleanupFunction(() => {
-    Services.telemetry.canRecordExtended = oldCanRecord;
     UrlClassifierTestUtils.cleanupTestTrackers();
   });
 });
 
-async function assertSitesListed(
-  trackersBlocked,
-  thirdPartyBlocked,
-  firstPartyBlocked
-) {
+/*
+ * Accepts an array containing 6 elements that identify the testcase:
+ * [0] - boolean indicating whether trackers are blocked.
+ * [1] - boolean indicating whether third party cookies are blocked.
+ * [2] - boolean indicating whether first party cookies are blocked.
+ * [3] - integer indicating number of expected content blocking events.
+ * [4] - integer indicating number of expected subview list headers.
+ * [5] - integer indicating number of expected cookie list items.
+ * [6] - integer indicating number of expected cookie list items
+ *       after loading a cookie-setting third party URL in an iframe
+ * [7] - integer indicating number of expected cookie list items
+ *       after loading a cookie-setting first party URL in an iframe
+ */
+async function assertSitesListed(testCase) {
+  let sitesListedTestCases = [
+    [true, false, false, 4, 1, 1, 1, 1],
+    [true, true, false, 5, 1, 1, 2, 2],
+    [true, true, true, 6, 2, 2, 3, 3],
+    [false, false, false, 3, 1, 1, 1, 1],
+  ];
+  let [
+    trackersBlocked,
+    thirdPartyBlocked,
+    firstPartyBlocked,
+    contentBlockingEventCount,
+    listHeaderCount,
+    cookieItemsCount1,
+    cookieItemsCount2,
+    cookieItemsCount3,
+  ] = sitesListedTestCases[testCase];
   let promise = BrowserTestUtils.openNewForegroundTab({
     url: COOKIE_PAGE,
     gBrowser,
   });
-  let specialCase =
-    firstPartyBlocked ||
-    (trackersBlocked && thirdPartyBlocked && !firstPartyBlocked) ||
-    (!trackersBlocked && !thirdPartyBlocked && !firstPartyBlocked);
-  let count = 4;
-  if (firstPartyBlocked) {
-    count = 6;
-  } else if (trackersBlocked && thirdPartyBlocked && !firstPartyBlocked) {
-    count = 5;
-  } else if (!trackersBlocked && !thirdPartyBlocked && !firstPartyBlocked) {
-    count = 3;
-  }
-  let [tab] = await Promise.all([promise, waitForContentBlockingEvent(count)]);
+  let [tab] = await Promise.all([
+    promise,
+    waitForContentBlockingEvent(contentBlockingEventCount),
+  ]);
   let browser = tab.linkedBrowser;
 
-  await openIdentityPopup();
-
-  Services.telemetry.clearEvents();
+  await openProtectionsPopup();
 
   let categoryItem = document.getElementById(
-    "identity-popup-content-blocking-category-cookies"
+    "protections-popup-category-cookies"
   );
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
-  let cookiesView = document.getElementById("identity-popup-cookiesView");
+  let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
   categoryItem.click();
   await viewShown;
 
   ok(true, "Cookies view was shown");
 
-  let events = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-  ).parent;
-  let buttonEvents = events.filter(
-    e =>
-      e[1] == "security.ui.identitypopup" &&
-      e[2] == "click" &&
-      e[3] == "cookies_subview_btn"
-  );
-  is(buttonEvents.length, 1, "recorded telemetry for the button click");
-
   let listHeaders = cookiesView.querySelectorAll(
-    ".identity-popup-cookiesView-list-header"
+    ".protections-popup-cookiesView-list-header"
   );
-  is(listHeaders.length, 3, "We have 3 list headers");
+  is(
+    listHeaders.length,
+    listHeaderCount,
+    `We have ${listHeaderCount} list headers.`
+  );
+  if (listHeaderCount == 1) {
+    ok(
+      !BrowserTestUtils.is_visible(listHeaders[0]),
+      "Only one header, should be hidden"
+    );
+  } else {
+    for (let header of listHeaders) {
+      ok(
+        BrowserTestUtils.is_visible(header),
+        "Multiple list headers - all should be visible."
+      );
+    }
+  }
 
   let emptyLabels = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-empty-label"
+    ".protections-popup-empty-label"
   );
-  if (specialCase) {
-    count = 1;
-  } else {
-    count = 2;
-  }
-  is(emptyLabels.length, count, `We have ${count} empty labels`);
+  is(emptyLabels.length, 0, `We have no empty labels`);
 
-  let listItems = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
-  );
-  if (specialCase) {
-    count = 2;
-  } else {
-    count = 1;
-  }
-  is(listItems.length, count, `We have ${count} cookie in the list`);
-
-  let listItem = listItems[specialCase ? 1 : 0];
-  let label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
-  is(label.value, "http://trackertest.org", "Has an item for trackertest.org");
-  ok(BrowserTestUtils.is_visible(listItem), "List item is visible");
+  let listItems = cookiesView.querySelectorAll(".protections-popup-list-item");
   is(
-    listItem.classList.contains("allowed"),
-    !trackersBlocked,
-    "Indicates whether the cookie was blocked or allowed"
+    listItems.length,
+    cookieItemsCount1,
+    `We have ${cookieItemsCount1} cookies in the list`
   );
 
-  if (specialCase) {
-    listItem = listItems[0];
-    label = listItem.querySelector(
-      ".identity-popup-content-blocking-list-host-label"
-    );
-    is(
-      label.value,
-      "http://not-tracking.example.com",
-      "Has an item for not-tracking.example.com"
-    );
-    ok(BrowserTestUtils.is_visible(listItem), "List item is visible");
-    is(
-      listItem.classList.contains("allowed"),
-      !firstPartyBlocked,
-      "Indicates whether the cookie was blocked"
-    );
+  if (trackersBlocked) {
+    let trackerTestItem;
+    for (let item of listItems) {
+      let label = item.querySelector(".protections-popup-list-host-label");
+      if (label.value == "http://trackertest.org") {
+        trackerTestItem = item;
+        break;
+      }
+    }
+    ok(trackerTestItem, "Has an item for trackertest.org");
+    ok(BrowserTestUtils.is_visible(trackerTestItem), "List item is visible");
   }
 
-  let mainView = document.getElementById("identity-popup-mainView");
+  if (firstPartyBlocked) {
+    let notTrackingExampleItem;
+    for (let item of listItems) {
+      let label = item.querySelector(".protections-popup-list-host-label");
+      if (label.value == "http://not-tracking.example.com") {
+        notTrackingExampleItem = item;
+        break;
+      }
+    }
+    ok(notTrackingExampleItem, "Has an item for not-tracking.example.com");
+    ok(
+      BrowserTestUtils.is_visible(notTrackingExampleItem),
+      "List item is visible"
+    );
+  }
+  let mainView = document.getElementById("protections-popup-mainView");
   viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
   let backButton = cookiesView.querySelector(".subviewbutton-back");
   backButton.click();
@@ -157,58 +159,40 @@ async function assertSitesListed(
 
   ok(true, "Cookies view was shown");
 
-  emptyLabels = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-empty-label"
-  );
-  if (specialCase) {
-    count = 0;
-  } else {
-    count = 1;
-  }
-  is(emptyLabels.length, count, `We have ${count} empty label`);
+  emptyLabels = cookiesView.querySelectorAll(".protections-popup-empty-label");
+  is(emptyLabels.length, 0, `We have no empty labels`);
 
-  listItems = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
-  );
-  if (specialCase) {
-    count = 3;
-  } else {
-    count = 2;
-  }
-  is(listItems.length, count, `We have ${count} cookies in the list`);
-
-  listItem = listItems[specialCase ? 2 : 1];
-  label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
+  listItems = cookiesView.querySelectorAll(".protections-popup-list-item");
   is(
-    label.value,
-    "https://test1.example.org",
-    "Has an item for test1.example.org"
-  );
-  ok(BrowserTestUtils.is_visible(listItem), "List item is visible");
-  is(
-    listItem.classList.contains("allowed"),
-    !thirdPartyBlocked,
-    "Indicates whether the cookie was blocked or allowed"
+    listItems.length,
+    cookieItemsCount2,
+    `We have ${cookieItemsCount2} cookies in the list`
   );
 
-  if (specialCase) {
-    listItem = listItems[1];
-    label = listItem.querySelector(
-      ".identity-popup-content-blocking-list-host-label"
-    );
-    is(
-      label.value,
-      "http://trackertest.org",
-      "Has an item for trackertest.org"
-    );
-    ok(BrowserTestUtils.is_visible(listItem), "List item is visible");
-    is(
-      listItem.classList.contains("allowed"),
-      !trackersBlocked && !thirdPartyBlocked && !firstPartyBlocked,
-      "Indicates whether the cookie was blocked"
-    );
+  if (thirdPartyBlocked) {
+    let test1ExampleItem;
+    for (let item of listItems) {
+      let label = item.querySelector(".protections-popup-list-host-label");
+      if (label.value == "https://test1.example.org") {
+        test1ExampleItem = item;
+        break;
+      }
+    }
+    ok(test1ExampleItem, "Has an item for test1.example.org");
+    ok(BrowserTestUtils.is_visible(test1ExampleItem), "List item is visible");
+  }
+
+  if (trackersBlocked || thirdPartyBlocked || firstPartyBlocked) {
+    let trackerTestItem;
+    for (let item of listItems) {
+      let label = item.querySelector(".protections-popup-list-host-label");
+      if (label.value == "http://trackertest.org") {
+        trackerTestItem = item;
+        break;
+      }
+    }
+    ok(trackerTestItem, "List item should exist for http://trackertest.org");
+    ok(BrowserTestUtils.is_visible(trackerTestItem), "List item is visible");
   }
 
   viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
@@ -233,31 +217,31 @@ async function assertSitesListed(
 
   ok(true, "Cookies view was shown");
 
-  emptyLabels = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-empty-label"
-  );
-  is(emptyLabels.length, 0, "We have 0 empty label");
+  emptyLabels = cookiesView.querySelectorAll(".protections-popup-empty-label");
+  is(emptyLabels.length, 0, "We have no empty labels");
 
-  listItems = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
+  listItems = cookiesView.querySelectorAll(".protections-popup-list-item");
+  is(
+    listItems.length,
+    cookieItemsCount3,
+    `We have ${cookieItemsCount3} cookies in the list`
   );
-  is(listItems.length, 3, "We have 2 cookies in the list");
 
-  listItem = listItems[0];
-  label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
-  is(
-    label.value,
-    "http://not-tracking.example.com",
-    "Has an item for the first party"
-  );
-  ok(BrowserTestUtils.is_visible(listItem), "List item is visible");
-  is(
-    listItem.classList.contains("allowed"),
-    !firstPartyBlocked,
-    "Indicates whether the cookie was blocked or allowed"
-  );
+  if (firstPartyBlocked) {
+    let notTrackingExampleItem;
+    for (let item of listItems) {
+      let label = item.querySelector(".protections-popup-list-host-label");
+      if (label.value == "http://not-tracking.example.com") {
+        notTrackingExampleItem = item;
+        break;
+      }
+    }
+    ok(notTrackingExampleItem, "Has an item for not-tracking.example.com");
+    ok(
+      BrowserTestUtils.is_visible(notTrackingExampleItem),
+      "List item is visible"
+    );
+  }
 
   BrowserTestUtils.removeTab(tab);
 }
@@ -268,19 +252,20 @@ add_task(async function testCookiesSubView() {
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
   );
-  await assertSitesListed(true, false, false);
+  let testCaseIndex = 0;
+  await assertSitesListed(testCaseIndex++);
   info("Testing cookies subview with reject third party cookies.");
   Services.prefs.setIntPref(
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_FOREIGN
   );
-  await assertSitesListed(true, true, false);
+  await assertSitesListed(testCaseIndex++);
   info("Testing cookies subview with reject all cookies.");
   Services.prefs.setIntPref(TPC_PREF, Ci.nsICookieService.BEHAVIOR_REJECT);
-  await assertSitesListed(true, true, true);
+  await assertSitesListed(testCaseIndex++);
   info("Testing cookies subview with accept all cookies.");
   Services.prefs.setIntPref(TPC_PREF, Ci.nsICookieService.BEHAVIOR_ACCEPT);
-  await assertSitesListed(false, false, false);
+  await assertSitesListed(testCaseIndex++);
 
   Services.prefs.clearUserPref(TPC_PREF);
 });
@@ -290,7 +275,7 @@ add_task(async function testCookiesSubViewAllowed() {
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
   );
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://trackertest.org/"
   );
   Services.perms.addFromPrincipal(
@@ -305,43 +290,24 @@ add_task(async function testCookiesSubViewAllowed() {
   });
   let [tab] = await Promise.all([promise, waitForContentBlockingEvent(3)]);
 
-  await openIdentityPopup();
+  await openProtectionsPopup();
 
   let categoryItem = document.getElementById(
-    "identity-popup-content-blocking-category-cookies"
+    "protections-popup-category-cookies"
   );
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
-  let cookiesView = document.getElementById("identity-popup-cookiesView");
+  let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
   categoryItem.click();
   await viewShown;
 
   ok(true, "Cookies view was shown");
 
-  let listItems = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
-  );
-  is(listItems.length, 2, "We have 1 cookie in the list");
+  let listItems = cookiesView.querySelectorAll(".protections-popup-list-item");
+  is(listItems.length, 1, "We have 1 cookie in the list");
 
   let listItem = listItems[0];
-  let label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
-  is(
-    label.value,
-    "http://not-tracking.example.com",
-    "has an item for not-tracking.example.com"
-  );
-  ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
-  ok(
-    listItem.classList.contains("allowed"),
-    "indicates whether the cookie was blocked or allowed"
-  );
-
-  listItem = listItems[1];
-  label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
+  let label = listItem.querySelector(".protections-popup-list-host-label");
   is(label.value, "http://trackertest.org", "has an item for trackertest.org");
   ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
   ok(
@@ -374,12 +340,12 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
     TPC_PREF,
     Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER
   );
-  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://not-tracking.example.com/"
   );
 
   // Pretend that the tracker has already been interacted with
-  let trackerPrincipal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+  let trackerPrincipal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
     "http://trackertest.org/"
   );
   Services.perms.addFromPrincipal(
@@ -421,43 +387,24 @@ add_task(async function testCookiesSubViewAllowedHeuristic() {
   await new Promise(resolve => waitForFocus(resolve, popup));
   await new Promise(resolve => waitForFocus(resolve, window));
 
-  await openIdentityPopup();
+  await openProtectionsPopup();
 
   let categoryItem = document.getElementById(
-    "identity-popup-content-blocking-category-cookies"
+    "protections-popup-category-cookies"
   );
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
-  let cookiesView = document.getElementById("identity-popup-cookiesView");
+  let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
   categoryItem.click();
   await viewShown;
 
   ok(true, "Cookies view was shown");
 
-  let listItems = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
-  );
-  is(listItems.length, 2, "We have 2 cookie in the list");
+  let listItems = cookiesView.querySelectorAll(".protections-popup-list-item");
+  is(listItems.length, 1, "We have 1 cookie in the list");
 
   let listItem = listItems[0];
-  let label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
-  is(
-    label.value,
-    "http://not-tracking.example.com",
-    "has an item for not-tracking.example.com"
-  );
-  ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
-  ok(
-    listItem.classList.contains("allowed"),
-    "indicates whether the cookie was blocked or allowed"
-  );
-
-  listItem = listItems[1];
-  label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
+  let label = listItem.querySelector(".protections-popup-list-host-label");
   is(label.value, "http://trackertest.org", "has an item for trackertest.org");
   ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
   ok(
@@ -504,43 +451,24 @@ add_task(async function testCookiesSubViewBlockedDoublyNested() {
   });
   let [tab] = await Promise.all([promise, waitForContentBlockingEvent(3)]);
 
-  await openIdentityPopup();
+  await openProtectionsPopup();
 
   let categoryItem = document.getElementById(
-    "identity-popup-content-blocking-category-cookies"
+    "protections-popup-category-cookies"
   );
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
-  let cookiesView = document.getElementById("identity-popup-cookiesView");
+  let cookiesView = document.getElementById("protections-popup-cookiesView");
   let viewShown = BrowserTestUtils.waitForEvent(cookiesView, "ViewShown");
   categoryItem.click();
   await viewShown;
 
   ok(true, "Cookies view was shown");
 
-  let listItems = cookiesView.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
-  );
-  is(listItems.length, 2, "We have 2 cookie in the list");
+  let listItems = cookiesView.querySelectorAll(".protections-popup-list-item");
+  is(listItems.length, 1, "We have 1 cookie in the list");
 
   let listItem = listItems[0];
-  let label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
-  is(
-    label.value,
-    "http://not-tracking.example.com",
-    "has an item for not-tracking.example.com"
-  );
-  ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
-  ok(
-    listItem.classList.contains("allowed"),
-    "indicates whether the cookie was blocked or allowed"
-  );
-
-  listItem = listItems[1];
-  label = listItem.querySelector(
-    ".identity-popup-content-blocking-list-host-label"
-  );
+  let label = listItem.querySelector(".protections-popup-list-host-label");
   is(label.value, "http://trackertest.org", "has an item for trackertest.org");
   ok(BrowserTestUtils.is_visible(listItem), "list item is visible");
   ok(

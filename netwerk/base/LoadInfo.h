@@ -34,13 +34,14 @@ class XMLHttpRequestMainThread;
 
 namespace net {
 class LoadInfoArgs;
+class LoadInfo;
 }  // namespace net
 
 namespace ipc {
 // we have to forward declare that function so we can use it as a friend.
-nsresult LoadInfoArgsToLoadInfo(
-    const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
-    nsILoadInfo** outLoadInfo);
+nsresult LoadInfoArgsToLoadInfo(const Maybe<net::LoadInfoArgs>& aLoadInfoArgs,
+                                nsINode* aLoadingContext,
+                                net::LoadInfo** outLoadInfo);
 }  // namespace ipc
 
 namespace net {
@@ -134,6 +135,7 @@ class LoadInfo final : public nsILoadInfo {
            const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
            nsSecurityFlags aSecurityFlags,
            nsContentPolicyType aContentPolicyType, LoadTainting aTainting,
+           bool aBlockAllMixedContent,
            bool aUpgradeInsecureRequests, bool aBrowserUpgradeInsecureRequests,
            bool aBrowserWouldUpgradeInsecureRequests, bool aForceAllowDataURI,
            bool aAllowInsecureRedirectToDataURI, bool aBypassCORSChecks,
@@ -143,7 +145,8 @@ class LoadInfo final : public nsILoadInfo {
            uint64_t aTopOuterWindowID, uint64_t aFrameOuterWindowID,
            uint64_t aBrowsingContextID, uint64_t aFrameBrowsingContextID,
            bool aInitialSecurityCheckDone, bool aIsThirdPartyRequest,
-           bool aIsDocshellReload, bool aSendCSPViolationEvents,
+           bool aIsDocshellReload, bool aIsFormSubmission,
+           bool aSendCSPViolationEvents,
            const OriginAttributes& aOriginAttributes,
            RedirectHistoryArray& aRedirectChainIncludingInternalRedirects,
            RedirectHistoryArray& aRedirectChain,
@@ -153,7 +156,8 @@ class LoadInfo final : public nsILoadInfo {
            bool aIsPreflight, bool aLoadTriggeredFromExternal,
            bool aServiceWorkerTaintingSynthesized,
            bool aDocumentHasUserInteracted, bool aDocumentHasLoaded,
-           const nsAString& aCspNonce, uint32_t aRequestBlockingReason);
+           const nsAString& aCspNonce, bool aSkipContentSniffing,
+           uint32_t aRequestBlockingReason, nsINode* aLoadingContext);
   LoadInfo(const LoadInfo& rhs);
 
   NS_IMETHOD GetRedirects(JSContext* aCx,
@@ -162,7 +166,7 @@ class LoadInfo final : public nsILoadInfo {
 
   friend nsresult mozilla::ipc::LoadInfoArgsToLoadInfo(
       const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
-      nsILoadInfo** outLoadInfo);
+      nsINode* aLoadingContext, net::LoadInfo** outLoadInfo);
 
   ~LoadInfo() = default;
 
@@ -210,6 +214,7 @@ class LoadInfo final : public nsILoadInfo {
   nsSecurityFlags mSecurityFlags;
   nsContentPolicyType mInternalContentPolicyType;
   LoadTainting mTainting;
+  bool mBlockAllMixedContent;
   bool mUpgradeInsecureRequests;
   bool mBrowserUpgradeInsecureRequests;
   bool mBrowserWouldUpgradeInsecureRequests;
@@ -229,6 +234,7 @@ class LoadInfo final : public nsILoadInfo {
   bool mInitialSecurityCheckDone;
   bool mIsThirdPartyContext;
   bool mIsDocshellReload;
+  bool mIsFormSubmission;
   bool mSendCSPViolationEvents;
   OriginAttributes mOriginAttributes;
   RedirectHistoryArray mRedirectChainIncludingInternalRedirects;
@@ -244,6 +250,7 @@ class LoadInfo final : public nsILoadInfo {
   bool mDocumentHasUserInteracted;
   bool mDocumentHasLoaded;
   nsString mCspNonce;
+  bool mSkipContentSniffing;
 
   // Is true if this load was triggered by processing the attributes of the
   // browsing context container.

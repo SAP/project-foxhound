@@ -175,7 +175,6 @@ class nsTStringRepr {
   DataFlags GetDataFlags() const { return mDataFlags; }
 
   const StringTaint& Taint() const { return mTaint; }
-  StringTaint& Taint() { return mTaint; }
 
   bool isTainted() const { return mTaint.hasTaint(); }
 
@@ -298,7 +297,7 @@ class nsTStringRepr {
  protected:
   nsTStringRepr() = delete;  // Never instantiate directly
 
-  constexpr nsTStringRepr(char_type* aData, size_type aLength,
+  nsTStringRepr(char_type* aData, size_type aLength,
                           DataFlags aDataFlags, ClassFlags aClassFlags,
                           const StringTaint& aStringTaint)
       : mData(aData),
@@ -313,7 +312,7 @@ class nsTStringRepr {
         mLength(aLength),
         mDataFlags(aDataFlags),
         mClassFlags(aClassFlags),
-        mTaint(EmptyTaint) {}
+        mTaint() {}
 
   char_type* mData;
   size_type mLength;

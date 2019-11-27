@@ -50,7 +50,6 @@
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsContentTypeParser.h"
-#include "XULDocument.h"
 
 static mozilla::LazyLogModule gContentSinkLog("nsXULContentSink");
 
@@ -805,11 +804,8 @@ nsresult XULContentSinkImpl::AddAttributes(const char16_t** aAttributes,
   // Create storage for the attributes
   nsXULPrototypeAttribute* attrs = nullptr;
   if (aAttrLen > 0) {
-    attrs = new nsXULPrototypeAttribute[aAttrLen];
+    attrs = aElement->mAttributes.AppendElements(aAttrLen);
   }
-
-  aElement->mAttributes = attrs;
-  aElement->mNumAttributes = aAttrLen;
 
   // Copy the attributes into the prototype
   uint32_t i;

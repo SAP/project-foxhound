@@ -11,6 +11,9 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+const { E10SUtils } = ChromeUtils.import(
+  "resource://gre/modules/E10SUtils.jsm"
+);
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -24,6 +27,7 @@ const PREFS_WHITELIST = [
   "accessibility.",
   "apz.",
   "browser.cache.",
+  "browser.contentblocking.category",
   "browser.display.",
   "browser.download.folderList",
   "browser.download.hide_plugins_without_extensions",
@@ -244,20 +248,20 @@ var dataProviders = {
       .trim();
     data.keyLocationServiceGoogleFound =
       keyLocationServiceGoogle != "no-google-location-service-api-key" &&
-      keyLocationServiceGoogle.length > 0;
+      !!keyLocationServiceGoogle.length;
 
     const keySafebrowsingGoogle = Services.urlFormatter
       .formatURL("%GOOGLE_SAFEBROWSING_API_KEY%")
       .trim();
     data.keySafebrowsingGoogleFound =
       keySafebrowsingGoogle != "no-google-safebrowsing-api-key" &&
-      keySafebrowsingGoogle.length > 0;
+      !!keySafebrowsingGoogle.length;
 
     const keyMozilla = Services.urlFormatter
       .formatURL("%MOZILLA_API_KEY%")
       .trim();
     data.keyMozillaFound =
-      keyMozilla != "no-mozilla-api-key" && keyMozilla.length > 0;
+      keyMozilla != "no-mozilla-api-key" && !!keyMozilla.length;
 
     done(data);
   },
@@ -358,6 +362,8 @@ var dataProviders = {
       if (!remoteType) {
         continue;
       }
+
+      remoteType = E10SUtils.remoteTypePrefix(remoteType);
 
       if (remoteTypes[remoteType]) {
         remoteTypes[remoteType]++;

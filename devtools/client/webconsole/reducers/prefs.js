@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -15,10 +13,8 @@ const PrefState = overrides =>
       {
         logLimit: 1000,
         sidebarToggle: false,
-        jstermCodeMirror: false,
         groupWarnings: false,
         historyCount: 50,
-        editor: false,
       },
       overrides
     )
@@ -28,11 +24,13 @@ function prefs(state = PrefState(), action) {
   if (action.type === WARNING_GROUPS_TOGGLE) {
     return {
       ...state,
-      groupWarnings: action.value,
+      groupWarnings: !state.groupWarnings,
     };
   }
   return state;
 }
 
-exports.PrefState = PrefState;
-exports.prefs = prefs;
+module.exports = {
+  PrefState,
+  prefs,
+};

@@ -5,7 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ContainerLayerMLGPU.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "LayersLogging.h"
 #include "LayerManagerMLGPU.h"
 #include "MLGDevice.h"
@@ -100,10 +100,15 @@ Maybe<IntRect> ContainerLayerMLGPU::FindVisibleBounds(
   ContainerLayer* container = aLayer->AsContainerLayer();
   if (container) {
     if (container->UseIntermediateSurface()) {
-      container->AsHostLayer()
-          ->AsLayerMLGPU()
-          ->AsContainerLayerMLGPU()
-          ->ComputeIntermediateSurfaceBounds();
+      ContainerLayerMLGPU* c =
+          container->AsHostLayer()->AsLayerMLGPU()->AsContainerLayerMLGPU();
+      if (!c) {
+        gfxCriticalError()
+            << "not container: "
+            << container->AsHostLayer()->AsLayerMLGPU()->GetType();
+      }
+      MOZ_RELEASE_ASSERT(c);
+      c->ComputeIntermediateSurfaceBounds();
     } else {
       Maybe<IntRect> accumulated = Some(IntRect());
 

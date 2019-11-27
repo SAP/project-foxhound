@@ -177,7 +177,6 @@
 @BINPATH@/@PREF_DIR@/mobile.js
 #endif # MOZ_GECKOVIEW_JAR
 @BINPATH@/@PREF_DIR@/channel-prefs.js
-@BINPATH@/ua-update.json
 @BINPATH@/defaults/autoconfig/prefcalls.js
 
 ; [Layout Engine Resources]
@@ -206,6 +205,7 @@
 @BINPATH@/res/grabber.gif
 @BINPATH@/res/dtd/*
 @BINPATH@/res/language.properties
+@BINPATH@/res/locale/layout/HtmlForm.properties
 
 #ifndef MOZ_ANDROID_EXCLUDE_FONTS
 @BINPATH@/res/fonts/*
@@ -240,6 +240,7 @@
 @BINPATH@/components/GeckoView.manifest
 @BINPATH@/components/GeckoViewExternalAppService.js
 @BINPATH@/components/GeckoViewPrompt.js
+@BINPATH@/components/GeckoViewPush.js
 @BINPATH@/components/GeckoViewPermission.js
 @BINPATH@/components/GeckoViewStartup.js
 #else
@@ -274,7 +275,6 @@
 @BINPATH@/chrome/marionette.manifest
 @BINPATH@/components/marionette.manifest
 @BINPATH@/components/marionette.js
-@BINPATH@/@PREF_DIR@/marionette.js
 #endif
 
 #ifdef PKG_LOCALE_MANIFEST

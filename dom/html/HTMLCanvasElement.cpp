@@ -10,7 +10,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "Layers.h"
-#include "MediaSegment.h"
+#include "MediaTrackGraph.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/CheckedInt.h"
@@ -19,7 +19,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
-#include "mozilla/dom/MediaStreamTrack.h"
+#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/EventDispatcher.h"
@@ -603,7 +603,10 @@ void HTMLCanvasElement::ToDataURL(JSContext* aCx, const nsAString& aType,
     return;
   }
 
-  aRv = ToDataURLImpl(aCx, aSubjectPrincipal, aType, aParams, aDataURL);
+  nsresult rv = ToDataURLImpl(aCx, aSubjectPrincipal, aType, aParams, aDataURL);
+  if (NS_FAILED(rv)) {
+    aDataURL.AssignLiteral("data:,");
+  }
 }
 
 void HTMLCanvasElement::SetMozPrintCallback(PrintCallback* aCallback) {
@@ -677,24 +680,18 @@ already_AddRefed<CanvasCaptureMediaStream> HTMLCanvasElement::CaptureStream(
     return nullptr;
   }
 
-  RefPtr<CanvasCaptureMediaStream> stream =
-      CanvasCaptureMediaStream::CreateSourceStream(window, this);
-  if (!stream) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
+  auto stream = MakeRefPtr<CanvasCaptureMediaStream>(window, this);
 
-  TrackID videoTrackId = 1;
   nsCOMPtr<nsIPrincipal> principal = NodePrincipal();
-  nsresult rv = stream->Init(aFrameRate, videoTrackId, principal);
+  nsresult rv = stream->Init(aFrameRate, principal);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;
   }
 
   RefPtr<MediaStreamTrack> track =
-      stream->CreateDOMTrack(videoTrackId, MediaSegment::VIDEO,
-                             new CanvasCaptureTrackSource(principal, stream));
+      new VideoStreamTrack(window, stream->GetSourceStream(),
+                           new CanvasCaptureTrackSource(principal, stream));
   stream->AddTrackInternal(track);
 
   // Check site-specific permission and display prompt if appropriate.
@@ -886,8 +883,11 @@ nsresult HTMLCanvasElement::MozGetAsFileImpl(const nsAString& aName,
       do_QueryInterface(OwnerDoc()->GetScopeObject());
 
   // The File takes ownership of the buffer
-  RefPtr<File> file =
-      File::CreateMemoryFile(win, imgData, imgSize, aName, type, PR_Now());
+  RefPtr<File> file = File::CreateMemoryFile(win->AsGlobal(), imgData, imgSize,
+                                             aName, type, PR_Now());
+  if (NS_WARN_IF(!file)) {
+    return NS_ERROR_FAILURE;
+  }
 
   file.forget(aResult);
   return NS_OK;
@@ -1207,8 +1207,8 @@ nsresult HTMLCanvasElement::RegisterFrameCaptureListener(
       return NS_ERROR_FAILURE;
     }
 
-    while (doc->GetParentDocument()) {
-      doc = doc->GetParentDocument();
+    while (doc->GetInProcessParentDocument()) {
+      doc = doc->GetInProcessParentDocument();
     }
 
     nsPresContext* context = doc->GetPresContext();

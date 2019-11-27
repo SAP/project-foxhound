@@ -6,25 +6,11 @@ geckoview-junit:
     description: "Geckoview junit run"
     suite: geckoview-junit
     treeherder-symbol: gv-junit
-    instance-size: xlarge
     loopback-video: true
     e10s: true
     target: geckoview-androidTest.apk
     max-run-time: 3600
-    tier:
-        by-test-platform:
-            android-em-7.*: 3
-            default: default
-    chunks:
-        by-test-platform:
-            android-em-4.3-arm7-api-16-ccov/debug: 8
-            android-em-4.3-arm7-api-16.*\/debug: 8
-            android-em-4.*\/(?:opt|pgo)?: 3
-            default: 1
-    run-on-projects:
-        by-test-platform:
-            android-em-4.3-arm7-api-16/opt: ['try']
-            default: ['try', 'trunk', 'mozilla-beta', 'mozilla-release']
+    tier: default
     mozharness:
         script: android_emulator_unittest.py
         config:
@@ -32,36 +18,8 @@ geckoview-junit:
                 android-em-7.*:
                     - android/android_common.py
                     - android/androidx86_7_0.py
-                android-em-4.*:
-                    - android/android_common.py
-                    - android/androidarm_4_3_junit.py
         extra-options:
             - --test-suite=geckoview-junit
-
-robocop:
-    description: "Robocop run"
-    suite: robocop
-    treeherder-symbol: M(rc)
-    instance-size: xlarge
-    tier: 2
-    chunks:
-        by-test-platform:
-            # android-em-4.3-arm7-api-16/debug -- not run
-            android-em-4.3-arm7-api-16-ccov/debug: 8
-            android-em-4.*\/(?:opt|pgo)?: 4
-    loopback-video: true
-    e10s: false
-    run-on-projects:
-        by-test-platform:
-            android-em-4.*/.*: ['try', 'mozilla-central']
-            default: built-projects
-    mozharness:
-        script: android_emulator_unittest.py
-        config:
-            - android/android_common.py
-            - android/androidarm_4_3.py
-        extra-options:
-            - --test-suite=robocop
 
 telemetry-tests-client:
     description: "Telemetry tests client run"
@@ -83,15 +41,10 @@ test-verify:
     suite: test-verify
     treeherder-symbol: TV
     loopback-video: true
-    instance-size:
-        by-test-platform:
-            android-em.*: xlarge
-            default: default
     max-run-time: 10800
     allow-software-gl-layers: false
     run-on-projects:
         by-test-platform:
-            android-em-4.*/.*: ['try', 'mozilla-central']  # bug 1548659
             # do not run on ccov
             .*-ccov/.*: []
             .*-asan/.*: []
@@ -99,6 +52,10 @@ test-verify:
             macosx.*64(?:-qr)?/opt: ['mozilla-central', 'try']
             # do not run on beta or release: usually just confirms earlier results
             default: ['trunk', 'try']
+    target:
+        by-test-platform:
+            android-em-7.*: geckoview-androidTest.apk
+            default: null
     tier: 2
     mozharness:
         script:
@@ -110,9 +67,6 @@ test-verify:
                 android-em-7.*:
                     - android/android_common.py
                     - android/androidx86_7_0.py
-                android-em-4.*:
-                    - android/android_common.py
-                    - android/androidarm_4_3.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py
@@ -122,6 +76,18 @@ test-verify:
                     - unittests/win_unittest.py
         extra-options:
             - --verify
+    fetches:
+        toolchain:
+            by-test-platform:
+                linux.*:
+                    - linux64-node
+                macosx.*:
+                    - macosx64-node
+                win.*64.*:
+                    - win64-node
+                win.*32.*:
+                    - win32-node
+                android-em-7.*: []
 
 test-verify-gpu:
     description: "Extra verification of tests modified on this push on gpu instances"
@@ -132,10 +98,6 @@ test-verify-gpu:
     treeherder-symbol: TVg
     loopback-video: true
     virtualization: virtual-with-gpu
-    instance-size:
-        by-test-platform:
-            android-em.*: xlarge
-            default: default
     max-run-time: 10800
     allow-software-gl-layers: false
     run-on-projects:
@@ -158,9 +120,6 @@ test-verify-gpu:
                 android-em-7.*:
                     - android/android_common.py
                     - android/androidx86_7_0.py
-                android-em-4.*:
-                    - android/android_common.py
-                    - android/androidarm_4_3.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py
@@ -195,9 +154,6 @@ test-coverage:
                 android-em-7.*:
                     - android/android_common.py
                     - android/androidx86_7_0.py
-                android-em-4.*:
-                    - android/android_common.py
-                    - android/androidarm_4_3.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py
@@ -207,6 +163,20 @@ test-coverage:
                     - unittests/win_unittest.py
         extra-options:
             - --per-test-coverage
+    fetches:
+        toolchain:
+            by-test-platform:
+                linux.*:
+                    - linux64-node
+                macosx.*:
+                    - macosx64-node
+                win.*aarch64.*:
+                    - win32-node
+                win.*-64.*:
+                    - win64-node
+                win.*32.*:
+                    - win32-node
+                android-em-7.*: []
 
 test-coverage-gpu:
     description: "Per-test coverage for tests that require gpu instances"
@@ -236,9 +206,6 @@ test-coverage-gpu:
                 android-em-7.*:
                     - android/android_common.py
                     - android/androidx86_7_0.py
-                android-em-4.*:
-                    - android/android_common.py
-                    - android/androidarm_4_3.py
                 linux.*:
                     - unittests/linux_unittest.py
                     - remove_executables.py

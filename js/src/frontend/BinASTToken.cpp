@@ -39,6 +39,23 @@ const BinaryASTSupport::CharSlice BINASTVARIANT_DESCRIPTIONS[] = {
 #undef WITH_VARIANT
 };
 
+const BinaryASTSupport::CharSlice BINASTLIST_DESCRIPTIONS[] = {
+#define NOTHING(_)
+#define EMIT_NAME(_list_name, _content, SPEC_NAME, _type_name) \
+  BinaryASTSupport::CharSlice(SPEC_NAME, sizeof(SPEC_NAME) - 1),
+    FOR_EACH_BIN_LIST(EMIT_NAME, NOTHING, NOTHING, NOTHING, NOTHING, NOTHING,
+                      NOTHING, NOTHING, NOTHING)
+#undef EMIT_NAME
+#undef NOTHING
+};
+
+const BinaryASTSupport::CharSlice BINASTINTERFACEANDFIELD_DESCRIPTIONS[] = {
+#define WITH_VARIANT(_, SPEC_NAME) \
+  BinaryASTSupport::CharSlice(SPEC_NAME, sizeof(SPEC_NAME) - 1),
+    FOR_EACH_BIN_INTERFACE_AND_FIELD(WITH_VARIANT)
+#undef WITH_VARIANT
+};
+
 const BinaryASTSupport::CharSlice& getBinASTKind(const BinASTKind& variant) {
   return BINASTKIND_DESCRIPTIONS[static_cast<size_t>(variant)];
 }
@@ -52,6 +69,16 @@ const BinaryASTSupport::CharSlice& getBinASTField(const BinASTField& variant) {
   return BINASTFIELD_DESCRIPTIONS[static_cast<size_t>(variant)];
 }
 
+const BinaryASTSupport::CharSlice& getBinASTList(const BinASTList& list) {
+  return BINASTLIST_DESCRIPTIONS[static_cast<size_t>(list)];
+}
+
+const BinaryASTSupport::CharSlice& getBinASTInterfaceAndField(
+    const BinASTInterfaceAndField& interfaceAndField) {
+  return BINASTINTERFACEANDFIELD_DESCRIPTIONS[static_cast<size_t>(
+      interfaceAndField)];
+}
+
 const char* describeBinASTKind(const BinASTKind& kind) {
   return getBinASTKind(kind).begin();
 }
@@ -62,6 +89,23 @@ const char* describeBinASTField(const BinASTField& field) {
 
 const char* describeBinASTVariant(const BinASTVariant& variant) {
   return getBinASTVariant(variant).begin();
+}
+
+const char* describeBinASTList(const BinASTList& list) {
+  return getBinASTList(list).begin();
+}
+
+const char* describeBinASTInterfaceAndField(
+    const BinASTInterfaceAndField& interfaceAndField) {
+  return getBinASTInterfaceAndField(interfaceAndField).begin();
+}
+
+size_t getBinASTKindSortKey(const BinASTKind& kind) {
+  return static_cast<size_t>(kind);
+}
+
+size_t getBinASTVariantSortKey(const BinASTVariant& variant) {
+  return static_cast<size_t>(variant);
 }
 
 }  // namespace frontend
@@ -89,7 +133,7 @@ bool BinaryASTSupport::ensureBinASTKindsInitialized(JSContext* cx) {
       const CharSlice& key = getBinASTKind(variant);
       auto ptr = binASTKindMap_.lookupForAdd(key);
       MOZ_ASSERT(!ptr);
-      if (!binASTKindMap_.add(ptr, key, variant)) {
+      if (MOZ_UNLIKELY(!binASTKindMap_.add(ptr, key, variant))) {
         ReportOutOfMemory(cx);
         return false;
       }
@@ -107,7 +151,7 @@ bool BinaryASTSupport::ensureBinASTVariantsInitialized(JSContext* cx) {
       const CharSlice& key = getBinASTVariant(variant);
       auto ptr = binASTVariantMap_.lookupForAdd(key);
       MOZ_ASSERT(!ptr);
-      if (!binASTVariantMap_.add(ptr, key, variant)) {
+      if (MOZ_UNLIKELY(!binASTVariantMap_.add(ptr, key, variant))) {
         ReportOutOfMemory(cx);
         return false;
       }
@@ -121,7 +165,7 @@ JS::Result<const js::frontend::BinASTKind*> BinaryASTSupport::binASTKind(
   MOZ_ASSERT_IF(cx->isHelperThreadContext(), !binASTKindMap_.empty());
   if (!cx->isHelperThreadContext()) {
     // Initialize Lazily if on main thread.
-    if (!ensureBinASTKindsInitialized(cx)) {
+    if (MOZ_UNLIKELY(!ensureBinASTKindsInitialized(cx))) {
       return cx->alreadyReportedError();
     }
   }
@@ -139,7 +183,7 @@ JS::Result<const js::frontend::BinASTVariant*> BinaryASTSupport::binASTVariant(
   MOZ_ASSERT_IF(cx->isHelperThreadContext(), !binASTVariantMap_.empty());
   if (!cx->isHelperThreadContext()) {
     // Initialize lazily if on main thread.
-    if (!ensureBinASTVariantsInitialized(cx)) {
+    if (MOZ_UNLIKELY(!ensureBinASTVariantsInitialized(cx))) {
       return cx->alreadyReportedError();
     }
   }

@@ -10,6 +10,7 @@
 #include "mozilla/Maybe.h"
 
 #include "builtin/TypedObjectConstants.h"
+#include "gc/ZoneAllocator.h"
 #include "js/ArrayBuffer.h"
 #include "js/GCHashTable.h"
 #include "vm/JSObject.h"
@@ -34,7 +35,6 @@ void* MapBufferMemory(size_t mappedSize, size_t initialCommittedSize);
 // size.  Returns false on failure.
 bool CommitBufferMemory(void* dataEnd, uint32_t delta);
 
-#ifndef WASM_HUGE_MEMORY
 // Extend an existing mapping by adding uncommited pages to it.  `dataStart`
 // must be the pointer to the start of the existing mapping, `mappedSize` the
 // size of the existing mapping, and `newMappedSize` the size of the extended
@@ -42,7 +42,6 @@ bool CommitBufferMemory(void* dataEnd, uint32_t delta);
 // must be divisible by the page size.  Returns false on failure.
 bool ExtendBufferMapping(void* dataStart, size_t mappedSize,
                          size_t newMappedSize);
-#endif
 
 // Remove an existing mapping.  `dataStart` must be the pointer to the start of
 // the mapping, and `mappedSize` the size of that mapping.
@@ -121,7 +120,6 @@ class ArrayBufferObjectMaybeShared : public NativeObject {
     return WasmArrayBufferMaxSize(this);
   }
   size_t wasmMappedSize() const { return WasmArrayBufferMappedSize(this); }
-  uint32_t wasmBoundsCheckLimit() const;
 
   inline bool isPreparedForAsmJS() const;
   inline bool isWasm() const;
@@ -304,8 +302,8 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
     WasmArrayRawBuffer* wasmBuffer() const;
   };
 
-  static const Class class_;
-  static const Class protoClass_;
+  static const JSClass class_;
+  static const JSClass protoClass_;
 
   static bool byteLengthGetter(JSContext* cx, unsigned argc, Value* vp);
 
@@ -388,7 +386,7 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   }
   bool hasInlineData() const { return dataPointer() == inlineDataPointer(); }
 
-  void releaseData(FreeOp* fop);
+  void releaseData(JSFreeOp* fop);
 
   BufferKind bufferKind() const {
     return BufferKind(flags() & BUFFER_KIND_MASK);
@@ -419,14 +417,11 @@ class ArrayBufferObject : public ArrayBufferObjectMaybeShared {
   static MOZ_MUST_USE bool wasmGrowToSizeInPlace(
       uint32_t newSize, Handle<ArrayBufferObject*> oldBuf,
       MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
-#ifndef WASM_HUGE_MEMORY
   static MOZ_MUST_USE bool wasmMovingGrowToSize(
       uint32_t newSize, Handle<ArrayBufferObject*> oldBuf,
       MutableHandle<ArrayBufferObject*> newBuf, JSContext* cx);
-#endif
-  uint32_t wasmBoundsCheckLimit() const;
 
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
 
   static BufferContents createMappedContents(int fd, size_t offset,
                                              size_t length);
@@ -606,7 +601,7 @@ inline constexpr bool TypeIsUnsigned<uint32_t>() {
 // and the views that use their storage.
 class InnerViewTable {
  public:
-  typedef Vector<JSObject*, 1, SystemAllocPolicy> ViewVector;
+  typedef Vector<JSObject*, 1, ZoneAllocPolicy> ViewVector;
 
   friend class ArrayBufferObject;
 
@@ -625,9 +620,8 @@ class InnerViewTable {
   // regression. Thus, it is vital that nursery pointers in this map not be held
   // live. Special support is required in the minor GC, implemented in
   // sweepAfterMinorGC.
-  typedef GCHashMap<JSObject*, ViewVector, MovableCellHasher<JSObject*>,
-                    SystemAllocPolicy, MapGCPolicy>
-      Map;
+  using Map = GCHashMap<JSObject*, ViewVector, MovableCellHasher<JSObject*>,
+                        ZoneAllocPolicy, MapGCPolicy>;
 
   // For all objects sharing their storage with some other view, this maps
   // the object to the list of such views. All entries in this map are weak.
@@ -651,7 +645,7 @@ class InnerViewTable {
   void removeViews(ArrayBufferObject* obj);
 
  public:
-  InnerViewTable() : nurseryKeysValid(true) {}
+  explicit InnerViewTable(Zone* zone) : map(zone), nurseryKeysValid(true) {}
 
   // Remove references to dead objects in the table and update table entries
   // to reflect moved objects.

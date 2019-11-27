@@ -20,6 +20,13 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/ActorManagerParent.jsm"
 );
 
+XPCOMUtils.defineLazyServiceGetter(
+  this,
+  "PushService",
+  "@mozilla.org/push/Service;1",
+  "nsIPushService"
+);
+
 const PREF_PDFJS_ENABLED_CACHE_STATE = "pdfjs.enabledCache.state";
 
 let ACTORS = {
@@ -36,13 +43,6 @@ let ACTORS = {
         "MozDOMPointerLock:Entered": {},
         "MozDOMPointerLock:Exited": {},
       },
-      messages: [
-        "Browser:Reload",
-        "Browser:AppTab",
-        "Browser:HasSiblings",
-        "MixedContent:ReenableProtection",
-        "UpdateCharacterSet",
-      ],
     },
   },
 
@@ -61,23 +61,95 @@ let ACTORS = {
     allFrames: true,
   },
 
-  SwitchDocumentDirection: {
-    child: {
-      moduleURI: "resource:///actors/SwitchDocumentDirectionChild.jsm",
+  DOMFullscreen: {
+    parent: {
+      moduleURI: "resource:///actors/DOMFullscreenParent.jsm",
+    },
 
-      messages: ["SwitchDocumentDirection"],
+    child: {
+      moduleURI: "resource:///actors/DOMFullscreenChild.jsm",
+      group: "browsers",
+      events: {
+        "MozDOMFullscreen:Request": {},
+        "MozDOMFullscreen:Entered": {},
+        "MozDOMFullscreen:NewOrigin": {},
+        "MozDOMFullscreen:Exit": {},
+        "MozDOMFullscreen:Exited": {},
+      },
     },
 
     allFrames: true,
   },
 
-  SubframeCrash: {
+  FormValidation: {
     parent: {
-      moduleURI: "resource:///actors/SubframeCrashParent.jsm",
+      moduleURI: "resource:///actors/FormValidationParent.jsm",
     },
 
     child: {
-      moduleURI: "resource:///actors/SubframeCrashChild.jsm",
+      moduleURI: "resource:///actors/FormValidationChild.jsm",
+      events: {
+        MozInvalidForm: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  PageInfo: {
+    child: {
+      moduleURI: "resource:///actors/PageInfoChild.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  Plugin: {
+    parent: {
+      moduleURI: "resource:///actors/PluginParent.jsm",
+    },
+    child: {
+      moduleURI: "resource:///actors/PluginChild.jsm",
+      events: {
+        PluginBindingAttached: { capture: true, wantUntrusted: true },
+        PluginCrashed: { capture: true },
+        PluginOutdated: { capture: true },
+        PluginInstantiated: { capture: true },
+        PluginRemoved: { capture: true },
+        HiddenPlugin: { capture: true },
+      },
+
+      observers: ["decoder-doctor-notification"],
+    },
+
+    allFrames: true,
+  },
+
+  Prompt: {
+    parent: {
+      moduleURI: "resource:///actors/PromptParent.jsm",
+    },
+
+    allFrames: true,
+  },
+
+  RFPHelper: {
+    parent: {
+      moduleURI: "resource:///actors/RFPHelperParent.jsm",
+    },
+    child: {
+      moduleURI: "resource:///actors/RFPHelperChild.jsm",
+      events: {
+        resize: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  SwitchDocumentDirection: {
+    child: {
+      moduleURI: "resource:///actors/SwitchDocumentDirectionChild.jsm",
     },
 
     allFrames: true,
@@ -90,15 +162,22 @@ let LEGACY_ACTORS = {
       matches: ["about:logins", "about:logins?*"],
       module: "resource:///actors/AboutLoginsChild.jsm",
       events: {
+        AboutLoginsCopyLoginDetail: { wantUntrusted: true },
         AboutLoginsCreateLogin: { wantUntrusted: true },
         AboutLoginsDeleteLogin: { wantUntrusted: true },
+        AboutLoginsDismissBreachAlert: { wantUntrusted: true },
+        AboutLoginsHideFooter: { wantUntrusted: true },
         AboutLoginsImport: { wantUntrusted: true },
         AboutLoginsInit: { wantUntrusted: true },
-        AboutLoginsOpenFAQ: { wantUntrusted: true },
-        AboutLoginsOpenFeedback: { wantUntrusted: true },
+        AboutLoginsGetHelp: { wantUntrusted: true },
+        AboutLoginsOpenMobileAndroid: { wantUntrusted: true },
+        AboutLoginsOpenMobileIos: { wantUntrusted: true },
         AboutLoginsOpenPreferences: { wantUntrusted: true },
         AboutLoginsOpenSite: { wantUntrusted: true },
         AboutLoginsRecordTelemetryEvent: { wantUntrusted: true },
+        AboutLoginsSortChanged: { wantUntrusted: true },
+        AboutLoginsSyncEnable: { wantUntrusted: true },
+        AboutLoginsSyncOptions: { wantUntrusted: true },
         AboutLoginsUpdateLogin: { wantUntrusted: true },
       },
       messages: [
@@ -106,6 +185,14 @@ let LEGACY_ACTORS = {
         "AboutLogins:LoginAdded",
         "AboutLogins:LoginModified",
         "AboutLogins:LoginRemoved",
+        "AboutLogins:MasterPasswordAuthRequired",
+        "AboutLogins:MasterPasswordResponse",
+        "AboutLogins:SendFavicons",
+        "AboutLogins:SetBreaches",
+        "AboutLogins:Setup",
+        "AboutLogins:ShowLoginItemError",
+        "AboutLogins:SyncState",
+        "AboutLogins:UpdateBreaches",
       ],
     },
   },
@@ -165,40 +252,6 @@ let LEGACY_ACTORS = {
     },
   },
 
-  ContextMenuSpecialProcess: {
-    child: {
-      module: "resource:///actors/ContextMenuSpecialProcessChild.jsm",
-      events: {
-        contextmenu: { mozSystemGroup: true },
-      },
-    },
-    allFrames: true,
-  },
-
-  DOMFullscreen: {
-    child: {
-      module: "resource:///actors/DOMFullscreenChild.jsm",
-      group: "browsers",
-      events: {
-        "MozDOMFullscreen:Request": {},
-        "MozDOMFullscreen:Entered": {},
-        "MozDOMFullscreen:NewOrigin": {},
-        "MozDOMFullscreen:Exit": {},
-        "MozDOMFullscreen:Exited": {},
-      },
-      messages: ["DOMFullscreen:Entered", "DOMFullscreen:CleanUp"],
-    },
-  },
-
-  FormValidation: {
-    child: {
-      module: "resource:///actors/FormValidationChild.jsm",
-      events: {
-        MozInvalidForm: {},
-      },
-    },
-  },
-
   LightweightTheme: {
     child: {
       module: "resource:///actors/LightweightThemeChild.jsm",
@@ -226,7 +279,6 @@ let LEGACY_ACTORS = {
     child: {
       module: "resource:///actors/NetErrorChild.jsm",
       events: {
-        AboutNetErrorLoad: { wantUntrusted: true },
         AboutNetErrorSetAutomatic: { wantUntrusted: true },
         AboutNetErrorResetPreferences: { wantUntrusted: true },
         click: {},
@@ -246,13 +298,6 @@ let LEGACY_ACTORS = {
     },
   },
 
-  PageInfo: {
-    child: {
-      module: "resource:///actors/PageInfoChild.jsm",
-      messages: ["PageInfo:getData"],
-    },
-  },
-
   PageStyle: {
     child: {
       module: "resource:///actors/PageStyleChild.jsm",
@@ -264,41 +309,6 @@ let LEGACY_ACTORS = {
       // Only matching web pages, as opposed to internal about:, chrome: or
       // resource: pages. See https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/Match_patterns
       matches: ["*://*/*"],
-    },
-  },
-
-  Plugin: {
-    child: {
-      module: "resource:///actors/PluginChild.jsm",
-      events: {
-        PluginBindingAttached: { capture: true, wantUntrusted: true },
-        PluginCrashed: { capture: true },
-        PluginOutdated: { capture: true },
-        PluginInstantiated: { capture: true },
-        PluginRemoved: { capture: true },
-        HiddenPlugin: { capture: true },
-      },
-
-      messages: [
-        "BrowserPlugins:ActivatePlugins",
-        "BrowserPlugins:ContextMenuCommand",
-        "BrowserPlugins:NPAPIPluginProcessCrashed",
-        "BrowserPlugins:CrashReportSubmitted",
-        "BrowserPlugins:Test:ClearCrashData",
-      ],
-
-      observers: ["decoder-doctor-notification"],
-    },
-  },
-
-  RFPHelper: {
-    child: {
-      module: "resource:///actors/RFPHelperChild.jsm",
-      group: "browsers",
-      events: {
-        resize: {},
-      },
-      messages: ["Finder:FindbarOpen", "Finder:FindbarClose"],
     },
   },
 
@@ -355,7 +365,10 @@ let LEGACY_ACTORS = {
 };
 
 (function earlyBlankFirstPaint() {
-  if (!Services.prefs.getBoolPref("browser.startup.blankWindow", false)) {
+  if (
+    AppConstants.platform == "macosx" ||
+    !Services.prefs.getBoolPref("browser.startup.blankWindow", false)
+  ) {
     return;
   }
 
@@ -454,7 +467,6 @@ XPCOMUtils.defineLazyGetter(
 // lazy module getters
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AboutCertViewerHandler: "resource://gre/modules/AboutCertViewerHandler.jsm",
   AboutNetErrorHandler:
     "resource:///modules/aboutpages/AboutNetErrorHandler.jsm",
   AboutPrivateBrowsingHandler:
@@ -464,7 +476,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
-  AutoCompletePopup: "resource://gre/modules/AutoCompletePopup.jsm",
   Blocklist: "resource://gre/modules/Blocklist.jsm",
   BookmarkHTMLUtils: "resource://gre/modules/BookmarkHTMLUtils.jsm",
   BookmarkJSONUtils: "resource://gre/modules/BookmarkJSONUtils.jsm",
@@ -475,10 +486,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Corroborate: "resource://gre/modules/Corroborate.jsm",
   Discovery: "resource:///modules/Discovery.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
+  FirefoxMonitor: "resource:///modules/FirefoxMonitor.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
   HomePage: "resource:///modules/HomePage.jsm",
   HybridContentTelemetry: "resource://gre/modules/HybridContentTelemetry.jsm",
   Integration: "resource://gre/modules/Integration.jsm",
+  LoginBreaches: "resource:///modules/LoginBreaches.jsm",
   LiveBookmarkMigrator: "resource:///modules/LiveBookmarkMigrator.jsm",
   NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
   Normandy: "resource://normandy/Normandy.jsm",
@@ -494,6 +507,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PluralForm: "resource://gre/modules/PluralForm.jsm",
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
+  PublicSuffixList: "resource://gre/modules/netwerk-dns/PublicSuffixList.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
   RemoteSecuritySettings:
     "resource://gre/modules/psm/RemoteSecuritySettings.jsm",
@@ -518,15 +532,11 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AboutLoginsParent: "resource:///modules/AboutLoginsParent.jsm",
   AsyncPrefs: "resource://gre/modules/AsyncPrefs.jsm",
   ContentClick: "resource:///modules/ContentClick.jsm",
-  FormValidationHandler: "resource:///modules/FormValidationHandler.jsm",
   LoginManagerParent: "resource://gre/modules/LoginManagerParent.jsm",
+  PluginManager: "resource:///actors/PluginParent.jsm",
   PictureInPicture: "resource://gre/modules/PictureInPicture.jsm",
   ReaderParent: "resource:///modules/ReaderParent.jsm",
-  RemotePrompt: "resource:///modules/RemotePrompt.jsm",
 });
-
-/* global ContentPrefServiceParent:false, ContentSearch:false,
-          UpdateListener:false, webrtcUI:false */
 
 /**
  * IF YOU ADD OR REMOVE FROM THIS LIST, PLEASE UPDATE THE LIST ABOVE AS WELL.
@@ -554,7 +564,6 @@ let initializedModules = {};
 
 if (AppConstants.MOZ_CRASHREPORTER) {
   XPCOMUtils.defineLazyModuleGetters(this, {
-    PluginCrashReporter: "resource:///modules/ContentCrashHandlers.jsm",
     UnsubmittedCrashHandler: "resource:///modules/ContentCrashHandlers.jsm",
   });
 }
@@ -585,6 +594,10 @@ const listeners = {
     "update-downloaded": ["UpdateListener"],
     "update-available": ["UpdateListener"],
     "update-error": ["UpdateListener"],
+    "gmp-plugin-crash": ["PluginManager"],
+    "plugin-crashed": ["PluginManager"],
+    "passwordmgr-storage-changed": ["LoginManagerParent"],
+    "passwordmgr-autosaved-login-merged": ["LoginManagerParent"],
   },
 
   ppmm: {
@@ -606,33 +619,37 @@ const listeners = {
   mm: {
     "AboutLogins:CreateLogin": ["AboutLoginsParent"],
     "AboutLogins:DeleteLogin": ["AboutLoginsParent"],
+    "AboutLogins:DismissBreachAlert": ["AboutLoginsParent"],
+    "AboutLogins:HideFooter": ["AboutLoginsParent"],
     "AboutLogins:Import": ["AboutLoginsParent"],
+    "AboutLogins:MasterPasswordRequest": ["AboutLoginsParent"],
     "AboutLogins:OpenFAQ": ["AboutLoginsParent"],
-    "AboutLogins:OpenFeedback": ["AboutLoginsParent"],
+    "AboutLogins:GetHelp": ["AboutLoginsParent"],
     "AboutLogins:OpenPreferences": ["AboutLoginsParent"],
+    "AboutLogins:OpenMobileAndroid": ["AboutLoginsParent"],
+    "AboutLogins:OpenMobileIos": ["AboutLoginsParent"],
     "AboutLogins:OpenSite": ["AboutLoginsParent"],
+    "AboutLogins:SortChanged": ["AboutLoginsParent"],
     "AboutLogins:Subscribe": ["AboutLoginsParent"],
+    "AboutLogins:SyncEnable": ["AboutLoginsParent"],
+    "AboutLogins:SyncOptions": ["AboutLoginsParent"],
     "AboutLogins:UpdateLogin": ["AboutLoginsParent"],
     "Content:Click": ["ContentClick"],
     ContentSearch: ["ContentSearch"],
-    "FormValidation:ShowPopup": ["FormValidationHandler"],
-    "FormValidation:HidePopup": ["FormValidationHandler"],
     "PictureInPicture:Request": ["PictureInPicture"],
     "PictureInPicture:Close": ["PictureInPicture"],
     "PictureInPicture:Playing": ["PictureInPicture"],
     "PictureInPicture:Paused": ["PictureInPicture"],
-    "Prompt:Open": ["RemotePrompt"],
+    "PictureInPicture:OpenToggleContextMenu": ["PictureInPicture"],
     "Reader:FaviconRequest": ["ReaderParent"],
     "Reader:UpdateReaderButton": ["ReaderParent"],
     // PLEASE KEEP THIS LIST IN SYNC WITH THE MOBILE LISTENERS IN BrowserCLH.js
     "PasswordManager:findLogins": ["LoginManagerParent"],
     "PasswordManager:findRecipes": ["LoginManagerParent"],
     "PasswordManager:onFormSubmit": ["LoginManagerParent"],
-    "PasswordManager:onGeneratedPasswordFilled": ["LoginManagerParent"],
+    "PasswordManager:onGeneratedPasswordFilledOrEdited": ["LoginManagerParent"],
     "PasswordManager:autoCompleteLogins": ["LoginManagerParent"],
     "PasswordManager:removeLogin": ["LoginManagerParent"],
-    "PasswordManager:insecureLoginFormPresent": ["LoginManagerParent"],
-    "PasswordManager:OpenFeedback": ["AboutLoginsParent"],
     "PasswordManager:OpenPreferences": ["LoginManagerParent"],
     // PLEASE KEEP THIS LIST IN SYNC WITH THE MOBILE LISTENERS IN BrowserCLH.js
     "rtcpeer:CancelRequest": ["webrtcUI"],
@@ -883,7 +900,7 @@ BrowserGlue.prototype = {
         this._setSyncAutoconnectDelay();
         break;
       case "fxaccounts:onverified":
-        this._showSyncStartedDoorhanger();
+        this._onThisDeviceConnected();
         break;
       case "fxaccounts:device_connected":
         this._onDeviceConnected(data);
@@ -947,6 +964,8 @@ BrowserGlue.prototype = {
               "migrateMatchBucketsPrefForUI66-done"
             );
           });
+        } else if (data == "add-breaches-sync-handler") {
+          this._addBreachesSyncHandler();
         }
         break;
       case "initial-migration-will-import-default-bookmarks":
@@ -1027,7 +1046,7 @@ BrowserGlue.prototype = {
         // parent only: configure default prefs, set up pref observers, register
         // pdf content handler, and initializes parent side message manager
         // shim for privileged api access.
-        PdfJs.init(true);
+        PdfJs.init();
         break;
       case "shield-init-complete":
         this._shieldInitComplete = true;
@@ -1207,7 +1226,9 @@ BrowserGlue.prototype = {
       "resource:///modules/themes/dark/"
     );
 
-    Normandy.init();
+    if (AppConstants.MOZ_NORMANDY) {
+      Normandy.init();
+    }
 
     SaveToPocket.init();
     Services.obs.notifyObservers(null, "browser-ui-startup-complete");
@@ -1534,9 +1555,6 @@ BrowserGlue.prototype = {
   // the first browser window has finished initializing
   _onFirstWindowLoaded: function BG__onFirstWindowLoaded(aWindow) {
     TabCrashHandler.init();
-    if (AppConstants.MOZ_CRASHREPORTER) {
-      PluginCrashReporter.init();
-    }
 
     ProcessHangMonitor.init();
 
@@ -1604,7 +1622,6 @@ BrowserGlue.prototype = {
 
     this._checkForOldBuildUpdates();
 
-    AutoCompletePopup.init();
     // Check if Sync is configured
     if (Services.prefs.prefHasUserValue("services.sync.username")) {
       WeaveService.init();
@@ -1613,8 +1630,6 @@ BrowserGlue.prototype = {
     PageThumbs.init();
 
     NewTabUtils.init();
-
-    AboutCertViewerHandler.init();
 
     AboutNetErrorHandler.init();
 
@@ -1664,8 +1679,14 @@ BrowserGlue.prototype = {
   },
 
   _updateAutoplayPref() {
-    let blocked = Services.prefs.getIntPref("media.autoplay.default", 1);
-    Services.telemetry.scalarSet("media.autoplay_default_blocked", blocked);
+    const blocked = Services.prefs.getIntPref("media.autoplay.default", 1);
+    const telemetry = Services.telemetry.getHistogramById(
+      "AUTOPLAY_DEFAULT_SETTING_CHANGE"
+    );
+    const labels = { 0: "allow", 1: "blockAudible", 5: "blockAll" };
+    if (blocked in labels) {
+      telemetry.add(labels[blocked]);
+    }
   },
 
   _setPrefExpectations() {
@@ -1704,17 +1725,11 @@ BrowserGlue.prototype = {
   },
 
   _recordContentBlockingTelemetry() {
-    let recordIdentityPopupEvents = Services.prefs.prefHasUserValue(
-      "security.identitypopup.recordEventElemetry"
-    )
-      ? Services.prefs.getBoolPref("security.identitypopup.recordEventElemetry")
-      : Services.prefs.getBoolPref(
-          "security.identitypopup.recordEventTelemetry"
-        );
-
     Services.telemetry.setEventRecordingEnabled(
-      "security.ui.identitypopup",
-      recordIdentityPopupEvents
+      "security.ui.protectionspopup",
+      Services.prefs.getBoolPref(
+        "security.protectionspopup.recordEventTelemetry"
+      )
     );
 
     let tpEnabled = Services.prefs.getBoolPref(
@@ -1780,6 +1795,41 @@ BrowserGlue.prototype = {
     Services.telemetry.scalarSet("contentblocking.category", categoryPref);
   },
 
+  _recordContentBlockerTelemetry() {
+    [
+      "other",
+      "script",
+      "image",
+      "stylesheet",
+      "object",
+      "document",
+      "subdocument",
+      "refresh",
+      "xbl",
+      "ping",
+      "xmlhttprequest",
+      "objectsubrequest",
+      "dtd",
+      "font",
+      "media",
+      "websocket",
+      "csp_report",
+      "xslt",
+      "beacon",
+      "fetch",
+      "image",
+      "manifest",
+      "saveas_download",
+      "speculative",
+    ].forEach(type => {
+      Services.telemetry.keyedScalarSet(
+        "security.contentblocker_permissions",
+        type,
+        Services.perms.getAllWithTypePrefix(type).length
+      );
+    });
+  },
+
   _sendMediaTelemetry() {
     let win = Services.wm.getMostRecentWindow("navigator:browser");
     if (win) {
@@ -1829,11 +1879,9 @@ BrowserGlue.prototype = {
 
     PageThumbs.uninit();
     NewTabUtils.uninit();
-    AboutCertViewerHandler.uninit();
     AboutNetErrorHandler.uninit();
     AboutPrivateBrowsingHandler.uninit();
     AboutProtectionsHandler.uninit();
-    AutoCompletePopup.uninit();
 
     Normandy.uninit();
     RFPHelper.uninit();
@@ -1951,16 +1999,14 @@ BrowserGlue.prototype = {
     this._monitorScreenshotsPref();
     this._monitorWebcompatReporterPref();
 
-    if (Services.prefs.getBoolPref("corroborator.enabled", true)) {
-      Corroborate.init().catch(Cu.reportError);
-    }
-
     let pService = Cc["@mozilla.org/toolkit/profile-service;1"].getService(
       Ci.nsIToolkitProfileService
     );
     if (pService.createdAlternateProfile) {
       this._showNewInstallModal();
     }
+
+    FirefoxMonitor.init();
   },
 
   /**
@@ -1990,17 +2036,6 @@ BrowserGlue.prototype = {
     });
 
     Services.tm.idleDispatchToMainThread(() => {
-      let enableCertErrorUITelemetry = Services.prefs.getBoolPref(
-        "security.certerrors.recordEventTelemetry",
-        false
-      );
-      Services.telemetry.setEventRecordingEnabled(
-        "security.ui.certerror",
-        enableCertErrorUITelemetry
-      );
-    });
-
-    Services.tm.idleDispatchToMainThread(() => {
       Services.prefs.addObserver(
         "permissions.eventTelemetry.enabled",
         this._togglePermissionPromptTelemetry
@@ -2008,8 +2043,17 @@ BrowserGlue.prototype = {
       this._togglePermissionPromptTelemetry();
     });
 
+    // Begin listening for incoming push messages.
+    Services.tm.idleDispatchToMainThread(() => {
+      PushService.wrappedJSObject.ensureReady();
+    });
+
     Services.tm.idleDispatchToMainThread(() => {
       this._recordContentBlockingTelemetry();
+    });
+
+    Services.tm.idleDispatchToMainThread(() => {
+      this._recordContentBlockerTelemetry();
     });
 
     // Load the Login Manager data from disk off the main thread, some time
@@ -2023,6 +2067,11 @@ BrowserGlue.prototype = {
         Cu.reportError(ex);
       }
     }, 3000);
+
+    // Add breach alerts pref observer reasonably early so the pref flip works
+    Services.tm.idleDispatchToMainThread(() => {
+      this._addBreachAlertsPrefObserver();
+    });
 
     // It's important that SafeBrowsing is initialized reasonably
     // early, so we use a maximum timeout for it.
@@ -2107,6 +2156,12 @@ BrowserGlue.prototype = {
       TabUnloader.init();
     });
 
+    Services.tm.idleDispatchToMainThread(() => {
+      if (Services.prefs.getBoolPref("corroborator.enabled", false)) {
+        Corroborate.init().catch(Cu.reportError);
+      }
+    });
+
     // Marionette needs to be initialized as very last step
     Services.tm.idleDispatchToMainThread(() => {
       Services.obs.notifyObservers(null, "marionette-startup-requested");
@@ -2155,11 +2210,46 @@ BrowserGlue.prototype = {
 
     Services.tm.idleDispatchToMainThread(() => {
       RemoteSettings.init();
+      this._addBreachesSyncHandler();
+    });
+
+    Services.tm.idleDispatchToMainThread(() => {
+      PublicSuffixList.init();
     });
 
     Services.tm.idleDispatchToMainThread(() => {
       RemoteSecuritySettings.init();
     });
+  },
+
+  _addBreachesSyncHandler() {
+    if (
+      Services.prefs.getBoolPref(
+        "signon.management.page.breach-alerts.enabled",
+        false
+      )
+    ) {
+      RemoteSettings(LoginBreaches.REMOTE_SETTINGS_COLLECTION).on(
+        "sync",
+        async event => {
+          await LoginBreaches.update(event.data.current);
+        }
+      );
+    }
+  },
+
+  _addBreachAlertsPrefObserver() {
+    const BREACH_ALERTS_PREF = "signon.management.page.breach-alerts.enabled";
+    const clearVulnerablePasswordsIfBreachAlertsDisabled = async function() {
+      if (!Services.prefs.getBoolPref(BREACH_ALERTS_PREF)) {
+        await LoginBreaches.clearAllPotentiallyVulnerablePasswords();
+      }
+    };
+    clearVulnerablePasswordsIfBreachAlertsDisabled();
+    Services.prefs.addObserver(
+      BREACH_ALERTS_PREF,
+      clearVulnerablePasswordsIfBreachAlertsDisabled
+    );
   },
 
   _onQuitRequest: function BG__onQuitRequest(aCancelQuit, aQuitType) {
@@ -2587,15 +2677,12 @@ BrowserGlue.prototype = {
     notification.persistence = -1; // Until user closes it
   },
 
-  _showSyncStartedDoorhanger() {
+  _onThisDeviceConnected() {
     let bundle = Services.strings.createBundle(
       "chrome://browser/locale/accounts.properties"
     );
-    let productName = gBrandBundle.GetStringFromName("brandShortName");
-    let title = bundle.GetStringFromName("syncStartNotification.title");
-    let body = bundle.formatStringFromName("syncStartNotification.body2", [
-      productName,
-    ]);
+    let title = bundle.GetStringFromName("deviceConnDisconnTitle");
+    let body = bundle.GetStringFromName("thisDeviceConnectedBody");
 
     let clickCallback = (subject, topic, data) => {
       if (topic != "alertclickcallback") {
@@ -2671,7 +2758,7 @@ BrowserGlue.prototype = {
   _migrateUI: function BG__migrateUI() {
     // Use an increasing number to keep track of the current migration state.
     // Completely unrelated to the current Firefox release number.
-    const UI_VERSION = 86;
+    const UI_VERSION = 87;
     const BROWSER_DOCURL = AppConstants.BROWSER_CHROME_URL;
 
     let currentUIVersion;
@@ -3018,7 +3105,7 @@ BrowserGlue.prototype = {
             HomePage.reset();
           } else {
             value = updated;
-            HomePage.set(value);
+            HomePage.safeSet(value);
           }
         }
       }
@@ -3052,6 +3139,12 @@ BrowserGlue.prototype = {
       flashPermissions.forEach(p => Services.perms.removePermission(p));
     }
 
+    // currentUIVersion < 85 is missing due to the following:
+    // Origianlly, Bug #1568900 added currentUIVersion 85 but was targeting FF70 release.
+    // In between it landing in FF70, Bug #1562601 (currentUIVersion 86) landed and
+    // was uplifted to Beta. To make sure the migration doesn't get skipped, the
+    // code block that was at 85 has been moved/bumped to currentUIVersion 87.
+
     if (currentUIVersion < 86) {
       // If the user has set "media.autoplay.allow-muted" to false
       // migrate that to media.autoplay.default=BLOCKED_ALL.
@@ -3068,6 +3161,17 @@ BrowserGlue.prototype = {
         );
       }
       Services.prefs.clearUserPref("media.autoplay.allow-muted");
+    }
+
+    if (currentUIVersion < 87) {
+      const TRACKING_TABLE_PREF = "urlclassifier.trackingTable";
+      const CUSTOM_BLOCKING_PREF =
+        "browser.contentblocking.customBlockList.preferences.ui.enabled";
+      // Check if user has set custom tables pref, and show custom block list UI
+      // in the about:preferences#privacy custom panel.
+      if (Services.prefs.prefHasUserValue(TRACKING_TABLE_PREF)) {
+        Services.prefs.setBoolPref(CUSTOM_BLOCKING_PREF, true);
+      }
     }
 
     // Update the migration version.
@@ -3435,9 +3539,9 @@ BrowserGlue.prototype = {
     let accountsBundle = Services.strings.createBundle(
       "chrome://browser/locale/accounts.properties"
     );
-    let title = accountsBundle.GetStringFromName("deviceConnectedTitle");
+    let title = accountsBundle.GetStringFromName("deviceConnDisconnTitle");
     let body = accountsBundle.formatStringFromName(
-      "deviceConnectedBody" + (deviceName ? "" : ".noDeviceName"),
+      "otherDeviceConnectedBody" + (deviceName ? "" : ".noDeviceName"),
       [deviceName]
     );
 
@@ -3474,10 +3578,8 @@ BrowserGlue.prototype = {
     let bundle = Services.strings.createBundle(
       "chrome://browser/locale/accounts.properties"
     );
-    let title = bundle.GetStringFromName(
-      "deviceDisconnectedNotification.title"
-    );
-    let body = bundle.GetStringFromName("deviceDisconnectedNotification.body");
+    let title = bundle.GetStringFromName("deviceConnDisconnTitle");
+    let body = bundle.GetStringFromName("thisDeviceDisconnectedBody");
 
     let clickCallback = (subject, topic, data) => {
       if (topic != "alertclickcallback") {
@@ -3590,6 +3692,7 @@ var ContentBlockingCategoriesPrefs = {
         "network.cookie.cookieBehavior": null,
         "privacy.trackingprotection.pbmode.enabled": null,
         "privacy.trackingprotection.enabled": null,
+        "privacy.trackingprotection.socialtracking.enabled": null,
         "privacy.trackingprotection.fingerprinting.enabled": null,
         "privacy.trackingprotection.cryptomining.enabled": null,
       },
@@ -3597,6 +3700,7 @@ var ContentBlockingCategoriesPrefs = {
         "network.cookie.cookieBehavior": null,
         "privacy.trackingprotection.pbmode.enabled": null,
         "privacy.trackingprotection.enabled": null,
+        "privacy.trackingprotection.socialtracking.enabled": null,
         "privacy.trackingprotection.fingerprinting.enabled": null,
         "privacy.trackingprotection.cryptomining.enabled": null,
       },
@@ -3645,6 +3749,16 @@ var ContentBlockingCategoriesPrefs = {
         case "-cm":
           this.CATEGORY_PREFS[type][
             "privacy.trackingprotection.cryptomining.enabled"
+          ] = false;
+          break;
+        case "stp":
+          this.CATEGORY_PREFS[type][
+            "privacy.trackingprotection.socialtracking.enabled"
+          ] = true;
+          break;
+        case "-stp":
+          this.CATEGORY_PREFS[type][
+            "privacy.trackingprotection.socialtracking.enabled"
           ] = false;
           break;
         case "cookieBehavior0":
@@ -3896,16 +4010,10 @@ ContentPermissionPrompt.prototype = {
     );
     let scheme = 0;
     try {
-      // URI is null for system principals.
-      if (request.principal.URI) {
-        switch (request.principal.URI.scheme) {
-          case "http":
-            scheme = 1;
-            break;
-          case "https":
-            scheme = 2;
-            break;
-        }
+      if (request.principal.schemeIs("http")) {
+        scheme = 1;
+      } else if (request.principal.schemeIs("https")) {
+        scheme = 2;
       }
     } catch (ex) {
       // If the request principal is not available at this point,
@@ -3917,16 +4025,6 @@ ContentPermissionPrompt.prototype = {
       return;
     }
     schemeHistogram.add(type, scheme);
-
-    // request.element should be the browser element in e10s.
-    if (request.element && request.element.contentPrincipal) {
-      let thirdPartyHistogram = Services.telemetry.getKeyedHistogramById(
-        "PERMISSION_REQUEST_THIRD_PARTY_ORIGIN"
-      );
-      let isThirdParty =
-        request.principal.origin != request.element.contentPrincipal.origin;
-      thirdPartyHistogram.add(type, isThirdParty);
-    }
 
     let userInputHistogram = Services.telemetry.getKeyedHistogramById(
       "PERMISSION_REQUEST_HANDLING_USER_INPUT"

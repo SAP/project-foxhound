@@ -258,13 +258,13 @@ typedef AstVector<AstName> AstNameVector;
 typedef AstVector<AstRef> AstRefVector;
 
 struct AstBase {
-  void* operator new(size_t numBytes, LifoAlloc& astLifo) throw() {
+  void* operator new(size_t numBytes, LifoAlloc& astLifo) noexcept(true) {
     return astLifo.alloc(numBytes);
   }
 };
 
 struct AstNode {
-  void* operator new(size_t numBytes, LifoAlloc& astLifo) throw() {
+  void* operator new(size_t numBytes, LifoAlloc& astLifo) noexcept(true) {
     return astLifo.alloc(numBytes);
   }
 };
@@ -293,43 +293,45 @@ class AstTypeDef : public AstNode {
 class AstFuncType : public AstTypeDef {
   AstName name_;
   AstValTypeVector args_;
-  AstExprType ret_;
+  AstValTypeVector results_;
 
  public:
   explicit AstFuncType(LifoAlloc& lifo)
-      : AstTypeDef(Which::IsFuncType), args_(lifo), ret_(ExprType::Void) {}
-  AstFuncType(AstValTypeVector&& args, AstExprType ret)
-      : AstTypeDef(Which::IsFuncType), args_(std::move(args)), ret_(ret) {}
+      : AstTypeDef(Which::IsFuncType), args_(lifo), results_(lifo) {}
+  AstFuncType(AstValTypeVector&& args, AstValTypeVector&& results)
+      : AstTypeDef(Which::IsFuncType),
+        args_(std::move(args)),
+        results_(std::move(results)) {}
   AstFuncType(AstName name, AstFuncType&& rhs)
       : AstTypeDef(Which::IsFuncType),
         name_(name),
         args_(std::move(rhs.args_)),
-        ret_(rhs.ret_) {}
+        results_(std::move(rhs.results_)) {}
   const AstValTypeVector& args() const { return args_; }
   AstValTypeVector& args() { return args_; }
-  AstExprType ret() const { return ret_; }
-  AstExprType& ret() { return ret_; }
+  const AstValTypeVector& results() const { return results_; }
+  AstValTypeVector& results() { return results_; }
   AstName name() const { return name_; }
   bool operator==(const AstFuncType& rhs) const {
-    if (ret() != rhs.ret()) {
-      return false;
+    return EqualContainers(args(), rhs.args()) &&
+           EqualContainers(results(), rhs.results());
+  }
+
+  AstExprType returnType() const {
+    if (results().length() == 0) {
+      return AstExprType(ExprType::Void);
     }
-    size_t len = args().length();
-    if (rhs.args().length() != len) {
-      return false;
-    }
-    for (size_t i = 0; i < len; i++) {
-      if (args()[i] != rhs.args()[i]) {
-        return false;
-      }
-    }
-    return true;
+    MOZ_ASSERT(results().length() == 1);
+    return AstExprType(results()[0]);
   }
 
   typedef const AstFuncType& Lookup;
   static HashNumber hash(Lookup ft) {
-    HashNumber hn = HashNumber(ft.ret().code());
+    HashNumber hn = 0;
     for (const AstValType& vt : ft.args()) {
+      hn = mozilla::AddToHash(hn, uint32_t(vt.code()));
+    }
+    for (const AstValType& vt : ft.results()) {
       hn = mozilla::AddToHash(hn, uint32_t(vt.code()));
     }
     return hn;
@@ -417,6 +419,7 @@ enum class AstExprKind {
   MemorySize,
   Nop,
   Pop,
+  RefFunc,
   RefNull,
   Return,
   SetGlobal,
@@ -436,11 +439,12 @@ enum class AstExprKind {
 #endif
   TeeLocal,
   Store,
-  TernaryOperator,
+  Select,
   UnaryOperator,
   Unreachable,
   Wait,
-  Wake
+  Wake,
+  Fence
 };
 
 class AstExpr : public AstNode {
@@ -484,6 +488,29 @@ class AstDrop : public AstExpr {
   explicit AstDrop(AstExpr& value)
       : AstExpr(AstExprKind::Drop, ExprType::Void), value_(value) {}
   AstExpr& value() const { return value_; }
+};
+
+class AstSelect : public AstExpr {
+  AstExpr* condition_;
+  AstExpr* op1_;
+  AstExpr* op2_;
+  AstValTypeVector result_;
+
+ public:
+  static const AstExprKind Kind = AstExprKind::Select;
+  AstSelect(AstExpr* condition, AstExpr* op1, AstExpr* op2,
+            AstValTypeVector&& result)
+      : AstExpr(Kind, ExprType::Limit),
+        condition_(condition),
+        op1_(op1),
+        op2_(op2),
+        result_(std::move(result)) {}
+
+  AstExpr* condition() const { return condition_; }
+  AstExpr* op1() const { return op1_; }
+  AstExpr* op2() const { return op2_; }
+  AstValTypeVector& result() { return result_; }
+  const AstValTypeVector& result() const { return result_; }
 };
 
 class AstConst : public AstExpr {
@@ -815,6 +842,11 @@ class AstWake : public AstExpr {
 
   const AstLoadStoreAddress& address() const { return address_; }
   AstExpr& count() const { return *count_; }
+};
+
+struct AstFence : AstExpr {
+  static const AstExprKind Kind = AstExprKind::Fence;
+  AstFence() : AstExpr(AstExprKind::Fence, ExprType::Void) {}
 };
 
 class AstMemOrTableCopy : public AstExpr {
@@ -1265,22 +1297,34 @@ struct AstNullValue {};
 typedef Variant<AstRef, AstNullValue> AstElem;
 typedef AstVector<AstElem> AstElemVector;
 
+enum class AstElemSegmentKind {
+  Active,
+  Passive,
+  Declared,
+};
+
 class AstElemSegment : public AstNode {
+  AstElemSegmentKind kind_;
   AstRef targetTable_;
   AstExpr* offsetIfActive_;
+  ValType elemType_;
   AstElemVector elems_;
 
  public:
-  AstElemSegment(AstRef targetTable, AstExpr* offsetIfActive,
+  AstElemSegment(AstElemSegmentKind kind, AstRef targetTable,
+                 AstExpr* offsetIfActive, ValType elemType,
                  AstElemVector&& elems)
-      : targetTable_(targetTable),
+      : kind_(kind),
+        targetTable_(targetTable),
         offsetIfActive_(offsetIfActive),
+        elemType_(elemType),
         elems_(std::move(elems)) {}
 
+  AstElemSegmentKind kind() const { return kind_; }
   AstRef targetTable() const { return targetTable_; }
   AstRef& targetTableRef() { return targetTable_; }
-  bool isPassive() const { return offsetIfActive_ == nullptr; }
   AstExpr* offsetIfActive() const { return offsetIfActive_; }
+  ValType elemType() const { return elemType_; }
   AstElemVector& elems() { return elems_; }
   const AstElemVector& elems() const { return elems_; }
 };
@@ -1499,27 +1543,6 @@ class AstBinaryOperator final : public AstExpr {
   AstExpr* rhs() const { return rhs_; }
 };
 
-class AstTernaryOperator : public AstExpr {
-  Op op_;
-  AstExpr* op0_;
-  AstExpr* op1_;
-  AstExpr* op2_;
-
- public:
-  static const AstExprKind Kind = AstExprKind::TernaryOperator;
-  AstTernaryOperator(Op op, AstExpr* op0, AstExpr* op1, AstExpr* op2)
-      : AstExpr(Kind, ExprType::Limit),
-        op_(op),
-        op0_(op0),
-        op1_(op1),
-        op2_(op2) {}
-
-  Op op() const { return op_; }
-  AstExpr* op0() const { return op0_; }
-  AstExpr* op1() const { return op1_; }
-  AstExpr* op2() const { return op2_; }
-};
-
 class AstComparisonOperator final : public AstExpr {
   Op op_;
   AstExpr* lhs_;
@@ -1560,6 +1583,17 @@ class AstExtraConversionOperator final : public AstExpr {
 
   MiscOp op() const { return op_; }
   AstExpr* operand() const { return operand_; }
+};
+
+class AstRefFunc final : public AstExpr {
+  AstRef func_;
+
+ public:
+  static const AstExprKind Kind = AstExprKind::RefFunc;
+  explicit AstRefFunc(AstRef func)
+      : AstExpr(Kind, ExprType::FuncRef), func_(func) {}
+
+  AstRef& func() { return func_; }
 };
 
 class AstRefNull final : public AstExpr {

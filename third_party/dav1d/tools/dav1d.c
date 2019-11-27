@@ -27,8 +27,8 @@
 
 #include "config.h"
 #include "vcs_version.h"
+#include "cli_config.h"
 
-#include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
 #include <math.h>
@@ -43,6 +43,9 @@
 #endif
 #ifdef _WIN32
 # include <windows.h>
+#endif
+#if defined(HAVE_MACH_ABSOLUTE_TIME)
+#include <mach/mach_time.h>
 #endif
 
 #include "dav1d/dav1d.h"
@@ -60,10 +63,14 @@ static uint64_t get_time_nanos(void) {
     LARGE_INTEGER t;
     QueryPerformanceCounter(&t);
     return 1000000000 * t.QuadPart / frequency.QuadPart;
-#else
+#elif defined(HAVE_CLOCK_GETTIME)
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return 1000000000ULL * ts.tv_sec + ts.tv_nsec;
+#elif defined(HAVE_MACH_ABSOLUTE_TIME)
+    mach_timebase_info_data_t info;
+    mach_timebase_info(&info);
+    return mach_absolute_time() * info.numer / info.denom;
 #endif
 }
 
@@ -129,7 +136,7 @@ int main(const int argc, char *const *const argv) {
     Dav1dPicture p;
     Dav1dContext *c;
     Dav1dData data;
-    unsigned n_out = 0, total, fps[2];
+    unsigned n_out = 0, total, fps[2], timebase[2];
     uint64_t nspf, tfirst, elapsed;
     double i_fps;
     FILE *frametimes = NULL;
@@ -147,7 +154,7 @@ int main(const int argc, char *const *const argv) {
 
     if ((res = input_open(&in, cli_settings.demuxer,
                           cli_settings.inputfile,
-                          fps, &total)) < 0)
+                          fps, &total, timebase)) < 0)
     {
         return res;
     }
@@ -208,7 +215,7 @@ int main(const int argc, char *const *const argv) {
         if ((res = dav1d_send_data(c, &data)) < 0) {
             if (res != DAV1D_ERR(EAGAIN)) {
                 fprintf(stderr, "Error decoding frame: %s\n",
-                        strerror(-res));
+                        strerror(DAV1D_ERR(res)));
                 break;
             }
         }
@@ -216,7 +223,7 @@ int main(const int argc, char *const *const argv) {
         if ((res = dav1d_get_picture(c, &p)) < 0) {
             if (res != DAV1D_ERR(EAGAIN)) {
                 fprintf(stderr, "Error decoding frame: %s\n",
-                        strerror(-res));
+                        strerror(DAV1D_ERR(res)));
                 break;
             }
             res = 0;
@@ -252,7 +259,7 @@ int main(const int argc, char *const *const argv) {
         if ((res = dav1d_get_picture(c, &p)) < 0) {
             if (res != DAV1D_ERR(EAGAIN)) {
                 fprintf(stderr, "Error decoding frame: %s\n",
-                        strerror(-res));
+                        strerror(DAV1D_ERR(res)));
             } else {
                 res = 0;
                 break;

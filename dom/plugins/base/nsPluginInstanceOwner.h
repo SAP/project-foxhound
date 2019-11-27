@@ -251,7 +251,7 @@ class nsPluginInstanceOwner final : public nsIPluginInstanceOwner,
 
   bool UseAsyncRendering();
 
-  already_AddRefed<nsIURI> GetBaseURI() const;
+  nsIURI* GetBaseURI() const;
 
   bool GetCompositionString(uint32_t aIndex, nsTArray<uint8_t>* aString,
                             int32_t* aLength);
@@ -295,6 +295,8 @@ class nsPluginInstanceOwner final : public nsIPluginInstanceOwner,
   bool mGotCompositionData;
   bool mSentStartComposition;
   bool mPluginDidNotHandleIMEComposition;
+  uint32_t mWheelScrollLines;
+  uint32_t mWheelScrollChars;
 #endif
 
   nsPluginNativeWindow* mPluginWindow;

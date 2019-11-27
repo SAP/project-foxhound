@@ -8,6 +8,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/PromiseUtils.jsm"
 );
 
+ChromeUtils.defineModuleGetter(
+  this,
+  "GeckoViewTabBridge",
+  "resource://gre/modules/GeckoViewTab.jsm"
+);
+
 const getBrowserWindow = window => {
   return window.docShell.rootTreeItem.domWindow;
 };
@@ -29,6 +35,11 @@ let tabListener = {
     if (webProgress.isTopLevel) {
       let { BrowserApp } = browser.ownerGlobal;
       let nativeTab = BrowserApp.getTabForBrowser(browser);
+
+      // Ignore initial about:blank
+      if (!request && this.initializingTabs.has(nativeTab)) {
+        return;
+      }
 
       // Now we are certain that the first page in the tab was loaded.
       this.initializingTabs.delete(nativeTab);
@@ -333,8 +344,11 @@ this.tabs = class extends ExtensionAPI {
 
           tabListener.initTabReady();
           options.triggeringPrincipal = principal;
-          let nativeTab = BrowserApp.addTab(url, options);
 
+          options.extensionId = context.extension.id;
+          options.url = url;
+
+          let nativeTab = await GeckoViewTabBridge.createNewTab(options);
           if (createProperties.url) {
             tabListener.initializingTabs.add(nativeTab);
           }
@@ -347,10 +361,19 @@ this.tabs = class extends ExtensionAPI {
             tabs = [tabs];
           }
 
-          for (let tabId of tabs) {
-            let nativeTab = tabTracker.getTab(tabId);
-            nativeTab.browser.ownerGlobal.BrowserApp.closeTab(nativeTab);
-          }
+          await Promise.all(
+            tabs.map(async tabId => {
+              const windowId = GeckoViewTabBridge.tabIdToWindowId(tabId);
+              const window = windowTracker.getWindow(windowId, context, false);
+              if (!window) {
+                throw new ExtensionError(`Invalid tab ID ${tabId}`);
+              }
+              await GeckoViewTabBridge.closeTab({
+                window,
+                extensionId: context.extension.id,
+              });
+            })
+          );
         },
 
         async update(tabId, updateProperties) {
@@ -371,12 +394,8 @@ this.tabs = class extends ExtensionAPI {
             nativeTab.browser.loadURI(url, options);
           }
 
-          if (updateProperties.active !== null) {
-            if (updateProperties.active) {
-              BrowserApp.selectTab(nativeTab);
-            } else {
-              // Not sure what to do here? Which tab should we select?
-            }
+          if (updateProperties.active) {
+            BrowserApp.selectTab(nativeTab);
           }
           // FIXME: highlighted/selected, muted, pinned, openerTabId, successorTabId
 
@@ -416,7 +435,9 @@ this.tabs = class extends ExtensionAPI {
           queryInfo = Object.assign({}, queryInfo);
 
           if (queryInfo.url !== null) {
-            queryInfo.url = new MatchPatternSet([].concat(queryInfo.url));
+            queryInfo.url = new MatchPatternSet([].concat(queryInfo.url), {
+              restrictSchemes: false,
+            });
           }
           if (queryInfo.title !== null) {
             queryInfo.title = new MatchGlob(queryInfo.title);

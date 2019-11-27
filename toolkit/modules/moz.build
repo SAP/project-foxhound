@@ -165,7 +165,6 @@ EXTRA_JS_MODULES += [
     'ActorManagerParent.jsm',
     'AppMenuNotifications.jsm',
     'AsyncPrefs.jsm',
-    'AutoCompletePopupContent.jsm',
     'AutoScrollController.jsm',
     'BinarySearch.jsm',
     'BrowserUtils.jsm',
@@ -188,6 +187,7 @@ EXTRA_JS_MODULES += [
     'FinderHighlighter.jsm',
     'FinderIterator.jsm',
     'FinderParent.jsm',
+    'FirstStartup.jsm',
     'FormLikeFactory.jsm',
     'Geometry.jsm',
     'GMPExtractorWorker.js',
@@ -195,6 +195,7 @@ EXTRA_JS_MODULES += [
     'GMPUtils.jsm',
     'HiddenFrame.jsm',
     'Http.jsm',
+    'IgnoreLists.jsm',
     'IndexedDB.jsm',
     'InlineSpellChecker.jsm',
     'InlineSpellCheckerContent.jsm',
@@ -228,8 +229,6 @@ EXTRA_JS_MODULES += [
     'Troubleshoot.jsm',
     'UpdateUtils.jsm',
     'WebChannel.jsm',
-    'WebProgressChild.jsm',
-    'ZipUtils.jsm',
 ]
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
@@ -245,10 +244,10 @@ EXTRA_JS_MODULES.sessionstore += [
     'sessionstore/Utils.jsm',
 ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('windows', 'gtk3'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('windows', 'gtk'):
     DEFINES['MENUBAR_CAN_AUTOHIDE'] = 1
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('windows', 'gtk3', 'cocoa'):
+if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('windows', 'gtk', 'cocoa'):
     DEFINES['HAVE_SHELL_SERVICE'] = 1
 
 EXTRA_PP_JS_MODULES += [
@@ -296,9 +295,7 @@ for var in ('ANDROID_PACKAGE_NAME',
 for var in ('MOZ_SYSTEM_NSS',
             'MOZ_UNSIGNED_APP_SCOPE',
             'MOZ_UNSIGNED_SYSTEM_SCOPE',
-            'MOZ_UPDATER',
-            'MOZ_ANDROID_MOZILLA_ONLINE',
-            'MOZ_SWITCHBOARD'):
+            'MOZ_UPDATER'):
     if CONFIG[var]:
         DEFINES[var] = True
 

@@ -41,7 +41,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
 
 #[cfg(not(feature = "std"))]
 #[macro_use]
@@ -95,7 +94,7 @@ mod nan_canonicalization;
 mod partition_slice;
 mod postopt;
 mod predicates;
-mod ref_slice;
+mod redundant_reload_remover;
 mod regalloc;
 mod result;
 mod scoped_hash_map;

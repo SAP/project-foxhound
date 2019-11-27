@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -51,7 +50,12 @@ add_task(async function() {
 
   info("Reload the page, expect the highlighter to be displayed once again");
   let onStateRestored = highlighters.once("grid-state-restored");
+
+  const onReloaded = inspector.once("reloaded");
   await refreshTab();
+  info("Wait for inspector to be reloaded after page reload");
+  await onReloaded;
+
   let { restored } = await onStateRestored;
   ok(restored, "The highlighter state was restored");
 

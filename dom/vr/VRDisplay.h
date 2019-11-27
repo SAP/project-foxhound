@@ -116,6 +116,8 @@ class VRPose final : public Pose {
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
+  void Update(const gfx::VRHMDSensorState& aState);
+
  protected:
   ~VRPose();
 
@@ -153,8 +155,7 @@ class VRFrameData final : public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(VRFrameData)
 
   explicit VRFrameData(nsISupports* aParent);
-  static already_AddRefed<VRFrameData> Constructor(const GlobalObject& aGlobal,
-                                                   ErrorResult& aRv);
+  static already_AddRefed<VRFrameData> Constructor(const GlobalObject& aGlobal);
 
   void Update(const VRFrameInfo& aFrameInfo);
 

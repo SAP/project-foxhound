@@ -20,6 +20,10 @@ namespace a11y {
 
 class xpcAccessibleGeneric;
 
+#if !defined(XP_WIN)
+class DocAccessiblePlatformExtParent;
+#endif
+
 /*
  * These objects live in the main process and comunicate with and represent
  * an accessible document in a content process.
@@ -241,6 +245,14 @@ class DocAccessibleParent : public ProxyAccessible,
 #if !defined(XP_WIN)
   virtual mozilla::ipc::IPCResult RecvBatch(
       const uint64_t& aBatchType, nsTArray<BatchData>&& aData) override;
+
+  virtual bool DeallocPDocAccessiblePlatformExtParent(
+      PDocAccessiblePlatformExtParent* aActor) override;
+
+  virtual PDocAccessiblePlatformExtParent*
+  AllocPDocAccessiblePlatformExtParent() override;
+
+  DocAccessiblePlatformExtParent* GetPlatformExtension();
 #endif
 
   /**
@@ -309,6 +321,15 @@ class DocAccessibleParent : public ProxyAccessible,
   bool mTopLevel;
   bool mTopLevelInContentProcess;
   bool mShutdown;
+
+  struct PendingChildDoc {
+    PendingChildDoc(DocAccessibleParent* aChildDoc, uint64_t aParentID)
+        : mChildDoc(aChildDoc), mParentID(aParentID) {}
+    RefPtr<DocAccessibleParent> mChildDoc;
+    uint64_t mParentID;
+  };
+  // We use nsTArray because there will be very few entries.
+  nsTArray<PendingChildDoc> mPendingChildDocs;
 
   static uint64_t sMaxDocID;
   static nsDataHashtable<nsUint64HashKey, DocAccessibleParent*>& LiveDocs() {

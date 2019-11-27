@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -53,6 +52,7 @@ var navigateTo = async function(inspector, url) {
   const markuploaded = inspector.once("markuploaded");
   const onNewRoot = inspector.once("new-root");
   const onUpdated = inspector.once("inspector-updated");
+  const onReloaded = inspector.once("reloaded");
 
   info("Navigating to: " + url);
   const target = inspector.toolbox.target;
@@ -66,6 +66,9 @@ var navigateTo = async function(inspector, url) {
 
   info("Waiting for inspector to update after new-root event.");
   await onUpdated;
+
+  info("Waiting for inspector updates after page reload");
+  await onReloaded;
 };
 
 /**
@@ -76,7 +79,7 @@ var navigateTo = async function(inspector, url) {
 var startPicker = async function(toolbox, skipFocus) {
   info("Start the element picker");
   toolbox.win.focus();
-  await toolbox.inspector.nodePicker.start();
+  await toolbox.nodePicker.start();
   if (!skipFocus) {
     // By default make sure the content window is focused since the picker may not focus
     // the content window by default.
@@ -84,6 +87,16 @@ var startPicker = async function(toolbox, skipFocus) {
       content.focus();
     });
   }
+};
+
+/**
+ * Start the eye dropper tool.
+ * @param {Toolbox} toolbox
+ */
+var startEyeDropper = async function(toolbox) {
+  info("Start the eye dropper tool");
+  toolbox.win.focus();
+  await toolbox.getPanel("inspector").showEyeDropper();
 };
 
 /**
@@ -129,7 +142,7 @@ function pickElement(inspector, testActor, selector, x, y) {
  */
 function hoverElement(inspector, testActor, selector, x, y) {
   info("Waiting for element " + selector + " to be hovered");
-  const onHovered = inspector.inspector.nodePicker.once("picker-node-hovered");
+  const onHovered = inspector.toolbox.nodePicker.once("picker-node-hovered");
   testActor.synthesizeMouse({ selector, x, y, options: { type: "mousemove" } });
   return onHovered;
 }
@@ -176,24 +189,6 @@ function clearCurrentNodeSelection(inspector) {
   const updated = inspector.once("inspector-updated");
   inspector.selection.setNodeFront(null);
   return updated;
-}
-
-/**
- * Open the inspector in a tab with given URL.
- * @param {string} url  The URL to open.
- * @param {String} hostType Optional hostType, as defined in Toolbox.HostType
- * @return A promise that is resolved once the tab and inspector have loaded
- *         with an object: { tab, toolbox, inspector }.
- */
-var openInspectorForURL = async function(url, hostType) {
-  const tab = await addTab(url);
-  const { inspector, toolbox, testActor } = await openInspector(hostType);
-  return { tab, inspector, toolbox, testActor };
-};
-
-async function getActiveInspector() {
-  const target = await TargetFactory.forTab(gBrowser.selectedTab);
-  return gDevTools.getToolbox(target).getPanel("inspector");
 }
 
 /**
@@ -504,7 +499,7 @@ async function poll(check, desc, attempts = 10, timeBetweenAttempts = 200) {
  */
 const getHighlighterHelperFor = type =>
   async function({ inspector, testActor }) {
-    const front = inspector.inspector;
+    const front = inspector.inspectorFront;
     const highlighter = await front.getHighlighterByType(type);
 
     let prefix = "";
@@ -760,6 +755,35 @@ var waitForTab = async function() {
   info("The tab load completed");
   return tab;
 };
+
+/**
+ * Wait for a predicate to return a result.
+ *
+ * @param {Function} condition
+ *        Invoked once in a while until it returns a truthy value. This should be an
+ *        idempotent function, since we have to run it a second time after it returns
+ *        true in order to return the value.
+ * @param {String} message [optional]
+ *        A message to output if the condition fails.
+ * @param {Number} interval [optional]
+ *        How often the predicate is invoked, in milliseconds.
+ * @return {Object}
+ *         A promise that is resolved with the result of the condition.
+ */
+async function waitFor(
+  condition,
+  message = "waitFor",
+  interval = 10,
+  maxTries = 500
+) {
+  await BrowserTestUtils.waitForCondition(
+    condition,
+    message,
+    interval,
+    maxTries
+  );
+  return condition();
+}
 
 /**
  * Simulate the key input for the given input in the window.

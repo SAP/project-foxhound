@@ -10,6 +10,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/Latin1.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
@@ -91,9 +92,16 @@ static inline const CharT* SkipSpace(const CharT* s, const CharT* end) {
 extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
                                           const char* s);
 
+extern UniqueChars DuplicateStringToArena(arena_id_t destArenaId, JSContext* cx,
+                                          const char* s, size_t n);
+
 extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
                                                  JSContext* cx,
                                                  const char16_t* s);
+
+extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
+                                                 JSContext* cx,
+                                                 const char16_t* s, size_t n);
 
 /*
  * These variants do not report OOMs, you must arrange for OOMs to be reported
@@ -113,7 +121,12 @@ extern UniqueTwoByteChars DuplicateStringToArena(arena_id_t destArenaId,
 
 extern UniqueChars DuplicateString(JSContext* cx, const char* s);
 
+extern UniqueChars DuplicateString(JSContext* cx, const char* s, size_t n);
+
 extern UniqueTwoByteChars DuplicateString(JSContext* cx, const char16_t* s);
+
+extern UniqueTwoByteChars DuplicateString(JSContext* cx, const char16_t* s,
+                                          size_t n);
 
 /*
  * These variants do not report OOMs, you must arrange for OOMs to be reported
@@ -139,16 +152,15 @@ extern char16_t* InflateString(JSContext* cx, const char* bytes, size_t length);
  * enough for 'srclen' char16_t code units. The buffer is NOT null-terminated.
  */
 inline void CopyAndInflateChars(char16_t* dst, const char* src, size_t srclen) {
-  for (size_t i = 0; i < srclen; i++) {
-    dst[i] = (unsigned char)src[i];
-  }
+  mozilla::ConvertLatin1toUtf16(mozilla::MakeSpan(src, srclen),
+                                mozilla::MakeSpan(dst, srclen));
 }
 
 inline void CopyAndInflateChars(char16_t* dst, const JS::Latin1Char* src,
                                 size_t srclen) {
-  for (size_t i = 0; i < srclen; i++) {
-    dst[i] = src[i];
-  }
+  mozilla::ConvertLatin1toUtf16(
+      mozilla::AsChars(mozilla::MakeSpan(src, srclen)),
+      mozilla::MakeSpan(dst, srclen));
 }
 
 /*

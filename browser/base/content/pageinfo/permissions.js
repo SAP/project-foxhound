@@ -9,7 +9,6 @@ const { SitePermissions } = ChromeUtils.import(
 );
 
 var gPermPrincipal;
-var gUsageRequest;
 
 // Array of permissionIDs sorted alphabetically by label.
 var gPermissions = SitePermissions.listPermissions()
@@ -54,11 +53,6 @@ function onLoadPermission(uri, principal) {
 
 function onUnloadPermission() {
   Services.obs.removeObserver(permissionObserver, "perm-changed");
-
-  if (gUsageRequest) {
-    gUsageRequest.cancel();
-    gUsageRequest = null;
-  }
 }
 
 function initRow(aPartId) {
@@ -188,8 +182,12 @@ function onCheckboxClick(aPartId) {
 
 function onRadioClick(aPartId) {
   var radioGroup = document.getElementById(aPartId + "RadioGroup");
-  var id = radioGroup.selectedItem ? radioGroup.selectedItem.id : "#1";
-  var permission = parseInt(id.split("#")[1]);
+  let permission;
+  if (radioGroup.selectedItem) {
+    permission = parseInt(radioGroup.selectedItem.id.split("#")[1]);
+  } else {
+    permission = SitePermissions.getDefault(aPartId);
+  }
   SitePermissions.setForPrincipal(gPermPrincipal, aPartId, permission);
 }
 

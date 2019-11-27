@@ -10,6 +10,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/Unused.h"
 #include "mozpkix/Result.h"
+#include "nsThreadUtils.h"
 
 #ifdef XP_MACOSX
 #  include <Security/Security.h>
@@ -18,7 +19,12 @@
 #  include "nsCocoaFeatures.h"
 #endif  // XP_MACOSX
 
-extern LazyLogModule gPIPNSSLog;
+#ifdef XP_WIN
+#  include <windows.h>
+#  include <wincrypt.h>
+#endif  // XP_WIN
+
+extern mozilla::LazyLogModule gPIPNSSLog;
 
 using namespace mozilla;
 
@@ -86,9 +92,18 @@ static void CertIsTrustAnchorForTLSServerAuth(PCCERT_CONTEXT certificate,
   memset(&chainPara, 0, sizeof(CERT_CHAIN_PARA));
   chainPara.cbSize = sizeof(CERT_CHAIN_PARA);
   chainPara.RequestedUsage = certUsage;
-
+  // Disable anything that could result in network I/O.
+  DWORD flags = CERT_CHAIN_REVOCATION_CHECK_CACHE_ONLY |
+                CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL |
+                CERT_CHAIN_DISABLE_AUTH_ROOT_AUTO_UPDATE |
+// mingw's version of wincrypt.h doesn't define this flag (bug 1592792).
+#  if defined(CERT_CHAIN_DISABLE_AIA)
+                CERT_CHAIN_DISABLE_AIA;
+#  else
+                0x00002000;
+#  endif
   if (!CertGetCertificateChain(nullptr, certificate, nullptr, nullptr,
-                               &chainPara, 0, nullptr, &pChainContext)) {
+                               &chainPara, flags, nullptr, &pChainContext)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("CertGetCertificateChain failed"));
     return;
   }
@@ -129,19 +144,26 @@ class ScopedCertStore final {
 //   CERT_SYSTEM_STORE_LOCAL_MACHINE
 //     (for HKLM\SOFTWARE\Microsoft\SystemCertificates)
 //   CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY
-//     (for
-//     HKLM\SOFTWARE\Policies\Microsoft\SystemCertificates\Root\Certificates)
+//     (for HKLM\SOFTWARE\Policy\Microsoft\SystemCertificates)
 //   CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE
-//     (for HKLM\SOFTWARE\Microsoft\EnterpriseCertificates\Root\Certificates)
+//     (for HKLM\SOFTWARE\Microsoft\EnterpriseCertificates)
+//   CERT_SYSTEM_STORE_CURRENT_USER
+//     (for HKCU\SOFTWARE\Microsoft\SystemCertificates)
+//   CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY
+//     (for HKCU\SOFTWARE\Policy\Microsoft\SystemCertificates)
 static void GatherEnterpriseCertsForLocation(DWORD locationFlag,
                                              Vector<EnterpriseCert>& certs) {
   MOZ_ASSERT(locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE ||
                  locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY ||
-                 locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
+                 locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE ||
+                 locationFlag == CERT_SYSTEM_STORE_CURRENT_USER ||
+                 locationFlag == CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY,
              "unexpected locationFlag for GatherEnterpriseRootsForLocation");
   if (!(locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE ||
         locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_GROUP_POLICY ||
-        locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE)) {
+        locationFlag == CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE ||
+        locationFlag == CERT_SYSTEM_STORE_CURRENT_USER ||
+        locationFlag == CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY)) {
     return;
   }
 
@@ -196,6 +218,9 @@ static void GatherEnterpriseCertsWindows(Vector<EnterpriseCert>& certs) {
                                    certs);
   GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_LOCAL_MACHINE_ENTERPRISE,
                                    certs);
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_CURRENT_USER, certs);
+  GatherEnterpriseCertsForLocation(CERT_SYSTEM_STORE_CURRENT_USER_GROUP_POLICY,
+                                   certs);
 }
 #endif  // XP_WIN
 
@@ -244,6 +269,13 @@ OSStatus GatherEnterpriseCertsMacOS(Vector<EnterpriseCert>& certs) {
       continue;
     }
     ScopedCFType<SecTrustRef> trustHandle(trust);
+    // Disable AIA chasing to avoid network I/O.
+    rv = SecTrustSetNetworkFetchAllowed(trustHandle.get(), false);
+    if (rv != errSecSuccess) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("SecTrustSetNetworkFetchAllowed failed"));
+      continue;
+    }
     bool isTrusted = false;
     bool fallBackToDeprecatedAPI = true;
 #  if defined MAC_OS_X_VERSION_10_14

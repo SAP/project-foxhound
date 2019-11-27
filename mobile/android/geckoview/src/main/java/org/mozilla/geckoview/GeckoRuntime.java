@@ -35,6 +35,7 @@ import org.mozilla.gecko.GeckoScreenOrientation;
 import org.mozilla.gecko.GeckoSystemStateListener;
 import org.mozilla.gecko.GeckoThread;
 import org.mozilla.gecko.PrefsHelper;
+import org.mozilla.gecko.annotation.WrapForJNI;
 import org.mozilla.gecko.util.BundleEventListener;
 import org.mozilla.gecko.util.ContextUtils;
 import org.mozilla.gecko.util.DebugConfig;
@@ -45,6 +46,7 @@ import org.yaml.snakeyaml.error.YAMLException;
 
 import java.io.File;
 import java.io.FileNotFoundException;
+import java.net.URI;
 
 public final class GeckoRuntime implements Parcelable {
     private static final String LOGTAG = "GeckoRuntime";
@@ -84,14 +86,6 @@ public final class GeckoRuntime implements Parcelable {
 
     /**
      * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is
-     * a boolean indicating whether or not the crash dump was succcessfully
-     * retrieved. If this is false, the dump file referred to in
-     * {@link #EXTRA_MINIDUMP_PATH} may be corrupted or incomplete.
-     */
-    public static final String EXTRA_MINIDUMP_SUCCESS = "minidumpSuccess";
-
-    /**
-     * This is a key for extra data sent with {@link #ACTION_CRASHED}. The value is
      * a boolean indicating whether or not the crash was fatal or not. If true, the
      * main application process was affected by the crash. If false, only an internal
      * process used by Gecko has crashed and the application may be able to recover.
@@ -100,6 +94,7 @@ public final class GeckoRuntime implements Parcelable {
     public static final String EXTRA_CRASH_FATAL = "fatal";
 
     private final class LifecycleListener implements LifecycleObserver {
+        private boolean mPaused = false;
         public LifecycleListener() {
         }
 
@@ -116,6 +111,11 @@ public final class GeckoRuntime implements Parcelable {
         @OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
         void onResume() {
             Log.d(LOGTAG, "Lifecycle: onResume");
+            if (mPaused) {
+                // Do not trigger the first onResume event because it breaks nsAppShell::sPauseCount counter thresholds.
+                GeckoThread.onResume();
+            }
+            mPaused = false;
             // Monitor network status and send change notifications to Gecko
             // while active.
             GeckoNetworkManager.getInstance().start(GeckoAppShell.getApplicationContext());
@@ -124,8 +124,10 @@ public final class GeckoRuntime implements Parcelable {
         @OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         void onPause() {
             Log.d(LOGTAG, "Lifecycle: onPause");
+            mPaused = true;
             // Stop monitoring network status while inactive.
             GeckoNetworkManager.getInstance().stop();
+            GeckoThread.onPause();
         }
     }
 
@@ -156,11 +158,71 @@ public final class GeckoRuntime implements Parcelable {
         return sDefaultRuntime;
     }
 
+    private static GeckoRuntime sRuntime;
     private GeckoRuntimeSettings mSettings;
     private Delegate mDelegate;
+    private ServiceWorkerDelegate mServiceWorkerDelegate;
+    private WebNotificationDelegate mNotificationDelegate;
     private RuntimeTelemetry mTelemetry;
-    private WebExtensionEventDispatcher mWebExtensionDispatcher;
+    private final WebExtensionEventDispatcher mWebExtensionDispatcher;
     private StorageController mStorageController;
+    private final WebExtensionController mWebExtensionController;
+    private WebPushController mPushController;
+    private final ContentBlockingController mContentBlockingController;
+
+    private GeckoRuntime() {
+        mWebExtensionDispatcher = new WebExtensionEventDispatcher();
+        mWebExtensionController = new WebExtensionController(this, mWebExtensionDispatcher);
+        mContentBlockingController = new ContentBlockingController();
+        if (sRuntime != null) {
+            throw new IllegalStateException("Only one GeckoRuntime instance is allowed");
+        }
+        sRuntime = this;
+    }
+
+    @WrapForJNI
+    @UiThread
+    private @Nullable static GeckoRuntime getInstance() {
+        return sRuntime;
+    }
+
+
+    /**
+     * Called by mozilla::dom::ClientOpenWindowInCurrentProcess to retrieve the window id to use
+     * for a ServiceWorkerClients.openWindow() request.
+     * @param baseUrl The base Url for the request.
+     * @param url Url being requested to be opened in a new window.
+     * @return SessionID to use for the request.
+     */
+    @WrapForJNI(calledFrom = "gecko")
+    private static @NonNull GeckoResult<String> serviceWorkerOpenWindow(final @NonNull String baseUrl, final @NonNull String url) {
+        if (sRuntime != null && sRuntime.mServiceWorkerDelegate != null) {
+            final URI actual = URI.create(baseUrl).resolve(url);
+            GeckoResult<String> result = new GeckoResult<>();
+            // perform the onOpenWindow call in the UI thread
+            ThreadUtils.postToUiThread(() -> {
+                sRuntime
+                    .mServiceWorkerDelegate
+                    .onOpenWindow(actual.toString())
+                    .accept( session -> {
+                        if (session != null) {
+                            if (!session.isOpen()) {
+                                result.completeExceptionally(new RuntimeException("Returned GeckoSession must be open."));
+                            } else {
+                                session.loadUri(actual.toString());
+                                result.complete(session.getId());
+                            }
+                        } else {
+                            result.complete(null);
+                        }
+                    });
+            });
+            return result;
+        } else {
+            return GeckoResult.fromException(new java.lang.RuntimeException("No available Service Worker delegate."));
+        }
+    }
+
 
     /**
      * Attach the runtime to the given context.
@@ -194,7 +256,6 @@ public final class GeckoRuntime implements Parcelable {
                         context, crashHandler);
                 i.putExtra(EXTRA_MINIDUMP_PATH, message.getString(EXTRA_MINIDUMP_PATH));
                 i.putExtra(EXTRA_EXTRAS_PATH, message.getString(EXTRA_EXTRAS_PATH));
-                i.putExtra(EXTRA_MINIDUMP_SUCCESS, true);
                 i.putExtra(EXTRA_CRASH_FATAL, message.getBoolean(EXTRA_CRASH_FATAL, true));
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -252,8 +313,6 @@ public final class GeckoRuntime implements Parcelable {
         GeckoAppShell.setScreenSizeOverride(settings.getScreenSizeOverride());
         GeckoAppShell.setCrashHandlerService(settings.getCrashHandler());
         GeckoFontScaleListener.getInstance().attachToContext(context, settings);
-
-        mWebExtensionDispatcher = new WebExtensionEventDispatcher();
 
         final GeckoThread.InitInfo info = new GeckoThread.InitInfo();
         info.args = settings.getArguments();
@@ -327,6 +386,26 @@ public final class GeckoRuntime implements Parcelable {
     public static @NonNull GeckoRuntime create(final @NonNull Context context) {
         ThreadUtils.assertOnUiThread();
         return create(context, new GeckoRuntimeSettings());
+    }
+
+    /**
+     * Returns a WebExtensionController for this GeckoRuntime.
+     *
+     * @return an instance of {@link WebExtensionController}.
+     */
+    @UiThread
+    public @NonNull WebExtensionController getWebExtensionController() {
+        return mWebExtensionController;
+    }
+
+    /**
+     * Returns the ContentBlockingController for this GeckoRuntime.
+     *
+     * @return An instance of {@link ContentBlockingController}.
+     */
+    @UiThread
+    public @NonNull ContentBlockingController getContentBlockingController() {
+        return mContentBlockingController;
     }
 
     /**
@@ -413,7 +492,7 @@ public final class GeckoRuntime implements Parcelable {
         return result;
     }
 
-    /* protected */ WebExtensionEventDispatcher getWebExtensionDispatcher() {
+    /* protected */ @NonNull WebExtensionEventDispatcher getWebExtensionDispatcher() {
         return mWebExtensionDispatcher;
     }
 
@@ -490,18 +569,86 @@ public final class GeckoRuntime implements Parcelable {
         return mDelegate;
     }
 
+    @UiThread
+    public interface ServiceWorkerDelegate {
+
+        /**
+         * This is called when a service worker tries to open a new window using client.openWindow()
+         * The GeckoView application should provide an open {@link GeckoSession} to open the url.
+         *
+         * @param url Url which the Service Worker wishes to open in a new window.
+         * @return New or existing open {@link GeckoSession} in which to open the requested url.
+         *
+         * @see <a href="https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API">Service Worker API</a>
+         * @see <a href="https://developer.mozilla.org/en-US/docs/Web/API/Clients/openWindow">openWindow()</a>
+         */
+        @UiThread
+        @NonNull
+        GeckoResult<GeckoSession> onOpenWindow(@NonNull String url);
+    }
+
+    /**
+     * Sets the {@link ServiceWorkerDelegate} to be used for Service Worker requests.
+     *
+     * @param serviceWorkerDelegate An instance of {@link ServiceWorkerDelegate}.
+     *
+     * @see <a href="https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API">Service Worker API</a>
+     */
+    @UiThread
+    public void setServiceWorkerDelegate(final @Nullable ServiceWorkerDelegate serviceWorkerDelegate) {
+        mServiceWorkerDelegate = serviceWorkerDelegate;
+    }
+
+    /**
+     * Sets the delegate to be used for handling Web Notifications.
+     *
+     * @param delegate An instance of {@link WebNotificationDelegate}.
+     *
+     * @see <a href="https://developer.mozilla.org/en-US/docs/Web/API/Notification">Web Notifications</a>
+     */
+    @UiThread
+    public void setWebNotificationDelegate(final @Nullable WebNotificationDelegate delegate) {
+        mNotificationDelegate = delegate;
+    }
+
+    /**
+     * Returns the current WebNotificationDelegate, if any
+     *
+     * @return an instance of  WebNotificationDelegate or null if no delegate has been set
+     */
+    @WrapForJNI
+    @UiThread
+    public @Nullable WebNotificationDelegate getWebNotificationDelegate() {
+        return mNotificationDelegate;
+    }
+
+    @WrapForJNI
+    @UiThread
+    private void notifyOnShow(final WebNotification notification) {
+        ThreadUtils.getUiHandler().post(() -> {
+            if (mNotificationDelegate != null) {
+                mNotificationDelegate.onShowNotification(notification);
+            }
+        });
+    }
+
+    @WrapForJNI
+    @UiThread
+    private void notifyOnClose(final WebNotification notification) {
+        ThreadUtils.getUiHandler().post(() -> {
+            if (mNotificationDelegate != null) {
+                mNotificationDelegate.onCloseNotification(notification);
+            }
+        });
+    }
+
     @AnyThread
     public @NonNull GeckoRuntimeSettings getSettings() {
         return mSettings;
     }
 
-    /* package */ void setPref(final String name, final Object value,
-                               final boolean override) {
-        if (override || !GeckoAppShell.isFennec()) {
-            // Override pref on Fennec only when requested to prevent
-            // overriding of persistent prefs.
-            PrefsHelper.setPref(name, value, /* flush */ false);
-        }
+    /* package */ void setPref(final String name, final Object value) {
+        PrefsHelper.setPref(name, value, /* flush */ false);
     }
 
     /**
@@ -579,6 +726,24 @@ public final class GeckoRuntime implements Parcelable {
             mStorageController = new StorageController();
         }
         return mStorageController;
+    }
+
+    /**
+     * Get the Web Push controller for this runtime.
+     * The Web Push controller can be used to allow content
+     * to use the Web Push API.
+     *
+     * @return The {@link WebPushController} for this instance.
+     */
+    @UiThread
+    public @NonNull WebPushController getWebPushController() {
+        ThreadUtils.assertOnUiThread();
+
+        if (mPushController == null) {
+            mPushController = new WebPushController();
+        }
+
+        return mPushController;
     }
 
     @Override // Parcelable

@@ -11,6 +11,7 @@ XPCSHELL_TESTS_MANIFESTS += [
     'tests/xpcshell/searchconfigs/xpcshell-2.ini',
     'tests/xpcshell/searchconfigs/xpcshell-3.ini',
     'tests/xpcshell/searchconfigs/xpcshell-4.ini',
+    'tests/xpcshell/xpcshell-legacyconfig.ini',
     'tests/xpcshell/xpcshell.ini',
 ]
 
@@ -27,6 +28,7 @@ if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
 
 EXTRA_JS_MODULES += [
     'SearchEngine.jsm',
+    'SearchEngineSelector.jsm',
     'SearchService.jsm',
     'SearchStaticData.jsm',
     'SearchSuggestionController.jsm',

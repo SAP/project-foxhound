@@ -1,7 +1,8 @@
 "use strict";
 
-/* exported createHttpServer, promiseConsoleOutput, cleanupDir, clearCache, testEnv
-            runWithPrefs, withHandlingUserInput */
+/* exported createHttpServer, cleanupDir, clearCache, promiseConsoleOutput,
+            promiseQuotaManagerServiceReset, promiseQuotaManagerServiceClear,
+            runWithPrefs, testEnv, withHandlingUserInput */
 
 var { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
@@ -35,6 +36,8 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PromiseTestUtils: "resource://testing-common/PromiseTestUtils.jsm",
   Schemas: "resource://gre/modules/Schemas.jsm",
 });
+
+PromiseTestUtils.whitelistRejectionsGlobally(/Message manager disconnected/);
 
 // These values may be changed in later head files and tested in check_remote
 // below.
@@ -244,4 +247,22 @@ async function withHandlingUserInput(extension, fn) {
     "ExtensionTest:HandleUserInput",
     false
   );
+}
+
+// QuotaManagerService test helpers.
+
+function promiseQuotaManagerServiceReset() {
+  info("Calling QuotaManagerService.reset to enforce new test storage limits");
+  return new Promise(resolve => {
+    Services.qms.reset().callback = resolve;
+  });
+}
+
+function promiseQuotaManagerServiceClear() {
+  info(
+    "Calling QuotaManagerService.clear to empty the test data and refresh test storage limits"
+  );
+  return new Promise(resolve => {
+    Services.qms.clear().callback = resolve;
+  });
 }

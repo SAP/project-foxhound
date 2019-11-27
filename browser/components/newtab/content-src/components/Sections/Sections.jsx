@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { actionCreators as ac, actionTypes as at } from "common/Actions.jsm";
 import { Card, PlaceholderCard } from "content-src/components/Card/Card";
 import { CollapsibleSection } from "content-src/components/CollapsibleSection/CollapsibleSection";
@@ -196,7 +200,7 @@ export class Section extends React.PureComponent {
     const isPocketLoggedInDefined =
       isUserLoggedIn === true || isUserLoggedIn === false;
 
-    const hasTopics = topics && topics.length > 0;
+    const hasTopics = topics && !!topics.length;
 
     const shouldShowPocketCta =
       id === "topstories" && useCta && isUserLoggedIn === false;

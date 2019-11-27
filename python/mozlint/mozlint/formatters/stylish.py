@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, unicode_literals
-
 from mozterm import Terminal
 
 from ..result import Issue
@@ -79,7 +77,7 @@ class StylishFormatter(object):
 
         num_errors = 0
         num_warnings = 0
-        for path, errors in sorted(result.issues.iteritems()):
+        for path, errors in sorted(result.issues.items()):
             self._reset_max()
 
             message.append(self.term.underline(path))

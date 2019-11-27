@@ -36,6 +36,17 @@ ChromeUtils.defineModuleGetter(
   "AppConstants",
   "resource://gre/modules/AppConstants.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "FirstStartup",
+  "resource://gre/modules/FirstStartup.jsm"
+);
+
+ChromeUtils.defineModuleGetter(
+  this,
+  "AttributionCode",
+  "resource:///modules/AttributionCode.jsm"
+);
 
 var EXPORTED_SYMBOLS = ["ClientEnvironmentBase"];
 
@@ -96,6 +107,11 @@ class ClientEnvironmentBase {
   }
 
   static get searchEngine() {
+    // Telemetry Environment is not available in early first-startup.
+    if (FirstStartup.state === FirstStartup.IN_PROGRESS) {
+      return undefined;
+    }
+
     return (async () => {
       await TelemetryEnvironment.onInitialized();
       return TelemetryEnvironment.currentEnvironment.settings
@@ -164,6 +180,11 @@ class ClientEnvironmentBase {
   }
 
   static get os() {
+    // Telemetry Environment is not available in early first-startup.
+    if (FirstStartup.state === FirstStartup.IN_PROGRESS) {
+      return undefined;
+    }
+
     function coerceToNumber(version) {
       const parts = version.split(".");
       return parseFloat(parts.slice(0, 2).join("."));
@@ -201,5 +222,9 @@ class ClientEnvironmentBase {
 
       return rv;
     })();
+  }
+
+  static get attribution() {
+    return AttributionCode.getAttrDataAsync();
   }
 }

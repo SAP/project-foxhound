@@ -22,6 +22,7 @@ class nsIChannel;
 namespace mozilla {
 namespace dom {
 struct CSP;
+class Document;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -86,7 +87,8 @@ static const char* CSPStrDirectives[] = {
     "child-src",                  // CHILD_SRC_DIRECTIVE
     "block-all-mixed-content",    // BLOCK_ALL_MIXED_CONTENT
     "sandbox",                    // SANDBOX_DIRECTIVE
-    "worker-src"                  // WORKER_SRC_DIRECTIVE
+    "worker-src",                 // WORKER_SRC_DIRECTIVE
+    "navigate-to"                 // NAVIGATE_TO_DIRECTIVE
 };
 
 inline const char* CSP_CSPDirectiveToString(CSPDirective aDir) {
@@ -107,14 +109,15 @@ inline CSPDirective CSP_StringToCSPDirective(const nsAString& aDir) {
   return nsIContentSecurityPolicy::NO_DIRECTIVE;
 }
 
-#define FOR_EACH_CSP_KEYWORD(MACRO)           \
-  MACRO(CSP_SELF, "'self'")                   \
-  MACRO(CSP_UNSAFE_INLINE, "'unsafe-inline'") \
-  MACRO(CSP_UNSAFE_EVAL, "'unsafe-eval'")     \
-  MACRO(CSP_NONE, "'none'")                   \
-  MACRO(CSP_NONCE, "'nonce-")                 \
-  MACRO(CSP_REPORT_SAMPLE, "'report-sample'") \
-  MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'")
+#define FOR_EACH_CSP_KEYWORD(MACRO)             \
+  MACRO(CSP_SELF, "'self'")                     \
+  MACRO(CSP_UNSAFE_INLINE, "'unsafe-inline'")   \
+  MACRO(CSP_UNSAFE_EVAL, "'unsafe-eval'")       \
+  MACRO(CSP_NONE, "'none'")                     \
+  MACRO(CSP_NONCE, "'nonce-")                   \
+  MACRO(CSP_REPORT_SAMPLE, "'report-sample'")   \
+  MACRO(CSP_STRICT_DYNAMIC, "'strict-dynamic'") \
+  MACRO(CSP_UNSAFE_ALLOW_REDIRECTS, "'unsafe-allow-redirects'")
 
 enum CSPKeyword {
 #define KEYWORD_ENUM(id_, string_) id_,
@@ -206,6 +209,9 @@ class nsCSPSrcVisitor;
 
 void CSP_PercentDecodeStr(const nsAString& aEncStr, nsAString& outDecStr);
 bool CSP_ShouldResponseInheritCSP(nsIChannel* aChannel);
+
+void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
+                           const nsAString& aPolicyStr);
 
 /* =============== nsCSPSrc ================== */
 
@@ -657,6 +663,9 @@ class nsCSPPolicy {
   inline uint32_t getNumDirectives() const { return mDirectives.Length(); }
 
   bool visitDirectiveSrcs(CSPDirective aDir, nsCSPSrcVisitor* aVisitor) const;
+
+  bool allowsNavigateTo(nsIURI* aURI, bool aWasRedirected,
+                        bool aEnforceWhitelist) const;
 
  private:
   nsUpgradeInsecureDirective* mUpgradeInsecDir;

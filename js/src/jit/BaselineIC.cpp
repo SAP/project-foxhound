@@ -34,7 +34,11 @@
 #include "jit/VMFunctions.h"
 #include "js/Conversions.h"
 #include "js/GCVector.h"
+#include "vm/BytecodeIterator.h"
+#include "vm/BytecodeLocation.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/JSFunction.h"
+#include "vm/JSScript.h"
 #include "vm/Opcodes.h"
 #include "vm/SelfHosting.h"
 #include "vm/TypedArrayObject.h"
@@ -47,6 +51,8 @@
 #include "jit/shared/Lowering-shared-inl.h"
 #include "jit/SharedICHelpers-inl.h"
 #include "jit/VMFunctionList-inl.h"
+#include "vm/BytecodeIterator-inl.h"
+#include "vm/BytecodeLocation-inl.h"
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/Interpreter-inl.h"
 #include "vm/JSScript-inl.h"
@@ -156,10 +162,35 @@ class MOZ_RAII FallbackStubAllocator {
   }
 };
 
+// Helper method called by lambda expressions `addIC` and `addPrologueIC` in
+// `JitScript::initICEntriesAndBytecodeTypeMap`.
+static bool AddICImpl(JSContext* cx, JitScript* jitScript, uint32_t offset,
+                      ICStub* stub, uint32_t& icEntryIndex) {
+  if (!stub) {
+    MOZ_ASSERT(cx->isExceptionPending());
+    mozilla::Unused << cx;  // Silence -Wunused-lambda-capture in opt builds.
+    return false;
+  }
+
+  // Initialize the ICEntry.
+  ICEntry& entryRef = jitScript->icEntry(icEntryIndex);
+  icEntryIndex++;
+  new (&entryRef) ICEntry(stub, offset);
+
+  // Fix up pointers from fallback stubs to the ICEntry.
+  if (stub->isFallback()) {
+    stub->toFallbackStub()->fixupICEntry(&entryRef);
+  } else {
+    stub->toTypeMonitor_Fallback()->fixupICEntry(&entryRef);
+  }
+
+  return true;
+}
+
 bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
                                                 JSScript* script) {
   MOZ_ASSERT(cx->realm()->jitRealm());
-  MOZ_ASSERT(jit::IsBaselineEnabled(cx));
+  MOZ_ASSERT(jit::IsBaselineInterpreterEnabled());
 
   MOZ_ASSERT(numICEntries() == script->numICEntries());
 
@@ -170,27 +201,15 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
 
   using Kind = BaselineICFallbackKind;
 
-  auto addIC = [cx, this, &icEntryIndex, script](jsbytecode* pc, ICStub* stub) {
-    if (!stub) {
-      MOZ_ASSERT(cx->isExceptionPending());
-      mozilla::Unused << cx;  // Silence -Wunused-lambda-capture in opt builds.
-      return false;
-    }
+  auto addIC = [cx, this, script, &icEntryIndex](BytecodeLocation loc,
+                                                 ICStub* stub) {
+    uint32_t offset = loc.bytecodeToOffset(script);
+    return AddICImpl(cx, this, offset, stub, icEntryIndex);
+  };
 
-    // Initialize the ICEntry.
-    uint32_t offset = pc ? script->pcToOffset(pc) : ICEntry::ProloguePCOffset;
-    ICEntry& entryRef = icEntry(icEntryIndex);
-    icEntryIndex++;
-    new (&entryRef) ICEntry(stub, offset);
-
-    // Fix up pointers from fallback stubs to the ICEntry.
-    if (stub->isFallback()) {
-      stub->toFallbackStub()->fixupICEntry(&entryRef);
-    } else {
-      stub->toTypeMonitor_Fallback()->fixupICEntry(&entryRef);
-    }
-
-    return true;
+  // Lambda expression for adding ICs for non-op ICs
+  auto addPrologueIC = [cx, this, &icEntryIndex](ICStub* stub) {
+    return AddICImpl(cx, this, ICEntry::ProloguePCOffset, stub, icEntryIndex);
   };
 
   // Add ICEntries and fallback stubs for this/argument type checks.
@@ -199,14 +218,14 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
   if (JSFunction* fun = script->functionNonDelazifying()) {
     ICStub* stub =
         alloc.newStub<ICTypeMonitor_Fallback>(Kind::TypeMonitor, nullptr, 0);
-    if (!addIC(nullptr, stub)) {
+    if (!addPrologueIC(stub)) {
       return false;
     }
 
     for (size_t i = 0; i < fun->nargs(); i++) {
       ICStub* stub = alloc.newStub<ICTypeMonitor_Fallback>(Kind::TypeMonitor,
                                                            nullptr, i + 1);
-      if (!addIC(nullptr, stub)) {
+      if (!addPrologueIC(stub)) {
         return false;
       }
     }
@@ -218,20 +237,18 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
 
   // For JOF_IC ops: initialize ICEntries and fallback stubs.
   // For JOF_TYPESET ops: initialize bytecode type map entries.
-  jsbytecode const* pcEnd = script->codeEnd();
-  for (jsbytecode* pc = script->code(); pc < pcEnd; pc = GetNextPc(pc)) {
-    JSOp op = JSOp(*pc);
-
+  for (BytecodeLocation loc : js::AllBytecodesIterable(script)) {
+    JSOp op = loc.getOp();
     // Note: if the script is very large there will be more JOF_TYPESET ops
     // than bytecode type sets. See JSScript::MaxBytecodeTypeSets.
-    if ((CodeSpec[op].format & JOF_TYPESET) &&
+    if (BytecodeOpHasTypeSet(op) &&
         typeMapIndex < JSScript::MaxBytecodeTypeSets) {
-      typeMap[typeMapIndex] = script->pcToOffset(pc);
+      typeMap[typeMapIndex] = loc.bytecodeToOffset(script);
       typeMapIndex++;
     }
 
     // Assert the frontend stored the correct IC index in jump target ops.
-    MOZ_ASSERT_IF(BytecodeIsJumpTarget(op), GET_ICINDEX(pc) == icEntryIndex);
+    MOZ_ASSERT_IF(BytecodeIsJumpTarget(op), loc.icIndex() == icEntryIndex);
 
     if (!BytecodeOpHasIC(op)) {
       continue;
@@ -244,7 +261,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_IFEQ:
       case JSOP_IFNE: {
         ICStub* stub = alloc.newStub<ICToBool_Fallback>(Kind::ToBool);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -254,7 +271,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_INC:
       case JSOP_DEC: {
         ICStub* stub = alloc.newStub<ICUnaryArith_Fallback>(Kind::UnaryArith);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -272,7 +289,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_MOD:
       case JSOP_POW: {
         ICStub* stub = alloc.newStub<ICBinaryArith_Fallback>(Kind::BinaryArith);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -286,28 +303,20 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_STRICTEQ:
       case JSOP_STRICTNE: {
         ICStub* stub = alloc.newStub<ICCompare_Fallback>(Kind::Compare);
-        if (!addIC(pc, stub)) {
-          return false;
-        }
-        break;
-      }
-      case JSOP_LOOPENTRY: {
-        ICStub* stub =
-            alloc.newStub<ICWarmUpCounter_Fallback>(Kind::WarmUpCounter);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_NEWARRAY: {
-        ObjectGroup* group =
-            ObjectGroup::allocationSiteGroup(cx, script, pc, JSProto_Array);
+        ObjectGroup* group = ObjectGroup::allocationSiteGroup(
+            cx, script, loc.toRawBytecode(), JSProto_Array);
         if (!group) {
           return false;
         }
         ICStub* stub =
             alloc.newStub<ICNewArray_Fallback>(Kind::NewArray, group);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -315,7 +324,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_NEWOBJECT:
       case JSOP_NEWINIT: {
         ICStub* stub = alloc.newStub<ICNewObject_Fallback>(Kind::NewObject);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -327,7 +336,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_SETELEM:
       case JSOP_STRICTSETELEM: {
         ICStub* stub = alloc.newStub<ICSetElem_Fallback>(Kind::SetElem);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -343,7 +352,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_SETGNAME:
       case JSOP_STRICTSETGNAME: {
         ICStub* stub = alloc.newStub<ICSetProp_Fallback>(Kind::SetProp);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -353,14 +362,14 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_LENGTH:
       case JSOP_GETBOUNDNAME: {
         ICStub* stub = alloc.newStub<ICGetProp_Fallback>(Kind::GetProp);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_GETPROP_SUPER: {
         ICStub* stub = alloc.newStub<ICGetProp_Fallback>(Kind::GetPropSuper);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -368,28 +377,28 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_GETELEM:
       case JSOP_CALLELEM: {
         ICStub* stub = alloc.newStub<ICGetElem_Fallback>(Kind::GetElem);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_GETELEM_SUPER: {
         ICStub* stub = alloc.newStub<ICGetElem_Fallback>(Kind::GetElemSuper);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_IN: {
         ICStub* stub = alloc.newStub<ICIn_Fallback>(Kind::In);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_HASOWN: {
         ICStub* stub = alloc.newStub<ICHasOwn_Fallback>(Kind::HasOwn);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -397,7 +406,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_GETNAME:
       case JSOP_GETGNAME: {
         ICStub* stub = alloc.newStub<ICGetName_Fallback>(Kind::GetName);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -405,7 +414,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_BINDNAME:
       case JSOP_BINDGNAME: {
         ICStub* stub = alloc.newStub<ICBindName_Fallback>(Kind::BindName);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -414,7 +423,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_GETIMPORT: {
         ICStub* stub =
             alloc.newStub<ICTypeMonitor_Fallback>(Kind::TypeMonitor, nullptr);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -422,7 +431,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_GETINTRINSIC: {
         ICStub* stub =
             alloc.newStub<ICGetIntrinsic_Fallback>(Kind::GetIntrinsic);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -435,7 +444,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_EVAL:
       case JSOP_STRICTEVAL: {
         ICStub* stub = alloc.newStub<ICCall_Fallback>(Kind::Call);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -443,7 +452,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_SUPERCALL:
       case JSOP_NEW: {
         ICStub* stub = alloc.newStub<ICCall_Fallback>(Kind::CallConstructing);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -452,7 +461,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_SPREADEVAL:
       case JSOP_STRICTSPREADEVAL: {
         ICStub* stub = alloc.newStub<ICCall_Fallback>(Kind::SpreadCall);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -461,14 +470,14 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_SPREADNEW: {
         ICStub* stub =
             alloc.newStub<ICCall_Fallback>(Kind::SpreadCallConstructing);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_INSTANCEOF: {
         ICStub* stub = alloc.newStub<ICInstanceOf_Fallback>(Kind::InstanceOf);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -476,14 +485,14 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
       case JSOP_TYPEOF:
       case JSOP_TYPEOFEXPR: {
         ICStub* stub = alloc.newStub<ICTypeOf_Fallback>(Kind::TypeOf);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
       }
       case JSOP_ITER: {
         ICStub* stub = alloc.newStub<ICGetIterator_Fallback>(Kind::GetIterator);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -497,7 +506,7 @@ bool JitScript::initICEntriesAndBytecodeTypeMap(JSContext* cx,
         }
         ICStub* stub =
             alloc.newStub<ICRest_Fallback>(Kind::Rest, templateObject);
-        if (!addIC(pc, stub)) {
+        if (!addIC(loc, stub)) {
           return false;
         }
         break;
@@ -556,7 +565,6 @@ bool ICStub::NonCacheIRStubMakesGCCalls(Kind kind) {
 
   switch (kind) {
     case Call_Fallback:
-    case WarmUpCounter_Fallback:
     // These three fallback stubs don't actually make non-tail calls,
     // but the fallback code for the bailout path needs to pop the stub frame
     // pushed during the bailout.
@@ -721,220 +729,6 @@ static void TryAttachStub(const char* name, JSContext* cx, BaselineFrame* frame,
   }
 }
 
-//
-// WarmUpCounter_Fallback
-//
-
-/* clang-format off */
-// The following data is kept in a temporary heap-allocated buffer, stored in
-// JitRuntime (high memory addresses at top, low at bottom):
-//
-//     +----->+=================================+  --      <---- High Address
-//     |      |                                 |   |
-//     |      |     ...BaselineFrame...         |   |-- Copy of BaselineFrame + stack values
-//     |      |                                 |   |
-//     |      +---------------------------------+   |
-//     |      |                                 |   |
-//     |      |     ...Locals/Stack...          |   |
-//     |      |                                 |   |
-//     |      +=================================+  --
-//     |      |     Padding(Maybe Empty)        |
-//     |      +=================================+  --
-//     +------|-- baselineFrame                 |   |-- IonOsrTempData
-//            |   jitcode                       |   |
-//            +=================================+  --      <---- Low Address
-//
-// A pointer to the IonOsrTempData is returned.
-/* clang-format on */
-
-struct IonOsrTempData {
-  void* jitcode;
-  uint8_t* baselineFrame;
-};
-
-static IonOsrTempData* PrepareOsrTempData(JSContext* cx, BaselineFrame* frame,
-                                          void* jitcode) {
-  size_t numLocalsAndStackVals = frame->numValueSlots();
-
-  // Calculate the amount of space to allocate:
-  //      BaselineFrame space:
-  //          (sizeof(Value) * (numLocals + numStackVals))
-  //        + sizeof(BaselineFrame)
-  //
-  //      IonOsrTempData space:
-  //          sizeof(IonOsrTempData)
-
-  size_t frameSpace =
-      sizeof(BaselineFrame) + sizeof(Value) * numLocalsAndStackVals;
-  size_t ionOsrTempDataSpace = sizeof(IonOsrTempData);
-
-  size_t totalSpace = AlignBytes(frameSpace, sizeof(Value)) +
-                      AlignBytes(ionOsrTempDataSpace, sizeof(Value));
-
-  IonOsrTempData* info = (IonOsrTempData*)cx->allocateOsrTempData(totalSpace);
-  if (!info) {
-    ReportOutOfMemory(cx);
-    return nullptr;
-  }
-
-  memset(info, 0, totalSpace);
-
-  info->jitcode = jitcode;
-
-  // Copy the BaselineFrame + local/stack Values to the buffer. Arguments and
-  // |this| are not copied but left on the stack: the Baseline and Ion frame
-  // share the same frame prefix and Ion won't clobber these values. Note
-  // that info->baselineFrame will point to the *end* of the frame data, like
-  // the frame pointer register in baseline frames.
-  uint8_t* frameStart =
-      (uint8_t*)info + AlignBytes(ionOsrTempDataSpace, sizeof(Value));
-  info->baselineFrame = frameStart + frameSpace;
-
-  memcpy(frameStart, (uint8_t*)frame - numLocalsAndStackVals * sizeof(Value),
-         frameSpace);
-
-  JitSpew(JitSpew_BaselineOSR, "Allocated IonOsrTempData at %p", (void*)info);
-  JitSpew(JitSpew_BaselineOSR, "Jitcode is %p", info->jitcode);
-
-  // All done.
-  return info;
-}
-
-bool DoWarmUpCounterFallbackOSR(JSContext* cx, BaselineFrame* frame,
-                                ICWarmUpCounter_Fallback* stub,
-                                IonOsrTempData** infoPtr) {
-  MOZ_ASSERT(infoPtr);
-  *infoPtr = nullptr;
-
-  RootedScript script(cx, frame->script());
-  jsbytecode* pc = stub->icEntry()->pc(script);
-  MOZ_ASSERT(JSOp(*pc) == JSOP_LOOPENTRY);
-
-  FallbackICSpew(cx, stub, "WarmUpCounter(%d)", int(script->pcToOffset(pc)));
-
-  if (!IonCompileScriptForBaseline(cx, frame, pc)) {
-    return false;
-  }
-
-  if (!script->hasIonScript() || script->ionScript()->osrPc() != pc ||
-      script->ionScript()->bailoutExpected() || frame->isDebuggee()) {
-    return true;
-  }
-
-  IonScript* ion = script->ionScript();
-  MOZ_ASSERT(cx->runtime()->geckoProfiler().enabled() ==
-             ion->hasProfilingInstrumentation());
-  MOZ_ASSERT(ion->osrPc() == pc);
-
-  JitSpew(JitSpew_BaselineOSR, "  OSR possible!");
-  void* jitcode = ion->method()->raw() + ion->osrEntryOffset();
-
-  // Prepare the temporary heap copy of the fake InterpreterFrame and actual
-  // args list.
-  JitSpew(JitSpew_BaselineOSR, "Got jitcode.  Preparing for OSR into ion.");
-  IonOsrTempData* info = PrepareOsrTempData(cx, frame, jitcode);
-  if (!info) {
-    return false;
-  }
-  *infoPtr = info;
-
-  return true;
-}
-
-bool FallbackICCodeCompiler::emit_WarmUpCounter() {
-  // Push a stub frame so that we can perform a non-tail call.
-  enterStubFrame(masm, R1.scratchReg());
-
-  Label noCompiledCode;
-  // Call DoWarmUpCounterFallbackOSR to compile/check-for Ion-compiled function
-  {
-    // Push IonOsrTempData pointer storage
-    masm.subFromStackPtr(Imm32(sizeof(void*)));
-    masm.push(masm.getStackPointer());
-
-    // Push stub pointer.
-    masm.push(ICStubReg);
-
-    pushStubPayload(masm, R0.scratchReg());
-
-    using Fn = bool (*)(JSContext*, BaselineFrame*, ICWarmUpCounter_Fallback*,
-                        IonOsrTempData * *infoPtr);
-    if (!callVM<Fn, DoWarmUpCounterFallbackOSR>(masm)) {
-      return false;
-    }
-
-    // Pop IonOsrTempData pointer.
-    masm.pop(R0.scratchReg());
-
-    leaveStubFrame(masm);
-
-    // If no JitCode was found, then skip just exit the IC.
-    masm.branchPtr(Assembler::Equal, R0.scratchReg(), ImmPtr(nullptr),
-                   &noCompiledCode);
-  }
-
-  // Get a scratch register.
-  AllocatableGeneralRegisterSet regs(availableGeneralRegs(0));
-  Register osrDataReg = R0.scratchReg();
-  regs.take(osrDataReg);
-  regs.takeUnchecked(OsrFrameReg);
-
-  Register scratchReg = regs.takeAny();
-
-  // At this point, stack looks like:
-  //  +-> [...Calling-Frame...]
-  //  |   [...Actual-Args/ThisV/ArgCount/Callee...]
-  //  |   [Descriptor]
-  //  |   [Return-Addr]
-  //  +---[Saved-FramePtr]            <-- BaselineFrameReg points here.
-  //      [...Baseline-Frame...]
-
-  // Restore the stack pointer to point to the saved frame pointer.
-  masm.moveToStackPtr(BaselineFrameReg);
-
-  // Discard saved frame pointer, so that the return address is on top of
-  // the stack.
-  masm.pop(scratchReg);
-
-#ifdef DEBUG
-  // If profiler instrumentation is on, ensure that lastProfilingFrame is
-  // the frame currently being OSR-ed
-  {
-    Label checkOk;
-    AbsoluteAddress addressOfEnabled(
-        cx->runtime()->geckoProfiler().addressOfEnabled());
-    masm.branch32(Assembler::Equal, addressOfEnabled, Imm32(0), &checkOk);
-    masm.loadPtr(AbsoluteAddress((void*)&cx->jitActivation), scratchReg);
-    masm.loadPtr(
-        Address(scratchReg, JitActivation::offsetOfLastProfilingFrame()),
-        scratchReg);
-
-    // It may be the case that we entered the baseline frame with
-    // profiling turned off on, then in a call within a loop (i.e. a
-    // callee frame), turn on profiling, then return to this frame,
-    // and then OSR with profiling turned on.  In this case, allow for
-    // lastProfilingFrame to be null.
-    masm.branchPtr(Assembler::Equal, scratchReg, ImmWord(0), &checkOk);
-
-    masm.branchStackPtr(Assembler::Equal, scratchReg, &checkOk);
-    masm.assumeUnreachable("Baseline OSR lastProfilingFrame mismatch.");
-    masm.bind(&checkOk);
-  }
-#endif
-
-  // Jump into Ion.
-  masm.loadPtr(Address(osrDataReg, offsetof(IonOsrTempData, jitcode)),
-               scratchReg);
-  masm.loadPtr(Address(osrDataReg, offsetof(IonOsrTempData, baselineFrame)),
-               OsrFrameReg);
-  masm.jump(scratchReg);
-
-  // No jitcode available, do nothing.
-  masm.bind(&noCompiledCode);
-  EmitReturnFromIC(masm);
-  return true;
-}
-
 void ICFallbackStub::unlinkStub(Zone* zone, ICStub* prev, ICStub* stub) {
   MOZ_ASSERT(stub->next());
 
@@ -1079,28 +873,54 @@ bool ICMonitoredFallbackStub::initMonitoringChain(JSContext* cx,
   return true;
 }
 
-bool ICMonitoredFallbackStub::addMonitorStubForValue(JSContext* cx,
-                                                     BaselineFrame* frame,
-                                                     StackTypeSet* types,
-                                                     HandleValue val) {
+static void TypeMonitorMagicValue(JSContext* cx, ICTypeMonitor_Fallback* stub,
+                                  JSScript* script, jsbytecode* pc,
+                                  HandleValue value) {
+  MOZ_ASSERT(value.isMagic());
+
+  // It's possible that we arrived here from bailing out of Ion, and that
+  // Ion proved that the value is dead and optimized out. In such cases,
+  // do nothing. However, it's also possible that we have an uninitialized
+  // this, in which case we should not look for other magic values.
+
+  if (value.whyMagic() == JS_OPTIMIZED_OUT) {
+    MOZ_ASSERT(!stub->monitorsThis());
+    return;
+  }
+
+  // In derived class constructors (including nested arrows/eval), the
+  // |this| argument or GETALIASEDVAR can return the magic TDZ value.
+  MOZ_ASSERT(value.whyMagic() == JS_UNINITIALIZED_LEXICAL);
+  MOZ_ASSERT(script->functionNonDelazifying() || script->isForEval());
+  MOZ_ASSERT(stub->monitorsThis() || *GetNextPc(pc) == JSOP_CHECKTHIS ||
+             *GetNextPc(pc) == JSOP_CHECKTHISREINIT ||
+             *GetNextPc(pc) == JSOP_CHECKRETURN);
+  if (stub->monitorsThis()) {
+    JitScript::MonitorThisType(cx, script, TypeSet::UnknownType());
+  } else {
+    JitScript::MonitorBytecodeType(cx, script, pc, TypeSet::UnknownType());
+  }
+}
+
+bool TypeMonitorResult(JSContext* cx, ICMonitoredFallbackStub* stub,
+                       BaselineFrame* frame, HandleScript script,
+                       jsbytecode* pc, HandleValue val) {
   ICTypeMonitor_Fallback* typeMonitorFallback =
-      getFallbackMonitorStub(cx, frame->script());
+      stub->getFallbackMonitorStub(cx, script);
   if (!typeMonitorFallback) {
     return false;
   }
-  return typeMonitorFallback->addMonitorStubForValue(cx, frame, types, val);
-}
 
-static MOZ_MUST_USE bool TypeMonitorResult(JSContext* cx,
-                                           ICMonitoredFallbackStub* stub,
-                                           BaselineFrame* frame,
-                                           HandleScript script, jsbytecode* pc,
-                                           HandleValue val) {
+  if (MOZ_UNLIKELY(val.isMagic())) {
+    TypeMonitorMagicValue(cx, typeMonitorFallback, script, pc, val);
+    return true;
+  }
+
   AutoSweepJitScript sweep(script);
   StackTypeSet* types = script->jitScript()->bytecodeTypes(sweep, script, pc);
   JitScript::MonitorBytecodeType(cx, script, pc, types, val);
 
-  return stub->addMonitorStubForValue(cx, frame, types, val);
+  return typeMonitorFallback->addMonitorStubForValue(cx, frame, types, val);
 }
 
 bool ICCacheIR_Updated::initUpdatingChain(JSContext* cx, ICStubSpace* space) {
@@ -1155,7 +975,7 @@ JitCode* ICStubCompiler::getStubCode() {
   if (!generateStubCode(masm)) {
     return nullptr;
   }
-  Linker linker(masm, "getStubCode");
+  Linker linker(masm);
   Rooted<JitCode*> newStubCode(cx, linker.newCode(cx, CodeKind::Baseline));
   if (!newStubCode) {
     return nullptr;
@@ -1274,6 +1094,7 @@ bool ICTypeMonitor_Fallback::addMonitorStubForValue(JSContext* cx,
                                                     StackTypeSet* types,
                                                     HandleValue val) {
   MOZ_ASSERT(types);
+  MOZ_ASSERT(!val.isMagic());
 
   // Don't attach too many SingleObject/ObjectGroup stubs. If the value is a
   // primitive or if we will attach an any-object stub, we can handle this
@@ -1313,10 +1134,6 @@ bool ICTypeMonitor_Fallback::addMonitorStubForValue(JSContext* cx,
     addOptimizedMonitorStub(stub);
 
   } else if (val.isPrimitive() || types->unknownObject()) {
-    if (val.isMagic(JS_UNINITIALIZED_LEXICAL)) {
-      return true;
-    }
-    MOZ_ASSERT(!val.isMagic());
     ValueType type = val.type();
 
     // Check for existing TypeMonitor stub.
@@ -1456,28 +1273,7 @@ bool DoTypeMonitorFallback(JSContext* cx, BaselineFrame* frame,
   res.set(value);
 
   if (MOZ_UNLIKELY(value.isMagic())) {
-    // It's possible that we arrived here from bailing out of Ion, and that
-    // Ion proved that the value is dead and optimized out. In such cases,
-    // do nothing. However, it's also possible that we have an uninitialized
-    // this, in which case we should not look for other magic values.
-
-    if (value.whyMagic() == JS_OPTIMIZED_OUT) {
-      MOZ_ASSERT(!stub->monitorsThis());
-      return true;
-    }
-
-    // In derived class constructors (including nested arrows/eval), the
-    // |this| argument or GETALIASEDVAR can return the magic TDZ value.
-    MOZ_ASSERT(value.isMagic(JS_UNINITIALIZED_LEXICAL));
-    MOZ_ASSERT(frame->isFunctionFrame() || frame->isEvalFrame());
-    MOZ_ASSERT(stub->monitorsThis() || *GetNextPc(pc) == JSOP_CHECKTHIS ||
-               *GetNextPc(pc) == JSOP_CHECKTHISREINIT ||
-               *GetNextPc(pc) == JSOP_CHECKRETURN);
-    if (stub->monitorsThis()) {
-      JitScript::MonitorThisType(cx, script, TypeSet::UnknownType());
-    } else {
-      JitScript::MonitorBytecodeType(cx, script, pc, TypeSet::UnknownType());
-    }
+    TypeMonitorMagicValue(cx, stub, script, pc, value);
     return true;
   }
 
@@ -2453,74 +2249,6 @@ bool FallbackICCodeCompiler::emit_SetElem() {
   return tailCallVM<Fn, DoSetElemFallback>(masm);
 }
 
-template <typename T>
-void StoreToTypedArray(JSContext* cx, MacroAssembler& masm, Scalar::Type type,
-                       const ValueOperand& value, const T& dest,
-                       Register scratch, Label* failure) {
-  Label done;
-
-  if (type == Scalar::Float32 || type == Scalar::Float64) {
-    masm.ensureDouble(value, FloatReg0, failure);
-    if (type == Scalar::Float32) {
-      ScratchFloat32Scope fpscratch(masm);
-      masm.convertDoubleToFloat32(FloatReg0, fpscratch);
-      masm.storeToTypedFloatArray(type, fpscratch, dest);
-    } else {
-      masm.storeToTypedFloatArray(type, FloatReg0, dest);
-    }
-  } else if (type == Scalar::Uint8Clamped) {
-    Label notInt32;
-    masm.branchTestInt32(Assembler::NotEqual, value, &notInt32);
-    masm.unboxInt32(value, scratch);
-    masm.clampIntToUint8(scratch);
-
-    Label clamped;
-    masm.bind(&clamped);
-    masm.storeToTypedIntArray(type, scratch, dest);
-    masm.jump(&done);
-
-    // If the value is a double, clamp to uint8 and jump back.
-    // Else, jump to failure.
-    masm.bind(&notInt32);
-    masm.branchTestDouble(Assembler::NotEqual, value, failure);
-    masm.unboxDouble(value, FloatReg0);
-    masm.clampDoubleToUint8(FloatReg0, scratch);
-    masm.jump(&clamped);
-  } else if (type == Scalar::BigInt64 || type == Scalar::BigUint64) {
-    // FIXME: https://bugzil.la/1536703
-    masm.jump(failure);
-  } else {
-    Label notInt32;
-    masm.branchTestInt32(Assembler::NotEqual, value, &notInt32);
-    masm.unboxInt32(value, scratch);
-
-    Label isInt32;
-    masm.bind(&isInt32);
-    masm.storeToTypedIntArray(type, scratch, dest);
-    masm.jump(&done);
-
-    // If the value is a double, truncate and jump back.
-    // Else, jump to failure.
-    masm.bind(&notInt32);
-    masm.branchTestDouble(Assembler::NotEqual, value, failure);
-    masm.unboxDouble(value, FloatReg0);
-    masm.branchTruncateDoubleMaybeModUint32(FloatReg0, scratch, failure);
-    masm.jump(&isInt32);
-  }
-
-  masm.bind(&done);
-}
-
-template void StoreToTypedArray(JSContext* cx, MacroAssembler& masm,
-                                Scalar::Type type, const ValueOperand& value,
-                                const Address& dest, Register scratch,
-                                Label* failure);
-
-template void StoreToTypedArray(JSContext* cx, MacroAssembler& masm,
-                                Scalar::Type type, const ValueOperand& value,
-                                const BaseIndex& dest, Register scratch,
-                                Label* failure);
-
 //
 // In_Fallback
 //
@@ -3331,27 +3059,9 @@ bool DoSpreadCallFallback(JSContext* cx, BaselineFrame* frame,
 
 void ICStubCompilerBase::pushCallArguments(MacroAssembler& masm,
                                            AllocatableGeneralRegisterSet regs,
-                                           Register argcReg, bool isJitCall,
+                                           Register argcReg,
                                            bool isConstructing) {
   MOZ_ASSERT(!regs.has(argcReg));
-
-  // Account for new.target
-  Register count = regs.takeAny();
-
-  masm.move32(argcReg, count);
-
-  // If we are setting up for a jitcall, we have to align the stack taking
-  // into account the args and newTarget. We could also count callee and |this|,
-  // but it's a waste of stack space. Because we want to keep argcReg unchanged,
-  // just account for newTarget initially, and add the other 2 after assuring
-  // allignment.
-  if (isJitCall) {
-    if (isConstructing) {
-      masm.add32(Imm32(1), count);
-    }
-  } else {
-    masm.add32(Imm32(2 + isConstructing), count);
-  }
 
   // argPtr initially points to the last argument.
   Register argPtr = regs.takeAny();
@@ -3359,27 +3069,32 @@ void ICStubCompilerBase::pushCallArguments(MacroAssembler& masm,
 
   // Skip 4 pointers pushed on top of the arguments: the frame descriptor,
   // return address, old frame pointer and stub reg.
-  masm.addPtr(Imm32(STUB_FRAME_SIZE), argPtr);
+  size_t valueOffset = STUB_FRAME_SIZE;
 
-  // Align the stack such that the JitFrameLayout is aligned on the
-  // JitStackAlignment.
-  if (isJitCall) {
-    masm.alignJitStackBasedOnNArgs(count, /*countIncludesThis =*/false);
+  // We have to push |this|, callee, new.target (if constructing) and argc
+  // arguments. Handle the number of Values we know statically first.
 
-    // Account for callee and |this|, skipped earlier
-    masm.add32(Imm32(2), count);
+  size_t numNonArgValues = 2 + isConstructing;
+  for (size_t i = 0; i < numNonArgValues; i++) {
+    masm.pushValue(Address(argPtr, valueOffset));
+    valueOffset += sizeof(Value);
   }
 
-  // Push all values, starting at the last one.
-  Label loop, done;
+  // If there are no arguments we're done.
+  Label done;
+  masm.branchTest32(Assembler::Zero, argcReg, argcReg, &done);
+
+  // Push argc Values.
+  Label loop;
+  Register count = regs.takeAny();
+  masm.addPtr(Imm32(valueOffset), argPtr);
+  masm.move32(argcReg, count);
   masm.bind(&loop);
-  masm.branchTest32(Assembler::Zero, count, count, &done);
   {
     masm.pushValue(Address(argPtr, 0));
     masm.addPtr(Imm32(sizeof(Value)), argPtr);
 
-    masm.sub32(Imm32(1), count);
-    masm.jump(&loop);
+    masm.branchSub32(Assembler::NonZero, Imm32(1), count, &loop);
   }
   masm.bind(&done);
 }
@@ -3447,8 +3162,7 @@ bool FallbackICCodeCompiler::emitCall(bool isSpread, bool isConstructing) {
 
   regs.take(R0.scratchReg());  // argc.
 
-  pushCallArguments(masm, regs, R0.scratchReg(), /* isJitCall = */ false,
-                    isConstructing);
+  pushCallArguments(masm, regs, R0.scratchReg(), isConstructing);
 
   masm.push(masm.getStackPointer());
   masm.push(R0.scratchReg());
@@ -4131,7 +3845,7 @@ bool JitRuntime::generateBaselineICFallbackCode(JSContext* cx) {
   IC_BASELINE_FALLBACK_CODE_KIND_LIST(EMIT_CODE)
 #undef EMIT_CODE
 
-  Linker linker(masm, "BaselineICFallback");
+  Linker linker(masm);
   JitCode* code = linker.newCode(cx, CodeKind::Other);
   if (!code) {
     return false;

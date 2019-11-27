@@ -78,7 +78,6 @@ BoxModel.prototype = {
     this._tooltip = null;
     this.document = null;
     this.inspector = null;
-    this.walker = null;
   },
 
   get highlighters() {
@@ -172,13 +171,15 @@ BoxModel.prototype = {
         return null;
       }
 
-      const node = this.inspector.selection.nodeFront;
+      const { nodeFront } = this.inspector.selection;
+      const inspectorFront = this.getCurrentInspectorFront();
+      const { pageStyle } = inspectorFront;
 
-      let layout = await this.inspector.pageStyle.getLayout(node, {
+      let layout = await pageStyle.getLayout(nodeFront, {
         autoMargins: true,
       });
 
-      const styleEntries = await this.inspector.pageStyle.getApplied(node, {
+      const styleEntries = await pageStyle.getApplied(nodeFront, {
         // We don't need styles applied to pseudo elements of the current node.
         skipPseudo: true,
       });
@@ -186,22 +187,22 @@ BoxModel.prototype = {
 
       // Update the layout properties with whether or not the element's position is
       // editable with the geometry editor.
-      const isPositionEditable = await this.inspector.pageStyle.isPositionEditable(
-        node
-      );
+      const isPositionEditable = await pageStyle.isPositionEditable(nodeFront);
 
       layout = Object.assign({}, layout, {
         isPositionEditable,
       });
 
-      const actorCanGetOffSetParent = await this.inspector.target.actorHasMethod(
+      const actorCanGetOffSetParent = await nodeFront.targetFront.actorHasMethod(
         "domwalker",
         "getOffsetParent"
       );
 
       if (actorCanGetOffSetParent) {
         // Update the redux store with the latest offset parent DOM node
-        const offsetParent = await this.inspector.walker.getOffsetParent(node);
+        const offsetParent = await inspectorFront.walker.getOffsetParent(
+          nodeFront
+        );
         this.store.dispatch(updateOffsetParent(offsetParent));
       }
 
@@ -236,11 +237,8 @@ BoxModel.prototype = {
    * Hides the box-model highlighter on the currently selected element.
    */
   onHideBoxModelHighlighter() {
-    if (!this.inspector) {
-      return;
-    }
-
-    this.inspector.highlighter.unhighlight();
+    const { highlighter } = this.getCurrentInspectorFront();
+    highlighter.unhighlight();
   },
 
   /**
@@ -253,7 +251,10 @@ BoxModel.prototype = {
     this.highlighters.hideGeometryEditor();
     this.store.dispatch(updateGeometryEditorEnabled(false));
 
-    inspector.nodePicker.off("picker-started", this.onHideGeometryEditor);
+    inspector.toolbox.nodePicker.off(
+      "picker-started",
+      this.onHideGeometryEditor
+    );
     selection.off("new-node-front", this.onHideGeometryEditor);
     markup.off("leave", this.onMarkupViewLeave);
     markup.off("node-hover", this.onMarkupViewNodeHover);
@@ -402,8 +403,9 @@ BoxModel.prototype = {
       return;
     }
 
-    const nodeFront = this.inspector.selection.nodeFront;
-    this.inspector.highlighter.highlight(nodeFront, options);
+    const { highlighter } = this.getCurrentInspectorFront();
+    const { nodeFront } = this.inspector.selection;
+    highlighter.highlight(nodeFront, options);
   },
 
   /**
@@ -442,17 +444,27 @@ BoxModel.prototype = {
 
     if (enabled) {
       // Hide completely the geometry editor if the picker is clicked or a new node front
-      inspector.nodePicker.on("picker-started", this.onHideGeometryEditor);
+      inspector.toolbox.nodePicker.on(
+        "picker-started",
+        this.onHideGeometryEditor
+      );
       selection.on("new-node-front", this.onHideGeometryEditor);
       // Temporary hide the geometry editor
       markup.on("leave", this.onMarkupViewLeave);
       markup.on("node-hover", this.onMarkupViewNodeHover);
     } else {
-      inspector.nodePicker.off("picker-started", this.onHideGeometryEditor);
+      inspector.toolbox.nodePicker.off(
+        "picker-started",
+        this.onHideGeometryEditor
+      );
       selection.off("new-node-front", this.onHideGeometryEditor);
       markup.off("leave", this.onMarkupViewLeave);
       markup.off("node-hover", this.onMarkupViewNodeHover);
     }
+  },
+
+  getCurrentInspectorFront() {
+    return this.inspector.selection.nodeFront.inspectorFront;
   },
 };
 

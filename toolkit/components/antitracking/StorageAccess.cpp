@@ -7,6 +7,9 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/net/CookieSettings.h"
 #include "mozilla/AntiTrackingCommon.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StorageAccess.h"
 #include "nsICookieService.h"
 #include "nsICookieSettings.h"
@@ -131,16 +134,8 @@ static StorageAccess InternalStorageAllowedCheck(
   // be affected, which is desireable due to the lack of automated testing for
   // about: URIs with these preferences set, and the importance of the correct
   // functioning of these URIs even with custom preferences.
-  nsCOMPtr<nsIURI> uri = aURI;
-  if (!uri) {
-    Unused << aPrincipal->GetURI(getter_AddRefs(uri));
-  }
-  if (uri) {
-    bool isAbout = false;
-    MOZ_ALWAYS_SUCCEEDS(uri->SchemeIs("about", &isAbout));
-    if (isAbout) {
-      return access;
-    }
+  if ((aURI && aURI->SchemeIs("about")) || aPrincipal->SchemeIs("about")) {
+    return access;
   }
 
   if (!StorageDisabledByAntiTracking(aWindow, aChannel, aPrincipal, aURI,
@@ -286,6 +281,7 @@ bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
                                    nsIChannel* aChannel,
                                    nsIPrincipal* aPrincipal, nsIURI* aURI,
                                    uint32_t& aRejectedReason) {
+  MOZ_ASSERT(aWindow || aChannel || aPrincipal);
   nsCOMPtr<nsICookieSettings> cookieSettings;
   if (aWindow) {
     if (aWindow->GetExtantDoc()) {
@@ -300,21 +296,18 @@ bool StorageDisabledByAntiTracking(nsPIDOMWindowInner* aWindow,
   }
   bool disabled = StorageDisabledByAntiTrackingInternal(
       aWindow, aChannel, aPrincipal, aURI, cookieSettings, aRejectedReason);
-  if (StaticPrefs::
-          browser_contentblocking_rejecttrackers_control_center_ui_enabled()) {
-    if (aWindow) {
-      AntiTrackingCommon::NotifyBlockingDecision(
-          aWindow,
-          disabled ? AntiTrackingCommon::BlockingDecision::eBlock
-                   : AntiTrackingCommon::BlockingDecision::eAllow,
-          aRejectedReason);
-    } else if (aChannel) {
-      AntiTrackingCommon::NotifyBlockingDecision(
-          aChannel,
-          disabled ? AntiTrackingCommon::BlockingDecision::eBlock
-                   : AntiTrackingCommon::BlockingDecision::eAllow,
-          aRejectedReason);
-    }
+  if (aWindow) {
+    AntiTrackingCommon::NotifyBlockingDecision(
+        aWindow,
+        disabled ? AntiTrackingCommon::BlockingDecision::eBlock
+                 : AntiTrackingCommon::BlockingDecision::eAllow,
+        aRejectedReason);
+  } else if (aChannel) {
+    AntiTrackingCommon::NotifyBlockingDecision(
+        aChannel,
+        disabled ? AntiTrackingCommon::BlockingDecision::eBlock
+                 : AntiTrackingCommon::BlockingDecision::eAllow,
+        aRejectedReason);
   }
   return disabled;
 }

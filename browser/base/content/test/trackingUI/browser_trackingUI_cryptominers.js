@@ -1,4 +1,3 @@
-/* eslint-disable mozilla/no-arbitrary-setTimeout */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -7,14 +6,11 @@
 const TRACKING_PAGE =
   "http://example.org/browser/browser/base/content/test/trackingUI/trackingPage.html";
 const CM_PROTECTION_PREF = "privacy.trackingprotection.cryptomining.enabled";
-const CM_ANNOTATION_PREF =
-  "privacy.trackingprotection.cryptomining.annotate.enabled";
 let cmHistogram;
 
 add_task(async function setup() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      [ContentBlocking.prefIntroCount, ContentBlocking.MAX_INTROS],
       [
         "urlclassifier.features.cryptomining.blacklistHosts",
         "cryptomining.example.com",
@@ -26,7 +22,7 @@ add_task(async function setup() {
       ["privacy.trackingprotection.enabled", false],
       ["privacy.trackingprotection.annotate_channels", false],
       ["privacy.trackingprotection.fingerprinting.enabled", false],
-      ["privacy.trackingprotection.fingerprinting.annotate.enabled", false],
+      ["urlclassifier.features.fingerprinting.annotate.blacklistHosts", ""],
     ],
   });
   cmHistogram = Services.telemetry.getHistogramById(
@@ -51,25 +47,19 @@ async function testIdentityState(hasException) {
       false,
       TRACKING_PAGE
     );
-    ContentBlocking.disableForCurrentPage();
+    gProtectionsHandler.disableForCurrentPage();
     await loaded;
   }
 
   ok(
-    !ContentBlocking.content.hasAttribute("detected"),
+    !gProtectionsHandler._protectionsPopup.hasAttribute("detected"),
     "cryptominers are not detected"
   );
-  if (hasException) {
-    ok(
-      !BrowserTestUtils.is_hidden(ContentBlocking.iconBox),
-      "icon box is visible to indicate the exception"
-    );
-  } else {
-    ok(
-      BrowserTestUtils.is_hidden(ContentBlocking.iconBox),
-      "icon box is not visible"
-    );
-  }
+
+  ok(
+    BrowserTestUtils.is_visible(gProtectionsHandler.iconBox),
+    "icon box is visible regardless the exception"
+  );
 
   promise = waitForContentBlockingEvent();
 
@@ -79,13 +69,16 @@ async function testIdentityState(hasException) {
 
   await promise;
 
-  ok(ContentBlocking.content.hasAttribute("detected"), "trackers are detected");
   ok(
-    BrowserTestUtils.is_visible(ContentBlocking.iconBox),
+    gProtectionsHandler._protectionsPopup.hasAttribute("detected"),
+    "trackers are detected"
+  );
+  ok(
+    BrowserTestUtils.is_visible(gProtectionsHandler.iconBox),
     "icon box is visible"
   );
   is(
-    ContentBlocking.iconBox.hasAttribute("hasException"),
+    gProtectionsHandler.iconBox.hasAttribute("hasException"),
     hasException,
     "Shows an exception when appropriate"
   );
@@ -96,7 +89,7 @@ async function testIdentityState(hasException) {
       false,
       TRACKING_PAGE
     );
-    ContentBlocking.enableForCurrentPage();
+    gProtectionsHandler.enableForCurrentPage();
     await loaded;
   }
 
@@ -120,7 +113,7 @@ async function testSubview(hasException) {
       false,
       TRACKING_PAGE
     );
-    ContentBlocking.disableForCurrentPage();
+    gProtectionsHandler.disableForCurrentPage();
     await loaded;
   }
 
@@ -130,20 +123,18 @@ async function testSubview(hasException) {
   });
   await promise;
 
-  await openIdentityPopup();
+  await openProtectionsPopup();
 
   let categoryItem = document.getElementById(
-    "identity-popup-content-blocking-category-cryptominers"
+    "protections-popup-category-cryptominers"
   );
   ok(BrowserTestUtils.is_visible(categoryItem), "TP category item is visible");
-  let subview = document.getElementById("identity-popup-cryptominersView");
+  let subview = document.getElementById("protections-popup-cryptominersView");
   let viewShown = BrowserTestUtils.waitForEvent(subview, "ViewShown");
   categoryItem.click();
   await viewShown;
 
-  let listItems = subview.querySelectorAll(
-    ".identity-popup-content-blocking-list-item"
-  );
+  let listItems = subview.querySelectorAll(".protections-popup-list-item");
   is(listItems.length, 1, "We have 1 item in the list");
   let listItem = listItems[0];
   ok(BrowserTestUtils.is_visible(listItem), "List item is visible");
@@ -158,7 +149,7 @@ async function testSubview(hasException) {
     "Indicates the miner was blocked or allowed"
   );
 
-  let mainView = document.getElementById("identity-popup-mainView");
+  let mainView = document.getElementById("protections-popup-mainView");
   viewShown = BrowserTestUtils.waitForEvent(mainView, "ViewShown");
   let backButton = subview.querySelector(".subviewbutton-back");
   backButton.click();
@@ -172,12 +163,83 @@ async function testSubview(hasException) {
       false,
       TRACKING_PAGE
     );
-    ContentBlocking.enableForCurrentPage();
+    gProtectionsHandler.enableForCurrentPage();
     await loaded;
   }
 
   let loads = hasException ? 3 : 1;
   testTelemetry(loads, 1, hasException);
+
+  BrowserTestUtils.removeTab(tab);
+}
+
+async function testCategoryItem() {
+  Services.prefs.setBoolPref(CM_PROTECTION_PREF, false);
+  let promise = BrowserTestUtils.openNewForegroundTab({
+    url: TRACKING_PAGE,
+    gBrowser,
+  });
+  let [tab] = await Promise.all([promise, waitForContentBlockingEvent()]);
+
+  let categoryItem = document.getElementById(
+    "protections-popup-category-cryptominers"
+  );
+
+  ok(
+    !categoryItem.classList.contains("blocked"),
+    "Category not marked as blocked"
+  );
+  ok(
+    categoryItem.classList.contains("notFound"),
+    "Category marked as not found"
+  );
+  Services.prefs.setBoolPref(CM_PROTECTION_PREF, true);
+  ok(categoryItem.classList.contains("blocked"), "Category marked as blocked");
+  ok(
+    categoryItem.classList.contains("notFound"),
+    "Category marked as not found"
+  );
+  Services.prefs.setBoolPref(CM_PROTECTION_PREF, false);
+  ok(
+    !categoryItem.classList.contains("blocked"),
+    "Category not marked as blocked"
+  );
+  ok(
+    categoryItem.classList.contains("notFound"),
+    "Category marked as not found"
+  );
+
+  promise = waitForContentBlockingEvent();
+
+  await ContentTask.spawn(tab.linkedBrowser, {}, function() {
+    content.postMessage("cryptomining", "*");
+  });
+
+  await promise;
+
+  ok(
+    !categoryItem.classList.contains("blocked"),
+    "Category not marked as blocked"
+  );
+  ok(
+    !categoryItem.classList.contains("notFound"),
+    "Category not marked as not found"
+  );
+  Services.prefs.setBoolPref(CM_PROTECTION_PREF, true);
+  ok(categoryItem.classList.contains("blocked"), "Category marked as blocked");
+  ok(
+    !categoryItem.classList.contains("notFound"),
+    "Category not marked as not found"
+  );
+  Services.prefs.setBoolPref(CM_PROTECTION_PREF, false);
+  ok(
+    !categoryItem.classList.contains("blocked"),
+    "Category not marked as blocked"
+  );
+  ok(
+    !categoryItem.classList.contains("notFound"),
+    "Category not marked as not found"
+  );
 
   BrowserTestUtils.removeTab(tab);
 }
@@ -199,7 +261,6 @@ function testTelemetry(pagesVisited, pagesWithBlockableContent, hasException) {
 
 add_task(async function test() {
   Services.prefs.setBoolPref(CM_PROTECTION_PREF, true);
-  Services.prefs.setBoolPref(CM_ANNOTATION_PREF, true);
 
   await testIdentityState(false);
   await testIdentityState(true);
@@ -207,6 +268,7 @@ add_task(async function test() {
   await testSubview(false);
   await testSubview(true);
 
+  await testCategoryItem();
+
   Services.prefs.clearUserPref(CM_PROTECTION_PREF);
-  Services.prefs.clearUserPref(CM_ANNOTATION_PREF);
 });

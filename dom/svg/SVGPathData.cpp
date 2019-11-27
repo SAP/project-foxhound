@@ -22,9 +22,10 @@
 #include "SVGPathSegUtils.h"
 #include <algorithm>
 
-using namespace mozilla;
 using namespace mozilla::dom::SVGPathSeg_Binding;
 using namespace mozilla::gfx;
+
+namespace mozilla {
 
 static inline bool IsMoveto(uint16_t aSegType) {
   return aSegType == PATHSEG_MOVETO_ABS || aSegType == PATHSEG_MOVETO_REL;
@@ -164,6 +165,12 @@ bool SVGPathData::GetDistancesFromOriginToEndsOfVisibleSegments(
   while (i < mData.Length()) {
     uint32_t segType = SVGPathSegUtils::DecodeType(mData[i]);
     SVGPathSegUtils::TraversePathSegment(&mData[i], state);
+
+    // With degenerately large point coordinates, TraversePathSegment can fail
+    // and end up producing NaNs.
+    if (!std::isfinite(state.length)) {
+      return false;
+    }
 
     // We skip all moveto commands except an initial moveto. See the text 'A
     // "move to" command does not count as an additional point when dividing up
@@ -1071,3 +1078,5 @@ size_t SVGPathData::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
 size_t SVGPathData::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }
+
+}  // namespace mozilla

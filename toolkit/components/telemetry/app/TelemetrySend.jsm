@@ -315,14 +315,17 @@ var TelemetrySend = {
    * @param {String} aUrl The telemetry server URL
    * @param {String} aPingFilePath The path to the file holding the ping
    *        contents, if if sent successfully the pingsender will delete it.
+   * @param {callback} observer A function called with parameters
+            (subject, topic, data) and a topic of "process-finished" or
+            "process-failed" after pingsender completion.
    *
    * @throws NS_ERROR_FAILURE if we couldn't find or run the pingsender
    *         executable.
    * @throws NS_ERROR_NOT_IMPLEMENTED on Android as the pingsender is not
    *         available.
    */
-  testRunPingSender(url, pingPath) {
-    TelemetrySendImpl.runPingSender(url, pingPath);
+  testRunPingSender(url, pingPath, observer) {
+    return TelemetrySendImpl.runPingSender(url, pingPath, observer);
   },
 };
 
@@ -508,7 +511,7 @@ var SendScheduler = {
       );
 
       // Bail out if there is nothing to send.
-      if (pending.length == 0 && current.length == 0) {
+      if (!pending.length && !current.length) {
         this._log.trace("_doSendTask - no pending pings, bailing out");
         this._sendTaskState = "bail out - no pings to send";
         return;
@@ -805,7 +808,7 @@ var TelemetrySendImpl = {
     // Scan the pending pings - that gives us a list sorted by last modified, descending.
     let infos = await TelemetryStorage.loadPendingPingList();
     this._log.info("_checkPendingPings - pending ping count: " + infos.length);
-    if (infos.length == 0) {
+    if (!infos.length) {
       this._log.trace("_checkPendingPings - no pending pings");
       return;
     }
@@ -1102,7 +1105,7 @@ var TelemetrySendImpl = {
       pingSends.push(p);
     }
 
-    if (persistedPingIds.length > 0) {
+    if (persistedPingIds.length) {
       pingSends.push(
         this._sendPersistedPings(persistedPingIds).catch(ex => {
           this._log.info("sendPings - persisted pings not sent", ex);
@@ -1553,7 +1556,7 @@ var TelemetrySendImpl = {
     };
   },
 
-  runPingSender(url, pingPath) {
+  runPingSender(url, pingPath, observer) {
     if (AppConstants.platform === "android") {
       throw Cr.NS_ERROR_NOT_IMPLEMENTED;
     }
@@ -1570,6 +1573,6 @@ var TelemetrySendImpl = {
     process.init(exe);
     process.startHidden = true;
     process.noShell = true;
-    process.run(/* blocking */ false, [url, pingPath], 2);
+    process.runAsync([url, pingPath], 2, observer);
   },
 };

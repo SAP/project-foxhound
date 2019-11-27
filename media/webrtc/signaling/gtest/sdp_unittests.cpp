@@ -3900,7 +3900,7 @@ TEST_P(NewSdpTest, CheckAddMediaSection) {
 
   mSdp->AddMediaSection(SdpMediaSection::kAudio,
                         SdpDirectionAttribute::Direction::kSendonly, 14006,
-                        SdpMediaSection::kTcpTlsRtpSavpf, sdp::kIPv6,
+                        SdpMediaSection::kTcpDtlsRtpSavpf, sdp::kIPv6,
                         "2607:f8b0:4004:801::2013");
 
   ASSERT_EQ(5U, mSdp->GetMediaSectionCount())
@@ -3912,7 +3912,7 @@ TEST_P(NewSdpTest, CheckAddMediaSection) {
   ASSERT_EQ(SdpDirectionAttribute::Direction::kSendonly,
             nextNewMediaSection.GetDirectionAttribute().mValue);
   ASSERT_EQ(14006U, nextNewMediaSection.GetPort());
-  ASSERT_EQ(SdpMediaSection::kTcpTlsRtpSavpf,
+  ASSERT_EQ(SdpMediaSection::kTcpDtlsRtpSavpf,
             nextNewMediaSection.GetProtocol());
   ASSERT_EQ(sdp::kIPv6, nextNewMediaSection.GetConnection().GetAddrType());
   ASSERT_EQ("2607:f8b0:4004:801::2013",
@@ -3939,7 +3939,7 @@ TEST_P(NewSdpTest, CheckAddMediaSection) {
     // "NOT:AN.IP.ADDRESS" is expected to cause a failure
     mSdp->AddMediaSection(SdpMediaSection::kAudio,
                           SdpDirectionAttribute::Direction::kSendonly, 14006,
-                          SdpMediaSection::kTcpTlsRtpSavpf, sdp::kIPv6,
+                          SdpMediaSection::kTcpDtlsRtpSavpf, sdp::kIPv6,
                           "NOT:AN.IP.ADDRESS");
     ASSERT_EQ(5U, mSdp->GetMediaSectionCount())
         << "Wrong number of media sections after adding media section";
@@ -5715,6 +5715,8 @@ TEST_F(SdpTest, hugeSdp) {
       "a=extmap:2 urn:ietf:params:rtp-hdrext:toffset\r\n"
       "a=extmap:3 "
       "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\n"
+      "a=extmap:6 "
+      "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay\r\n"
       "a=sendrecv\r\n"
       "a=mid:video\r\n"
       "a=rtcp-mux\r\n"

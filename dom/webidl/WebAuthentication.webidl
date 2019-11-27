@@ -9,7 +9,8 @@
 
 /***** Interfaces to Data *****/
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface PublicKeyCredential : Credential {
     [SameObject] readonly attribute ArrayBuffer              rawId;
     [SameObject] readonly attribute AuthenticatorResponse    response;
@@ -23,17 +24,20 @@ partial interface PublicKeyCredential {
     static Promise<boolean> isExternalCTAP2SecurityKeySupported();
 };
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface AuthenticatorResponse {
     [SameObject] readonly attribute ArrayBuffer clientDataJSON;
 };
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface AuthenticatorAttestationResponse : AuthenticatorResponse {
     [SameObject] readonly attribute ArrayBuffer attestationObject;
 };
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface AuthenticatorAssertionResponse : AuthenticatorResponse {
     [SameObject] readonly attribute ArrayBuffer      authenticatorData;
     [SameObject] readonly attribute ArrayBuffer      signature;
@@ -149,7 +153,9 @@ enum PublicKeyCredentialType {
 dictionary PublicKeyCredentialDescriptor {
     required PublicKeyCredentialType      type;
     required BufferSource                 id;
-    sequence<AuthenticatorTransport>      transports;
+    // Transports is a string that is matched against the AuthenticatorTransport
+    // enumeration so that we have forward-compatibility for new transports.
+    sequence<DOMString>                   transports;
 };
 
 enum AuthenticatorTransport {

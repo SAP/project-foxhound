@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { DSCard, PlaceholderDSCard } from "../DSCard/DSCard.jsx";
 import { DSEmptyState } from "../DSEmptyState/DSEmptyState.jsx";
 import React from "react";
@@ -26,10 +30,16 @@ export class CardGrid extends React.PureComponent {
             shim={rec.shim}
             type={this.props.type}
             context={rec.context}
+            sponsor={rec.sponsor}
             dispatch={this.props.dispatch}
             source={rec.domain}
             pocket_id={rec.pocket_id}
+            context_type={rec.context_type}
             bookmarkGuid={rec.bookmarkGuid}
+            engagement={rec.engagement}
+            display_engagement_labels={this.props.display_engagement_labels}
+            cta={rec.cta}
+            cta_variant={this.props.cta_variant}
           />
         )
       );
@@ -67,7 +77,9 @@ export class CardGrid extends React.PureComponent {
 
     return (
       <div>
-        <div className="ds-header">{this.props.title}</div>
+        {this.props.title && (
+          <div className="ds-header">{this.props.title}</div>
+        )}
         {isEmpty ? (
           <div className="ds-card-grid empty">
             <DSEmptyState

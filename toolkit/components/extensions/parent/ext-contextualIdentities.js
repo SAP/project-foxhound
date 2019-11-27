@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 ChromeUtils.defineModuleGetter(
@@ -115,16 +119,12 @@ ExtensionPreferencesManager.addSetting(CONTAINERS_ENABLED_SETTING_NAME, {
 
   setCallback(value) {
     if (value !== true) {
-      return Object.assign(CONTAINER_PREF_INSTALL_DEFAULTS, {
+      return {
+        ...CONTAINER_PREF_INSTALL_DEFAULTS,
         "privacy.userContext.extension": value,
-      });
+      };
     }
-
-    let prefs = {};
-    for (let pref of this.prefNames) {
-      prefs[pref] = undefined;
-    }
-    return prefs;
+    return {};
   },
 });
 

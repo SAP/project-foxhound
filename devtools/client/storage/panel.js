@@ -1,5 +1,3 @@
-/* -*- Mode: Javascript; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -52,22 +50,22 @@ class StoragePanel {
    * Destroy the storage inspector.
    */
   destroy() {
-    if (!this._destroyed) {
-      this.UI.destroy();
-      this.UI = null;
-
-      // Destroy front to ensure packet handler is removed from client
-      this._front.destroy();
-      this._front = null;
-      this._destroyed = true;
-
-      this._target.off("close", this.destroy);
-      this._target = null;
-      this._toolbox = null;
-      this._panelWin = null;
+    if (this._destroyed) {
+      return;
     }
+    this._destroyed = true;
 
-    return Promise.resolve(null);
+    this.UI.destroy();
+    this.UI = null;
+
+    // Destroy front to ensure packet handler is removed from client
+    this._front.destroy();
+    this._front = null;
+
+    this._target.off("close", this.destroy);
+    this._target = null;
+    this._toolbox = null;
+    this._panelWin = null;
   }
 }
 

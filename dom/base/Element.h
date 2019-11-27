@@ -20,7 +20,6 @@
 #include "nsChangeHint.h"
 #include "nsContentUtils.h"
 #include "nsDOMAttributeMap.h"
-#include "nsILinkHandler.h"
 #include "nsINodeList.h"
 #include "nsIScrollableFrame.h"
 #include "nsNodeUtils.h"
@@ -226,6 +225,7 @@ class Element : public FragmentOrElement {
    */
   void SetTabIndex(int32_t aTabIndex, mozilla::ErrorResult& aError);
 
+#ifdef MOZ_XBL
   /**
    * Sets or unsets an XBL binding for this element. Setting a
    * binding on an element that already has a binding will remove the
@@ -241,6 +241,7 @@ class Element : public FragmentOrElement {
    */
   void SetXBLBinding(nsXBLBinding* aBinding,
                      nsBindingManager* aOldBindingManager = nullptr);
+#endif
 
   /**
    * Sets the ShadowRoot binding for this element. The contents of the
@@ -459,8 +460,6 @@ class Element : public FragmentOrElement {
       UpdateState(true);
     }
   }
-
-  mozilla::StyleUrlOrNone GetBindingURL(Document* aDocument);
 
   Directionality GetComputedDirectionality() const;
 
@@ -1039,6 +1038,8 @@ class Element : public FragmentOrElement {
   }
 
   nsDOMTokenList* ClassList();
+  nsDOMTokenList* Part();
+
   nsDOMAttributeMap* Attributes() {
     nsDOMSlots* slots = DOMSlots();
     if (!slots->mAttributeMap) {
@@ -1477,7 +1478,11 @@ class Element : public FragmentOrElement {
    *
    * If you change this, change also the similar method in Link.
    */
-  virtual void NodeInfoChanged(Document* aOldDoc) {}
+  virtual void NodeInfoChanged(Document* aOldDoc) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    AssertInvariantsOnNodeInfoChange();
+#endif
+  }
 
   /**
    * Parse a string into an nsAttrValue for a CORS attribute.  This
@@ -1496,8 +1501,6 @@ class Element : public FragmentOrElement {
    * but if not should have been parsed via ParseCORSValue).
    */
   static CORSMode AttrValueToCORSMode(const nsAttrValue* aValue);
-
-  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
 
   nsINode* GetScopeChainParent() const override;
 
@@ -1597,8 +1600,8 @@ class Element : public FragmentOrElement {
    */
   float FontSizeInflation();
 
-  net::ReferrerPolicy GetReferrerPolicyAsEnum();
-  net::ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue);
+  ReferrerPolicy GetReferrerPolicyAsEnum();
+  ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue);
 
   /*
    * Helpers for .dataset.  This is implemented on Element, though only some
@@ -1915,17 +1918,19 @@ class Element : public FragmentOrElement {
    */
   virtual void GetLinkTarget(nsAString& aTarget);
 
-  nsDOMTokenList* GetTokenList(
-      nsAtom* aAtom,
-      const DOMTokenListSupportedTokenArray aSupportedTokens = nullptr);
-
+  enum class ReparseAttributes { No, Yes };
   /**
    * Copy attributes and state to another element
    * @param aDest the object to copy to
    */
-  nsresult CopyInnerTo(Element* aDest);
+  nsresult CopyInnerTo(Element* aDest,
+                       ReparseAttributes = ReparseAttributes::Yes);
 
  private:
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  void AssertInvariantsOnNodeInfoChange();
+#endif
+
   /**
    * Slow path for GetClasses, this should only be called for SVG elements.
    */
@@ -1963,6 +1968,7 @@ class Element : public FragmentOrElement {
   AttrArray mAttrs;
 };
 
+#ifdef MOZ_XBL
 class RemoveFromBindingManagerRunnable : public mozilla::Runnable {
  public:
   RemoveFromBindingManagerRunnable(nsBindingManager* aManager,
@@ -1976,6 +1982,7 @@ class RemoveFromBindingManagerRunnable : public mozilla::Runnable {
   RefPtr<nsIContent> mContent;
   RefPtr<Document> mDoc;
 };
+#endif
 
 NS_DEFINE_STATIC_IID_ACCESSOR(Element, NS_ELEMENT_IID)
 

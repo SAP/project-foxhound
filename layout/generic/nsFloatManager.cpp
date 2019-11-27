@@ -49,7 +49,7 @@ nsFloatManager::nsFloatManager(PresShell* aPresShell, WritingMode aWM)
 nsFloatManager::~nsFloatManager() { MOZ_COUNT_DTOR(nsFloatManager); }
 
 // static
-void* nsFloatManager::operator new(size_t aSize) CPP_THROW_NEW {
+void* nsFloatManager::operator new(size_t aSize) noexcept(true) {
   if (sCachedFloatManagerCount > 0) {
     // We have cached unused instances of this class, return a cached
     // instance in stead of always creating a new one.
@@ -2202,12 +2202,8 @@ void nsFloatManager::ImageShapeInfo::CreateInterval(
     // constructed. We add 1 to aB to capture the end of the block axis pixel.
     origin.MoveBy(aIMin * aAppUnitsPerDevPixel,
                   (aB + 1) * -aAppUnitsPerDevPixel);
-  } else if (aWM.IsVerticalLR() && !aWM.IsLineInverted()) {
-    // sideways-lr.
-    // Checking IsLineInverted is the only reliable way to distinguish
-    // vertical-lr from sideways-lr. IsSideways and IsInlineReversed are both
-    // affected by bidi and text-direction, and so complicate detection.
-    // These writing modes proceed from the bottom left, and each interval
+  } else if (aWM.IsSidewaysLR()) {
+    // This writing mode proceeds from the bottom left, and each interval
     // moves in a negative inline direction and a positive block direction.
     // We add 1 to aIMax to capture the end of the inline axis pixel.
     origin.MoveBy((aIMax + 1) * -aAppUnitsPerDevPixel,

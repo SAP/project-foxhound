@@ -22,6 +22,7 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Touch.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/PendingAnimationTracker.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsFrame.h"
@@ -42,11 +43,10 @@
 #include "nsJSUtils.h"
 
 #include "mozilla/ChaosMode.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TouchEvents.h"
@@ -115,6 +115,7 @@
 #include "mozilla/PreloadedStyleSheet.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
+#include "mozilla/ResultExtensions.h"
 
 #ifdef XP_WIN
 #  undef GetClassName
@@ -344,32 +345,6 @@ nsDOMWindowUtils::GetDocumentMetadata(const nsAString& aName,
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::Redraw(uint32_t aCount, uint32_t* aDurationOut) {
-  if (aCount == 0) aCount = 1;
-
-  if (PresShell* presShell = GetPresShell()) {
-    nsIFrame* rootFrame = presShell->GetRootFrame();
-
-    if (rootFrame) {
-      PRIntervalTime iStart = PR_IntervalNow();
-
-      for (uint32_t i = 0; i < aCount; i++) rootFrame->InvalidateFrame();
-
-#if defined(MOZ_X11) && defined(MOZ_WIDGET_GTK)
-      if (!gfxPlatform::IsHeadless()) {
-        XSync(GDK_DISPLAY_XDISPLAY(gdk_display_get_default()), False);
-      }
-#endif
-
-      *aDurationOut = PR_IntervalToMilliseconds(PR_IntervalNow() - iStart);
-
-      return NS_OK;
-    }
-  }
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
 nsDOMWindowUtils::UpdateLayerTree() {
   if (RefPtr<PresShell> presShell = GetPresShell()) {
     // Don't flush throttled animations since it might fire MozAfterPaint event
@@ -469,16 +444,6 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
   aElement->SetProperty(nsGkAtoms::DisplayPort,
                         new DisplayPortPropertyData(displayport, aPriority),
                         nsINode::DeleteProperty<DisplayPortPropertyData>);
-
-  if (StaticPrefs::layout_scroll_root_frame_containers()) {
-    nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
-    if (rootScrollFrame && aElement == rootScrollFrame->GetContent() &&
-        nsLayoutUtils::UsesAsyncScrolling(rootScrollFrame)) {
-      // We are setting a root displayport for a document.
-      // The pres shell needs a special flag set.
-      presShell->SetIgnoreViewportScrolling(true);
-    }
-  }
 
   nsLayoutUtils::InvalidateForDisplayPortChange(aElement, hadDisplayPort,
                                                 oldDisplayPort, displayport);
@@ -585,7 +550,7 @@ nsDOMWindowUtils::SetResolutionAndScaleTo(float aResolution) {
   }
 
   presShell->SetResolutionAndScaleTo(aResolution,
-                                     ResolutionChangeOrigin::MainThread);
+                                     ResolutionChangeOrigin::MainThreadRestore);
 
   return NS_OK;
 }
@@ -2902,7 +2867,7 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
   IDBOpenDBOptions options;
   JS::Rooted<JS::Value> optionsVal(aCx, aOptions);
   if (!options.Init(aCx, optionsVal)) {
-    return NS_ERROR_TYPE_ERR;
+    return NS_ERROR_UNEXPECTED;
   }
 
   quota::PersistenceType persistenceType =
@@ -3275,7 +3240,7 @@ nsDOMWindowUtils::RemoveSheetUsingURIString(const nsACString& aSheetURI,
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetIsHandlingUserInput(bool* aHandlingUserInput) {
-  *aHandlingUserInput = EventStateManager::IsHandlingUserInput();
+  *aHandlingUserInput = UserActivation::IsHandlingUserInput();
 
   return NS_OK;
 }
@@ -3283,7 +3248,7 @@ nsDOMWindowUtils::GetIsHandlingUserInput(bool* aHandlingUserInput) {
 NS_IMETHODIMP
 nsDOMWindowUtils::GetMillisSinceLastUserInput(
     double* aMillisSinceLastUserInput) {
-  TimeStamp lastInput = EventStateManager::LatestUserInputStart();
+  TimeStamp lastInput = UserActivation::LatestUserInputStart();
   if (lastInput.IsNull()) {
     *aMillisSinceLastUserInput = -1.0f;
     return NS_OK;
@@ -3444,11 +3409,6 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
 
   RefPtr<nsROCSSPrimitiveValue> cssValue = nullptr;
   if (frame && nsLayoutUtils::AreAsyncAnimationsEnabled()) {
-    RefPtr<LayerManager> widgetLayerManager;
-    if (nsIWidget* widget = GetWidget()) {
-      widgetLayerManager = widget->GetLayerManager();
-    }
-
     if (aProperty.EqualsLiteral("opacity")) {
       OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_OPACITY,
                                      GetWebRenderBridge());
@@ -3594,7 +3554,7 @@ NS_IMPL_ISUPPORTS(HandlingUserInputHelper, nsIJSRAIIHelper)
 HandlingUserInputHelper::HandlingUserInputHelper(bool aHandlingUserInput)
     : mHandlingUserInput(aHandlingUserInput), mDestructCalled(false) {
   if (aHandlingUserInput) {
-    EventStateManager::StartHandlingUserInput(eVoidEvent);
+    UserActivation::StartHandlingUserInput(eVoidEvent);
   }
 }
 
@@ -3614,7 +3574,7 @@ HandlingUserInputHelper::Destruct() {
 
   mDestructCalled = true;
   if (mHandlingUserInput) {
-    EventStateManager::StopHandlingUserInput(eVoidEvent);
+    UserActivation::StopHandlingUserInput(eVoidEvent);
   }
 
   return NS_OK;
@@ -3707,41 +3667,6 @@ nsDOMWindowUtils::SetMediaSuspend(uint32_t aSuspend) {
 
   window->SetMediaSuspend(aSuspend);
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::GetAudioMuted(bool* aMuted) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  NS_ENSURE_STATE(window);
-
-  *aMuted = window->GetAudioMuted();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SetAudioMuted(bool aMuted) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  NS_ENSURE_STATE(window);
-
-  window->SetAudioMuted(aMuted);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::GetAudioVolume(float* aVolume) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  NS_ENSURE_STATE(window);
-
-  *aVolume = window->GetAudioVolume();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::SetAudioVolume(float aVolume) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  NS_ENSURE_STATE(window);
-
-  return window->SetAudioVolume(aVolume);
 }
 
 NS_IMETHODIMP
@@ -3873,31 +3798,6 @@ nsDOMWindowUtils::TriggerDeviceReset() {
   if (pm) {
     pm->SimulateDeviceReset();
   }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::ForceUseCounterFlush(nsINode* aNode) {
-  NS_ENSURE_ARG_POINTER(aNode);
-
-  if (nsCOMPtr<Document> doc = do_QueryInterface(aNode)) {
-    mozilla::css::ImageLoader* loader = doc->StyleImageLoader();
-    loader->FlushUseCounters();
-
-    // Flush the document and any external documents that it depends on.
-    const auto reportKind =
-        Document::UseCounterReportKind::eIncludeExternalResources;
-    doc->ReportUseCounters(reportKind);
-    return NS_OK;
-  }
-
-  if (nsCOMPtr<nsIContent> content = do_QueryInterface(aNode)) {
-    if (HTMLImageElement* img = HTMLImageElement::FromNode(content)) {
-      img->FlushUseCounters();
-      return NS_OK;
-    }
-  }
-
   return NS_OK;
 }
 
@@ -4129,12 +4029,66 @@ NS_IMETHODIMP
 nsDOMWindowUtils::SetCompositionRecording(bool aValue) {
   if (CompositorBridgeChild* cbc = GetCompositorBridge()) {
     if (aValue) {
-      cbc->SendBeginRecording(TimeStamp::Now());
+      RefPtr<nsDOMWindowUtils> self = this;
+      cbc->SendBeginRecording(TimeStamp::Now())
+          ->Then(
+              GetCurrentThreadSerialEventTarget(), __func__,
+              [self](const bool& aSuccess) {
+                if (!aSuccess) {
+                  self->ReportErrorMessageForWindow(
+                      NS_LITERAL_STRING(
+                          "The composition recorder is already running."),
+                      "DOM", true);
+                }
+              },
+              [self](const mozilla::ipc::ResponseRejectReason&) {
+                self->ReportErrorMessageForWindow(
+                    NS_LITERAL_STRING(
+                        "Could not start the composition recorder."),
+                    "DOM", true);
+              });
     } else {
-      cbc->SendEndRecording();
+      bool success = false;
+      if (!cbc->SendEndRecording(&success)) {
+        ReportErrorMessageForWindow(
+            NS_LITERAL_STRING("Could not stop the composition recorder."),
+            "DOM", true);
+      } else if (!success) {
+        ReportErrorMessageForWindow(
+            NS_LITERAL_STRING("The composition recorder is not running."),
+            "DOM", true);
+      }
     }
   }
+
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SetTransactionLogging(bool aValue) {
+  if (WebRenderBridgeChild* wrbc = GetWebRenderBridge()) {
+    wrbc->SetTransactionLogging(aValue);
+  }
+  return NS_OK;
+}
+
+void nsDOMWindowUtils::ReportErrorMessageForWindow(
+    const nsAString& aErrorMessage, const char* aClassification,
+    bool aFromChrome) {
+  bool isPrivateWindow = false;
+
+  if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow)) {
+    if (nsIPrincipal* principal =
+            nsGlobalWindowOuter::Cast(window)->GetPrincipal()) {
+      uint32_t privateBrowsingId = 0;
+
+      if (NS_SUCCEEDED(principal->GetPrivateBrowsingId(&privateBrowsingId))) {
+        isPrivateWindow = !!privateBrowsingId;
+      }
+    }
+  }
+  nsContentUtils::LogSimpleConsoleError(aErrorMessage, aClassification,
+                                        isPrivateWindow, aFromChrome);
 }
 
 NS_IMETHODIMP
@@ -4188,5 +4142,11 @@ nsDOMWindowUtils::GetLayersId(uint64_t* aOutLayersId) {
     return NS_ERROR_FAILURE;
   }
   *aOutLayersId = (uint64_t)child->GetLayersId();
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetUsesOverlayScrollbars(bool* aResult) {
+  *aResult = Document::UseOverlayScrollbars(GetDocument());
   return NS_OK;
 }

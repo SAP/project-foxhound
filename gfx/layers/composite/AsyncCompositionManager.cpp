@@ -10,11 +10,12 @@
 #include "Layers.h"                 // for Layer, ContainerLayer, etc
 #include "gfxPoint.h"               // for gfxPoint, gfxSize
 #include "mozilla/ServoBindings.h"  // for Servo_AnimationValue_GetOpacity, etc
-#include "mozilla/StaticPrefs.h"    // for StaticPrefs
-#include "mozilla/WidgetUtils.h"    // for ComputeTransformForRotation
-#include "mozilla/gfx/BaseRect.h"   // for BaseRect
-#include "mozilla/gfx/Point.h"      // for RoundedToInt, PointTyped
-#include "mozilla/gfx/Rect.h"       // for RoundedToInt, RectTyped
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/WidgetUtils.h"      // for ComputeTransformForRotation
+#include "mozilla/gfx/BaseRect.h"     // for BaseRect
+#include "mozilla/gfx/Point.h"        // for RoundedToInt, PointTyped
+#include "mozilla/gfx/Rect.h"         // for RoundedToInt, RectTyped
 #include "mozilla/gfx/ScaleFactor.h"  // for ScaleFactor
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/APZSampler.h"  // for APZSampler
@@ -33,7 +34,7 @@
 #include "nsRect.h"                  // for mozilla::gfx::IntRect
 #include "nsRegion.h"                // for nsIntRegion
 #include "nsTArray.h"                // for nsTArray, nsTArray_Impl, etc
-#include "nsTArrayForwardDeclare.h"  // for InfallibleTArray
+#include "nsTArrayForwardDeclare.h"  // for nsTArray
 #include "UnitTransforms.h"          // for TransformTo
 #if defined(MOZ_WIDGET_ANDROID)
 #  include <android/log.h>
@@ -281,33 +282,6 @@ static void AccumulateLayerTransforms(Layer* aLayer, Layer* aAncestor,
   }
 }
 
-static LayerPoint GetLayerFixedMarginsOffset(
-    Layer* aLayer, const ScreenMargin& aFixedLayerMargins) {
-  // Work out the necessary translation, in root scrollable layer space.
-  // Because fixed layer margins are stored relative to the root scrollable
-  // layer, we can just take the difference between these values.
-  LayerPoint translation;
-  int32_t sides = aLayer->GetFixedPositionSides();
-
-  if ((sides & eSideBitsLeftRight) == eSideBitsLeftRight) {
-    translation.x += (aFixedLayerMargins.left - aFixedLayerMargins.right) / 2;
-  } else if (sides & eSideBitsRight) {
-    translation.x -= aFixedLayerMargins.right;
-  } else if (sides & eSideBitsLeft) {
-    translation.x += aFixedLayerMargins.left;
-  }
-
-  if ((sides & eSideBitsTopBottom) == eSideBitsTopBottom) {
-    translation.y += (aFixedLayerMargins.top - aFixedLayerMargins.bottom) / 2;
-  } else if (sides & eSideBitsBottom) {
-    translation.y -= aFixedLayerMargins.bottom;
-  } else if (sides & eSideBitsTop) {
-    translation.y += aFixedLayerMargins.top;
-  }
-
-  return translation;
-}
-
 static gfxFloat IntervalOverlap(gfxFloat aTranslation, gfxFloat aMin,
                                 gfxFloat aMax) {
   // Determine the amount of overlap between the 1D vector |aTranslation|
@@ -511,8 +485,13 @@ void AsyncCompositionManager::AdjustFixedOrStickyLayer(
 
   // Offset the layer's anchor point to make sure fixed position content
   // respects content document fixed position margins.
+  ScreenPoint offset = ComputeFixedMarginsOffset(
+      aFixedLayerMargins, layer->GetFixedPositionSides());
+  // Fixed margins only apply to layers fixed to the root, so we can view
+  // the offset in layer space.
   LayerPoint offsetAnchor =
-      anchor + GetLayerFixedMarginsOffset(layer, aFixedLayerMargins);
+      anchor + ViewAs<LayerPixel>(
+                   offset, PixelCastJustification::ScreenIsParentLayerForRoot);
 
   // Additionally transform the anchor to compensate for the change
   // from the old transform to the new transform. We do
@@ -1118,18 +1097,14 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
 #endif
 
             // Transform the current local clips by this APZC's async transform.
-            // If we're using containerful scrolling, then the clip is not part
-            // of the scrolled frame and should not be transformed.
-            if (!scrollMetadata.UsesContainerScrolling()) {
-              MOZ_ASSERT(asyncTransform.Is2D());
-              if (clipParts.mFixedClip) {
-                *clipParts.mFixedClip =
-                    TransformBy(asyncTransform, *clipParts.mFixedClip);
-              }
-              if (clipParts.mScrolledClip) {
-                *clipParts.mScrolledClip =
-                    TransformBy(asyncTransform, *clipParts.mScrolledClip);
-              }
+            MOZ_ASSERT(asyncTransform.Is2D());
+            if (clipParts.mFixedClip) {
+              *clipParts.mFixedClip =
+                  TransformBy(asyncTransform, *clipParts.mFixedClip);
+            }
+            if (clipParts.mScrolledClip) {
+              *clipParts.mScrolledClip =
+                  TransformBy(asyncTransform, *clipParts.mScrolledClip);
             }
             // Note: we don't set the layer's shadow clip rect property yet;
             // AlignFixedAndStickyLayers will use the clip parts from the clip
@@ -1145,12 +1120,9 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
             // layers. We do this by using GetTransform() as the base transform
             // rather than GetLocalTransform(), which would include those
             // factors.
-            AsyncTransform asyncTransformForFixedAdjustment =
-                sampler->GetCurrentAsyncTransformForFixedAdjustment(wrapper);
             LayerToParentLayerMatrix4x4 transformWithoutOverscrollOrOmta =
                 layer->GetTransformTyped() *
-                CompleteAsyncTransform(
-                    AdjustForClip(asyncTransformForFixedAdjustment, layer));
+                CompleteAsyncTransform(AdjustForClip(asyncTransform, layer));
             AlignFixedAndStickyLayers(layer, layer, metrics.GetScrollId(),
                                       oldTransform,
                                       transformWithoutOverscrollOrOmta,
@@ -1232,10 +1204,7 @@ bool AsyncCompositionManager::ApplyAsyncContentTransformToTree(
               !layer->GetParent()->GetIsFixedPosition() &&
               IsFixedToZoomContainer(layer)) {
             LayerToParentLayerMatrix4x4 emptyTransform;
-            ScreenMargin marginsForFixedLayer;
-#ifdef MOZ_WIDGET_ANDROID
-            marginsForFixedLayer = GetFixedLayerMargins();
-#endif
+            ScreenMargin marginsForFixedLayer = GetFixedLayerMargins();
             AdjustFixedOrStickyLayer(zoomContainer, layer,
                                      sampler->GetGuid(*zoomedMetrics).mScrollId,
                                      emptyTransform, emptyTransform,
@@ -1479,7 +1448,6 @@ bool AsyncCompositionManager::TransformShadowTree(
   return wantNextFrame;
 }
 
-#if defined(MOZ_WIDGET_ANDROID)
 void AsyncCompositionManager::SetFixedLayerMargins(ScreenIntCoord aTop,
                                                    ScreenIntCoord aBottom) {
   mFixedLayerMargins.top = aTop;
@@ -1493,7 +1461,31 @@ ScreenMargin AsyncCompositionManager::GetFixedLayerMargins() const {
   }
   return result;
 }
-#endif  // defined(MOZ_WIDGET_ANDROID)
+
+/*static*/
+ScreenPoint AsyncCompositionManager::ComputeFixedMarginsOffset(
+    const ScreenMargin& aFixedMargins, SideBits aFixedSides) {
+  // Work out the necessary translation, in screen space.
+  ScreenPoint translation;
+
+  if ((aFixedSides & eSideBitsLeftRight) == eSideBitsLeftRight) {
+    translation.x += (aFixedMargins.left - aFixedMargins.right) / 2;
+  } else if (aFixedSides & eSideBitsRight) {
+    translation.x -= aFixedMargins.right;
+  } else if (aFixedSides & eSideBitsLeft) {
+    translation.x += aFixedMargins.left;
+  }
+
+  if ((aFixedSides & eSideBitsTopBottom) == eSideBitsTopBottom) {
+    translation.y += (aFixedMargins.top - aFixedMargins.bottom) / 2;
+  } else if (aFixedSides & eSideBitsBottom) {
+    translation.y -= aFixedMargins.bottom;
+  } else if (aFixedSides & eSideBitsTop) {
+    translation.y += aFixedMargins.top;
+  }
+
+  return translation;
+}
 
 }  // namespace layers
 }  // namespace mozilla

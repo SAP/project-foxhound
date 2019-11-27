@@ -10,9 +10,11 @@
  * liability, trademark and document use rules apply.
  */
 
-[Constructor(DOMString type, optional UIEventInit eventInitDict = {})]
+[Exposed=Window]
 interface UIEvent : Event
 {
+  constructor(DOMString type, optional UIEventInit eventInitDict = {});
+
   readonly attribute WindowProxy? view;
   readonly attribute long         detail;
   void initUIEvent(DOMString aType,

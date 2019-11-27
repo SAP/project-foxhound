@@ -345,12 +345,7 @@ bool nsXBLContentSink::OnOpenContainer(const char16_t** aAtts,
 
     nsIURI* uri = mDocument->GetDocumentURI();
 
-    bool isChrome = false;
-    bool isRes = false;
-
-    uri->SchemeIs("chrome", &isChrome);
-    uri->SchemeIs("resource", &isRes);
-    mIsChromeOrResource = isChrome || isRes;
+    mIsChromeOrResource = uri->SchemeIs("chrome") || uri->SchemeIs("resource");
 
     mState = eXBL_InBindings;
   } else if (aTagName == nsGkAtoms::binding) {
@@ -776,11 +771,8 @@ nsresult nsXBLContentSink::AddAttributesToXULPrototype(
   // Create storage for the attributes
   nsXULPrototypeAttribute* attrs = nullptr;
   if (aAttsCount > 0) {
-    attrs = new nsXULPrototypeAttribute[aAttsCount];
+    attrs = aElement->mAttributes.AppendElements(aAttsCount);
   }
-
-  aElement->mAttributes = attrs;
-  aElement->mNumAttributes = aAttsCount;
 
   // Copy the attributes into the prototype
   RefPtr<nsAtom> prefix, localName;

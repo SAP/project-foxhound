@@ -37,6 +37,7 @@ exclude = [
   "media/mp4parse-rust/mp4parse_capi",
   "media/mp4parse-rust/mp4parse_fallible",
   "xpcom/rust/gkrust_utils",
+  "tools/fuzzing/rust",
 ]
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
@@ -58,14 +59,16 @@ codegen-units = 1
 
 [patch.crates-io]
 libudev-sys = { path = "dom/webauthn/libudev-sys" }
-serde_derive = { git = "https://github.com/servo/serde", branch = "deserialize_from_enums10" }
 winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
 packed_simd = { git = "https://github.com/hsivonen/packed_simd", branch = "rust_1_32" }
 
 [patch.crates-io.cranelift-codegen]
 git = "https://github.com/CraneStation/Cranelift"
-rev = "312516a69da03dc06eace32f61412389a8dcadf3"
+rev = "182414f15c18538dfebbe040469ec8001e93ecc5"
 
 [patch.crates-io.cranelift-wasm]
 git = "https://github.com/CraneStation/Cranelift"
-rev = "312516a69da03dc06eace32f61412389a8dcadf3"
+rev = "182414f15c18538dfebbe040469ec8001e93ecc5"
+
+[patch.crates-io.coreaudio-sys]
+path = "third_party/rust/coreaudio-sys"

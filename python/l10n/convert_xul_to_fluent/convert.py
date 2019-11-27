@@ -10,6 +10,8 @@ import argparse
 import sys
 # import re
 
+# To run this, you'll need to have lxml installed:
+#   `pip install lxml`
 
 # default migration directions
 data = {
@@ -91,7 +93,7 @@ def main():
     print('======== Fluent ========')
     print(ftl.encode("utf-8"))
     if not dry_run:
-        write_file(data['ftl'], ftl.encode("utf-8"), data['mozilla-central'])
+        write_file(data['ftl'], ftl.encode("utf-8"), data['mozilla-central'], append=True)
 
 
 if __name__ == '__main__':

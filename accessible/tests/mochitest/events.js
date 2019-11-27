@@ -135,28 +135,6 @@ function waitForEvent(
 }
 
 /**
- * A promise based version of waitForEvent function.
- */
-function waitForEventPromise(eventType, target) {
-  return new Promise(resolve => {
-    let eventObserver = {
-      observe(subject, topic, data) {
-        let event = subject.QueryInterface(nsIAccessibleEvent);
-        if (event.eventType !== eventType) {
-          return;
-        }
-
-        if (event.accessible == getAccessible(target)) {
-          Services.obs.removeObserver(this, "accessible-event");
-          resolve(event);
-        }
-      },
-    };
-    Services.obs.addObserver(eventObserver, "accessible-event");
-  });
-}
-
-/**
  * Generate mouse move over image map what creates image map accessible (async).
  * See waitForImageMap() function.
  */
@@ -1486,7 +1464,7 @@ function synthFocus(aNodeOrID, aCheckerOrEventSeq) {
   this.__proto__ = new synthAction(aNodeOrID, checkerOfEventSeq);
 
   this.invoke = function synthFocus_invoke() {
-    if (this.DOMNode.editor || this.DOMNode.localName == "textbox") {
+    if (this.DOMNode.editor) {
       this.DOMNode.selectionStart = this.DOMNode.selectionEnd = this.DOMNode.value.length;
     }
     this.DOMNode.focus();
@@ -1656,10 +1634,7 @@ function synthSelectAll(aNodeOrID, aCheckerOrEventSeq) {
   this.__proto__ = new synthAction(aNodeOrID, aCheckerOrEventSeq);
 
   this.invoke = function synthSelectAll_invoke() {
-    if (
-      ChromeUtils.getClassName(this.DOMNode) === "HTMLInputElement" ||
-      this.DOMNode.localName == "textbox"
-    ) {
+    if (ChromeUtils.getClassName(this.DOMNode) === "HTMLInputElement") {
       this.DOMNode.select();
     } else {
       window.getSelection().selectAllChildren(this.DOMNode);

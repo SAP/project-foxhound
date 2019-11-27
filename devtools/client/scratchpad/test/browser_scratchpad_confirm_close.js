@@ -1,13 +1,11 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 /* Bug 653427 */
 
-var tempScope = {};
-ChromeUtils.import("resource://gre/modules/NetUtil.jsm", tempScope);
-ChromeUtils.import("resource://gre/modules/FileUtils.jsm", tempScope);
-var NetUtil = tempScope.NetUtil;
-var FileUtils = tempScope.FileUtils;
+const { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
+const { FileUtils } = ChromeUtils.import(
+  "resource://gre/modules/FileUtils.jsm"
+);
 
 // only finish() when correct number of tests are done
 const expected = 9;

@@ -88,7 +88,7 @@ const PAGECONTENT_TRANSLATED =
   "<html><body>" +
   "<div id='div'>" +
   "<iframe id='frame' width='320' height='295' style='border: none;'" +
-  "        src='data:text/html,<select id=select autofocus><option>he he he</option><option>boo boo</option><option>baz baz</option></select>'" +
+  "        src='data:text/html,<select id=select><option>he he he</option><option>boo boo</option><option>baz baz</option></select>'" +
   "</iframe>" +
   "</div></body></html>";
 
@@ -396,6 +396,20 @@ add_task(async function() {
 add_task(async function() {
   const pageUrl = "data:text/html," + escape(PAGECONTENT_TRANSLATED);
   let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+
+  // We need to explicitly call Element.focus() since dataURL is treated as
+  // cross-origin, thus autofocus doesn't work there.
+  const iframe = await SpecialPowers.spawn(tab.linkedBrowser, [], () => {
+    return content.document.querySelector("iframe").browsingContext;
+  });
+  await SpecialPowers.spawn(iframe, [], async () => {
+    const input = content.document.getElementById("select");
+    const focusPromise = new Promise(resolve => {
+      input.addEventListener("focus", resolve, { once: true });
+    });
+    input.focus();
+    await focusPromise;
+  });
 
   let menulist = document.getElementById("ContentSelectDropdown");
   let selectPopup = menulist.menupopup;
@@ -783,7 +797,7 @@ async function performLargePopupTests(win) {
     );
 
     // Don't check the scroll position for the last step as the popup will be cut off.
-    if (positions.length > 0) {
+    if (positions.length) {
       let cs = win.getComputedStyle(selectPopup);
       let bpBottom =
         parseFloat(cs.paddingBottom) + parseFloat(cs.borderBottomWidth);
@@ -1169,6 +1183,53 @@ add_task(async function test_handling_user_input() {
   getPromise = getIsHandlingUserInput(tab.linkedBrowser, "three", "click");
   EventUtils.synthesizeMouseAtCenter(selectPopup.firstElementChild, {});
   is(await getPromise, true, "isHandlingUserInput should be true");
+
+  BrowserTestUtils.removeTab(tab);
+});
+
+// Test that input and change events are dispatched consistently (bug 1561882).
+add_task(async function test_event_destroys_popup() {
+  const PAGE_CONTENT = `
+<!doctype html>
+<select>
+  <option>a</option>
+  <option>b</option>
+</select>
+<script>
+gChangeEvents = 0;
+gInputEvents = 0;
+let select = document.querySelector("select");
+  select.addEventListener("input", function() {
+    gInputEvents++;
+    this.style.display = "none";
+    this.getBoundingClientRect();
+  })
+  select.addEventListener("change", function() {
+    gChangeEvents++;
+  })
+</script>`;
+
+  const pageUrl = "data:text/html," + escape(PAGE_CONTENT);
+  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, pageUrl);
+
+  let menulist = document.getElementById("ContentSelectDropdown");
+  let selectPopup = menulist.menupopup;
+
+  // Test change and input events get handled consistently
+  await openSelectPopup(selectPopup, "click");
+  EventUtils.synthesizeKey("KEY_ArrowDown");
+  await hideSelectPopup(selectPopup);
+
+  is(
+    await getChangeEvents(),
+    1,
+    "Should get change and input events consistently"
+  );
+  is(
+    await getInputEvents(),
+    1,
+    "Should get change and input events consistently (input)"
+  );
 
   BrowserTestUtils.removeTab(tab);
 });

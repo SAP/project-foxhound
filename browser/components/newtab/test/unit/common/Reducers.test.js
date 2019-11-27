@@ -900,6 +900,18 @@ describe("Reducers", () => {
         INITIAL_STATE.DiscoveryStream
       );
     });
+    it("should set isPrivacyInfoModalVisible to true with SHOW_PRIVACY_INFO", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.SHOW_PRIVACY_INFO,
+      });
+      assert.equal(state.isPrivacyInfoModalVisible, true);
+    });
+    it("should set isPrivacyInfoModalVisible to false with HIDE_PRIVACY_INFO", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.HIDE_PRIVACY_INFO,
+      });
+      assert.equal(state.isPrivacyInfoModalVisible, false);
+    });
     it("should set layout data with DISCOVERY_STREAM_LAYOUT_UPDATE", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
@@ -948,12 +960,29 @@ describe("Reducers", () => {
       });
       assert.isTrue(state.feeds.loaded);
     });
-    it("should set spoc_endpoint with DISCOVERY_STREAM_SPOCS_ENDPOINT", () => {
+    it("should set spoc_endpoint and spocs_per_domain with DISCOVERY_STREAM_SPOCS_ENDPOINT", () => {
       const state = DiscoveryStream(undefined, {
         type: at.DISCOVERY_STREAM_SPOCS_ENDPOINT,
-        data: "foo.com",
+        data: { url: "foo.com", spocs_per_domain: 2 },
       });
       assert.equal(state.spocs.spocs_endpoint, "foo.com");
+      assert.equal(state.spocs.spocs_per_domain, 2);
+    });
+    it("should use initial state with DISCOVERY_STREAM_SPOCS_PLACEMENTS", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.DISCOVERY_STREAM_SPOCS_PLACEMENTS,
+        data: {},
+      });
+      assert.deepEqual(state.spocs.placements, []);
+    });
+    it("should set placements with DISCOVERY_STREAM_SPOCS_PLACEMENTS", () => {
+      const state = DiscoveryStream(undefined, {
+        type: at.DISCOVERY_STREAM_SPOCS_PLACEMENTS,
+        data: {
+          placements: [1, 2, 3],
+        },
+      });
+      assert.deepEqual(state.spocs.placements, [1, 2, 3]);
     });
     it("should set spocs with DISCOVERY_STREAM_SPOCS_UPDATE", () => {
       const data = {
@@ -966,12 +995,36 @@ describe("Reducers", () => {
       });
       assert.deepEqual(state.spocs, {
         spocs_endpoint: "",
+        spocs_per_domain: 1,
         data: [1, 2, 3],
         lastUpdated: 123,
         loaded: true,
         frequency_caps: [],
         blocked: [],
+        placements: [],
       });
+    });
+    it("should default to a single spoc placement", () => {
+      const deleteAction = {
+        type: at.DISCOVERY_STREAM_LINK_BLOCKED,
+        data: { url: "https://foo.com" },
+      };
+      const oldState = {
+        spocs: {
+          data: {
+            spocs: [{ url: "test-spoc.com" }],
+          },
+          loaded: true,
+        },
+        feeds: {
+          data: {},
+          loaded: true,
+        },
+      };
+
+      const newState = DiscoveryStream(oldState, deleteAction);
+
+      assert.equal(newState.spocs.data.spocs.length, 1);
     });
     it("should handle no data from DISCOVERY_STREAM_SPOCS_UPDATE", () => {
       const data = null;
@@ -1019,6 +1072,7 @@ describe("Reducers", () => {
         spocs: {
           data: {},
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
         feeds: {
           data: {},
@@ -1039,6 +1093,7 @@ describe("Reducers", () => {
             spocs: [{ url: "https://foo.com" }, { url: "test-spoc.com" }],
           },
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
         feeds: {
           data: {},
@@ -1057,6 +1112,7 @@ describe("Reducers", () => {
         spocs: {
           data: {},
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
         feeds: {
           data: {
@@ -1098,6 +1154,7 @@ describe("Reducers", () => {
             spocs: [{ url: "https://foo.com" }, { url: "test-spoc.com" }],
           },
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
       };
       const deleteAction = {
@@ -1136,6 +1193,7 @@ describe("Reducers", () => {
           data: {
             spocs: [{ url: "https://foo.com" }, { url: "test-spoc.com" }],
           },
+          placements: [{ name: "spocs" }],
           loaded: true,
         },
       };
@@ -1206,6 +1264,7 @@ describe("Reducers", () => {
             ],
           },
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
       };
       const deleteAction = {
@@ -1245,6 +1304,7 @@ describe("Reducers", () => {
             ],
           },
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
       };
       const deleteAction = {
@@ -1281,6 +1341,7 @@ describe("Reducers", () => {
             spocs: [{ url: "https://foo.com" }, { url: "test-spoc.com" }],
           },
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
       };
       const bookmarkAction = {
@@ -1357,6 +1418,7 @@ describe("Reducers", () => {
             ],
           },
           loaded: true,
+          placements: [{ name: "spocs" }],
         },
       };
       const action = {

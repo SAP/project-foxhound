@@ -1,3 +1,9 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifndef mozilla_intl_l10n_Localization_h
 #define mozilla_intl_l10n_Localization_h
 
@@ -66,7 +72,7 @@ class Localization : public nsIObserver,
  protected:
   virtual ~Localization();
   void RegisterObservers();
-  void OnChange();
+  virtual void OnChange();
   already_AddRefed<Promise> MaybeWrapPromise(Promise* aInnerPromise);
   void ConvertL10nArgsToJSValue(JSContext* aCx, const L10nArgs& aArgs,
                                 JS::MutableHandle<JS::Value> aRetVal,

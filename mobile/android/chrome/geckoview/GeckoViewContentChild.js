@@ -24,7 +24,7 @@ const SCROLL_BEHAVIOR_AUTO = 1;
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   FormLikeFactory: "resource://gre/modules/FormLikeFactory.jsm",
-  GeckoViewAutoFill: "resource://gre/modules/GeckoViewAutoFill.jsm",
+  GeckoViewAutofill: "resource://gre/modules/GeckoViewAutofill.jsm",
   ManifestObtainer: "resource://gre/modules/ManifestObtainer.jsm",
   PrivacyFilter: "resource://gre/modules/sessionstore/PrivacyFilter.jsm",
   SessionHistory: "resource://gre/modules/sessionstore/SessionHistory.jsm",
@@ -70,7 +70,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     XPCOMUtils.defineLazyGetter(
       this,
       "_autoFill",
-      () => new GeckoViewAutoFill(this.eventDispatcher)
+      () => new GeckoViewAutofill(this.eventDispatcher)
     );
 
     // Notify WebExtension process script that this tab is ready for extension content to load.
@@ -91,6 +91,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     addEventListener("MozDOMFullscreen:Request", this, false);
     addEventListener("contextmenu", this, { capture: true });
     addEventListener("DOMContentLoaded", this, false);
+    addEventListener("MozFirstContentfulPaint", this, false);
   }
 
   onDisable() {
@@ -104,36 +105,7 @@ class GeckoViewContentChild extends GeckoViewChildModule {
     removeEventListener("MozDOMFullscreen:Request", this);
     removeEventListener("contextmenu", this, { capture: true });
     removeEventListener("DOMContentLoaded", this);
-  }
-
-  collectSessionState() {
-    let history = SessionHistory.collect(docShell);
-    let formdata = SessionStoreUtils.collectFormData(content);
-    let scrolldata = SessionStoreUtils.collectScrollPosition(content);
-
-    // Save the current document resolution.
-    let zoom = 1;
-    let domWindowUtils = content.windowUtils;
-    zoom = domWindowUtils.getResolution();
-    scrolldata = scrolldata || {};
-    scrolldata.zoom = {};
-    scrolldata.zoom.resolution = zoom;
-
-    // Save some data that'll help in adjusting the zoom level
-    // when restoring in a different screen orientation.
-    let displaySize = {};
-    let width = {},
-      height = {};
-    domWindowUtils.getContentViewerSize(width, height);
-
-    displaySize.width = width.value;
-    displaySize.height = height.value;
-
-    scrolldata.zoom.displaySize = displaySize;
-
-    formdata = PrivacyFilter.filterFormData(formdata || {});
-
-    return { history, formdata, scrolldata };
+    removeEventListener("MozFirstContentfulPaint", this);
   }
 
   toPixels(aLength, aType) {
@@ -480,7 +452,13 @@ class GeckoViewContentChild extends GeckoViewChildModule {
             });
           }
         });
+        break;
       }
+      case "MozFirstContentfulPaint":
+        this.eventDispatcher.sendRequest({
+          type: "GeckoView:FirstContentfulPaint",
+        });
+        break;
     }
   }
 

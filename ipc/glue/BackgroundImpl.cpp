@@ -1491,7 +1491,7 @@ PBackgroundChild* ChildImpl::GetOrCreateForCurrentThread(
           MOZ_ASSERT(content);
 
           if (!content->SendInitBackground(std::move(aParent))) {
-            MOZ_CRASH("Failed to create top level actor!");
+            NS_WARNING("Failed to create top level actor!");
           }
         });
     if (!runnable) {
@@ -1597,7 +1597,7 @@ PBackgroundChild* ChildImpl::GetOrCreateSocketActorForCurrentThread(
               SocketProcessBridgeChild::GetSingleton();
 
           if (!bridgeChild->SendInitBackground(std::move(aParent))) {
-            MOZ_CRASH("Failed to create top level actor!");
+            NS_WARNING("Failed to create top level actor!");
           }
         });
     if (!runnable) {
@@ -1618,6 +1618,9 @@ PBackgroundChild* ChildImpl::GetOrCreateSocketActorForCurrentThread(
   if (NS_IsMainThread()) {
     if (!bridgeChild->SendInitBackground(std::move(parent))) {
       NS_WARNING("Failed to create top level actor!");
+      // Need to close the IPC channel before ChildImpl getting deleted.
+      strongActor->Close();
+      strongActor->AssertActorDestroyed();
       return nullptr;
     }
   } else {

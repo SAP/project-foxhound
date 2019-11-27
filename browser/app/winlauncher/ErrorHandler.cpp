@@ -16,6 +16,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WindowsVersion.h"
+#include "mozilla/WinTokenUtils.h"
 #include "mozilla/XREAppData.h"
 #include "nsWindowsHelpers.h"
 
@@ -286,7 +287,8 @@ static bool AddWscInfo(mozilla::JSONWriter& aJson) {
 
   // We need COM for this. Using ProcessRuntime so that process-global COM
   // configuration is done correctly
-  mozilla::mscom::ProcessRuntime mscom(GeckoProcessType_Default);
+  mozilla::mscom::ProcessRuntime mscom(
+      mozilla::mscom::ProcessRuntime::ProcessCategory::Launcher);
   if (!mscom) {
     // We haven't written anything yet, so we can return true here and continue
     // capturing data.
@@ -533,6 +535,12 @@ static bool PrepPing(const PingThreadContext& aContext, const std::wstring& aId,
   ::GetNativeSystemInfo(&sysInfo);
   aJson.IntProperty("cpu_arch", sysInfo.wProcessorArchitecture);
   aJson.IntProperty("num_logical_cpus", sysInfo.dwNumberOfProcessors);
+
+  mozilla::LauncherResult<bool> isAdminWithoutUac =
+      mozilla::IsAdminWithoutUac();
+  if (isAdminWithoutUac.isOk()) {
+    aJson.BoolProperty("is_admin_without_uac", isAdminWithoutUac.unwrap());
+  }
 
   MEMORYSTATUSEX memStatus = {sizeof(memStatus)};
   if (::GlobalMemoryStatusEx(&memStatus)) {

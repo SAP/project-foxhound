@@ -43,6 +43,7 @@ XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 JAR_MANIFESTS += ['jar.mn']
 
 DevToolsModules(
+    'accessibility.js',
     'async-storage.js',
     'async-utils.js',
     'base-loader.js',
@@ -51,7 +52,6 @@ DevToolsModules(
     'content-observer.js',
     'debounce.js',
     'defer.js',
-    'deprecated-sync-thenables.js',
     'DevToolsUtils.js',
     'dom-node-constants.js',
     'dom-node-filter-constants.js',
@@ -65,11 +65,11 @@ DevToolsModules(
     'l10n.js',
     'loader-plugin-raw.jsm',
     'Loader.jsm',
-    'multi-e10s-helper.js',
-    'Parser.jsm',
+    'natural-sort.js',
     'path.js',
     'plural-form.js',
     'protocol.js',
+    'service-workers-debug-helper.js',
     'system.js',
     'task.js',
     'ThreadSafeDevToolsUtils.js',

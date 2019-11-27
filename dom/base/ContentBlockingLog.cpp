@@ -11,6 +11,9 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/RandomNum.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_telemetry.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/XorShift128PlusRNG.h"
@@ -76,7 +79,7 @@ static bool IsReportingPerUserEnabled() {
 
 static bool IsReportingPerDocumentEnabled() {
   constexpr double boundary =
-      kRatioReportDocument * std::numeric_limits<uint64_t>::max();
+      kRatioReportDocument * double(std::numeric_limits<uint64_t>::max());
   Maybe<uint64_t> randomNum = RandomUint64();
   return randomNum.isSome() && randomNum.value() <= boundary;
 }

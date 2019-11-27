@@ -344,6 +344,13 @@ MARKUPMAP(maction_, New_HyperText, roles::MATHML_ACTION,
           AttrFromDOM(actiontype_, actiontype_),
           AttrFromDOM(selection_, selection_))
 
+MARKUPMAP(
+    menu,
+    [](Element* aElement, Accessible* aContext) -> Accessible* {
+      return new HTMLListAccessible(aElement, aContext->Document());
+    },
+    roles::LIST)
+
 MARKUPMAP(merror_, New_HyperText, roles::MATHML_ERROR)
 
 MARKUPMAP(mstack_, New_HyperText, roles::MATHML_STACK,
@@ -395,7 +402,7 @@ MARKUPMAP(
     [](Element* aElement, Accessible* aContext) -> Accessible* {
       return new HTMLOutputAccessible(aElement, aContext->Document());
     },
-    roles::SECTION, Attr(live, polite))
+    roles::STATUSBAR, Attr(live, polite))
 
 MARKUPMAP(p, nullptr, roles::PARAGRAPH)
 
@@ -501,7 +508,7 @@ MARKUPMAP(
     0)
 
 MARKUPMAP(
-    tfoot,
+    thead,
     [](Element* aElement, Accessible* aContext) -> Accessible* {
       // Expose this as a grouping if its frame type is non-standard.
       if (aElement->GetPrimaryFrame() &&

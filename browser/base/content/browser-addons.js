@@ -301,7 +301,7 @@ var gXPInstallObserver = {
       i => i.addon.signedState <= AddonManager.SIGNEDSTATE_MISSING
     );
     let someUnsigned =
-      unsigned.length > 0 && unsigned.length < installInfo.installs.length;
+      !!unsigned.length && unsigned.length < installInfo.installs.length;
 
     options.eventCallback = aEvent => {
       switch (aEvent) {
@@ -361,7 +361,7 @@ var gXPInstallObserver = {
       );
       notification.setAttribute("warning", "true");
       options.learnMoreURL += "unsigned-addons";
-    } else if (unsigned.length == 0) {
+    } else if (!unsigned.length) {
       // All add-ons are verified or don't need to be verified
       messageString = gNavigatorBundle.getString("addonConfirmInstall.message");
       notification.removeAttribute("warning");
@@ -437,13 +437,41 @@ var gXPInstallObserver = {
     "xpinstall-disabled",
   ],
 
-  // Remove all opened addon installation notifications
+  /**
+   * Remove all opened addon installation notifications
+   *
+   * @param {*} browser - Browser to remove notifications for
+   * @returns {boolean} - true if notifications have been removed.
+   */
   removeAllNotifications(browser) {
     let notifications = this.NOTIFICATION_IDS.map(id =>
       PopupNotifications.getNotification(id, browser)
     ).filter(notification => notification != null);
 
-    PopupNotifications.remove(notifications);
+    PopupNotifications.remove(notifications, true);
+
+    return !!notifications.length;
+  },
+
+  logWarningFullScreenInstallBlocked() {
+    // If notifications have been removed, log a warning to the website console
+    let consoleMsg = Cc["@mozilla.org/scripterror;1"].createInstance(
+      Ci.nsIScriptError
+    );
+    let message = gBrowserBundle.GetStringFromName(
+      "addonInstallFullScreenBlocked"
+    );
+    consoleMsg.initWithWindowID(
+      message,
+      gBrowser.currentURI.spec,
+      null,
+      0,
+      0,
+      Ci.nsIScriptError.warningFlag,
+      "FullScreen",
+      gBrowser.selectedBrowser.innerWindowID
+    );
+    Services.console.logMessage(consoleMsg);
   },
 
   observe(aSubject, aTopic, aData) {
@@ -515,6 +543,11 @@ var gXPInstallObserver = {
           secondaryActions,
           options
         );
+        break;
+      }
+      case "addon-install-fullscreen-blocked": {
+        // AddonManager denied installation because we are in DOM fullscreen
+        this.logWarningFullScreenInstallBlocked();
         break;
       }
       case "addon-install-origin-blocked": {
@@ -628,8 +661,8 @@ var gXPInstallObserver = {
             "xpinstallPromptMessage.neverAllow.accesskey"
           ),
           callback: () => {
-            SitePermissions.set(
-              browser.currentURI,
+            SitePermissions.setForPrincipal(
+              browser.contentPrincipal,
               "install",
               SitePermissions.BLOCK
             );
@@ -682,14 +715,6 @@ var gXPInstallObserver = {
         options.sourceURI = browser.currentURI;
         options.eventCallback = function(aEvent) {
           switch (aEvent) {
-            case "shown":
-              let notificationElement = [...this.owner.panel.children].find(
-                n => n.notification == this
-              );
-              if (notificationElement) {
-                notificationElement.setAttribute("mainactiondisabled", "true");
-              }
-              break;
             case "removed":
               options.contentWindow = null;
               options.sourceURI = null;
@@ -701,6 +726,7 @@ var gXPInstallObserver = {
           accessKey: gNavigatorBundle.getString(
             "addonInstall.acceptButton2.accesskey"
           ),
+          disabled: true,
           callback: () => {},
         };
         let secondaryAction = {

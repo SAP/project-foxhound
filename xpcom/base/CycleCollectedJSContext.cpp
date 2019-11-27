@@ -10,10 +10,10 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/Move.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimelineConsumers.h"
 #include "mozilla/TimelineMarker.h"
@@ -27,6 +27,7 @@
 #include "mozilla/dom/PromiseRejectionEvent.h"
 #include "mozilla/dom/PromiseRejectionEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/UserActivation.h"
 #include "jsapi.h"
 #include "js/Debug.h"
 #include "js/GCAPI.h"
@@ -102,6 +103,9 @@ CycleCollectedJSContext::~CycleCollectedJSContext() {
   mUncaughtRejections.reset();
   mConsumedRejections.reset();
 
+  mAboutToBeNotifiedRejectedPromises.Clear();
+  mPendingUnhandledRejections.Clear();
+
   JS_DestroyContext(mJSContext);
   mJSContext = nullptr;
 
@@ -151,10 +155,12 @@ nsresult CycleCollectedJSContext::Initialize(JSRuntime* aParentRuntime,
   MOZ_ASSERT(!mJSContext);
 
   mozilla::dom::InitScriptSettings();
-  mJSContext = JS_NewContext(aMaxBytes, aMaxNurseryBytes, aParentRuntime);
+  mJSContext = JS_NewContext(aMaxBytes, aParentRuntime);
   if (!mJSContext) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+
+  JS_SetGCParameter(mJSContext, JSGC_MAX_NURSERY_BYTES, aMaxNurseryBytes);
 
   mRuntime = CreateRuntime(mJSContext);
 
@@ -361,8 +367,7 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
     }
   } else {
     PromiseDebugging::AddConsumedRejection(aPromise);
-    if (mozilla::StaticPrefs::dom_promise_rejection_events_enabled() &&
-        !aMutedErrors) {
+    if (mozilla::StaticPrefs::dom_promise_rejection_events_enabled()) {
       for (size_t i = 0; i < aboutToBeNotified.Length(); i++) {
         if (aboutToBeNotified[i] &&
             aboutToBeNotified[i]->PromiseObj() == aPromise) {
@@ -377,10 +382,10 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
       }
       RefPtr<Promise> promise;
       unhandled.Remove(promiseID, getter_AddRefs(promise));
-      if (!promise) {
+      if (!promise && !aMutedErrors) {
         nsIGlobalObject* global = xpc::NativeGlobal(aPromise);
         if (nsCOMPtr<EventTarget> owner = do_QueryInterface(global)) {
-          PromiseRejectionEventInit init;
+          RootedDictionary<PromiseRejectionEventInit> init(aCx);
           init.mPromise = Promise::CreateFromExisting(global, aPromise);
           init.mReason = JS::GetPromiseResult(aPromise);
 
@@ -712,7 +717,8 @@ NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
       continue;
     }
 
-    JS::RootedObject promiseObj(mCx->RootingCx(), promise->PromiseObj());
+    JS::RootingContext* cx = mCx->RootingCx();
+    JS::RootedObject promiseObj(cx, promise->PromiseObj());
     MOZ_ASSERT(JS::IsPromiseObject(promiseObj));
 
     // Only fire unhandledrejection if the promise is still not handled;
@@ -720,7 +726,7 @@ NS_IMETHODIMP CycleCollectedJSContext::NotifyUnhandledRejections::Run() {
     if (!JS::GetPromiseIsHandled(promiseObj)) {
       if (nsCOMPtr<EventTarget> target =
               do_QueryInterface(promise->GetParentObject())) {
-        PromiseRejectionEventInit init;
+        RootedDictionary<PromiseRejectionEventInit> init(cx);
         init.mPromise = promise;
         init.mReason = JS::GetPromiseResult(promiseObj);
         init.mCancelable = true;

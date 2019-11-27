@@ -3,6 +3,7 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifdef XP_WIN
 #  include "WMF.h"
 #endif
@@ -15,12 +16,13 @@
 #include "GPUProcessManager.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/PerfStats.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/RemoteDecoderManagerParent.h"
 #include "mozilla/dom/MemoryReportRequest.h"
+#include "mozilla/webgpu/WebGPUThreading.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/image/ImageMemoryReporter.h"
@@ -66,6 +68,10 @@
 #  include "ChildProfilerController.h"
 #endif
 #include "nsAppRunner.h"
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+#  include "mozilla/SandboxTestingChild.h"
+#endif
 
 namespace mozilla {
 namespace gfx {
@@ -159,17 +165,9 @@ void GPUParent::NotifyDeviceReset() {
   Unused << SendNotifyDeviceReset(data);
 }
 
-PAPZInputBridgeParent* GPUParent::AllocPAPZInputBridgeParent(
+already_AddRefed<PAPZInputBridgeParent> GPUParent::AllocPAPZInputBridgeParent(
     const LayersId& aLayersId) {
-  APZInputBridgeParent* parent = new APZInputBridgeParent(aLayersId);
-  parent->AddRef();
-  return parent;
-}
-
-bool GPUParent::DeallocPAPZInputBridgeParent(PAPZInputBridgeParent* aActor) {
-  APZInputBridgeParent* parent = static_cast<APZInputBridgeParent*>(aActor);
-  parent->Release();
-  return true;
+  return MakeAndAddRef<APZInputBridgeParent>(aLayersId);
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvInit(
@@ -186,6 +184,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, devicePrefs.oglCompositing());
   gfxConfig::Inherit(Feature::ADVANCED_LAYERS, devicePrefs.advancedLayers());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
+  gfxConfig::Inherit(Feature::WEBGPU, devicePrefs.webGPU());
 
   {  // Let the crash reporter know if we've got WR enabled or not. For other
     // processes this happens in gfxPlatform::InitWebRenderConfig.
@@ -272,6 +271,10 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   }
 #endif
 
+  if (gfxConfig::IsEnabled(Feature::WEBGPU)) {
+    webgpu::WebGPUThreading::Start();
+  }
+
   VRManager::ManagerInit();
   // Send a message to the UI process that we're done.
   GPUDeviceData data;
@@ -282,6 +285,17 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
                                  mLaunchTime);
   return IPC_OK();
 }
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+mozilla::ipc::IPCResult GPUParent::RecvInitSandboxTesting(
+    Endpoint<PSandboxTestingChild>&& aEndpoint) {
+  if (!SandboxTestingChild::Initialize(std::move(aEndpoint))) {
+    return IPC_FAIL(
+        this, "InitSandboxTesting failed to initialise the child process.");
+  }
+  return IPC_OK();
+}
+#endif
 
 mozilla::ipc::IPCResult GPUParent::RecvInitCompositorManager(
     Endpoint<PCompositorManagerParent>&& aEndpoint) {
@@ -478,7 +492,7 @@ mozilla::ipc::IPCResult GPUParent::RecvRequestMemoryReport(
 }
 
 mozilla::ipc::IPCResult GPUParent::RecvShutdownVR() {
-  if (StaticPrefs::dom_vr_process_enabled()) {
+  if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     VRGPUChild::Shutdown();
   }
   return IPC_OK();
@@ -537,6 +551,10 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
 #endif
 
   image::ImageMemoryReporter::ShutdownForWebRender();
+
+  if (gfxConfig::IsEnabled(Feature::WEBGPU)) {
+    webgpu::WebGPUThreading::ShutDown();
+  }
 
   // Shut down the default GL context provider.
   gl::GLContextProvider::Shutdown();

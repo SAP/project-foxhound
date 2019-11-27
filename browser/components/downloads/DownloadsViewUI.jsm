@@ -169,6 +169,10 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
   connect() {
     let document = this.element.ownerDocument;
     let downloadListItemFragment = gDownloadListItemFragments.get(document);
+    // When changing the markup within the fragment, please ensure that
+    // the functions within DownloadsView still operate correctly.
+    // E.g. onDownloadClick() relies on brittle logic and performs/prevents
+    // actions based on the check if originaltarget was not a button.
     if (!downloadListItemFragment) {
       let MozXULElement = document.defaultView.MozXULElement;
       downloadListItemFragment = MozXULElement.parseXULToFragment(`
@@ -188,20 +192,22 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
           </vbox>
         </hbox>
         <toolbarseparator />
-        <button class="downloadButton"
-                oncommand="DownloadsView.onDownloadButton(event);"/>
+        <button class="downloadButton"/>
       `);
       gDownloadListItemFragments.set(document, downloadListItemFragment);
     }
     this.element.setAttribute("active", true);
     this.element.setAttribute("orient", "horizontal");
-    this.element.setAttribute(
-      "onclick",
-      "DownloadsView.onDownloadClick(event);"
-    );
+    this.element.addEventListener("click", ev => {
+      ev.target.ownerGlobal.DownloadsView.onDownloadClick(ev);
+    });
     this.element.appendChild(
       document.importNode(downloadListItemFragment, true)
     );
+    let downloadButton = this.element.querySelector(".downloadButton");
+    downloadButton.addEventListener("command", function(event) {
+      event.target.ownerGlobal.DownloadsView.onDownloadButton(event);
+    });
     for (let [propertyName, selector] of [
       ["_downloadTypeIcon", ".downloadTypeIcon"],
       ["_downloadTarget", ".downloadTarget"],
@@ -327,8 +333,14 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
    *        Downloads View.
    */
   showStatusWithDetails(stateLabel, hoverStatus) {
+    let referrer =
+      this.download.source.referrerInfo &&
+      this.download.source.referrerInfo.originalReferrer
+        ? this.download.source.referrerInfo.originalReferrer.spec
+        : null;
+
     let [displayHost] = DownloadUtils.getURIHost(
-      this.download.source.referrer || this.download.source.url
+      referrer || this.download.source.url
     );
     let [displayDate] = DownloadUtils.getReadableDates(
       new Date(this.download.endTime)
@@ -681,7 +693,10 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
       case "downloadsCmd_pauseResume":
         return this.download.hasPartialData && !this.download.error;
       case "downloadsCmd_openReferrer":
-        return !!this.download.source.referrer;
+        return (
+          !!this.download.source.referrerInfo &&
+          !!this.download.source.referrerInfo.originalReferrer
+        );
       case "downloadsCmd_confirmBlock":
       case "downloadsCmd_chooseUnblock":
       case "downloadsCmd_chooseOpen":
@@ -738,7 +753,9 @@ this.DownloadsViewUI.DownloadElementShell.prototype = {
   },
 
   downloadsCmd_openReferrer() {
-    this.element.ownerGlobal.openURL(this.download.source.referrer);
+    this.element.ownerGlobal.openURL(
+      this.download.source.referrerInfo.originalReferrer
+    );
   },
 
   downloadsCmd_pauseResume() {

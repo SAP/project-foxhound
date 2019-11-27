@@ -222,8 +222,7 @@ nsresult mozInlineSpellStatus::InitForNavigation(
   }
   // the anchor node might not be in the DOM anymore, check
   if (root && aOldAnchorNode &&
-      !nsContentUtils::ContentIsShadowIncludingDescendantOf(aOldAnchorNode,
-                                                            root)) {
+      !aOldAnchorNode->IsShadowIncludingInclusiveDescendantOf(root)) {
     *aContinue = false;
     return NS_OK;
   }
@@ -1059,9 +1058,15 @@ bool mozInlineSpellChecker::ShouldSpellCheckNode(TextEditor* aTextEditor,
                                            nsGkAtoms::cite, eIgnoreCase)) {
         return false;
       }
-      if (parent->IsHTMLElement(nsGkAtoms::pre) &&
+      if (parent->IsAnyOfHTMLElements(nsGkAtoms::pre, nsGkAtoms::div) &&
           parent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::_class,
                                            nsGkAtoms::mozsignature,
+                                           eIgnoreCase)) {
+        return false;
+      }
+      if (parent->IsHTMLElement(nsGkAtoms::div) &&
+          parent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::_class,
+                                           nsGkAtoms::mozfwcontainer,
                                            eIgnoreCase)) {
         return false;
       }
@@ -1271,10 +1276,8 @@ nsresult mozInlineSpellChecker::DoSpellCheck(
     // aWordUtil.GetRootNode()
     nsINode* rootNode = aWordUtil.GetRootNode();
     if (!beginNode->IsInComposedDoc() || !endNode->IsInComposedDoc() ||
-        !nsContentUtils::ContentIsShadowIncludingDescendantOf(beginNode,
-                                                              rootNode) ||
-        !nsContentUtils::ContentIsShadowIncludingDescendantOf(endNode,
-                                                              rootNode)) {
+        !beginNode->IsShadowIncludingInclusiveDescendantOf(rootNode) ||
+        !endNode->IsShadowIncludingInclusiveDescendantOf(rootNode)) {
       // Just bail out and don't try to spell-check this
       return NS_OK;
     }
@@ -1627,7 +1630,7 @@ nsresult mozInlineSpellChecker::AddRange(Selection* aSpellCheckSelection,
   if (!SpellCheckSelectionIsFull()) {
     IgnoredErrorResult err;
     aSpellCheckSelection->AddRangeAndSelectFramesAndNotifyListeners(*aRange,
-        err);
+                                                                    err);
     if (err.Failed()) {
       rv = err.StealNSResult();
     } else {

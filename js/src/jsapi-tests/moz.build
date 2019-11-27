@@ -7,6 +7,7 @@
 GeckoProgram('jsapi-tests', linkage=None)
 
 include('../js-cxxflags.mozbuild')
+include('../js-standalone.mozbuild')
 
 UNIFIED_SOURCES += [
     'selfTest.cpp',
@@ -16,6 +17,7 @@ UNIFIED_SOURCES += [
     'testArrayBufferView.cpp',
     'testArrayBufferWithUserOwnedContents.cpp',
     'testAtomicOperations.cpp',
+    'testAtomizeUtf8NonAsciiLatin1CodePoint.cpp',
     'testBoundFunction.cpp',
     'testBug604087.cpp',
     'testCallArgs.cpp',
@@ -76,6 +78,7 @@ UNIFIED_SOURCES += [
     'testNewObject.cpp',
     'testNewTargetInvokeConstructor.cpp',
     'testNullRoot.cpp',
+    'testNumberToString.cpp',
     'testObjectEmulatingUndefined.cpp',
     'testOOM.cpp',
     'testParseJSON.cpp',
@@ -170,16 +173,6 @@ LOCAL_INCLUDES += [
 USE_LIBS += [
     'static:js',
 ]
-
-if CONFIG['ENABLE_WASM_CRANELIFT']:
-    USE_LIBS += [
-        'jsrust'
-    ]
-
-if CONFIG['MOZ_NEEDS_LIBATOMIC']:
-    OS_LIBS += ['atomic']
-
-OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
 
 DEFINES['topsrcdir'] = '%s/js/src' % TOPSRCDIR
 OBJDIR_PP_FILES.js.src['jsapi-tests'] += ['jsapi-tests-gdb.py.in']

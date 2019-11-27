@@ -72,6 +72,8 @@ function URLFetcher(url, timeout) {
         // For some redirects we don't get a status, so we need to check it
         // this way. This only works because we set the redirectionLimit to 0.
         self.onredirectorerror(300);
+        // No need to invoke the onerror callback, we handled it here.
+        xhr.onerror = null;
       }
     }
   };
@@ -209,7 +211,7 @@ function LoginObserver(captivePortalDetector) {
         case LOGIN_OBSERVER_STATE_BURST:
           // Wait while network stays idle for a short period
           state = LOGIN_OBSERVER_STATE_VERIFY_NEEDED;
-        // Fall though to start polling timer
+        // Fall through to start polling timer
         case LOGIN_OBSERVER_STATE_IDLE:
         // Just fall through to perform a captive portal check.
         case LOGIN_OBSERVER_STATE_VERIFY_NEEDED:
@@ -528,13 +530,14 @@ CaptivePortalDetector.prototype = {
   },
 };
 
-/* globals debug: true */
 var debug;
 if (DEBUG) {
+  // eslint-disable-next-line no-global-assign
   debug = function(s) {
     dump("-*- CaptivePortalDetector component: " + s + "\n");
   };
 } else {
+  // eslint-disable-next-line no-global-assign
   debug = function(s) {};
 }
 

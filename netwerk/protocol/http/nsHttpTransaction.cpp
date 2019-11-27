@@ -25,6 +25,7 @@
 #include "nsIPipe.h"
 #include "nsCRT.h"
 #include "mozilla/Tokenizer.h"
+#include "mozilla/Move.h"
 #include "TCPFastOpenLayer.h"
 
 #include "nsISeekableStream.h"
@@ -194,8 +195,8 @@ void nsHttpTransaction::SetClassOfService(uint32_t cos) {
 
 class ReleaseH2WSTrans final : public Runnable {
  public:
-  explicit ReleaseH2WSTrans(SpdyConnectTransaction* trans)
-      : Runnable("ReleaseH2WSTrans"), mTrans(trans) {}
+  explicit ReleaseH2WSTrans(already_AddRefed<SpdyConnectTransaction>&& trans)
+      : Runnable("ReleaseH2WSTrans"), mTrans(std::move(trans)) {}
 
   NS_IMETHOD Run() override {
     mTrans = nullptr;
@@ -236,7 +237,8 @@ nsHttpTransaction::~nsHttpTransaction() {
   ReleaseBlockingTransaction();
 
   if (mH2WSTransaction) {
-    RefPtr<ReleaseH2WSTrans> r = new ReleaseH2WSTrans(mH2WSTransaction);
+    RefPtr<ReleaseH2WSTrans> r =
+        new ReleaseH2WSTrans(mH2WSTransaction.forget());
     r->Dispatch();
   }
 }
@@ -445,6 +447,14 @@ nsAHttpConnection* nsHttpTransaction::Connection() {
 }
 
 void nsHttpTransaction::SetH2WSConnRefTaken() {
+  if (!OnSocketThread()) {
+    nsCOMPtr<nsIRunnable> event =
+        NewRunnableMethod("nsHttpTransaction::SetH2WSConnRefTaken", this,
+                          &nsHttpTransaction::SetH2WSConnRefTaken);
+    gSocketTransportService->Dispatch(event, NS_DISPATCH_NORMAL);
+    return;
+  }
+
   if (mH2WSTransaction) {
     // Need to let the websocket transaction/connection know we've reached
     // this point so it can stop forwarding information through us and
@@ -2351,8 +2361,17 @@ void nsHttpTransaction::Refused0RTT() {
 void nsHttpTransaction::SetHttpTrailers(nsCString& aTrailers) {
   LOG(("nsHttpTransaction::SetHttpTrailers %p", this));
   LOG(("[\n    %s\n]", aTrailers.BeginReading()));
-  if (!mForTakeResponseTrailers) {
-    mForTakeResponseTrailers = new nsHttpHeaderArray();
+
+  // Introduce a local variable to minimize the critical section.
+  nsAutoPtr<nsHttpHeaderArray> httpTrailers(new nsHttpHeaderArray());
+  // Given it's usually null, use double-check locking for performance.
+  if (mForTakeResponseTrailers) {
+    MutexAutoLock lock(*nsHttp::GetLock());
+    if (mForTakeResponseTrailers) {
+      // Copy the trailer. |TakeResponseTrailers| gets the original trailer
+      // until the final swap.
+      *httpTrailers = *mForTakeResponseTrailers;
+    }
   }
 
   int32_t cur = 0;
@@ -2363,26 +2382,30 @@ void nsHttpTransaction::SetHttpTrailers(nsCString& aTrailers) {
       newline = len;
     }
 
-    int32_t end = aTrailers[newline - 1] == '\r' ? newline - 1 : newline;
+    int32_t end =
+        (newline && aTrailers[newline - 1] == '\r') ? newline - 1 : newline;
     nsDependentCSubstring line(aTrailers, cur, end);
     nsHttpAtom hdr = {nullptr};
     nsAutoCString hdrNameOriginal;
     nsAutoCString val;
-    if (NS_SUCCEEDED(mForTakeResponseTrailers->ParseHeaderLine(
-            line, &hdr, &hdrNameOriginal, &val))) {
+    if (NS_SUCCEEDED(httpTrailers->ParseHeaderLine(line, &hdr, &hdrNameOriginal,
+                                                   &val))) {
       if (hdr == nsHttp::Server_Timing) {
-        Unused << mForTakeResponseTrailers->SetHeaderFromNet(
-            hdr, hdrNameOriginal, val, true);
+        Unused << httpTrailers->SetHeaderFromNet(hdr, hdrNameOriginal, val,
+                                                 true);
       }
     }
 
     cur = newline + 1;
   }
 
-  if (mForTakeResponseTrailers->Count() == 0) {
+  if (httpTrailers->Count() == 0) {
     // Didn't find a Server-Timing header, so get rid of this.
-    mForTakeResponseTrailers = nullptr;
+    httpTrailers = nullptr;
   }
+
+  MutexAutoLock lock(*nsHttp::GetLock());
+  Swap(mForTakeResponseTrailers, httpTrailers);
 }
 
 bool nsHttpTransaction::IsWebsocketUpgrade() {
@@ -2398,6 +2421,8 @@ bool nsHttpTransaction::IsWebsocketUpgrade() {
 
 void nsHttpTransaction::SetH2WSTransaction(
     SpdyConnectTransaction* aH2WSTransaction) {
+  MOZ_ASSERT(OnSocketThread());
+
   mH2WSTransaction = aH2WSTransaction;
 }
 

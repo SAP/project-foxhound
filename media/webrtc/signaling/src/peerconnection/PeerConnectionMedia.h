@@ -12,8 +12,8 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/net/StunAddrsRequestChild.h"
-#include "nsIProtocolProxyCallback.h"
 #include "MediaTransportHandler.h"
+#include "nsIHttpChannelInternal.h"
 
 #include "TransceiverImpl.h"
 
@@ -125,6 +125,7 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   }
 
   nsPIDOMWindowInner* GetWindow() const;
+  already_AddRefed<nsIHttpChannelInternal> GetChannel() const;
 
   void AlpnNegotiated_s(const std::string& aAlpn);
   void AlpnNegotiated_m(const std::string& aAlpn);
@@ -137,25 +138,16 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
 
  private:
   void InitLocalAddrs();  // for stun local address IPC request
-  nsresult InitProxy();
-  class ProtocolProxyQueryHandler : public nsIProtocolProxyCallback {
-   public:
-    explicit ProtocolProxyQueryHandler(PeerConnectionMedia* pcm) : pcm_(pcm) {}
-
-    NS_IMETHOD OnProxyAvailable(nsICancelable* request, nsIChannel* aChannel,
-                                nsIProxyInfo* proxyinfo,
-                                nsresult result) override;
-    NS_DECL_ISUPPORTS
-
-   private:
-    void SetProxyOnPcm(nsIProxyInfo& proxyinfo);
-    RefPtr<PeerConnectionMedia> pcm_;
-    virtual ~ProtocolProxyQueryHandler() {}
-  };
+  bool ShouldForceProxy() const;
+  std::unique_ptr<NrSocketProxyConfig> GetProxyConfig() const;
 
   class StunAddrsHandler : public net::StunAddrsListener {
    public:
     explicit StunAddrsHandler(PeerConnectionMedia* pcm) : pcm_(pcm) {}
+
+    void OnMDNSQueryComplete(const nsCString& hostname,
+                             const Maybe<nsCString>& address) override;
+
     void OnStunAddrsAvailable(
         const mozilla::net::NrIceStunAddrArray& addrs) override;
 
@@ -177,9 +169,11 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   void GatherIfReady();
   void FlushIceCtxOperationQueueIfReady();
   void PerformOrEnqueueIceCtxOperation(nsIRunnable* runnable);
-  void EnsureIceGathering(bool aDefaultRouteOnly);
+  nsresult SetTargetForDefaultLocalAddressLookup();
+  void EnsureIceGathering(bool aDefaultRouteOnly, bool aObfuscateHostAddresses);
 
   bool GetPrefDefaultAddressOnly() const;
+  bool GetPrefObfuscateHostAddresses() const;
 
   void ConnectSignals();
 
@@ -194,9 +188,7 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   void OnCandidateFound_m(const std::string& aTransportId,
                           const CandidateInfo& aCandidateInfo);
 
-  bool IsIceCtxReady() const {
-    return mProxyResolveCompleted && mLocalAddrsCompleted;
-  }
+  bool IsIceCtxReady() const { return mLocalAddrsCompleted; }
 
   // The parent PC
   PeerConnectionImpl* mParent;
@@ -218,14 +210,8 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
   // gathering or start checking)
   std::vector<nsCOMPtr<nsIRunnable>> mQueuedIceCtxOperations;
 
-  // Used to cancel any ongoing proxy request.
-  nsCOMPtr<nsICancelable> mProxyRequest;
-
-  // Used to track the state of the request.
-  bool mProxyResolveCompleted;
-
-  // Used to track proxy existence and socket proxy configuration.
-  std::unique_ptr<NrSocketProxyConfig> mProxyConfig;
+  // Set if prefs dictate that we should force the use of a web proxy.
+  bool mForceProxy;
 
   // Used to cancel incoming stun addrs response
   RefPtr<net::StunAddrsRequestChild> mStunAddrsRequest;
@@ -235,6 +221,24 @@ class PeerConnectionMedia : public sigslot::has_slots<> {
 
   // Used to store the result of the stun addr IPC request
   nsTArray<NrIceStunAddr> mStunAddrs;
+
+  // Used to ensure the target for default local address lookup is only set
+  // once.
+  bool mTargetForDefaultLocalAddressLookupIsSet;
+
+  // Set to true when the object is going to be released.
+  bool mDestroyed;
+
+  // Used to store the mDNS hostnames that we have registered
+  std::set<std::string> mRegisteredMDNSHostnames;
+
+  // Used to store the mDNS hostnames that we have queried
+  struct PendingIceCandidate {
+    std::vector<std::string> mTokenizedCandidate;
+    std::string mTransportId;
+    std::string mUfrag;
+  };
+  std::map<std::string, std::list<PendingIceCandidate>> mQueriedMDNSHostnames;
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PeerConnectionMedia)
 };

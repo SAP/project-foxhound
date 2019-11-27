@@ -7,9 +7,9 @@
 .. role:: python(code)
    :language: python
 
-==================================
-Migrating Legacy Strings to Fluent
-==================================
+=============================================
+Migrating Strings From Legacy or Fluent Files
+=============================================
 
 Firefox is a project localized in over 100 languages. As the code for existing
 features moves away from the old localization systems and starts using
@@ -22,6 +22,11 @@ it allows to migrate legacy translations from `.dtd` and `.properties` files,
 not only moving strings and transforming them as needed to adapt to the `FTL`
 syntax, but also replicating "blame" for each string in VCS.
 
+The library also includes basic support for migrating existing Fluent messages
+without interpolations (e.g. variable replacements). The typical use cases
+would be messages moving as-is to a different file, or changes to the
+morphology of existing messages (e.g move content from an attribute to the
+value of the message).
 
 Migration Recipes and Their Lifecycle
 =====================================
@@ -93,8 +98,6 @@ This is how the migration recipe looks:
 
 .. code-block:: python
 
-  # coding=utf8
-
   # Any copyright is dedicated to the Public Domain.
   # http://creativecommons.org/publicdomain/zero/1.0/
 
@@ -112,7 +115,7 @@ This is how the migration recipe looks:
   """
   findbar-next =
       .tooltiptext = { COPY(from_path, "next.tooltip") }
-  """, from_path="toolkit/chrome/global/findbar.dtd")
+  """, from_path="toolkit/chrome/global/findbar.dtd"))
 
 
 The first important thing to notice is that the migration recipe needs file
@@ -153,8 +156,8 @@ repeating the same path multiple times, making the recipe more readable. Without
       transforms_from(
   """
   findbar-next =
-  .tooltiptext = { COPY("toolkit/chrome/global/findbar.dtd", "next.tooltip") }
-  """)
+      .tooltiptext = { COPY("toolkit/chrome/global/findbar.dtd", "next.tooltip") }
+  """))
 
 
 This method of writing migration recipes allows to take the original FTL
@@ -222,7 +225,7 @@ placeholders or entities that need to be replaced to adapt to Fluent syntax.
 Consider for example the following string:
 
 
-.. code-block:: XML
+.. code-block:: DTD
 
   <!ENTITY aboutSupport.featuresTitle "&brandShortName; Features">
 
@@ -230,7 +233,7 @@ Consider for example the following string:
 Which needs to be migrated to:
 
 
-.. code-block:: properties
+.. code-block:: fluent
 
   features-title = { -brand-short-name } Features
 
@@ -304,7 +307,7 @@ variables, implicitly relying on the order in which the arguments appear:
 And the target Fluent string:
 
 
-.. code-block:: properties
+.. code-block:: fluent
 
   update-full-name = { $name } ({ $buildID })
 
@@ -375,7 +378,7 @@ string is displayed in products, and are added only for formatting reasons. For
 example, consider this string:
 
 
-.. code-block:: XML
+.. code-block:: DTD
 
   <!ENTITY aboutAbout.note   "This is a list of “about” pages for your convenience.<br/>
                               Some of them might be confusing. Some are for diagnostic purposes only.<br/>
@@ -385,7 +388,7 @@ example, consider this string:
 If migrated as is, it would result in:
 
 
-.. code-block:: properties
+.. code-block:: fluent
 
   about-about-note =
       This is a list of “about” pages for your convenience.<br/>
@@ -397,7 +400,7 @@ This can be avoided by trimming the migrated string, with :python:`trim:"True`
 or :python:`trim=True`, depending on the context:
 
 
-.. code-block:: properties
+.. code-block:: python
 
   transforms_from(
   """
@@ -454,9 +457,9 @@ Consider the following example:
 In Fluent:
 
 
-.. code-block:: properties
+.. code-block:: fluent
 
-  searchResults.needHelpSupportLink = Need help? Visit <a data-l10n-name="url">{ -brand-short-name } Support</a>
+  search-results-need-help-support-link = Need help? Visit <a data-l10n-name="url">{ -brand-short-name } Support</a>
 
 
 This is quite a complex migration: it requires to take 2 legacy strings, and
@@ -525,7 +528,7 @@ Consider the following legacy string:
 In Fluent:
 
 
-.. code-block:: properties
+.. code-block:: fluent
 
   containers-disable-alert-ok-button =
       { $tabCount ->
@@ -572,7 +575,7 @@ It’s always possible to migrate strings by manually creating the underlying AS
 structure. Consider the following complex Fluent string:
 
 
-.. code-block:: properties
+.. code-block:: fluent
 
   use-current-pages =
       .label =
@@ -648,124 +651,98 @@ new elements are:
  - A :python:`SelectExpression` is defined, with an array of :python:`Variant`
    objects.
 
+Fluent to Fluent (FTL2FTL) Migrations
+-------------------------------------
+
+It’s possible to migrate existing Fluent messages using :python:`COPY_PATTERN`
+in a migration recipe. Unlike migrations from legacy content, it’s not possible
+to interpolate the text, only to copy existing content without changes.
+
+Consider for example a patch modifying an existing message to move the original
+value to a :js:`alt` attribute.
+
+Original message:
+
+
+.. code-block:: fluent
+
+  about-logins-icon = Warning icon
+      .title = Breached website
+
+
+New message:
+
+
+.. code-block:: fluent
+
+  about-logins-breach-icon =
+      .alt = Warning icon
+      .title = Breached website
+
+
+This type of changes requires a new message identifier, which in turn causes
+existing translations to be lost. It’s possible to migrate the existing
+translated content with:
+
+
+.. code-block:: python
+
+    from fluent.migrate import COPY_PATTERN
+
+    ctx.add_transforms(
+        "browser/browser/aboutLogins.ftl",
+        "browser/browser/aboutLogins.ftl",
+        transforms_from(
+    """
+    about-logins-breach-icon =
+        .alt = {COPY_PATTERN(from_path, "about-logins-icon")}
+        .title = {COPY_PATTERN(from_path, "about-logins-icon.title")}
+    """,from_path="browser/browser/aboutLogins.ftl"),
+    )
+
+
+In this specific case, the destination and source files are the same. The dot
+notation is used to access attributes: :js:`about-logins-icon.title` matches
+the :js:`title` attribute of the message with identifier
+:js:`about-logins-icon`, while :js:`about-logins-icon` alone matches the value
+of the message.
+
+
+.. warning::
+
+  Using the message identifier in :python:`COPY_PATTERN` will not migrate the
+  message as a whole, with all its attributes, only its value.
+
 
 How to Test Migration Recipes
 =============================
 
-Unfortunately, testing migration recipes requires several manual steps. We plan
-to `introduce automated testing`__ for patches including migration recipes, in
-the meantime this is how it’s possible to test migration recipes.
-
-__ https://bugzilla.mozilla.org/show_bug.cgi?id=1353680
-
-
-1. Install Fluent Migration
----------------------------
-
-The first step is to install the `Fluent Migration`_ Python library. It’s
-currently not available as a package, so the repository must be cloned locally
-and installed manually, e.g. with :bash:`pip install -e .`.
-
-Installing this package will make a :bash:`migrate-l10n` command available.
-
-
-2. Clone gecko-strings
-----------------------
-
-Migration recipes work against localization repositories, which means it’s not
-possible to test them directly against `mozilla-central`, unless the *source*
-path (the second argument) in :python:`ctx.add_transforms` is temporarily
-tweaked to match `mozilla-central` paths.
-
-To test the actual recipe that will land in the patch, it’s necessary to clone
-the `gecko-strings`_ repository on the system twice, in two separate folders.
-One will simulate the reference en-US repository after the patch has landed, and
-the other will simulate a target localization. For example, let’s call the two
-folders `en-US` and `test`.
-
+To test migration recipes, use the following mach command:
 
 .. code-block:: bash
 
-  hg clone https://hg.mozilla.org/l10n/gecko-strings en-US
-  cp -r en-US test
+  ./mach fluent-migration-test python/l10n/fluent_migrations/bug_1485002_newtab.py
 
+This will analyze your migration recipe to check that the :python:`migrate`
+function exists, and interacts correctly with the migration context. Once that
+passes, it clones :bash:`gecko-strings` into :bash:`$OBJDIR/python/l10n`, creates a
+reference localization by adding your local Fluent strings to the ones in
+:bash:`gecko-strings`. It then runs the migration recipe, both as dry run and
+as actual migration. Finally it analyzes the commits, and checks if any
+migrations were actually run and the bug number in the commit message matches
+the migration name.
 
-3. Add new FTL strings to the local en-US repository
-----------------------------------------------------
+It will also show the diff between the migrated files and the reference, ignoring
+blank lines.
 
-The changed (or brand new) FTL files from the patch need to be copied into the
-`en-US` repository. Remember that paths are slightly different, with
-localization repositories missing the :bash:`locales/en-US` portion. There’s no
-need to commit these changes locally.
-
-
-4. Run the migration recipe
----------------------------
-
-The system is all set to run the recipe with the following commands:
-
+You can inspect the generated repository further by looking at
 
 .. code-block:: bash
 
-  cd PATH/TO/recipes
+  ls $OBJDIR/python/l10n/bug_1485002_newtab/en-US
 
-  migrate-l10n \
-    --lang test
-    --reference-dir PATH/TO/en-US \
-    --localization-dir PATH/TO/test \
-    --dry-run \
-    name_of_the_recipe
-
-
-The name of the recipe needs to be specified without the :bash:`.py` extension,
-since it’s imported as a module.
-
-Alternatively, before running :bash:`migrate-l10n`, it’s possible to update the
-value of :bash:`PYTHONPATH` to include the folder storing migration recipes.
-
-
-.. code-block:: bash
-
-  export PYTHONPATH="${PYTHONPATH}:PATH/TO/recipes/"
-
-
-The :bash:`--dry-run` option allows to run the recipe without making changes,
-and it’s useful to spot syntax errors in the recipe. If there are no errors,
-it’s possible to run the migration without :bash:`--dry-run` and actually commit
-the changes locally.
-
-This is the output of a migration:
-
-
-.. code-block:: bash
-
-  Running migration bug_1411707_findbar for test
-  WARNING:migrate:Plural rule for "'test'" is not defined in compare-locales
-  INFO:migrate:Localization file toolkit/toolkit/main-window/findbar.ftl does not exist and it will be created
-    Writing to test/toolkit/toolkit/main-window/findbar.ftl
-    Committing changeset: Bug 1411707 - Migrate the findbar XBL binding to a Custom Element, part 1.
-    Writing to test/toolkit/toolkit/main-window/findbar.ftl
-    Committing changeset: Bug 1411707 - Migrate the findbar XBL binding to a Custom Element, part 2.
-
-
-.. hint::
-
-  The warning about plural rules is expected, since `test` is not a valid locale
-  code. At this point, the result of migration is committed to the local `test`
-  folder.
-
-
-5. Compare the resulting files
-------------------------------
-
-Once the migration has run, the `test` repository includes the migrated files,
-and it’s possible to compare them with the files in `en-US`. Since the migration
-code strips empty line between strings, it’s recommended to use :bash:`diff -B`
-between the two files, or use a visual diff to compare their content.
-
-
-6. Caveats
-----------
+Caveats
+-------
 
 Be aware of hard-coded English context in migration. Consider for example:
 

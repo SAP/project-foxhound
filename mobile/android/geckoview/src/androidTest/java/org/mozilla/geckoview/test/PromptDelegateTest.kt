@@ -1,13 +1,11 @@
 package org.mozilla.geckoview.test
 
-import android.support.test.InstrumentationRegistry
 import org.mozilla.geckoview.AllowOrDeny
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate.LoadRequest
+import org.mozilla.geckoview.GeckoSession.PromptDelegate
 import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
 import org.mozilla.geckoview.test.util.Callbacks
 
 import android.support.test.filters.MediumTest
@@ -16,18 +14,10 @@ import org.hamcrest.Matchers.*
 import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.geckoview.test.util.HttpBin
-import java.net.URI
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
-@ReuseSession(false)
-@WithDevToolsAPI
 class PromptDelegateTest : BaseSessionTest() {
-    companion object {
-        val TEST_ENDPOINT: String = "http://localhost:4243"
-    }
-
     @Ignore("disable test for frequently failing Bug 1535423")
     @Test fun popupTest() {
         // Ensure popup blocking is enabled for this test.
@@ -36,11 +26,11 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onPopupRequest(session: GeckoSession, targetUri: String?)
-                    : GeckoResult<AllowOrDeny>? {
+            override fun onPopupPrompt(session: GeckoSession, prompt: PromptDelegate.PopupPrompt)
+                    : GeckoResult<PromptDelegate.PromptResponse>? {
                 assertThat("Session should not be null", session, notNullValue())
-                assertThat("URL should not be null", targetUri, notNullValue())
-                assertThat("URL should match", targetUri, endsWith(HELLO_HTML_PATH))
+                assertThat("URL should not be null", prompt.targetUri, notNullValue())
+                assertThat("URL should match", prompt.targetUri, endsWith(HELLO_HTML_PATH))
                 return null
             }
         })
@@ -52,12 +42,12 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : Callbacks.PromptDelegate, Callbacks.NavigationDelegate {
             @AssertCalled(count = 1)
-            override fun onPopupRequest(session: GeckoSession, targetUri: String?)
-                    : GeckoResult<AllowOrDeny>? {
+            override fun onPopupPrompt(session: GeckoSession, prompt: PromptDelegate.PopupPrompt)
+                    : GeckoResult<PromptDelegate.PromptResponse>? {
                 assertThat("Session should not be null", session, notNullValue())
-                assertThat("URL should not be null", targetUri, notNullValue())
-                assertThat("URL should match", targetUri, endsWith(HELLO_HTML_PATH))
-                return GeckoResult.fromValue(AllowOrDeny.ALLOW)
+                assertThat("URL should not be null", prompt.targetUri, notNullValue())
+                assertThat("URL should match", prompt.targetUri, endsWith(HELLO_HTML_PATH))
+                return GeckoResult.fromValue(prompt.confirm(AllowOrDeny.ALLOW))
             }
 
             @AssertCalled(count = 2)
@@ -80,12 +70,12 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : Callbacks.PromptDelegate, Callbacks.NavigationDelegate {
             @AssertCalled(count = 1)
-            override fun onPopupRequest(session: GeckoSession, targetUri: String?)
-                    : GeckoResult<AllowOrDeny>? {
+            override fun onPopupPrompt(session: GeckoSession, prompt: PromptDelegate.PopupPrompt)
+                    : GeckoResult<PromptDelegate.PromptResponse>? {
                 assertThat("Session should not be null", session, notNullValue())
-                assertThat("URL should not be null", targetUri, notNullValue())
-                assertThat("URL should match", targetUri, endsWith(HELLO_HTML_PATH))
-                return GeckoResult.fromValue(AllowOrDeny.DENY)
+                assertThat("URL should not be null", prompt.targetUri, notNullValue())
+                assertThat("URL should match", prompt.targetUri, endsWith(HELLO_HTML_PATH))
+                return GeckoResult.fromValue(prompt.confirm(AllowOrDeny.DENY))
             }
 
             @AssertCalled(count = 1)
@@ -113,38 +103,32 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onAlert(session: GeckoSession, title: String?, msg: String?, callback: GeckoSession.PromptDelegate.AlertCallback) {
-                assertThat("Message should match", "Alert!", equalTo(msg))
+            override fun onAlertPrompt(session: GeckoSession, prompt: PromptDelegate.AlertPrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("Message should match", "Alert!", equalTo(prompt.message))
+                return GeckoResult.fromValue(prompt.dismiss())
             }
         })
     }
 
     @Test fun authTest() {
-        val httpBin = HttpBin(InstrumentationRegistry.getTargetContext(), URI.create(TEST_ENDPOINT))
+        sessionRule.session.loadTestPath("/basic-auth/foo/bar")
 
-        try {
-            httpBin.start()
-
-            sessionRule.session.loadUri("$TEST_ENDPOINT/basic-auth/foo/bar")
-
-            sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
-                @AssertCalled(count = 1)
-                override fun onAuthPrompt(session: GeckoSession, title: String?, msg: String?, options: GeckoSession.PromptDelegate.AuthOptions, callback: GeckoSession.PromptDelegate.AuthCallback) {
-                    //TODO: Figure out some better testing here.
-                }
-            })
-        } finally {
-            httpBin.stop()
-        }
+        sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
+            @AssertCalled(count = 1)
+            override fun onAuthPrompt(session: GeckoSession, prompt: PromptDelegate.AuthPrompt): GeckoResult<PromptDelegate.PromptResponse>? {
+                //TODO: Figure out some better testing here.
+                return null
+            }
+        })
     }
 
     @Ignore // TODO: Reenable when 1501574 is fixed.
     @Test fun buttonTest() {
         sessionRule.delegateDuringNextWait(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onButtonPrompt(session: GeckoSession, title: String?, msg: String?, btnMsg: Array<out String>?, callback: GeckoSession.PromptDelegate.ButtonCallback) {
-                assertThat("Message should match", "Confirm?", equalTo(msg))
-                callback.confirm(GeckoSession.PromptDelegate.BUTTON_TYPE_POSITIVE)
+            override fun onButtonPrompt(session: GeckoSession, prompt: PromptDelegate.ButtonPrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("Message should match", "Confirm?", equalTo(prompt.message))
+                return GeckoResult.fromValue(prompt.confirm(PromptDelegate.ButtonPrompt.Type.POSITIVE))
             }
         })
 
@@ -154,9 +138,9 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onButtonPrompt(session: GeckoSession, title: String?, msg: String?, btnMsg: Array<out String>?, callback: GeckoSession.PromptDelegate.ButtonCallback) {
-                assertThat("Message should match", "Confirm?", equalTo(msg))
-                callback.confirm(GeckoSession.PromptDelegate.BUTTON_TYPE_NEGATIVE)
+            override fun onButtonPrompt(session: GeckoSession, prompt: PromptDelegate.ButtonPrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("Message should match", "Confirm?", equalTo(prompt.message))
+                return GeckoResult.fromValue(prompt.confirm(PromptDelegate.ButtonPrompt.Type.NEGATIVE))
             }
         })
 
@@ -166,12 +150,15 @@ class PromptDelegateTest : BaseSessionTest() {
     }
 
     @Test fun textTest() {
-        sessionRule.delegateDuringNextWait(object : Callbacks.PromptDelegate {
+        sessionRule.session.loadTestPath(HELLO_HTML_PATH)
+        sessionRule.session.waitForPageStop()
+
+        sessionRule.delegateUntilTestEnd(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onTextPrompt(session: GeckoSession, title: String?, msg: String?, value: String?, callback: GeckoSession.PromptDelegate.TextCallback) {
-                assertThat("Message should match", "Prompt:", equalTo(msg))
-                assertThat("Default should match", "default", equalTo(value))
-                callback.confirm("foo")
+            override fun onTextPrompt(session: GeckoSession, prompt: PromptDelegate.TextPrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("Message should match", "Prompt:", equalTo(prompt.message))
+                assertThat("Default should match", "default", equalTo(prompt.defaultValue))
+                return GeckoResult.fromValue(prompt.confirm("foo"))
             }
         })
 
@@ -191,7 +178,8 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onChoicePrompt(session: GeckoSession, title: String?, msg: String?, type: Int, choices: Array<out GeckoSession.PromptDelegate.Choice>, callback: GeckoSession.PromptDelegate.ChoiceCallback) {
+            override fun onChoicePrompt(session: GeckoSession, prompt: PromptDelegate.ChoicePrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                return GeckoResult.fromValue(prompt.dismiss())
             }
         })
     }
@@ -204,21 +192,29 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onColorPrompt(session: GeckoSession, title: String?, value: String?, callback: GeckoSession.PromptDelegate.TextCallback) {
-                assertThat("Value should match", "#ffffff", equalTo(value))
-                callback.confirm("#123456")
+            override fun onColorPrompt(session: GeckoSession, prompt: PromptDelegate.ColorPrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("Value should match", "#ffffff", equalTo(prompt.defaultValue))
+                return GeckoResult.fromValue(prompt.confirm("#123456"))
             }
         })
 
         sessionRule.session.evaluateJS("""
-            let c = document.getElementById('colorexample');
-            let p = new Promise((resolve, reject) => {
-                c.addEventListener('change', (event) => resolve(event.target.value), false);
-            });
-            c.click();""".trimIndent())
+            this.c = document.getElementById('colorexample');
+        """.trimIndent())
+
+        val promise = sessionRule.session.evaluatePromiseJS("""
+            new Promise((resolve, reject) => {
+                this.c.addEventListener(
+                    'change',
+                    event => resolve(event.target.value),
+                    false
+                );
+            })""".trimIndent())
+
+        sessionRule.session.evaluateJS("this.c.click();")
 
         assertThat("Value should match",
-                sessionRule.session.waitForJS("p") as String,
+                promise.value as String,
                 equalTo("#123456"))
     }
 
@@ -233,7 +229,8 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onDateTimePrompt(session: GeckoSession, title: String?, type: Int, value: String?, min: String?, max: String?, callback: GeckoSession.PromptDelegate.TextCallback) {
+            override fun onDateTimePrompt(session: GeckoSession, prompt: PromptDelegate.DateTimePrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                return GeckoResult.fromValue(prompt.dismiss())
             }
         })
     }
@@ -248,12 +245,14 @@ class PromptDelegateTest : BaseSessionTest() {
 
         sessionRule.waitUntilCalled(object : Callbacks.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onFilePrompt(session: GeckoSession, title: String?, type: Int, mimeTypes: Array<out String>?, callback: GeckoSession.PromptDelegate.FileCallback) {
-                assertThat("Length of mimeTypes should match", 2, equalTo(mimeTypes!!.size))
-                assertThat("First accept attribute should match", "image/*", equalTo(mimeTypes[0]))
-                assertThat("Second accept attribute should match", ".pdf", equalTo(mimeTypes[1]))
-                // TODO: Test capture attribute when implemented.
+            override fun onFilePrompt(session: GeckoSession, prompt: PromptDelegate.FilePrompt): GeckoResult<PromptDelegate.PromptResponse> {
+                assertThat("Length of mimeTypes should match", 2, equalTo(prompt.mimeTypes!!.size))
+                assertThat("First accept attribute should match", "image/*", equalTo(prompt.mimeTypes?.get(0)))
+                assertThat("Second accept attribute should match", ".pdf", equalTo(prompt.mimeTypes?.get(1)))
+                assertThat("Capture attribute should match", PromptDelegate.FilePrompt.Capture.USER, equalTo(prompt.capture))
+                return GeckoResult.fromValue(prompt.dismiss())
             }
         })
     }
 }
+

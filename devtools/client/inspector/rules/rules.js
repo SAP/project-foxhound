@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -79,7 +77,7 @@ const PREF_UA_STYLES = "devtools.inspector.showUserAgentStyles";
 const PREF_DEFAULT_COLOR_UNIT = "devtools.defaultColorUnit";
 const FILTER_CHANGED_TIMEOUT = 150;
 // Removes the flash-out class from an element after 1 second.
-const REMOVE_FLASH_OUT_CLASS_TIMER = 1000;
+const PROPERTY_FLASHING_DURATION = 1000;
 
 // This is used to parse user input when filtering.
 const FILTER_PROP_RE = /\s*([^:\s]*)\s*:\s*(.*?)\s*;?$/;
@@ -144,7 +142,6 @@ function CssRuleView(inspector, document, store) {
   this.styleDocument = document;
   this.styleWindow = this.styleDocument.defaultView;
   this.store = store || {};
-  this.pageStyle = inspector.pageStyle;
 
   // Allow tests to override debouncing behavior, as this can cause intermittents.
   this.debounce = debounce;
@@ -162,6 +159,7 @@ function CssRuleView(inspector, document, store) {
   this._onTogglePrintSimulation = this._onTogglePrintSimulation.bind(this);
   this.highlightElementRule = this.highlightElementRule.bind(this);
   this.highlightProperty = this.highlightProperty.bind(this);
+  this.refreshPanel = this.refreshPanel.bind(this);
 
   const doc = this.styleDocument;
   this.element = doc.getElementById("ruleview-container-focusable");
@@ -301,7 +299,7 @@ CssRuleView.prototype = {
     return this._elementStyle ? this._elementStyle.rules : [];
   },
 
-  get target() {
+  get currentTarget() {
     return this.inspector.toolbox.target;
   },
 
@@ -322,7 +320,7 @@ CssRuleView.prototype = {
     }
 
     try {
-      const front = this.inspector.inspector;
+      const front = this.inspector.inspectorFront;
       const h = await front.getHighlighterByType("SelectorHighlighter");
       this.selectorHighlighter = h;
       return h;
@@ -382,6 +380,18 @@ CssRuleView.prototype = {
     }
   },
 
+  isPanelVisible: function() {
+    if (this.inspector.is3PaneModeEnabled) {
+      return true;
+    }
+    return (
+      this.inspector.toolbox &&
+      this.inspector.sidebar &&
+      this.inspector.toolbox.currentToolId === "inspector" &&
+      this.inspector.sidebar.getCurrentTabID() == "ruleview"
+    );
+  },
+
   /**
    * Check the print emulation actor's backwards-compatibility via the target actor's
    * actorHasMethod.
@@ -390,17 +400,17 @@ CssRuleView.prototype = {
     // In order to query if the emulation actor's print simulation methods are supported,
     // we have to call the emulation front so that the actor is lazily loaded. This allows
     // us to use `actorHasMethod`. Please see `getActorDescription` for more information.
-    this._emulationFront = await this.target.getFront("emulation");
+    this._emulationFront = await this.currentTarget.getFront("emulation");
 
     // Show the toggle button if:
     // - Print simulation is supported for the current target.
     // - Not debugging content document.
     if (
-      (await this.target.actorHasMethod(
+      (await this.currentTarget.actorHasMethod(
         "emulation",
         "getIsPrintSimulationEnabled"
       )) &&
-      !this.target.chrome
+      !this.currentTarget.chrome
     ) {
       this.printSimulationButton.removeAttribute("hidden");
 
@@ -655,10 +665,6 @@ CssRuleView.prototype = {
       !this.inspector.selection.isElementNode() ||
       this.inspector.selection.isAnonymousNode();
     this.addRuleButton.disabled = shouldBeDisabled;
-  },
-
-  setPageStyle: function(pageStyle) {
-    this.pageStyle = pageStyle;
   },
 
   /**
@@ -922,8 +928,15 @@ CssRuleView.prototype = {
       this._clearRules();
       this._showEmpty();
       this.refreshPseudoClassPanel();
+      if (this.pageStyle) {
+        this.pageStyle.off("stylesheet-updated", this.refreshPanel);
+        this.pageStyle = null;
+      }
       return promise.resolve(undefined);
     }
+
+    this.pageStyle = element.inspectorFront.pageStyle;
+    this.pageStyle.on("stylesheet-updated", this.refreshPanel);
 
     // To figure out how shorthand properties are interpreted by the
     // engine, we will set properties on a dummy element and observe
@@ -983,8 +996,8 @@ CssRuleView.prototype = {
    * Update the rules for the currently highlighted element.
    */
   refreshPanel: function() {
-    // Ignore refreshes during editing or when no element is selected.
-    if (this.isEditing || !this._elementStyle) {
+    // Ignore refreshes when the panel is hidden, or during editing or when no element is selected.
+    if (!this.isPanelVisible() || this.isEditing || !this._elementStyle) {
       return promise.resolve(undefined);
     }
 
@@ -1116,6 +1129,11 @@ CssRuleView.prototype = {
     if (this._elementStyle) {
       this._elementStyle.destroy();
       this._elementStyle = null;
+    }
+
+    if (this.pageStyle) {
+      this.pageStyle.off("stylesheet-updated", this.refreshPanel);
+      this.pageStyle = null;
     }
   },
 
@@ -1718,24 +1736,22 @@ CssRuleView.prototype = {
    */
   _flashElement(element) {
     flashElementOn(element, {
-      backgroundClass: "ruleview-property-highlight-background-color",
-    });
-    flashElementOff(element, {
-      backgroundClass: "ruleview-property-highlight-background-color",
+      backgroundClass: "theme-bg-contrast",
     });
 
-    if (this._removeFlashOutTimer) {
+    if (this._flashMutationTimer) {
       clearTimeout(this._removeFlashOutTimer);
-      this._removeFlashOutTimer = null;
+      this._flashMutationTimer = null;
     }
 
-    // Remove the flash-out class to prevent the element from re-flashing when the view
-    // is resized.
-    this._removeFlashOutTimer = setTimeout(() => {
-      element.classList.remove("flash-out");
+    this._flashMutationTimer = setTimeout(() => {
+      flashElementOff(element, {
+        backgroundClass: "theme-bg-contrast",
+      });
+
       // Emit "scrolled-to-property" for use by tests.
       this.emit("scrolled-to-element");
-    }, REMOVE_FLASH_OUT_CLASS_TIMER);
+    }, PROPERTY_FLASHING_DURATION);
   },
 
   /**
@@ -2048,24 +2064,20 @@ function RuleViewTool(inspector, window) {
   this.inspector.selection.on("detached-front", this.onDetachedFront);
   this.inspector.selection.on("new-node-front", this.onSelected);
   this.inspector.selection.on("pseudoclass", this.refresh);
-  this.inspector.target.on("navigate", this.clearUserProperties);
+  this.inspector.currentTarget.on("navigate", this.clearUserProperties);
   this.inspector.ruleViewSideBar.on("ruleview-selected", this.onPanelSelected);
   this.inspector.sidebar.on("ruleview-selected", this.onPanelSelected);
-  this.inspector.pageStyle.on("stylesheet-updated", this.refresh);
   this.inspector.styleChangeTracker.on("style-changed", this.refresh);
 
   this.onSelected();
 }
 
 RuleViewTool.prototype = {
-  isSidebarActive: function() {
+  isPanelVisible: function() {
     if (!this.view) {
       return false;
     }
-
-    return this.inspector.is3PaneModeEnabled
-      ? true
-      : this.inspector.sidebar.getCurrentTabID() == "ruleview";
+    return this.view.isPanelVisible();
   },
 
   onDetachedFront: function() {
@@ -2082,12 +2094,10 @@ RuleViewTool.prototype = {
     }
 
     const isInactive =
-      !this.isSidebarActive() && this.inspector.selection.nodeFront;
+      !this.isPanelVisible() && this.inspector.selection.nodeFront;
     if (isInactive) {
       return;
     }
-
-    this.view.setPageStyle(this.inspector.pageStyle);
 
     if (
       !this.inspector.selection.isConnected() ||
@@ -2106,7 +2116,7 @@ RuleViewTool.prototype = {
   },
 
   refresh: function() {
-    if (this.isSidebarActive()) {
+    if (this.isPanelVisible()) {
       this.view.refreshPanel();
     }
   },
@@ -2134,11 +2144,8 @@ RuleViewTool.prototype = {
     this.inspector.selection.off("detached-front", this.onDetachedFront);
     this.inspector.selection.off("pseudoclass", this.refresh);
     this.inspector.selection.off("new-node-front", this.onSelected);
-    this.inspector.target.off("navigate", this.clearUserProperties);
+    this.inspector.currentTarget.off("navigate", this.clearUserProperties);
     this.inspector.sidebar.off("ruleview-selected", this.onPanelSelected);
-    if (this.inspector.pageStyle) {
-      this.inspector.pageStyle.off("stylesheet-updated", this.refresh);
-    }
 
     this.view.off("ruleview-refreshed", this.onViewRefreshed);
 

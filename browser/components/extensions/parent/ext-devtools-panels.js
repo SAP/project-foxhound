@@ -1,5 +1,9 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 var { ExtensionParent } = ChromeUtils.import(
@@ -138,6 +142,8 @@ class ParentDevToolsPanel extends BaseDevToolsPanel {
       url: WEBEXT_PANELS_URL,
       icon: icon,
       label: title,
+      // panelLabel is used to set the aria-label attribute (See Bug 1570645).
+      panelLabel: title,
       tooltip: `DevTools Panel added by "${extensionName}" add-on.`,
       isTargetSupported: target => target.isLocalTab,
       build: (window, toolbox) => {
@@ -555,10 +561,18 @@ class ParentDevToolsInspectorSidebar extends BaseDevToolsPanel {
 
     const oldActor = _lastObjectValueGrip && _lastObjectValueGrip.actor;
     const newActor = newObjectValueGrip && newObjectValueGrip.actor;
+    const client = this.toolbox.target.client;
 
     // Release the previously active actor on the remote debugging server.
     if (oldActor && oldActor !== newActor) {
-      this.toolbox.target.client.release(oldActor);
+      const objFront = client.getFrontByID(oldActor);
+      if (objFront) {
+        objFront.release();
+        return;
+      }
+
+      // In case there's no object front, use the client's release method.
+      client.release(oldActor).catch(() => {});
     }
   }
 }

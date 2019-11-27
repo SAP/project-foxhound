@@ -8,10 +8,13 @@
 
 #include "CompositorWidget.h"
 #include "gfxASurface.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/gfx/CriticalSection.h"
 #include "mozilla/gfx/Point.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/widget/WinCompositorWindowThread.h"
+#include "FxROutputHandler.h"
 #include "nsIWidget.h"
 
 class nsWindow;
@@ -36,6 +39,7 @@ class PlatformCompositorWidgetDelegate : public CompositorWidgetDelegate {
   virtual void SetParentWnd(const HWND aParentWnd) {}
   virtual void UpdateCompositorWnd(const HWND aCompositorWnd,
                                    const HWND aParentWnd) {}
+  virtual void SetRootLayerTreeID(const layers::LayersId& aRootLayerTreeId) {}
 
   // CompositorWidgetDelegate Overrides
 
@@ -66,8 +70,8 @@ class WinCompositorWidget : public CompositorWidget,
   bool NeedsToDeferEndRemoteDrawing() override;
   LayoutDeviceIntSize GetClientSize() override;
   already_AddRefed<gfx::DrawTarget> GetBackBufferDrawTarget(
-      gfx::DrawTarget* aScreenTarget, const LayoutDeviceIntRect& aRect,
-      const LayoutDeviceIntRect& aClearRect) override;
+      gfx::DrawTarget* aScreenTarget, const gfx::IntRect& aRect,
+      bool* aOutIsCleared) override;
   already_AddRefed<gfx::SourceSurface> EndBackBufferDrawing() override;
   bool InitCompositor(layers::Compositor* aCompositor) override;
   uintptr_t GetWidgetKey() override;
@@ -104,12 +108,21 @@ class WinCompositorWidget : public CompositorWidget,
     return mTransparentSurfaceLock;
   }
 
+  void RequestFxrOutput();
+  bool HasFxrOutputHandler() const { return mFxrHandler != nullptr; }
+  FxROutputHandler* GetFxrOutputHandler() const { return mFxrHandler.get(); }
+
+  bool HasGlass() const;
+
  protected:
  private:
   HDC GetWindowSurface();
   void FreeWindowSurface(HDC dc);
 
   void CreateTransparentSurface(const gfx::IntSize& aSize);
+
+ protected:
+  bool mSetParentCompleted;
 
  private:
   uintptr_t mWidgetKey;
@@ -122,7 +135,8 @@ class WinCompositorWidget : public CompositorWidget,
 
   // Transparency handling.
   mozilla::Mutex mTransparentSurfaceLock;
-  nsTransparencyMode mTransparencyMode;
+  mozilla::Atomic<nsTransparencyMode, MemoryOrdering::Relaxed>
+      mTransparencyMode;
   RefPtr<gfxASurface> mTransparentSurface;
   HDC mMemoryDC;
   HDC mCompositeDC;
@@ -131,6 +145,8 @@ class WinCompositorWidget : public CompositorWidget,
   uint8_t* mLockedBackBufferData;
 
   bool mNotDeferEndRemoteDrawing;
+
+  UniquePtr<FxROutputHandler> mFxrHandler;
 };
 
 }  // namespace widget

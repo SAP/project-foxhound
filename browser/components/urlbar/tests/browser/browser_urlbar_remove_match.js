@@ -23,12 +23,8 @@ add_task(async function test_remove_history() {
   let expectedResultCount = UrlbarTestUtils.getResultCount(window) - 1;
 
   EventUtils.synthesizeKey("KEY_ArrowDown");
-  Assert.equal(UrlbarTestUtils.getSelectedIndex(window), 1);
-  let options =
-    UrlbarPrefs.get("quantumbar") || AppConstants.platform == "macosx"
-      ? { shiftKey: true }
-      : {};
-  EventUtils.synthesizeKey("KEY_Delete", options);
+  Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), 1);
+  EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
   await promiseVisitRemoved;
   await TestUtils.waitForCondition(
     () => UrlbarTestUtils.getResultCount(window) == expectedResultCount,
@@ -65,12 +61,8 @@ add_task(async function test_remove_bookmark_doesnt() {
   Assert.equal(result.url, TEST_URL, "Found the expected result");
 
   EventUtils.synthesizeKey("KEY_ArrowDown");
-  Assert.equal(UrlbarTestUtils.getSelectedIndex(window), 1);
-  let options =
-    UrlbarPrefs.get("quantumbar") || AppConstants.platform == "macosx"
-      ? { shiftKey: true }
-      : {};
-  EventUtils.synthesizeKey("KEY_Delete", options);
+  Assert.equal(UrlbarTestUtils.getSelectedRowIndex(window), 1);
+  EventUtils.synthesizeKey("KEY_Delete", { shiftKey: true });
 
   // We don't have an easy way of determining if the event was process or not,
   // so let any event queues clear before testing.

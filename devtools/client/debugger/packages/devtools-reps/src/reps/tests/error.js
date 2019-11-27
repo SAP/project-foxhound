@@ -42,6 +42,17 @@ describe("Error - Simple error", () => {
 
     expect(renderedComponent.text()).toEqual("Error");
   });
+
+  it("renders with error type and preview message when in short mode", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stubs.get("MultilineStackError"),
+        mode: MODE.SHORT,
+      })
+    );
+
+    expect(renderedComponent).toMatchSnapshot();
+  });
 });
 
 describe("Error - Multi line stack error", () => {
@@ -569,6 +580,28 @@ describe("Error - Error with invalid stack", () => {
   // x = new Error("bad stack");
   // x.stack = "bar\nbaz\nfoo\n\n\n\n\n\n\n";
   const stub = stubs.get("Error with invalid stack");
+
+  it("correctly selects Error Rep for Error object", () => {
+    expect(getRep(stub)).toBe(ErrorRep.rep);
+  });
+
+  it("renders with expected text", () => {
+    const renderedComponent = shallow(
+      ErrorRep.rep({
+        object: stub,
+      })
+    );
+
+    expect(renderedComponent).toMatchSnapshot();
+    expectActorAttribute(renderedComponent, stub.actor);
+  });
+});
+
+describe("Error - Error with undefined-grip stack", () => {
+  // Test object:
+  // x = new Error("sd");
+  // x.stack = undefined;
+  const stub = stubs.get("Error with undefined-grip stack");
 
   it("correctly selects Error Rep for Error object", () => {
     expect(getRep(stub)).toBe(ErrorRep.rep);

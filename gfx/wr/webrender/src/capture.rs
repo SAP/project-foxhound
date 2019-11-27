@@ -101,10 +101,24 @@ impl CaptureConfig {
 
     #[cfg(feature = "png")]
     pub fn save_png(
-        path: PathBuf, size: DeviceIntSize, format: ImageFormat, data: &[u8],
+        path: PathBuf, size: DeviceIntSize, format: ImageFormat, stride: Option<i32>, data: &[u8],
     ) {
-        use png::{BitDepth, ColorType, Encoder, HasParameters};
+        use png::{BitDepth, ColorType, Encoder};
         use std::io::BufWriter;
+        use std::borrow::Cow;
+
+        // `png` expects
+        let data = match stride {
+            Some(stride) if stride != format.bytes_per_pixel() * size.width => {
+                let mut unstrided = Vec::new();
+                for y in 0..size.height {
+                    let start = (y * stride) as usize;
+                    unstrided.extend_from_slice(&data[start..start+(size.width * format.bytes_per_pixel()) as usize]);
+                }
+                Cow::from(unstrided)
+            }
+            _ => Cow::from(data),
+        };
 
         let color_type = match format {
             ImageFormat::RGBA8 => ColorType::RGBA,
@@ -121,13 +135,12 @@ impl CaptureConfig {
         };
         let w = BufWriter::new(File::create(path).unwrap());
         let mut enc = Encoder::new(w, size.width as u32, size.height as u32);
-        enc
-            .set(color_type)
-            .set(BitDepth::Eight);
+        enc.set_color(color_type);
+        enc.set_depth(BitDepth::Eight);
         enc
             .write_header()
             .unwrap()
-            .write_image_data(&data)
+            .write_image_data(&*data)
             .unwrap();
     }
 }

@@ -12,7 +12,7 @@
 #include "mozilla/dom/SimpleGlobalObject.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 #include "nsContentUtils.h"
 #include "nsIEffectiveTLDService.h"
@@ -312,7 +312,7 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
         return nullptr;
       }
 
-      ReportingEndpoint endpoint;
+      RootedDictionary<ReportingEndpoint> endpoint(cx);
       if (!endpoint.Init(cx, element)) {
         LogToConsoleIncompleteEndpoint(aChannel, aURI, groupName);
         continue;

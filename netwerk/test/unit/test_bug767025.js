@@ -1,6 +1,9 @@
 /* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
 
 /**
  * This is testcase do following steps to make sure bug767025 removing
@@ -73,6 +76,7 @@ function init_profile() {
   );
   dump(ps.getBoolPref("browser.cache.offline.enable"));
   ps.setBoolPref("browser.cache.offline.enable", true);
+  ps.setBoolPref("browser.cache.offline.storage.enable", true);
   ps.setComplexValue(
     "browser.cache.offline.parent_directory",
     Ci.nsIFile,
@@ -107,7 +111,7 @@ function do_app_cache(manifestURL, pageURL) {
     Ci.nsIOfflineCacheUpdateService
   );
 
-  Services.perms.add(
+  PermissionTestUtils.add(
     manifestURL,
     "offline-app",
     Ci.nsIPermissionManager.ALLOW_ACTION

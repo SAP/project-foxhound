@@ -53,12 +53,14 @@ extern "C" {
     output_params.format = CUBEB_SAMPLE_FLOAT32NE;
     output_params.rate = rate;
     output_params.channels = 2;
+    output_params.layout = CUBEB_LAYOUT_UNDEFINED;
     output_params.prefs = CUBEB_STREAM_PREF_NONE;
 
     cubeb_stream_params input_params;
     input_params.format = CUBEB_SAMPLE_FLOAT32NE;
     input_params.rate = rate;
     input_params.channels = 1;
+    input_params.layout = CUBEB_LAYOUT_UNDEFINED;
     input_params.prefs = CUBEB_STREAM_PREF_NONE;
 
     cubeb_stream * stm;
@@ -102,7 +104,7 @@ extern "C" {
 
       for (i = 0; i < nframes; ++i) {
         for (c = 0; c < 2; ++c) {
-          buf[i][c] = in[i];
+          out[i][c] = in[i];
         }
       }
       return nframes;
@@ -221,10 +223,19 @@ enum {
 /** Miscellaneous stream preferences. */
 typedef enum {
   CUBEB_STREAM_PREF_NONE     = 0x00, /**< No stream preferences are requested. */
-  CUBEB_STREAM_PREF_LOOPBACK = 0x01 /**< Request a loopback stream. Should be
+  CUBEB_STREAM_PREF_LOOPBACK = 0x01, /**< Request a loopback stream. Should be
                                          specified on the input params and an
                                          output device to loopback from should
                                          be passed in place of an input device. */
+  CUBEB_STREAM_PREF_DISABLE_DEVICE_SWITCHING = 0x02, /**< Disable switching
+                                                          default device on OS
+                                                          changes. */
+  CUBEB_STREAM_PREF_VOICE = 0x04  /**< This stream is going to transport voice data.
+                                       Depending on the backend and platform, this can
+                                       change the audio input or output devices
+                                       selected, as well as the quality of the stream,
+                                       for example to accomodate bluetooth SCO modes on
+                                       bluetooth devices. */
 } cubeb_stream_prefs;
 
 /** Stream format initialization parameters. */
@@ -557,20 +568,6 @@ CUBEB_EXPORT int cubeb_stream_get_latency(cubeb_stream * stream, uint32_t * late
     @retval CUBEB_ERROR_NOT_SUPPORTED */
 CUBEB_EXPORT int cubeb_stream_set_volume(cubeb_stream * stream, float volume);
 
-/** If the stream is stereo, set the left/right panning. If the stream is mono,
-    this has no effect.
-    @param stream the stream for which to change the panning
-    @param panning a number from -1.0 to 1.0. -1.0 means that the stream is
-           fully mixed in the left channel, 1.0 means the stream is fully
-           mixed in the right channel. 0.0 is equal power in the right and
-           left channel (default).
-    @retval CUBEB_OK
-    @retval CUBEB_ERROR_INVALID_PARAMETER if stream is null or if panning is
-            outside the [-1.0, 1.0] range.
-    @retval CUBEB_ERROR_NOT_SUPPORTED
-    @retval CUBEB_ERROR stream is not mono nor stereo */
-CUBEB_EXPORT int cubeb_stream_set_panning(cubeb_stream * stream, float panning);
-
 /** Get the current output device for this stream.
     @param stm the stream for which to query the current output device
     @param device a pointer in which the current output device will be stored.
@@ -628,9 +625,13 @@ CUBEB_EXPORT int cubeb_device_collection_destroy(cubeb * context,
 /** Registers a callback which is called when the system detects
     a new device or a device is removed.
     @param context
-    @param devtype device type to include
+    @param devtype device type to include. Different callbacks and user pointers
+           can be registered for each devtype. The hybrid devtype
+           `CUBEB_DEVICE_TYPE_INPUT | CUBEB_DEVICE_TYPE_OUTPUT` is also valid
+           and will register the provided callback and user pointer in both sides.
     @param callback a function called whenever the system device list changes.
-           Passing NULL allow to unregister a function
+           Passing NULL allow to unregister a function. You have to unregister
+           first before you register a new callback.
     @param user_ptr pointer to user specified data which will be present in
            subsequent callbacks.
     @retval CUBEB_ERROR_NOT_SUPPORTED */

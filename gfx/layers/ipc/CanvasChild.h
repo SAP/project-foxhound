@@ -75,6 +75,12 @@ class CanvasChild final : public PCanvasChild {
   void EndTransaction();
 
   /**
+   * @returns true if the canvas IPC classes have not been used for some time
+   *          and can be cleaned up.
+   */
+  bool ShouldBeCleanedUp() const;
+
+  /**
    * Create a DrawTargetRecording for a canvas texture.
    * @param aSize size for the DrawTarget
    * @param aFormat SurfaceFormat for the DrawTarget
@@ -89,6 +95,23 @@ class CanvasChild final : public PCanvasChild {
    */
   void RecordEvent(const gfx::RecordedEvent& aEvent);
 
+  /**
+   * Wrap the given surface, so that we can provide a DataSourceSurface if
+   * required.
+   * @param aSurface the SourceSurface to wrap
+   * @returns a SourceSurface that can provide a DataSourceSurface if required
+   */
+  already_AddRefed<gfx::SourceSurface> WrapSurface(
+      const RefPtr<gfx::SourceSurface>& aSurface);
+
+  /**
+   * Get DataSourceSurface from the translated equivalent version of aSurface in
+   * the GPU process.
+   * @param aSurface the SourceSurface in this process for which we need a
+   *                 DataSourceSurface
+   * @returns a DataSourceSurface created from data for aSurface retrieve from
+   *          GPU process
+   */
   already_AddRefed<gfx::DataSourceSurface> GetDataSurface(
       const gfx::SourceSurface* aSurface);
 
@@ -106,7 +129,7 @@ class CanvasChild final : public PCanvasChild {
   TextureType mTextureType = TextureType::Unknown;
   uint32_t mLastWriteLockCheckpoint = 0;
   uint32_t mTransactionsSinceGetDataSurface = kCacheDataSurfaceThreshold;
-  bool mCanSend = false;
+  TimeStamp mLastNonEmptyTransaction = TimeStamp::NowLoRes();
   bool mIsInTransaction = false;
   bool mHasOutstandingWriteLock = false;
 };

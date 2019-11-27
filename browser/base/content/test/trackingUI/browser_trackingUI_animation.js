@@ -41,20 +41,27 @@ add_task(async function testShieldAnimation() {
 
   await promiseTabLoadEvent(tab, BENIGN_PAGE);
   ok(BrowserTestUtils.is_hidden(animationIcon), "the animated icon is hidden");
-  ok(BrowserTestUtils.is_hidden(noAnimationIcon), "the default icon is hidden");
+  ok(
+    BrowserTestUtils.is_visible(noAnimationIcon),
+    "the default icon is visible"
+  );
 
   Services.prefs.setBoolPref(ANIMATIONS_PREF, false);
   await Promise.all([
     promiseTabLoadEvent(tab, TRACKING_PAGE),
     waitForContentBlockingEvent(2, tab.linkedBrowser.ownerGlobal),
   ]);
+
+  // We will only show the last frame of the animation when the animation is
+  // disable. So, the animated icon would be shown but the default icon
+  // wouldn't.
   ok(
-    BrowserTestUtils.is_visible(noAnimationIcon),
-    "the default icon is shown when animations are disabled"
+    BrowserTestUtils.is_hidden(noAnimationIcon),
+    "the default icon is hidden when animations are disabled"
   );
   ok(
-    BrowserTestUtils.is_hidden(animationIcon),
-    "the animated icon is hidden when animations are disabled"
+    BrowserTestUtils.is_visible(animationIcon),
+    "the animated icon is shown when animations are disabled"
   );
 
   gBrowser.removeCurrentTab();

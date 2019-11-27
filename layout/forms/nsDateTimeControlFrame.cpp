@@ -145,8 +145,8 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
     // will be fixed later.
     const nsSize dummyContainerSize;
     ReflowChild(inputAreaFrame, aPresContext, childDesiredSize,
-                childReflowOuput, myWM, childOffset, dummyContainerSize, 0,
-                childStatus);
+                childReflowOuput, myWM, childOffset, dummyContainerSize,
+                ReflowChildFlags::Default, childStatus);
     MOZ_ASSERT(childStatus.IsFullyComplete(),
                "We gave our child unconstrained available block-size, "
                "so it should be complete");
@@ -183,7 +183,8 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
 
     // Place the child
     FinishReflowChild(inputAreaFrame, aPresContext, childDesiredSize,
-                      &childReflowOuput, myWM, childOffset, borderBoxSize, 0);
+                      &childReflowOuput, myWM, childOffset, borderBoxSize,
+                      ReflowChildFlags::Default);
 
     if (!aReflowInput.mStyleDisplay->IsContainLayout()) {
       nsSize contentBoxSize =
@@ -211,65 +212,4 @@ void nsDateTimeControlFrame::Reflow(nsPresContext* aPresContext,
                  ("exit nsDateTimeControlFrame::Reflow: size=%d,%d",
                   aDesiredSize.Width(), aDesiredSize.Height()));
   NS_FRAME_SET_TRUNCATION(aStatus, aReflowInput, aDesiredSize);
-}
-
-void nsDateTimeControlFrame::SyncDisabledState() {
-  Element* dateTimeBoxElement =
-      static_cast<dom::HTMLInputElement*>(GetContent())
-          ->GetDateTimeBoxElement();
-  if (!dateTimeBoxElement) {
-    return;
-  }
-
-  AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
-      dateTimeBoxElement, NS_LITERAL_STRING("MozDateTimeAttributeChanged"),
-      CanBubble::eNo, ChromeOnlyDispatch::eNo);
-  dispatcher->RunDOMEventWhenSafe();
-}
-
-nsresult nsDateTimeControlFrame::AttributeChanged(int32_t aNameSpaceID,
-                                                  nsAtom* aAttribute,
-                                                  int32_t aModType) {
-  // nsGkAtoms::disabled is handled by SyncDisabledState
-  if (aNameSpaceID == kNameSpaceID_None) {
-    if (aAttribute == nsGkAtoms::value || aAttribute == nsGkAtoms::readonly ||
-        aAttribute == nsGkAtoms::tabindex) {
-      MOZ_ASSERT(mContent->IsHTMLElement(nsGkAtoms::input), "bad cast");
-      auto contentAsInputElem =
-          static_cast<dom::HTMLInputElement*>(GetContent());
-      // If script changed the <input>'s type before setting these attributes
-      // then we don't need to do anything since we are going to be reframed.
-      if (contentAsInputElem->ControlType() == NS_FORM_INPUT_TIME ||
-          contentAsInputElem->ControlType() == NS_FORM_INPUT_DATE) {
-        Element* dateTimeBoxElement =
-            static_cast<dom::HTMLInputElement*>(GetContent())
-                ->GetDateTimeBoxElement();
-        if (aAttribute == nsGkAtoms::value) {
-          if (dateTimeBoxElement) {
-            AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
-                dateTimeBoxElement,
-                NS_LITERAL_STRING("MozDateTimeValueChanged"), CanBubble::eNo,
-                ChromeOnlyDispatch::eNo);
-            dispatcher->RunDOMEventWhenSafe();
-          }
-        } else {
-          if (dateTimeBoxElement) {
-            AsyncEventDispatcher* dispatcher = new AsyncEventDispatcher(
-                dateTimeBoxElement,
-                NS_LITERAL_STRING("MozDateTimeAttributeChanged"),
-                CanBubble::eNo, ChromeOnlyDispatch::eNo);
-            dispatcher->RunDOMEventWhenSafe();
-          }
-        }
-      }
-    }
-  }
-
-  return nsContainerFrame::AttributeChanged(aNameSpaceID, aAttribute, aModType);
-}
-
-void nsDateTimeControlFrame::ContentStatesChanged(EventStates aStates) {
-  if (aStates.HasState(NS_EVENT_STATE_DISABLED)) {
-    nsContentUtils::AddScriptRunner(new SyncDisabledStateEvent(this));
-  }
 }

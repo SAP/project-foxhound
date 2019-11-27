@@ -10,8 +10,10 @@
 #include "mozilla/Maybe.h"
 #include "nsIContent.h"  // for use in inline function (ParentChainChanged)
 #include "nsIMutationObserver.h"  // for use in inline function (ParentChainChanged)
+#include "mozilla/dom/Document.h"
 #include "js/TypeDecls.h"
 #include "nsCOMArray.h"
+#include "nsContentUtils.h"
 
 struct CharacterDataChangeInfo;
 template <class E>
@@ -204,6 +206,24 @@ class nsNodeUtils {
                     JS::Handle<JSObject*> aReparentScope,
                     nsCOMArray<nsINode>& aNodesWithProperties,
                     mozilla::ErrorResult& aError) {
+    if (aNode && aNewNodeInfoManager) {
+      mozilla::dom::Document* afterAdoptDoc =
+          aNewNodeInfoManager->GetDocument();
+      mozilla::dom::Document* beforeAdoptDoc = aNode->OwnerDoc();
+
+      if (afterAdoptDoc && beforeAdoptDoc &&
+          (afterAdoptDoc->GetDocGroup() != beforeAdoptDoc->GetDocGroup())) {
+        // This is a temporary solution for Bug 1590526 to only limit
+        // the restriction to chrome level documents because web extensions
+        // rely on content to content node adoption.
+        if (nsContentUtils::IsChromeDoc(afterAdoptDoc) ||
+            nsContentUtils::IsChromeDoc(beforeAdoptDoc)) {
+          aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
+          return;
+        }
+      }
+    }
+
     // Just need to store the return value of CloneAndAdopt in a
     // temporary nsCOMPtr to make sure we release it.
     nsCOMPtr<nsINode> node =

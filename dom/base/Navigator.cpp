@@ -31,7 +31,9 @@
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
 #include "mozilla/dom/CredentialsContainer.h"
@@ -39,6 +41,7 @@
 #include "mozilla/dom/FeaturePolicyUtils.h"
 #include "mozilla/dom/GamepadServiceTest.h"
 #include "mozilla/dom/MediaCapabilities.h"
+#include "mozilla/dom/MediaSession.h"
 #include "mozilla/dom/WakeLock.h"
 #include "mozilla/dom/power/PowerManagerService.h"
 #include "mozilla/dom/MIDIAccessManager.h"
@@ -103,6 +106,9 @@
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/Unused.h"
 
+#include "mozilla/webgpu/Instance.h"
+#include "mozilla/dom/WindowGlobalChild.h"
+
 namespace mozilla {
 namespace dom {
 
@@ -138,6 +144,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(Navigator)
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Navigator)
   tmp->Invalidate();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mWindow)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mSharePromise)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
@@ -154,6 +161,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaDevices)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mServiceWorkerContainer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaCapabilities)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaSession)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAddonManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebGpu)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
@@ -161,6 +171,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGamepadServiceTest)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRGetDisplaysPromises)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRServiceTest)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mSharePromise)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Navigator)
@@ -224,6 +235,13 @@ void Navigator::Invalidate() {
   }
 
   mMediaCapabilities = nullptr;
+  mMediaSession = nullptr;
+
+  mAddonManager = nullptr;
+
+  mWebGpu = nullptr;
+
+  mSharePromise = nullptr;
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
@@ -498,18 +516,18 @@ bool Navigator::CookieEnabled() {
     return cookieEnabled;
   }
 
-  nsCOMPtr<nsIURI> codebaseURI;
-  doc->NodePrincipal()->GetURI(getter_AddRefs(codebaseURI));
+  nsCOMPtr<nsIURI> contentURI;
+  doc->NodePrincipal()->GetURI(getter_AddRefs(contentURI));
 
-  if (!codebaseURI) {
-    // Not a codebase, so technically can't set cookies, but let's
+  if (!contentURI) {
+    // Not a content, so technically can't set cookies, but let's
     // just return the default value.
     return cookieEnabled;
   }
 
   uint32_t rejectedReason = 0;
   bool granted = AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-      mWindow, codebaseURI, &rejectedReason);
+      mWindow, contentURI, &rejectedReason);
 
   AntiTrackingCommon::NotifyBlockingDecision(
       mWindow,
@@ -545,7 +563,7 @@ void Navigator::GetBuildID(nsAString& aBuildID, CallerType aCallerType,
       if (doc) {
         nsIURI* uri = doc->GetDocumentURI();
         if (uri) {
-          MOZ_ALWAYS_SUCCEEDS(uri->SchemeIs("https", &isHTTPS));
+          isHTTPS = uri->SchemeIs("https");
           if (isHTTPS) {
             MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
           }
@@ -815,6 +833,7 @@ void Navigator::RegisterContentHandler(const nsAString& aMIMEType,
 
 // This list should be kept up-to-date with the spec:
 // https://html.spec.whatwg.org/multipage/system-state.html#custom-handlers
+// If you change this list, please also update the copy in E10SUtils.jsm.
 static const char* const kSafeSchemes[] = {
     "bitcoin", "geo",  "im",   "irc",         "ircs", "magnet", "mailto",
     "mms",     "news", "nntp", "openpgp4fpr", "sip",  "sms",    "smsto",
@@ -849,7 +868,8 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
   // If the uri doesn't contain '%s', it won't be a good handler - the %s
   // gets replaced with the handled URI.
   if (!FindInReadable(NS_LITERAL_CSTRING("%s"), spec)) {
-    aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR);
+    aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR,
+                          "Handler URI does not contain \"%s\".");
     return;
   }
 
@@ -1118,10 +1138,7 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
   }
 
   // Spec disallows any schemes save for HTTP/HTTPs
-  bool isValidScheme;
-  if (!(NS_SUCCEEDED(uri->SchemeIs("http", &isValidScheme)) && isValidScheme) &&
-      !(NS_SUCCEEDED(uri->SchemeIs("https", &isValidScheme)) &&
-        isValidScheme)) {
+  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
     aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Beacon"),
                                                aUrl);
     return false;
@@ -1276,14 +1293,12 @@ void Navigator::MozGetUserMediaDevices(
   }
   if (Document* doc = mWindow->GetExtantDoc()) {
     if (!mWindow->IsSecureContext()) {
-      doc->SetDocumentAndPageUseCounter(
-          eUseCounter_custom_MozGetUserMediaInsec);
+      doc->SetUseCounter(eUseCounter_custom_MozGetUserMediaInsec);
     }
     nsINode* node = doc;
     while ((node = nsContentUtils::GetCrossDocParentNode(node))) {
       if (NS_FAILED(nsContentUtils::CheckSameOrigin(doc, node))) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_MozGetUserMediaXOrigin);
+        doc->SetUseCounter(eUseCounter_custom_MozGetUserMediaXOrigin);
         break;
       }
     }
@@ -1323,6 +1338,110 @@ Promise* Navigator::GetBattery(ErrorResult& aRv) {
   mBatteryPromise->MaybeResolve(mBatteryManager);
 
   return mBatteryPromise;
+}
+
+//*****************************************************************************
+//    Navigator::Share() - Web Share API
+//*****************************************************************************
+
+Promise* Navigator::Share(const ShareData& aData, ErrorResult& aRv) {
+  if (NS_WARN_IF(!mWindow || !mWindow->GetDocShell() ||
+                 !mWindow->GetExtantDoc())) {
+    aRv.Throw(NS_ERROR_UNEXPECTED);
+    return nullptr;
+  }
+
+  if (mSharePromise) {
+    NS_WARNING("Only one share picker at a time per navigator instance");
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return nullptr;
+  }
+
+  // If none of data's members title, text, or url are present, reject p with
+  // TypeError, and abort these steps.
+  bool someMemberPassed = aData.mTitle.WasPassed() || aData.mText.WasPassed() ||
+                          aData.mUrl.WasPassed();
+  if (!someMemberPassed) {
+    nsAutoString message;
+    nsContentUtils::GetLocalizedString(nsContentUtils::eDOM_PROPERTIES,
+                                       "WebShareAPI_NeedOneMember", message);
+    aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(message);
+    return nullptr;
+  }
+
+  // null checked above
+  auto doc = mWindow->GetExtantDoc();
+
+  // If data's url member is present, try to resolve it...
+  nsCOMPtr<nsIURI> url;
+  if (aData.mUrl.WasPassed()) {
+    auto result = doc->ResolveWithBaseURI(aData.mUrl.Value());
+    if (NS_WARN_IF(result.isErr())) {
+      aRv.ThrowTypeError<MSG_INVALID_URL>(aData.mUrl.Value());
+      return nullptr;
+    }
+    url = result.unwrap();
+  }
+
+  // Process the title member...
+  nsCString title;
+  if (aData.mTitle.WasPassed()) {
+    title.Assign(NS_ConvertUTF16toUTF8(aData.mTitle.Value()));
+  } else {
+    title.SetIsVoid(true);
+  }
+
+  // Process the text member...
+  nsCString text;
+  if (aData.mText.WasPassed()) {
+    text.Assign(NS_ConvertUTF16toUTF8(aData.mText.Value()));
+  } else {
+    text.SetIsVoid(true);
+  }
+
+  // The spec does the "triggered by user activation" after the data checks.
+  // Unfortunately, both Chrome and Safari behave this way, so interop wins.
+  // https://github.com/w3c/web-share/pull/118
+  if (!UserActivation::IsHandlingUserInput()) {
+    NS_WARNING("Attempt to share not triggered by user activation");
+    aRv.Throw(NS_ERROR_DOM_NOT_ALLOWED_ERR);
+    return nullptr;
+  }
+
+  // Let mSharePromise be a new promise.
+  mSharePromise = Promise::Create(mWindow->AsGlobal(), aRv);
+  if (aRv.Failed()) {
+    return nullptr;
+  }
+
+  IPCWebShareData data(title, text, url);
+  auto wgc = mWindow->GetWindowGlobalChild();
+  if (!wgc) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  auto shareResolver = [self = RefPtr<Navigator>(this)](nsresult aResult) {
+    MOZ_ASSERT(self->mSharePromise);
+    if (NS_SUCCEEDED(aResult)) {
+      self->mSharePromise->MaybeResolveWithUndefined();
+    } else {
+      self->mSharePromise->MaybeReject(aResult);
+    }
+    self->mSharePromise = nullptr;
+  };
+
+  auto shareRejector = [self = RefPtr<Navigator>(this)](
+                           mozilla::ipc::ResponseRejectReason&& aReason) {
+    // IPC died or maybe page navigated...
+    if (self->mSharePromise) {
+      self->mSharePromise = nullptr;
+    }
+  };
+
+  // Do the share
+  wgc->SendShare(data, shareResolver, shareRejector);
+  return mSharePromise;
 }
 
 already_AddRefed<LegacyMozTCPSocket> Navigator::MozTCPSocket() {
@@ -1759,9 +1878,6 @@ already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
                                                 mWindow->IsSecureContext())
                     .get());
 
-  Telemetry::Accumulate(Telemetry::MEDIA_EME_SECURE_CONTEXT,
-                        mWindow->IsSecureContext());
-
   if (!mWindow->IsSecureContext()) {
     Document* doc = mWindow->GetExtantDoc();
     AutoTArray<nsString, 1> params;
@@ -1825,11 +1941,43 @@ dom::MediaCapabilities* Navigator::MediaCapabilities() {
   return mMediaCapabilities;
 }
 
+dom::MediaSession* Navigator::MediaSession() {
+  if (!mMediaSession) {
+    mMediaSession = new dom::MediaSession(GetWindow());
+  }
+  return mMediaSession;
+}
+
 Clipboard* Navigator::Clipboard() {
   if (!mClipboard) {
     mClipboard = new dom::Clipboard(GetWindow());
   }
   return mClipboard;
+}
+
+AddonManager* Navigator::GetMozAddonManager(ErrorResult& aRv) {
+  if (!mAddonManager) {
+    nsPIDOMWindowInner* win = GetWindow();
+    if (!win) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    mAddonManager = ConstructJSImplementation<AddonManager>(
+        "@mozilla.org/addon-web-api/manager;1", win->AsGlobal(), aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+  }
+
+  return mAddonManager;
+}
+
+webgpu::Instance* Navigator::Gpu() {
+  if (!mWebGpu) {
+    mWebGpu = webgpu::Instance::Create(GetWindow()->AsGlobal());
+  }
+  return mWebGpu;
 }
 
 /* static */

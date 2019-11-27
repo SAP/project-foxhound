@@ -72,17 +72,15 @@ already_AddRefed<Promise> MediaDevices::GetUserMedia(
   if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
     if (Document* doc = owner->GetExtantDoc()) {
       if (!owner->IsSecureContext()) {
-        doc->SetDocumentAndPageUseCounter(eUseCounter_custom_GetUserMediaInsec);
+        doc->SetUseCounter(eUseCounter_custom_GetUserMediaInsec);
       }
       if (!IsSameOriginWithAllParentDocs(doc)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_GetUserMediaXOrigin);
+        doc->SetUseCounter(eUseCounter_custom_GetUserMediaXOrigin);
       }
       Document* topDoc = doc->GetTopLevelContentDocument();
       IgnoredErrorResult ignored;
       if (topDoc && !topDoc->HasFocus(ignored)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_GetUserMediaUnfocused);
+        doc->SetUseCounter(eUseCounter_custom_GetUserMediaUnfocused);
       }
     }
   }
@@ -118,14 +116,12 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
   if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
     if (Document* doc = owner->GetExtantDoc()) {
       if (!owner->IsSecureContext()) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_EnumerateDevicesInsec);
+        doc->SetUseCounter(eUseCounter_custom_EnumerateDevicesInsec);
       }
       Document* topDoc = doc->GetTopLevelContentDocument();
       IgnoredErrorResult ignored;
       if (topDoc && !topDoc->HasFocus(ignored)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_EnumerateDevicesUnfocused);
+        doc->SetUseCounter(eUseCounter_custom_EnumerateDevicesUnfocused);
       }
     }
   }
@@ -146,6 +142,10 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
             }
             auto windowId = window->WindowID();
             nsTArray<RefPtr<MediaDeviceInfo>> infos;
+            bool allowLabel =
+                aDevices->Length() == 0 ||
+                MediaManager::Get()->IsActivelyCapturingOrHasAPermission(
+                    windowId);
             for (auto& device : *aDevices) {
               MOZ_ASSERT(device->mKind == dom::MediaDeviceKind::Audioinput ||
                          device->mKind == dom::MediaDeviceKind::Videoinput ||
@@ -153,8 +153,7 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
               // Include name only if page currently has a gUM stream active
               // or persistent permissions (audio or video) have been granted
               nsString label;
-              if (MediaManager::Get()->IsActivelyCapturingOrHasAPermission(
-                      windowId) ||
+              if (allowLabel ||
                   Preferences::GetBool("media.navigator.permission.disabled",
                                        false)) {
                 label = device->mName;
@@ -180,8 +179,7 @@ already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
   if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
     if (Document* doc = owner->GetExtantDoc()) {
       if (!IsSameOriginWithAllParentDocs(doc)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_GetDisplayMediaXOrigin);
+        doc->SetUseCounter(eUseCounter_custom_GetDisplayMediaXOrigin);
       }
     }
   }

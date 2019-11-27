@@ -39,6 +39,7 @@ class InspectorUtils {
                                 nsTArray<RefPtr<StyleSheet>>& aResult);
   static void GetCSSStyleRules(GlobalObject& aGlobal, Element& aElement,
                                const nsAString& aPseudo,
+                               bool aIncludeVisitedStyle,
                                nsTArray<RefPtr<BindingStyleRule>>& aResult);
 
   /**
@@ -91,6 +92,7 @@ class InspectorUtils {
                                      BindingStyleRule& aRule,
                                      uint32_t aSelectorIndex,
                                      const nsAString& aPseudo,
+                                     bool aRelevantLinkVisited,
                                      ErrorResult& aRv);
 
   // Utilities for working with CSS properties
@@ -228,6 +230,8 @@ class InspectorUtils {
   static bool HasPseudoClassLock(GlobalObject& aGlobal, Element& aElement,
                                  const nsAString& aPseudoClass);
   static void ClearPseudoClassLocks(GlobalObject& aGlobal, Element& aElement);
+
+  static bool IsElementThemed(GlobalObject& aGlobal, Element& aElement);
 
   /**
    * Parse CSS and update the style sheet in place.

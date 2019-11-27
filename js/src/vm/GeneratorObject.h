@@ -16,6 +16,8 @@
 
 namespace js {
 
+class GlobalObject;
+
 enum class GeneratorResumeKind { Next, Throw, Return };
 
 class AbstractGeneratorObject : public NativeObject {
@@ -195,7 +197,7 @@ class GeneratorObject : public AbstractGeneratorObject {
  public:
   enum { RESERVED_SLOTS = AbstractGeneratorObject::RESERVED_SLOTS };
 
-  static const Class class_;
+  static const JSClass class_;
 
   static GeneratorObject* create(JSContext* cx, HandleFunction fun);
 };
@@ -222,6 +224,9 @@ AbstractGeneratorObject* GetGeneratorObjectForFrame(JSContext* cx,
                                                     AbstractFramePtr frame);
 
 void SetGeneratorClosed(JSContext* cx, AbstractFramePtr frame);
+
+extern JSObject* InitGeneratorFunction(JSContext* cx,
+                                       js::Handle<GlobalObject*> global);
 
 }  // namespace js
 

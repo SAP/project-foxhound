@@ -321,7 +321,7 @@ class DesktopSingleLocale(LocalesMixin, AutomationMixin,
                             "checksums", "zip",
                             "installer.exe", "installer-stub.exe"]
             targets = [(".%s" % (ext,), "target.%s" % (ext,)) for ext in targets_exts]
-            targets.extend([(f, f) for f in 'setup.exe', 'setup-stub.exe'])
+            targets.extend([(f, f) for f in ('setup.exe', 'setup-stub.exe')])
             for f in matches:
                 possible_targets = [
                     (tail, target_file)
@@ -465,8 +465,6 @@ class DesktopSingleLocale(LocalesMixin, AutomationMixin,
             cmd.extend([
                 '--tooltool-manifest',
                 os.path.join(dirs['abs_mozilla_dir'], manifest_src),
-                '--tooltool-url',
-                config['tooltool_url'],
             ])
             auth_file = self._get_tooltool_auth_file()
             if auth_file and os.path.exists(auth_file):

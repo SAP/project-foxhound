@@ -71,6 +71,8 @@ static const nsLiteralCString kTypeString[] = {
     NS_LITERAL_CSTRING("speculative"),
     NS_LITERAL_CSTRING(""),  // TYPE_INTERNAL_MODULE
     NS_LITERAL_CSTRING(""),  // TYPE_INTERNAL_MODULE_PRELOAD
+    NS_LITERAL_CSTRING(""),  // TYPE_INTERNAL_DTD
+    NS_LITERAL_CSTRING(""),  // TYPE_INTERNAL_FORCE_ALLOWED_DTD
 };
 
 #define NUMBER_OF_TYPES MOZ_ARRAY_LENGTH(kTypeString)
@@ -84,10 +86,12 @@ nsContentBlocker::nsContentBlocker() {
 }
 
 nsresult nsContentBlocker::Init() {
-  nsresult rv;
-  mPermissionManager = do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
+  mPermissionManager = nsPermissionManager::GetInstance();
+  if (!mPermissionManager) {
+    return NS_ERROR_NULL_POINTER;
+  }
 
+  nsresult rv;
   nsCOMPtr<nsIPrefService> prefService =
       do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -290,8 +294,8 @@ nsresult nsContentBlocker::TestPermission(nsIURI* aCurrentURI,
   // preload permission.
   uint32_t permission = nsIPermissionManager::UNKNOWN_ACTION;
   if (mPermissionManager->GetHasPreloadPermissions()) {
-    rv = mPermissionManager->TestPermission(
-        aCurrentURI, kTypeString[aContentType - 1], &permission);
+    rv = mPermissionManager->LegacyTestPermissionFromURI(
+        aCurrentURI, nullptr, kTypeString[aContentType - 1], &permission);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -317,14 +321,10 @@ nsresult nsContentBlocker::TestPermission(nsIURI* aCurrentURI,
       // Need a requesting uri for third party checks to work.
       if (!aFirstURI) return NS_OK;
 
-      bool trustedSource = false;
-      rv = aFirstURI->SchemeIs("chrome", &trustedSource);
-      NS_ENSURE_SUCCESS(rv, rv);
-      if (!trustedSource) {
-        rv = aFirstURI->SchemeIs("resource", &trustedSource);
-        NS_ENSURE_SUCCESS(rv, rv);
+      // chrome: and resource: are always trusted.
+      if (aFirstURI->SchemeIs("chrome") || aFirstURI->SchemeIs("resource")) {
+        return NS_OK;
       }
-      if (trustedSource) return NS_OK;
 
       // compare tails of names checking to see if they have a common domain
       // we do this by comparing the tails of both names where each tail

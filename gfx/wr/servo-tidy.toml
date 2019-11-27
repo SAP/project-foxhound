@@ -6,24 +6,30 @@ check-alphabetical-order = false
 [ignore]
 # Ignored packages with duplicated versions
 packages = [
-    "crossbeam-epoch",
     "crossbeam-utils",
     "gl_generator",
-    "khronos_api",
     "lazy_static",
-    "log",
+    "percent-encoding",
     "rand",
     "rand_core",
     "winapi",
     "core-graphics",
     "core-text",
-    "xml-rs",
     "yaml-rust",
+
+    # These are tracked in bug 1587468, see there for pending work.
+    "syn",
+    "quote",
+    "unicode-xid",
+    "synstructure",
+    "proc-macro2",
 ]
 
 # Files that are ignored for all tidy and lint checks.
 files = [
     "./wrench/src/egl.rs",  # Copied from glutin
+    "./ci-scripts/wrupdater/converter.py",  # servo-tidy doesn't like python3
+    "./ci-scripts/wrupdater/read-json.py",  # servo-tidy doesn't like python3
 ]
 
 # Many directories are currently ignored while we tidy things up

@@ -1,9 +1,9 @@
 pipeline {
-   agent {
-      kubernetes {
-         label "${UUID.randomUUID().toString()}"
-         defaultContainer 'jdk'
-         yaml """
+    agent {
+        kubernetes {
+            label "${UUID.randomUUID().toString()}"
+            defaultContainer 'jdk'
+            yaml """
 apiVersion: v1
 kind: Pod
 spec:
@@ -17,17 +17,22 @@ spec:
     image: docker.wdf.sap.corp:50001/sap-production/jnlp-alpine:3.26.1-sap-02
     args: ['\$(JENKINS_SECRET)', '\$(JENKINS_NAME)']
 """
-       }
-   }
-   stages {
-      stage('Build with Kaniko') {
-         steps {
-	    container(name: 'kaniko') {
-	       sh '''
-	          /kaniko/executor --dockerfile `pwd`/dockerfiles/Dockerfile --context `pwd` --no-push
-	       '''
-	    }
-         }
-      }
-   }
+        }
+    }
+    stages {
+        stage('Build with Kaniko') {
+            steps {
+                git 'https://github.wdf.sap.corp/WebSecResearch/exploit-export.git'
+                container(name: 'kaniko') {
+                    withCredentials([file(credentialsId: 'wdfdocker', variable: 'FILE')]) {
+                        sh '''
+                        mv $FILE /kaniko/.docker/config.json
+                        /kaniko/executor --dockerfile `pwd`/Dockerfile --context `pwd` --destination docker.wdf.sap.corp:65306/taintfox/exploit-export:latest --skip-tls-verify-registry docker.wdf.sap.corp:65306
+                        rm /kaniko/.docker/config.json
+                        '''
+                    }
+                }
+            }
+        }
+    }
 }

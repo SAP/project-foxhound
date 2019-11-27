@@ -7,7 +7,7 @@
 
 #include "base/thread.h"
 #include "mozilla/layers/SynchronousTask.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "RemoteVideoDecoder.h"
 #include "RemoteDecoderManagerChild.h"
 
@@ -73,8 +73,7 @@ already_AddRefed<MediaDataDecoder> GpuDecoderModule::CreateVideoDecoder(
   }
 
   RefPtr<RemoteMediaDataDecoder> object = new RemoteMediaDataDecoder(
-      child, RemoteDecoderManagerChild::GetManagerThread(),
-      RemoteDecoderManagerChild::GetManagerAbstractThread());
+      child);
 
   return object.forget();
 }

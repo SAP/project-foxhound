@@ -150,6 +150,9 @@ function continueToNextStepSync() {
   testGenerator.next();
 }
 
+// TODO compareKeys is duplicated in ../helpers.js, can we import that here?
+// the same applies to many other functions in this file
+// this duplication should be avoided (bug 1565986)
 function compareKeys(k1, k2) {
   let t = typeof k1;
   if (t != typeof k2) {
@@ -176,6 +179,22 @@ function compareKeys(k1, k2) {
     }
 
     return true;
+  }
+
+  if (k1 instanceof ArrayBuffer) {
+    if (!(k2 instanceof ArrayBuffer)) {
+      return false;
+    }
+
+    function arrayBuffersAreEqual(a, b) {
+      if (a.byteLength != b.byteLength) {
+        return false;
+      }
+      let ui8b = new Uint8Array(b);
+      return new Uint8Array(a).every((val, i) => val === ui8b[i]);
+    }
+
+    return arrayBuffersAreEqual(k1, k2);
   }
 
   return false;
@@ -475,16 +494,6 @@ function verifyView(view1, view2) {
   continueToNextStep();
 }
 
-function verifyWasmModule(module1, module2) {
-  // We assume the given modules have no imports and export a single function
-  // named 'run'.
-  var instance1 = new WebAssembly.Instance(module1);
-  var instance2 = new WebAssembly.Instance(module2);
-  is(instance1.exports.run(), instance2.exports.run(), "same run() result");
-
-  continueToNextStep();
-}
-
 function grabFileUsageAndContinueHandler(request) {
   testGenerator.next(request.result.fileUsage);
 }
@@ -512,14 +521,29 @@ function setDataThreshold(threshold) {
   SpecialPowers.setIntPref("dom.indexedDB.dataThreshold", threshold);
 }
 
+function resetDataThreshold() {
+  info("Clearing data threshold pref");
+  SpecialPowers.clearUserPref("dom.indexedDB.dataThreshold");
+}
+
 function setMaxSerializedMsgSize(aSize) {
   info("Setting maximal size of a serialized message to " + aSize);
   SpecialPowers.setIntPref("dom.indexedDB.maxSerializedMsgSize", aSize);
 }
 
+function enablePreprocessing() {
+  info("Setting preprocessing pref");
+  SpecialPowers.setBoolPref("dom.indexedDB.preprocessing", true);
+}
+
+function resetPreprocessing() {
+  info("Clearing preprocessing pref");
+  SpecialPowers.clearUserPref("dom.indexedDB.preprocessing");
+}
+
 function getPrincipal(url) {
   let uri = Services.io.newURI(url);
-  return Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
+  return Services.scriptSecurityManager.createContentPrincipal(uri, {});
 }
 
 function expectingSuccess(request) {
@@ -609,7 +633,7 @@ var SpecialPowers = {
   clearUserPref(prefName) {
     Services.prefs.clearUserPref(prefName);
   },
-  // Copied (and slightly adjusted) from specialpowersAPI.js
+  // Copied (and slightly adjusted) from testing/specialpowers/content/SpecialPowersAPI.jsm
   exactGC(callback) {
     let count = 0;
 
@@ -617,7 +641,7 @@ var SpecialPowers = {
       function scheduledGCCallback() {
         Cu.forceCC();
 
-        if (++count < 2) {
+        if (++count < 3) {
           doPreciseGCandCC();
         } else {
           callback();

@@ -12,9 +12,6 @@ const { ContentProcessDomains } = ChromeUtils.import(
 const { Domains } = ChromeUtils.import(
   "chrome://remote/content/domains/Domains.jsm"
 );
-const { UnknownMethodError } = ChromeUtils.import(
-  "chrome://remote/content/Error.jsm"
-);
 
 class ContentProcessSession {
   constructor(messageManager, browsingContext, content, docShell) {
@@ -31,7 +28,7 @@ class ContentProcessSession {
     this.messageManager.addMessageListener("remote:destroy", this);
   }
 
-  destroy() {
+  destructor() {
     this.messageManager.removeMessageListener("remote:request", this);
     this.messageManager.removeMessageListener("remote:destroy", this);
     this.domains.clear();
@@ -68,11 +65,8 @@ class ContentProcessSession {
       case "remote:request":
         try {
           const { id, domain, command, params } = data.request;
-          if (!this.domains.domainSupportsMethod(domain, command)) {
-            throw new UnknownMethodError(domain, command);
-          }
-          const inst = this.domains.get(domain);
-          const result = await inst[command](params);
+
+          const result = await this.domains.execute(domain, command, params);
 
           this.messageManager.sendAsyncMessage("remote:result", {
             browsingContextId,
@@ -93,7 +87,7 @@ class ContentProcessSession {
         break;
 
       case "remote:destroy":
-        this.destroy();
+        this.destructor();
         break;
     }
   }

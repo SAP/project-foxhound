@@ -131,6 +131,64 @@ JSObject* CallbackObject::Callback(JSContext* aCx) {
   return callback;
 }
 
+void CallbackObject::GetDescription(nsACString& aOutString) {
+  JSObject* wrappedCallback = CallbackOrNull();
+  if (!wrappedCallback) {
+    aOutString.Append("<callback from a nuked compartment>");
+    return;
+  }
+
+  JS::Rooted<JSObject*> unwrappedCallback(
+      RootingCx(), js::CheckedUnwrapStatic(wrappedCallback));
+  if (!unwrappedCallback) {
+    aOutString.Append("<not a function>");
+    return;
+  }
+
+  AutoJSAPI jsapi;
+  jsapi.Init();
+  JSContext* cx = jsapi.cx();
+
+  JS::RootedObject rootedCallback(cx, unwrappedCallback);
+  JSAutoRealm ar(cx, rootedCallback);
+
+  JS::Rooted<JSFunction*> rootedFunction(cx,
+                                         JS_GetObjectFunction(rootedCallback));
+  if (!rootedFunction) {
+    aOutString.Append("<not a function>");
+    return;
+  }
+
+  JS::Rooted<JSString*> displayId(cx, JS_GetFunctionDisplayId(rootedFunction));
+  if (displayId) {
+    nsAutoJSString funcNameStr;
+    if (funcNameStr.init(cx, displayId)) {
+      if (funcNameStr.IsEmpty()) {
+        aOutString.Append("<empty name>");
+      } else {
+        AppendUTF16toUTF8(funcNameStr, aOutString);
+      }
+    } else {
+      aOutString.Append("<function name string failed to materialize>");
+      jsapi.ClearException();
+    }
+  } else {
+    aOutString.Append("<anonymous>");
+  }
+
+  JS::Rooted<JSScript*> rootedScript(cx,
+                                     JS_GetFunctionScript(cx, rootedFunction));
+  if (!rootedScript) {
+    return;
+  }
+
+  aOutString.Append(" (");
+  aOutString.Append(JS_GetScriptFilename(rootedScript));
+  aOutString.Append(":");
+  aOutString.AppendInt(JS_GetScriptBaseLineNumber(cx, rootedScript));
+  aOutString.Append(")");
+}
+
 CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
                                      ErrorResult& aRv,
                                      const char* aExecutionReason,
@@ -157,10 +215,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
 
   JSObject* wrappedCallback = aCallback->CallbackPreserveColor();
   if (!wrappedCallback) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING(
-            "Cannot execute callback from a nuked compartment."));
+    aRv.ThrowDOMException(NS_ERROR_DOM_NOT_SUPPORTED_ERR,
+                          "Cannot execute callback from a nuked compartment.");
     return;
   }
 
@@ -178,9 +234,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
       if (!xpc::Scriptability::Get(realCallback).Allowed()) {
         aRv.ThrowDOMException(
             NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-            NS_LITERAL_CSTRING(
-                "Refusing to execute function from global in which "
-                "script is disabled."));
+            "Refusing to execute function from global in which script is "
+            "disabled.");
         return;
       }
     }
@@ -196,8 +251,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
       if (!win->HasActiveDocument()) {
         aRv.ThrowDOMException(
             NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-            NS_LITERAL_CSTRING("Refusing to execute function from window "
-                               "whose document is no longer active."));
+            "Refusing to execute function from window whose document is no "
+            "longer active.");
         return;
       }
       globalObject = win;
@@ -212,8 +267,7 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
   if (!globalObject->HasJSGlobal()) {
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING("Refusing to execute function from global which is "
-                           "being torn down."));
+        "Refusing to execute function from global which is being torn down.");
     return;
   }
 
@@ -229,8 +283,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
     if (!incumbent->HasJSGlobal()) {
       aRv.ThrowDOMException(
           NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-          NS_LITERAL_CSTRING("Refusing to execute function because our "
-                             "incumbent global is being torn down."));
+          "Refusing to execute function because our incumbent global is being "
+          "torn down.");
       return;
     }
     mAutoIncumbentScript.emplace(incumbent);
@@ -345,7 +399,7 @@ CallbackObject::CallSetup::~CallSetup() {
 
         // IsJSContextException shouldn't be true anymore because we will report
         // the exception on the JSContext ... so throw something else.
-        mErrorResult.ThrowWithCustomCleanup(NS_ERROR_UNEXPECTED);
+        mErrorResult.Throw(NS_ERROR_UNEXPECTED);
       }
     }
   }

@@ -177,6 +177,7 @@ EVENT(durationchange, eDurationChange, EventNameType_HTML, eBasicEventClass)
 EVENT(emptied, eEmptied, EventNameType_HTML, eBasicEventClass)
 EVENT(ended, eEnded, EventNameType_HTML, eBasicEventClass)
 EVENT(finish, eMarqueeFinish, EventNameType_HTMLMarqueeOnly, eBasicEventClass)
+EVENT(formdata, eFormData, EventNameType_HTML, eBasicEventClass)
 EVENT(fullscreenchange, eFullscreenChange, EventNameType_HTML, eBasicEventClass)
 EVENT(fullscreenerror, eFullscreenError, EventNameType_HTML, eBasicEventClass)
 EVENT(input, eEditorInput, EventNameType_HTMLXUL, eEditorInputEventClass)
@@ -246,9 +247,12 @@ EVENT(toggle, eToggle, EventNameType_HTML, eBasicEventClass)
 EVENT(volumechange, eVolumeChange, EventNameType_HTML, eBasicEventClass)
 EVENT(waiting, eWaiting, EventNameType_HTML, eBasicEventClass)
 EVENT(wheel, eWheel, EventNameType_All, eWheelEventClass)
-EVENT(copy, eCopy, EventNameType_HTMLXUL, eClipboardEventClass)
-EVENT(cut, eCut, EventNameType_HTMLXUL, eClipboardEventClass)
-EVENT(paste, ePaste, EventNameType_HTMLXUL, eClipboardEventClass)
+EVENT(copy, eCopy, EventNameType_HTMLXUL | EventNameType_SVGGraphic,
+      eClipboardEventClass)
+EVENT(cut, eCut, EventNameType_HTMLXUL | EventNameType_SVGGraphic,
+      eClipboardEventClass)
+EVENT(paste, ePaste, EventNameType_HTMLXUL | EventNameType_SVGGraphic,
+      eClipboardEventClass)
 // Gecko-specific extensions that apply to elements
 EVENT(beforescriptexecute, eBeforeScriptExecute, EventNameType_HTMLXUL,
       eBasicEventClass)

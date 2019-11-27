@@ -16,7 +16,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
-use webrender::api::{self, DisplayListBuilder, DocumentId, PipelineId, RenderApi, Transaction};
+use webrender::api::{self, DisplayListBuilder, DocumentId, PipelineId, PrimitiveFlags, RenderApi, Transaction};
 use webrender::api::{ColorF, CommonItemProperties, SpaceAndClipInfo};
 use webrender::api::units::*;
 use webrender::euclid::size2;
@@ -136,12 +136,14 @@ impl CheckerboardRenderer {
 }
 
 impl api::BlobImageHandler for CheckerboardRenderer {
-    fn add(&mut self, key: api::BlobImageKey, cmds: Arc<api::BlobImageData>, _: Option<api::TileSize>) {
+    fn add(&mut self, key: api::BlobImageKey, cmds: Arc<api::BlobImageData>,
+           _visible_rect: &DeviceIntRect, _: Option<api::TileSize>) {
         self.image_cmds
             .insert(key, Arc::new(deserialize_blob(&cmds[..]).unwrap()));
     }
 
-    fn update(&mut self, key: api::BlobImageKey, cmds: Arc<api::BlobImageData>, _dirty_rect: &BlobDirtyRect) {
+    fn update(&mut self, key: api::BlobImageKey, cmds: Arc<api::BlobImageData>,
+              _visible_rect: &DeviceIntRect, _dirty_rect: &BlobDirtyRect) {
         // Here, updating is just replacing the current version of the commands with
         // the new one (no incremental updates).
         self.image_cmds
@@ -204,48 +206,46 @@ impl Example for App {
         pipeline_id: PipelineId,
         _document_id: DocumentId,
     ) {
-        let blob_img1 = api.generate_blob_image_key();
-        txn.add_blob_image(
-            blob_img1,
-            api::ImageDescriptor::new(500, 500, api::ImageFormat::BGRA8, true, false),
-            serialize_blob(api::ColorU::new(50, 50, 150, 255)),
-            Some(128),
-        );
-
-        let blob_img2 = api.generate_blob_image_key();
-        txn.add_blob_image(
-            blob_img2,
-            api::ImageDescriptor::new(200, 200, api::ImageFormat::BGRA8, true, false),
-            serialize_blob(api::ColorU::new(50, 150, 50, 255)),
-            None,
-        );
-
         let space_and_clip = SpaceAndClipInfo::root_scroll(pipeline_id);
 
         builder.push_simple_stacking_context(
             LayoutPoint::zero(),
             space_and_clip.spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
-        let bounds = (30, 30).by(500, 500);
+        let size1 = DeviceIntSize::new(500, 500);
+        let blob_img1 = api.generate_blob_image_key();
+        txn.add_blob_image(
+            blob_img1,
+            api::ImageDescriptor::new(size1.width, size1.height, api::ImageFormat::BGRA8, true, false),
+            serialize_blob(api::ColorU::new(50, 50, 150, 255)),
+            size1.into(),
+            Some(128),
+        );
+        let bounds = (30, 30).by(size1.width, size1.height);
         builder.push_image(
             &CommonItemProperties::new(bounds, space_and_clip),
             bounds,
-            LayoutSize::new(500.0, 500.0),
-            LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
             api::AlphaType::PremultipliedAlpha,
             blob_img1.as_image(),
             ColorF::WHITE,
         );
 
-        let bounds = (600, 600).by(200, 200);
+        let size2 = DeviceIntSize::new(256, 256);
+        let blob_img2 = api.generate_blob_image_key();
+        txn.add_blob_image(
+            blob_img2,
+            api::ImageDescriptor::new(size2.width, size2.height, api::ImageFormat::BGRA8, true, false),
+            serialize_blob(api::ColorU::new(50, 150, 50, 255)),
+            size2.into(),
+            None,
+        );
+        let bounds = (600, 600).by(size2.width, size2.height);
         builder.push_image(
             &CommonItemProperties::new(bounds, space_and_clip),
             bounds,
-            LayoutSize::new(200.0, 200.0),
-            LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
             api::AlphaType::PremultipliedAlpha,
             blob_img2.as_image(),

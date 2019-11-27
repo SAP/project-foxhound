@@ -670,14 +670,14 @@ void nsHTMLFramesetFrame::ReflowPlaceChild(nsIFrame* aChild,
   nsReflowStatus status;
 
   ReflowChild(aChild, aPresContext, reflowOutput, reflowInput, aOffset.x,
-              aOffset.y, 0, status);
+              aOffset.y, ReflowChildFlags::Default, status);
   NS_ASSERTION(status.IsComplete(), "bad status");
 
   // Place and size the child
   reflowOutput.Width() = aSize.width;
   reflowOutput.Height() = aSize.height;
-  FinishReflowChild(aChild, aPresContext, reflowOutput, nullptr, aOffset.x,
-                    aOffset.y, 0);
+  FinishReflowChild(aChild, aPresContext, reflowOutput, &reflowInput, aOffset.x,
+                    aOffset.y, ReflowChildFlags::Default);
 }
 
 static nsFrameborder GetFrameBorderHelper(nsGenericHTMLElement* aContent) {
@@ -934,11 +934,10 @@ void nsHTMLFramesetFrame::Reflow(nsPresContext* aPresContext,
     if (firstTime) {
       int32_t childVis;
       nsHTMLFramesetFrame* framesetFrame = do_QueryFrame(child);
-      nsSubDocumentFrame* subdocFrame;
       if (framesetFrame) {
         childVis = framesetFrame->mEdgeVisibility;
         mChildBorderColors[childX] = framesetFrame->mEdgeColors;
-      } else if ((subdocFrame = do_QueryFrame(child))) {
+      } else if (child->IsSubDocumentFrame()) {
         if (eFrameborder_Yes == mChildFrameborder[childX]) {
           childVis = ALL_VIS;
         } else if (eFrameborder_No == mChildFrameborder[childX]) {

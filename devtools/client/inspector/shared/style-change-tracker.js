@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -20,23 +18,43 @@ const EventEmitter = require("devtools/shared/event-emitter");
  */
 class InspectorStyleChangeTracker {
   constructor(inspector) {
-    this.walker = inspector.walker;
+    this.inspector = inspector;
     this.selection = inspector.selection;
 
     this.onMutations = this.onMutations.bind(this);
     this.onResized = this.onResized.bind(this);
 
-    this.walker.on("mutations", this.onMutations);
-    this.walker.on("resize", this.onResized);
+    this.init();
 
     EventEmitter.decorate(this);
   }
 
-  destroy() {
-    this.walker.off("mutations", this.onMutations);
-    this.walker.off("resize", this.onResized);
+  async init() {
+    try {
+      // TODO: Bug 1588868 - Get all the inspector fronts whenever targets changes or
+      // are added or removed.
+      this.inspectorFronts = await this.inspector.inspectorFront.getAllInspectorFronts();
+    } catch (e) {
+      // This call might fail if called asynchrously after the toolbox is finished
+      // closing.
+      return;
+    }
 
-    this.walker = this.selection = null;
+    for (const { walker } of this.inspectorFronts) {
+      walker.on("mutations", this.onMutations);
+      walker.on("resize", this.onResized);
+    }
+  }
+
+  destroy() {
+    for (const { walker } of this.inspectorFronts) {
+      walker.off("mutations", this.onMutations);
+      walker.off("resize", this.onResized);
+    }
+
+    this.inspector = null;
+    this.inspectorFronts = null;
+    this.selection = null;
   }
 
   /**

@@ -124,18 +124,19 @@ HashableValue HashableValue::trace(JSTracer* trc) const {
 
 namespace {} /* anonymous namespace */
 
-static const ClassOps MapIteratorObjectClassOps = {nullptr, /* addProperty */
-                                                   nullptr, /* delProperty */
-                                                   nullptr, /* enumerate */
-                                                   nullptr, /* newEnumerate */
-                                                   nullptr, /* resolve */
-                                                   nullptr, /* mayResolve */
-                                                   MapIteratorObject::finalize};
+static const JSClassOps MapIteratorObjectClassOps = {
+    nullptr, /* addProperty */
+    nullptr, /* delProperty */
+    nullptr, /* enumerate */
+    nullptr, /* newEnumerate */
+    nullptr, /* resolve */
+    nullptr, /* mayResolve */
+    MapIteratorObject::finalize};
 
 static const ClassExtension MapIteratorObjectClassExtension = {
     MapIteratorObject::objectMoved};
 
-const Class MapIteratorObject::class_ = {
+const JSClass MapIteratorObject::class_ = {
     "Map Iterator",
     JSCLASS_HAS_RESERVED_SLOTS(MapIteratorObject::SlotCount) |
         JSCLASS_FOREGROUND_FINALIZE | JSCLASS_SKIP_NURSERY_FINALIZE,
@@ -251,14 +252,16 @@ MapIteratorObject* MapIteratorObject::create(JSContext* cx, HandleObject obj,
   return iterobj;
 }
 
-void MapIteratorObject::finalize(FreeOp* fop, JSObject* obj) {
+void MapIteratorObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   MOZ_ASSERT(!IsInsideNursery(obj));
 
   auto range = MapIteratorObjectRange(&obj->as<NativeObject>());
   MOZ_ASSERT(!fop->runtime()->gc.nursery().isInside(range));
 
-  fop->delete_(range);
+  // Bug 1560019: Malloc memory associated with MapIteratorObjects is not
+  // currently tracked.
+  fop->deleteUntracked(range);
 }
 
 size_t MapIteratorObject::objectMoved(JSObject* obj, JSObject* old) {
@@ -368,17 +371,17 @@ JSObject* MapIteratorObject::createResultPair(JSContext* cx) {
 
 /*** Map ********************************************************************/
 
-const ClassOps MapObject::classOps_ = {nullptr,  // addProperty
-                                       nullptr,  // delProperty
-                                       nullptr,  // enumerate
-                                       nullptr,  // newEnumerate
-                                       nullptr,  // resolve
-                                       nullptr,  // mayResolve
-                                       finalize,
-                                       nullptr,  // call
-                                       nullptr,  // hasInstance
-                                       nullptr,  // construct
-                                       trace};
+const JSClassOps MapObject::classOps_ = {nullptr,  // addProperty
+                                         nullptr,  // delProperty
+                                         nullptr,  // enumerate
+                                         nullptr,  // newEnumerate
+                                         nullptr,  // resolve
+                                         nullptr,  // mayResolve
+                                         finalize,
+                                         nullptr,  // call
+                                         nullptr,  // hasInstance
+                                         nullptr,  // construct
+                                         trace};
 
 const ClassSpec MapObject::classSpec_ = {
     GenericCreateConstructor<MapObject::construct, 0, gc::AllocKind::FUNCTION>,
@@ -389,14 +392,14 @@ const ClassSpec MapObject::classSpec_ = {
     MapObject::properties,
 };
 
-const Class MapObject::class_ = {
+const JSClass MapObject::class_ = {
     "Map",
     JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(MapObject::SlotCount) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_Map) | JSCLASS_FOREGROUND_FINALIZE |
         JSCLASS_SKIP_NURSERY_FINALIZE,
     &MapObject::classOps_, &MapObject::classSpec_};
 
-const Class MapObject::protoClass_ = {
+const JSClass MapObject::protoClass_ = {
     js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_Map), JS_NULL_CLASS_OPS,
     &MapObject::classSpec_};
 
@@ -618,7 +621,7 @@ MapObject* MapObject::create(JSContext* cx,
   return mapObj;
 }
 
-void MapObject::finalize(FreeOp* fop, JSObject* obj) {
+void MapObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   if (ValueMap* map = obj->as<MapObject>().getData()) {
     fop->delete_(obj, map, MemoryUse::MapObjectTable);
@@ -626,7 +629,7 @@ void MapObject::finalize(FreeOp* fop, JSObject* obj) {
 }
 
 /* static */
-void MapObject::sweepAfterMinorGC(FreeOp* fop, MapObject* mapobj) {
+void MapObject::sweepAfterMinorGC(JSFreeOp* fop, MapObject* mapobj) {
   bool wasInsideNursery = IsInsideNursery(mapobj);
   if (wasInsideNursery && !IsForwarded(mapobj)) {
     finalize(fop, mapobj);
@@ -903,18 +906,19 @@ bool MapObject::clear(JSContext* cx, HandleObject obj) {
 
 /*** SetIterator ************************************************************/
 
-static const ClassOps SetIteratorObjectClassOps = {nullptr, /* addProperty */
-                                                   nullptr, /* delProperty */
-                                                   nullptr, /* enumerate */
-                                                   nullptr, /* newEnumerate */
-                                                   nullptr, /* resolve */
-                                                   nullptr, /* mayResolve */
-                                                   SetIteratorObject::finalize};
+static const JSClassOps SetIteratorObjectClassOps = {
+    nullptr, /* addProperty */
+    nullptr, /* delProperty */
+    nullptr, /* enumerate */
+    nullptr, /* newEnumerate */
+    nullptr, /* resolve */
+    nullptr, /* mayResolve */
+    SetIteratorObject::finalize};
 
 static const ClassExtension SetIteratorObjectClassExtension = {
     SetIteratorObject::objectMoved};
 
-const Class SetIteratorObject::class_ = {
+const JSClass SetIteratorObject::class_ = {
     "Set Iterator",
     JSCLASS_HAS_RESERVED_SLOTS(SetIteratorObject::SlotCount) |
         JSCLASS_FOREGROUND_FINALIZE | JSCLASS_SKIP_NURSERY_FINALIZE,
@@ -1021,14 +1025,16 @@ SetIteratorObject* SetIteratorObject::create(JSContext* cx, HandleObject obj,
   return iterobj;
 }
 
-void SetIteratorObject::finalize(FreeOp* fop, JSObject* obj) {
+void SetIteratorObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   MOZ_ASSERT(!IsInsideNursery(obj));
 
   auto range = SetIteratorObjectRange(&obj->as<NativeObject>());
   MOZ_ASSERT(!fop->runtime()->gc.nursery().isInside(range));
 
-  fop->delete_(range);
+  // Bug 1560019: Malloc memory associated with SetIteratorObjects is not
+  // currently tracked.
+  fop->deleteUntracked(range);
 }
 
 size_t SetIteratorObject::objectMoved(JSObject* obj, JSObject* old) {
@@ -1115,17 +1121,17 @@ JSObject* SetIteratorObject::createResult(JSContext* cx) {
 
 /*** Set ********************************************************************/
 
-const ClassOps SetObject::classOps_ = {nullptr,  // addProperty
-                                       nullptr,  // delProperty
-                                       nullptr,  // enumerate
-                                       nullptr,  // newEnumerate
-                                       nullptr,  // resolve
-                                       nullptr,  // mayResolve
-                                       finalize,
-                                       nullptr,  // call
-                                       nullptr,  // hasInstance
-                                       nullptr,  // construct
-                                       trace};
+const JSClassOps SetObject::classOps_ = {nullptr,  // addProperty
+                                         nullptr,  // delProperty
+                                         nullptr,  // enumerate
+                                         nullptr,  // newEnumerate
+                                         nullptr,  // resolve
+                                         nullptr,  // mayResolve
+                                         finalize,
+                                         nullptr,  // call
+                                         nullptr,  // hasInstance
+                                         nullptr,  // construct
+                                         trace};
 
 const ClassSpec SetObject::classSpec_ = {
     GenericCreateConstructor<SetObject::construct, 0, gc::AllocKind::FUNCTION>,
@@ -1136,7 +1142,7 @@ const ClassSpec SetObject::classSpec_ = {
     SetObject::properties,
 };
 
-const Class SetObject::class_ = {
+const JSClass SetObject::class_ = {
     "Set",
     JSCLASS_HAS_PRIVATE | JSCLASS_HAS_RESERVED_SLOTS(SetObject::SlotCount) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_Set) | JSCLASS_FOREGROUND_FINALIZE |
@@ -1145,7 +1151,7 @@ const Class SetObject::class_ = {
     &SetObject::classSpec_,
 };
 
-const Class SetObject::protoClass_ = {
+const JSClass SetObject::protoClass_ = {
     js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_Set), JS_NULL_CLASS_OPS,
     &SetObject::classSpec_};
 
@@ -1240,7 +1246,7 @@ void SetObject::trace(JSTracer* trc, JSObject* obj) {
   }
 }
 
-void SetObject::finalize(FreeOp* fop, JSObject* obj) {
+void SetObject::finalize(JSFreeOp* fop, JSObject* obj) {
   MOZ_ASSERT(fop->onMainThread());
   SetObject* setobj = static_cast<SetObject*>(obj);
   if (ValueSet* set = setobj->getData()) {
@@ -1249,7 +1255,7 @@ void SetObject::finalize(FreeOp* fop, JSObject* obj) {
 }
 
 /* static */
-void SetObject::sweepAfterMinorGC(FreeOp* fop, SetObject* setobj) {
+void SetObject::sweepAfterMinorGC(JSFreeOp* fop, SetObject* setobj) {
   bool wasInsideNursery = IsInsideNursery(setobj);
   if (wasInsideNursery && !IsForwarded(setobj)) {
     finalize(fop, setobj);

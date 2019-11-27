@@ -38,7 +38,6 @@ using namespace mozilla::dom;
 using namespace mozilla::net;
 
 static NS_DEFINE_CID(kDNSServiceCID, NS_DNSSERVICE_CID);
-bool sDisablePrefetchHTTPSPref;
 static bool sInitialized = false;
 static nsIDNSService* sDNSService = nullptr;
 static nsHTMLDNSPrefetch::nsDeferrals* sPrefetches = nullptr;
@@ -59,14 +58,7 @@ nsresult nsHTMLDNSPrefetch::Initialize() {
 
   sPrefetches->Activate();
 
-  Preferences::AddBoolVarCache(&sDisablePrefetchHTTPSPref,
-                               "network.dns.disablePrefetchFromHTTPS");
-
   Preferences::AddBoolVarCache(&sEsniEnabled, "network.security.esni.enabled");
-
-  // Default is false, so we need an explicit call to prime the cache.
-  sDisablePrefetchHTTPSPref =
-      Preferences::GetBool("network.dns.disablePrefetchFromHTTPS", true);
 
   sEsniEnabled = Preferences::GetBool("network.security.esni.enabled", false);
 
@@ -356,8 +348,7 @@ void nsHTMLDNSPrefetch::nsDeferrals::SubmitQueue() {
           rv = NS_URIChainHasFlags(hrefURI,
                                    nsIProtocolHandler::URI_IS_LOCAL_RESOURCE,
                                    &isLocalResource);
-
-          hrefURI->SchemeIs("https", &isHttps);
+          isHttps = hrefURI->SchemeIs("https");
         }
 
         if (!hostName.IsEmpty() && NS_SUCCEEDED(rv) && !isLocalResource &&

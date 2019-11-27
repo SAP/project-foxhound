@@ -16,7 +16,8 @@
 #include "mozilla/Base64.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/SharedThreadPool.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_accessibility.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/TaskCategory.h"
 #include "mozilla/TaskQueue.h"
@@ -55,6 +56,9 @@ CheckedInt64 FramesToUsecs(int64_t aFrames, uint32_t aRate) {
 }
 
 TimeUnit FramesToTimeUnit(int64_t aFrames, uint32_t aRate) {
+  if (MOZ_UNLIKELY(!aRate)) {
+    return TimeUnit::Invalid();
+  }
   int64_t major = aFrames / aRate;
   int64_t remainder = aFrames % aRate;
   return TimeUnit::FromMicroseconds(major) * USECS_PER_S +
@@ -74,7 +78,7 @@ CheckedInt64 TimeUnitToFrames(const TimeUnit& aTime, uint32_t aRate) {
 }
 
 nsresult SecondsToUsecs(double aSeconds, int64_t& aOutUsecs) {
-  if (aSeconds * double(USECS_PER_S) > INT64_MAX) {
+  if (aSeconds * double(USECS_PER_S) > double(INT64_MAX)) {
     return NS_ERROR_FAILURE;
   }
   aOutUsecs = int64_t(aSeconds * double(USECS_PER_S));
@@ -83,7 +87,8 @@ nsresult SecondsToUsecs(double aSeconds, int64_t& aOutUsecs) {
 
 static int32_t ConditionDimension(float aValue) {
   // This will exclude NaNs and too-big values.
-  if (aValue > 1.0 && aValue <= INT32_MAX) return int32_t(NS_round(aValue));
+  if (aValue > 1.0 && aValue <= float(INT32_MAX))
+    return int32_t(NS_round(aValue));
   return 0;
 }
 
@@ -184,24 +189,25 @@ bool IsVideoContentType(const nsCString& aContentType) {
 bool IsValidVideoRegion(const gfx::IntSize& aFrame,
                         const gfx::IntRect& aPicture,
                         const gfx::IntSize& aDisplay) {
-  return aFrame.width <= PlanarYCbCrImage::MAX_DIMENSION &&
+  return aFrame.width > 0 && aFrame.width <= PlanarYCbCrImage::MAX_DIMENSION &&
+         aFrame.height > 0 &&
          aFrame.height <= PlanarYCbCrImage::MAX_DIMENSION &&
          aFrame.width * aFrame.height <= MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT &&
-         aFrame.width * aFrame.height != 0 &&
+         aPicture.width > 0 &&
          aPicture.width <= PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.x < PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.x + aPicture.width < PlanarYCbCrImage::MAX_DIMENSION &&
+         aPicture.height > 0 &&
          aPicture.height <= PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.y < PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.y + aPicture.height < PlanarYCbCrImage::MAX_DIMENSION &&
          aPicture.width * aPicture.height <=
              MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT &&
-         aPicture.width * aPicture.height != 0 &&
+         aDisplay.width > 0 &&
          aDisplay.width <= PlanarYCbCrImage::MAX_DIMENSION &&
+         aDisplay.height > 0 &&
          aDisplay.height <= PlanarYCbCrImage::MAX_DIMENSION &&
-         aDisplay.width * aDisplay.height <=
-             MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT &&
-         aDisplay.width * aDisplay.height != 0;
+         aDisplay.width * aDisplay.height <= MAX_VIDEO_WIDTH * MAX_VIDEO_HEIGHT;
 }
 
 already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
@@ -211,8 +217,8 @@ already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
     case MediaThreadType::PLATFORM_DECODER:
       name = "MediaPDecoder";
       break;
-    case MediaThreadType::MSG_CONTROL:
-      name = "MSGControl";
+    case MediaThreadType::MTG_CONTROL:
+      name = "MTGControl";
       break;
     case MediaThreadType::WEBRTC_DECODER:
       name = "WebRTCPD";
@@ -220,6 +226,9 @@ already_AddRefed<SharedThreadPool> GetMediaThreadPool(MediaThreadType aType) {
     case MediaThreadType::MDSM:
       name = "MediaDecoderStateMachine";
       threads = 1;
+      break;
+    case MediaThreadType::PLATFORM_ENCODER:
+      name = "MediaPEncoder";
       break;
     default:
       MOZ_FALLTHROUGH_ASSERT("Unexpected MediaThreadType");
@@ -445,21 +454,6 @@ bool ExtractH264CodecDetails(const nsAString& aCodec, uint8_t& aProfile,
   } else if (aLevel <= 5) {
     aLevel *= 10;
   }
-
-  // We only make sure constraints is above 4 for collection perspective
-  // otherwise collect 0 for unknown.
-  Telemetry::Accumulate(Telemetry::VIDEO_CANPLAYTYPE_H264_CONSTRAINT_SET_FLAG,
-                        aConstraint >= 4 ? aConstraint : 0);
-  // 244 is the highest meaningful profile value (High 4:4:4 Intra Profile)
-  // that can be represented as single hex byte, otherwise collect 0 for
-  // unknown.
-  Telemetry::Accumulate(Telemetry::VIDEO_CANPLAYTYPE_H264_PROFILE,
-                        aProfile <= 244 ? aProfile : 0);
-
-  // Make sure aLevel represents a value between levels 1 and 5.2,
-  // otherwise collect 0 for unknown.
-  Telemetry::Accumulate(Telemetry::VIDEO_CANPLAYTYPE_H264_LEVEL,
-                        (aLevel >= 10 && aLevel <= 52) ? aLevel : 0);
 
   return true;
 }

@@ -24,7 +24,6 @@
 ; (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 ; SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-%include "config.asm"
 %include "ext/x86/x86inc.asm"
 
 SECTION_RODATA 16
@@ -178,7 +177,6 @@ cglobal put_bilin, 4, 8, 0, dst, ds, src, ss, w, h, mxy, bak
 .put:
     movzx                wd, word [t0+wq*2+table_offset(put,)]
     add                  wq, t0
-    lea                  r6, [ssq*3]
     RESTORE_DSQ_32       t0
     jmp                  wq
 .put_w2:
@@ -212,20 +210,14 @@ cglobal put_bilin, 4, 8, 0, dst, ds, src, ss, w, h, mxy, bak
     jg .put_w8
     RET
 .put_w16:
-    lea                  r4, [dsq*3]
-.put_w16_in:
     movu                 m0, [srcq+ssq*0]
     movu                 m1, [srcq+ssq*1]
-    movu                 m2, [srcq+ssq*2]
-    movu                 m3, [srcq+r6   ]
-    lea                srcq, [srcq+ssq*4]
+    lea                srcq, [srcq+ssq*2]
     mova       [dstq+dsq*0], m0
     mova       [dstq+dsq*1], m1
-    mova       [dstq+dsq*2], m2
-    mova       [dstq+r4   ], m3
-    lea                dstq, [dstq+dsq*4]
-    sub                  hd, 4
-    jg .put_w16_in
+    lea                dstq, [dstq+dsq*2]
+    sub                  hd, 2
+    jg .put_w16
     RET
 .put_w32:
     movu                 m0, [srcq+ssq*0+16*0]

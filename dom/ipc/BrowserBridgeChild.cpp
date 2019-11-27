@@ -4,17 +4,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#if defined(ACCESSIBILITY) && defined(XP_WIN)
-#  include "mozilla/a11y/ProxyAccessible.h"
-#  include "mozilla/a11y/ProxyWrappers.h"
+#ifdef ACCESSIBILITY
+#  ifdef XP_WIN
+#    include "mozilla/a11y/ProxyAccessible.h"
+#    include "mozilla/a11y/ProxyWrappers.h"
+#  endif
+#  include "mozilla/a11y/DocAccessible.h"
+#  include "mozilla/a11y/DocManager.h"
+#  include "mozilla/a11y/OuterDocAccessible.h"
 #endif
 #include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/BrowserBridgeHost.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/MozFrameLoaderOwnerBinding.h"
 #include "nsFocusManager.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
-#include "nsQueryObject.h"
 #include "nsIDocShellTreeOwner.h"
+#include "nsQueryObject.h"
+#include "nsSubDocumentFrame.h"
+#include "nsView.h"
 
 using namespace mozilla::ipc;
 
@@ -26,7 +35,6 @@ BrowserBridgeChild::BrowserBridgeChild(nsFrameLoader* aFrameLoader,
                                        TabId aId)
     : mId{aId},
       mLayersId{0},
-      mIPCOpen(true),
       mFrameLoader(aFrameLoader),
       mBrowsingContext(aBrowsingContext) {}
 
@@ -36,6 +44,27 @@ BrowserBridgeChild::~BrowserBridgeChild() {
     mEmbeddedDocAccessible->Shutdown();
   }
 #endif
+}
+
+already_AddRefed<BrowserBridgeHost> BrowserBridgeChild::FinishInit() {
+  RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
+  nsCOMPtr<nsIDocShell> docShell = do_GetInterface(owner->GetOwnerGlobal());
+  MOZ_DIAGNOSTIC_ASSERT(docShell);
+
+  nsDocShell::Cast(docShell)->OOPChildLoadStarted(this);
+
+#if defined(ACCESSIBILITY)
+  if (a11y::DocAccessible* docAcc =
+          a11y::GetExistingDocAccessible(owner->OwnerDoc())) {
+    if (a11y::Accessible* ownerAcc = docAcc->GetAccessible(owner)) {
+      if (a11y::OuterDocAccessible* outerAcc = ownerAcc->AsOuterDoc()) {
+        outerAcc->SendEmbedderAccessible(this);
+      }
+    }
+  }
+#endif  // defined(ACCESSIBILITY)
+
+  return MakeAndAddRef<BrowserBridgeHost>(this);
 }
 
 void BrowserBridgeChild::NavigateByKey(bool aForward,
@@ -142,25 +171,90 @@ BrowserBridgeChild::RecvSetEmbeddedDocAccessibleCOMProxy(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult BrowserBridgeChild::RecvFireFrameLoadEvent(
-    bool aIsTrusted) {
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvMaybeFireEmbedderLoadEvents(
+    bool aIsTrusted, bool aFireLoadAtEmbeddingElement) {
   RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
   if (!owner) {
     return IPC_OK();
   }
 
-  // Fire the `load` event on our embedder element.
-  nsEventStatus status = nsEventStatus_eIgnore;
-  WidgetEvent event(aIsTrusted, eLoad);
-  event.mFlags.mBubbles = false;
-  event.mFlags.mCancelable = false;
-  EventDispatcher::Dispatch(owner, nullptr, &event, nullptr, &status);
+  if (aFireLoadAtEmbeddingElement) {
+    nsEventStatus status = nsEventStatus_eIgnore;
+    WidgetEvent event(aIsTrusted, eLoad);
+    event.mFlags.mBubbles = false;
+    event.mFlags.mCancelable = false;
+    EventDispatcher::Dispatch(owner, nullptr, &event, nullptr, &status);
+  }
+
+  UnblockOwnerDocsLoadEvent();
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvScrollRectIntoView(
+    const nsRect& aRect, const ScrollAxis& aVertical,
+    const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
+    const int32_t& aAppUnitsPerDevPixel) {
+  RefPtr<Element> owner = mFrameLoader->GetOwnerContent();
+  if (!owner) {
+    return IPC_OK();
+  }
+
+  nsIFrame* frame = owner->GetPrimaryFrame();
+  if (!frame) {
+    return IPC_OK();
+  }
+
+  nsSubDocumentFrame* subdocumentFrame = do_QueryFrame(frame);
+  if (!subdocumentFrame) {
+    return IPC_OK();
+  }
+
+  nsPoint extraOffset = subdocumentFrame->GetExtraOffset();
+
+  int32_t parentAPD = frame->PresContext()->AppUnitsPerDevPixel();
+  nsRect rect =
+      aRect.ScaleToOtherAppUnitsRoundOut(aAppUnitsPerDevPixel, parentAPD);
+  rect += extraOffset;
+  RefPtr<PresShell> presShell = frame->PresShell();
+  presShell->ScrollFrameRectIntoView(frame, rect, aVertical, aHorizontal,
+                                     aScrollFlags);
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult BrowserBridgeChild::RecvSubFrameCrashed(
+    BrowsingContext* aContext) {
+  if (aContext) {
+    RefPtr<nsFrameLoaderOwner> frameLoaderOwner =
+        do_QueryObject(aContext->GetEmbedderElement());
+    IgnoredErrorResult rv;
+    RemotenessOptions options;
+    options.mError.Construct(static_cast<uint32_t>(NS_ERROR_FRAME_CRASHED));
+    frameLoaderOwner->ChangeRemoteness(options, rv);
+
+    if (NS_WARN_IF(rv.Failed())) {
+      return IPC_FAIL(this, "Remoteness change failed");
+    }
+  }
 
   return IPC_OK();
 }
 
 void BrowserBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
-  mIPCOpen = false;
+  // Ensure we unblock our document's 'load' event (in case the OOP-iframe has
+  // been removed before it finished loading, or its subprocess crashed):
+  UnblockOwnerDocsLoadEvent();
+}
+
+void BrowserBridgeChild::UnblockOwnerDocsLoadEvent() {
+  if (!mHadInitialLoad) {
+    mHadInitialLoad = true;
+    if (auto* docShell =
+            nsDocShell::Cast(mBrowsingContext->GetParent()->GetDocShell())) {
+      docShell->OOPChildLoadDone(this);
+    }
+  }
 }
 
 }  // namespace dom

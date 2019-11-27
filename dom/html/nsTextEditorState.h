@@ -7,6 +7,7 @@
 #ifndef nsTextEditorState_h__
 #define nsTextEditorState_h__
 
+#include "mozilla/Assertions.h"
 #include "nsString.h"
 #include "nsITextControlElement.h"
 #include "nsITextControlFrame.h"
@@ -47,8 +48,6 @@ class HTMLInputElement;
  *   <input type=email>
  *   <input type=password>
  *   <textarea>
- * and also XUL controls such as <textbox> which use one of these elements
- * behind the scenes.
  *
  * This class is held as a member of HTMLInputElement and nsHTMLTextAreaElement.
  * The public functions in this class include the public APIs which content/
@@ -226,7 +225,11 @@ class nsTextEditorState : public mozilla::SupportsWeakPtr<nsTextEditorState> {
     return mTextCtrlElement->IsPasswordTextControl();
   }
   int32_t GetCols() { return mTextCtrlElement->GetCols(); }
-  int32_t GetWrapCols() { return mTextCtrlElement->GetWrapCols(); }
+  int32_t GetWrapCols() {
+    int32_t wrapCols = mTextCtrlElement->GetWrapCols();
+    MOZ_ASSERT(wrapCols >= 0);
+    return wrapCols;
+  }
   int32_t GetRows() { return mTextCtrlElement->GetRows(); }
 
   void UpdateOverlayTextVisibility(bool aNotify);

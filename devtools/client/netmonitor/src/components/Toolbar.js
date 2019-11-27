@@ -15,7 +15,7 @@ const {
   connect,
 } = require("devtools/client/shared/redux/visibility-handler-connect");
 const Actions = require("../actions/index");
-const { FILTER_SEARCH_DELAY, FILTER_TAGS } = require("../constants");
+const { FILTER_SEARCH_DELAY, FILTER_TAGS, PANELS } = require("../constants");
 const {
   getDisplayedRequests,
   getRecordingState,
@@ -26,6 +26,12 @@ const {
 } = require("../utils/filter-autocomplete-provider");
 const { L10N } = require("../utils/l10n");
 const { fetchNetworkUpdatePacket } = require("../utils/request-utils");
+
+loader.lazyRequireGetter(
+  this,
+  "KeyShortcuts",
+  "devtools/client/shared/key-shortcuts"
+);
 
 // MDN
 const { getFilterBoxURL } = require("../utils/mdn-utils");
@@ -42,9 +48,10 @@ const SearchBox = createFactory(
 const { button, div, input, label, span } = dom;
 
 // Localization
-const SEARCH_KEY_SHORTCUT = L10N.getStr(
+const FILTER_KEY_SHORTCUT = L10N.getStr(
   "netmonitor.toolbar.filterFreetext.key"
 );
+const SEARCH_KEY_SHORTCUT = L10N.getStr("netmonitor.toolbar.search.key");
 const SEARCH_PLACE_HOLDER = L10N.getStr(
   "netmonitor.toolbar.filterFreetext.label"
 );
@@ -52,6 +59,8 @@ const TOOLBAR_CLEAR = L10N.getStr("netmonitor.toolbar.clear");
 const TOOLBAR_TOGGLE_RECORDING = L10N.getStr(
   "netmonitor.toolbar.toggleRecording"
 );
+const TOOLBAR_SEARCH = L10N.getStr("netmonitor.toolbar.search");
+const TOOLBAR_BLOCKING = L10N.getStr("netmonitor.toolbar.requestBlocking");
 const TOOLBAR_HAR_BUTTON = L10N.getStr("netmonitor.label.har");
 const LEARN_MORE_TITLE = L10N.getStr(
   "netmonitor.toolbar.filterFreetext.learnMore"
@@ -134,6 +143,11 @@ class Toolbar extends Component {
       networkThrottling: PropTypes.shape(Types.networkThrottling).isRequired,
       // Executed when throttling changes (through toolbar button).
       onChangeNetworkThrottling: PropTypes.func.isRequired,
+      toggleSearchPanel: PropTypes.func.isRequired,
+      networkActionBarOpen: PropTypes.bool.isRequired,
+      toggleRequestBlockingPanel: PropTypes.func.isRequired,
+      networkActionBarSelectedPanel: PropTypes.string.isRequired,
+      hasBlockedRequests: PropTypes.bool.isRequired,
     };
   }
 
@@ -160,6 +174,15 @@ class Toolbar extends Component {
       DEVTOOLS_DISABLE_CACHE_PREF,
       this.updateBrowserCacheDisabled
     );
+
+    this.shortcuts = new KeyShortcuts({
+      window,
+    });
+
+    this.shortcuts.on(SEARCH_KEY_SHORTCUT, event => {
+      event.preventDefault();
+      this.props.toggleSearchPanel();
+    });
   }
 
   shouldComponentUpdate(nextProps) {
@@ -167,11 +190,15 @@ class Toolbar extends Component {
       this.props.persistentLogsEnabled !== nextProps.persistentLogsEnabled ||
       this.props.browserCacheDisabled !== nextProps.browserCacheDisabled ||
       this.props.recording !== nextProps.recording ||
+      this.props.networkActionBarOpen !== nextProps.networkActionBarOpen ||
       this.props.singleRow !== nextProps.singleRow ||
       !Object.is(this.props.requestFilterTypes, nextProps.requestFilterTypes) ||
       this.props.networkThrottling !== nextProps.networkThrottling ||
       // Filtered requests are useful only when searchbox is focused
-      !!(this.refs.searchbox && this.refs.searchbox.focused)
+      !!(this.refs.searchbox && this.refs.searchbox.focused) ||
+      this.props.networkActionBarSelectedPanel !==
+        nextProps.networkActionBarSelectedPanel ||
+      this.props.hasBlockedRequests !== nextProps.hasBlockedRequests
     );
   }
 
@@ -261,6 +288,78 @@ class Toolbar extends Component {
       className: toggleRecordingButtonClass,
       title: TOOLBAR_TOGGLE_RECORDING,
       onClick: toggleRecording,
+    });
+  }
+
+  /**
+   * Render a blocking button.
+   */
+  renderBlockingButton(toggleSearchPanel) {
+    const {
+      networkActionBarOpen,
+      toggleRequestBlockingPanel,
+      networkActionBarSelectedPanel,
+      hasBlockedRequests,
+    } = this.props;
+
+    // The blocking feature is available behind a pref.
+    if (
+      !Services.prefs.getBoolPref(
+        "devtools.netmonitor.features.requestBlocking"
+      )
+    ) {
+      return null;
+    }
+
+    const className = ["devtools-button", "requests-list-blocking-button"];
+    if (
+      networkActionBarOpen &&
+      networkActionBarSelectedPanel === PANELS.BLOCKING
+    ) {
+      className.push("checked");
+    }
+
+    if (hasBlockedRequests) {
+      className.push("requests-list-blocking-button-enabled");
+    }
+
+    return button({
+      className: className.join(" "),
+      title: TOOLBAR_BLOCKING,
+      "aria-pressed": networkActionBarOpen,
+      onClick: toggleRequestBlockingPanel,
+    });
+  }
+
+  /**
+   * Render a search button.
+   */
+  renderSearchButton(toggleSearchPanel) {
+    const { networkActionBarOpen, networkActionBarSelectedPanel } = this.props;
+
+    // The search feature is available behind a pref.
+    if (!Services.prefs.getBoolPref("devtools.netmonitor.features.search")) {
+      return null;
+    }
+
+    const className = [
+      "devtools-button",
+      "devtools-search-icon",
+      "requests-list-search-button",
+    ];
+
+    if (
+      networkActionBarOpen &&
+      networkActionBarSelectedPanel === PANELS.SEARCH
+    ) {
+      className.push("checked");
+    }
+
+    return button({
+      className: className.join(" "),
+      title: TOOLBAR_SEARCH,
+      "aria-pressed": networkActionBarOpen,
+      onClick: toggleSearchPanel,
     });
   }
 
@@ -398,7 +497,7 @@ class Toolbar extends Component {
   renderFilterBox(setRequestFilterText) {
     return SearchBox({
       delay: FILTER_SEARCH_DELAY,
-      keyShortcut: SEARCH_KEY_SHORTCUT,
+      keyShortcut: FILTER_KEY_SHORTCUT,
       placeholder: SEARCH_PLACE_HOLDER,
       type: "filter",
       ref: "searchbox",
@@ -422,6 +521,7 @@ class Toolbar extends Component {
       browserCacheDisabled,
       recording,
       singleRow,
+      toggleSearchPanel,
     } = this.props;
 
     // Render the entire toolbar.
@@ -436,6 +536,8 @@ class Toolbar extends Component {
             this.renderFilterBox(setRequestFilterText),
             this.renderSeparator(),
             this.renderToggleRecordingButton(recording, toggleRecording),
+            this.renderSearchButton(toggleSearchPanel),
+            this.renderBlockingButton(toggleSearchPanel),
             this.renderSeparator(),
             this.renderFilterButtons(requestFilterTypes),
             this.renderSeparator(),
@@ -458,6 +560,8 @@ class Toolbar extends Component {
             this.renderFilterBox(setRequestFilterText),
             this.renderSeparator(),
             this.renderToggleRecordingButton(recording, toggleRecording),
+            this.renderSearchButton(toggleSearchPanel),
+            this.renderBlockingButton(toggleSearchPanel),
             this.renderSeparator(),
             this.renderPersistlogCheckbox(
               persistentLogsEnabled,
@@ -469,7 +573,7 @@ class Toolbar extends Component {
             this.renderHarButton()
           ),
           span(
-            { className: "devtools-toolbar" },
+            { className: "devtools-toolbar devtools-input-toolbar" },
             this.renderFilterButtons(requestFilterTypes)
           )
         );
@@ -480,11 +584,16 @@ module.exports = connect(
   state => ({
     browserCacheDisabled: state.ui.browserCacheDisabled,
     displayedRequests: getDisplayedRequests(state),
+    hasBlockedRequests:
+      state.requestBlocking.blockingEnabled &&
+      state.requestBlocking.blockedUrls.some(({ enabled }) => enabled),
     filteredRequests: getTypeFilteredRequests(state),
     persistentLogsEnabled: state.ui.persistentLogsEnabled,
     recording: getRecordingState(state),
     requestFilterTypes: state.filters.requestFilterTypes,
     networkThrottling: state.networkThrottling,
+    networkActionBarOpen: state.search.panelOpen,
+    networkActionBarSelectedPanel: state.ui.selectedActionBarTabId || "",
   }),
   dispatch => ({
     clearRequests: () => dispatch(Actions.clearRequests()),
@@ -500,5 +609,8 @@ module.exports = connect(
       dispatch(Actions.toggleRequestFilterType(type)),
     onChangeNetworkThrottling: (enabled, profile) =>
       dispatch(changeNetworkThrottling(enabled, profile)),
+    toggleSearchPanel: () => dispatch(Actions.toggleSearchPanel()),
+    toggleRequestBlockingPanel: () =>
+      dispatch(Actions.toggleRequestBlockingPanel()),
   })
 )(Toolbar);

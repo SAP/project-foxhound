@@ -4,8 +4,10 @@
 "use strict";
 
 ChromeUtils.import("resource://normandy/lib/AddonStudies.jsm", this);
+ChromeUtils.import("resource://normandy/lib/NormandyUtils.jsm", this);
 
 const FIXTURE_ADDON_ID = "normandydriver-a@example.com";
+const UUID_REGEX = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 var EXPORTED_SYMBOLS = ["NormandyTestUtils"];
 
@@ -47,6 +49,7 @@ const NormandyTestUtils = {
           extensionHash:
             "ade1c14196ec4fe0aa0a6ba40ac433d7c8d1ec985581a8a94d43dc58991b5171",
           extensionHashAlgorithm: "sha256",
+          enrollmentId: NormandyUtils.generateUuid(),
         },
         attrs
       );
@@ -80,9 +83,20 @@ const NormandyTestUtils = {
         preferences[prefName] = { ...defaultPrefInfo, ...prefInfo };
       }
 
+      // Generate a slug from userFacingName
+      let {
+        userFacingName = `Test study ${_preferenceStudyFactoryId++}`,
+        slug,
+      } = attrs;
+      delete attrs.slug;
+      if (userFacingName && !slug) {
+        slug = userFacingName.replace(" ", "-").toLowerCase();
+      }
+
       return Object.assign(
         {
-          name: `Test study ${_preferenceStudyFactoryId++}`,
+          userFacingName,
+          slug,
           branch: "control",
           expired: false,
           lastSeen: new Date().toJSON(),
@@ -139,5 +153,9 @@ const NormandyTestUtils = {
    */
   decorate_task(...args) {
     return testGlobals.add_task(NormandyTestUtils.decorate(...args));
+  },
+
+  isUuid(s) {
+    return UUID_REGEX.test(s);
   },
 };

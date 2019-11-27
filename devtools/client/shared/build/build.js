@@ -11,7 +11,7 @@ const _path = require("path");
 
 const defaultPlugins = [
   "transform-flow-strip-types",
-  "transform-class-properties",
+  "proposal-class-properties",
   "transform-react-jsx",
 ];
 
@@ -22,7 +22,23 @@ function transform(filePath) {
     : defaultPlugins;
 
   const doc = fs.readFileSync(filePath, "utf8");
-  const out = Babel.transform(doc, { plugins });
+
+  let out;
+  try {
+    out = Babel.transform(doc, { plugins });
+  } catch (err) {
+    throw new Error(`
+========================
+NODE COMPILATION ERROR!
+
+File:   ${filePath}
+Stack:
+
+${err.stack}
+
+========================
+`);
+  }
 
   return out.code;
 }
@@ -35,6 +51,11 @@ for (let i = 2; i < process.argv.length; i++) {
   const filePath = _path.basename(srcPath);
   fs.writeFileSync(filePath, code);
   deps.push(srcPath);
+}
+
+if (false) {
+  const code = transform("devtools/client/debugger/src/utils/prefs.js");
+  console.log(code.slice(0, 1500));
 }
 
 // Print all dependencies prefixed with 'dep:' in order to help node.py, the script that

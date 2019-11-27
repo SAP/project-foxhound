@@ -1,0 +1,40 @@
+# vim: set filetype=python:
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS.mozilla.dom += [
+    'AudioFocusManager.h',
+    'MediaController.h',
+    'MediaControlService.h',
+    'MediaControlUtils.h',
+    'MediaHardwareKeysEvent.h',
+    'MediaHardwareKeysManager.h',
+]
+
+EXPORTS.ipc += [
+    'MediaControlIPC.h',
+]
+
+if CONFIG['MOZ_APPLEMEDIA']:
+  EXPORTS += [
+      'MediaHardwareKeysEventSourceMac.h',
+  ]
+  UNIFIED_SOURCES += [
+      'MediaHardwareKeysEventSourceMac.mm',
+  ]
+
+UNIFIED_SOURCES += [
+    'AudioFocusManager.cpp',
+    'MediaController.cpp',
+    'MediaControlService.cpp',
+    'MediaHardwareKeysEvent.cpp',
+    'MediaHardwareKeysManager.cpp',
+]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+if CONFIG['ENABLE_TESTS']:
+    DIRS += ['tests/gtest']
+
+FINAL_LIBRARY = 'xul'

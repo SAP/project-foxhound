@@ -17,6 +17,7 @@ if CONFIG['MOZ_XUL']:
     EXPORTS += [
         'nsXULCommandDispatcher.h',
         'nsXULElement.h',
+        'nsXULPrototypeDocument.h',
         'nsXULSortService.h',
     ]
 
@@ -41,7 +42,6 @@ if CONFIG['MOZ_XUL']:
         'nsXULPrototypeDocument.cpp',
         'nsXULSortService.cpp',
         'XULBroadcastManager.cpp',
-        'XULDocument.cpp',
         'XULFrameElement.cpp',
         'XULMenuElement.cpp',
         'XULPersist.cpp',
@@ -66,7 +66,6 @@ LOCAL_INCLUDES += [
     '/docshell/base',
     '/dom/base',
     '/dom/html',
-    '/dom/xbl',
     '/dom/xml',
     '/layout/base',
     '/layout/generic',
@@ -74,6 +73,9 @@ LOCAL_INCLUDES += [
     '/layout/xul',
     '/layout/xul/tree',
 ]
+
+if CONFIG['MOZ_XBL']:
+    LOCAL_INCLUDES += ['/dom/xbl']
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

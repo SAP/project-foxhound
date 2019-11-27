@@ -17,6 +17,7 @@
  * https://w3c.github.io/webappsec-credential-management/#framework-credential-management
  * https://w3c.github.io/webdriver/webdriver-spec.html#interface
  * https://wicg.github.io/media-capabilities/#idl-index
+ * https://w3c.github.io/mediasession/#idl-index
  *
  * © Copyright 2004-2011 Apple Computer, Inc., Mozilla Foundation, and
  * Opera Software ASA. You are granted a license to use, reproduce
@@ -26,21 +27,22 @@
 interface URI;
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-navigator-object
-[HeaderFile="Navigator.h"]
+[HeaderFile="Navigator.h",
+ Exposed=Window]
 interface Navigator {
   // objects implementing this interface also implement the interfaces given below
 };
-Navigator implements NavigatorID;
-Navigator implements NavigatorLanguage;
-Navigator implements NavigatorOnLine;
-Navigator implements NavigatorContentUtils;
-Navigator implements NavigatorStorageUtils;
-Navigator implements NavigatorConcurrentHardware;
-Navigator implements NavigatorStorage;
-Navigator implements NavigatorAutomationInformation;
+Navigator includes NavigatorID;
+Navigator includes NavigatorLanguage;
+Navigator includes NavigatorOnLine;
+Navigator includes NavigatorContentUtils;
+Navigator includes NavigatorStorageUtils;
+Navigator includes NavigatorConcurrentHardware;
+Navigator includes NavigatorStorage;
+Navigator includes NavigatorAutomationInformation;
+Navigator includes GPUProvider;
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorID {
+interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
   [Constant, Cached, Throws]
   readonly attribute DOMString appCodeName; // constant "Mozilla"
@@ -60,8 +62,7 @@ interface NavigatorID {
   boolean taintEnabled(); // constant false
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorLanguage {
+interface mixin NavigatorLanguage {
 
   // These two attributes are cached because this interface is also implemented
   // by Workernavigator and this way we don't have to go back to the
@@ -74,13 +75,11 @@ interface NavigatorLanguage {
   readonly attribute sequence<DOMString> languages;
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorOnLine {
+interface mixin NavigatorOnLine {
   readonly attribute boolean onLine;
 };
 
-[NoInterfaceObject]
-interface NavigatorContentUtils {
+interface mixin NavigatorContentUtils {
   // content handler registration
   [Throws, ChromeOnly]
   void checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
@@ -95,14 +94,13 @@ interface NavigatorContentUtils {
   //void unregisterContentHandler(DOMString mimeType, DOMString url);
 };
 
-[SecureContext, NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorStorage {
+[SecureContext]
+interface mixin NavigatorStorage {
   [Pref="dom.storageManager.enabled"]
   readonly attribute StorageManager storage;
 };
 
-[NoInterfaceObject]
-interface NavigatorStorageUtils {
+interface mixin NavigatorStorageUtils {
   // NOT IMPLEMENTED
   //void yieldForStorageUpdates();
 };
@@ -127,12 +125,11 @@ partial interface Navigator {
 };
 
 // http://www.w3.org/TR/geolocation-API/#geolocation_interface
-[NoInterfaceObject]
-interface NavigatorGeolocation {
+interface mixin NavigatorGeolocation {
   [Throws, Pref="geo.enabled"]
   readonly attribute Geolocation geolocation;
 };
-Navigator implements NavigatorGeolocation;
+Navigator includes NavigatorGeolocation;
 
 // http://www.w3.org/TR/battery-status/#navigatorbattery-interface
 partial interface Navigator {
@@ -192,6 +189,12 @@ partial interface Navigator {
   // WebKit/Blink/Trident/Presto support this.
   [Affects=Nothing, DependsOn=Nothing]
   boolean javaEnabled();
+};
+
+// Addon manager bits
+partial interface Navigator {
+  [Throws, Func="mozilla::AddonManagerWebAPI::IsAPIEnabled"]
+  readonly attribute AddonManager mozAddonManager;
 };
 
 // NetworkInformation
@@ -299,8 +302,7 @@ partial interface Navigator {
                               sequence<MediaKeySystemConfiguration> supportedConfigurations);
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorConcurrentHardware {
+interface mixin NavigatorConcurrentHardware {
   readonly attribute unsigned long long hardwareConcurrency;
 };
 
@@ -311,8 +313,7 @@ partial interface Navigator {
 };
 
 // https://w3c.github.io/webdriver/webdriver-spec.html#interface
-[NoInterfaceObject]
-interface NavigatorAutomationInformation {
+interface mixin NavigatorAutomationInformation {
   [Pref="dom.webdriver.enabled"]
   readonly attribute boolean webdriver;
 };
@@ -321,4 +322,23 @@ interface NavigatorAutomationInformation {
 partial interface Navigator {
   [Pref="dom.events.asyncClipboard", SecureContext, SameObject]
   readonly attribute Clipboard clipboard;
+};
+
+// https://wicg.github.io/web-share/#navigator-interface
+partial interface Navigator {
+  [SecureContext, Throws, Pref="dom.webshare.enabled"]
+  Promise<void> share(optional ShareData data = {});
+};
+// https://wicg.github.io/web-share/#sharedata-dictionary
+dictionary ShareData {
+  USVString title;
+  USVString text;
+  USVString url;
+};
+
+// https://w3c.github.io/mediasession/#idl-index
+[Exposed=Window]
+partial interface Navigator {
+  [Pref="dom.media.mediasession.enabled", SameObject]
+  readonly attribute MediaSession mediaSession;
 };

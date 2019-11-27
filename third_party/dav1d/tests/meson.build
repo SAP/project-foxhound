@@ -27,7 +27,7 @@
 #
 
 # Leave subdir if tests are disabled
-if not get_option('build_tests')
+if not get_option('enable_tests')
     subdir_done()
 endif
 
@@ -41,6 +41,7 @@ if is_asm_enabled
 
     checkasm_tmpl_sources = files(
         'checkasm/cdef.c',
+        'checkasm/filmgrain.c',
         'checkasm/ipred.c',
         'checkasm/itx.c',
         'checkasm/loopfilter.c',

@@ -44,7 +44,6 @@ typedef wr::WrImageKey ImageKey;
 typedef wr::WrFontKey FontKey;
 typedef wr::WrFontInstanceKey FontInstanceKey;
 typedef wr::WrEpoch Epoch;
-typedef wr::WrExternalImageId ExternalImageId;
 
 typedef mozilla::Maybe<mozilla::wr::IdNamespace> MaybeIdNamespace;
 typedef mozilla::Maybe<mozilla::wr::ImageMask> MaybeImageMask;
@@ -627,11 +626,11 @@ static inline wr::LayoutSideOffsets ToBorderWidths(float top, float right,
   return bw;
 }
 
-static inline wr::SideOffsets2D<int32_t> ToSideOffsets2D_i32(int32_t top,
-                                                             int32_t right,
-                                                             int32_t bottom,
-                                                             int32_t left) {
-  SideOffsets2D<int32_t> offset;
+static inline wr::DeviceIntSideOffsets ToDeviceIntSideOffsets(int32_t top,
+                                                              int32_t right,
+                                                              int32_t bottom,
+                                                              int32_t left) {
+  wr::DeviceIntSideOffsets offset;
   offset.top = top;
   offset.right = right;
   offset.bottom = bottom;
@@ -639,11 +638,10 @@ static inline wr::SideOffsets2D<int32_t> ToSideOffsets2D_i32(int32_t top,
   return offset;
 }
 
-static inline wr::SideOffsets2D<float> ToSideOffsets2D_f32(float top,
-                                                           float right,
-                                                           float bottom,
-                                                           float left) {
-  SideOffsets2D<float> offset;
+static inline wr::LayoutSideOffsets ToLayoutSideOffsets(float top, float right,
+                                                        float bottom,
+                                                        float left) {
+  wr::LayoutSideOffsets offset;
   offset.top = top;
   offset.right = right;
   offset.bottom = bottom;
@@ -688,12 +686,12 @@ static inline wr::WrOpacityProperty ToWrOpacityProperty(uint64_t id,
 
 // Whenever possible, use wr::ExternalImageId instead of manipulating uint64_t.
 inline uint64_t AsUint64(const ExternalImageId& aId) {
-  return static_cast<uint64_t>(aId.mHandle);
+  return static_cast<uint64_t>(aId._0);
 }
 
 static inline ExternalImageId ToExternalImageId(uint64_t aID) {
   ExternalImageId Id;
-  Id.mHandle = aID;
+  Id._0 = aID;
   return Id;
 }
 
@@ -875,6 +873,7 @@ enum class WebRenderError : int8_t {
   INITIALIZE = 0,
   MAKE_CURRENT,
   RENDER,
+  NEW_SURFACE,
 
   Sentinel /* this must be last for serialization purposes. */
 };
@@ -908,6 +907,18 @@ static inline wr::WrColorDepth ToWrColorDepth(gfx::ColorDepth aColorDepth) {
       MOZ_ASSERT_UNREACHABLE("Tried to convert invalid color depth value.");
   }
   return wr::WrColorDepth::Color8;
+}
+
+static inline wr::WrColorRange ToWrColorRange(gfx::ColorRange aColorRange) {
+  switch (aColorRange) {
+    case gfx::ColorRange::LIMITED:
+      return wr::WrColorRange::Limited;
+    case gfx::ColorRange::FULL:
+      return wr::WrColorRange::Full;
+    default:
+      MOZ_ASSERT_UNREACHABLE("Tried to convert invalid color range value.");
+      return wr ::WrColorRange::Limited;
+  }
 }
 
 static inline wr::SyntheticItalics DegreesToSyntheticItalics(float aDegrees) {

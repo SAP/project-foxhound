@@ -94,29 +94,29 @@
 
     get _markup() {
       return `
-      <image class="ac-type-icon"></image>
-      <image class="ac-site-icon"></image>
+      <image class="ac-type-icon"/>
+      <image class="ac-site-icon"/>
       <hbox class="ac-title" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-title-text"></description>
+          <description class="ac-title-text"/>
         </description>
       </hbox>
       <hbox class="ac-tags" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-tags-text"></description>
+          <description class="ac-tags-text"/>
         </description>
       </hbox>
       <hbox class="ac-separator" align="center">
-        <description class="ac-separator-text" value="—"></description>
+        <description class="ac-separator-text" value="—"/>
       </hbox>
-      <hbox class="ac-url" align="center">
+      <hbox class="ac-url" align="center" aria-hidden="true">
         <description class="ac-text-overflow-container">
-          <description class="ac-url-text"></description>
+          <description class="ac-url-text"/>
         </description>
       </hbox>
       <hbox class="ac-action" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-action-text"></description>
+          <description class="ac-action-text"/>
         </description>
       </hbox>
     `;
@@ -148,23 +148,6 @@
 
     get _actionText() {
       return this.querySelector(".ac-action-text");
-    }
-
-    get label() {
-      // This property is a string that is read aloud by screen readers,
-      // so it must not contain anything that should not be user-facing.
-
-      let parts = [this.getAttribute("title"), this.getAttribute("displayurl")];
-      let label = parts.filter(str => str).join(" ");
-
-      // allow consumers that have extended popups to override
-      // the label values for the richlistitems
-      let panel = this.parentNode.parentNode;
-      if (panel.createResultLabel) {
-        return panel.createResultLabel(this, label);
-      }
-
-      return label;
     }
 
     get _stringBundle() {
@@ -705,9 +688,9 @@
       this._tags.setAttribute("empty", "true");
 
       if (type == "tag" || type == "bookmark-tag") {
-        // The title is separated from the tags by \x1F
+        // The title is separated from the tags by an endash
         let tags;
-        [title, tags] = title.split("\x1F");
+        [, title, tags] = title.match(/^(.+) \u2013 (.+)$/);
 
         // Each tag is split by a comma in an undefined order, so sort it
         let sortedTags = tags.split(/\s*,\s*/).sort((a, b) => {
@@ -961,29 +944,29 @@
 
     get _markup() {
       return `
-      <image class="ac-type-icon"></image>
-      <image class="ac-site-icon"></image>
+      <image class="ac-type-icon"/>
+      <image class="ac-site-icon"/>
       <vbox class="ac-title" align="left">
         <description class="ac-text-overflow-container">
-          <description class="ac-title-text"></description>
+          <description class="ac-title-text"/>
         </description>
       </vbox>
       <hbox class="ac-tags" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-tags-text"></description>
+          <description class="ac-tags-text"/>
         </description>
       </hbox>
       <hbox class="ac-separator" align="center">
-        <description class="ac-separator-text" value="—"></description>
+        <description class="ac-separator-text" value="—"/>
       </hbox>
       <hbox class="ac-url" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-url-text"></description>
+          <description class="ac-url-text"/>
         </description>
       </hbox>
       <hbox class="ac-action" align="center">
         <description class="ac-text-overflow-container">
-          <description class="ac-action-text"></description>
+          <description class="ac-action-text"/>
         </description>
       </hbox>
     `;

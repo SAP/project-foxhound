@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -24,8 +22,8 @@ add_task(async () => {
   await target.attach();
   const { client } = target;
 
-  const threadClient = await testEarlyDebuggerStatement(client, tab, target);
-  await testDebuggerStatement(client, tab, threadClient);
+  const threadFront = await testEarlyDebuggerStatement(client, tab, target);
+  await testDebuggerStatement(client, tab, threadFront);
 
   await target.destroy();
 });
@@ -36,7 +34,7 @@ async function testEarlyDebuggerStatement(client, tab, targetFront) {
   };
 
   // using the DebuggerClient to listen to the pause packet, as the
-  // threadClient is not yet attached.
+  // threadFront is not yet attached.
   client.on("paused", onPaused);
 
   // This should continue without nesting an event loop and calling
@@ -46,17 +44,17 @@ async function testEarlyDebuggerStatement(client, tab, targetFront) {
   client.off("paused", onPaused);
 
   // Now attach and resume...
-  const [, threadClient] = await targetFront.attachThread();
-  await threadClient.resume();
+  const [, threadFront] = await targetFront.attachThread();
+  await threadFront.resume();
   ok(true, "Pause wasn't called before we've attached.");
 
-  return threadClient;
+  return threadFront;
 }
 
-async function testDebuggerStatement(client, tab, threadClient) {
+async function testDebuggerStatement(client, tab, threadFront) {
   const onPaused = new Promise(resolve => {
-    threadClient.on("paused", async packet => {
-      await threadClient.resume();
+    threadFront.on("paused", async packet => {
+      await threadFront.resume();
       ok(true, "The pause handler was triggered on a debugger statement.");
       resolve();
     });

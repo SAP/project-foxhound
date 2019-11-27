@@ -72,13 +72,13 @@ class DataStorageSharedThread final {
   nsCOMPtr<nsIThread> mThread;
 };
 
-StaticMutex sDataStorageSharedThreadMutex;
-static StaticAutoPtr<DataStorageSharedThread> gDataStorageSharedThread;
+mozilla::StaticMutex sDataStorageSharedThreadMutex;
+static mozilla::StaticAutoPtr<DataStorageSharedThread> gDataStorageSharedThread;
 static bool gDataStorageSharedThreadShutDown = false;
 
 nsresult DataStorageSharedThread::Initialize() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  StaticMutexAutoLock lock(sDataStorageSharedThreadMutex);
+  mozilla::StaticMutexAutoLock lock(sDataStorageSharedThreadMutex);
 
   // If this happens, we initialized a DataStorage after shutdown notifications
   // were sent, so don't re-initialize the shared thread.
@@ -101,7 +101,7 @@ nsresult DataStorageSharedThread::Initialize() {
 
 nsresult DataStorageSharedThread::Shutdown() {
   MOZ_ASSERT(XRE_IsParentProcess());
-  StaticMutexAutoLock lock(sDataStorageSharedThreadMutex);
+  mozilla::StaticMutexAutoLock lock(sDataStorageSharedThreadMutex);
 
   if (!gDataStorageSharedThread || gDataStorageSharedThreadShutDown) {
     return NS_OK;
@@ -122,7 +122,7 @@ nsresult DataStorageSharedThread::Shutdown() {
   nsCOMPtr<nsIThread> threadHandle = gDataStorageSharedThread->mThread;
   nsresult rv;
   {
-    StaticMutexAutoUnlock unlock(sDataStorageSharedThreadMutex);
+    mozilla::StaticMutexAutoUnlock unlock(sDataStorageSharedThreadMutex);
     rv = threadHandle->Shutdown();
   }
   gDataStorageSharedThread->mThread = nullptr;
@@ -133,7 +133,7 @@ nsresult DataStorageSharedThread::Shutdown() {
 
 nsresult DataStorageSharedThread::Dispatch(nsIRunnable* event) {
   MOZ_ASSERT(XRE_IsParentProcess());
-  StaticMutexAutoLock lock(sDataStorageSharedThreadMutex);
+  mozilla::StaticMutexAutoLock lock(sDataStorageSharedThreadMutex);
   if (gDataStorageSharedThreadShutDown || !gDataStorageSharedThread ||
       !gDataStorageSharedThread->mThread) {
     return NS_ERROR_FAILURE;
@@ -173,7 +173,7 @@ NS_IMPL_ISUPPORTS(DataStorageMemoryReporter, nsIMemoryReporter)
 
 NS_IMPL_ISUPPORTS(DataStorage, nsIObserver)
 
-StaticAutoPtr<DataStorage::DataStorages> DataStorage::sDataStorages;
+mozilla::StaticAutoPtr<DataStorage::DataStorages> DataStorage::sDataStorages;
 
 DataStorage::DataStorage(const nsString& aFilename)
     : mMutex("DataStorage::mMutex"),
@@ -255,7 +255,7 @@ void DataStorage::GetAllChildProcessData(
 
 // static
 void DataStorage::SetCachedStorageEntries(
-    const InfallibleTArray<mozilla::dom::DataStorageEntry>& aEntries) {
+    const nsTArray<mozilla::dom::DataStorageEntry>& aEntries) {
   MOZ_ASSERT(XRE_IsContentProcess());
 
   // Make sure to initialize all DataStorage classes.
@@ -300,7 +300,7 @@ size_t DataStorage::SizeOfIncludingThis(
 }
 
 nsresult DataStorage::Init(
-    const InfallibleTArray<mozilla::dom::DataStorageItem>* aItems) {
+    const nsTArray<mozilla::dom::DataStorageItem>* aItems) {
   // Don't access the observer service or preferences off the main thread.
   if (!NS_IsMainThread()) {
     MOZ_ASSERT_UNREACHABLE("DataStorage::Init called off main thread");
@@ -676,9 +676,9 @@ DataStorage::DataStorageTable& DataStorage::GetTableForType(
   MOZ_CRASH("given bad DataStorage storage type");
 }
 
-void DataStorage::ReadAllFromTable(
-    DataStorageType aType, InfallibleTArray<dom::DataStorageItem>* aItems,
-    const MutexAutoLock& aProofOfLock) {
+void DataStorage::ReadAllFromTable(DataStorageType aType,
+                                   nsTArray<dom::DataStorageItem>* aItems,
+                                   const MutexAutoLock& aProofOfLock) {
   for (auto iter = GetTableForType(aType, aProofOfLock).Iter(); !iter.Done();
        iter.Next()) {
     DataStorageItem* item = aItems->AppendElement();
@@ -688,7 +688,7 @@ void DataStorage::ReadAllFromTable(
   }
 }
 
-void DataStorage::GetAll(InfallibleTArray<dom::DataStorageItem>* aItems) {
+void DataStorage::GetAll(nsTArray<dom::DataStorageItem>* aItems) {
   WaitForReady();
   MutexAutoLock lock(mMutex);
 

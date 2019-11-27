@@ -1,5 +1,9 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 /* exported PanelPopup, ViewPopup */
@@ -289,7 +293,6 @@ class BasePopup {
     if (this.extension.remote) {
       browser.setAttribute("remote", "true");
       browser.setAttribute("remoteType", E10SUtils.EXTENSION_REMOTE_TYPE);
-      browser.setAttribute("renderroot", "content");
     }
 
     // We only need flex sizing for the sake of the slide-in sub-views of the
@@ -439,7 +442,7 @@ class PanelPopup extends BasePopup {
   constructor(extension, document, popupURL, browserStyle) {
     let panel = document.createXULElement("panel");
     panel.setAttribute("id", makeWidgetId(extension.id) + "-panel");
-    panel.setAttribute("class", "browser-extension-panel");
+    panel.setAttribute("class", "browser-extension-panel panel-no-padding");
     panel.setAttribute("tabspecific", "true");
     panel.setAttribute("type", "arrow");
     panel.setAttribute("role", "group");

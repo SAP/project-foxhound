@@ -50,7 +50,6 @@ EXPORTS += [
     'nsFrameTraversal.h',
     'nsGenConList.h',
     'nsIFrameTraversal.h',
-    'nsILayoutDebugger.h',
     'nsIPercentBSizeObserver.h',
     'nsIReflowCallback.h',
     'nsLayoutUtils.h',
@@ -75,6 +74,7 @@ EXPORTS.mozilla += [
     'ArenaObjectID.h',
     'GeckoMVMContext.h',
     'GeometryUtils.h',
+    'MediaEmulationData.h',
     'MVMContext.h',
     'OverflowChangedTracker.h',
     'PresShell.h',
@@ -149,10 +149,12 @@ LOCAL_INCLUDES += [
     '/dom/base',
     '/dom/html',
     '/dom/svg',
-    '/dom/xbl',
     '/dom/xul',
     '/view',
 ]
+
+if CONFIG['MOZ_XBL']:
+    LOCAL_INCLUDES += ['/dom/xbl']
 
 if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
     LOCAL_INCLUDES += [

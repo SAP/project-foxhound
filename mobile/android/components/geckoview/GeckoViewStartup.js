@@ -21,6 +21,19 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 const { debug, warn } = GeckoViewUtils.initLogging("Startup"); // eslint-disable-line no-unused-vars
 
+const ACTORS = {
+  LoadURIDelegate: {
+    child: {
+      moduleURI: "resource:///actors/LoadURIDelegateChild.jsm",
+    },
+  },
+  WebBrowserChrome: {
+    child: {
+      moduleURI: "resource:///actors/WebBrowserChromeChild.jsm",
+    },
+  },
+};
+
 function GeckoViewStartup() {}
 
 GeckoViewStartup.prototype = {
@@ -65,8 +78,34 @@ GeckoViewStartup.prototype = {
 
         GeckoViewUtils.addLazyGetter(this, "GeckoViewStorageController", {
           module: "resource://gre/modules/GeckoViewStorageController.jsm",
-          ged: ["GeckoView:ClearData", "GeckoView:ClearHostData"],
+          ged: [
+            "GeckoView:ClearData",
+            "GeckoView:ClearSessionContextData",
+            "GeckoView:ClearHostData",
+          ],
         });
+
+        GeckoViewUtils.addLazyGetter(this, "GeckoViewPushController", {
+          module: "resource://gre/modules/GeckoViewPushController.jsm",
+          ged: ["GeckoView:PushEvent", "GeckoView:PushSubscriptionChanged"],
+        });
+
+        GeckoViewUtils.addLazyGetter(
+          this,
+          "GeckoViewContentBlockingController",
+          {
+            module:
+              "resource://gre/modules/GeckoViewContentBlockingController.jsm",
+            ged: [
+              "ContentBlocking:AddException",
+              "ContentBlocking:RemoveException",
+              "ContentBlocking:CheckException",
+              "ContentBlocking:SaveList",
+              "ContentBlocking:RestoreList",
+              "ContentBlocking:ClearList",
+            ],
+          }
+        );
 
         GeckoViewUtils.addLazyPrefObserver(
           {
@@ -96,6 +135,7 @@ GeckoViewStartup.prototype = {
         if (
           Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_DEFAULT
         ) {
+          ActorManagerParent.addActors(ACTORS);
           ActorManagerParent.flush();
 
           Services.mm.loadFrameScript(

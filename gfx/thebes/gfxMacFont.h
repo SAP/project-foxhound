@@ -8,7 +8,6 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "gfxFont.h"
-#include "cairo.h"
 #include <ApplicationServices/ApplicationServices.h>
 
 #include "mozilla/gfx/UnscaledFontMac.h"
@@ -27,8 +26,6 @@ class gfxMacFont : public gfxFont {
   /* overrides for the pure virtual methods in gfxFont */
   uint32_t GetSpaceGlyph() override { return mSpaceGlyph; }
 
-  bool SetupCairoFont(DrawTarget* aDrawTarget) override;
-
   /* override Measure to add padding for antialiasing */
   RunMetrics Measure(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
                      BoundingBoxType aBoundingBoxType, DrawTarget* aDrawTargetForTightBoundingBox,
@@ -43,8 +40,12 @@ class gfxMacFont : public gfxFont {
 
   int32_t GetGlyphWidth(uint16_t aGID) override;
 
+  bool GetGlyphBounds(uint16_t aGID, gfxRect* aBounds, bool aTight) override;
+
   already_AddRefed<mozilla::gfx::ScaledFont> GetScaledFont(
       mozilla::gfx::DrawTarget* aTarget) override;
+
+  bool ShouldRoundXOffset(cairo_t* aCairo) const override;
 
   void AddSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf,
                               FontCacheSizes* aSizes) const override;
@@ -82,8 +83,6 @@ class gfxMacFont : public gfxFont {
   // a Core Text font reference, created only if we're using CT to measure
   // glyph widths; otherwise null.
   CTFontRef mCTFont;
-
-  cairo_font_face_t* mFontFace;
 
   mozilla::UniquePtr<gfxFontShaper> mCoreTextShaper;
 

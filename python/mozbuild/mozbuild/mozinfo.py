@@ -78,6 +78,7 @@ def build_dict(config, env=os.environ):
     d['devedition'] = substs.get('MOZ_DEV_EDITION') == '1'
     d['pgo'] = substs.get('MOZ_PGO') == '1'
     d['crashreporter'] = bool(substs.get('MOZ_CRASHREPORTER'))
+    d['normandy'] = substs.get('MOZ_NORMANDY') == '1'
     d['datareporting'] = bool(substs.get('MOZ_DATA_REPORTING'))
     d['healthreport'] = substs.get('MOZ_SERVICES_HEALTHREPORT') == '1'
     d['sync'] = substs.get('MOZ_SERVICES_SYNC') == '1'
@@ -86,6 +87,7 @@ def build_dict(config, env=os.environ):
     d['asan'] = substs.get('MOZ_ASAN') == '1'
     d['tsan'] = substs.get('MOZ_TSAN') == '1'
     d['ubsan'] = substs.get('MOZ_UBSAN') == '1'
+    d['xbl'] = substs.get('MOZ_XBL') == '1'
     d['telemetry'] = substs.get('MOZ_TELEMETRY_REPORTING') == '1'
     d['tests_enabled'] = substs.get('ENABLE_TESTS') == "1"
     d['bin_suffix'] = substs.get('BIN_SUFFIX', '')

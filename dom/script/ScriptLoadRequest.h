@@ -12,7 +12,7 @@
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/net/ReferrerPolicy.h"
+#include "mozilla/TimeStamp.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "mozilla/Variant.h"
 #include "mozilla/Vector.h"
@@ -46,12 +46,12 @@ class ScriptFetchOptions {
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(ScriptFetchOptions)
 
   ScriptFetchOptions(mozilla::CORSMode aCORSMode,
-                     mozilla::net::ReferrerPolicy aReferrerPolicy,
+                     enum ReferrerPolicy aReferrerPolicy,
                      nsIScriptElement* aElement,
                      nsIPrincipal* aTriggeringPrincipal);
 
   const mozilla::CORSMode mCORSMode;
-  const mozilla::net::ReferrerPolicy mReferrerPolicy;
+  const enum ReferrerPolicy mReferrerPolicy;
   bool mIsPreload;
   nsCOMPtr<nsIScriptElement> mElement;
   nsCOMPtr<nsIPrincipal> mTriggeringPrincipal;
@@ -226,7 +226,7 @@ class ScriptLoadRequest
   }
 
   mozilla::CORSMode CORSMode() const { return mFetchOptions->mCORSMode; }
-  mozilla::net::ReferrerPolicy ReferrerPolicy() const {
+  enum ReferrerPolicy ReferrerPolicy() const {
     return mFetchOptions->mReferrerPolicy;
   }
   nsIScriptElement* Element() const { return mFetchOptions->mElement; }
@@ -332,6 +332,11 @@ class ScriptLoadRequest
   // For preload requests, we defer reporting errors to the console until the
   // request is used.
   nsresult mUnreportedPreloadError;
+
+  // Measure the duration of streamed bytes and the duration of parsing, to
+  // determine the maximal gain of streaming parsing using the same parsing
+  // speed.
+  TimeDuration mStreamingTime;
 };
 
 class ScriptLoadRequestList : private mozilla::LinkedList<ScriptLoadRequest> {

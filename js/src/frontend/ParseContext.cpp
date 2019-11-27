@@ -220,8 +220,8 @@ void ParseContext::Scope::removeCatchParameters(ParseContext* pc,
 
 ParseContext::ParseContext(JSContext* cx, ParseContext*& parent,
                            SharedContext* sc, ErrorReporter& errorReporter,
-                           class UsedNameTracker& usedNames,
-                           Directives* newDirectives, bool isFull)
+                           ParseInfo& parseInfo, Directives* newDirectives,
+                           bool isFull)
     : Nestable<ParseContext>(&parent),
       traceLog_(sc->cx_,
                 isFull ? TraceLogger_ParsingFull : TraceLogger_ParsingSyntax,
@@ -233,18 +233,27 @@ ParseContext::ParseContext(JSContext* cx, ParseContext*& parent,
       varScope_(nullptr),
       positionalFormalParameterNames_(cx->frontendCollectionPool()),
       closedOverBindingsForLazy_(cx->frontendCollectionPool()),
-      innerFunctionsForLazy(cx, GCVector<JSFunction*, 8>(cx)),
+      innerFunctionBoxesForLazy(cx),
       newDirectives(newDirectives),
       lastYieldOffset(NoYieldOffset),
       lastAwaitOffset(NoAwaitOffset),
-      scriptId_(usedNames.nextScriptId()),
+      scriptId_(parseInfo.usedNames.nextScriptId()),
       isStandaloneFunctionBody_(false),
       superScopeNeedsHomeObject_(false) {
   if (isFunctionBox()) {
-    if (functionBox()->isNamedLambda()) {
-      namedLambdaScope_.emplace(cx, parent, usedNames);
+    // We exclude ASM bodies because they are always eager, and the
+    // FunctionBoxes that get added to the tree in an AsmJS compilation
+    // don't have a long enough lifespan, as AsmJS marks the lifo allocator
+    // inside the ModuleValidator, and frees it again when that dies.
+    if (parseInfo.treeHolder.isDeferred() &&
+        !this->functionBox()->useAsmOrInsideUseAsm()) {
+      tree.emplace(parseInfo.treeHolder);
     }
-    functionScope_.emplace(cx, parent, usedNames);
+
+    if (functionBox()->isNamedLambda()) {
+      namedLambdaScope_.emplace(cx, parent, parseInfo.usedNames);
+    }
+    functionScope_.emplace(cx, parent, parseInfo.usedNames);
   }
 }
 
@@ -257,21 +266,25 @@ bool ParseContext::init() {
   JSContext* cx = sc()->cx_;
 
   if (isFunctionBox()) {
+    if (tree) {
+      if (!tree->init(cx, this->functionBox())) {
+        return false;
+      }
+    }
     // Named lambdas always need a binding for their own name. If this
     // binding is closed over when we finish parsing the function in
     // finishExtraFunctionScopes, the function box needs to be marked as
     // needing a dynamic DeclEnv object.
-    RootedFunction fun(cx, functionBox()->function());
-    if (fun->isNamedLambda()) {
+    if (functionBox()->isNamedLambda()) {
       if (!namedLambdaScope_->init(this)) {
         return false;
       }
-      AddDeclaredNamePtr p =
-          namedLambdaScope_->lookupDeclaredNameForAdd(fun->explicitName());
+      AddDeclaredNamePtr p = namedLambdaScope_->lookupDeclaredNameForAdd(
+          functionBox()->explicitName());
       MOZ_ASSERT(!p);
-      if (!namedLambdaScope_->addDeclaredName(this, p, fun->explicitName(),
-                                              DeclarationKind::Const,
-                                              DeclaredNameInfo::npos)) {
+      if (!namedLambdaScope_->addDeclaredName(
+              this, p, functionBox()->explicitName(), DeclarationKind::Const,
+              DeclaredNameInfo::npos)) {
         return false;
       }
     }
@@ -505,9 +518,9 @@ bool ParseContext::declareFunctionThis(const UsedNameTracker& usedNames,
   if (canSkipLazyClosedOverBindings) {
     declareThis = funbox->function()->lazyScript()->hasThisBinding();
   } else {
-    declareThis = hasUsedFunctionSpecialName(usedNames, dotThis) ||
-                  funbox->function()->kind() ==
-                      JSFunction::FunctionKind::ClassConstructor;
+    declareThis =
+        hasUsedFunctionSpecialName(usedNames, dotThis) ||
+        funbox->kind() == FunctionFlags::FunctionKind::ClassConstructor;
   }
 
   if (declareThis) {

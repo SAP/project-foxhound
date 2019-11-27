@@ -2,22 +2,15 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import os
 import json
 import signal
-import which
-
-# Py3/Py2 compatibility.
-try:
-    from json.decoder import JSONDecodeError
-except ImportError:
-    JSONDecodeError = ValueError
+from json.decoder import JSONDecodeError
 
 import mozpack.path as mozpath
-from mozpack.files import FileFinder
+from mozfile import which
 from mozlint import result
+from mozpack.files import FileFinder
 from mozprocess import ProcessHandlerMixin
 
 
@@ -135,14 +128,11 @@ def get_shellcheck_binary():
     if binary:
         return binary
 
-    try:
-        return which.which('shellcheck')
-    except which.WhichError:
-        return None
+    return which('shellcheck')
 
 
 def lint(paths, config, **lintargs):
-
+    log = lintargs['log']
     binary = get_shellcheck_binary()
 
     if not binary:
@@ -162,5 +152,6 @@ def lint(paths, config, **lintargs):
     for f in files:
         cmd = list(base_command)
         cmd.extend(['-s', files[f], f])
+        log.debug("Command: {}".format(cmd))
         run_process(config, cmd)
     return results

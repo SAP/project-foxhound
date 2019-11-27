@@ -64,6 +64,7 @@ from mozbuild.util import (
     ensureParentDir,
     FileAvoidWrite,
     mkdir,
+    ensure_subprocess_env,
 )
 import mozinstall
 from mozpack.files import (
@@ -113,10 +114,11 @@ class ArtifactJob(object):
     # dest_prefix is the prefix to be added that will yield the final path relative
     # to dist/.
     test_artifact_patterns = {
-        ('bin/BadCertServer', ('bin', 'bin')),
+        ('bin/BadCertAndPinningServer', ('bin', 'bin')),
+        ('bin/DelegatedCredentialsServer', ('bin', 'bin')),
         ('bin/GenerateOCSPResponse', ('bin', 'bin')),
         ('bin/OCSPStaplingServer', ('bin', 'bin')),
-        ('bin/SymantecSanctionsServer', ('bin', 'bin')),
+        ('bin/SanctionsTestServer', ('bin', 'bin')),
         ('bin/certutil', ('bin', 'bin')),
         ('bin/fileid', ('bin', 'bin')),
         ('bin/geckodriver', ('bin', 'bin')),
@@ -232,6 +234,15 @@ class ArtifactJob(object):
                     writer.add(destpath.encode('utf-8'), reader[filename], mode=mode)
                     added_entry = True
                     break
+
+                if filename.endswith('.ini'):
+                    # The artifact build writes test .ini files into the object
+                    # directory; they don't come from the upstream test archive.
+                    self.log(logging.INFO, 'artifact',
+                             {'filename': filename},
+                             'Skipping test INI file {filename}')
+                    continue
+
                 for files_entry in OBJDIR_TEST_FILES.values():
                     origin_pattern = files_entry['pattern']
                     leaf_filename = filename
@@ -269,6 +280,15 @@ class ArtifactJob(object):
                         writer.add(destpath.encode('utf-8'), entry.open(), mode=mode)
                         added_entry = True
                         break
+
+                    if filename.endswith('.ini'):
+                        # The artifact build writes test .ini files into the object
+                        # directory; they don't come from the upstream test archive.
+                        self.log(logging.INFO, 'artifact',
+                                 {'filename': filename},
+                                 'Skipping test INI file {filename}')
+                        continue
+
                     for files_entry in OBJDIR_TEST_FILES.values():
                         origin_pattern = files_entry['pattern']
                         leaf_filename = filename
@@ -312,12 +332,10 @@ class ArtifactJob(object):
 
 
 class AndroidArtifactJob(ArtifactJob):
-    package_re = r'public/build/target\.apk'
+    package_re = r'public/build/geckoview_example\.apk'
     product = 'mobile'
 
     package_artifact_patterns = {
-        'application.ini',
-        'platform.ini',
         '**/*.so',
     }
 
@@ -378,14 +396,12 @@ class LinuxArtifactJob(ArtifactJob):
     product = 'firefox'
 
     _package_artifact_patterns = {
-        '{product}/application.ini',
         '{product}/crashreporter',
         '{product}/dependentlibs.list',
         '{product}/{product}',
         '{product}/{product}-bin',
         '{product}/minidump-analyzer',
         '{product}/pingsender',
-        '{product}/platform.ini',
         '{product}/plugin-container',
         '{product}/updater',
         '{product}/**/*.so',
@@ -539,8 +555,6 @@ class WinArtifactJob(ArtifactJob):
 
     _package_artifact_patterns = {
         '{product}/dependentlibs.list',
-        '{product}/platform.ini',
-        '{product}/application.ini',
         '{product}/**/*.dll',
         '{product}/*.exe',
         '{product}/*.tlb',
@@ -554,10 +568,11 @@ class WinArtifactJob(ArtifactJob):
 
     # These are a subset of TEST_HARNESS_BINS in testing/mochitest/Makefile.in.
     test_artifact_patterns = {
-        ('bin/BadCertServer.exe', ('bin', 'bin')),
+        ('bin/BadCertAndPinningServer.exe', ('bin', 'bin')),
+        ('bin/DelegatedCredentialsServer.exe', ('bin', 'bin')),
         ('bin/GenerateOCSPResponse.exe', ('bin', 'bin')),
         ('bin/OCSPStaplingServer.exe', ('bin', 'bin')),
-        ('bin/SymantecSanctionsServer.exe', ('bin', 'bin')),
+        ('bin/SanctionsTestServer.exe', ('bin', 'bin')),
         ('bin/certutil.exe', ('bin', 'bin')),
         ('bin/fileid.exe', ('bin', 'bin')),
         ('bin/geckodriver.exe', ('bin', 'bin')),
@@ -865,6 +880,13 @@ class Artifacts(object):
         if self._log:
             self._log(*args, **kwargs)
 
+    def run_hg(self, *args, **kwargs):
+        env = kwargs.get('env', {})
+        env['HGPLAIN'] = '1'
+        kwargs['env'] = ensure_subprocess_env(env)
+        return subprocess.check_output([self._hg] + list(args),
+                                       **kwargs)
+
     def _guess_artifact_job(self):
         # Add the "-debug" suffix to the guessed artifact job name
         # if MOZ_DEBUG is enabled.
@@ -971,12 +993,10 @@ class Artifacts(object):
 
         # Mercurial updated the ordering of "last" in 4.3. We use revision
         # numbers to order here to accommodate multiple versions of hg.
-        last_revs = subprocess.check_output([
-            self._hg, 'log',
-            '--template', '{rev}:{node}\n',
-            '-r', 'last(public() and ::., {num})'.format(
-                num=NUM_REVISIONS_TO_QUERY)
-        ], cwd=self._topsrcdir).splitlines()
+        last_revs = self.run_hg('log', '--template', '{rev}:{node}\n',
+                                '-r', 'last(public() and ::., {num})'.format(
+                                    num=NUM_REVISIONS_TO_QUERY),
+                                cwd=self._topsrcdir).splitlines()
 
         if len(last_revs) == 0:
             raise Exception("""\
@@ -1044,9 +1064,6 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
 
         urls = []
         for artifact_name in self._artifact_job.find_candidate_artifacts(artifacts):
-            # We can easily extract the task ID from the URL.  We can't easily
-            # extract the build ID; we use the .ini files embedded in the
-            # downloaded artifact for this.
             url = get_artifact_url(taskId, artifact_name)
             urls.append(url)
         if urls:
@@ -1073,7 +1090,7 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
             if re.match(r'[0-9a-fA-F]{16}$', before):
                 orig_basename = after
             path = mozpath.join(distdir, orig_basename)
-            with FileAvoidWrite(path, mode='rb') as fh:
+            with FileAvoidWrite(path, readmode='rb') as fh:
                 shutil.copyfileobj(open(filename, mode='rb'), fh)
             self.log(logging.INFO, 'artifact',
                      {'path': path},
@@ -1106,10 +1123,8 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
 
         with zipfile.ZipFile(processed_filename) as zf:
             for info in zf.infolist():
-                if info.filename.endswith('.ini'):
-                    continue
                 n = mozpath.join(distdir, info.filename)
-                fh = FileAvoidWrite(n, mode='rb')
+                fh = FileAvoidWrite(n, readmode='rb')
                 shutil.copyfileobj(zf.open(info), fh)
                 file_existed, file_updated = fh.close()
                 self.log(logging.INFO, 'artifact',
@@ -1168,8 +1183,8 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
         revision = None
         try:
             if self._hg:
-                revision = subprocess.check_output([self._hg, 'log', '--template', '{node}\n',
-                                                    '-r', revset], cwd=self._topsrcdir).strip()
+                revision = self.run_hg('log', '--template', '{node}\n', '-r', revset,
+                                       cwd=self._topsrcdir).strip()
             elif self._git:
                 revset = subprocess.check_output([
                     self._git, 'rev-parse', '%s^{commit}' % revset],
@@ -1211,9 +1226,6 @@ see https://developer.mozilla.org/en-US/docs/Mozilla/Developer_guide/Source_Code
 
         urls = []
         for artifact_name in self._artifact_job.find_candidate_artifacts(artifacts):
-            # We can easily extract the task ID from the URL.  We can't easily
-            # extract the build ID; we use the .ini files embedded in the
-            # downloaded artifact for this.
             url = get_artifact_url(taskId, artifact_name)
             urls.append(url)
         if not urls:

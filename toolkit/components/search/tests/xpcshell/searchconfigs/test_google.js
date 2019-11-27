@@ -38,13 +38,27 @@ const test = new SearchConfigTest({
     {
       included: [{ regions: ["us"] }],
       domain: "google.com",
+      telemetryId: AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
+        ? "google-b-1-e"
+        : "google-b-1-d",
       codes: AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
         ? "client=firefox-b-1-e"
         : "client=firefox-b-1-d",
     },
     {
+      excluded: [{ regions: ["us", "by", "kz", "ru", "tr"] }],
+      included: [{}],
+      domain: "google.com",
+      telemetryId: AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
+        ? "google-b-e"
+        : "google-b-d",
+      codes: AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
+        ? "client=firefox-b-e"
+        : "client=firefox-b-d",
+    },
+    {
       excluded: [{ regions: ["us"] }],
-      included: [],
+      included: [{ regions: ["by", "kz", "ru", "tr"] }],
       domain: "google.com",
       codes: AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
         ? "client=firefox-b-e"
@@ -58,5 +72,6 @@ add_task(async function setup() {
 });
 
 add_task(async function test_searchConfig_google() {
-  await test.run();
+  await test.run(false);
+  await test.run(true);
 });

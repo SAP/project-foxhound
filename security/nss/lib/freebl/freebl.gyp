@@ -117,6 +117,51 @@
       ]
     },
     {
+      'target_name': 'gcm-aes-aarch64_c_lib',
+      'type': 'static_library',
+      'sources': [
+        'gcm-aarch64.c'
+      ],
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports'
+      ],
+      'cflags': [
+        '-march=armv8-a+crypto'
+      ],
+      'cflags_mozilla': [
+        '-march=armv8-a+crypto'
+      ]
+    },
+    {
+      'target_name': 'armv8_c_lib',
+      'type': 'static_library',
+      'sources': [
+        'aes-armv8.c',
+      ],
+      'dependencies': [
+        '<(DEPTH)/exports.gyp:nss_exports'
+      ],
+      'conditions': [
+        [ 'target_arch=="arm"', {
+          'cflags': [
+            '-march=armv8-a',
+            '-mfpu=crypto-neon-fp-armv8'
+          ],
+          'cflags_mozilla': [
+            '-march=armv8-a',
+            '-mfpu=crypto-neon-fp-armv8'
+          ],
+        }, 'target_arch=="arm64" or target_arch=="aarch64"', {
+          'cflags': [
+            '-march=armv8-a+crypto'
+          ],
+          'cflags_mozilla': [
+            '-march=armv8-a+crypto'
+          ],
+        }]
+      ]
+    },
+    {
       'target_name': 'freebl',
       'type': 'static_library',
       'sources': [
@@ -143,6 +188,15 @@
         [ 'target_arch=="ia32" or target_arch=="x64"', {
           'dependencies': [
             'gcm-aes-x86_c_lib',
+          ],
+        }, 'disable_arm_hw_aes==0 and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {
+          'dependencies': [
+            'armv8_c_lib'
+          ],
+        }],
+        [ 'target_arch=="arm64" or target_arch=="aarch64"', {
+          'dependencies': [
+            'gcm-aes-aarch64_c_lib',
           ],
         }],
         [ 'OS=="linux"', {
@@ -181,6 +235,15 @@
           'dependencies': [
             'gcm-aes-x86_c_lib',
           ]
+        }, 'target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64"', {
+          'dependencies': [
+            'armv8_c_lib',
+          ],
+        }],
+        [ 'target_arch=="arm64" or target_arch=="aarch64"', {
+          'dependencies': [
+            'gcm-aes-aarch64_c_lib',
+          ],
         }],
         [ 'OS!="linux"', {
           'conditions': [
@@ -403,6 +466,11 @@
               'MP_USE_UINT_DIGIT',
               'SHA_NO_LONG_LONG',
               'ARMHF',
+            ],
+          }],
+          [ 'disable_arm_hw_aes==0 and (target_arch=="arm" or target_arch=="arm64" or target_arch=="aarch64")', {
+            'defines': [
+              'USE_HW_AES',
             ],
           }],
         ],

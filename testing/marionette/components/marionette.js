@@ -88,6 +88,7 @@ const RECOMMENDED_PREFS = new Map([
 
   // Don't show the content blocking introduction panel.
   // We use a larger number than the default 22 to have some buffer
+  // This can be removed once Firefox 69 and 68 ESR and are no longer supported.
   ["browser.contentblocking.introCount", 99],
 
   // Indicate that the download panel has been shown once so that

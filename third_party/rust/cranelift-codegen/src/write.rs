@@ -5,6 +5,7 @@
 
 use crate::entity::SecondaryMap;
 use crate::ir::entities::AnyEntity;
+use crate::ir::immediates::V128Imm;
 use crate::ir::{
     DataFlowGraph, DisplayFunctionAnnotations, Ebb, Function, Inst, SigRef, Type, Value, ValueDef,
     ValueLoc,
@@ -504,6 +505,20 @@ pub fn write_operands(
         NullAry { .. } => write!(w, " "),
         InsertLane { lane, args, .. } => write!(w, " {}, {}, {}", args[0], lane, args[1]),
         ExtractLane { lane, arg, .. } => write!(w, " {}, {}", arg, lane),
+        UnaryConst {
+            constant_handle, ..
+        } => {
+            let data = dfg.constants.get(constant_handle);
+            let v128 = V128Imm::from(&data[..]);
+            write!(w, " {}", v128)
+        }
+        Shuffle { mask, args, .. } => {
+            let data = dfg.immediates.get(mask).expect(
+                "Expected the shuffle mask to already be inserted into the immediates table",
+            );
+            let v128 = V128Imm::from(&data[..]);
+            write!(w, " {}, {}, {}", args[0], args[1], v128)
+        }
         IntCompare { cond, args, .. } => write!(w, " {} {}, {}", cond, args[0], args[1]),
         IntCompareImm { cond, arg, imm, .. } => write!(w, " {} {}, {}", cond, arg, imm),
         IntCond { cond, arg, .. } => write!(w, " {} {}", cond, arg),
@@ -662,6 +677,14 @@ pub fn write_operands(
                 )
             } else {
                 write!(w, " %{} -> %{}", src, dst)
+            }
+        }
+        CopyToSsa { src, .. } => {
+            if let Some(isa) = isa {
+                let regs = isa.register_info();
+                write!(w, " {}", regs.display_regunit(src))
+            } else {
+                write!(w, " %{}", src)
             }
         }
         RegSpill { arg, src, dst, .. } => {

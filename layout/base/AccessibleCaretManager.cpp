@@ -19,7 +19,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsCaret.h"
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
@@ -572,6 +572,40 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
     return NS_ERROR_FAILURE;
   }
 
+  // If long tap point isn't selectable frame for caret and frame selection
+  // can find a better frame for caret, we don't select a word.
+  // See https://webcompat.com/issues/15953
+  nsIFrame::ContentOffsets offsets =
+      ptFrame->GetContentOffsetsFromPoint(ptInFrame, nsIFrame::SKIP_HIDDEN);
+  if (offsets.content) {
+    RefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
+    if (frameSelection) {
+      int32_t offset;
+      nsIFrame* theFrame = frameSelection->GetFrameForNodeOffset(
+          offsets.content, offsets.offset, offsets.associate, &offset);
+      if (theFrame && theFrame != ptFrame) {
+        SetSelectionDragState(true);
+        frameSelection->HandleClick(offsets.content, offsets.StartOffset(),
+                                    offsets.EndOffset(), false, false,
+                                    offsets.associate);
+        SetSelectionDragState(false);
+        ClearMaintainedSelection();
+
+        if (StaticPrefs::
+                layout_accessiblecaret_caret_shown_when_long_tapping_on_empty_content()) {
+          mFirstCaret->SetAppearance(Appearance::Normal);
+        }
+
+        UpdateCarets();
+        ProvideHapticFeedback();
+        DispatchCaretStateChangedEvent(
+            CaretChangedReason::Longpressonemptycontent);
+
+        return NS_OK;
+      }
+    }
+  }
+
   // Then try select a word under point.
   nsresult rv = SelectWord(ptFrame, ptInFrame);
   UpdateCarets();
@@ -585,6 +619,11 @@ void AccessibleCaretManager::OnScrollStart() {
 
   AutoRestore<bool> saveAllowFlushingLayout(mAllowFlushingLayout);
   mAllowFlushingLayout = false;
+
+  Maybe<PresShell::AutoAssertNoFlush> assert;
+  if (mPresShell) {
+    assert.emplace(*mPresShell);
+  }
 
   mIsScrollStarted = true;
 
@@ -602,6 +641,11 @@ void AccessibleCaretManager::OnScrollEnd() {
 
   AutoRestore<bool> saveAllowFlushingLayout(mAllowFlushingLayout);
   mAllowFlushingLayout = false;
+
+  Maybe<PresShell::AutoAssertNoFlush> assert;
+  if (mPresShell) {
+    assert.emplace(*mPresShell);
+  }
 
   mIsScrollStarted = false;
 
@@ -633,6 +677,11 @@ void AccessibleCaretManager::OnScrollPositionChanged() {
   AutoRestore<bool> saveAllowFlushingLayout(mAllowFlushingLayout);
   mAllowFlushingLayout = false;
 
+  Maybe<PresShell::AutoAssertNoFlush> assert;
+  if (mPresShell) {
+    assert.emplace(*mPresShell);
+  }
+
   if (mFirstCaret->IsLogicallyVisible() || mSecondCaret->IsLogicallyVisible()) {
     if (mIsScrollStarted) {
       // We don't want extra CaretStateChangedEvents dispatched when user is
@@ -655,6 +704,11 @@ void AccessibleCaretManager::OnReflow() {
 
   AutoRestore<bool> saveAllowFlushingLayout(mAllowFlushingLayout);
   mAllowFlushingLayout = false;
+
+  Maybe<PresShell::AutoAssertNoFlush> assert;
+  if (mPresShell) {
+    assert.emplace(*mPresShell);
+  }
 
   if (mFirstCaret->IsLogicallyVisible() || mSecondCaret->IsLogicallyVisible()) {
     AC_LOG("%s: UpdateCarets(RespectOldAppearance)", __FUNCTION__);
@@ -825,7 +879,8 @@ bool AccessibleCaretManager::IsPhoneNumber(nsAString& aCandidate) const {
   RefPtr<Document> doc = mPresShell->GetDocument();
   nsAutoString phoneNumberRegex(
       NS_LITERAL_STRING("(^\\+)?[0-9 ,\\-.()*#pw]{1,30}$"));
-  return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc);
+  return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc)
+      .valueOr(false);
 }
 
 void AccessibleCaretManager::SelectMoreIfPhoneNumber() const {
@@ -1354,7 +1409,7 @@ void AccessibleCaretManager::DispatchCaretStateChangedEvent(
          __FUNCTION__, static_cast<uint32_t>(init.mReason), init.mCollapsed,
          static_cast<uint32_t>(init.mCaretVisible));
 
-  (new AsyncEventDispatcher(doc, event))->RunDOMEventWhenSafe();
+  (new AsyncEventDispatcher(doc, event))->PostDOMEvent();
 }
 
 }  // namespace mozilla

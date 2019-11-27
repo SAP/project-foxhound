@@ -89,12 +89,12 @@ def add_entitlements_link(config, jobs):
             "mac entitlements",
             {
                 'platform': job['primary-dependency'].attributes.get('build_platform'),
-                'project': config.params['project'],
+                'release-level': config.params.release_level(),
             },
         )
         if entitlements_path:
             job['entitlements-url'] = config.params.file_url(
-                entitlements_path, endpoint="raw-file"
+                entitlements_path,
             )
         yield job
 
@@ -176,12 +176,18 @@ def make_task_description(config, jobs):
         }
 
         if 'macosx' in build_platform:
-            assert worker_type_alias.startswith("linux-"), \
+            worker_type_alias_map = {
+                'linux-depsigning': 'mac-depsigning',
+                'linux-signing': 'mac-signing',
+            }
+
+            assert worker_type_alias in worker_type_alias_map, \
                 (
                     "Make sure to adjust the below worker_type_alias logic for "
                     "mac if you change the signing workerType aliases!"
+                    " ({} not found in mapping)".format(worker_type_alias)
                 )
-            worker_type_alias = worker_type_alias.replace("linux-", "mac-")
+            worker_type_alias = worker_type_alias_map[worker_type_alias]
             mac_behavior = evaluate_keyed_by(
                 config.graph_config['mac-notarization']['mac-behavior'],
                 'mac behavior',

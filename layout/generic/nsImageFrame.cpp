@@ -29,6 +29,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Unused.h"
 
 #include "nsCOMPtr.h"
@@ -46,7 +47,6 @@
 #include "nsStyleUtil.h"
 #include "nsTransform2D.h"
 #include "nsImageMap.h"
-#include "nsIIOService.h"
 #include "nsILoadGroup.h"
 #include "nsISupportsPriority.h"
 #include "nsNetUtil.h"
@@ -106,9 +106,6 @@ using mozilla::layout::TextDrawTarget;
 
 // static icon information
 StaticRefPtr<nsImageFrame::IconLoad> nsImageFrame::gIconLoad;
-
-// cached IO service for loading icons
-nsIIOService* nsImageFrame::sIOService;
 
 // test if the width and height are fixed, looking at the style data
 // This is used by nsImageFrame::ShouldCreateImageFrameFor and should
@@ -311,9 +308,8 @@ void nsImageFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
 
     UpdateIntrinsicSize(mImage);
     UpdateIntrinsicRatio(mImage);
-  } else if (!aOldStyle ||
-             aOldStyle->StylePosition()->mAspectRatio !=
-                 StylePosition()->mAspectRatio) {
+  } else if (!aOldStyle || aOldStyle->StylePosition()->mAspectRatio !=
+                               StylePosition()->mAspectRatio) {
     UpdateIntrinsicRatio(mImage);
   }
 }
@@ -488,13 +484,13 @@ static AspectRatio ComputeAspectRatio(imgIContainer* aImage,
   if (style.StyleDisplay()->IsContainSize()) {
     return AspectRatio();
   }
-  if (style.StylePosition()->mAspectRatio != 0.0f) {
-    return AspectRatio(style.StylePosition()->mAspectRatio);
-  }
   if (aImage) {
     if (Maybe<AspectRatio> fromImage = aImage->GetIntrinsicRatio()) {
       return *fromImage;
     }
+  }
+  if (style.StylePosition()->mAspectRatio != 0.0f) {
+    return AspectRatio(style.StylePosition()->mAspectRatio);
   }
   if (aFrame.ShouldShowBrokenImageIcon()) {
     return AspectRatio(1.0f);
@@ -729,7 +725,7 @@ void nsImageFrame::UpdateImage(imgIRequest* aRequest, imgIContainer* aImage) {
     if (!(mState & IMAGE_SIZECONSTRAINED)) {
       PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                     NS_FRAME_IS_DIRTY);
-    } else {
+    } else if (PresShell()->IsActive()) {
       // We've already gotten the initial reflow, and our size hasn't changed,
       // so we're ready to request a decode.
       MaybeDecodeForPredictedSize();
@@ -1048,7 +1044,7 @@ void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
     static_assert(eOverflowType_LENGTH == 2, "Unknown overflow types?");
     nsRect& visualOverflow = aMetrics.VisualOverflow();
     visualOverflow.UnionRect(visualOverflow, altFeedbackSize);
-  } else {
+  } else if (PresShell()->IsActive()) {
     // We've just reflowed and we should have an accurate size, so we're ready
     // to request a decode.
     MaybeDecodeForPredictedSize();
@@ -1573,7 +1569,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
   // Clip to this rect so we don't render outside the inner rect
   LayoutDeviceRect bounds = LayoutDeviceRect::FromAppUnits(
       inner, PresContext()->AppUnitsPerDevPixel());
-  auto wrBounds = wr::ToRoundedLayoutRect(bounds);
+  auto wrBounds = wr::ToLayoutRect(bounds);
 
   // Draw image
   ImgDrawResult result = ImgDrawResult::NOT_READY;
@@ -1613,7 +1609,6 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
 
       const int32_t factor = PresContext()->AppUnitsPerDevPixel();
       LayoutDeviceRect destRect(LayoutDeviceRect::FromAppUnits(dest, factor));
-      destRect.Round();
 
       Maybe<SVGImageContext> svgContext;
       IntSize decodeSize =
@@ -1645,7 +1640,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
       nsRect rect(iconXPos, inner.y, size, size);
       auto devPxRect = LayoutDeviceRect::FromAppUnits(
           rect, PresContext()->AppUnitsPerDevPixel());
-      auto dest = wr::ToRoundedLayoutRect(devPxRect);
+      auto dest = wr::ToLayoutRect(devPxRect);
 
       auto borderWidths = wr::ToBorderWidths(1.0, 1.0, 1.0, 1.0);
       wr::BorderSide side = {color, wr::BorderStyle::Solid};
@@ -1660,7 +1655,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
                     size / 2 - twoPX);
       devPxRect = LayoutDeviceRect::FromAppUnits(
           rect, PresContext()->AppUnitsPerDevPixel());
-      dest = wr::ToRoundedLayoutRect(devPxRect);
+      dest = wr::ToLayoutRect(devPxRect);
 
       aBuilder.PushRoundedRect(dest, wrBounds, isBackfaceVisible, color);
     }
@@ -1782,7 +1777,7 @@ LayerState nsDisplayImage::GetLayerState(
     const ContainerLayerParameters& aParameters) {
   if (!nsDisplayItem::ForceActiveLayers()) {
     bool animated = false;
-    if (!nsLayoutUtils::AnimatedImageLayersEnabled() ||
+    if (!StaticPrefs::layout_animated_image_layers_enabled() ||
         mImage->GetType() != imgIContainer::TYPE_RASTER ||
         NS_FAILED(mImage->GetAnimated(&animated)) || !animated) {
       if (!aManager->IsCompositingCheap() ||
@@ -1895,7 +1890,6 @@ bool nsDisplayImage::CreateWebRenderCommands(
   const int32_t factor = mFrame->PresContext()->AppUnitsPerDevPixel();
   LayoutDeviceRect destRect(
       LayoutDeviceRect::FromAppUnits(GetDestRect(), factor));
-  destRect.Round();
 
   Maybe<SVGImageContext> svgContext;
   IntSize decodeSize = nsLayoutUtils::ComputeImageContainerDrawingParameters(
@@ -2270,8 +2264,8 @@ nsresult nsImageFrame::HandleEvent(nsPresContext* aPresContext,
             *aEventStatus = nsEventStatus_eConsumeDoDefault;
             clicked = true;
           }
-          nsContentUtils::TriggerLink(anchorNode, aPresContext, uri, target,
-                                      clicked, /* isTrusted */ true);
+          nsContentUtils::TriggerLink(anchorNode, uri, target, clicked,
+                                      /* isTrusted */ true);
         }
       }
     }
@@ -2296,6 +2290,11 @@ Maybe<nsIFrame::Cursor> nsImageFrame::GetCursor(const nsPoint& aPoint) {
   // Use the cursor from the style of the *area* element.
   RefPtr<ComputedStyle> areaStyle =
       PresShell()->StyleSet()->ResolveStyleLazily(*area);
+
+  // This is one of the cases, like the <xul:tree> pseudo-style stuff, where we
+  // get styles out of the blue and expect to trigger image loads for those.
+  areaStyle->StartImageLoads(*PresContext()->Document());
+
   StyleCursorKind kind = areaStyle->StyleUI()->mCursor;
   if (kind == StyleCursorKind::Auto) {
     kind = StyleCursorKind::Default;
@@ -2325,7 +2324,8 @@ void nsImageFrame::OnVisibilityChange(
     imageLoader->OnVisibilityChange(aNewVisibility, aNonvisibleAction);
   }
 
-  if (aNewVisibility == Visibility::ApproximatelyVisible) {
+  if (aNewVisibility == Visibility::ApproximatelyVisible &&
+      PresShell()->IsActive()) {
     MaybeDecodeForPredictedSize();
   }
 
@@ -2381,16 +2381,10 @@ nsresult nsImageFrame::GetIntrinsicImageSize(nsSize& aSize) {
 nsresult nsImageFrame::LoadIcon(const nsAString& aSpec,
                                 nsPresContext* aPresContext,
                                 imgRequestProxy** aRequest) {
-  nsresult rv = NS_OK;
   MOZ_ASSERT(!aSpec.IsEmpty(), "What happened??");
 
-  if (!sIOService) {
-    rv = CallGetService(NS_IOSERVICE_CONTRACTID, &sIOService);
-    NS_ENSURE_SUCCESS(rv, rv);
-  }
-
   nsCOMPtr<nsIURI> realURI;
-  SpecToURI(aSpec, sIOService, getter_AddRefs(realURI));
+  SpecToURI(aSpec, getter_AddRefs(realURI));
 
   RefPtr<imgLoader> il =
       nsContentUtils::GetImgLoaderForDocument(aPresContext->Document());
@@ -2408,7 +2402,7 @@ nsresult nsImageFrame::LoadIcon(const nsAString& aSpec,
                                           relevant for cookies, so does not
                                           apply to icons. */
       nullptr,                          /* referrer (not relevant for icons) */
-      mozilla::net::RP_Unset, nullptr,  /* principal (not relevant for icons) */
+      nullptr,                          /* principal (not relevant for icons) */
       0, loadGroup, gIconLoad, nullptr, /* No context */
       nullptr, /* Not associated with any particular document */
       loadFlags, nullptr, contentPolicyType, EmptyString(),
@@ -2424,16 +2418,14 @@ void nsImageFrame::GetDocumentCharacterSet(nsACString& aCharset) const {
   }
 }
 
-void nsImageFrame::SpecToURI(const nsAString& aSpec, nsIIOService* aIOService,
-                             nsIURI** aURI) {
-  nsCOMPtr<nsIURI> baseURI;
+void nsImageFrame::SpecToURI(const nsAString& aSpec, nsIURI** aURI) {
+  nsIURI* baseURI = nullptr;
   if (mContent) {
     baseURI = mContent->GetBaseURI();
   }
   nsAutoCString charset;
   GetDocumentCharacterSet(charset);
-  NS_NewURI(aURI, aSpec, charset.IsEmpty() ? nullptr : charset.get(), baseURI,
-            aIOService);
+  NS_NewURI(aURI, aSpec, charset.IsEmpty() ? nullptr : charset.get(), baseURI);
 }
 
 void nsImageFrame::GetLoadGroup(nsPresContext* aPresContext,

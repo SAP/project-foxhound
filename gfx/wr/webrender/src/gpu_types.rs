@@ -105,8 +105,23 @@ pub struct BlurInstance {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ScalingInstance {
+    pub target_rect: DeviceRect,
+    pub source_rect: DeviceIntRect,
+    pub source_layer: i32,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct SvgFilterInstance {
     pub task_address: RenderTaskAddress,
-    pub src_task_address: RenderTaskAddress,
+    pub input_1_task_address: RenderTaskAddress,
+    pub input_2_task_address: RenderTaskAddress,
+    pub kind: u16,
+    pub input_count: u16,
+    pub generic_int: u16,
+    pub extra_data_address: GpuCacheAddress,
 }
 
 #[derive(Copy, Clone, Debug, Hash, MallocSizeOf, PartialEq, Eq)]
@@ -154,7 +169,6 @@ pub struct ClipMaskInstance {
     pub local_pos: LayoutPoint,
     pub tile_rect: LayoutRect,
     pub sub_rect: DeviceRect,
-    pub snap_offsets: SnapOffsets,
     pub task_origin: DevicePoint,
     pub screen_origin: DevicePoint,
     pub device_pixel_scale: f32,
@@ -198,6 +212,35 @@ impl ResolveInstanceData {
     }
 }
 
+/// Vertex format for picture cache composite shader.
+#[derive(Debug, Clone)]
+#[repr(C)]
+pub struct CompositeInstance {
+    rect: DeviceRect,
+    clip_rect: DeviceRect,
+    color: PremultipliedColorF,
+    layer: f32,
+    z_id: f32,
+}
+
+impl CompositeInstance {
+    pub fn new(
+        rect: DeviceRect,
+        clip_rect: DeviceRect,
+        color: PremultipliedColorF,
+        layer: f32,
+        z_id: ZBufferId,
+    ) -> Self {
+        CompositeInstance {
+            rect,
+            clip_rect,
+            color,
+            layer,
+            z_id: z_id.0 as f32,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone)]
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
@@ -235,7 +278,6 @@ impl PrimitiveHeaders {
         self.headers_float.push(PrimitiveHeaderF {
             local_rect: prim_header.local_rect,
             local_clip_rect: prim_header.local_clip_rect,
-            snap_offsets: prim_header.snap_offsets,
         });
 
         self.headers_int.push(PrimitiveHeaderI {
@@ -256,7 +298,6 @@ impl PrimitiveHeaders {
 pub struct PrimitiveHeader {
     pub local_rect: LayoutRect,
     pub local_clip_rect: LayoutRect,
-    pub snap_offsets: SnapOffsets,
     pub specific_prim_address: GpuCacheAddress,
     pub transform_id: TransformPaletteId,
 }
@@ -269,7 +310,6 @@ pub struct PrimitiveHeader {
 pub struct PrimitiveHeaderF {
     pub local_rect: LayoutRect,
     pub local_clip_rect: LayoutRect,
-    pub snap_offsets: SnapOffsets,
 }
 
 // i32 parts of a primitive header
@@ -576,33 +616,6 @@ pub enum UvRectKind {
         bottom_left: DeviceHomogeneousVector,
         bottom_right: DeviceHomogeneousVector,
     },
-}
-
-/// Represents offsets in device pixels that a primitive
-/// was snapped to.
-#[cfg_attr(feature = "capture", derive(Serialize))]
-#[cfg_attr(feature = "replay", derive(Deserialize))]
-#[derive(Copy, Clone, Debug)]
-#[repr(C)]
-pub struct SnapOffsets {
-    /// How far the top left corner was snapped
-    pub top_left: DeviceVector2D,
-    /// How far the bottom right corner was snapped
-    pub bottom_right: DeviceVector2D,
-}
-
-impl SnapOffsets {
-    pub fn empty() -> Self {
-        SnapOffsets {
-            top_left: DeviceVector2D::zero(),
-            bottom_right: DeviceVector2D::zero(),
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        let zero = DeviceVector2D::zero();
-        self.top_left == zero && self.bottom_right == zero
-    }
 }
 
 #[derive(Debug, Copy, Clone)]

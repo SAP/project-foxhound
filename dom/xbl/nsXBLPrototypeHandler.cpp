@@ -26,7 +26,6 @@
 #include "nsIDOMEventListener.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsIDOMWindow.h"
 #include "nsIServiceManager.h"
 #include "nsIScriptError.h"
 #include "nsIWeakReferenceUtils.h"
@@ -110,20 +109,6 @@ nsXBLPrototypeHandler::nsXBLPrototypeHandler(Element* aHandlerElement,
 
   // Make sure our prototype is initialized.
   ConstructPrototype(aHandlerElement);
-}
-
-nsXBLPrototypeHandler::nsXBLPrototypeHandler(ShortcutKeyData* aKeyData)
-    : mHandlerText(nullptr),
-      mLineNumber(0),
-      mReserved(XBLReservedKey_False),
-      mNextHandler(nullptr),
-      mPrototypeBinding(nullptr) {
-  Init();
-
-  ConstructPrototype(nullptr, aKeyData->event, nullptr, nullptr,
-                     aKeyData->command, aKeyData->keycode, aKeyData->key,
-                     aKeyData->modifiers, nullptr, nullptr, nullptr, nullptr,
-                     nullptr);
 }
 
 nsXBLPrototypeHandler::nsXBLPrototypeHandler(nsXBLPrototypeBinding* aBinding)

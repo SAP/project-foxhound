@@ -14,6 +14,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'widget_cocoa'
 
 EXPORTS += [
+    'CFTypeRefPtr.h',
     'mozView.h',
     'nsBidiKeyboard.h',
     'nsChangeObserver.h',
@@ -35,6 +36,7 @@ UNIFIED_SOURCES += [
     'nsCursorManager.mm',
     'nsDeviceContextSpecX.mm',
     'nsFilePicker.mm',
+    'nsIconLoaderService.mm',
     'nsIdleServiceX.mm',
     'nsLookAndFeel.mm',
     'nsMacCursor.mm',
@@ -56,6 +58,7 @@ UNIFIED_SOURCES += [
     'nsSystemStatusBarCocoa.mm',
     'nsToolkit.mm',
     'nsTouchBar.mm',
+    'nsTouchBarInputIcon.mm',
     'nsTouchBarUpdater.mm',
     'nsWidgetFactory.mm',
     'nsWindowMap.mm',
@@ -88,6 +91,7 @@ include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
 LOCAL_INCLUDES += [
+    '/dom/media/platforms/apple',
     '/layout/base',
     '/layout/forms',
     '/layout/generic',
@@ -139,22 +143,6 @@ RESOURCE_FILES.cursors += [
     'cursors/zoomOut@2x.png',
 ]
 
-RESOURCE_FILES.touchbar += [
-    'touchbar/back.pdf',
-    'touchbar/bookmark-filled.pdf',
-    'touchbar/bookmark.pdf',
-    'touchbar/forward.pdf',
-    'touchbar/fullscreen.pdf',
-    'touchbar/home.pdf',
-    'touchbar/new.pdf',
-    'touchbar/reader-mode.pdf',
-    'touchbar/refresh.pdf',
-    'touchbar/search.pdf',
-    'touchbar/share.pdf',
-    'touchbar/sidebar-left.pdf',
-    'touchbar/sidebar-right.pdf',
-]
-
 # These resources go in $(DIST)/bin/res/MainMenu.nib, but we can't use a magic
 # RESOURCE_FILES.MainMenu.nib attribute, since that would put the files in
 # $(DIST)/bin/res/MainMenu/nib. Instead, we call __setattr__ directly to create
@@ -166,3 +154,7 @@ RESOURCE_FILES.__setattr__('MainMenu.nib', [
 ])
 
 CXXFLAGS += CONFIG['TK_CFLAGS']
+
+OS_LIBS += [
+    '-framework IOSurface',
+]

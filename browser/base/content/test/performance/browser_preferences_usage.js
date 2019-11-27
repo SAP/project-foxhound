@@ -1,6 +1,10 @@
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
+if (Services.prefs.getBoolPref("fission.autostart")) {
+  requestLongerTimeout(2);
+}
+
 const DEFAULT_PROCESS_COUNT = Services.prefs
   .getDefaultBranch(null)
   .getIntPref("dom.ipc.processCount");
@@ -123,7 +127,15 @@ add_task(async function startup() {
       min: 0,
       max: 50,
     },
+    "csp.skip_about_page_has_csp_assert": {
+      // This is accessed in debug only.
+    },
   };
+
+  if (SpecialPowers.useRemoteSubframes) {
+    // Bug 1585732 - Number of accesses with Fission enabled is higher than without.
+    max = 50;
+  }
 
   let startupRecorder = Cc["@mozilla.org/test/startuprecorder;1"].getService()
     .wrappedJSObject;
@@ -202,6 +214,29 @@ add_task(async function navigate_around() {
       max: 55,
     },
   };
+
+  if (SpecialPowers.useRemoteSubframes) {
+    // Bug 1585732 - Number of accesses with Fission enabled is higher than without.
+    max = 50;
+
+    whitelist = Object.assign(
+      {
+        "fission.rebuild_frameloaders_on_remoteness_change": {
+          min: 1,
+          max: 100,
+        },
+        "media.cubeb.sandbox": {
+          min: 1,
+          max: 200,
+        },
+        "security.sandbox.content.level": {
+          min: 1,
+          max: 200,
+        },
+      },
+      whitelist
+    );
+  }
 
   Services.prefs.resetStats();
 

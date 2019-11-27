@@ -140,7 +140,9 @@ bool NetAddrToString(const NetAddr* addr, char* buf, uint32_t bufSize) {
 
 bool IsLoopBackAddress(const NetAddr* addr) {
   if (addr->raw.family == AF_INET) {
-    return (addr->inet.ip == htonl(INADDR_LOOPBACK));
+    // Consider 127.0.0.1/8 as loopback
+    uint32_t ipv4Addr = ntohl(addr->inet.ip);
+    return (ipv4Addr >> 24) == 127;
   }
   if (addr->raw.family == AF_INET6) {
     if (IPv6ADDR_IS_LOOPBACK(&addr->inet6.ip)) {
@@ -172,6 +174,8 @@ bool IsIPAddrAny(const NetAddr* addr) {
   return false;
 }
 
+bool IsIPAddrV4(const NetAddr* addr) { return addr->raw.family == AF_INET; }
+
 bool IsIPAddrV4Mapped(const NetAddr* addr) {
   if (addr->raw.family == AF_INET6) {
     return IPv6ADDR_IS_V4MAPPED(&addr->inet6.ip);
@@ -201,6 +205,21 @@ bool IsIPAddrLocal(const NetAddr* addr) {
     }
   }
   // Not an IPv4/6 local address.
+  return false;
+}
+
+bool IsIPAddrShared(const NetAddr* addr) {
+  MOZ_ASSERT(addr);
+
+  // IPv4 RFC6598.
+  if (addr->raw.family == AF_INET) {
+    uint32_t addr32 = ntohl(addr->inet.ip);
+    if (addr32 >> 22 == 0x644 >> 2) {  // 100.64/10 prefix (RFC 6598).
+      return true;
+    }
+  }
+
+  // Not an IPv4 shared address.
   return false;
 }
 

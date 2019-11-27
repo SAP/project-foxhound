@@ -7,7 +7,8 @@
 import type { GripProperties, Node, Props, ReduxAction } from "./types";
 
 const { loadItemProperties } = require("./utils/load-properties");
-const { getLoadedProperties, getActors } = require("./reducer");
+const { getPathExpression, getValue, nodeIsBucket } = require("./utils/node");
+const { getLoadedProperties, getActors, getWatchpoints } = require("./reducer");
 
 type Dispatch = ReduxAction => void;
 
@@ -50,8 +51,7 @@ function nodeLoadProperties(node: Node, actor) {
     try {
       const properties = await loadItemProperties(
         node,
-        client.createObjectClient,
-        client.createLongStringClient,
+        client,
         loadedProperties
       );
 
@@ -73,10 +73,64 @@ function nodePropertiesLoaded(
   };
 }
 
-function closeObjectInspector() {
-  return async ({ getState, client }: ThunkArg) => {
-    releaseActors(getState(), client);
+/*
+ * This action adds a property watchpoint to an object
+ */
+function addWatchpoint(item, watchpoint: string) {
+  return async function({ dispatch, client }: ThunkArgs) {
+    const { parent, name } = item;
+    let object = getValue(parent);
+
+    if (nodeIsBucket(parent)) {
+      object = getValue(parent.parent);
+    }
+
+    if (!object) {
+      return;
+    }
+
+    const path = parent.path;
+    const property = name;
+    const label = getPathExpression(item);
+    const actor = object.actor;
+
+    await client.addWatchpoint(object, property, label, watchpoint);
+
+    dispatch({
+      type: "SET_WATCHPOINT",
+      data: { path, watchpoint, property, actor },
+    });
   };
+}
+
+/*
+ * This action removes a property watchpoint from an object
+ */
+function removeWatchpoint(item) {
+  return async function({ dispatch, client }: ThunkArgs) {
+    const { parent, name } = item;
+    let object = getValue(parent);
+
+    if (nodeIsBucket(parent)) {
+      object = getValue(parent.parent);
+    }
+
+    const property = name;
+    const path = parent.path;
+    const actor = object.actor;
+
+    await client.removeWatchpoint(object, property);
+
+    dispatch({
+      type: "REMOVE_WATCHPOINT",
+      data: { path, property, actor },
+    });
+  };
+}
+
+function closeObjectInspector() {
+  return ({ dispatch, getState, client }: ThunkArg) =>
+    releaseActors(getState(), client, dispatch);
 }
 
 /*
@@ -88,8 +142,8 @@ function closeObjectInspector() {
  * consumer.
  */
 function rootsChanged(props: Props) {
-  return async ({ dispatch, client, getState }: ThunkArg) => {
-    releaseActors(getState(), client);
+  return ({ dispatch, client, getState }: ThunkArg) => {
+    releaseActors(getState(), client, dispatch);
     dispatch({
       type: "ROOTS_CHANGED",
       data: props,
@@ -97,10 +151,28 @@ function rootsChanged(props: Props) {
   };
 }
 
-function releaseActors(state, client) {
+async function releaseActors(state, client, dispatch) {
   const actors = getActors(state);
+  if (actors.size === 0) {
+    return;
+  }
+
+  const watchpoints = getWatchpoints(state);
+  let released = false;
   for (const actor of actors) {
-    client.releaseActor(actor);
+    // Watchpoints are stored in object actors.
+    // If we release the actor we lose the watchpoint.
+    if (!watchpoints.has(actor)) {
+      await client.releaseActor(actor);
+      released = true;
+    }
+  }
+
+  if (released) {
+    dispatch({
+      type: "RELEASED_ACTORS",
+      data: { actors },
+    });
   }
 }
 
@@ -138,4 +210,6 @@ module.exports = {
   nodeLoadProperties,
   nodePropertiesLoaded,
   rootsChanged,
+  addWatchpoint,
+  removeWatchpoint,
 };

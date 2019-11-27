@@ -26,6 +26,10 @@
  * Google Author(s): Behdad Esfahbod
  */
 
+#include "hb.hh"
+
+#ifndef HB_NO_OT_SHAPE
+
 #include "hb-ot-map.hh"
 #include "hb-ot-shape.hh"
 #include "hb-ot-layout.hh"
@@ -187,7 +191,8 @@ hb_ot_map_builder_t::compile (hb_ot_map_t                  &m,
 	  feature_infos[j].max_value = feature_infos[i].max_value;
 	  feature_infos[j].default_value = feature_infos[i].default_value;
 	} else {
-	  feature_infos[j].flags &= ~F_GLOBAL;
+	  if (feature_infos[j].flags & F_GLOBAL)
+	    feature_infos[j].flags ^= F_GLOBAL;
 	  feature_infos[j].max_value = hb_max (feature_infos[j].max_value, feature_infos[i].max_value);
 	  /* Inherit default_value from j */
 	}
@@ -293,7 +298,7 @@ hb_ot_map_builder_t::compile (hb_ot_map_t                  &m,
 		     global_bit_mask);
 
       for (unsigned i = 0; i < m.features.length; i++)
-        if (m.features[i].stage[table_index] == stage)
+	if (m.features[i].stage[table_index] == stage)
 	  add_lookups (m, table_index,
 		       m.features[i].index[table_index],
 		       key.variations_index[table_index],
@@ -332,3 +337,6 @@ hb_ot_map_builder_t::compile (hb_ot_map_t                  &m,
     }
   }
 }
+
+
+#endif

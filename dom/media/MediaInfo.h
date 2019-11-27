@@ -14,7 +14,6 @@
 #  include "AudioConfig.h"
 #  include "ImageTypes.h"
 #  include "MediaData.h"
-#  include "TrackID.h"  // for TrackID
 #  include "TimeUnits.h"
 #  include "mozilla/gfx/Point.h"  // for gfx::IntSize
 #  include "mozilla/gfx/Rect.h"   // for gfx::IntRect
@@ -44,7 +43,7 @@ class TrackInfo {
   enum TrackType { kUndefinedTrack, kAudioTrack, kVideoTrack, kTextTrack };
   TrackInfo(TrackType aType, const nsAString& aId, const nsAString& aKind,
             const nsAString& aLabel, const nsAString& aLanguage, bool aEnabled,
-            TrackID aTrackId)
+            uint32_t aTrackId)
       : mId(aId),
         mKind(aKind),
         mLabel(aLabel),
@@ -74,7 +73,7 @@ class TrackInfo {
   nsString mLanguage;
   bool mEnabled;
 
-  TrackID mTrackId;
+  uint32_t mTrackId;
 
   nsCString mMimeType;
   media::TimeUnit mDuration;
@@ -251,7 +250,10 @@ class VideoInfo : public TrackInfo {
 
   // True indicates no restriction on Y, U, V values (otherwise 16-235 for 8
   // bits etc)
-  bool mFullRange = false;
+  gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
+
+  Maybe<int32_t> GetFrameRate() const { return mFrameRate; }
+  void SetFrameRate(int32_t aRate) { mFrameRate = Some(aRate); }
 
  private:
   // mImage may be cropped; currently only used with the WebM container.
@@ -260,6 +262,8 @@ class VideoInfo : public TrackInfo {
 
   // Indicates whether or not frames may contain alpha information.
   bool mAlphaPresent = false;
+
+  Maybe<int32_t> mFrameRate;
 };
 
 class AudioInfo : public TrackInfo {
@@ -394,16 +398,6 @@ class MediaInfo {
   }
 
   bool HasValidMedia() const { return HasVideo() || HasAudio(); }
-
-  void AssertValid() const {
-    NS_ASSERTION(!HasAudio() || mAudio.mTrackId != TRACK_INVALID,
-                 "Audio track ID must be valid");
-    NS_ASSERTION(!HasVideo() || mVideo.mTrackId != TRACK_INVALID,
-                 "Audio track ID must be valid");
-    NS_ASSERTION(
-        !HasAudio() || !HasVideo() || mAudio.mTrackId != mVideo.mTrackId,
-        "Duplicate track IDs");
-  }
 
   // TODO: Store VideoInfo and AudioIndo in arrays to support multi-tracks.
   VideoInfo mVideo;

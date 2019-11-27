@@ -8,6 +8,9 @@
 // inet_ntop() doesn't exist on Windows XP.
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
+#include <algorithm>
+#include <vector>
+
 #include <stdarg.h>
 #include <windef.h>
 #include <winbase.h>
@@ -34,7 +37,7 @@
 #include "nsAutoPtr.h"
 #include "mozilla/Services.h"
 #include "nsCRT.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/Base64.h"
 #include "mozilla/ScopeExit.h"
@@ -46,6 +49,7 @@ using namespace mozilla;
 
 static LazyLogModule gNotifyAddrLog("nsNotifyAddr");
 #define LOG(args) MOZ_LOG(gNotifyAddrLog, mozilla::LogLevel::Debug, args)
+#define LOG_ENABLED() MOZ_LOG_TEST(gNotifyAddrLog, mozilla::LogLevel::Debug)
 
 static HMODULE sNetshell;
 static decltype(NcFreeNetconProperties)* sNcFreeNetconProperties;
@@ -115,8 +119,6 @@ nsNotifyAddrListener::nsNotifyAddrListener()
       mCheckEvent(nullptr),
       mShutdown(false),
       mIPInterfaceChecksum(0),
-      mAllowChangedEvent(true),
-      mIPv6Changes(false),
       mCoalescingActive(false) {
   InitIphlpapi();
 }
@@ -159,11 +161,47 @@ nsNotifyAddrListener::GetNetworkID(nsACString& aNetworkID) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsNotifyAddrListener::GetDnsSuffixList(nsTArray<nsCString>& aDnsSuffixList) {
+  aDnsSuffixList.Clear();
+  MutexAutoLock lock(mMutex);
+  aDnsSuffixList.AppendElements(mDnsSuffixList);
+  return NS_OK;
+}
+
+//
+// Hash the sorted network ids
+//
+void nsNotifyAddrListener::HashSortedNetworkIds(std::vector<GUID> nwGUIDS,
+                                                SHA1Sum& sha1) {
+  std::sort(nwGUIDS.begin(), nwGUIDS.end(), [](const GUID& a, const GUID& b) {
+    return memcmp(&a, &b, sizeof(GUID)) < 0;
+  });
+
+  for (auto const& nwGUID : nwGUIDS) {
+    sha1.update(&nwGUID, sizeof(GUID));
+
+    if (LOG_ENABLED()) {
+      nsPrintfCString guid("%08lX%04X%04X%02X%02X%02X%02X%02X%02X%02X%02X%lX",
+                           nwGUID.Data1, nwGUID.Data2, nwGUID.Data3,
+                           nwGUID.Data4[0], nwGUID.Data4[1], nwGUID.Data4[2],
+                           nwGUID.Data4[3], nwGUID.Data4[4], nwGUID.Data4[5],
+                           nwGUID.Data4[6], nwGUID.Data4[7]);
+      LOG(("calculateNetworkId: interface networkID: %s\n", guid.get()));
+    }
+  }
+}
+
 //
 // Figure out the current "network identification" string.
 //
 void nsNotifyAddrListener::calculateNetworkId(void) {
   MOZ_ASSERT(!NS_IsMainThread(), "Must not be called on the main thread");
+
+  // No need to recompute the networkId if we're shutting down.
+  if (mShutdown) {
+    return;
+  }
 
   if (FAILED(CoInitializeEx(nullptr, COINIT_MULTITHREADED))) {
     return;
@@ -186,8 +224,17 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
     return;
   }
 
+  // We will hash the found network ids
+  // for privacy reasons
   SHA1Sum sha1;
-  uint32_t networkCount = 0;
+
+  // The networks stored in enumNetworks
+  // are not ordered. We will sort them
+  // To keep a consistent hash
+  // regardless of the found networks order.
+  std::vector<GUID> nwGUIDS;
+
+  // Consume the found networks iterator
   while (true) {
     RefPtr<INetwork> network;
     hr = enumNetworks->Next(1, getter_AddRefs(network), nullptr);
@@ -200,18 +247,10 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
     if (hr != S_OK) {
       continue;
     }
-    networkCount++;
-    sha1.update(&nwGUID, sizeof(nwGUID));
-
-    nsPrintfCString guid("%08lX%04X%04X%02X%02X%02X%02X%02X%02X%02X%02X%lX",
-                         nwGUID.Data1, nwGUID.Data2, nwGUID.Data3,
-                         nwGUID.Data4[0], nwGUID.Data4[1], nwGUID.Data4[2],
-                         nwGUID.Data4[3], nwGUID.Data4[4], nwGUID.Data4[5],
-                         nwGUID.Data4[6], nwGUID.Data4[7]);
-    LOG(("calculateNetworkId: interface networkID: %s\n", guid.get()));
+    nwGUIDS.push_back(nwGUID);
   }
 
-  if (networkCount == 0) {
+  if (nwGUIDS.empty()) {
     MutexAutoLock lock(mMutex);
     mNetworkId.Truncate();
     LOG(("calculateNetworkId: no network ID - no active networks"));
@@ -221,6 +260,8 @@ void nsNotifyAddrListener::calculateNetworkId(void) {
 
   nsAutoCString output;
   SHA1Sum::Hash digest;
+  HashSortedNetworkIds(nwGUIDS, sha1);
+
   sha1.finish(digest);
   nsCString newString(reinterpret_cast<char*>(digest), SHA1Sum::kHashSize);
   nsresult rv = Base64Encode(newString, output);
@@ -259,6 +300,13 @@ nsNotifyAddrListener::nextCoalesceWaitTime() {
   // check if coalescing period should continue
   double period = (TimeStamp::Now() - mChangeTime).ToMilliseconds();
   if (period >= kNetworkChangeCoalescingPeriod) {
+    if (!mNetworkChangeTime.IsNull()) {
+      Telemetry::AccumulateTimeDelta(
+          Telemetry::NETWORK_TIME_BETWEEN_NETWORK_CHANGE_EVENTS,
+          mNetworkChangeTime);
+    }
+    mNetworkChangeTime = TimeStamp::Now();
+
     SendEvent(NS_NETWORK_LINK_DATA_CHANGED);
     mCoalescingActive = false;
     return INFINITE;  // return default
@@ -276,7 +324,8 @@ nsNotifyAddrListener::Run() {
 
   DWORD waitTime = INFINITE;
 
-  if (!sNotifyIpInterfaceChange || !sCancelMibChangeNotify2 || !mIPv6Changes) {
+  if (!sNotifyIpInterfaceChange || !sCancelMibChangeNotify2 ||
+      !StaticPrefs::network_notify_IPv6()) {
     // For Windows versions which are older than Vista which lack
     // NotifyIpInterfaceChange. Note this means no IPv6 support.
     HANDLE ev = CreateEvent(nullptr, FALSE, FALSE, nullptr);
@@ -350,17 +399,17 @@ nsresult nsNotifyAddrListener::Init(void) {
       observerService->AddObserver(this, "xpcom-shutdown-threads", false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  Preferences::AddBoolVarCache(&mAllowChangedEvent, NETWORK_NOTIFY_CHANGED_PREF,
-                               true);
-  Preferences::AddBoolVarCache(&mIPv6Changes, NETWORK_NOTIFY_IPV6_PREF, false);
-
   mCheckEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
   NS_ENSURE_TRUE(mCheckEvent, NS_ERROR_OUT_OF_MEMORY);
 
-  rv = NS_NewNamedThread("Link Monitor", getter_AddRefs(mThread), this);
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIThreadPool> threadPool = new nsThreadPool();
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetThreadLimit(1));
+  MOZ_ALWAYS_SUCCEEDS(
+      threadPool->SetThreadStackSize(nsIThreadManager::kThreadPoolStackSize));
+  MOZ_ALWAYS_SUCCEEDS(threadPool->SetName(NS_LITERAL_CSTRING("Link Monitor")));
+  mThread = threadPool.forget();
 
-  return NS_OK;
+  return mThread->Dispatch(this, NS_DISPATCH_NORMAL);
 }
 
 nsresult nsNotifyAddrListener::Shutdown(void) {
@@ -375,7 +424,7 @@ nsresult nsNotifyAddrListener::Shutdown(void) {
   mShutdown = true;
   SetEvent(mCheckEvent);
 
-  nsresult rv = mThread ? mThread->Shutdown() : NS_OK;
+  nsresult rv = mThread ? mThread->ShutdownWithTimeout(2000) : NS_OK;
 
   // Have to break the cycle here, otherwise nsNotifyAddrListener holds
   // onto the thread and the thread holds onto the nsNotifyAddrListener
@@ -414,13 +463,6 @@ nsresult nsNotifyAddrListener::SendEvent(const char* aEventID) {
   if (!aEventID) return NS_ERROR_NULL_POINTER;
 
   LOG(("SendEvent: network is '%s'\n", aEventID));
-
-  // The event was caused by a call to GetIsLinkUp on the main thread.
-  // We only need to recalculate for events caused by NotifyAddrChange or
-  // OnInterfaceChange
-  if (!NS_IsMainThread()) {
-    calculateNetworkId();
-  }
 
   nsresult rv;
   nsCOMPtr<nsIRunnable> event = new ChangeEvent(this, aEventID);
@@ -558,6 +600,8 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
   //
   ULONG sumAll = 0;
 
+  nsTArray<nsCString> dnsSuffixList;
+
   if (ret == ERROR_SUCCESS) {
     bool linkUp = false;
     ULONG sum = 0;
@@ -585,6 +629,15 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
           sum += (reinterpret_cast<unsigned char*>(sockAddr->lpSockaddr))[i];
         }
       }
+
+      if (StaticPrefs::network_notify_dnsSuffixList()) {
+        nsCString suffix = NS_ConvertUTF16toUTF8(adapter->DnsSuffix);
+        if (!suffix.IsEmpty()) {
+          LOG(("  found DNS suffix=%s\n", suffix.get()));
+          dnsSuffixList.AppendElement(suffix);
+        }
+      }
+
       linkUp = true;
       sumAll ^= sum;
     }
@@ -599,6 +652,13 @@ nsNotifyAddrListener::CheckAdaptersAddresses(void) {
   }
 
   CoUninitialize();
+
+  if (StaticPrefs::network_notify_dnsSuffixList()) {
+    MutexAutoLock lock(mMutex);
+    mDnsSuffixList.SwapElements(dnsSuffixList);
+  }
+
+  calculateNetworkId();
 
   return ret;
 }
@@ -649,7 +709,8 @@ void nsNotifyAddrListener::CheckLinkStatus(void) {
 
       // Network is online. Topology has changed. Always send CHANGED
       // before UP - if allowed to and having cooled down.
-      if (mAllowChangedEvent && (since.ToMilliseconds() > 2000)) {
+      if (StaticPrefs::network_notify_changed() &&
+          (since.ToMilliseconds() > 2000)) {
         NetworkChanged();
       }
     }

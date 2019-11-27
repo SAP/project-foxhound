@@ -31,12 +31,11 @@ namespace dom {
 class Document;
 
 /*
- * System-wide setup/teardown routines. Init and Destroy should be invoked
- * once each, at startup and shutdown (respectively).
+ * Per thread setup/teardown routines. Init and Destroy should be invoked
+ * once each, at startup and shutdown of the script runtime (respectively).
  */
 void InitScriptSettings();
 void DestroyScriptSettings();
-bool ScriptSettingsInitialized();
 
 /*
  * Static helpers in ScriptSettings which track the number of listeners
@@ -407,10 +406,23 @@ class AutoIncumbentScript : protected ScriptSettingsStackEntry {
  *
  * This class may not be instantiated if an exception is pending.
  */
-class AutoNoJSAPI : protected ScriptSettingsStackEntry {
+class AutoNoJSAPI : protected ScriptSettingsStackEntry,
+                    protected JSAutoNullableRealm {
  public:
-  explicit AutoNoJSAPI();
+  AutoNoJSAPI() : AutoNoJSAPI(danger::GetJSContext()) {}
   ~AutoNoJSAPI();
+
+ private:
+  // Helper constructor to avoid doing GetJSContext() multiple times
+  // during construction.
+  explicit AutoNoJSAPI(JSContext* aCx);
+
+  // Stashed JSContext* so we don't need to GetJSContext in our destructor.
+  // It's probably safe to hold on to this, in the sense that the world should
+  // not get torn down while we're on the stack, and if it's not, we'd need to
+  // fix JSAutoNullableRealm to not hold on to a JSContext either, or
+  // something.
+  JSContext* mCx;
 };
 
 }  // namespace dom

@@ -5,29 +5,21 @@ py3:
     exclude:
         - browser/app
         - build
-        - client.py
-        - config
-        - dom/bindings
         - dom/canvas/test
-        - dom/media/test
         - gfx
         - ipc/ipdl
         - layout/reftests
-        - layout/style
+        - layout/style/ServoCSSPropList.mako.py
         - layout/tools/reftest
-        - media
         - security/manager/ssl
         - testing/awsy
-        - testing/firefox-ui/harness/firefox_ui_harness/runners/update.py
+        - testing/condprofile/condprof/android.py
+        - testing/condprofile/condprof/desktop.py
         - testing/gtest
-        - testing/mochitest
         - testing/mozharness
         - testing/tps
         - testing/web-platform
         - toolkit
-        - tools/jprof
-        - tools/profiler
-        - tools/rb
         - xpcom/idl-parser
     extensions: ['py']
     support-files:

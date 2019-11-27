@@ -14,7 +14,7 @@
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/StyleAnimationValue.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimingParams.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h"  // For FastBaseKeyframe etc.
 #include "mozilla/dom/Document.h"  // For Document::AreWebAnimationsImplicitKeyframesEnabled
@@ -367,8 +367,8 @@ static void GetKeyframeListFromKeyframeSequence(JSContext* aCx,
   // Check that the keyframes are loosely sorted and with values all
   // between 0% and 100%.
   if (!HasValidOffsets(aResult)) {
-    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     aResult.Clear();
+    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     return;
   }
 }
@@ -506,8 +506,24 @@ static bool GetPropertyValuesPairs(JSContext* aCx,
     if (!propName.init(aCx, ids[i])) {
       return false;
     }
-    nsCSSPropertyID property = nsCSSProps::LookupPropertyByIDLName(
-        propName, CSSEnabledState::ForAllContent);
+
+    // Basically, we have to handle "cssOffset" and "cssFloat" specially here:
+    // "cssOffset" => eCSSProperty_offset
+    // "cssFloat"  => eCSSProperty_float
+    // This means if the attribute is the string "cssOffset"/"cssFloat", we use
+    // CSS "offset"/"float" property.
+    // https://drafts.csswg.org/web-animations/#property-name-conversion
+    nsCSSPropertyID property = nsCSSPropertyID::eCSSProperty_UNKNOWN;
+    if (propName.EqualsLiteral("cssOffset")) {
+      property = nsCSSPropertyID::eCSSProperty_offset;
+    } else if (propName.EqualsLiteral("cssFloat")) {
+      property = nsCSSPropertyID::eCSSProperty_float;
+    } else if (!propName.EqualsLiteral("offset") &&
+               !propName.EqualsLiteral("float")) {
+      property = nsCSSProps::LookupPropertyByIDLName(
+          propName, CSSEnabledState::ForAllContent);
+    }
+
     if (KeyframeUtils::IsAnimatableProperty(property)) {
       AdditionalProperty* p = properties.AppendElement();
       p->mProperty = property;
@@ -1058,8 +1074,8 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
   // offsets are thrown before exceptions arising from invalid easings, we check
   // the offsets here.
   if (!HasValidOffsets(aResult)) {
-    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     aResult.Clear();
+    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     return;
   }
 

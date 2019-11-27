@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -46,7 +44,7 @@ class InactiveCssTooltipHelper {
     doc.l10n.resumeObserving();
 
     // Size the content.
-    tooltip.setContentSize({ width: 275, height: Infinity });
+    tooltip.setContentSize({ width: 267, height: Infinity });
   }
 
   /**
@@ -68,8 +66,8 @@ class InactiveCssTooltipHelper {
    *
    * @param {Object} data
    *        An object in the following format: {
-   *          fixId: "inactive-css-not-grid-item-fix", // Fluent id containing the
-   *                                                   // Inactive CSS fix.
+   *          fixId: "inactive-css-not-grid-item-fix-2", // Fluent id containing the
+   *                                                     // Inactive CSS fix.
    *          msgId: "inactive-css-not-grid-item", // Fluent id containing the
    *                                               // Inactive CSS message.
    *          numFixProps: 2, // Number of properties in the fix section of the
@@ -81,13 +79,13 @@ class InactiveCssTooltipHelper {
    */
   getTemplate(data, tooltip) {
     const XHTML_NS = "http://www.w3.org/1999/xhtml";
-    const { fixId, msgId, numFixProps, property, display } = data;
+    const { fixId, msgId, numFixProps, property, display, learnMoreURL } = data;
     const { doc } = tooltip;
 
+    const documentURL =
+      learnMoreURL || `https://developer.mozilla.org/docs/Web/CSS/${property}`;
     this._currentTooltip = tooltip;
-    this._currentUrl =
-      `https://developer.mozilla.org/docs/Web/CSS/${property}` +
-      `?utm_source=devtools&utm_medium=inspector-inactive-css`;
+    this._currentUrl = `${documentURL}?utm_source=devtools&utm_medium=inspector-inactive-css`;
 
     const templateNode = doc.createElementNS(XHTML_NS, "template");
 

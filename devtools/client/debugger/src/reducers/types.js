@@ -12,13 +12,12 @@
 import type { ASTState } from "./ast";
 import type { BreakpointsState } from "./breakpoints";
 import type { ExpressionState } from "./expressions";
-import type { DebuggeeState } from "./debuggee";
+import type { ThreadsState } from "./threads";
 import type { FileSearchState } from "./file-search";
 import type { PauseState } from "./pause";
 import type { PreviewState } from "./preview";
 import type { PendingBreakpointsState } from "../selectors";
 import type { ProjectTextSearchState } from "./project-text-search";
-import type { Record } from "../utils/makeRecord";
 import type { SourcesState } from "./sources";
 import type { SourceActorsState } from "./source-actors";
 import type { TabList } from "./tabs";
@@ -29,9 +28,9 @@ import type { EventListenersState } from "./event-listeners";
 export type State = {
   ast: ASTState,
   breakpoints: BreakpointsState,
-  expressions: Record<ExpressionState>,
+  expressions: ExpressionState,
   eventListenerBreakpoints: EventListenersState,
-  debuggee: DebuggeeState,
+  threads: ThreadsState,
   fileSearch: FileSearchState,
   pause: PauseState,
   preview: PreviewState,

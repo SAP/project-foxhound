@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 <vbox id="editBookmarkPanelContent" flex="1">
   <hbox id="editBMPanel_selectionCount" pack="center">
     <label id="editBMPanel_itemsCountText"/>
@@ -9,8 +13,8 @@
       <label value="&editBookmarkOverlay.name.label;"
              accesskey="&editBookmarkOverlay.name.accesskey;"
              control="editBMPanel_namePicker"/>
-      <textbox id="editBMPanel_namePicker"
-               onchange="gEditItemOverlay.onNamePickerChange().catch(Cu.reportError);"/>
+      <html:input id="editBMPanel_namePicker"
+                  onchange="gEditItemOverlay.onNamePickerChange().catch(Cu.reportError);"/>
     </vbox>
 
     <vbox id="editBMPanel_locationRow"
@@ -18,9 +22,9 @@
       <label value="&editBookmarkOverlay.location.label;"
              accesskey="&editBookmarkOverlay.location.accesskey;"
              control="editBMPanel_locationField"/>
-      <textbox id="editBMPanel_locationField"
-               class="uri-element"
-               onchange="gEditItemOverlay.onLocationFieldChange();"/>
+      <html:input id="editBMPanel_locationField"
+                  class="uri-element"
+                  onchange="gEditItemOverlay.onLocationFieldChange();"/>
     </vbox>
 
     <vbox id="editBMPanel_folderRow"
@@ -72,12 +76,12 @@
       <label value="&editBookmarkOverlay.tags.label;"
              accesskey="&editBookmarkOverlay.tags.accesskey;"
              control="editBMPanel_tagsField"/>
-      <hbox flex="1" align="center">
-        <textbox id="editBMPanel_tagsField"
-                 type="autocomplete"
-                 flex="1"
+      <hbox flex="1" align="center" role="combobox">
+        <html:input id="editBMPanel_tagsField"
+                 is="autocomplete-input"
+                 style="-moz-box-flex: 1;"
                  autocompletesearch="places-tag-autocomplete"
-                 autocompletepopup="PopupAutoComplete"
+                 autocompletepopup="editBMPanel_tagsAutocomplete"
                  completedefaultindex="true"
                  completeselectedindex="true"
                  tabscrolling="true"
@@ -89,6 +93,17 @@
                 tooltiptextdown="&editBookmarkOverlay.tagsExpanderDown.tooltip;"
                 tooltiptextup="&editBookmarkOverlay.expanderUp.tooltip;"
                 oncommand="gEditItemOverlay.toggleTagsSelector().catch(Cu.reportError);"/>
+        <popupset>
+          <panel is="autocomplete-richlistbox-popup"
+                 type="autocomplete-richlistbox"
+                 id="editBMPanel_tagsAutocomplete"
+                 role="group"
+                 noautofocus="true"
+                 hidden="true"
+                 overflowpadding="4"
+                 norolluponanchor="true"
+                 nomaxresults="true"/>
+        </popupset>
       </hbox>
     </vbox>
 
@@ -104,8 +119,8 @@
       <label value="&editBookmarkOverlay.keyword.label;"
              accesskey="&editBookmarkOverlay.keyword.accesskey;"
              control="editBMPanel_keywordField"/>
-      <textbox id="editBMPanel_keywordField"
-               onchange="gEditItemOverlay.onKeywordFieldChange();"/>
+      <html:input id="editBMPanel_keywordField"
+                  onchange="gEditItemOverlay.onKeywordFieldChange();"/>
     </vbox>
   </vbox>
 </vbox>

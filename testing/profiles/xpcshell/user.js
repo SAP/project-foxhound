@@ -5,6 +5,8 @@ user_pref("app.normandy.api_url", "https://%(server)s/selfsupport-dummy/");
 user_pref("browser.safebrowsing.downloads.remote.url", "https://%(server)s/safebrowsing-dummy");
 user_pref("browser.search.geoip.url", "https://%(server)s/geoip-dummy");
 user_pref("extensions.systemAddon.update.url", "http://%(server)s/dummy-system-addons.xml");
+// Treat WebExtension API/schema warnings as errors.
+user_pref("extensions.webextensions.warnings-as-errors", true);
 // Always use network provider for geolocation tests
 // so we bypass the OSX dialog raised by the corelocation provider
 user_pref("geo.provider.testing", true);
@@ -23,3 +25,6 @@ user_pref("dom.ipc.processPriorityManager.enabled", false);
 // Avoid idle-daily notifications, to avoid expensive operations that may
 // cause unexpected test timeouts.
 user_pref("idle.lastDailyNotification", -1);
+// Enable telemetry event ping during tests, even for geckoview, where it
+// is normally disabled.
+user_pref("toolkit.telemetry.eventping.enabled", true);

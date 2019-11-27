@@ -3,9 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-const FIREFOX_VERSION = parseInt(Services.appinfo.version.match(/\d+/), 10);
 const TWO_DAYS = 2 * 24 * 3600 * 1000;
 
 const MESSAGES = () => [
@@ -52,16 +49,6 @@ const MESSAGES = () => [
     trigger: { id: "bookmark-panel" },
   },
   {
-    id: "FXA_ACCOUNTS_BADGE",
-    template: "toolbar_badge",
-    content: {
-      target: "fxa-toolbar-menu-button",
-    },
-    // Never accessed the FxA panel && doesn't use Firefox sync & has FxA enabled
-    targeting: `!hasAccessedFxAPanel && !usesFirefoxSync && isFxAEnabled == true`,
-    trigger: { id: "toolbarBadgeUpdate" },
-  },
-  {
     id: "WNP_THANK_YOU",
     template: "update_action",
     content: {
@@ -77,27 +64,285 @@ const MESSAGES = () => [
     trigger: { id: "momentsUpdate" },
   },
   {
-    id: `WHATS_NEW_BADGE_${FIREFOX_VERSION}`,
-    template: "toolbar_badge",
+    id: "WHATS_NEW_70_1",
+    template: "whatsnew_panel_message",
+    order: 3,
     content: {
-      // delay: 5 * 3600 * 1000,
-      delay: 5000,
-      target: "whats-new-menu-button",
-      action: { id: "show-whatsnew-button" },
+      bucket_id: "WHATS_NEW_70_1",
+      published_date: 1560969794394,
+      title: "Protection Is Our Focus",
+      icon_url:
+        "resource://activity-stream/data/content/assets/whatsnew-send-icon.png",
+      icon_alt: "Firefox Send Logo",
+      body:
+        "The New Enhanced Tracking Protection, gives you the best level of protection and performance. Discover how this version is the safest version of firefox ever made.",
+      cta_url: "https://blog.mozilla.org/",
+      cta_type: "OPEN_URL",
     },
+    targeting: `firefoxVersion > 69`,
+    trigger: { id: "whatsNewPanelOpened" },
+  },
+  {
+    id: "WHATS_NEW_70_2",
+    template: "whatsnew_panel_message",
+    order: 1,
+    content: {
+      bucket_id: "WHATS_NEW_70_1",
+      published_date: 1560969794394,
+      title: "Another thing new in Firefox 70",
+      body:
+        "The New Enhanced Tracking Protection, gives you the best level of protection and performance. Discover how this version is the safest version of firefox ever made.",
+      link_text: "Learn more on our blog",
+      cta_url: "https://blog.mozilla.org/",
+      cta_type: "OPEN_URL",
+    },
+    targeting: `firefoxVersion > 69`,
+    trigger: { id: "whatsNewPanelOpened" },
+  },
+  {
+    id: "WHATS_NEW_69_1",
+    template: "whatsnew_panel_message",
+    order: 1,
+    content: {
+      bucket_id: "WHATS_NEW_69_1",
+      published_date: 1557346235089,
+      title: "Something new in Firefox 69",
+      body:
+        "The New Enhanced Tracking Protection, gives you the best level of protection and performance. Discover how this version is the safest version of firefox ever made.",
+      link_text: "Learn more on our blog",
+      cta_url: "https://blog.mozilla.org/",
+      cta_type: "OPEN_URL",
+    },
+    targeting: `firefoxVersion > 68`,
+    trigger: { id: "whatsNewPanelOpened" },
+  },
+  {
+    id: "WHATS_NEW_70_3",
+    template: "whatsnew_panel_message",
+    order: 2,
+    content: {
+      bucket_id: "WHATS_NEW_70_3",
+      published_date: 1560969794394,
+      layout: "tracking-protections",
+      title: { string_id: "cfr-whatsnew-tracking-blocked-title" },
+      subtitle: { string_id: "cfr-whatsnew-tracking-blocked-subtitle" },
+      icon_url:
+        "resource://activity-stream/data/content/assets/protection-report-icon.png",
+      icon_alt: "Protection Report icon",
+      body: { string_id: "cfr-whatsnew-tracking-protect-body" },
+      link_text: { string_id: "cfr-whatsnew-tracking-blocked-link-text" },
+      cta_url: "protections",
+      cta_type: "OPEN_ABOUT_PAGE",
+    },
+    targeting: `firefoxVersion > 69 && totalBlockedCount > 0`,
+    trigger: { id: "whatsNewPanelOpened" },
+  },
+  {
+    id: "BOOKMARK_CFR",
+    template: "cfr_doorhanger",
+    content: {
+      layout: "icon_and_message",
+      category: "cfrFeatures",
+      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
+      heading_text: { string_id: "cfr-doorhanger-sync-bookmarks-header" },
+      info_icon: {
+        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
+        sumo_path: "https://example.com",
+      },
+      text: { string_id: "cfr-doorhanger-sync-bookmarks-body" },
+      icon: "chrome://branding/content/icon64.png",
+      buttons: {
+        primary: {
+          label: { string_id: "cfr-doorhanger-sync-bookmarks-ok-button" },
+          action: {
+            type: "OPEN_PREFERENCES_PAGE",
+            data: { category: "sync" },
+          },
+        },
+        secondary: [
+          {
+            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
+            action: { type: "CANCEL" },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-never-show-recommendation",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-manage-settings-button",
+            },
+            action: {
+              type: "OPEN_PREFERENCES_PAGE",
+              data: { category: "general-cfrfeatures" },
+            },
+          },
+        ],
+      },
+    },
+    targeting: "true",
+    trigger: {
+      id: "openBookmarkedURL",
+    },
+  },
+  {
+    id: "PDF_URL_FFX_SEND",
+    template: "cfr_doorhanger",
+    content: {
+      layout: "icon_and_message",
+      category: "cfrFeatures",
+      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
+      heading_text: { string_id: "cfr-doorhanger-firefox-send-header" },
+      info_icon: {
+        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
+        sumo_path: "https://example.com",
+      },
+      text: { string_id: "cfr-doorhanger-firefox-send-body" },
+      icon: "chrome://branding/content/icon64.png",
+      buttons: {
+        primary: {
+          label: { string_id: "cfr-doorhanger-firefox-send-ok-button" },
+          action: {
+            type: "OPEN_URL",
+            data: {
+              args:
+                "https://send.firefox.com/login/?utm_source=activity-stream&entrypoint=activity-stream-cfr-pdf",
+              where: "tabshifted",
+            },
+          },
+        },
+        secondary: [
+          {
+            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
+            action: { type: "CANCEL" },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-never-show-recommendation",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-manage-settings-button",
+            },
+            action: {
+              type: "OPEN_PREFERENCES_PAGE",
+              data: { category: "general-cfrfeatures" },
+            },
+          },
+        ],
+      },
+    },
+    targeting: "true",
+    trigger: {
+      id: "openURL",
+      patterns: ["*://*/*.pdf"],
+    },
+  },
+  {
+    id: "SEND_TAB_CFR",
+    template: "cfr_doorhanger",
+    content: {
+      layout: "icon_and_message",
+      category: "cfrFeatures",
+      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
+      heading_text: { string_id: "cfr-doorhanger-send-tab-header" },
+      info_icon: {
+        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
+        sumo_path: "https://example.com",
+      },
+      text: { string_id: "cfr-doorhanger-send-tab-body" },
+      icon: "chrome://branding/content/icon64.png",
+      buttons: {
+        primary: {
+          label: { string_id: "cfr-doorhanger-send-tab-ok-button" },
+          action: {
+            type: "HIGHLIGHT_FEATURE",
+            data: { args: "pageAction-sendToDevice" },
+          },
+        },
+        secondary: [
+          {
+            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
+            action: { type: "CANCEL" },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-never-show-recommendation",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-manage-settings-button",
+            },
+            action: {
+              type: "OPEN_PREFERENCES_PAGE",
+              data: { category: "general-cfrfeatures" },
+            },
+          },
+        ],
+      },
+    },
+    targeting: "true",
+    trigger: {
+      // Match any URL that has a Reader Mode icon
+      id: "openArticleURL",
+      patterns: ["*://*/*"],
+    },
+  },
+  {
+    id: "SEND_RECIPE_TAB_CFR",
+    template: "cfr_doorhanger",
+    // Higher priority because this has the same targeting rules as
+    // SEND_TAB_CFR but is more specific
     priority: 1,
-    trigger: { id: "toolbarBadgeUpdate" },
-    frequency: {
-      // Makes it so that we track impressions for this message while at the
-      // same time it can have unlimited impressions
-      lifetime: Infinity,
+    content: {
+      layout: "icon_and_message",
+      category: "cfrFeatures",
+      notification_text: { string_id: "cfr-doorhanger-extension-notification" },
+      heading_text: { string_id: "cfr-doorhanger-send-tab-recipe-header" },
+      info_icon: {
+        label: { string_id: "cfr-doorhanger-extension-sumo-link" },
+        sumo_path: "https://example.com",
+      },
+      text: { string_id: "cfr-doorhanger-send-tab-body" },
+      icon: "chrome://branding/content/icon64.png",
+      buttons: {
+        primary: {
+          label: { string_id: "cfr-doorhanger-send-tab-ok-button" },
+          action: {
+            type: "HIGHLIGHT_FEATURE",
+            data: { args: "pageAction-sendToDevice" },
+          },
+        },
+        secondary: [
+          {
+            label: { string_id: "cfr-doorhanger-extension-cancel-button" },
+            action: { type: "CANCEL" },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-never-show-recommendation",
+            },
+          },
+          {
+            label: {
+              string_id: "cfr-doorhanger-extension-manage-settings-button",
+            },
+            action: {
+              type: "OPEN_PREFERENCES_PAGE",
+              data: { category: "general-cfrfeatures" },
+            },
+          },
+        ],
+      },
     },
-    // Never saw this message or saw it in the past 4 days or more recent
-    targeting: `isWhatsNewPanelEnabled &&
-      (earliestFirefoxVersion && firefoxVersion > earliestFirefoxVersion) &&
-        messageImpressions[.id == 'WHATS_NEW_BADGE_${FIREFOX_VERSION}']|length == 0 ||
-      (messageImpressions[.id == 'WHATS_NEW_BADGE_${FIREFOX_VERSION}']|length >= 1 &&
-        currentDate|date - messageImpressions[.id == 'WHATS_NEW_BADGE_${FIREFOX_VERSION}'][0] <= 4 * 24 * 3600 * 1000)`,
+    targeting: "true",
+    trigger: {
+      id: "openArticleURL",
+      params: ["www.allrecipes.com", "allrecipes.com"],
+    },
   },
 ];
 

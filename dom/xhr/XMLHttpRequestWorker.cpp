@@ -671,6 +671,10 @@ class OpenRunnable final : public WorkerThreadProxySyncRunnable {
   // be passed on to the net monitor.
   UniquePtr<SerializedStackHolder> mOriginStack;
 
+  // Remember the worker thread's stack when the XHR was opened for profiling
+  // purposes.
+  UniqueProfilerBacktrace mSource;
+
  public:
   OpenRunnable(WorkerPrivate* aWorkerPrivate, Proxy* aProxy,
                const nsACString& aMethod, const nsAString& aURL,
@@ -679,7 +683,8 @@ class OpenRunnable final : public WorkerThreadProxySyncRunnable {
                bool aWithCredentials, uint32_t aTimeout,
                XMLHttpRequestResponseType aResponseType,
                const nsString& aMimeTypeOverride,
-               UniquePtr<SerializedStackHolder> aOriginStack)
+               UniquePtr<SerializedStackHolder> aOriginStack,
+               UniqueProfilerBacktrace aSource = nullptr)
       : WorkerThreadProxySyncRunnable(aWorkerPrivate, aProxy),
         mMethod(aMethod),
         mURL(aURL),
@@ -688,7 +693,8 @@ class OpenRunnable final : public WorkerThreadProxySyncRunnable {
         mTimeout(aTimeout),
         mResponseType(aResponseType),
         mMimeTypeOverride(aMimeTypeOverride),
-        mOriginStack(std::move(aOriginStack)) {
+        mOriginStack(std::move(aOriginStack)),
+        mSource(std::move(aSource)) {
     if (aUser.WasPassed()) {
       mUserStr = aUser.Value();
       mUser = &mUserStr;
@@ -1322,6 +1328,10 @@ nsresult OpenRunnable::MainThreadRunInternal() {
     return rv.StealNSResult();
   }
 
+  if (mSource) {
+    mProxy->mXHR->SetSource(std::move(mSource));
+  }
+
   mProxy->mXHR->SetResponseType(mResponseType, rv);
   if (NS_WARN_IF(rv.Failed())) {
     return rv.StealNSResult();
@@ -1796,8 +1806,8 @@ void XMLHttpRequestWorker::Open(const nsACString& aMethod,
   RefPtr<OpenRunnable> runnable = new OpenRunnable(
       mWorkerPrivate, mProxy, aMethod, aUrl, aUser, aPassword,
       mBackgroundRequest, mWithCredentials, mTimeout, mResponseType,
-      alsoOverrideMimeType ? mMimeTypeOverride : VoidString(),
-      std::move(stack));
+      alsoOverrideMimeType ? mMimeTypeOverride : VoidString(), std::move(stack),
+      profiler_get_backtrace());
 
   ++mProxy->mOpenCount;
   runnable->Dispatch(Canceling, aRv);
@@ -1938,7 +1948,7 @@ void XMLHttpRequestWorker::Send(
     return;
   }
 
-  if (!mProxy) {
+  if (!mProxy || mStateData.mFlagSend) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
@@ -2191,7 +2201,8 @@ void XMLHttpRequestWorker::SetResponseType(
 
   if (mStateData.mReadyState == XMLHttpRequest_Binding::LOADING ||
       mStateData.mReadyState == XMLHttpRequest_Binding::DONE) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE);
+    aRv.Throw(
+        NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_RESPONSE_TYPE);
     return;
   }
 

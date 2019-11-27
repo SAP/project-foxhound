@@ -33,6 +33,7 @@ class nsColumnSetFrame final : public nsContainerFrame {
                            nsFrameList& aChildList) override;
   void AppendFrames(ChildListID aListID, nsFrameList& aFrameList) override;
   void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                    const nsLineList::iterator* aPrevFrameLine,
                     nsFrameList& aFrameList) override;
   void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 #endif
@@ -86,9 +87,9 @@ class nsColumnSetFrame final : public nsContainerFrame {
    * These are the parameters that control the layout of columns.
    */
   struct ReflowConfig {
-    // The number of columns that we want to balance across. If we're not
-    // balancing, this will be set to INT32_MAX.
-    int32_t mBalanceColCount = INT32_MAX;
+    // The optimal number of columns that we want to use. This is computed from
+    // column-count, column-width, available inline-size, etc.
+    int32_t mUsedColCount = INT32_MAX;
 
     // The inline-size of each individual column.
     nscoord mColISize = NS_UNCONSTRAINEDSIZE;
@@ -105,9 +106,12 @@ class nsColumnSetFrame final : public nsContainerFrame {
     // the best column block-size.
     nscoord mColMaxBSize = NS_UNCONSTRAINEDSIZE;
 
-    // A boolean controlling whether or not we are balancing. This should be
-    // equivalent to mBalanceColCount != INT32_MAX.
+    // A boolean controlling whether or not we are balancing.
     bool mIsBalancing = false;
+
+    // A boolean controlling whether or not we are forced to fill columns
+    // sequentially.
+    bool mForceAuto = false;
 
     // The last known column block-size that was 'feasible'. A column bSize is
     // feasible if all child content fits within the specified bSize.

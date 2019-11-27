@@ -52,7 +52,7 @@ function FrameLocation({ frame, displayFullUrl = false }: FrameLocationProps) {
     : getFilename(source);
 
   return (
-    <span className="location">
+    <span className="location" title={source.url}>
       <span className="filename">{filename}</span>:
       <span className="line">{location.line}</span>
     </span>
@@ -92,12 +92,14 @@ export default class FrameComponent extends Component<FrameComponentProps> {
       toggleFrameworkGrouping,
       toggleBlackBox,
       frameworkGroupingOn,
+      cx,
     } = this.props;
     FrameMenu(
       frame,
       frameworkGroupingOn,
       { copyStackTrace, toggleFrameworkGrouping, toggleBlackBox },
-      event
+      event,
+      cx
     );
   }
 

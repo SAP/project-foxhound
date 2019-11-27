@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -49,7 +47,9 @@ function toolboxRegister(aToolbox) {
 
   toolbox.addAdditionalTool({
     id: TOOL_ID,
-    label: "per-toolbox Test Tool",
+    // The size of the label can make the test fail if it's too long.
+    // See ok(tab, ...) assert below and Bug 1596345.
+    label: "Test Tool",
     inMenu: true,
     isTargetSupported: () => true,
     build: function() {
@@ -80,6 +80,10 @@ function testToolRegistered() {
   // Test that the tool appeared in the UI.
   const doc = toolbox.doc;
   const tab = doc.getElementById("toolbox-tab-" + TOOL_ID);
+
+  // Note that this assert can fail if the tab is pushed to the overflow menu
+  // because of a lack of available space in the toolbar. The test should be
+  // rewritten to avoid that. See Bug 1596345 for a follow-up fix.
   ok(tab, "new tool's tab exists in toolbox UI");
 
   const panel = doc.getElementById("toolbox-panel-" + TOOL_ID);

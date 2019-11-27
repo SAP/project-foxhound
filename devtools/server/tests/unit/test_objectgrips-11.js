@@ -7,7 +7,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
@@ -29,9 +29,9 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-grips", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
+      gThreadFront = threadFront;
       test_object_grip();
     });
   });
@@ -39,23 +39,21 @@ function run_test() {
 }
 
 function test_object_grip() {
-  gThreadClient.once("paused", function(packet) {
+  gThreadFront.once("paused", async function(packet) {
     const args = packet.frame.arguments;
 
-    const objClient = gThreadClient.pauseGrip(args[0]);
-    objClient.getOwnPropertyNames(function(response) {
-      const opn = response.ownPropertyNames;
-      Assert.equal(opn.length, 4);
-      opn.sort();
-      Assert.equal(opn[0], "columnNumber");
-      Assert.equal(opn[1], "fileName");
-      Assert.equal(opn[2], "lineNumber");
-      Assert.equal(opn[3], "message");
+    const objClient = gThreadFront.pauseGrip(args[0]);
+    const response = await objClient.getOwnPropertyNames();
+    const opn = response.ownPropertyNames;
+    Assert.equal(opn.length, 4);
+    opn.sort();
+    Assert.equal(opn[0], "columnNumber");
+    Assert.equal(opn[1], "fileName");
+    Assert.equal(opn[2], "lineNumber");
+    Assert.equal(opn[3], "message");
 
-      gThreadClient.resume().then(function() {
-        finishClient(gClient);
-      });
-    });
+    await gThreadFront.resume();
+    finishClient(gClient);
   });
 
   gDebuggee.eval("stopMe(new TypeError('error message text'))");

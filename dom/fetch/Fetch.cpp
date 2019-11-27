@@ -186,6 +186,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
   // Touched only on the worker thread.
   RefPtr<FetchObserver> mFetchObserver;
   RefPtr<WeakWorkerRef> mWorkerRef;
+  bool mIsShutdown;
 
  public:
   // Returns null if worker is shutting down.
@@ -248,6 +249,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
   Promise* WorkerPromise(WorkerPrivate* aWorkerPrivate) const {
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
+    MOZ_ASSERT(!mIsShutdown);
 
     return mPromiseProxy->WorkerPromise();
   }
@@ -271,6 +273,7 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     MOZ_ASSERT(aWorkerPrivate);
     aWorkerPrivate->AssertIsOnWorkerThread();
 
+    mIsShutdown = true;
     mPromiseProxy->CleanUp();
 
     mFetchObserver = nullptr;
@@ -282,12 +285,19 @@ class WorkerFetchResolver final : public FetchDriverObserver {
     mWorkerRef = nullptr;
   }
 
+  bool IsShutdown(WorkerPrivate* aWorkerPrivate) const {
+    MOZ_ASSERT(aWorkerPrivate);
+    aWorkerPrivate->AssertIsOnWorkerThread();
+    return mIsShutdown;
+  }
+
  private:
   WorkerFetchResolver(PromiseWorkerProxy* aProxy,
                       AbortSignalProxy* aSignalProxy, FetchObserver* aObserver)
       : mPromiseProxy(aProxy),
         mSignalProxy(aSignalProxy),
-        mFetchObserver(aObserver) {
+        mFetchObserver(aObserver),
+        mIsShutdown(false) {
     MOZ_ASSERT(!NS_IsMainThread());
     MOZ_ASSERT(mPromiseProxy);
   }
@@ -479,23 +489,23 @@ already_AddRefed<Promise> FetchRequest(nsIGlobalObject* aGlobal,
       loadGroup = doc->GetDocumentLoadGroup();
       cookieSettings = doc->CookieSettings();
 
-      nsAutoCString fileNameString;
-      if (nsJSUtils::GetCallingLocation(cx, fileNameString)) {
-        isTrackingFetch = doc->IsScriptTracking(fileNameString);
-      }
+      isTrackingFetch = doc->IsScriptTracking(cx);
     } else {
       principal = aGlobal->PrincipalOrNull();
       if (NS_WARN_IF(!principal)) {
         aRv.Throw(NS_ERROR_FAILURE);
         return nullptr;
       }
+
+      cookieSettings = mozilla::net::CookieSettings::Create();
+    }
+
+    if (!loadGroup) {
       nsresult rv = NS_NewLoadGroup(getter_AddRefs(loadGroup), principal);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         aRv.Throw(rv);
         return nullptr;
       }
-
-      cookieSettings = mozilla::net::CookieSettings::Create();
     }
 
     Telemetry::Accumulate(Telemetry::FETCH_IS_MAINTHREAD, 1);
@@ -596,9 +606,7 @@ void MainThreadFetchResolver::OnResponseAvailableInternal(
       return;
     }
 
-    ErrorResult result;
-    result.ThrowTypeError<MSG_FETCH_FAILED>();
-    mPromise->MaybeReject(result);
+    mPromise->MaybeRejectWithTypeError<MSG_FETCH_FAILED>();
   }
 }
 
@@ -662,9 +670,7 @@ class WorkerFetchResponseRunnable final : public MainThreadWorkerRunnable {
         fetchObserver->SetState(FetchState::Errored);
       }
 
-      ErrorResult result;
-      result.ThrowTypeError<MSG_FETCH_FAILED>();
-      promise->MaybeReject(result);
+      promise->MaybeRejectWithTypeError<MSG_FETCH_FAILED>();
     }
     return true;
   }
@@ -721,6 +727,10 @@ class WorkerFetchResponseEndRunnable final : public MainThreadWorkerRunnable,
         mReason(aReason) {}
 
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
+    if (mResolver->IsShutdown(aWorkerPrivate)) {
+      return true;
+    }
+
     if (mReason == FetchDriverObserver::eAborted) {
       mResolver->WorkerPromise(aWorkerPrivate)
           ->MaybeReject(NS_ERROR_DOM_ABORT_ERR);

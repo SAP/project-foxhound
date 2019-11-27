@@ -51,6 +51,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 
 mozilla::LazyLogModule nsURILoader::mLog("URILoader");
@@ -66,9 +67,9 @@ mozilla::LazyLogModule nsURILoader::mLog("URILoader");
 static uint32_t sConvertDataLimit = 20;
 
 static bool InitPreferences() {
-  nsresult rv = mozilla::Preferences::AddUintVarCache(
+  mozilla::Preferences::AddUintVarCache(
       &sConvertDataLimit, "general.document_open_conversion_depth_limit", 20);
-  return NS_SUCCEEDED(rv);
+  return true;
 }
 
 /**
@@ -235,28 +236,20 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest* request) {
       return NS_BINDING_ABORTED;
     }
 
-    static bool sLargeAllocationTestingAllHttpLoads = false;
     static bool sLargeAllocationHeaderEnabled = false;
     static bool sCachedLargeAllocationPref = false;
     if (!sCachedLargeAllocationPref) {
       sCachedLargeAllocationPref = true;
       mozilla::Preferences::AddBoolVarCache(
           &sLargeAllocationHeaderEnabled, "dom.largeAllocationHeader.enabled");
-      mozilla::Preferences::AddBoolVarCache(
-          &sLargeAllocationTestingAllHttpLoads,
-          "dom.largeAllocation.testing.allHttpLoads");
     }
 
     if (sLargeAllocationHeaderEnabled) {
-      if (sLargeAllocationTestingAllHttpLoads) {
+      if (StaticPrefs::dom_largeAllocation_testing_allHttpLoads()) {
         nsCOMPtr<nsIURI> uri;
         rv = httpChannel->GetURI(getter_AddRefs(uri));
         if (NS_SUCCEEDED(rv) && uri) {
-          bool httpScheme = false;
-          bool httpsScheme = false;
-          uri->SchemeIs("http", &httpScheme);
-          uri->SchemeIs("https", &httpsScheme);
-          if ((httpScheme || httpsScheme) &&
+          if ((uri->SchemeIs("http") || uri->SchemeIs("https")) &&
               nsContentUtils::AttemptLargeAllocationLoad(httpChannel)) {
             return NS_BINDING_ABORTED;
           }

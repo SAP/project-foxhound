@@ -224,7 +224,8 @@ OpKind wasm::Classify(OpBytes op) {
     case Op::F32Store:
     case Op::F64Store:
       return OpKind::Store;
-    case Op::Select:
+    case Op::SelectNumeric:
+    case Op::SelectTyped:
       return OpKind::Select;
     case Op::GetLocal:
       return OpKind::GetLocal;
@@ -318,6 +319,8 @@ OpKind wasm::Classify(OpBytes op) {
         case ThreadOp::I32Wait:
         case ThreadOp::I64Wait:
           return OpKind::Wait;
+        case ThreadOp::Fence:
+          return OpKind::Fence;
         case ThreadOp::I32AtomicLoad:
         case ThreadOp::I64AtomicLoad:
         case ThreadOp::I32AtomicLoad8U:

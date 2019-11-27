@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -67,7 +71,7 @@ function shortURL({ url }) {
 
   // Remove the eTLD (e.g., com, net) and the preceding period from the hostname
   const eTLD = getETLD(hostname);
-  const eTLDExtra = eTLD.length > 0 ? -(eTLD.length + 1) : Infinity;
+  const eTLDExtra = eTLD.length ? -(eTLD.length + 1) : Infinity;
 
   // Ideally get the short eTLD-less host but fall back to longer url parts
   return (

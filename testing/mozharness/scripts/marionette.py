@@ -91,6 +91,14 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin,
          "help": "Run tests without multiple processes (e10s). (Desktop builds only)",
          }
     ], [
+        ["--setpref"],
+        {"action": "append",
+         "metavar": "PREF=VALUE",
+         "dest": "extra_prefs",
+         "default": [],
+         "help": "Extra user prefs.",
+         }
+    ], [
         ["--headless"],
         {"action": "store_true",
          "dest": "headless",
@@ -168,8 +176,8 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin,
     def _pre_config_lock(self, rw_config):
         super(MarionetteTest, self)._pre_config_lock(rw_config)
         if not self.config.get('emulator') and not self.config.get('marionette_address'):
-                self.fatal("You need to specify a --marionette-address for non-emulator tests! "
-                           "(Try --marionette-address localhost:2828 )")
+            self.fatal("You need to specify a --marionette-address for non-emulator tests! "
+                       "(Try --marionette-address localhost:2828 )")
 
     def _query_tests_dir(self):
         dirs = self.query_abs_dirs()
@@ -308,6 +316,8 @@ class MarionetteTest(TestingMixin, MercurialScript, TransferMixin,
 
         if self.config['enable_webrender']:
             cmd.append('--enable-webrender')
+
+        cmd.extend(['--setpref={}'.format(p) for p in self.config['extra_prefs']])
 
         cmd.append('--gecko-log=-')
 

@@ -33,7 +33,7 @@ class gfxAndroidPlatform : public gfxPlatform {
   gfxImageFormat GetOffscreenFormat() override { return mOffscreenFormat; }
 
   // to support IPC font list (sharing between chrome and content)
-  void GetSystemFontList(InfallibleTArray<FontListEntry>* retValue);
+  void GetSystemFontList(nsTArray<FontListEntry>* retValue);
 
   // platform implementations of font functions
   gfxPlatformFontList* CreatePlatformFontList() override;
@@ -49,8 +49,6 @@ class gfxAndroidPlatform : public gfxPlatform {
 
   bool FontHintingEnabled() override;
   bool RequiresLinearZoom() override;
-
-  FT_Library GetFTLibrary() override;
 
   already_AddRefed<mozilla::gfx::VsyncSource> CreateHardwareVsyncSource()
       override;

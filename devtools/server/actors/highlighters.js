@@ -24,6 +24,12 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
+  "isRemoteFrame",
+  "devtools/shared/layout/utils",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "isXUL",
   "devtools/server/actors/highlighters/utils/markup",
   true
@@ -38,6 +44,12 @@ loader.lazyRequireGetter(
   this,
   "BoxModelHighlighter",
   "devtools/server/actors/highlighters/box-model",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "BoxModelHighlighterObserver",
+  "devtools/server/actors/highlighters/box-model-observer",
   true
 );
 
@@ -104,7 +116,7 @@ exports.register = register;
  * The HighlighterActor class
  */
 exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
-  initialize: function(inspector, autohide) {
+  initialize: function(inspector, autohide, useNewBoxModelHighlighter = false) {
     protocol.Actor.prototype.initialize.call(this, null);
 
     this._autohide = autohide;
@@ -113,9 +125,8 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
     this._targetActor = this._inspector.targetActor;
     this._highlighterEnv = new HighlighterEnvironment();
     this._highlighterEnv.initFromTargetActor(this._targetActor);
+    this._useNewBoxModelHighlighter = useNewBoxModelHighlighter;
 
-    this._highlighterReady = this._highlighterReady.bind(this);
-    this._highlighterHidden = this._highlighterHidden.bind(this);
     this._onNavigate = this._onNavigate.bind(this);
 
     const doc = this._targetActor.window.document;
@@ -143,13 +154,20 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
   _createHighlighter: function() {
     this._isPreviousWindowXUL = isXUL(this._targetActor.window);
 
+    if (this._useNewBoxModelHighlighter) {
+      this._highlighter = new BoxModelHighlighterObserver(
+        this._highlighterEnv,
+        this.conn
+      );
+
+      return;
+    }
+
     if (!this._isPreviousWindowXUL) {
       this._highlighter = new BoxModelHighlighter(
         this._highlighterEnv,
         this._inspector
       );
-      this._highlighter.on("ready", this._highlighterReady);
-      this._highlighter.on("hide", this._highlighterHidden);
     } else {
       this._highlighter = new SimpleOutlineHighlighter(this._highlighterEnv);
     }
@@ -157,10 +175,6 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
 
   _destroyHighlighter: function() {
     if (this._highlighter) {
-      if (!this._isPreviousWindowXUL) {
-        this._highlighter.off("ready", this._highlighterReady);
-        this._highlighter.off("hide", this._highlighterHidden);
-      }
       this._highlighter.destroy();
       this._highlighter = null;
     }
@@ -220,6 +234,12 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
     if (this._highlighter) {
       this._highlighter.hide();
     }
+
+    // Since the node-picker works independently in each remote frame, the inspector
+    // front-end decides which highlighter to show and hide while picking.
+    // If we're being asked to hide here, we should also reset the current hovered node so
+    // we can start highlighting correctly again later.
+    this._hoveredNode = null;
   },
 
   /**
@@ -257,17 +277,35 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
   _currentNode: null,
 
   pick: function() {
+    if (this._targetActor.threadActor) {
+      this._targetActor.threadActor.hideOverlay();
+    }
+
     if (this._isPicking) {
       return null;
     }
     this._isPicking = true;
 
+    // In most cases, we need to prevent content events from reaching the content. This is
+    // needed to avoid triggering actions such as submitting forms or following links.
+    // In the case where the event happens on a remote frame however, we do want to let it
+    // through. That is because otherwise the pickers started in nested remote frames will
+    // never have a chance of picking their own elements.
     this._preventContentEvent = event => {
+      if (isRemoteFrame(event.target)) {
+        return;
+      }
       event.stopPropagation();
       event.preventDefault();
     };
 
     this._onPick = event => {
+      // If the picked node is a remote frame, then we need to let the event through
+      // since there's a highlighter actor in that sub-frame also picking.
+      if (isRemoteFrame(event.target)) {
+        return;
+      }
+
       this._preventContentEvent(event);
 
       if (!this._isEventAllowed(event)) {
@@ -283,7 +321,6 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
         );
         return;
       }
-
       this._stopPickerListeners();
       this._isPicking = false;
       if (this._autohide) {
@@ -298,8 +335,13 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
     };
 
     this._onHovered = event => {
-      this._preventContentEvent(event);
+      // If the hovered node is a remote frame, then we need to let the event through
+      // since there's a highlighter actor in that sub-frame also picking.
+      if (isRemoteFrame(event.target)) {
+        return;
+      }
 
+      this._preventContentEvent(event);
       if (!this._isEventAllowed(event)) {
         return;
       }
@@ -372,9 +414,11 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
           this._walker.emit("picker-node-canceled");
           return;
         case event.DOM_VK_C:
+          const { altKey, ctrlKey, metaKey, shiftKey } = event;
+
           if (
-            (IS_OSX && event.metaKey && event.altKey) ||
-            (!IS_OSX && event.ctrlKey && event.shiftKey)
+            (IS_OSX && metaKey && altKey | shiftKey) ||
+            (!IS_OSX && ctrlKey && shiftKey)
           ) {
             this.cancelPick();
             this._walker.emit("picker-node-canceled");
@@ -475,15 +519,11 @@ exports.HighlighterActor = protocol.ActorClassWithSpec(highlighterSpec, {
     this._setSuppressedEventListener(null);
   },
 
-  _highlighterReady: function() {
-    this._inspector.walker.emit("highlighter-ready");
-  },
-
-  _highlighterHidden: function() {
-    this._inspector.walker.emit("highlighter-hide");
-  },
-
   cancelPick: function() {
+    if (this._targetActor.threadActor) {
+      this._targetActor.threadActor.showOverlay();
+    }
+
     if (this._isPicking) {
       this._highlighter.hide();
       this._stopPickerListeners();

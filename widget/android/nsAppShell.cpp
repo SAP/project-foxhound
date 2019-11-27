@@ -58,19 +58,18 @@
 
 #include "AndroidAlerts.h"
 #include "AndroidUiThread.h"
-#include "ANRReporter.h"
 #include "GeckoBatteryManager.h"
 #include "GeckoNetworkManager.h"
 #include "GeckoProcessManager.h"
 #include "GeckoScreenOrientation.h"
 #include "GeckoSystemStateListener.h"
+#include "GeckoTelemetryDelegate.h"
 #include "GeckoVRManager.h"
 #include "PrefsHelper.h"
 #include "ScreenHelperAndroid.h"
 #include "Telemetry.h"
-#include "fennec/MemoryMonitor.h"
-#include "fennec/ThumbnailHelper.h"
 #include "WebExecutorSupport.h"
+#include "Base64UtilsSupport.h"
 
 #ifdef DEBUG_ANDROID_EVENTS
 #  define EVLOG(args...) ALOG(args)
@@ -139,7 +138,7 @@ class GeckoThreadSupport final
 
     OriginAttributes attrs;
     nsCOMPtr<nsIPrincipal> principal =
-        BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+        BasePrincipal::CreateContentPrincipal(uri, attrs);
     specConn->SpeculativeConnect(uri, principal, nullptr);
   }
 
@@ -362,14 +361,6 @@ class GeckoAppShellSupport final
   }
 };
 
-class BrowserLocaleManagerSupport final
-    : public java::BrowserLocaleManager::Natives<BrowserLocaleManagerSupport> {
- public:
-  static void RefreshLocales() {
-    intl::OSPreferences::GetInstance()->Refresh();
-  }
-};
-
 nsAppShell::nsAppShell()
     : mSyncRunFinished(*(sAppShellLock = new Mutex("nsAppShell")),
                        "nsAppShell.SyncRun"),
@@ -387,6 +378,7 @@ nsAppShell::nsAppShell()
       GeckoAppShellSupport::Init();
       mozilla::GeckoSystemStateListener::Init();
       mozilla::widget::Telemetry::Init();
+      mozilla::widget::GeckoTelemetryDelegate::Init();
 
       // Set the corresponding state in GeckoThread.
       java::GeckoThread::SetState(java::GeckoThread::State::RUNNING());
@@ -410,16 +402,11 @@ nsAppShell::nsAppShell()
     mozilla::PrefsHelper::Init();
     mozilla::widget::Telemetry::Init();
     mozilla::widget::WebExecutorSupport::Init();
+    mozilla::widget::Base64UtilsSupport::Init();
     nsWindow::InitNatives();
     mozilla::gl::AndroidSurfaceTexture::Init();
     mozilla::WebAuthnTokenManager::Init();
-
-    if (jni::IsFennec()) {
-      BrowserLocaleManagerSupport::Init();
-      mozilla::ANRReporter::Init();
-      mozilla::MemoryMonitor::Init();
-      mozilla::ThumbnailHelper::Init();
-    }
+    mozilla::widget::GeckoTelemetryDelegate::Init();
 
     java::GeckoThread::SetState(java::GeckoThread::State::JNI_READY());
 

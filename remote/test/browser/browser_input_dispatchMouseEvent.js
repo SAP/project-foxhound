@@ -3,10 +3,8 @@
 
 "use strict";
 
-const TEST_URI = "data:text/html;charset=utf-8,<div>foo</div>";
-
 add_task(async function testDispatchMouseEvent() {
-  const { client, tab } = await setupTestForUri(TEST_URI);
+  const { client } = await setupForURL(toDataURL("<div>foo</div>"));
 
   const { Input } = client;
 
@@ -54,10 +52,5 @@ add_task(async function testDispatchMouseEvent() {
     return this.clickPromise;
   });
 
-  await client.close();
-  ok(true, "The client is closed");
-
-  BrowserTestUtils.removeTab(tab);
-
-  await RemoteAgent.close();
+  await teardown(client);
 });

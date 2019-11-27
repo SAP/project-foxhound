@@ -9,9 +9,6 @@ var EXPORTED_SYMBOLS = ["PictureInPictureChild", "PictureInPictureToggleChild"];
 const { ActorChild } = ChromeUtils.import(
   "resource://gre/modules/ActorChild.jsm"
 );
-const { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -24,13 +21,12 @@ ChromeUtils.defineModuleGetter(
   "resource://gre/modules/Services.jsm"
 );
 
-XPCOMUtils.defineLazyGlobalGetters(this, ["InspectorUtils"]);
-
 const TOGGLE_ENABLED_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.enabled";
 const TOGGLE_TESTING_PREF =
   "media.videocontrols.picture-in-picture.video-toggle.testing";
 const MOUSEMOVE_PROCESSING_DELAY_MS = 50;
+const TOGGLE_HIDING_TIMEOUT_MS = 2000;
 
 // A weak reference to the most recent <video> in this content
 // process that is being viewed in Picture-in-Picture.
@@ -58,7 +54,31 @@ class PictureInPictureToggleChild extends ActorChild {
     // itself.
     this.weakDocStates = new WeakMap();
     this.toggleEnabled = Services.prefs.getBoolPref(TOGGLE_ENABLED_PREF);
+
+    Services.prefs.addObserver(TOGGLE_ENABLED_PREF, this);
     this.toggleTesting = Services.prefs.getBoolPref(TOGGLE_TESTING_PREF, false);
+  }
+
+  cleanup() {
+    this.removeMouseButtonListeners();
+    Services.prefs.removeObserver(TOGGLE_ENABLED_PREF, this);
+  }
+
+  observe(subject, topic, data) {
+    if (topic == "nsPref:changed" && data == TOGGLE_ENABLED_PREF) {
+      this.toggleEnabled = Services.prefs.getBoolPref(TOGGLE_ENABLED_PREF);
+
+      if (this.toggleEnabled) {
+        // We have enabled the Picture-in-Picture toggle, so we need to make
+        // sure we register all of the videos that might already be on the page.
+        this.content.requestIdleCallback(() => {
+          let videos = this.content.document.querySelectorAll("video");
+          for (let video of videos) {
+            this.registerVideo(video);
+          }
+        });
+      }
+    }
   }
 
   /**
@@ -91,6 +111,13 @@ class PictureInPictureToggleChild extends ActorChild {
         // suppressed ("click" events don't fire if a "mouseup" occurs on a different
         // element from the "pointerdown" / "mousedown" event).
         clickedElement: null,
+        // This is a DeferredTask to hide the toggle after a period of mouse
+        // inactivity.
+        hideToggleDeferredTask: null,
+        // If we reach a point where we're tracking videos for mouse movements,
+        // then this will be true. If there are no videos worth tracking, then
+        // this is false.
+        isTrackingVideos: false,
       };
       this.weakDocStates.set(this.content.document, state);
     }
@@ -106,15 +133,24 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     switch (event.type) {
-      case "canplay": {
+      case "UAWidgetSetupOrChange": {
         if (
           this.toggleEnabled &&
           event.target instanceof this.content.HTMLVideoElement &&
-          !event.target.controls &&
           event.target.ownerDocument == this.content.document
         ) {
           this.registerVideo(event.target);
         }
+        break;
+      }
+      case "contextmenu": {
+        if (this.toggleEnabled) {
+          this.checkContextMenu(event);
+        }
+        break;
+      }
+      case "mouseout": {
+        this.onMouseOut(event);
         break;
       }
       case "mousedown":
@@ -132,10 +168,12 @@ class PictureInPictureToggleChild extends ActorChild {
         this.onMouseMove(event);
         break;
       }
+      case "pageshow": {
+        this.onPageShow(event);
+        break;
+      }
       case "pagehide": {
-        if (event.target.top == event.target) {
-          this.removeMouseButtonListeners();
-        }
+        this.onPageHide(event);
         break;
       }
     }
@@ -254,6 +292,9 @@ class PictureInPictureToggleChild extends ActorChild {
       capture: true,
     });
     this.content.windowRoot.addEventListener("click", this, { capture: true });
+    this.content.windowRoot.addEventListener("mouseout", this, {
+      capture: true,
+    });
   }
 
   removeMouseButtonListeners() {
@@ -270,6 +311,9 @@ class PictureInPictureToggleChild extends ActorChild {
       capture: true,
     });
     this.content.windowRoot.removeEventListener("click", this, {
+      capture: true,
+    });
+    this.content.windowRoot.removeEventListener("mouseout", this, {
       capture: true,
     });
   }
@@ -298,7 +342,14 @@ class PictureInPictureToggleChild extends ActorChild {
       mozSystemGroup: true,
       capture: true,
     });
+    this.content.addEventListener("pageshow", this, {
+      mozSystemGroup: true,
+    });
+    this.content.addEventListener("pagehide", this, {
+      mozSystemGroup: true,
+    });
     this.addMouseButtonListeners();
+    state.isTrackingVideos = true;
   }
 
   /**
@@ -313,10 +364,49 @@ class PictureInPictureToggleChild extends ActorChild {
       mozSystemGroup: true,
       capture: true,
     });
+    this.content.removeEventListener("pageshow", this, {
+      mozSystemGroup: true,
+    });
+    this.content.removeEventListener("pagehide", this, {
+      mozSystemGroup: true,
+    });
     this.removeMouseButtonListeners();
     let oldOverVideo = state.weakOverVideo && state.weakOverVideo.get();
     if (oldOverVideo) {
       this.onMouseLeaveVideo(oldOverVideo);
+    }
+    state.isTrackingVideos = false;
+  }
+
+  /**
+   * This pageshow event handler will get called if and when we complete a tab
+   * tear out or in. If we happened to be tracking videos before the tear
+   * occurred, we re-add the mouse event listeners so that they're attached to
+   * the right WindowRoot.
+   *
+   * @param {Event} event The pageshow event fired when completing a tab tear
+   * out or in.
+   */
+  onPageShow(event) {
+    let state = this.docState;
+    if (state.isTrackingVideos) {
+      this.addMouseButtonListeners();
+    }
+  }
+
+  /**
+   * This pagehide event handler will get called if and when we start a tab
+   * tear out or in. If we happened to be tracking videos before the tear
+   * occurred, we remove the mouse event listeners. We'll re-add them when the
+   * pageshow event fires.
+   *
+   * @param {Event} event The pagehide event fired when starting a tab tear
+   * out or in.
+   */
+  onPageHide(event) {
+    let state = this.docState;
+    if (state.isTrackingVideos) {
+      this.removeMouseButtonListeners();
     }
   }
 
@@ -332,6 +422,11 @@ class PictureInPictureToggleChild extends ActorChild {
    * @param {Event} event The mousemove event.
    */
   onPointerDown(event) {
+    // The toggle ignores non-primary mouse clicks.
+    if (event.button != 0) {
+      return;
+    }
+
     let state = this.docState;
 
     let video = state.weakOverVideo && state.weakOverVideo.get();
@@ -402,6 +497,11 @@ class PictureInPictureToggleChild extends ActorChild {
    * @param {Event} event A mousedown, pointerup, mouseup or click event.
    */
   onMouseButtonEvent(event) {
+    // The toggle ignores non-primary mouse clicks.
+    if (event.button != 0) {
+      return;
+    }
+
     let state = this.docState;
     if (state.isClickingToggle) {
       event.stopImmediatePropagation();
@@ -427,6 +527,28 @@ class PictureInPictureToggleChild extends ActorChild {
   }
 
   /**
+   * Called on mouseout events to determine whether or not the mouse has
+   * exited the window.
+   *
+   * @param {Event} event The mouseout event.
+   */
+  onMouseOut(event) {
+    if (!event.relatedTarget) {
+      // For mouseout events, if there's no relatedTarget (which normally
+      // maps to the element that the mouse entered into) then this means that
+      // we left the window.
+      let state = this.docState;
+
+      let video = state.weakOverVideo && state.weakOverVideo.get();
+      if (!video) {
+        return;
+      }
+
+      this.onMouseLeaveVideo(video);
+    }
+  }
+
+  /**
    * Called for each mousemove event when we're tracking those events to
    * determine if the cursor is hovering over a <video>.
    *
@@ -434,6 +556,12 @@ class PictureInPictureToggleChild extends ActorChild {
    */
   onMouseMove(event) {
     let state = this.docState;
+
+    if (state.hideToggleDeferredTask) {
+      state.hideToggleDeferredTask.disarm();
+      state.hideToggleDeferredTask.arm();
+    }
+
     state.lastMouseMoveEvent = event;
     state.mousemoveDeferredTask.arm();
   }
@@ -461,7 +589,7 @@ class PictureInPictureToggleChild extends ActorChild {
       1,
       true,
       false,
-      false
+      true
     );
 
     for (let element of elements) {
@@ -505,6 +633,21 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     let toggle = shadowRoot.getElementById("pictureInPictureToggleButton");
+    let controlsOverlay = shadowRoot.querySelector(".controlsOverlay");
+    controlsOverlay.removeAttribute("hidetoggle");
+
+    // The hideToggleDeferredTask we create here is for automatically hiding
+    // the toggle after a period of no mousemove activity for
+    // TOGGLE_HIDING_TIMEOUT_MS. If the mouse moves, then the DeferredTask
+    // timer is reset.
+    //
+    // We disable the toggle hiding timeout during testing to reduce
+    // non-determinism from timers when testing the toggle.
+    if (!state.hideToggleDeferredTask && !this.toggleTesting) {
+      state.hideToggleDeferredTask = new DeferredTask(() => {
+        controlsOverlay.setAttribute("hidetoggle", true);
+      }, TOGGLE_HIDING_TIMEOUT_MS);
+    }
 
     if (oldOverVideo) {
       if (oldOverVideo == video) {
@@ -520,8 +663,7 @@ class PictureInPictureToggleChild extends ActorChild {
     }
 
     state.weakOverVideo = Cu.getWeakReference(video);
-    let controlsOverlay = shadowRoot.querySelector(".controlsOverlay");
-    InspectorUtils.addPseudoClassLock(controlsOverlay, ":hover");
+    controlsOverlay.classList.add("hovering");
 
     // Now that we're hovering the video, we'll check to see if we're
     // hovering the toggle too.
@@ -530,18 +672,14 @@ class PictureInPictureToggleChild extends ActorChild {
 
   /**
    * Checks if a mouse event is happening over a toggle element. If it is,
-   * sets the :hover pseudoclass on it. Otherwise, it clears the :hover
-   * pseudoclass.
+   * sets the hovering class on it. Otherwise, it clears the hovering
+   * class.
    *
    * @param {Element} toggle The Picture-in-Picture toggle to check.
    * @param {MouseEvent} event A MouseEvent to test.
    */
   checkHoverToggle(toggle, event) {
-    if (this.isMouseOverToggle(toggle, event)) {
-      InspectorUtils.addPseudoClassLock(toggle, ":hover");
-    } else {
-      InspectorUtils.removePseudoClassLock(toggle, ":hover");
-    }
+    toggle.classList.toggle("hovering", this.isMouseOverToggle(toggle, event));
   }
 
   /**
@@ -557,11 +695,18 @@ class PictureInPictureToggleChild extends ActorChild {
     if (shadowRoot) {
       let controlsOverlay = shadowRoot.querySelector(".controlsOverlay");
       let toggle = shadowRoot.getElementById("pictureInPictureToggleButton");
-      InspectorUtils.removePseudoClassLock(controlsOverlay, ":hover");
-      InspectorUtils.removePseudoClassLock(toggle, ":hover");
+      controlsOverlay.classList.remove("hovering");
+      toggle.classList.remove("hovering");
     }
 
     state.weakOverVideo = null;
+
+    if (!this.toggleTesting) {
+      state.hideToggleDeferredTask.disarm();
+      state.mousemoveDeferredTask.disarm();
+    }
+
+    state.hideToggleDeferredTask = null;
   }
 
   /**
@@ -577,13 +722,53 @@ class PictureInPictureToggleChild extends ActorChild {
     let toggleRect = toggle.ownerGlobal.windowUtils.getBoundsWithoutFlushing(
       toggle
     );
+
+    // If the toggle has no dimensions, we're definitely not over it.
+    if (!toggleRect.width || !toggleRect.height) {
+      return false;
+    }
+
     let { clientX, clientY } = event;
+
     return (
       clientX >= toggleRect.left &&
       clientX <= toggleRect.right &&
       clientY >= toggleRect.top &&
       clientY <= toggleRect.bottom
     );
+  }
+
+  /**
+   * Checks a contextmenu event to see if the mouse is currently over the
+   * Picture-in-Picture toggle. If so, sends a message to the parent process
+   * to open up the Picture-in-Picture toggle context menu.
+   *
+   * @param {MouseEvent} event A contextmenu event.
+   */
+  checkContextMenu(event) {
+    let state = this.docState;
+
+    let video = state.weakOverVideo && state.weakOverVideo.get();
+    if (!video) {
+      return;
+    }
+
+    let shadowRoot = video.openOrClosedShadowRoot;
+    if (!shadowRoot) {
+      return;
+    }
+
+    let toggle = shadowRoot.getElementById("pictureInPictureToggleButton");
+    if (this.isMouseOverToggle(toggle, event)) {
+      event.stopImmediatePropagation();
+      event.preventDefault();
+
+      this.mm.sendAsyncMessage("PictureInPicture:OpenToggleContextMenu", {
+        screenX: event.screenX,
+        screenY: event.screenY,
+        mozInputSource: event.mozInputSource,
+      });
+    }
   }
 
   /**
@@ -610,6 +795,12 @@ class PictureInPictureChild extends ActorChild {
       case "MozTogglePictureInPicture": {
         if (event.isTrusted) {
           this.togglePictureInPicture(event.target);
+        }
+        break;
+      }
+      case "MozStopPictureInPicture": {
+        if (event.isTrusted && event.target === this.weakVideo) {
+          this.closePictureInPicture({ reason: "video-el-remove" });
         }
         break;
       }
@@ -658,6 +849,12 @@ class PictureInPictureChild extends ActorChild {
    * has been requested.
    */
   async togglePictureInPicture(video) {
+    // We don't allow viewing <video> elements with MediaStreams
+    // in Picture-in-Picture for now due to bug 1592539.
+    if (video.srcObject) {
+      return;
+    }
+
     if (this.inPictureInPicture(video)) {
       // The only way we could have entered here for the same video is if
       // we are toggling via the context menu, since we hide the inline
@@ -742,6 +939,10 @@ class PictureInPictureChild extends ActorChild {
         this.pause();
         break;
       }
+      case "PictureInPicture:KeyToggle": {
+        this.keyToggle();
+        break;
+      }
     }
   }
 
@@ -810,22 +1011,17 @@ class PictureInPictureChild extends ActorChild {
     }
 
     let doc = this.content.document;
-    let playerVideo = originatingVideo.cloneNode();
-    playerVideo.removeAttribute("controls");
+    let playerVideo = doc.createElement("video");
 
-    // Mute the video and rely on the originating video's audio playback.
-    // This way, we sidestep the AutoplayPolicy blocking stuff.
-    playerVideo.muted = true;
+    doc.body.style.overflow = "hidden";
+    doc.body.style.margin = "0";
 
     // Force the player video to assume maximum height and width of the
     // containing window
     playerVideo.style.height = "100vh";
     playerVideo.style.width = "100vw";
-
-    // And now try to get rid of as much surrounding whitespace as possible.
-    playerVideo.style.margin = "0";
-    doc.body.style.overflow = "hidden";
-    doc.body.style.margin = "0";
+    playerVideo.style.backgroundImage =
+      'url("chrome://global/skin/media/imagedoc-darknoise.png")';
 
     doc.body.appendChild(playerVideo);
 
@@ -858,6 +1054,25 @@ class PictureInPictureChild extends ActorChild {
     let video = this.weakVideo;
     if (video) {
       video.pause();
+    }
+  }
+
+  /**
+   * The keyboard was used to attempt to open Picture-in-Picture. In this case,
+   * find the focused window, and open Picture-in-Picture for the first
+   * available video. We suspect this heuristic will handle most cases, though
+   * we might refine this later on.
+   */
+  keyToggle() {
+    let focusedWindow = Services.focus.focusedWindow;
+    if (focusedWindow) {
+      let doc = focusedWindow.document;
+      if (doc) {
+        let video = doc.querySelector("video");
+        if (video) {
+          this.togglePictureInPicture(video);
+        }
+      }
     }
   }
 }

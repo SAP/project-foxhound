@@ -85,7 +85,7 @@ skip-if(verify&&isDebugBuild&&gtkWidget) load 1157994.html
 load 1158427.html
 skip-if(verify&&isDebugBuild&&gtkWidget) load 1185176.html
 load 1185192.html
-load 1257700.html
+skip-if(Android) load 1257700.html # bug 1575666
 load 1267263.html
 load 1270303.html
 load 1304948.html
@@ -120,11 +120,17 @@ load 1494073.html
 skip-if(Android) load 1526044.html # Bug 1528391
 skip-if(Android&&AndroidVersion<21) load encrypted-track-with-bad-sample-description-index.mp4 # Bug 1533211, unkip after bug 1550912
 load encrypted-track-without-tenc.mp4 # Bug 1533215
-load encrypted-track-with-sample-missing-cenc-aux.mp4 # Bug 1533625
+asserts-if(Android,0-1) load encrypted-track-with-sample-missing-cenc-aux.mp4 # Bug 1533625, bug 1588967
 load 1533909.html
 load 1538727.html
 load empty-samples.webm # Bug 1540580
 test-pref(media.autoplay.block-webaudio,false) load 1545133.html
 load track-with-zero-dimensions.mp4 # Bug 1542539
 load 1560215.html
+skip-if(Android) load 1547784.html # Skip on Android as clearkey is not supported
 load 1547899.html
+load 1569645.html
+load 1575271.html
+load 1577184.html
+pref(media.autoplay.default,0) load 1587248.html
+load 1594466.html

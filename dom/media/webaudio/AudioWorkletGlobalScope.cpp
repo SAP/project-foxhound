@@ -7,11 +7,13 @@
 #include "AudioWorkletGlobalScope.h"
 
 #include "AudioNodeEngine.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 #include "AudioWorkletImpl.h"
 #include "jsapi.h"
 #include "mozilla/dom/AudioWorkletGlobalScopeBinding.h"
-#include "mozilla/dom/WorkletPrincipal.h"
+#include "mozilla/dom/AudioWorkletProcessor.h"
+#include "mozilla/dom/StructuredCloneHolder.h"
+#include "mozilla/dom/WorkletPrincipals.h"
 #include "mozilla/dom/AudioParamDescriptorBinding.h"
 #include "nsPrintfCString.h"
 #include "nsTHashtable.h"
@@ -34,15 +36,14 @@ AudioWorkletGlobalScope::AudioWorkletGlobalScope(AudioWorkletImpl* aImpl)
 bool AudioWorkletGlobalScope::WrapGlobalObject(
     JSContext* aCx, JS::MutableHandle<JSObject*> aReflector) {
   JS::RealmOptions options;
+  JS::AutoHoldPrincipals principals(aCx, new WorkletPrincipals(mImpl));
   return AudioWorkletGlobalScope_Binding::Wrap(
-      aCx, this, this, options, WorkletPrincipal::GetWorkletPrincipal(), true,
-      aReflector);
+      aCx, this, this, options, principals.get(), true, aReflector);
 }
 
-void AudioWorkletGlobalScope::RegisterProcessor(JSContext* aCx,
-                                                const nsAString& aName,
-                                                VoidFunction& aProcessorCtor,
-                                                ErrorResult& aRv) {
+void AudioWorkletGlobalScope::RegisterProcessor(
+    JSContext* aCx, const nsAString& aName,
+    AudioWorkletProcessorConstructor& aProcessorCtor, ErrorResult& aRv) {
   JS::Rooted<JSObject*> processorConstructor(aCx,
                                              aProcessorCtor.CallableOrNull());
 
@@ -54,9 +55,8 @@ void AudioWorkletGlobalScope::RegisterProcessor(JSContext* aCx,
   if (aName.IsEmpty()) {
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING(
-            "Argument 1 of AudioWorkletGlobalScope.registerProcessor "
-            "should not be an empty string."));
+        "Argument 1 of AudioWorkletGlobalScope.registerProcessor should not be "
+        "an empty string.");
     return;
   }
 
@@ -70,9 +70,8 @@ void AudioWorkletGlobalScope::RegisterProcessor(JSContext* aCx,
     // Duplicate names are not allowed
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING(
-            "Argument 1 of AudioWorkletGlobalScope.registerProcessor "
-            "is invalid: a class with the same name is already registered."));
+        "Argument 1 of AudioWorkletGlobalScope.registerProcessor is invalid: a "
+        "class with the same name is already registered.");
     return;
   }
 
@@ -193,7 +192,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(JSContext* aCx,
       "AudioWorkletGlobalScope: parameter descriptors",
       [impl = mImpl, name = nsString(aName), map = std::move(map)]() mutable {
         AudioNode* destinationNode =
-            impl->DestinationStream()->Engine()->NodeMainThread();
+            impl->DestinationTrack()->Engine()->NodeMainThread();
         if (!destinationNode) {
           return;
         }
@@ -285,6 +284,75 @@ AudioParamDescriptorMap AudioWorkletGlobalScope::DescriptorsFromJS(
   }
 
   return res;
+}
+
+bool AudioWorkletGlobalScope::ConstructProcessor(
+    const nsAString& aName,
+    NotNull<StructuredCloneHolder*> aOptionsSerialization,
+    JS::MutableHandle<JSObject*> aRetProcessor) {
+  /**
+   * See the second algorithm at
+   * https://webaudio.github.io/web-audio-api/#instantiation-of-AudioWorkletNode-and-AudioWorkletProcessor
+   */
+  AutoJSAPI jsapi;
+  if (NS_WARN_IF(!jsapi.Init(this))) {
+    return false;
+  }
+  JSContext* cx = jsapi.cx();
+  ErrorResult rv;
+  /** TODO https://bugzilla.mozilla.org/show_bug.cgi?id=1565956
+   * 1. Let processorPort be
+   *    StructuredDeserializeWithTransfer(processorPortSerialization,
+   *                                      the current Realm).
+   */
+  /**
+   * 2. Let options be StructuredDeserialize(optionsSerialization,
+   *                                         the current Realm).
+   */
+  JS::Rooted<JS::Value> optionsVal(cx);
+  aOptionsSerialization->Read(this, cx, &optionsVal, rv);
+  if (rv.MaybeSetPendingException(cx)) {
+    return false;
+  }
+  /**
+   * 3. Let processorConstructor be the result of looking up nodeName on the
+   *    AudioWorkletGlobalScope's node name to processor definition map.
+   */
+  RefPtr<AudioWorkletProcessorConstructor> processorConstructor =
+      mNameToProcessorMap.Get(aName);
+  // AudioWorkletNode has already checked the definition exists.
+  // See also https://github.com/WebAudio/web-audio-api/issues/1854
+  MOZ_ASSERT(processorConstructor);
+  /**
+   * 4. Let processor be the result of Construct(processorConstructor,
+   *                                             « options »).
+   */
+  // The options were an object before serialization and so will be an object
+  // if deserialization succeeded above.  toObject() asserts.
+  JS::Rooted<JSObject*> options(cx, &optionsVal.toObject());
+  // Using https://heycam.github.io/webidl/#construct-a-callback-function
+  // See
+  // https://github.com/WebAudio/web-audio-api/pull/1843#issuecomment-478590304
+  RefPtr<AudioWorkletProcessor> processor = processorConstructor->Construct(
+      options, rv, "AudioWorkletProcessor construction",
+      CallbackFunction::eReportExceptions);
+  if (rv.Failed()) {
+    rv.SuppressException();  // already reported
+    return false;
+  }
+  /** TODO https://bugzilla.mozilla.org/show_bug.cgi?id=1565956
+   * but see https://github.com/WebAudio/web-audio-api/issues/1973
+   *
+   * 5. Set processor’s port to processorPort.
+   */
+
+  JS::Rooted<JS::Value> processorVal(cx);
+  if (NS_WARN_IF(!ToJSValue(cx, processor, &processorVal))) {
+    return false;
+  }
+  MOZ_ASSERT(processorVal.isObject());
+  aRetProcessor.set(&processorVal.toObject());
+  return true;
 }
 
 }  // namespace dom

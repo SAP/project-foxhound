@@ -34,7 +34,7 @@ already_AddRefed<IDBRequest> GenerateRequest(JSContext* aCx, IDBIndex* aIndex) {
   MOZ_ASSERT(aIndex);
   aIndex->AssertIsOnOwningThread();
 
-  IDBTransaction* transaction = aIndex->ObjectStore()->Transaction();
+  IDBTransaction* const transaction = aIndex->ObjectStore()->Transaction();
 
   RefPtr<IDBRequest> request =
       IDBRequest::Create(aCx, aIndex, transaction->Database(), transaction);
@@ -138,7 +138,7 @@ const nsString& IDBIndex::Name() const {
 void IDBIndex::SetName(const nsAString& aName, ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
-  IDBTransaction* transaction = mObjectStore->Transaction();
+  IDBTransaction* const transaction = mObjectStore->Transaction();
 
   if (transaction->GetMode() != IDBTransaction::VERSION_CHANGE ||
       mDeletedMetadata) {
@@ -172,13 +172,11 @@ void IDBIndex::SetName(const nsAString& aName, ErrorResult& aRv) {
   // number to keep in sync with the parent.
   const uint64_t requestSerialNumber = IDBRequest::NextSerialNumber();
 
-  IDB_LOG_MARK(
-      "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+  IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
       "database(%s).transaction(%s).objectStore(%s).index(%s)."
       "rename(%s)",
-      "IndexedDB %s: C T[%lld] R[%llu]: IDBIndex.rename()", IDB_LOG_ID_STRING(),
-      transaction->LoggingSerialNumber(), requestSerialNumber,
-      IDB_LOG_STRINGIFY(transaction->Database()),
+      "IDBIndex.rename()", transaction->LoggingSerialNumber(),
+      requestSerialNumber, IDB_LOG_STRINGIFY(transaction->Database()),
       IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
       loggingOldIndex.get(), IDB_LOG_STRINGIFY(this));
 
@@ -316,23 +314,20 @@ already_AddRefed<IDBRequest> IDBIndex::GetInternal(bool aKeyOnly,
   MOZ_ASSERT(request);
 
   if (aKeyOnly) {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+    IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
         "database(%s).transaction(%s).objectStore(%s).index(%s)."
         "getKey(%s)",
-        "IndexedDB %s: C T[%lld] R[%llu]: IDBIndex.getKey()",
-        IDB_LOG_ID_STRING(), transaction->LoggingSerialNumber(),
+        "IDBIndex.getKey()", transaction->LoggingSerialNumber(),
         request->LoggingSerialNumber(),
         IDB_LOG_STRINGIFY(transaction->Database()),
         IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
         IDB_LOG_STRINGIFY(this), IDB_LOG_STRINGIFY(keyRange));
   } else {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+    IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
         "database(%s).transaction(%s).objectStore(%s).index(%s)."
         "get(%s)",
-        "IndexedDB %s: C T[%lld] R[%llu]: IDBIndex.get()", IDB_LOG_ID_STRING(),
-        transaction->LoggingSerialNumber(), request->LoggingSerialNumber(),
+        "IDBIndex.get()", transaction->LoggingSerialNumber(),
+        request->LoggingSerialNumber(),
         IDB_LOG_STRINGIFY(transaction->Database()),
         IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
         IDB_LOG_STRINGIFY(this), IDB_LOG_STRINGIFY(keyRange));
@@ -377,36 +372,30 @@ already_AddRefed<IDBRequest> IDBIndex::GetAllInternal(
 
   const uint32_t limit = aLimit.WasPassed() ? aLimit.Value() : 0;
 
-  RequestParams params;
-  if (aKeysOnly) {
-    params =
-        IndexGetAllKeysParams(objectStoreId, indexId, optionalKeyRange, limit);
-  } else {
-    params = IndexGetAllParams(objectStoreId, indexId, optionalKeyRange, limit);
-  }
+  const auto& params =
+      aKeysOnly ? RequestParams{IndexGetAllKeysParams(objectStoreId, indexId,
+                                                      optionalKeyRange, limit)}
+                : RequestParams{IndexGetAllParams(objectStoreId, indexId,
+                                                  optionalKeyRange, limit)};
 
   RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
   if (aKeysOnly) {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+    IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
         "database(%s).transaction(%s).objectStore(%s).index(%s)."
         "getAllKeys(%s, %s)",
-        "IndexedDB %s: C T[%lld] R[%llu]: IDBIndex.getAllKeys()",
-        IDB_LOG_ID_STRING(), transaction->LoggingSerialNumber(),
+        "IDBIndex.getAllKeys()", transaction->LoggingSerialNumber(),
         request->LoggingSerialNumber(),
         IDB_LOG_STRINGIFY(transaction->Database()),
         IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
         IDB_LOG_STRINGIFY(this), IDB_LOG_STRINGIFY(keyRange),
         IDB_LOG_STRINGIFY(aLimit));
   } else {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+    IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
         "database(%s).transaction(%s).objectStore(%s).index(%s)."
         "getAll(%s, %s)",
-        "IndexedDB %s: C T[%lld] R[%llu]: IDBIndex.getAll()",
-        IDB_LOG_ID_STRING(), transaction->LoggingSerialNumber(),
+        "IDBIndex.getAll()", transaction->LoggingSerialNumber(),
         request->LoggingSerialNumber(),
         IDB_LOG_STRINGIFY(transaction->Database()),
         IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
@@ -441,8 +430,8 @@ already_AddRefed<IDBRequest> IDBIndex::OpenCursorInternal(
     return nullptr;
   }
 
-  int64_t objectStoreId = mObjectStore->Id();
-  int64_t indexId = Id();
+  const int64_t objectStoreId = mObjectStore->Id();
+  const int64_t indexId = Id();
 
   Maybe<SerializedKeyRange> optionalKeyRange;
 
@@ -453,50 +442,34 @@ already_AddRefed<IDBRequest> IDBIndex::OpenCursorInternal(
     optionalKeyRange.emplace(std::move(serializedKeyRange));
   }
 
-  IDBCursor::Direction direction = IDBCursor::ConvertDirection(aDirection);
+  const IDBCursor::Direction direction =
+      IDBCursor::ConvertDirection(aDirection);
 
-  OpenCursorParams params;
-  if (aKeysOnly) {
-    IndexOpenKeyCursorParams openParams;
-    openParams.objectStoreId() = objectStoreId;
-    openParams.indexId() = indexId;
-    openParams.optionalKeyRange() = std::move(optionalKeyRange);
-    openParams.direction() = direction;
+  const CommonIndexOpenCursorParams commonIndexParams = {
+      {objectStoreId, std::move(optionalKeyRange), direction}, indexId};
 
-    params = std::move(openParams);
-  } else {
-    IndexOpenCursorParams openParams;
-    openParams.objectStoreId() = objectStoreId;
-    openParams.indexId() = indexId;
-    openParams.optionalKeyRange() = std::move(optionalKeyRange);
-    openParams.direction() = direction;
-
-    params = std::move(openParams);
-  }
+  const auto params =
+      aKeysOnly ? OpenCursorParams{IndexOpenKeyCursorParams{commonIndexParams}}
+                : OpenCursorParams{IndexOpenCursorParams{commonIndexParams}};
 
   RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
   if (aKeysOnly) {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+    IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
         "database(%s).transaction(%s).objectStore(%s).index(%s)."
         "openKeyCursor(%s, %s)",
-        "IndexedDB %s: C T[%lld] R[%llu]: IDBIndex.openKeyCursor()",
-        IDB_LOG_ID_STRING(), transaction->LoggingSerialNumber(),
+        "IDBIndex.openKeyCursor()", transaction->LoggingSerialNumber(),
         request->LoggingSerialNumber(),
         IDB_LOG_STRINGIFY(transaction->Database()),
         IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
         IDB_LOG_STRINGIFY(this), IDB_LOG_STRINGIFY(keyRange),
         IDB_LOG_STRINGIFY(direction));
   } else {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+    IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
         "database(%s).transaction(%s).objectStore(%s).index(%s)."
         "openCursor(%s, %s)",
-        "IndexedDB %s: C T[%lld] R[%llu]: "
-        "IDBObjectStore.openKeyCursor()",
-        IDB_LOG_ID_STRING(), transaction->LoggingSerialNumber(),
+        "IDBObjectStore.openCursor()", transaction->LoggingSerialNumber(),
         request->LoggingSerialNumber(),
         IDB_LOG_STRINGIFY(transaction->Database()),
         IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),
@@ -504,7 +477,7 @@ already_AddRefed<IDBRequest> IDBIndex::OpenCursorInternal(
         IDB_LOG_STRINGIFY(direction));
   }
 
-  BackgroundCursorChild* actor =
+  BackgroundCursorChild* const actor =
       new BackgroundCursorChild(request, this, direction);
 
   mObjectStore->Transaction()->OpenCursor(actor, params);
@@ -522,7 +495,7 @@ already_AddRefed<IDBRequest> IDBIndex::Count(JSContext* aCx,
     return nullptr;
   }
 
-  IDBTransaction* transaction = mObjectStore->Transaction();
+  IDBTransaction* const transaction = mObjectStore->Transaction();
   if (!transaction->IsOpen()) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR);
     return nullptr;
@@ -547,12 +520,10 @@ already_AddRefed<IDBRequest> IDBIndex::Count(JSContext* aCx,
   RefPtr<IDBRequest> request = GenerateRequest(aCx, this);
   MOZ_ASSERT(request);
 
-  IDB_LOG_MARK(
-      "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
+  IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
       "database(%s).transaction(%s).objectStore(%s).index(%s)."
       "count(%s)",
-      "IndexedDB %s: C T[%lld] R[%llu]: IDBObjectStore.count()",
-      IDB_LOG_ID_STRING(), transaction->LoggingSerialNumber(),
+      "IDBObjectStore.count()", transaction->LoggingSerialNumber(),
       request->LoggingSerialNumber(),
       IDB_LOG_STRINGIFY(transaction->Database()),
       IDB_LOG_STRINGIFY(transaction), IDB_LOG_STRINGIFY(mObjectStore),

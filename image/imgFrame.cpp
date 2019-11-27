@@ -87,7 +87,7 @@ static bool ShouldUseHeap(const IntSize& aSize, int32_t aStride,
 
   // Lets us avoid too many small images consuming all of the handles. The
   // actual allocation checks for overflow.
-  int32_t bufferSize = (aStride * aSize.width) / 1024;
+  int32_t bufferSize = (aStride * aSize.height) / 1024;
   if (bufferSize < StaticPrefs::image_mem_volatile_min_threshold_kb()) {
     return true;
   }
@@ -162,7 +162,7 @@ static bool ClearSurface(DataSourceSurface* aSurface, const IntSize& aSize,
     // Skia doesn't support RGBX surfaces, so ensure the alpha value is set
     // to opaque white. While it would be nice to only do this for Skia,
     // imgFrame can run off main thread and past shutdown where
-    // we might not have gfxPlatform, so just memset everytime instead.
+    // we might not have gfxPlatform, so just memset every time instead.
     memset(data, 0xFF, stride * aSize.height);
   } else if (aSurface->OnHeap()) {
     // We only need to memset it if the buffer was allocated on the heap.
@@ -355,10 +355,12 @@ nsresult imgFrame::InitForDecoderRecycle(const AnimationParams& aAnimParams) {
   return NS_OK;
 }
 
-nsresult imgFrame::InitWithDrawable(
-    gfxDrawable* aDrawable, const nsIntSize& aSize, const SurfaceFormat aFormat,
-    SamplingFilter aSamplingFilter, uint32_t aImageFlags,
-    gfx::BackendType aBackend) {
+nsresult imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
+                                    const nsIntSize& aSize,
+                                    const SurfaceFormat aFormat,
+                                    SamplingFilter aSamplingFilter,
+                                    uint32_t aImageFlags,
+                                    gfx::BackendType aBackend) {
   // Assert for properties that should be verified by decoders,
   // warn for properties related to bad content.
   if (!SurfaceCache::IsLegalSize(aSize)) {

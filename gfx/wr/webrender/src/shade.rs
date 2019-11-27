@@ -4,7 +4,7 @@
 
 use crate::batch::{BatchKey, BatchKind, BrushBatchKind, BatchFeatures};
 use crate::device::{Device, Program, ShaderError};
-use euclid::{Transform3D};
+use euclid::default::Transform3D;
 use crate::glyph_rasterizer::GlyphFormat;
 use crate::renderer::{
     desc,
@@ -66,6 +66,7 @@ pub(crate) enum ShaderKind {
     #[allow(dead_code)]
     VectorCover,
     Resolve,
+    Composite,
 }
 
 pub struct LazilyCompiledShader {
@@ -156,6 +157,13 @@ impl LazilyCompiledShader {
                         &self.features,
                     )
                 }
+                ShaderKind::Composite => {
+                    create_prim_shader(
+                        self.name,
+                        device,
+                        &self.features,
+                    )
+                }
                 ShaderKind::ClipCache => {
                     create_clip_shader(
                         self.name,
@@ -179,6 +187,7 @@ impl LazilyCompiledShader {
                 ShaderKind::VectorCover => VertexArrayKind::VectorCover,
                 ShaderKind::ClipCache => VertexArrayKind::Clip,
                 ShaderKind::Resolve => VertexArrayKind::Resolve,
+                ShaderKind::Composite => VertexArrayKind::Composite,
             };
 
             let vertex_descriptor = match vertex_format {
@@ -192,6 +201,8 @@ impl LazilyCompiledShader {
                 VertexArrayKind::Border => &desc::BORDER,
                 VertexArrayKind::Scale => &desc::SCALE,
                 VertexArrayKind::Resolve => &desc::RESOLVE,
+                VertexArrayKind::SvgFilter => &desc::SVG_FILTER,
+                VertexArrayKind::Composite => &desc::COMPOSITE,
             };
 
             device.link_program(program, vertex_descriptor)?;
@@ -511,6 +522,7 @@ pub struct Shaders {
     pub cs_scale: LazilyCompiledShader,
     pub cs_line_decoration: LazilyCompiledShader,
     pub cs_gradient: LazilyCompiledShader,
+    pub cs_svg_filter: LazilyCompiledShader,
 
     // Brush shaders
     brush_solid: BrushShader,
@@ -547,6 +559,13 @@ pub struct Shaders {
     pub pls_resolve: LazilyCompiledShader,
 
     ps_split_composite: LazilyCompiledShader,
+
+    // Composite shader. This is a very simple shader used to composite
+    // picture cache tiles into the framebuffer. In future, this will
+    // only be used on platforms that aren't directly handing picture
+    // cache surfaces to an OS compositor, such as DirectComposite or
+    // CoreAnimation.
+    pub composite: LazilyCompiledShader,
 }
 
 impl Shaders {
@@ -629,6 +648,14 @@ impl Shaders {
             ShaderKind::Cache(VertexArrayKind::Blur),
             "cs_blur",
             &["COLOR_TARGET"],
+            device,
+            options.precache_flags,
+        )?;
+
+        let cs_svg_filter = LazilyCompiledShader::new(
+            ShaderKind::Cache(VertexArrayKind::SvgFilter),
+            "cs_svg_filter",
+            &[],
             device,
             options.precache_flags,
         )?;
@@ -838,6 +865,14 @@ impl Shaders {
             options.precache_flags,
         )?;
 
+        let composite = LazilyCompiledShader::new(
+            ShaderKind::Composite,
+            "composite",
+            &[],
+            device,
+            options.precache_flags,
+        )?;
+
         Ok(Shaders {
             cs_blur_a8,
             cs_blur_rgba8,
@@ -846,6 +881,7 @@ impl Shaders {
             cs_gradient,
             cs_border_solid,
             cs_scale,
+            cs_svg_filter,
             brush_solid,
             brush_image,
             brush_fast_image,
@@ -863,6 +899,7 @@ impl Shaders {
             ps_text_run,
             ps_text_run_dual_source,
             ps_split_composite,
+            composite,
         })
     }
 
@@ -930,6 +967,7 @@ impl Shaders {
         self.cs_scale.deinit(device);
         self.cs_blur_a8.deinit(device);
         self.cs_blur_rgba8.deinit(device);
+        self.cs_svg_filter.deinit(device);
         self.brush_solid.deinit(device);
         self.brush_blend.deinit(device);
         self.brush_mix_blend.deinit(device);
@@ -963,6 +1001,7 @@ impl Shaders {
         self.cs_line_decoration.deinit(device);
         self.cs_border_segment.deinit(device);
         self.ps_split_composite.deinit(device);
+        self.composite.deinit(device);
     }
 }
 

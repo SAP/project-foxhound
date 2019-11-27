@@ -18,6 +18,17 @@ NS_IMETHODIMP RemoteWebProgressRequest::Init(nsIURI* aURI,
   return NS_OK;
 }
 
+NS_IMETHODIMP RemoteWebProgressRequest::GetElapsedLoadTimeMS(
+    uint64_t* aElapsedLoadTimeMS) {
+  NS_ENSURE_ARG_POINTER(aElapsedLoadTimeMS);
+  if (mMaybeElapsedLoadTimeMS) {
+    *aElapsedLoadTimeMS = *mMaybeElapsedLoadTimeMS;
+    return NS_OK;
+  }
+  *aElapsedLoadTimeMS = 0;
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
 // nsIChannel methods
 
 NS_IMETHODIMP RemoteWebProgressRequest::GetOriginalURI(nsIURI** aOriginalURI) {
@@ -213,6 +224,35 @@ NS_IMETHODIMP RemoteWebProgressRequest::GetLoadFlags(nsLoadFlags* aLoadFlags) {
 }
 
 NS_IMETHODIMP RemoteWebProgressRequest::SetLoadFlags(nsLoadFlags aLoadFlags) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+RemoteWebProgressRequest::IsTrackingResource(bool* aIsTrackingResource) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+RemoteWebProgressRequest::IsThirdPartyTrackingResource(
+    bool* aIsTrackingResource) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+RemoteWebProgressRequest::GetClassificationFlags(
+    uint32_t* aClassificationFlags) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+RemoteWebProgressRequest::GetFirstPartyClassificationFlags(
+    uint32_t* aClassificationFlags) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+RemoteWebProgressRequest::GetThirdPartyClassificationFlags(
+    uint32_t* aClassificationFlags) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

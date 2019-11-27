@@ -8,7 +8,7 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs.h"
+#include "nsIClassifiedChannel.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -90,11 +90,6 @@ UrlClassifierFeatureSocialTrackingAnnotation::MaybeCreate(
        "%p",
        aChannel));
 
-  if (!StaticPrefs::
-          privacy_trackingprotection_socialtracking_annotate_enabled()) {
-    return nullptr;
-  }
-
   if (!UrlClassifierCommon::ShouldEnableClassifier(aChannel)) {
     return nullptr;
   }
@@ -140,21 +135,23 @@ UrlClassifierFeatureSocialTrackingAnnotation::ProcessChannel(
 
   static std::vector<UrlClassifierCommon::ClassificationData>
       sClassificationData = {
-          {NS_LITERAL_CSTRING("facebook-socialtracking-track-"),
-           nsIHttpChannel::ClassificationFlags::
+          {NS_LITERAL_CSTRING("social-tracking-protection-facebook-"),
+           nsIClassifiedChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_FACEBOOK},
-          {NS_LITERAL_CSTRING("twitter-socialtracking-track-"),
-           nsIHttpChannel::ClassificationFlags::
+          {NS_LITERAL_CSTRING("social-tracking-protection-linkedin-"),
+           nsIClassifiedChannel::ClassificationFlags::
+               CLASSIFIED_SOCIALTRACKING_LINKEDIN},
+          {NS_LITERAL_CSTRING("social-tracking-protection-twitter-"),
+           nsIClassifiedChannel::ClassificationFlags::
                CLASSIFIED_SOCIALTRACKING_TWITTER},
-          // TODO: fix this list of tables and flags
       };
 
   uint32_t flags = UrlClassifierCommon::TablesToClassificationFlags(
       aList, sClassificationData,
-      nsIHttpChannel::ClassificationFlags::CLASSIFIED_SOCIALTRACKING);
+      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_SOCIALTRACKING);
 
   UrlClassifierCommon::AnnotateChannel(
-      aChannel, AntiTrackingCommon::eSocialTracking, flags,
+      aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_SOCIALTRACKING_CONTENT);
 
   return NS_OK;
@@ -163,15 +160,19 @@ UrlClassifierFeatureSocialTrackingAnnotation::ProcessChannel(
 NS_IMETHODIMP
 UrlClassifierFeatureSocialTrackingAnnotation::GetURIByListType(
     nsIChannel* aChannel, nsIUrlClassifierFeature::listType aListType,
-    nsIURI** aURI) {
+    nsIUrlClassifierFeature::URIType* aURIType, nsIURI** aURI) {
   NS_ENSURE_ARG_POINTER(aChannel);
+  NS_ENSURE_ARG_POINTER(aURIType);
   NS_ENSURE_ARG_POINTER(aURI);
 
   if (aListType == nsIUrlClassifierFeature::blacklist) {
+    *aURIType = nsIUrlClassifierFeature::blacklistURI;
     return aChannel->GetURI(aURI);
   }
 
   MOZ_ASSERT(aListType == nsIUrlClassifierFeature::whitelist);
+
+  *aURIType = nsIUrlClassifierFeature::pairwiseWhitelistURI;
   return UrlClassifierCommon::CreatePairwiseWhiteListURI(aChannel, aURI);
 }
 

@@ -88,6 +88,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CountingAllocatorBase.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/ServoStyleConsts.h"
 
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 
@@ -349,8 +350,7 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
     rv = aBinDirectory->IsDirectory(&value);
 
     if (NS_SUCCEEDED(rv) && value) {
-      nsDirectoryService::gService->Set(NS_XPCOM_INIT_CURRENT_PROCESS_DIR,
-                                        aBinDirectory);
+      nsDirectoryService::gService->SetCurrentProcessDirectory(aBinDirectory);
     }
   }
 
@@ -769,7 +769,19 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
   GkRust_Shutdown();
 
+#ifdef NS_FREE_PERMANENT_DATA
+  // By the time we're shutting down, there may still be async parse tasks going
+  // on in the Servo thread-pool. This is fairly uncommon, though not
+  // impossible. CSS parsing heavily uses the atom table, so obviously it's not
+  // fine to get rid of it.
+  //
+  // In leak-checking / ASAN / etc. builds, shut down the servo thread-pool,
+  // which will wait for all the work to be done. For other builds, we don't
+  // really want to wait on shutdown for possibly slow tasks. So just leak the
+  // atom table in those.
+  Servo_ShutdownThreadPool();
   NS_ShutdownAtomTable();
+#endif
 
   NS_IF_RELEASE(gDebug);
 

@@ -6,6 +6,7 @@ from __future__ import absolute_import
 
 import os
 import re
+import time
 
 from logger.logger import RaptorLogger
 
@@ -17,9 +18,13 @@ def init_android_power_test(raptor):
     upload_dir = os.getenv("MOZ_UPLOAD_DIR")
     if not upload_dir:
         LOG.critical(
-            "% power test ignored; MOZ_UPLOAD_DIR unset" % raptor.config["app"]
+            "%s power test ignored; MOZ_UPLOAD_DIR unset" % raptor.config["app"]
         )
         return
+    # Disable adaptive brightness - do not restore the value since this setting
+    # should always be disabled.
+    raptor.device.shell_output("settings put system screen_brightness_mode 0")
+
     # Set the screen-off timeout to two (2) hours, since the device will be running
     # disconnected, and would otherwise turn off the screen, thereby halting
     # execution of the test. Save the current value so we can restore it later
@@ -43,6 +48,8 @@ def init_android_power_test(raptor):
     filepath = os.path.join(upload_dir, "battery-before.txt")
     with open(filepath, "w") as output:
         output.write(raptor.device.shell_output("dumpsys battery"))
+
+    raptor.test_start_time = int(time.time())
 
 
 # The batterystats output for Estimated power use differs
@@ -91,7 +98,7 @@ def finish_android_power_test(raptor, test_name, os_baseline=False):
     upload_dir = os.getenv("MOZ_UPLOAD_DIR")
     if not upload_dir:
         LOG.critical(
-            "% power test ignored because MOZ_UPLOAD_DIR was not set" % test_name
+            "%s power test ignored because MOZ_UPLOAD_DIR was not set" % test_name
         )
         return
     # Restore screen_off_timeout and screen brightness.
@@ -101,6 +108,8 @@ def finish_android_power_test(raptor, test_name, os_baseline=False):
     raptor.device.shell_output(
         "settings put system screen_brightness %s" % raptor.screen_brightness
     )
+
+    test_end_time = int(time.time())
 
     filepath = os.path.join(upload_dir, "battery-after.txt")
     with open(filepath, "w") as output:
@@ -242,6 +251,32 @@ def finish_android_power_test(raptor, test_name, os_baseline=False):
 
         raptor.control_server.submit_supporting_data(power_data)
         if raptor.os_baseline_data:
+            # raptor.power_test_time is only used by test_power.py
+            # for testing power measurement parsing
+            test_time = raptor.power_test_time
+            if not test_time:
+                test_time = float(test_end_time - raptor.test_start_time)/60
+            LOG.info("Approximate power test time %s" % str(test_time))
+
+            def calculate_pc(power_measure, baseline_measure):
+                return (100 * (
+                    (power_measure + baseline_measure) /
+                    baseline_measure
+                )) - 100
+
+            pc_power_data = {
+                "type": "power",
+                "test": power_data["test"] + "-%change",
+                "unit": "%",
+                "values": {}
+            }
+            for power_measure in power_data['values']:
+                pc_power_data['values'][power_measure] = calculate_pc(
+                    (power_data['values'][power_measure]/test_time),
+                    raptor.os_baseline_data['values'][power_measure]
+                )
+
+            raptor.control_server.submit_supporting_data(pc_power_data)
             raptor.control_server.submit_supporting_data(raptor.os_baseline_data)
 
         # Generate power bugreport zip

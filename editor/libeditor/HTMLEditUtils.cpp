@@ -5,7 +5,6 @@
 
 #include "HTMLEditUtils.h"
 
-#include "TextEditUtils.h"        // for TextEditUtils
 #include "mozilla/ArrayUtils.h"   // for ArrayLength
 #include "mozilla/Assertions.h"   // for MOZ_ASSERT, etc.
 #include "mozilla/EditAction.h"   // for EditAction
@@ -213,7 +212,9 @@ bool HTMLEditUtils::IsNamedAnchor(nsINode* aNode) {
 bool HTMLEditUtils::IsMozDiv(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsHTMLElement(nsGkAtoms::div) &&
-         TextEditUtils::HasMozAttr(aNode);
+         aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
+                                         NS_LITERAL_STRING("_moz"),
+                                         eIgnoreCase);
 }
 
 /**

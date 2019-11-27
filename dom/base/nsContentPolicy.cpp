@@ -17,7 +17,6 @@
 #include "nsContentPolicy.h"
 #include "nsIURI.h"
 #include "nsIDocShell.h"
-#include "nsIDOMWindow.h"
 #include "nsIBrowserChild.h"
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
@@ -28,6 +27,8 @@
 #include "nsIContentSecurityPolicy.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/TaskCategory.h"
+
+class nsIDOMWindow;
 
 using mozilla::LogLevel;
 
@@ -70,16 +71,9 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
                                              int16_t* decision) {
   nsContentPolicyType contentType = loadInfo->InternalContentPolicyType();
   nsCOMPtr<nsISupports> requestingContext = loadInfo->GetLoadingContext();
-  nsCOMPtr<nsIURI> requestingLocation;
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
-  if (loadingPrincipal) {
-    loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));
-  }
-
   // sanity-check passed-through parameters
   MOZ_ASSERT(decision, "Null out pointer");
   WARN_IF_URI_UNINITIALIZED(contentLocation, "Request URI");
-  WARN_IF_URI_UNINITIALIZED(requestingLocation, "Requesting URI");
 
 #ifdef DEBUG
   {
@@ -92,11 +86,6 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   }
 #endif
 
-  /*
-   * There might not be a requestinglocation. This can happen for
-   * iframes with an image as src. Get the uri from the dom node.
-   * See bug 254510
-   */
   nsCOMPtr<mozilla::dom::Document> doc;
   nsCOMPtr<nsIContent> node = do_QueryInterface(requestingContext);
   if (node) {
@@ -104,10 +93,6 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
   }
   if (!doc) {
     doc = do_QueryInterface(requestingContext);
-  }
-
-  if (!requestingLocation && doc) {
-    requestingLocation = doc->GetDocumentURI();
   }
 
   nsContentPolicyType externalType =
@@ -166,11 +151,6 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
 // logType must be a literal string constant
 #define LOG_CHECK(logType)                                                     \
   PR_BEGIN_MACRO                                                               \
-  nsCOMPtr<nsIURI> requestingLocation;                                         \
-  nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();      \
-  if (loadingPrincipal) {                                                      \
-    loadingPrincipal->GetURI(getter_AddRefs(requestingLocation));              \
-  }                                                                            \
   /* skip all this nonsense if the call failed or logging is disabled */       \
   if (NS_SUCCEEDED(rv) && MOZ_LOG_TEST(gConPolLog, LogLevel::Debug)) {         \
     const char* resultName;                                                    \
@@ -181,10 +161,8 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
     }                                                                          \
     MOZ_LOG(                                                                   \
         gConPolLog, LogLevel::Debug,                                           \
-        ("Content Policy: " logType ": <%s> <Ref:%s> result=%s",               \
+        ("Content Policy: " logType ": <%s> result=%s",                        \
          contentLocation ? contentLocation->GetSpecOrDefault().get() : "None", \
-         requestingLocation ? requestingLocation->GetSpecOrDefault().get()     \
-                            : "None",                                          \
          resultName));                                                         \
   }                                                                            \
   PR_END_MACRO

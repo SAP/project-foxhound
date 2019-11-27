@@ -19,7 +19,7 @@
 #include "mozilla/Pair.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticMutex.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Tuple.h"
 #include "nsIMemoryReporter.h"
@@ -231,9 +231,9 @@ static int64_t AreaOfIntSize(const IntSize& aSize) {
  * mode, the cache will strongly favour sizes which are a factor of 2 of the
  * largest native size. It accomplishes this by suggesting a factor of 2 size
  * when lookups fail and substituting the nearest factor of 2 surface to the
- * ideal size as the "best" available (as opposed to subsitution but not found).
- * This allows us to minimize memory consumption and CPU time spent decoding
- * when a website requires many variants of the same surface.
+ * ideal size as the "best" available (as opposed to substitution but not
+ * found). This allows us to minimize memory consumption and CPU time spent
+ * decoding when a website requires many variants of the same surface.
  */
 class ImageSurfaceCache {
   ~ImageSurfaceCache() {}
@@ -1054,10 +1054,10 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
 
     // (Note that we *don't* unlock the per-image cache here; that's the
     // difference between this and UnlockImage.)
-    DoUnlockSurfaces(
-        WrapNotNull(cache),
-        /* aStaticOnly = */ !StaticPrefs::image_mem_animated_discardable(),
-        aAutoLock);
+    DoUnlockSurfaces(WrapNotNull(cache),
+                     /* aStaticOnly = */
+                     !StaticPrefs::image_mem_animated_discardable_AtStartup(),
+                     aAutoLock);
   }
 
   already_AddRefed<ImageSurfaceCache> RemoveImage(
@@ -1378,18 +1378,23 @@ void SurfaceCache::Initialize() {
   // Length of time before an unused surface is removed from the cache, in
   // milliseconds.
   uint32_t surfaceCacheExpirationTimeMS =
-      StaticPrefs::image_mem_surfacecache_min_expiration_ms();
+      StaticPrefs::image_mem_surfacecache_min_expiration_ms_AtStartup();
 
   // What fraction of the memory used by the surface cache we should discard
   // when we get a memory pressure notification. This value is interpreted as
   // 1/N, so 1 means to discard everything, 2 means to discard about half of the
   // memory we're using, and so forth. We clamp it to avoid division by zero.
   uint32_t surfaceCacheDiscardFactor =
-      max(StaticPrefs::image_mem_surfacecache_discard_factor(), 1u);
+      max(StaticPrefs::image_mem_surfacecache_discard_factor_AtStartup(), 1u);
 
   // Maximum size of the surface cache, in kilobytes.
   uint64_t surfaceCacheMaxSizeKB =
-      StaticPrefs::image_mem_surfacecache_max_size_kb();
+      StaticPrefs::image_mem_surfacecache_max_size_kb_AtStartup();
+
+  if (sizeof(uintptr_t) <= 4) {
+    // Limit surface cache to 1 GB if our address space is 32 bit.
+    surfaceCacheMaxSizeKB = 1024 * 1024;
+  }
 
   // A knob determining the actual size of the surface cache. Currently the
   // cache is (size of main memory) / (surface cache size factor) KB
@@ -1400,7 +1405,7 @@ void SurfaceCache::Initialize() {
   // of memory, which would yield a 64MB cache on this setting.
   // We clamp this value to avoid division by zero.
   uint32_t surfaceCacheSizeFactor =
-      max(StaticPrefs::image_mem_surfacecache_size_factor(), 1u);
+      max(StaticPrefs::image_mem_surfacecache_size_factor_AtStartup(), 1u);
 
   // Compute the size of the surface cache.
   uint64_t memorySize = PR_GetPhysicalMemorySize();
@@ -1644,7 +1649,7 @@ IntSize SurfaceCache::ClampVectorSize(const IntSize& aSize) {
     return aSize;
   }
 
-  int32_t proposedKB = int32_t(int64_t(aSize.width) * aSize.height / 256);
+  int64_t proposedKB = int64_t(aSize.width) * aSize.height / 256;
   if (maxSizeKB >= proposedKB) {
     return aSize;
   }

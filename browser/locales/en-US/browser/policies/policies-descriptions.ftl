@@ -54,6 +54,8 @@ policy-DisableFormHistory = Don’t remember search and form history.
 
 policy-DisableMasterPasswordCreation = If true, a master password can’t be created.
 
+policy-DisablePasswordReveal = Do not allow passwords to be revealed in saved logins.
+
 policy-DisablePocket = Disable the feature to save webpages to Pocket.
 
 policy-DisablePrivateBrowsing = Disable Private Browsing.
@@ -105,6 +107,8 @@ policy-Homepage = Set and optionally lock the homepage.
 
 policy-InstallAddonsPermission = Allow certain websites to install add-ons.
 
+policy-LegacyProfiles = Disable the feature enforcing a separate profile for each installation
+
 policy-LocalFileLinks = Allow specific websites to link to local files.
 
 policy-NetworkPrediction = Enable or disable network prediction (DNS prefetching).
@@ -115,9 +119,13 @@ policy-NoDefaultBookmarks = Disable creation of the default bookmarks bundled wi
 
 policy-OfferToSaveLogins = Enforce the setting to allow { -brand-short-name } to offer to remember saved logins and passwords. Both true and false values are accepted.
 
+policy-OfferToSaveLoginsDefault = Set the default value for allowing { -brand-short-name } to offer to remember saved logins and passwords. Both true and false values are accepted.
+
 policy-OverrideFirstRunPage = Override the first run page. Set this policy to blank if you want to disable the first run page.
 
 policy-OverridePostUpdatePage = Override the post-update “What’s New” page. Set this policy to blank if you want to disable the post-update page.
+
+policy-PasswordManagerEnabled = Enable saving passwords to the password manager.
 
 policy-Permissions = Configure permissions for camera, microphone, location and notifications.
 

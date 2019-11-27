@@ -24,6 +24,7 @@
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/BrowserHost.h"
 #include "nsIContentPolicy.h"
+#include "nsIClassifiedChannel.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIInterfaceRequestor.h"
@@ -47,6 +48,31 @@ namespace extensions {
 
 #define CHANNELWRAPPER_PROP_KEY \
   NS_LITERAL_STRING("ChannelWrapper::CachedInstance")
+
+using CF = nsIClassifiedChannel::ClassificationFlags;
+using MUC = MozUrlClassificationFlags;
+
+struct ClassificationStruct {
+  uint32_t mFlag;
+  MozUrlClassificationFlags mValue;
+};
+static const ClassificationStruct classificationArray[] = {
+    {CF::CLASSIFIED_FINGERPRINTING, MUC::Fingerprinting},
+    {CF::CLASSIFIED_FINGERPRINTING_CONTENT, MUC::Fingerprinting_content},
+    {CF::CLASSIFIED_CRYPTOMINING, MUC::Cryptomining},
+    {CF::CLASSIFIED_CRYPTOMINING_CONTENT, MUC::Cryptomining_content},
+    {CF::CLASSIFIED_TRACKING, MUC::Tracking},
+    {CF::CLASSIFIED_TRACKING_AD, MUC::Tracking_ad},
+    {CF::CLASSIFIED_TRACKING_ANALYTICS, MUC::Tracking_analytics},
+    {CF::CLASSIFIED_TRACKING_SOCIAL, MUC::Tracking_social},
+    {CF::CLASSIFIED_TRACKING_CONTENT, MUC::Tracking_content},
+    {CF::CLASSIFIED_SOCIALTRACKING, MUC::Socialtracking},
+    {CF::CLASSIFIED_SOCIALTRACKING_FACEBOOK, MUC::Socialtracking_facebook},
+    {CF::CLASSIFIED_SOCIALTRACKING_LINKEDIN, MUC::Socialtracking_linkedin},
+    {CF::CLASSIFIED_SOCIALTRACKING_TWITTER, MUC::Socialtracking_twitter},
+    {CF::CLASSIFIED_ANY_BASIC_TRACKING, MUC::Any_basic_tracking},
+    {CF::CLASSIFIED_ANY_STRICT_TRACKING, MUC::Any_strict_tracking},
+    {CF::CLASSIFIED_ANY_SOCIAL_TRACKING, MUC::Any_social_tracking}};
 
 /*****************************************************************************
  * Lifetimes
@@ -170,6 +196,7 @@ void ChannelWrapper::ClearCachedAttributes() {
   ChannelWrapper_Binding::ClearCachedRemoteAddressValue(this);
   ChannelWrapper_Binding::ClearCachedStatusCodeValue(this);
   ChannelWrapper_Binding::ClearCachedStatusLineValue(this);
+  ChannelWrapper_Binding::ClearCachedUrlClassificationValue(this);
   if (!mFiredErrorEvent) {
     ChannelWrapper_Binding::ClearCachedErrorStringValue(this);
   }
@@ -438,7 +465,7 @@ already_AddRefed<nsIURI> ChannelWrapper::GetOriginURI() const {
   nsCOMPtr<nsIURI> uri;
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
     if (nsIPrincipal* prin = loadInfo->TriggeringPrincipal()) {
-      if (prin->GetIsCodebasePrincipal()) {
+      if (prin->GetIsContentPrincipal()) {
         Unused << prin->GetURI(getter_AddRefs(uri));
       }
     }
@@ -450,7 +477,7 @@ already_AddRefed<nsIURI> ChannelWrapper::GetDocumentURI() const {
   nsCOMPtr<nsIURI> uri;
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
     if (nsIPrincipal* prin = loadInfo->LoadingPrincipal()) {
-      if (prin->GetIsCodebasePrincipal()) {
+      if (prin->GetIsContentPrincipal()) {
         Unused << prin->GetURI(getter_AddRefs(uri));
       }
     }
@@ -859,6 +886,44 @@ void ChannelWrapper::GetRemoteAddress(nsCString& aRetVal) const {
   if (nsCOMPtr<nsIHttpChannelInternal> internal = QueryChannel()) {
     Unused << internal->GetRemoteAddress(aRetVal);
   }
+}
+
+void FillClassification(
+    Sequence<mozilla::dom::MozUrlClassificationFlags>& classifications,
+    uint32_t classificationFlags, ErrorResult& aRv) {
+  if (classificationFlags == 0) {
+    return;
+  }
+  for (const auto& entry : classificationArray) {
+    if (classificationFlags & entry.mFlag) {
+      if (!classifications.AppendElement(entry.mValue, mozilla::fallible)) {
+        aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+        return;
+      }
+    }
+  }
+}
+
+void ChannelWrapper::GetUrlClassification(
+    dom::Nullable<dom::MozUrlClassification>& aRetVal, ErrorResult& aRv) const {
+  MozUrlClassification classification;
+  nsCOMPtr<nsIHttpChannel> chan = MaybeHttpChannel();
+  nsCOMPtr<nsIClassifiedChannel> classified = do_QueryInterface(chan);
+  MOZ_DIAGNOSTIC_ASSERT(
+      classified,
+      "Must be an object inheriting from both nsIHttpChannel and "
+      "nsIClassifiedChannel");
+  if (classified) {
+    uint32_t classificationFlags;
+    classified->GetFirstPartyClassificationFlags(&classificationFlags);
+    FillClassification(classification.mFirstParty, classificationFlags, aRv);
+    if (aRv.Failed()) {
+      return;
+    }
+    classified->GetThirdPartyClassificationFlags(&classificationFlags);
+    FillClassification(classification.mThirdParty, classificationFlags, aRv);
+  }
+  aRetVal.SetValue(std::move(classification));
 }
 
 /*****************************************************************************

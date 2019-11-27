@@ -42,7 +42,6 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/Event.h"
-#include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/InputAPZContext.h"
@@ -119,9 +118,10 @@ void nsSliderFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 }
 
 void nsSliderFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                 const nsLineList::iterator* aPrevFrameLine,
                                  nsFrameList& aFrameList) {
   bool wasEmpty = mFrames.IsEmpty();
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aFrameList);
+  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
   if (wasEmpty) AddListener();
 }
 
@@ -366,7 +366,8 @@ void nsSliderFrame::BuildDisplayListForChildren(
           ScrollbarData::CreateForThumb(*scrollDirection, GetThumbRatio(),
                                         thumbStart, thumbLength,
                                         isAsyncDraggable, sliderTrackStart,
-                                        sliderTrackLength, scrollTargetId));
+                                        sliderTrackLength, scrollTargetId),
+          true, false, nsDisplayOwnLayer::OwnLayerForScrollThumb);
 
       return;
     }
@@ -926,25 +927,16 @@ class AsyncScrollbarDragStarter final : public nsAPostRefreshObserver {
   AsyncDragMetrics mDragMetrics;
 };
 
-static bool UsesSVGEffects(nsIFrame* aFrame) {
-  return aFrame->StyleEffects()->HasFilters() ||
-         nsSVGIntegrationUtils::UsingMaskOrClipPathForFrame(aFrame);
-}
-
 static bool ScrollFrameWillBuildScrollInfoLayer(nsIFrame* aScrollFrame) {
   /*
    * Note: if changing the conditions in this function, make a corresponding
    * change to nsDisplayListBuilder::ShouldBuildScrollInfoItemsForHoisting()
    * in nsDisplayList.cpp.
    */
-  if (gfx::gfxVars::UseWebRender()) {
-    // If WebRender is enabled, even scrollframes enclosed in SVG effects can
-    // be drag-scrolled by APZ.
-    return false;
-  }
   nsIFrame* current = aScrollFrame;
   while (current) {
-    if (UsesSVGEffects(current)) {
+    if (nsSVGIntegrationUtils::UsesSVGEffectsNotSupportedInCompositor(
+            current)) {
       return true;
     }
     current = nsLayoutUtils::GetParentOrPlaceholderForCrossDoc(current);

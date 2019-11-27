@@ -5,8 +5,8 @@
 
 #include "VideoStreamTrack.h"
 
-#include "MediaStreamGraph.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraph.h"
+#include "MediaTrackListener.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "VideoOutput.h"
@@ -14,11 +14,12 @@
 namespace mozilla {
 namespace dom {
 
-VideoStreamTrack::VideoStreamTrack(DOMMediaStream* aStream, TrackID aTrackID,
-                                   TrackID aInputTrackID,
+VideoStreamTrack::VideoStreamTrack(nsPIDOMWindowInner* aWindow,
+                                   mozilla::MediaTrack* aInputTrack,
                                    MediaStreamTrackSource* aSource,
+                                   MediaStreamTrackState aReadyState,
                                    const MediaTrackConstraints& aConstraints)
-    : MediaStreamTrack(aStream, aTrackID, aInputTrackID, aSource,
+    : MediaStreamTrack(aWindow, aInputTrack, aSource, aReadyState,
                        aConstraints) {}
 
 void VideoStreamTrack::Destroy() {
@@ -27,6 +28,9 @@ void VideoStreamTrack::Destroy() {
 }
 
 void VideoStreamTrack::AddVideoOutput(VideoFrameContainer* aSink) {
+  if (Ended()) {
+    return;
+  }
   auto output = MakeRefPtr<VideoOutput>(
       aSink, nsGlobalWindowInner::Cast(GetParentObject())
                  ->AbstractMainThreadFor(TaskCategory::Other));
@@ -34,6 +38,9 @@ void VideoStreamTrack::AddVideoOutput(VideoFrameContainer* aSink) {
 }
 
 void VideoStreamTrack::AddVideoOutput(VideoOutput* aOutput) {
+  if (Ended()) {
+    return;
+  }
   for (const auto& output : mVideoOutputs) {
     if (output == aOutput) {
       MOZ_ASSERT_UNREACHABLE("A VideoOutput was already added");
@@ -71,6 +78,11 @@ void VideoStreamTrack::GetLabel(nsAString& aLabel, CallerType aCallerType) {
     return;
   }
   MediaStreamTrack::GetLabel(aLabel, aCallerType);
+}
+
+already_AddRefed<MediaStreamTrack> VideoStreamTrack::CloneInternal() {
+  return do_AddRef(new VideoStreamTrack(mWindow, mInputTrack, mSource,
+                                        ReadyState(), mConstraints));
 }
 
 }  // namespace dom

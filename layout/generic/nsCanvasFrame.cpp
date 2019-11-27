@@ -149,7 +149,7 @@ nsresult nsCanvasFrame::CreateAnonymousContent(
   // Create a popupgroup element for chrome privileged top level non-XUL
   // documents to support context menus and tooltips.
   if (PresContext()->IsChrome() && PresContext()->IsRoot() &&
-      doc->AllowXULXBL() && !doc->IsXULDocument()) {
+      doc->AllowXULXBL()) {
     nsNodeInfoManager* nodeInfoManager = doc->NodeInfoManager();
     RefPtr<NodeInfo> nodeInfo =
         nodeInfoManager->GetNodeInfo(nsGkAtoms::popupgroup, nullptr,
@@ -247,7 +247,6 @@ void nsCanvasFrame::SetInitialChildList(ChildListID aListID,
                    aChildList.OnlyChild(),
                "Primary child list can have at most one frame in it");
   nsContainerFrame::SetInitialChildList(aListID, aChildList);
-  MaybePropagateRootElementWritingMode();
 }
 
 void nsCanvasFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
@@ -264,16 +263,15 @@ void nsCanvasFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
   nsFrame::VerifyDirtyBitSet(aFrameList);
 #endif
   nsContainerFrame::AppendFrames(aListID, aFrameList);
-  MaybePropagateRootElementWritingMode();
 }
 
 void nsCanvasFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                 const nsLineList::iterator* aPrevFrameLine,
                                  nsFrameList& aFrameList) {
   // Because we only support a single child frame inserting is the same
   // as appending
   MOZ_ASSERT(!aPrevFrame, "unexpected previous sibling frame");
   AppendFrames(aListID, aFrameList);
-  MaybePropagateRootElementWritingMode();
 }
 
 #ifdef DEBUG
@@ -371,8 +369,8 @@ bool nsDisplayCanvasBackgroundColor::CreateWebRenderCommands(
   LayoutDeviceRect rect =
       LayoutDeviceRect::FromAppUnits(bgClipRect, appUnitsPerDevPixel);
 
-  wr::LayoutRect roundedRect = wr::ToRoundedLayoutRect(rect);
-  aBuilder.PushRect(roundedRect, roundedRect, !BackfaceIsHidden(),
+  wr::LayoutRect r = wr::ToLayoutRect(rect);
+  aBuilder.PushRect(r, r, !BackfaceIsHidden(),
                     wr::ToColorF(ToDeviceColor(mColor)));
   return true;
 }
@@ -724,15 +722,14 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     LogicalMargin margin = kidReflowInput.ComputedLogicalMargin();
     LogicalPoint kidPt(kidWM, margin.IStart(kidWM), margin.BStart(kidWM));
 
-    kidReflowInput.ApplyRelativePositioning(&kidPt, containerSize);
-
     // Reflow the frame
     ReflowChild(kidFrame, aPresContext, kidDesiredSize, kidReflowInput, kidWM,
-                kidPt, containerSize, 0, aStatus);
+                kidPt, containerSize, ReflowChildFlags::Default, aStatus);
 
     // Complete the reflow and position and size the child frame
     FinishReflowChild(kidFrame, aPresContext, kidDesiredSize, &kidReflowInput,
-                      kidWM, kidPt, containerSize, 0);
+                      kidWM, kidPt, containerSize,
+                      ReflowChildFlags::ApplyRelativePositioning);
 
     if (!aStatus.IsFullyComplete()) {
       nsIFrame* nextFrame = kidFrame->GetNextInFlow();
@@ -790,7 +787,8 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
 
   if (prevCanvasFrame) {
     ReflowOverflowContainerChildren(aPresContext, aReflowInput,
-                                    aDesiredSize.mOverflowAreas, 0, aStatus);
+                                    aDesiredSize.mOverflowAreas,
+                                    ReflowChildFlags::Default, aStatus);
   }
 
   if (mPopupSetFrame) {
@@ -804,9 +802,10 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     ReflowInput popupReflowInput(aPresContext, aReflowInput, mPopupSetFrame,
                                  availSize);
     ReflowChild(mPopupSetFrame, aPresContext, popupDesiredSize,
-                popupReflowInput, 0, 0, NS_FRAME_NO_MOVE_FRAME, popupStatus);
+                popupReflowInput, 0, 0, ReflowChildFlags::NoMoveFrame,
+                popupStatus);
     FinishReflowChild(mPopupSetFrame, aPresContext, popupDesiredSize,
-                      &popupReflowInput, 0, 0, NS_FRAME_NO_MOVE_FRAME);
+                      &popupReflowInput, 0, 0, ReflowChildFlags::NoMoveFrame);
   }
 
   FinishReflowWithAbsoluteFrames(aPresContext, aDesiredSize, aReflowInput,
@@ -828,15 +827,6 @@ nsresult nsCanvasFrame::GetContentForEvent(WidgetEvent* aEvent,
   }
 
   return rv;
-}
-
-void nsCanvasFrame::MaybePropagateRootElementWritingMode() {
-  nsIFrame* child = PrincipalChildList().FirstChild();
-  if (child && child->GetContent() &&
-      child->GetContent() == PresContext()->Document()->GetRootElement()) {
-    nsIFrame* childPrimary = child->GetContent()->GetPrimaryFrame();
-    PropagateRootElementWritingMode(childPrimary->GetWritingMode());
-  }
 }
 
 #ifdef DEBUG_FRAME_DUMP

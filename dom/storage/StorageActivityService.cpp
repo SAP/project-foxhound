@@ -27,8 +27,8 @@ void StorageActivityService::SendActivity(nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!aPrincipal || BasePrincipal::Cast(aPrincipal)->Kind() !=
-                         BasePrincipal::eCodebasePrincipal) {
-    // Only codebase principals.
+                         BasePrincipal::eContentPrincipal) {
+    // Only content principals.
     return;
   }
 
@@ -126,7 +126,7 @@ void StorageActivityService::SendActivityInternal(nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(BasePrincipal::Cast(aPrincipal)->Kind() ==
-             BasePrincipal::eCodebasePrincipal);
+             BasePrincipal::eContentPrincipal);
 
   if (!XRE_IsParentProcess()) {
     SendActivityToParent(aPrincipal);
@@ -231,7 +231,7 @@ StorageActivityService::GetActiveOrigins(PRTime aFrom, PRTime aTo,
                                          nsIArray** aRetval) {
   uint64_t now = PR_Now();
   if (((now - aFrom) / PR_USEC_PER_SEC) > TIME_MAX_SECS || aFrom >= aTo) {
-    return NS_ERROR_RANGE_ERR;
+    return NS_ERROR_INVALID_ARG;
   }
 
   nsresult rv = NS_OK;
@@ -244,7 +244,7 @@ StorageActivityService::GetActiveOrigins(PRTime aFrom, PRTime aTo,
   for (auto iter = mActivities.Iter(); !iter.Done(); iter.Next()) {
     if (iter.UserData() >= aFrom && iter.UserData() <= aTo) {
       RefPtr<BasePrincipal> principal =
-          BasePrincipal::CreateCodebasePrincipal(iter.Key());
+          BasePrincipal::CreateContentPrincipal(iter.Key());
       MOZ_ASSERT(principal);
 
       rv = devices->AppendElement(principal);

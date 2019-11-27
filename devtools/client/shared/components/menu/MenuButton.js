@@ -16,12 +16,22 @@ const {
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const { button } = dom;
-const {
-  HTMLTooltip,
-} = require("devtools/client/shared/widgets/tooltip/HTMLTooltip");
-const { focusableSelector } = require("devtools/client/shared/focus");
 
 const isMacOS = Services.appinfo.OS === "Darwin";
+
+loader.lazyRequireGetter(
+  this,
+  "HTMLTooltip",
+  "devtools/client/shared/widgets/tooltip/HTMLTooltip",
+  true
+);
+
+loader.lazyRequireGetter(
+  this,
+  "focusableSelector",
+  "devtools/client/shared/focus",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
@@ -44,6 +54,9 @@ class MenuButton extends PureComponent {
     return {
       // The document to be used for rendering the menu popup.
       doc: PropTypes.object.isRequired,
+
+      // A text content for the button.
+      label: PropTypes.string,
 
       // An optional ID to assign to the menu's container tooltip object.
       menuId: PropTypes.string,
@@ -148,6 +161,7 @@ class MenuButton extends PureComponent {
     const tooltipProps = {
       type: "doorhanger",
       useXulWrapper: true,
+      isMenuTooltip: true,
     };
 
     if (this.props.menuId) {
@@ -411,10 +425,10 @@ class MenuButton extends PureComponent {
         this.tooltip.panel
       );
 
-      return button(buttonProps, menu);
+      return button(buttonProps, this.props.label, menu);
     }
 
-    return button(buttonProps);
+    return button(buttonProps, this.props.label);
   }
 }
 

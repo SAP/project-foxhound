@@ -114,6 +114,8 @@ bool FunctionEmitter::emitLazy() {
 
   funbox_->setEnclosingScopeForInnerLazyFunction(bce_->innermostScope());
   if (bce_->emittingRunOnceLambda) {
+    // NOTE: The 'funbox' is only partially initialized so we defer checking
+    // the shouldSuppressRunOnce condition until delazification.
     fun_->lazyScript()->setTreatAsRunOnce();
   }
 
@@ -423,7 +425,9 @@ bool FunctionScriptEmitter::prepareForParameters() {
     // parameter exprs, any unobservable environment ops (like pushing the
     // call object, setting '.this', etc) need to go in the prologue, else it
     // messes up breakpoint tests.
-    bce_->switchToMain();
+    if (!bce_->switchToMain()) {
+      return false;
+    }
   }
 
   if (!functionEmitterScope_->enterFunction(bce_, funbox_)) {
@@ -436,7 +440,9 @@ bool FunctionScriptEmitter::prepareForParameters() {
   }
 
   if (!funbox_->hasParameterExprs) {
-    bce_->switchToMain();
+    if (!bce_->switchToMain()) {
+      return false;
+    }
   }
 
   // Parameters can't reuse the reject try-catch block from the function body,
@@ -478,7 +484,7 @@ bool FunctionScriptEmitter::prepareForBody() {
     }
   }
 
-  if (funbox_->kind() == JSFunction::FunctionKind::ClassConstructor) {
+  if (funbox_->kind() == FunctionFlags::FunctionKind::ClassConstructor) {
     if (!funbox_->isDerivedClassConstructor()) {
       if (!bce_->emitInitializeInstanceFields()) {
         //          [stack]
@@ -501,13 +507,10 @@ bool FunctionScriptEmitter::emitAsyncFunctionRejectPrologue() {
 
 bool FunctionScriptEmitter::emitAsyncFunctionRejectEpilogue() {
   if (!rejectTryCatch_->emitCatch()) {
-    return false;
-  }
-
-  if (!bce_->emit1(JSOP_EXCEPTION)) {
     //              [stack] EXC
     return false;
   }
+
   if (!bce_->emitGetDotGeneratorInInnermostScope()) {
     //              [stack] EXC GEN
     return false;
@@ -525,7 +528,7 @@ bool FunctionScriptEmitter::emitAsyncFunctionRejectEpilogue() {
     //              [stack] GEN
     return false;
   }
-  if (!bce_->emit1(JSOP_FINALYIELDRVAL)) {
+  if (!bce_->emitYieldOp(JSOP_FINALYIELDRVAL)) {
     //              [stack]
     return false;
   }
@@ -721,7 +724,7 @@ bool FunctionScriptEmitter::emitEndBody() {
   // Always end the script with a JSOP_RETRVAL. Some other parts of the
   // codebase depend on this opcode,
   // e.g. InterpreterRegs::setToEndOfScript.
-  if (!bce_->emit1(JSOP_RETRVAL)) {
+  if (!bce_->emitReturnRval()) {
     //              [stack]
     return false;
   }

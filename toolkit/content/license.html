@@ -5,7 +5,7 @@
 
 <html lang="en">
   <head>
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src chrome:; img-src chrome:" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src chrome:; img-src chrome:; object-src 'none'" />
     <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
     <title>Licenses</title>
     <link rel="stylesheet" href="chrome://global/skin/in-content/info-pages.css" type="text/css">
@@ -75,7 +75,8 @@
       <li><a href="about:license#babel">Babel License</a></li>
       <li><a href="about:license#babylon">Babylon License</a></li>
       <li><a href="about:license#bincode">bincode License</a></li>
-      <li><a href="about:license#bsd2clause">BSD-2-Clause License</a></li>
+      <li><a href="about:license#bsd2clause">BSD 2-Clause License</a></li>
+      <li><a href="about:license#bsd3clause">BSD 3-Clause License</a></li>
       <li><a href="about:license#bspatch">bspatch License</a></li>
       <li><a href="about:license#byteorder">byteorder License</a></li>
       <li><a href="about:license#cairo">Cairo Component Licenses</a></li>
@@ -92,6 +93,7 @@
       <li><a href="about:license#twemoji">Twemoji License</a></li>
 #endif
       <li><a href="about:license#hunspell-ee">Estonian Spellchecking Dictionary License</a></li>
+      <li><a href="about:license#emitter">Emitter License</a></li>
       <li><a href="about:license#expat">Expat License</a></li>
       <li><a href="about:license#firebug">Firebug License</a></li>
       <li><a href="about:license#gdi32-sys">gdi32-sys License</a></li>
@@ -131,13 +133,13 @@
       <li><a href="about:license#lodash">lodash License</a></li>
       <li><a href="about:license#matches">matches License</a></li>
       <li><a href="about:license#myspell">MySpell License</a></li>
+      <li><a href="about:license#mqtt-packet">mqtt-packet License</a></li>
       <li><a href="about:license#naturalSort">naturalSort License</a></li>
       <li><a href="about:license#nicer">nICEr License</a></li>
       <li><a href="about:license#node-md5">node-md5 License</a></li>
       <li><a href="about:license#node-properties">node-properties License</a></li>
       <li><a href="about:license#nom">nom License</a></li>
       <li><a href="about:license#nrappkit">nrappkit License</a></li>
-      <li><a href="about:license#openaes">OpenAES License</a></li>
       <li><a href="about:license#openldap">OpenLDAP Public License</a></li>
       <li><a href="about:license#openvision">OpenVision License</a></li>
 #if defined(XP_WIN) || defined(XP_MACOSX) || defined(XP_LINUX)
@@ -167,6 +169,8 @@
       <li><a href="about:license#sctp">SCTP Licenses</a></li>
       <li><a href="about:license#skia">Skia License</a></li>
       <li><a href="about:license#snappy">Snappy License</a></li>
+      <li><a href="about:license#socket.io-parser">Socket.IO Parser License</a></li>
+      <li><a href="about:license#sockjs-client">SockJS-Client License</a></li>
       <li><a href="about:license#sprintf.js">sprintf.js License</a></li>
       <li><a href="about:license#sunsoft">SunSoft License</a></li>
       <li><a href="about:license#superfasthash">SuperFastHash License</a></li>
@@ -2280,39 +2284,6 @@ licences.
 
     <hr>
 
-#ifdef MOZ_INSTALL_TRACKING
-    <h1><a id="adjust"></a>Adjust SDK License</h1>
-
-    <p>This license applies to all files in the directory
-    <code>mobile/android/thirdparty/com/adjust/sdk</code>.</p>
-
-<pre>
-Copyright (c) 2012-2014 adjust GmbH,
-https://www.adjust.com
-
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-</pre>
-
-    <hr>
-
-#endif
     <h1><a id="apache"></a>Apache License 2.0</h1>
 
     <p>This license applies to various files in the Mozilla codebase.</p>
@@ -2911,7 +2882,7 @@ SOFTWARE.
 
     <hr>
 
-    <h1><a id="bsd2clause"></a>BSD-2-Clause License</h1>
+    <h1><a id="bsd2clause"></a>BSD 2-Clause License</h1>
 
     <p>This license applies to files in the following directories:
     <ul>
@@ -2948,6 +2919,47 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
+
+
+<hr>
+
+<h1><a id="bsd3clause"></a>BSD 3-Clause License</h1>
+
+<p>This license applies to files in the following directories:
+<ul>
+    <li><code>browser/components/newtab/vendor/react-transition-group.js</code></li>
+    <li><code>third_party/rust/bindgen/</code></li>
+</ul>
+See the individual LICENSE files for copyright owners.</p>
+
+<pre>
+Redistribution and use in source and binary forms, with or without 
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its 
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+</pre>
 
     <hr>
 
@@ -3489,6 +3501,39 @@ ESTONIA
 Phone &amp; Fax: +372 6411443
 </pre>
 
+    <hr>
+
+    <h1><a id="emitter"></a>Emitter License</h1>
+
+    <p>This license applies to the file
+    <code>devtools/client/netmonitor/src/components/websockets/parsers/socket-io/component-emitter.js</code>.</p>
+
+<pre>
+(The MIT License)
+
+Copyright (c) 2014 Component contributors <dev@component.io>
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+</pre>
 
 
     <hr>
@@ -4774,6 +4819,41 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 </pre>
 
+    <hr>
+
+    <h1><a id="mqtt-packet"></a>mqtt-packet License</h1>
+
+    <p>This license applies to the file
+    <code>devtools/client/netmonitor/src/components/websockets/parsers/mqtt/index.js</code>.</p>
+
+<pre>
+The MIT License (MIT)
+=====================
+
+Copyright (c) 2014-2017 mqtt-packet contributors
+---------------------------------------
+
+*mqtt-packet contributors listed at <https://github.com/mqttjs/mqtt-packet#contributors>*
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+</pre>
+
 
 <hr>
 
@@ -4847,41 +4927,6 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-</pre>
-
-
-    <hr>
-
-    <h1><a id="openaes"></a>OpenAES License</h1>
-
-    <p>This license applies to certain files in the directory
-    <code>media/gmp-clearkey/0.1/openaes</code>.
-    </p>
-
-<pre>
-Copyright (c) 2012, Nabil S. Al Ramli, www.nalramli.com
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-
-  - Redistributions of source code must retain the above copyright notice,
-    this list of conditions and the following disclaimer.
-  - Redistributions in binary form must reproduce the above copyright
-    notice, this list of conditions and the following disclaimer in the
-    documentation and/or other materials provided with the distribution.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
 </pre>
 
 
@@ -6136,6 +6181,70 @@ DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+</pre>
+
+    <hr>
+
+    <h1><a id="socket.io-parser"></a>Socket.IO Parser License</h1>
+
+    <p>This license applies to the files<br/>
+    <code>devtools/client/netmonitor/src/components/websockets/parsers/socket-io/binary.js</code><br/>
+    <code>devtools/client/netmonitor/src/components/websockets/parsers/socket-io/index.js</code><br/>
+    <code>devtools/client/netmonitor/src/components/websockets/parsers/socket-io/is-buffer.js</code><br/>
+  </p>
+
+<pre>
+(The MIT License)
+
+Copyright (c) 2014 Guillermo Rauch <guillermo@learnboost.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the 'Software'), to deal in
+the Software without restriction, including without limitation the rights to
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+</pre>
+
+    <hr>
+
+    <h1><a id="sockjs-client"></a>SockJS-Client License</h1>
+
+    <p>This license applies to specific file
+    <code>devtools/client/netmonitor/src/components/websockets/parsers/sockjs/index.js</code>.</p>
+
+<pre>
+The MIT License (MIT)
+
+Copyright (c) 2011-2018 The sockjs-client Authors.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 </pre>
 
     <hr>

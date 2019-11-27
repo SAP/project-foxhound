@@ -10,6 +10,7 @@
 #define nsPresContext_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/MediaFeatureChange.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/ScrollStyles.h"
@@ -36,6 +37,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/AppUnits.h"
+#include "mozilla/MediaEmulationData.h"
 #include "prclist.h"
 #include "nsThreadUtils.h"
 #include "nsIMessageManager.h"
@@ -52,7 +54,6 @@ class nsITimer;
 class nsIContent;
 class nsIFrame;
 class nsFrameManager;
-class nsILinkHandler;
 class nsAtom;
 class nsIRunnable;
 class gfxFontFeatureValueSet;
@@ -107,12 +108,12 @@ const uint8_t kPresContext_DefaultFixedFont_ID = 0x01;
 #ifdef DEBUG
 struct nsAutoLayoutPhase;
 
-enum nsLayoutPhase {
-  eLayoutPhase_Paint,
-  eLayoutPhase_DisplayListBuilding,  // sometimes a subset of the paint phase
-  eLayoutPhase_Reflow,
-  eLayoutPhase_FrameC,
-  eLayoutPhase_COUNT
+enum class nsLayoutPhase : uint8_t {
+  Paint,
+  DisplayListBuilding,  // sometimes a subset of the paint phase
+  Reflow,
+  FrameC,
+  COUNT
 };
 #endif
 
@@ -132,6 +133,9 @@ class nsPresContext : public nsISupports,
   using Encoding = mozilla::Encoding;
   template <typename T>
   using NotNull = mozilla::NotNull<T>;
+  using MediaEmulationData = mozilla::MediaEmulationData;
+  using StylePrefersColorScheme = mozilla::StylePrefersColorScheme;
+
   typedef mozilla::ScrollStyles ScrollStyles;
   typedef mozilla::StaticPresData StaticPresData;
   using TransactionId = mozilla::layers::TransactionId;
@@ -199,9 +203,17 @@ class nsPresContext : public nsISupports,
 
   /**
    * Returns the root widget for this.
-   * Note that the widget is a mediater with IME.
    */
-  nsIWidget* GetRootWidget();
+  nsIWidget* GetRootWidget() const;
+
+  /**
+   * Returns the widget which may have native focus and handles text input
+   * like keyboard input, IME, etc.
+   */
+  nsIWidget* GetTextInputHandlingWidget() const {
+    // Currently, root widget for each PresContext handles text input.
+    return GetRootWidget();
+  }
 
   /**
    * Return the presentation context for the root of the view manager
@@ -303,21 +315,19 @@ class nsPresContext : public nsISupports,
   /**
    * Get medium of presentation
    */
-  nsAtom* Medium() {
-    if (!mIsEmulatingMedia) return mMedium;
-    return mMediaEmulated;
+  const nsAtom* Medium() {
+    MOZ_ASSERT(mMedium);
+    return mMediaEmulationData.mMedium ? mMediaEmulationData.mMedium.get()
+                                       : mMedium;
   }
 
   /*
    * Render the document as if being viewed on a device with the specified
    * media type.
+   *
+   * If passed null, it stops emulating.
    */
-  void EmulateMedium(const nsAString& aMediaType);
-
-  /*
-   * Restore the viewer's natural medium
-   */
-  void StopEmulatingMedium();
+  void EmulateMedium(nsAtom* aMediaType);
 
   /** Get a cached integer pref, by its type */
   // *  - initially created for bugs 30910, 61883, 74186, 84398
@@ -346,17 +356,6 @@ class nsPresContext : public nsISupports,
   nsISupports* GetContainerWeak() const;
 
   nsIDocShell* GetDocShell() const;
-
-  // XXX this are going to be replaced with set/get container
-  void SetLinkHandler(nsILinkHandler* aHandler) { mLinkHandler = aHandler; }
-  nsILinkHandler* GetLinkHandler() { return mLinkHandler; }
-
-  /**
-   * Detach this pres context - i.e. cancel relevant timers,
-   * SetLinkHandler(null), etc.
-   * Only to be used by the DocumentViewer.
-   */
-  virtual void Detach();
 
   /**
    * Get the visible area associated with this presentation context.
@@ -498,8 +497,13 @@ class nsPresContext : public nsISupports,
   float GetDeviceFullZoom();
   void SetFullZoom(float aZoom);
 
-  float GetOverrideDPPX() { return mOverrideDPPX; }
-  void SetOverrideDPPX(float aDPPX);
+  float GetOverrideDPPX() const { return mMediaEmulationData.mDPPX; }
+  void SetOverrideDPPX(float);
+
+  Maybe<StylePrefersColorScheme> GetOverridePrefersColorScheme() const {
+    return mMediaEmulationData.mPrefersColorScheme;
+  }
+  void SetOverridePrefersColorScheme(const Maybe<StylePrefersColorScheme>&);
 
   nscoord GetAutoQualityMinFontSize() {
     return DevPixelsToAppUnits(mAutoQualityMinFontSizePixelsPref);
@@ -723,8 +727,6 @@ class nsPresContext : public nsISupports,
    */
   uint32_t GetBidi() const;
 
-  bool IsTopLevelWindowInactive();
-
   /*
    * Obtain a native them for rendering our widgets (both form controls and
    * html)
@@ -804,7 +806,6 @@ class nsPresContext : public nsISupports,
 
   // Is this presentation in a chrome docshell?
   bool IsChrome() const;
-  bool IsChromeOriginImage() const;
 
   // Public API for native theme code to get style internals.
   bool HasAuthorSpecifiedRules(const nsIFrame* aFrame,
@@ -1039,7 +1040,6 @@ class nsPresContext : public nsISupports,
   void SetImgAnimations(nsIContent* aParent, uint16_t aMode);
   void SetSMILAnimations(mozilla::dom::Document* aDoc, uint16_t aNewMode,
                          uint16_t aOldMode);
-  void GetDocumentColorPreferences();
 
   void PreferenceChanged(const char* aPrefName);
 
@@ -1130,14 +1130,11 @@ class nsPresContext : public nsISupports,
   mozilla::UniquePtr<nsAnimationManager> mAnimationManager;
   mozilla::UniquePtr<mozilla::RestyleManager> mRestyleManager;
   RefPtr<mozilla::CounterStyleManager> mCounterStyleManager;
-  nsAtom* MOZ_UNSAFE_REF(
-      "always a static atom") mMedium;  // initialized by subclass ctors
-  RefPtr<nsAtom> mMediaEmulated;
+  const nsStaticAtom* mMedium;
   RefPtr<gfxFontFeatureValueSet> mFontFeatureValuesLookup;
-
-  // This pointer is nulled out through SetLinkHandler() in the destructors of
-  // the classes which set it. (using SetLinkHandler() again).
-  nsILinkHandler* MOZ_NON_OWNING_REF mLinkHandler;
+  // TODO(emilio): Maybe lazily create and put under a UniquePtr if this grows a
+  // lot?
+  MediaEmulationData mMediaEmulationData;
 
  public:
   // The following are public member variables so that we can use them
@@ -1152,7 +1149,6 @@ class nsPresContext : public nsISupports,
   float mTextZoom;           // Text zoom, defaults to 1.0
   float mEffectiveTextZoom;  // Text zoom * system font scale
   float mFullZoom;           // Page zoom, defaults to 1.0
-  float mOverrideDPPX;       // DPPX overrided, defaults to 0.0
   gfxSize mLastFontInflationScreenSize;
 
   int32_t mCurAppUnitsPerDevPixel;
@@ -1236,7 +1232,6 @@ class nsPresContext : public nsISupports,
   unsigned mPendingUIResolutionChanged : 1;
   unsigned mPrefChangePendingNeedsReflow : 1;
   unsigned mPostedPrefChangedRunnable : 1;
-  unsigned mIsEmulatingMedia : 1;
 
   // Are we currently drawing an SVG glyph?
   unsigned mIsGlyph : 1;
@@ -1291,7 +1286,8 @@ class nsPresContext : public nsISupports,
 #ifdef DEBUG
  private:
   friend struct nsAutoLayoutPhase;
-  uint32_t mLayoutPhaseCount[eLayoutPhase_COUNT];
+  mozilla::EnumeratedArray<nsLayoutPhase, nsLayoutPhase::COUNT, uint32_t>
+      mLayoutPhaseCount;
 
  public:
   uint32_t LayoutPhaseCount(nsLayoutPhase aPhase) {
@@ -1304,7 +1300,6 @@ class nsRootPresContext final : public nsPresContext {
  public:
   nsRootPresContext(mozilla::dom::Document* aDocument, nsPresContextType aType);
   virtual ~nsRootPresContext();
-  virtual void Detach() override;
 
   /**
    * Registers a plugin to receive geometry updates (position and clip

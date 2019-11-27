@@ -17,7 +17,6 @@ var EXPORTED_SYMBOLS = [
   "MockFxaStorageManager",
   "AccountState", // from a module import
   "sumHistogram",
-  "getLoginTelemetryScalar",
   "syncTestLogging",
 ];
 
@@ -206,7 +205,7 @@ var configureFxAccountIdentity = function(
     },
   };
   let mockFxAClient = new MockFxAccountsClient();
-  fxa.internal._fxAccountsClient = mockFxAClient;
+  fxa._internal._fxAccountsClient = mockFxAClient;
 
   let mockTSC = {
     // TokenServerClient
@@ -244,8 +243,7 @@ var configureIdentity = async function(identityOverrides, server) {
   }
 
   configureFxAccountIdentity(ns.Service.identity, config);
-  // because we didn't send any FxA LOGIN notifications we must set the username.
-  ns.Service.identity.username = config.username;
+  Services.prefs.setStringPref("services.sync.username", config.username);
   // many of these tests assume all the auth stuff is setup and don't hit
   // a path which causes that auth to magically happen - so do it now.
   await ns.Service.identity._ensureValidToken();
@@ -308,11 +306,4 @@ var sumHistogram = function(name, options = {}) {
   }
   histogram.clear();
   return sum;
-};
-
-var getLoginTelemetryScalar = function() {
-  let snapshot = Services.telemetry.getSnapshotForKeyedScalars("main", true);
-  return snapshot.parent
-    ? snapshot.parent["services.sync.sync_login_state_transitions"]
-    : {};
 };

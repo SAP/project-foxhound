@@ -5,10 +5,13 @@ from __future__ import absolute_import
 
 import json
 import os
+from urlparse import parse_qs, urlsplit, urlunsplit
+from urllib import urlencode, unquote
 
 from logger.logger import RaptorLogger
 from manifestparser import TestManifest
 from utils import transform_platform
+from constants.raptor_tests_constants import YOUTUBE_PLAYBACK_MEASURE
 
 here = os.path.abspath(os.path.dirname(__file__))
 raptor_ini = os.path.join(here, 'raptor.ini')
@@ -114,6 +117,11 @@ def validate_test_ini(test_details):
         # convert to a list; and remove any spaces
         test_details['alert_on'] = [_item.strip() for _item in test_details['alert_on'].split(',')]
 
+        # if test is raptor-youtube-playback and measure is empty, use all the tests
+        if test_details.get('measure') is None \
+                and 'youtube-playback' in test_details.get('name', ''):
+            test_details['measure'] = YOUTUBE_PLAYBACK_MEASURE
+
         # now make sure each alert_on value provided is valid
         for alert_on_value in test_details['alert_on']:
             if alert_on_value not in test_details['measure']:
@@ -123,6 +131,32 @@ def validate_test_ini(test_details):
                 valid_settings = False
 
     return valid_settings
+
+
+def add_test_url_params(url, extra_params):
+    # add extra parameters to the test_url query string
+    # the values that already exist are re-written
+
+    # urlsplit returns a result as a tuple like (scheme, netloc, path, query, fragment)
+    parsed_url = urlsplit(url)
+
+    parsed_query_params = parse_qs(parsed_url.query)
+    parsed_extra_params = parse_qs(extra_params)
+
+    for name, value in parsed_extra_params.items():
+        # overwrite the old value
+        parsed_query_params[name] = value
+
+    final_query_string = unquote(urlencode(parsed_query_params, doseq=True))
+
+    # reconstruct test_url with the changed query string
+    return urlunsplit((
+        parsed_url.scheme,
+        parsed_url.netloc,
+        parsed_url.path,
+        final_query_string,
+        parsed_url.fragment
+    ))
 
 
 def write_test_settings_json(args, test_details, oskey):
@@ -161,21 +195,19 @@ def write_test_settings_json(args, test_details, oskey):
 
     test_settings['raptor-options']['unit'] = test_details.get("unit", "ms")
 
-    test_settings['raptor-options']['lower_is_better'] = bool_from_str(
-        test_details.get("lower_is_better", "true"))
+    test_settings['raptor-options']['lower_is_better'] = test_details.get("lower_is_better", True)
 
     # support optional subtest unit/lower_is_better fields
     val = test_details.get('subtest_unit', test_settings['raptor-options']['unit'])
     test_settings['raptor-options']['subtest_unit'] = val
-    subtest_lower_is_better = test_details.get('subtest_lower_is_better', None)
+    subtest_lower_is_better = test_details.get('subtest_lower_is_better')
 
     if subtest_lower_is_better is None:
         # default to main test values if not set
         test_settings['raptor-options']['subtest_lower_is_better'] = (
             test_settings['raptor-options']['lower_is_better'])
     else:
-        test_settings['raptor-options']['subtest_lower_is_better'] = bool_from_str(
-            subtest_lower_is_better)
+        test_settings['raptor-options']['subtest_lower_is_better'] = subtest_lower_is_better
 
     if test_details.get("alert_change_type", None) is not None:
         test_settings['raptor-options']['alert_change_type'] = test_details['alert_change_type']
@@ -347,6 +379,15 @@ def get_raptor_test_list(args, oskey):
         # either warm or cold-mode, initialize the starting current 'browser-cycle'
         next_test['browser_cycle'] = 1
 
+        # if --test-url-params was provided on the command line, add the params to the test_url
+        # provided in the INI
+        if args.test_url_params is not None:
+            initial_test_url = next_test['test_url']
+            next_test['test_url'] = add_test_url_params(initial_test_url, args.test_url_params)
+            LOG.info("adding extra test_url params (%s) as specified on cmd line "
+                     "to the current test_url (%s), resulting: %s" %
+                     (args.test_url_params, initial_test_url, next_test['test_url']))
+
         if next_test.get('use_live_sites', "false") == "true":
             # when using live sites we want to turn off playback
             LOG.info("using live sites so turning playback off!")
@@ -373,6 +414,9 @@ def get_raptor_test_list(args, oskey):
                 next_test['measure'].remove('hero')
                 # remove the 'hero =' line since no longer measuring hero
                 del next_test['hero']
+
+        if next_test.get('lower_is_better') is not None:
+            next_test['lower_is_better'] = bool_from_str(next_test.get('lower_is_better'))
 
     # write out .json test setting files for the control server to read and send to web ext
     if len(tests_to_run) != 0:

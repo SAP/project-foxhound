@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -32,6 +30,10 @@ function dbg() {
   return _dbg;
 }
 
+function dbgObject(id) {
+  return dbg()._pool.getObject(id);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Public Interface
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,6 +55,7 @@ const ReplayInspector = {
         get(_, name) {
           switch (name) {
             case "getAllStyleSheets":
+            case "getContentState":
             case "getCSSStyleRules":
             case "getRuleLine":
             case "getRuleColumn":
@@ -73,16 +76,6 @@ const ReplayInspector = {
     );
   },
 
-  // Create the CSSRule object to bind for other server users.
-  createCSSRule(rule) {
-    return {
-      ...rule,
-      isInstance(node) {
-        return gFixedProxy.CSSRule.isInstance(node);
-      },
-    };
-  },
-
   wrapRequireHook(requireHook) {
     return (id, require) => {
       const rv = requireHook(id, require);
@@ -98,7 +91,7 @@ const ReplayInspector = {
       clientX: event.clientX,
       clientY: event.clientY,
     });
-    const obj = dbg()._getObject(rv.id);
+    const obj = dbgObject(rv.id);
     return wrapValue(obj);
   },
 
@@ -106,7 +99,30 @@ const ReplayInspector = {
   getDebuggerObject(node) {
     return unwrapValue(node);
   },
+
+  // For use by ReplayDebugger.
+  wrapObject,
+  unwrapObject(obj) {
+    return proxyMap.get(obj);
+  },
 };
+
+// Objects we need to override isInstance for.
+const gOverrideIsInstance = ["CSSRule", "Event"];
+
+for (const name of gOverrideIsInstance) {
+  ReplayInspector[`create${name}`] = original => ({
+    ...original,
+    isInstance(obj) {
+      const unwrapped = proxyMap.get(obj);
+      if (!unwrapped) {
+        return original.isInstance(obj);
+      }
+      assert(unwrapped instanceof ReplayDebugger.Object);
+      return unwrapped.replayIsInstance(name);
+    },
+  });
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Require Substitutions
@@ -141,7 +157,7 @@ function createSubstituteChrome(chrome) {
           const data = dbg()._sendRequestAllowDiverge({
             type: "newDeepTreeWalker",
           });
-          const obj = dbg()._getObject(data.id);
+          const obj = dbgObject(data.id);
           return wrapObject(obj);
         },
       },
@@ -157,10 +173,10 @@ function createSubstituteChrome(chrome) {
         // Objects are considered dead if we have unpaused since creating them
         // and they are not one of the fixed proxies. This prevents the
         // inspector from trying to continue using them.
-        if (!unwrapped._data) {
+        if (unwrapped._pool != dbg()._pool) {
           updateFixedProxies();
           unwrapped = proxyMap.get(node);
-          return !unwrapped._data;
+          return unwrapped._pool != dbg()._pool;
         }
         return false;
       },
@@ -268,7 +284,7 @@ function unwrapValue(value) {
 
   if (value instanceof Object) {
     const rv = dbg()._sendRequest({ type: "createObject" });
-    const newobj = dbg()._getObject(rv.id);
+    const newobj = dbgObject(rv.id);
 
     Object.entries(value).forEach(([name, propvalue]) => {
       const unwrapped = unwrapValue(propvalue);
@@ -281,22 +297,24 @@ function unwrapValue(value) {
 }
 
 function getObjectProperty(obj, name) {
+  assert(obj._pool == dbg()._pool);
   const rv = dbg()._sendRequestAllowDiverge({
     type: "getObjectPropertyValue",
     id: obj._data.id,
     name,
   });
-  return dbg()._convertCompletionValue(rv);
+  return dbg()._pool.convertCompletionValue(rv);
 }
 
 function setObjectProperty(obj, name, value) {
+  assert(obj._pool == dbg()._pool);
   const rv = dbg()._sendRequestAllowDiverge({
     type: "setObjectPropertyValue",
     id: obj._data.id,
     name,
     value: dbg()._convertValueForChild(value),
   });
-  return dbg()._convertCompletionValue(rv);
+  return dbg()._pool.convertCompletionValue(rv);
 }
 
 function getTargetObject(target) {
@@ -481,11 +499,7 @@ function updateFixedProxies() {
         ReplayInspectorProxyHandler
       );
     }
-    initFixedProxy(
-      gFixedProxy[key],
-      gFixedProxyTargets[key],
-      dbg()._getObject(value)
-    );
+    initFixedProxy(gFixedProxy[key], gFixedProxyTargets[key], dbgObject(value));
   }
 }
 

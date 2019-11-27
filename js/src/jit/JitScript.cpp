@@ -12,19 +12,27 @@
 #include "mozilla/ScopeExit.h"
 
 #include "jit/BaselineIC.h"
+#include "jit/BytecodeAnalysis.h"
+#include "vm/BytecodeIterator.h"
+#include "vm/BytecodeLocation.h"
+#include "vm/BytecodeUtil.h"
 #include "vm/JSScript.h"
 #include "vm/Stack.h"
 #include "vm/TypeInference.h"
 #include "wasm/WasmInstance.h"
 
+#include "gc/FreeOp-inl.h"
 #include "jit/JSJitFrameIter-inl.h"
+#include "vm/BytecodeIterator-inl.h"
+#include "vm/BytecodeLocation-inl.h"
 #include "vm/JSScript-inl.h"
 #include "vm/TypeInference-inl.h"
 
 using namespace js;
 using namespace js::jit;
 
-static size_t NumTypeSets(JSScript* script) {
+/* static */
+size_t JitScript::NumTypeSets(JSScript* script) {
   // We rely on |num| not overflowing below.
   static_assert(JSScript::MaxBytecodeTypeSets == UINT16_MAX,
                 "JSScript typesets should have safe range to avoid overflow");
@@ -50,15 +58,28 @@ JitScript::JitScript(JSScript* script, uint32_t typeSetOffset,
 
   uint8_t* base = reinterpret_cast<uint8_t*>(this);
   DefaultInitializeElements<StackTypeSet>(base + typeSetOffset, numTypeSets());
+
+  // Initialize the warm-up count from the count stored in the script.
+  warmUpCount_ = script->getWarmUpCount();
+
+  // Ensure the baselineScript_ and ionScript_ fields match the BaselineDisabled
+  // and IonDisabled script flags.
+  if (!script->canBaselineCompile()) {
+    setBaselineScriptImpl(script, BaselineDisabledScriptPtr);
+  }
+  if (!script->canIonCompile()) {
+    setIonScriptImpl(script, IonDisabledScriptPtr);
+  }
 }
 
 bool JSScript::createJitScript(JSContext* cx) {
-  MOZ_ASSERT(!jitScript_);
+  MOZ_ASSERT(!hasJitScript());
   cx->check(this);
 
-  // Scripts that will never run in the Baseline Interpreter or the JITs don't
-  // need a JitScript.
-  MOZ_ASSERT(!hasForceInterpreterOp());
+  // Scripts with a JitScript can run in the Baseline Interpreter. Make sure
+  // we don't create a JitScript for scripts we shouldn't Baseline interpret.
+  MOZ_ASSERT_IF(IsBaselineInterpreterEnabled(),
+                CanBaselineInterpretScript(this));
 
   AutoEnterAnalysis enter(cx);
 
@@ -69,7 +90,7 @@ bool JSScript::createJitScript(JSContext* cx) {
   }
 
   // If ensureHasAnalyzedArgsUsage allocated the JitScript we're done.
-  if (jitScript_) {
+  if (hasJitScript()) {
     return true;
   }
 
@@ -82,7 +103,7 @@ bool JSScript::createJitScript(JSContext* cx) {
     }
   }
 
-  size_t numTypeSets = NumTypeSets(this);
+  size_t numTypeSets = JitScript::NumTypeSets(this);
 
   static_assert(sizeof(JitScript) % sizeof(uintptr_t) == 0,
                 "Trailing arrays must be aligned properly");
@@ -126,9 +147,9 @@ bool JSScript::createJitScript(JSContext* cx) {
     return false;
   }
 
-  MOZ_ASSERT(!jitScript_);
+  MOZ_ASSERT(!hasJitScript());
   prepareForDestruction.release();
-  jitScript_ = jitScript.release();
+  warmUpData_.setJitScript(jitScript.release());
   AddCellMemory(this, allocSize.value(), MemoryUse::JitScript);
 
   // We have a JitScript so we can set the script's jitCodeRaw_ pointer to the
@@ -137,19 +158,19 @@ bool JSScript::createJitScript(JSContext* cx) {
 
 #ifdef DEBUG
   AutoSweepJitScript sweep(this);
-  StackTypeSet* typeArray = jitScript_->typeArrayDontCheckGeneration();
+  StackTypeSet* typeArray = this->jitScript()->typeArrayDontCheckGeneration();
   for (unsigned i = 0; i < numBytecodeTypeSets(); i++) {
     InferSpew(ISpewOps, "typeSet: %sT%p%s bytecode%u %p",
               InferSpewColor(&typeArray[i]), &typeArray[i],
               InferSpewColorReset(), i, this);
   }
-  StackTypeSet* thisTypes = jitScript_->thisTypes(sweep, this);
+  StackTypeSet* thisTypes = this->jitScript()->thisTypes(sweep, this);
   InferSpew(ISpewOps, "typeSet: %sT%p%s this %p", InferSpewColor(thisTypes),
             thisTypes, InferSpewColorReset(), this);
   unsigned nargs =
       functionNonDelazifying() ? functionNonDelazifying()->nargs() : 0;
   for (unsigned i = 0; i < nargs; i++) {
-    StackTypeSet* types = jitScript_->argTypes(sweep, this, i);
+    StackTypeSet* types = this->jitScript()->argTypes(sweep, this, i);
     InferSpew(ISpewOps, "typeSet: %sT%p%s arg%u %p", InferSpewColor(types),
               types, InferSpewColorReset(), i, this);
   }
@@ -158,26 +179,62 @@ bool JSScript::createJitScript(JSContext* cx) {
   return true;
 }
 
-void JSScript::maybeReleaseJitScript() {
-  if (!jitScript_ || zone()->types.keepJitScripts || hasBaselineScript() ||
-      jitScript_->active()) {
+void JSScript::maybeReleaseJitScript(JSFreeOp* fop) {
+  MOZ_ASSERT(hasJitScript());
+
+  if (zone()->types.keepJitScripts || jitScript()->hasBaselineScript() ||
+      jitScript()->active()) {
     return;
   }
 
-  releaseJitScript();
+  releaseJitScript(fop);
 }
 
-void JSScript::releaseJitScript() {
+void JSScript::releaseJitScript(JSFreeOp* fop) {
+  MOZ_ASSERT(hasJitScript());
+  MOZ_ASSERT(!hasBaselineScript());
   MOZ_ASSERT(!hasIonScript());
 
-  RemoveCellMemory(this, jitScript_->allocBytes(), MemoryUse::JitScript);
+  fop->removeCellMemory(this, jitScript()->allocBytes(), MemoryUse::JitScript);
 
-  JitScript::Destroy(zone(), jitScript_);
-  jitScript_ = nullptr;
-  updateJitCodeRaw(runtimeFromMainThread());
+  JitScript::Destroy(zone(), jitScript());
+  warmUpData_.clearJitScript();
+  updateJitCodeRaw(fop->runtime());
+}
+
+void JSScript::releaseJitScriptOnFinalize(JSFreeOp* fop) {
+  MOZ_ASSERT(hasJitScript());
+
+  if (hasIonScript()) {
+    IonScript* ion = jitScript()->clearIonScript(fop, this);
+    jit::IonScript::Destroy(fop, ion);
+  }
+
+  if (hasBaselineScript()) {
+    BaselineScript* baseline = jitScript()->clearBaselineScript(fop, this);
+    jit::BaselineScript::Destroy(fop, baseline);
+  }
+
+  releaseJitScript(fop);
+}
+
+void JitScript::CachedIonData::trace(JSTracer* trc) {
+  TraceNullableEdge(trc, &templateEnv, "jitscript-iondata-template-env");
 }
 
 void JitScript::trace(JSTracer* trc) {
+  if (hasBaselineScript()) {
+    baselineScript()->trace(trc);
+  }
+
+  if (hasIonScript()) {
+    ionScript()->trace(trc);
+  }
+
+  if (hasCachedIonData()) {
+    cachedIonData().trace(trc);
+  }
+
   // Mark all IC stub codes hanging off the IC stub entries.
   for (size_t i = 0; i < numICEntries(); i++) {
     ICEntry& ent = icEntry(i);
@@ -192,9 +249,10 @@ void JitScript::ensureProfileString(JSContext* cx, JSScript* script) {
     return;
   }
 
+  AutoEnterOOMUnsafeRegion oomUnsafe;
   profileString_ = cx->runtime()->geckoProfiler().profileString(cx, script);
   if (!profileString_) {
-    MOZ_CRASH("Failed to allocate profile string");
+    oomUnsafe.crash("Failed to allocate profile string");
   }
 }
 
@@ -225,7 +283,7 @@ void JitScript::printTypes(JSContext* cx, HandleScript script) {
   fprintf(stderr, "\n    this:");
   thisTypes(sweep, script)->print();
 
-  for (unsigned i = 0; script->functionNonDelazifying() &&
+  for (uint32_t i = 0; script->functionNonDelazifying() &&
                        i < script->functionNonDelazifying()->nargs();
        i++) {
     fprintf(stderr, "\n    arg%u:", i);
@@ -233,21 +291,21 @@ void JitScript::printTypes(JSContext* cx, HandleScript script) {
   }
   fprintf(stderr, "\n");
 
-  for (jsbytecode* pc = script->code(); pc < script->codeEnd();
-       pc += GetBytecodeLength(pc)) {
+  for (BytecodeLocation it : AllBytecodesIterable(script)) {
     {
       fprintf(stderr, "%p:", script.get());
       Sprinter sprinter(cx);
       if (!sprinter.init()) {
         return;
       }
-      Disassemble1(cx, script, pc, script->pcToOffset(pc), true, &sprinter);
+      Disassemble1(cx, script, it.toRawBytecode(), it.bytecodeToOffset(script),
+                   true, &sprinter);
       fprintf(stderr, "%s", sprinter.string());
     }
 
-    if (CodeSpec[*pc].format & JOF_TYPESET) {
-      StackTypeSet* types = bytecodeTypes(sweep, script, pc);
-      fprintf(stderr, "  typeset %u:", unsigned(types - typeArray(sweep)));
+    if (it.opHasTypeSet()) {
+      StackTypeSet* types = bytecodeTypes(sweep, script, it.toRawBytecode());
+      fprintf(stderr, "  typeset %u:", uint32_t(types - typeArray(sweep)));
       types->print();
       fprintf(stderr, "\n");
     }
@@ -493,6 +551,103 @@ void JitScript::removeDependentWasmImport(wasm::Instance& instance,
       break;
     }
   }
+}
+
+JitScript::CachedIonData::CachedIonData(EnvironmentObject* templateEnv,
+                                        IonBytecodeInfo bytecodeInfo)
+    : templateEnv(templateEnv), bytecodeInfo(bytecodeInfo) {}
+
+bool JitScript::ensureHasCachedIonData(JSContext* cx, HandleScript script) {
+  MOZ_ASSERT(script->jitScript() == this);
+
+  if (hasCachedIonData()) {
+    return true;
+  }
+
+  Rooted<EnvironmentObject*> templateEnv(cx);
+  if (script->functionNonDelazifying()) {
+    RootedFunction fun(cx, script->functionNonDelazifying());
+
+    if (fun->needsNamedLambdaEnvironment()) {
+      templateEnv =
+          NamedLambdaObject::createTemplateObject(cx, fun, gc::TenuredHeap);
+      if (!templateEnv) {
+        return false;
+      }
+    }
+
+    if (fun->needsCallObject()) {
+      templateEnv = CallObject::createTemplateObject(cx, script, templateEnv,
+                                                     gc::TenuredHeap);
+      if (!templateEnv) {
+        return false;
+      }
+    }
+  }
+
+  IonBytecodeInfo bytecodeInfo = AnalyzeBytecodeForIon(cx, script);
+
+  UniquePtr<CachedIonData> data =
+      cx->make_unique<CachedIonData>(templateEnv, bytecodeInfo);
+  if (!data) {
+    return false;
+  }
+
+  cachedIonData_ = std::move(data);
+  return true;
+}
+
+void JitScript::setBaselineScriptImpl(JSScript* script,
+                                      BaselineScript* baselineScript) {
+  JSRuntime* rt = script->runtimeFromMainThread();
+  setBaselineScriptImpl(rt->defaultFreeOp(), script, baselineScript);
+}
+
+void JitScript::setBaselineScriptImpl(JSFreeOp* fop, JSScript* script,
+                                      BaselineScript* baselineScript) {
+  if (hasBaselineScript()) {
+    BaselineScript::writeBarrierPre(script->zone(), baselineScript_);
+    fop->removeCellMemory(script, baselineScript_->allocBytes(),
+                          MemoryUse::BaselineScript);
+    baselineScript_ = nullptr;
+  }
+
+  MOZ_ASSERT(ionScript_ == nullptr || ionScript_ == IonDisabledScriptPtr);
+
+  baselineScript_ = baselineScript;
+  if (hasBaselineScript()) {
+    AddCellMemory(script, baselineScript_->allocBytes(),
+                  MemoryUse::BaselineScript);
+  }
+
+  script->resetWarmUpResetCounter();
+  script->updateJitCodeRaw(fop->runtime());
+}
+
+void JitScript::setIonScriptImpl(JSScript* script, IonScript* ionScript) {
+  JSRuntime* rt = script->runtimeFromMainThread();
+  setIonScriptImpl(rt->defaultFreeOp(), script, ionScript);
+}
+
+void JitScript::setIonScriptImpl(JSFreeOp* fop, JSScript* script,
+                                 IonScript* ionScript) {
+  MOZ_ASSERT_IF(ionScript != IonDisabledScriptPtr,
+                !baselineScript()->hasPendingIonBuilder());
+
+  if (hasIonScript()) {
+    IonScript::writeBarrierPre(script->zone(), ionScript_);
+    fop->removeCellMemory(script, ionScript_->allocBytes(),
+                          MemoryUse::IonScript);
+    ionScript_ = nullptr;
+  }
+
+  ionScript_ = ionScript;
+  MOZ_ASSERT_IF(hasIonScript(), hasBaselineScript());
+  if (hasIonScript()) {
+    AddCellMemory(script, ionScript_->allocBytes(), MemoryUse::IonScript);
+  }
+
+  script->updateJitCodeRaw(fop->runtime());
 }
 
 #ifdef JS_STRUCTURED_SPEW

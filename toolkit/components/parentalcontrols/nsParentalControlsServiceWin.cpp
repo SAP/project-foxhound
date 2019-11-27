@@ -13,15 +13,86 @@
 #include "nsILocalFileWin.h"
 #include "nsArrayUtils.h"
 #include "nsIXULAppInfo.h"
+#include "nsWindowsHelpers.h"
+#include "nsIWindowsRegKey.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsVersion.h"
+
+#include <sddl.h>
 
 using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsParentalControlsService, nsIParentalControlsService)
 
+// Get the SID string for the user associated with this process's token.
+static nsAutoString GetUserSid() {
+  nsAutoString ret;
+  HANDLE rawToken;
+  BOOL success =
+      ::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &rawToken);
+  if (!success) {
+    return ret;
+  }
+  nsAutoHandle token(rawToken);
+
+  DWORD bufLen;
+  success = ::GetTokenInformation(token, TokenUser, nullptr, 0, &bufLen);
+  if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+    return ret;
+  }
+
+  UniquePtr<char[]> buf = MakeUnique<char[]>(bufLen);
+  success = ::GetTokenInformation(token, TokenUser, buf.get(), bufLen, &bufLen);
+  MOZ_ASSERT(success);
+
+  if (success) {
+    TOKEN_USER* tokenUser = (TOKEN_USER*)(buf.get());
+    PSID sid = tokenUser->User.Sid;
+    LPWSTR sidStr;
+    success = ::ConvertSidToStringSidW(sid, &sidStr);
+    if (success) {
+      ret = sidStr;
+      ::LocalFree(sidStr);
+    }
+  }
+  return ret;
+}
+
 nsParentalControlsService::nsParentalControlsService()
     : mEnabled(false), mProvider(0), mPC(nullptr) {
+  // On at least some builds of Windows 10, the old parental controls API no
+  // longer exists, so we have to pull the info we need out of the registry.
+  if (IsWin10OrLater()) {
+    nsAutoString regKeyName;
+    regKeyName.AppendLiteral(
+        "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Parental Controls\\"
+        "Users\\");
+    regKeyName.Append(GetUserSid());
+    regKeyName.AppendLiteral("\\Web");
+
+    nsresult rv;
+    nsCOMPtr<nsIWindowsRegKey> regKey =
+        do_CreateInstance("@mozilla.org/windows-registry-key;1", &rv);
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    rv = regKey->Open(nsIWindowsRegKey::ROOT_KEY_LOCAL_MACHINE, regKeyName,
+                      nsIWindowsRegKey::ACCESS_READ);
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    uint32_t filterOn = 0;
+    rv = regKey->ReadIntValue(NS_LITERAL_STRING("Filter On"), &filterOn);
+    if (NS_FAILED(rv)) {
+      return;
+    }
+
+    mEnabled = filterOn != 0;
+    return;
+  }
+
   HRESULT hr;
   CoInitialize(nullptr);
   hr = CoCreateInstance(__uuidof(WindowsParentalControls), nullptr,
@@ -73,7 +144,16 @@ NS_IMETHODIMP
 nsParentalControlsService::GetBlockFileDownloadsEnabled(bool* aResult) {
   *aResult = false;
 
-  if (!mEnabled) return NS_ERROR_NOT_AVAILABLE;
+  if (!mEnabled) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  // If we're on Windows 10 and we don't have the whole API available, then
+  // we can't tell if file downloads are allowed, so assume they are to avoid
+  // breaking downloads for every single user with parental controls.
+  if (!mPC) {
+    return NS_OK;
+  }
 
   RefPtr<IWPCWebSettings> wpcws;
   if (SUCCEEDED(mPC->GetWebSettings(nullptr, getter_AddRefs(wpcws)))) {
@@ -89,7 +169,15 @@ NS_IMETHODIMP
 nsParentalControlsService::GetLoggingEnabled(bool* aResult) {
   *aResult = false;
 
-  if (!mEnabled) return NS_ERROR_NOT_AVAILABLE;
+  if (!mEnabled) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  // If we're on Windows 10 and we don't have the whole API available, then
+  // we don't know how logging should be done, so report that it's disabled.
+  if (!mPC) {
+    return NS_OK;
+  }
 
   // Check the general purpose logging flag
   RefPtr<IWPCSettings> wpcs;
@@ -142,7 +230,14 @@ nsParentalControlsService::RequestURIOverride(
     nsIURI* aTarget, nsIInterfaceRequestor* aWindowContext, bool* _retval) {
   *_retval = false;
 
-  if (!mEnabled) return NS_ERROR_NOT_AVAILABLE;
+  if (!mEnabled) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  // We don't know how to get the overrides unless the PC API exists.
+  if (!mPC) {
+    return NS_OK;
+  }
 
   NS_ENSURE_ARG_POINTER(aTarget);
 
@@ -173,7 +268,14 @@ nsParentalControlsService::RequestURIOverrides(
     nsIArray* aTargets, nsIInterfaceRequestor* aWindowContext, bool* _retval) {
   *_retval = false;
 
-  if (!mEnabled) return NS_ERROR_NOT_AVAILABLE;
+  if (!mEnabled) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  // We don't know how to get the overrides unless the PC API exists.
+  if (!mPC) {
+    return NS_OK;
+  }
 
   NS_ENSURE_ARG_POINTER(aTargets);
 

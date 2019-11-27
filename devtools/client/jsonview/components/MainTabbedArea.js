@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -67,7 +65,7 @@ define(function(require, exports, module) {
           {
             id: "json",
             className: "json",
-            title: JSONView.Locale.$STR("jsonViewer.tab.JSON"),
+            title: JSONView.Locale["jsonViewer.tab.JSON"],
           },
           JsonPanel({
             data: this.state.json,
@@ -81,7 +79,7 @@ define(function(require, exports, module) {
           {
             id: "rawdata",
             className: "rawdata",
-            title: JSONView.Locale.$STR("jsonViewer.tab.RawData"),
+            title: JSONView.Locale["jsonViewer.tab.RawData"],
           },
           TextPanel({
             isValidJson:
@@ -95,7 +93,7 @@ define(function(require, exports, module) {
           {
             id: "headers",
             className: "headers",
-            title: JSONView.Locale.$STR("jsonViewer.tab.Headers"),
+            title: JSONView.Locale["jsonViewer.tab.Headers"],
           },
           HeadersPanel({
             data: this.props.headers,

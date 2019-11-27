@@ -44,6 +44,8 @@ use crate::gecko_bindings::bindings::{Gecko_ElementState, Gecko_GetDocumentLWThe
 use crate::gecko_bindings::bindings::{Gecko_SetNodeFlags, Gecko_UnsetNodeFlags};
 use crate::gecko_bindings::structs;
 use crate::gecko_bindings::structs::nsChangeHint;
+#[cfg(feature = "moz_xbl")]
+use crate::gecko_bindings::structs::nsXBLBinding as RawGeckoXBLBinding;
 use crate::gecko_bindings::structs::Document_DocumentTheme as DocumentTheme;
 use crate::gecko_bindings::structs::EffectCompositor_CascadeLevel as CascadeLevel;
 use crate::gecko_bindings::structs::ELEMENT_HANDLED_SNAPSHOT;
@@ -53,9 +55,7 @@ use crate::gecko_bindings::structs::ELEMENT_HAS_SNAPSHOT;
 use crate::gecko_bindings::structs::NODE_DESCENDANTS_NEED_FRAMES;
 use crate::gecko_bindings::structs::NODE_NEEDS_FRAME;
 use crate::gecko_bindings::structs::{nsAtom, nsIContent, nsINode_BooleanFlag};
-use crate::gecko_bindings::structs::{
-    nsINode as RawGeckoNode, nsXBLBinding as RawGeckoXBLBinding, Element as RawGeckoElement,
-};
+use crate::gecko_bindings::structs::{nsINode as RawGeckoNode, Element as RawGeckoElement};
 use crate::gecko_bindings::sugar::ownership::{HasArcFFI, HasSimpleFFI};
 use crate::global_style_data::GLOBAL_STYLE_DATA;
 use crate::hash::FxHashMap;
@@ -86,6 +86,8 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::mem;
 use std::ptr;
+#[cfg(not(feature = "moz_xbl"))]
+use values::Impossible;
 
 #[inline]
 fn elements_with_id<'a, 'le>(
@@ -529,9 +531,11 @@ impl<'a> Iterator for GeckoChildrenIterator<'a> {
 }
 
 /// A Simple wrapper over a non-null Gecko `nsXBLBinding` pointer.
+#[cfg(feature = "moz_xbl")]
 #[derive(Clone, Copy)]
 pub struct GeckoXBLBinding<'lb>(pub &'lb RawGeckoXBLBinding);
 
+#[cfg(feature = "moz_xbl")]
 impl<'lb> GeckoXBLBinding<'lb> {
     #[inline]
     fn base_binding(&self) -> Option<Self> {
@@ -553,6 +557,22 @@ impl<'lb> GeckoXBLBinding<'lb> {
             }
             binding = binding.base_binding()?;
         }
+    }
+}
+
+/// A stub wraper for GeckoXBLBinding.
+#[cfg(not(feature = "moz_xbl"))]
+pub struct GeckoXBLBinding<'lb>(&'lb Impossible);
+
+#[cfg(not(feature = "moz_xbl"))]
+impl<'lb> GeckoXBLBinding<'lb> {
+    #[inline]
+    fn anon_content(&self) -> *const nsIContent {
+        match *self.0 {}
+    }
+
+    fn binding_with_content(&self) -> Option<Self> {
+        None
     }
 }
 
@@ -681,11 +701,13 @@ impl<'le> GeckoElement<'le> {
         })
     }
 
+    #[cfg(feature = "moz_xbl")]
     #[inline]
     fn may_be_in_binding_manager(&self) -> bool {
         self.flags() & (structs::NODE_MAY_BE_IN_BINDING_MNGR as u32) != 0
     }
 
+    #[cfg(feature = "moz_xbl")]
     #[inline]
     fn xbl_binding(&self) -> Option<GeckoXBLBinding<'le>> {
         if !self.may_be_in_binding_manager() {
@@ -696,6 +718,12 @@ impl<'le> GeckoElement<'le> {
         unsafe { slots.mXBLBinding.mRawPtr.as_ref().map(GeckoXBLBinding) }
     }
 
+    #[cfg(not(feature = "moz_xbl"))]
+    #[inline]
+    fn xbl_binding(&self) -> Option<GeckoXBLBinding<'le>> {
+        None
+    }
+
     #[inline]
     fn xbl_binding_with_content(&self) -> Option<GeckoXBLBinding<'le>> {
         self.xbl_binding().and_then(|b| b.binding_with_content())
@@ -704,44 +732,6 @@ impl<'le> GeckoElement<'le> {
     #[inline]
     fn has_xbl_binding_with_content(&self) -> bool {
         !self.xbl_binding_with_content().is_none()
-    }
-
-    /// This duplicates the logic in Gecko's virtual nsINode::GetBindingParent
-    /// function, which only has two implementations: one for XUL elements, and
-    /// one for other elements.
-    ///
-    /// We just hard code in our knowledge of those two implementations here.
-    fn xbl_binding_parent(&self) -> Option<Self> {
-        if self.is_xul_element() {
-            // FIXME(heycam): Having trouble with bindgen on nsXULElement,
-            // where the binding parent is stored in a member variable
-            // rather than in slots.  So just get it through FFI for now.
-            unsafe {
-                bindings::Gecko_GetBindingParent(self.0)
-                    .as_ref()
-                    .map(GeckoElement)
-            }
-        } else {
-            let binding_parent =
-                unsafe { self.non_xul_xbl_binding_parent().as_ref() }.map(GeckoElement);
-
-            debug_assert!(
-                binding_parent ==
-                    unsafe {
-                        bindings::Gecko_GetBindingParent(self.0)
-                            .as_ref()
-                            .map(GeckoElement)
-                    }
-            );
-            binding_parent
-        }
-    }
-
-    #[inline]
-    fn non_xul_xbl_binding_parent(&self) -> *mut RawGeckoElement {
-        debug_assert!(!self.is_xul_element());
-        self.extended_slots()
-            .map_or(ptr::null_mut(), |slots| slots._base.mBindingParent.mRawPtr)
     }
 
     #[inline]
@@ -865,19 +855,9 @@ impl<'le> GeckoElement<'le> {
         return self.flags() & (NODE_IS_NATIVE_ANONYMOUS_ROOT as u32) != 0;
     }
 
-    /// This logic is duplicated in Gecko's nsIContent::IsInAnonymousSubtree.
     #[inline]
     fn is_in_anonymous_subtree(&self) -> bool {
-        if self.is_in_native_anonymous_subtree() {
-            return true;
-        }
-
-        let binding_parent = match self.xbl_binding_parent() {
-            Some(p) => p,
-            None => return false,
-        };
-
-        binding_parent.shadow_root().is_none()
+        unsafe { bindings::Gecko_IsInAnonymousSubtree(self.0) }
     }
 
     /// Returns true if this node is the shadow root of an use-element shadow tree.

@@ -395,7 +395,9 @@ PlacesViewBase.prototype = {
           }
         }
 
-        let popup = document.createXULElement("menupopup");
+        let popup = document.createXULElement("menupopup", {
+          is: "places-popup",
+        });
         popup._placesNode = PlacesUtils.asContainer(aPlacesNode);
 
         if (!this._nativeView) {
@@ -713,9 +715,9 @@ PlacesViewBase.prototype = {
     }
 
     if (!hasMultipleURIs) {
-      aPopup.setAttribute("singleitempopup", "true");
+      aPopup.setAttribute("nofooterpopup", "true");
     } else {
-      aPopup.removeAttribute("singleitempopup");
+      aPopup.removeAttribute("nofooterpopup");
     }
 
     if (!hasMultipleURIs) {
@@ -818,7 +820,7 @@ PlacesViewBase.prototype = {
 
     // Remove any delayed element, see _cleanPopup for details.
     if ("_delayedRemovals" in popup) {
-      while (popup._delayedRemovals.length > 0) {
+      while (popup._delayedRemovals.length) {
         popup.removeChild(popup._delayedRemovals.shift());
       }
     }
@@ -1062,7 +1064,9 @@ PlacesToolbar.prototype = {
           }
         }
 
-        let popup = document.createXULElement("menupopup");
+        let popup = document.createXULElement("menupopup", {
+          is: "places-popup",
+        });
         popup.setAttribute("placespopup", "true");
         button.appendChild(popup);
         popup._placesNode = PlacesUtils.asContainer(aChild);
@@ -2169,6 +2173,7 @@ this.PlacesPanelview = class extends PlacesViewBase {
         if (event.button != 1) {
           break;
         }
+      // fall through
       case "command":
         this._onCommand(event);
         break;

@@ -17,12 +17,6 @@ interface nsISimpleEnumerator;
 interface nsICookie;
 interface nsIFile;
 
-[scriptable, function, uuid(20709db8-8dad-4e45-b33e-6e7c761dfc5d)]
-interface nsIPrivateModeCallback : nsISupports
-{
-  void callback();
-};
-
 /**
  * An optional interface for accessing or removing the cookies
  * that are in the cookie list
@@ -66,22 +60,18 @@ interface nsICookieManager : nsISupports
    * @param aName The name specified in the cookie
    * @param aPath The path for which the cookie was set
    * @param aOriginAttributes The originAttributes of this cookie.
-   * @param aBlocked Indicates if cookies from this host should be permanently
-   *                 blocked.
    *
    */
   [implicit_jscontext]
   void remove(in AUTF8String   aHost,
               in ACString      aName,
               in AUTF8String   aPath,
-              in boolean       aBlocked,
               in jsval         aOriginAttributes);
 
   [notxpcom]
   nsresult removeNative(in AUTF8String   aHost,
                         in ACString      aName,
                         in AUTF8String   aPath,
-                        in boolean       aBlocked,
                         in OriginAttributesPtr aOriginAttributes);
 
   /**
@@ -241,10 +231,10 @@ interface nsICookieManager : nsISupports
 
   /**
    * Remove all the cookies whose origin attributes matches aPattern and the
-   * host is the root domain of aHost.
+   * host is exactly aHost (without subdomain matching).
    *
-   * @param aHost the host to match the root domain
+   * @param aHost the host to match
    * @param aPattern origin attribute pattern in JSON format
    */
-  void removeCookiesFromRootDomain(in AUTF8String aHost, in AString aPattern);
+  void removeCookiesFromExactHost(in AUTF8String aHost, in AString aPattern);
 };

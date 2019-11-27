@@ -17,6 +17,7 @@
 namespace js {
 
 class AsyncGeneratorObject;
+class GlobalObject;
 
 // Resume the async generator when the `await` operand fulfills to `value`.
 MOZ_MUST_USE bool AsyncGeneratorAwaitedFulfilled(
@@ -79,7 +80,7 @@ class AsyncGeneratorRequest : public NativeObject {
   friend AsyncGeneratorObject;
 
  public:
-  static const Class class_;
+  static const JSClass class_;
 
   static AsyncGeneratorRequest* create(JSContext* cx,
                                        CompletionKind completionKind,
@@ -186,7 +187,7 @@ class AsyncGeneratorObject : public AbstractGeneratorObject {
   }
 
  public:
-  static const Class class_;
+  static const JSClass class_;
 
   static AsyncGeneratorObject* create(JSContext* cx, HandleFunction asyncGen);
 
@@ -280,7 +281,7 @@ class AsyncFromSyncIteratorObject : public NativeObject {
   }
 
  public:
-  static const Class class_;
+  static const JSClass class_;
 
   static JSObject* create(JSContext* cx, HandleObject iter,
                           HandleValue nextMethod);
@@ -293,6 +294,9 @@ class AsyncFromSyncIteratorObject : public NativeObject {
 MOZ_MUST_USE bool AsyncGeneratorResume(
     JSContext* cx, Handle<AsyncGeneratorObject*> asyncGenObj,
     CompletionKind completionKind, HandleValue argument);
+
+extern JSObject* InitAsyncGeneratorFunction(JSContext* cx,
+                                            js::Handle<GlobalObject*> global);
 
 }  // namespace js
 

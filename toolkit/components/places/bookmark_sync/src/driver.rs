@@ -200,21 +200,17 @@ impl Task for RecordTelemetryEventTask {
                 callback.OnFetchLocalTree(
                     as_millis(stats.time),
                     stats.items as i64,
+                    stats.deletions as i64,
                     problem_counts_to_bag(&stats.problems).bag().coerce(),
                 )
-            },
-            TelemetryEvent::FetchNewLocalContents(stats) => unsafe {
-                callback.OnFetchNewLocalContents(as_millis(stats.time), stats.items as i64)
             },
             TelemetryEvent::FetchRemoteTree(stats) => unsafe {
                 callback.OnFetchRemoteTree(
                     as_millis(stats.time),
                     stats.items as i64,
+                    stats.deletions as i64,
                     problem_counts_to_bag(&stats.problems).bag().coerce(),
                 )
-            },
-            TelemetryEvent::FetchNewRemoteContents(stats) => unsafe {
-                callback.OnFetchNewRemoteContents(as_millis(stats.time), stats.items as i64)
             },
             TelemetryEvent::Merge(time, counts) => unsafe {
                 callback.OnMerge(
@@ -261,6 +257,5 @@ fn structure_counts_to_bag(counts: &StructureCounts) -> HashPropertyBag {
     bag.set("remoteDeletes", counts.remote_deletes as i64);
     bag.set("dupes", counts.dupes as i64);
     bag.set("items", counts.merged_nodes as i64);
-    bag.set("deletes", counts.merged_deletions as i64);
     bag
 }

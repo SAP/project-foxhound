@@ -27,14 +27,19 @@ class BrowserParent;
  */
 class BrowserBridgeParent : public PBrowserBridgeParent {
  public:
-  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeParent);
+  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeParent, final);
 
   BrowserBridgeParent();
 
   // Initialize this actor after performing startup.
   nsresult Init(const nsString& aPresentationURL, const nsString& aRemoteType,
-                CanonicalBrowsingContext* aBrowsingContext,
-                const uint32_t& aChromeFlags, TabId aTabId);
+                const WindowGlobalInit& aWindowInit, uint32_t aChromeFlags,
+                TabId aTabId);
+
+  nsresult InitWithProcess(ContentParent* aContentParent,
+                           const nsString& aPresentationURL,
+                           const WindowGlobalInit& aWindowInit,
+                           uint32_t aChromeFlags, TabId aTabId);
 
   BrowserParent* GetBrowserParent() { return mBrowserParent; }
 
@@ -70,7 +75,6 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
       const DimensionInfo& aDimensions);
   mozilla::ipc::IPCResult RecvUpdateEffects(const EffectsInfo& aEffects);
   mozilla::ipc::IPCResult RecvRenderLayers(const bool& aEnabled,
-                                           const bool& aForceRepaint,
                                            const LayersObserverEpoch& aEpoch);
 
   mozilla::ipc::IPCResult RecvNavigateByKey(const bool& aForward,
@@ -99,9 +103,8 @@ class BrowserBridgeParent : public PBrowserBridgeParent {
   RefPtr<BrowserParent> mBrowserParent;
 #if defined(ACCESSIBILITY)
   RefPtr<a11y::DocAccessibleParent> mEmbedderAccessibleDoc;
-  uint64_t mEmbedderAccessibleID;
+  uint64_t mEmbedderAccessibleID = 0;
 #endif  // defined(ACCESSIBILITY)
-  bool mIPCOpen;
 };
 
 }  // namespace dom

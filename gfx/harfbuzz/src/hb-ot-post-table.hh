@@ -178,6 +178,8 @@ struct post
       return false;
     }
 
+    hb_blob_ptr_t<post> table;
+
     protected:
 
     unsigned int get_glyph_count () const
@@ -237,13 +239,14 @@ struct post
     }
 
     private:
-    hb_blob_ptr_t<post> table;
     uint32_t version;
     const ArrayOf<HBUINT16> *glyphNameIndex;
     hb_vector_t<uint32_t> index_to_offset;
     const uint8_t *pool;
     hb_atomic_ptr_t<uint16_t *> gids_sorted_by_name;
   };
+
+  bool has_data () const { return version.to_int (); }
 
   bool sanitize (hb_sanitize_context_t *c) const
   {
@@ -259,7 +262,7 @@ struct post
 					 * 0x00020000 for version 2.0
 					 * 0x00025000 for version 2.5 (deprecated)
 					 * 0x00030000 for version 3.0 */
-  Fixed		italicAngle;		/* Italic angle in counter-clockwise degrees
+  HBFixed		italicAngle;		/* Italic angle in counter-clockwise degrees
 					 * from the vertical. Zero for upright text,
 					 * negative for text that leans to the right
 					 * (forward). */

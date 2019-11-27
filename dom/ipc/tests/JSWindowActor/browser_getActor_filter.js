@@ -2,6 +2,8 @@
    http://creativecommons.org/publicdomain/zero/1.0/ */
 "use strict";
 
+requestLongerTimeout(2);
+
 declTest("getActor with mismatch", {
   matches: ["*://*/*"],
 
@@ -15,7 +17,7 @@ declTest("getActor with mismatch", {
     );
 
     await ContentTask.spawn(browser, {}, async function() {
-      let child = content.window.getWindowGlobalChild();
+      let child = content.getWindowGlobalChild();
       ok(child, "WindowGlobalChild should have value.");
 
       Assert.throws(
@@ -36,7 +38,7 @@ declTest("getActor with matches", {
     ok(parent.getActor("Test"), "JSWindowActorParent should have value.");
 
     await ContentTask.spawn(browser, {}, async function() {
-      let child = content.window.getWindowGlobalChild();
+      let child = content.getWindowGlobalChild();
       ok(child, "WindowGlobalChild should have value.");
       ok(child.getActor("Test"), "JSWindowActorChild should have value.");
     });
@@ -55,9 +57,14 @@ declTest("getActor with iframe matches", {
       content.document.body.appendChild(frame);
       await ContentTaskUtils.waitForEvent(frame, "load");
 
-      is(content.window.frames.length, 1, "There should be an iframe.");
-      let child = frame.contentWindow.window.getWindowGlobalChild();
-      ok(child.getActor("Test"), "JSWindowActorChild should have value.");
+      is(content.frames.length, 1, "There should be an iframe.");
+      await content.SpecialPowers.spawn(frame, [], () => {
+        let child = content.getWindowGlobalChild();
+        Assert.ok(
+          child.getActor("Test"),
+          "JSWindowActorChild should have value."
+        );
+      });
     });
   },
 });
@@ -74,13 +81,15 @@ declTest("getActor with iframe mismatch", {
       content.document.body.appendChild(frame);
       await ContentTaskUtils.waitForEvent(frame, "load");
 
-      is(content.window.frames.length, 1, "There should be an iframe.");
-      let child = frame.contentWindow.window.getWindowGlobalChild();
-      Assert.throws(
-        () => child.getActor("Test"),
-        /NS_ERROR_NOT_AVAILABLE/,
-        "Should throw if it doesn't match."
-      );
+      is(content.frames.length, 1, "There should be an iframe.");
+      await content.SpecialPowers.spawn(frame, [], () => {
+        let child = content.getWindowGlobalChild();
+        Assert.throws(
+          () => child.getActor("Test"),
+          /NS_ERROR_NOT_AVAILABLE/,
+          "Should throw if it doesn't match."
+        );
+      });
     });
   },
 });
@@ -93,9 +102,37 @@ declTest("getActor with remoteType match", {
     ok(parent.getActor("Test"), "JSWindowActorParent should have value.");
 
     await ContentTask.spawn(browser, {}, async function() {
-      let child = content.window.getWindowGlobalChild();
+      let child = content.getWindowGlobalChild();
       ok(child, "WindowGlobalChild should have value.");
       ok(child.getActor("Test"), "JSWindowActorChild should have value.");
+    });
+  },
+});
+
+declTest("getActor with iframe remoteType match", {
+  allFrames: true,
+  remoteTypes: ["web"],
+
+  async test(browser) {
+    await ContentTask.spawn(browser, TEST_URL, async function(url) {
+      let child = content.getWindowGlobalChild();
+      ok(child, "WindowGlobalChild should have value.");
+      ok(child.getActor("Test"), "JSWindowActorChild should have value.");
+
+      // Create and append an iframe into the window's document.
+      let frame = content.document.createElement("iframe");
+      frame.src = url;
+      content.document.body.appendChild(frame);
+      await ContentTaskUtils.waitForEvent(frame, "load");
+
+      is(content.frames.length, 1, "There should be an iframe.");
+      await content.SpecialPowers.spawn(frame, [], () => {
+        child = content.getWindowGlobalChild();
+        Assert.ok(
+          child.getActor("Test"),
+          "JSWindowActorChild should have value."
+        );
+      });
     });
   },
 });
@@ -113,7 +150,7 @@ declTest("getActor with remoteType mismatch", {
     );
 
     await ContentTask.spawn(browser, {}, async function() {
-      let child = content.window.getWindowGlobalChild();
+      let child = content.getWindowGlobalChild();
       ok(child, "WindowGlobalChild should have value.");
       Assert.throws(
         () => child.getActor("Test"),
@@ -132,8 +169,8 @@ declTest("getActor without allFrames", {
       // Create and append an iframe into the window's document.
       let frame = content.document.createElement("iframe");
       content.document.body.appendChild(frame);
-      is(content.window.frames.length, 1, "There should be an iframe.");
-      let child = frame.contentWindow.window.getWindowGlobalChild();
+      is(content.frames.length, 1, "There should be an iframe.");
+      let child = frame.contentWindow.getWindowGlobalChild();
       Assert.throws(
         () => child.getActor("Test"),
         /NS_ERROR_NOT_AVAILABLE/,
@@ -151,8 +188,8 @@ declTest("getActor with allFrames", {
       // Create and append an iframe into the window's document.
       let frame = content.document.createElement("iframe");
       content.document.body.appendChild(frame);
-      is(content.window.frames.length, 1, "There should be an iframe.");
-      let child = frame.contentWindow.window.getWindowGlobalChild();
+      is(content.frames.length, 1, "There should be an iframe.");
+      let child = frame.contentWindow.getWindowGlobalChild();
       let actorChild = child.getActor("Test");
       ok(actorChild, "JSWindowActorChild should have value.");
     });

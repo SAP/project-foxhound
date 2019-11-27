@@ -64,7 +64,7 @@ ChromeUtils.defineModuleGetter(
 ChromeUtils.defineModuleGetter(
   this,
   "ProfilerMenuButton",
-  "resource://devtools/client/performance-new/popup/menu-button.jsm"
+  "resource://devtools/client/performance-new/popup/menu-button.jsm.js"
 );
 
 // We don't want to spend time initializing the full loader here so we create
@@ -118,12 +118,6 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
       ),
       modifiers: "", // F12 is the only one without modifiers
     },
-    // Open WebIDE window
-    {
-      id: "webide",
-      shortcut: KeyShortcutsBundle.GetStringFromName("webide.commandkey"),
-      modifiers: "shift",
-    },
     // Open the Browser Toolbox
     {
       id: "browserToolbox",
@@ -168,6 +162,12 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     {
       toolId: "webconsole",
       shortcut: KeyShortcutsBundle.GetStringFromName("webconsole.commandkey"),
+      modifiers,
+    },
+    // Key for opening the Debugger
+    {
+      toolId: "jsdebugger",
+      shortcut: KeyShortcutsBundle.GetStringFromName("jsdebugger.commandkey2"),
       modifiers,
     },
     // Key for opening the Network Monitor
@@ -215,6 +215,7 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     // like on Chrome DevTools.
     shortcuts.push({
       id: "inspectorMac",
+      toolId: "inspector",
       shortcut: KeyShortcutsBundle.GetStringFromName("inspector.commandkey"),
       modifiers: "accel,shift",
     });
@@ -258,7 +259,7 @@ function isProfilerButtonEnabled() {
 
 XPCOMUtils.defineLazyGetter(this, "ProfilerPopupBackground", function() {
   return ChromeUtils.import(
-    "resource://devtools/client/performance-new/popup/background.jsm"
+    "resource://devtools/client/performance-new/popup/background.jsm.js"
   );
 });
 
@@ -312,9 +313,9 @@ DevToolsStartup.prototype = {
     const isInitialLaunch =
       cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
     if (isInitialLaunch) {
-      // Execute only on first launch of this browser instance.
-      const hasDevToolsFlag = flags.console || flags.devtools || flags.debugger;
-      this.setupEnabledPref(hasDevToolsFlag);
+      // Enable devtools for all users on startup (onboarding experiment from Bug 1408969
+      // is over).
+      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
 
       // Store devtoolsFlag to check it later in onWindowReady.
       this.devtoolsFlag = flags.devtools;
@@ -429,26 +430,6 @@ DevToolsStartup.prototype = {
         this.sendEntryPointTelemetry("CommandLine");
       }
     }
-
-    // Wait until we get a window before sending a ping to telemetry to avoid slowing down
-    // the startup phase.
-    this.pingOnboardingTelemetry();
-  },
-
-  /**
-   * Check if the user is being flagged as DevTools users or not. This probe should only
-   * be logged once per profile.
-   */
-  pingOnboardingTelemetry() {
-    // Only ping telemetry once per profile.
-    const alreadyLoggedPref = "devtools.onboarding.telemetry.logged";
-    if (Services.prefs.getBoolPref(alreadyLoggedPref)) {
-      return;
-    }
-
-    const scalarId = "devtools.onboarding.is_devtools_user";
-    this.telemetry.scalarSet(scalarId, this.isDevToolsUser());
-    Services.prefs.setBoolPref(alreadyLoggedPref, true);
   },
 
   /**
@@ -655,51 +636,6 @@ DevToolsStartup.prototype = {
   isDevToolsUser() {
     const selfXssCount = Services.prefs.getIntPref("devtools.selfxss.count", 0);
     return selfXssCount > 0;
-  },
-
-  /**
-   * Depending on some runtime parameters (command line arguments as well as existing
-   * preferences), the DEVTOOLS_ENABLED_PREF might be forced to true.
-   *
-   * @param {Boolean} hasDevToolsFlag
-   *        true if any DevTools command line argument was passed when starting Firefox.
-   */
-  setupEnabledPref(hasDevToolsFlag) {
-    // Read the current experiment state.
-    const experimentState = Services.prefs.getCharPref(
-      "devtools.onboarding.experiment"
-    );
-    const isRegularExperiment = experimentState == "on";
-    const isForcedExperiment = experimentState == "force";
-    const isInExperiment = isRegularExperiment || isForcedExperiment;
-
-    // Force devtools.enabled to true for users that are not part of the experiment.
-    if (!isInExperiment) {
-      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
-      return;
-    }
-
-    // Force devtools.enabled to false once for each experiment user.
-    if (!Services.prefs.getBoolPref("devtools.onboarding.experiment.flipped")) {
-      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, false);
-      Services.prefs.setBoolPref(
-        "devtools.onboarding.experiment.flipped",
-        true
-      );
-    }
-
-    if (Services.prefs.getBoolPref(DEVTOOLS_ENABLED_PREF)) {
-      // Nothing to do if DevTools are already enabled.
-      return;
-    }
-
-    // We only consider checking the actual isDevToolsUser() if the user is in the
-    // "regular" experiment group.
-    const isDevToolsUser = isRegularExperiment && this.isDevToolsUser();
-
-    if (hasDevToolsFlag || isDevToolsUser) {
-      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
-    }
   },
 
   hookKeyShortcuts(window) {
@@ -938,8 +874,10 @@ DevToolsStartup.prototype = {
     const window = Services.wm.getMostRecentWindow("devtools:webconsole");
     if (!window) {
       const require = this.initDevTools("CommandLine");
-      const { HUDService } = require("devtools/client/webconsole/hudservice");
-      HUDService.toggleBrowserConsole().catch(console.error);
+      const {
+        BrowserConsoleManager,
+      } = require("devtools/client/webconsole/browser-console-manager");
+      BrowserConsoleManager.toggleBrowserConsole().catch(console.error);
     } else {
       // the Browser Console was already open
       window.focus();
@@ -1066,10 +1004,11 @@ DevToolsStartup.prototype = {
       // actors and DebuggingServer itself, especially since we can mark
       // serverLoader as invisible to the debugger (unlike the usual loader
       // settings).
-      const serverLoader = new DevToolsLoader();
-      serverLoader.invisibleToDebugger = true;
+      const serverLoader = new DevToolsLoader({
+        invisibleToDebugger: true,
+      });
       const { DebuggerServer: debuggerServer } = serverLoader.require(
-        "devtools/server/main"
+        "devtools/server/debugger-server"
       );
       const { SocketListener } = serverLoader.require(
         "devtools/shared/security/socket"
@@ -1208,7 +1147,7 @@ const JsonView = {
     // Register for messages coming from the child process.
     // This is never removed as there is no particular need to unregister
     // it during shutdown.
-    Services.ppmm.addMessageListener("devtools:jsonview:save", this.onSave);
+    Services.mm.addMessageListener("devtools:jsonview:save", this.onSave);
   },
 
   // Message handlers for events from child processes
@@ -1218,8 +1157,8 @@ const JsonView = {
    * in the parent process.
    */
   onSave: function(message) {
-    const chrome = Services.wm.getMostRecentWindow("navigator:browser");
-    const browser = chrome.gBrowser.selectedBrowser;
+    const browser = message.target;
+    const chrome = browser.ownerGlobal;
     if (message.data === null) {
       // Save original contents
       chrome.saveBrowser(browser);

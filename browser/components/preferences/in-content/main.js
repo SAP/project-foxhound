@@ -195,6 +195,12 @@ Preferences.addAll([
   { id: "browser.search.update", type: "bool" },
 
   { id: "privacy.userContext.enabled", type: "bool" },
+
+  // Picture-in-Picture
+  {
+    id: "media.videocontrols.picture-in-picture.video-toggle.enabled",
+    type: "bool",
+  },
 ]);
 
 if (AppConstants.HAVE_SHELL_SERVICE) {
@@ -265,18 +271,6 @@ var gMainPane = {
   STARTUP_PREF_RESTORE_SESSION: 3,
 
   // Convenience & Performance Shortcuts
-
-  get _brandShortName() {
-    delete this._brandShortName;
-    return (this._brandShortName = document
-      .getElementById("bundleBrand")
-      .getString("brandShortName"));
-  },
-
-  get _prefsBundle() {
-    delete this._prefsBundle;
-    return (this._prefsBundle = document.getElementById("bundlePreferences"));
-  },
 
   get _list() {
     delete this._list;
@@ -383,6 +377,20 @@ var gMainPane = {
       link.setAttribute("href", cfrLearnMoreUrl);
     }
 
+    if (
+      Services.prefs.getBoolPref(
+        "media.videocontrols.picture-in-picture.enabled"
+      )
+    ) {
+      document.getElementById("pictureInPictureBox").hidden = false;
+
+      let pipLearnMoreUrl =
+        Services.urlFormatter.formatURLPref("app.support.baseURL") +
+        "picture-in-picture";
+      let link = document.getElementById("pictureInPictureLearnMore");
+      link.setAttribute("href", pipLearnMoreUrl);
+    }
+
     if (AppConstants.platform == "win") {
       // Functionality for "Show tabs in taskbar" on Windows 7 and up.
       try {
@@ -401,6 +409,31 @@ var gMainPane = {
     }
     if (!TransientPrefs.prefShouldBeVisible("browser.tabs.warnOnOpen")) {
       document.getElementById("warnOpenMany").hidden = true;
+    }
+
+    setEventListener("ctrlTabRecentlyUsedOrder", "command", function() {
+      Services.prefs.clearUserPref("browser.ctrlTab.migrated");
+    });
+    setEventListener("manageBrowserLanguagesButton", "command", function() {
+      gMainPane.showBrowserLanguages({ search: false });
+    });
+    if (AppConstants.MOZ_UPDATER) {
+      // These elements are only compiled in when the updater is enabled
+      setEventListener("checkForUpdatesButton", "command", function() {
+        gAppUpdater.checkForUpdates();
+      });
+      setEventListener("downloadAndInstallButton", "command", function() {
+        gAppUpdater.startDownload();
+      });
+      setEventListener("updateButton", "command", function() {
+        gAppUpdater.buttonRestartAfterDownload();
+      });
+      setEventListener("checkForUpdatesButton2", "command", function() {
+        gAppUpdater.checkForUpdates();
+      });
+      setEventListener("checkForUpdatesButton3", "command", function() {
+        gAppUpdater.checkForUpdates();
+      });
     }
 
     // Startup pref
@@ -691,6 +724,43 @@ var gMainPane = {
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "main-pane-loaded");
 
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("defaultFont"),
+      element => FontBuilder.readFontSelection(element)
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("translate"),
+      () =>
+        this.updateButtons(
+          "translateButton",
+          "browser.translation.detectLanguage"
+        )
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("checkSpelling"),
+      () => this.readCheckSpelling()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("checkSpelling"),
+      () => this.writeCheckSpelling()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("saveWhere"),
+      () => this.readUseDownloadDir()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("linkTargeting"),
+      () => this.readLinkTarget()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("linkTargeting"),
+      () => this.writeLinkTarget()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("browserContainersCheckbox"),
+      () => this.readBrowserContainersCheckbox()
+    );
+
     this.setInitialized();
   },
 
@@ -707,8 +777,8 @@ var gMainPane = {
             this._initListEventHandlers();
             this._loadData();
             await this._rebuildVisibleTypes();
-            this._sortVisibleTypes();
-            this._rebuildView();
+            await this._rebuildView();
+            await this._sortListView();
             resolve();
           } catch (ex) {
             reject(ex);
@@ -983,7 +1053,7 @@ var gMainPane = {
   /* Confirm the locale change and restart the browser in the new locale. */
   confirmBrowserLanguageChange(event) {
     let localesString = (event.target.getAttribute("locales") || "").trim();
-    if (!localesString || localesString.length == 0) {
+    if (!localesString || !localesString.length) {
       return;
     }
     let locales = localesString.split(",");
@@ -1040,7 +1110,7 @@ var gMainPane = {
     if (value) {
       // We need to restore the blank homepage setting in our other pref
       if (startupPref.value === this.STARTUP_PREF_BLANK) {
-        HomePage.set("about:blank");
+        HomePage.safeSet("about:blank");
       }
       newValue = this.STARTUP_PREF_RESTORE_SESSION;
       let warnOnQuitPref = Preferences.get("browser.sessionstore.warnOnQuit");
@@ -1733,12 +1803,11 @@ var gMainPane = {
           aData == PREF_HIDE_PLUGINS_WITHOUT_EXTENSIONS
         ) {
           await this._rebuildVisibleTypes();
-          this._sortVisibleTypes();
+          await this._rebuildView();
+          await this._sortListView();
+        } else {
+          await this._rebuildView();
         }
-
-        // All the prefs we observe can affect what we display, so we rebuild
-        // the view when any of them changes.
-        this._rebuildView();
       }
     } else if (aTopic == AUTO_UPDATE_CHANGED_TOPIC) {
       if (aData != "true" && aData != "false") {
@@ -1917,13 +1986,14 @@ var gMainPane = {
       // We couldn't find any reason to exclude the type, so include it.
       this._visibleTypes.push(handlerInfo);
 
-      let otherHandlerInfo = visibleDescriptions.get(handlerInfo.description);
+      let key = JSON.stringify(handlerInfo.description);
+      let otherHandlerInfo = visibleDescriptions.get(key);
       if (!otherHandlerInfo) {
         // This is the first type with this description that we encountered
         // while rebuilding the _visibleTypes array this time. Make sure the
         // flag is reset so we won't add the type to the description.
         handlerInfo.disambiguateDescription = false;
-        visibleDescriptions.set(handlerInfo.description, handlerInfo);
+        visibleDescriptions.set(key, handlerInfo);
       } else {
         // There is at least another type with this description. Make sure we
         // add the type to the description on both HandlerInfoWrapper objects.
@@ -1933,7 +2003,7 @@ var gMainPane = {
     }
   },
 
-  _rebuildView() {
+  async _rebuildView() {
     let lastSelectedType =
       this.selectedHandlerListItem &&
       this.selectedHandlerListItem.handlerInfoWrapper.type;
@@ -1943,11 +2013,6 @@ var gMainPane = {
     this._list.textContent = "";
 
     var visibleTypes = this._visibleTypes;
-
-    // If the user is filtering the list, then only show matching types.
-    if (this._filter.value) {
-      visibleTypes = visibleTypes.filter(this._matchesFilter, this);
-    }
 
     let items = visibleTypes.map(
       visibleType => new HandlerListItem(visibleType)
@@ -1960,22 +2025,33 @@ var gMainPane = {
         lastSelectedItem = item;
       }
     }
-    this._list.appendChild(itemsFragment);
+
     for (let item of items) {
       item.setupNode();
+      this.rebuildActionsMenu(item.node, item.handlerInfoWrapper);
+      item.refreshAction();
+    }
+
+    // If the user is filtering the list, then only show matching types.
+    // If we filter, we need to first localize the fragment, to
+    // be able to filter by localized values.
+    if (this._filter.value) {
+      await document.l10n.translateFragment(itemsFragment);
+
+      this._filterView(itemsFragment);
+
+      document.l10n.pauseObserving();
+      this._list.appendChild(itemsFragment);
+      document.l10n.resumeObserving();
+    } else {
+      // Otherwise we can just append the fragment and it'll
+      // get localized via the Mutation Observer.
+      this._list.appendChild(itemsFragment);
     }
 
     if (lastSelectedItem) {
       this._list.selectedItem = lastSelectedItem.node;
     }
-  },
-
-  _matchesFilter(aType) {
-    var filterValue = this._filter.value.toLowerCase();
-    return (
-      aType.typeDescription.toLowerCase().includes(filterValue) ||
-      aType.actionDescription.toLowerCase().includes(filterValue)
-    );
   },
 
   /**
@@ -2029,9 +2105,10 @@ var gMainPane = {
    * Rebuild the actions menu for the selected entry.  Gets called by
    * the richlistitem constructor when an entry in the list gets selected.
    */
-  rebuildActionsMenu() {
-    var typeItem = this._list.selectedItem;
-    var handlerInfo = this.selectedHandlerListItem.handlerInfoWrapper;
+  rebuildActionsMenu(
+    typeItem = this._list.selectedItem,
+    handlerInfo = this.selectedHandlerListItem.handlerInfoWrapper
+  ) {
     var menu = typeItem.querySelector(".actionsMenu");
     var menuPopup = menu.menupopup;
 
@@ -2048,24 +2125,19 @@ var gMainPane = {
         "action",
         Ci.nsIHandlerInfo.handleInternally
       );
-      let label = gMainPane._prefsBundle.getFormattedString("previewInApp", [
-        this._brandShortName,
-      ]);
-      internalMenuItem.setAttribute("label", label);
-      internalMenuItem.setAttribute("tooltiptext", label);
+      document.l10n.setAttributes(
+        internalMenuItem,
+        "applications-preview-inapp"
+      );
       internalMenuItem.setAttribute(APP_ICON_ATTR_NAME, "ask");
       menuPopup.appendChild(internalMenuItem);
     }
 
-    {
-      var askMenuItem = document.createXULElement("menuitem");
-      askMenuItem.setAttribute("action", Ci.nsIHandlerInfo.alwaysAsk);
-      let label = gMainPane._prefsBundle.getString("alwaysAsk");
-      askMenuItem.setAttribute("label", label);
-      askMenuItem.setAttribute("tooltiptext", label);
-      askMenuItem.setAttribute(APP_ICON_ATTR_NAME, "ask");
-      menuPopup.appendChild(askMenuItem);
-    }
+    var askMenuItem = document.createXULElement("menuitem");
+    askMenuItem.setAttribute("action", Ci.nsIHandlerInfo.alwaysAsk);
+    document.l10n.setAttributes(askMenuItem, "applications-always-ask");
+    askMenuItem.setAttribute(APP_ICON_ATTR_NAME, "ask");
+    menuPopup.appendChild(askMenuItem);
 
     // Create a menu item for saving to disk.
     // Note: this option isn't available to protocol types, since we don't know
@@ -2073,9 +2145,7 @@ var gMainPane = {
     if (handlerInfo.wrappedHandlerInfo instanceof Ci.nsIMIMEInfo) {
       var saveMenuItem = document.createXULElement("menuitem");
       saveMenuItem.setAttribute("action", Ci.nsIHandlerInfo.saveToDisk);
-      let label = gMainPane._prefsBundle.getString("saveFile");
-      saveMenuItem.setAttribute("label", label);
-      saveMenuItem.setAttribute("tooltiptext", label);
+      document.l10n.setAttributes(saveMenuItem, "applications-action-save");
       saveMenuItem.setAttribute(APP_ICON_ATTR_NAME, "save");
       menuPopup.appendChild(saveMenuItem);
     }
@@ -2092,13 +2162,12 @@ var gMainPane = {
         "action",
         Ci.nsIHandlerInfo.useSystemDefault
       );
-      let label = gMainPane._prefsBundle.getFormattedString("useDefault", [
-        handlerInfo.defaultDescription,
-      ]);
-      defaultMenuItem.setAttribute("label", label);
-      defaultMenuItem.setAttribute(
-        "tooltiptext",
-        handlerInfo.defaultDescription
+      document.l10n.setAttributes(
+        defaultMenuItem,
+        "applications-use-app-default",
+        {
+          "app-name": handlerInfo.defaultDescription,
+        }
       );
       defaultMenuItem.setAttribute(
         "image",
@@ -2124,9 +2193,9 @@ var gMainPane = {
       } else {
         label = possibleApp.name;
       }
-      label = gMainPane._prefsBundle.getFormattedString("useApp", [label]);
-      menuItem.setAttribute("label", label);
-      menuItem.setAttribute("tooltiptext", label);
+      document.l10n.setAttributes(menuItem, "applications-use-app", {
+        "app-name": label,
+      });
       menuItem.setAttribute(
         "image",
         this._getIconURLForHandlerApp(possibleApp)
@@ -2164,11 +2233,9 @@ var gMainPane = {
         if (!appAlreadyInHandlers) {
           let menuItem = document.createXULElement("menuitem");
           menuItem.setAttribute("action", Ci.nsIHandlerInfo.useHelperApp);
-          let label = gMainPane._prefsBundle.getFormattedString("useApp", [
-            handler.name,
-          ]);
-          menuItem.setAttribute("label", label);
-          menuItem.setAttribute("tooltiptext", label);
+          document.l10n.setAttributes(menuItem, "applications-use-app", {
+            "app-name": handler.name,
+          });
           menuItem.setAttribute(
             "image",
             this._getIconURLForHandlerApp(handler)
@@ -2188,12 +2255,13 @@ var gMainPane = {
     if (handlerInfo.pluginName) {
       var pluginMenuItem = document.createXULElement("menuitem");
       pluginMenuItem.setAttribute("action", kActionUsePlugin);
-      let label = gMainPane._prefsBundle.getFormattedString("usePluginIn", [
-        handlerInfo.pluginName,
-        this._brandShortName,
-      ]);
-      pluginMenuItem.setAttribute("label", label);
-      pluginMenuItem.setAttribute("tooltiptext", label);
+      document.l10n.setAttributes(
+        pluginMenuItem,
+        "applications-use-plugin-in",
+        {
+          "plugin-name": handlerInfo.pluginName,
+        }
+      );
       pluginMenuItem.setAttribute(APP_ICON_ATTR_NAME, "plugin");
       menuPopup.appendChild(pluginMenuItem);
     }
@@ -2214,9 +2282,7 @@ var gMainPane = {
       menuItem.addEventListener("command", function(e) {
         gMainPane.chooseApp(e);
       });
-      let label = gMainPane._prefsBundle.getString("useOtherApp");
-      menuItem.setAttribute("label", label);
-      menuItem.setAttribute("tooltiptext", label);
+      document.l10n.setAttributes(menuItem, "applications-use-other");
       menuPopup.appendChild(menuItem);
     }
 
@@ -2229,10 +2295,7 @@ var gMainPane = {
       menuItem.addEventListener("command", function(e) {
         gMainPane.manageApp(e);
       });
-      menuItem.setAttribute(
-        "label",
-        gMainPane._prefsBundle.getString("manageApp")
-      );
+      document.l10n.setAttributes(menuItem, "applications-manage-app");
       menuPopup.appendChild(menuItem);
     }
 
@@ -2252,17 +2315,37 @@ var gMainPane = {
           }
           break;
         case Ci.nsIHandlerInfo.useSystemDefault:
-          menu.selectedItem = defaultMenuItem;
+          // We might not have a default item if we're not aware of an
+          // OS-default handler for this type:
+          menu.selectedItem = defaultMenuItem || askMenuItem;
           break;
         case Ci.nsIHandlerInfo.useHelperApp:
           if (preferredApp) {
-            menu.selectedItem = possibleAppMenuItems.filter(v =>
+            let preferredItem = possibleAppMenuItems.find(v =>
               v.handlerApp.equals(preferredApp)
-            )[0];
+            );
+            if (preferredItem) {
+              menu.selectedItem = preferredItem;
+            } else {
+              // This shouldn't happen, but let's make sure we end up with a
+              // selected item:
+              let possible = possibleAppMenuItems
+                .map(v => v.handlerApp && v.handlerApp.name)
+                .join(", ");
+              Cu.reportError(
+                new Error(
+                  `Preferred handler for ${
+                    handlerInfo.type
+                  } not in list of possible handlers!? (List: ${possible})`
+                )
+              );
+              menu.selectedItem = askMenuItem;
+            }
           }
           break;
         case kActionUsePlugin:
-          menu.selectedItem = pluginMenuItem;
+          // The plugin may have been removed, if so, select 'always ask':
+          menu.selectedItem = pluginMenuItem || askMenuItem;
           break;
         case Ci.nsIHandlerInfo.saveToDisk:
           menu.selectedItem = saveMenuItem;
@@ -2296,41 +2379,48 @@ var gMainPane = {
       column.setAttribute("sortDirection", "ascending");
     }
 
-    this._sortVisibleTypes();
-    this._rebuildView();
+    this._sortListView();
   },
 
-  /**
-   * Sort the list of visible types by the current sort column/direction.
-   */
-  _sortVisibleTypes() {
+  async _sortListView() {
     if (!this._sortColumn) {
       return;
     }
+    let comp = new Services.intl.Collator(undefined, {
+      usage: "sort",
+    });
 
-    function sortByType(a, b) {
-      return a.typeDescription
-        .toLowerCase()
-        .localeCompare(b.typeDescription.toLowerCase());
+    await document.l10n.translateFragment(this._list);
+    let items = Array.from(this._list.children);
+
+    let textForNode;
+    if (this._sortColumn.getAttribute("value") === "type") {
+      textForNode = n => n.querySelector(".typeDescription").textContent;
+    } else {
+      textForNode = n => n.querySelector(".actionsMenu").getAttribute("label");
     }
 
-    function sortByAction(a, b) {
-      return a.actionDescription
-        .toLowerCase()
-        .localeCompare(b.actionDescription.toLowerCase());
-    }
+    let sortDir = this._sortColumn.getAttribute("sortDirection");
+    let multiplier = sortDir == "descending" ? -1 : 1;
+    items.sort(
+      (a, b) => multiplier * comp.compare(textForNode(a), textForNode(b))
+    );
 
-    switch (this._sortColumn.getAttribute("value")) {
-      case "type":
-        this._visibleTypes.sort(sortByType);
-        break;
-      case "action":
-        this._visibleTypes.sort(sortByAction);
-        break;
-    }
+    // Re-append items in the correct order:
+    items.forEach(item => this._list.appendChild(item));
+  },
 
-    if (this._sortColumn.getAttribute("sortDirection") == "descending") {
-      this._visibleTypes.reverse();
+  _filterView(frag = this._list) {
+    const filterValue = this._filter.value.toLowerCase();
+    for (let elem of frag.children) {
+      const typeDescription = elem.querySelector(".typeDescription")
+        .textContent;
+      const actionDescription = elem
+        .querySelector(".actionDescription")
+        .getAttribute("value");
+      elem.hidden =
+        !typeDescription.toLowerCase().includes(filterValue) &&
+        !actionDescription.toLowerCase().includes(filterValue);
     }
   },
 
@@ -2433,7 +2523,7 @@ var gMainPane = {
     );
   },
 
-  chooseApp(aEvent) {
+  async chooseApp(aEvent) {
     // Don't let the normal "on select action" handler get this event,
     // as we handle it specially ourselves.
     aEvent.stopPropagation();
@@ -2466,8 +2556,17 @@ var gMainPane = {
       var handlerInfo = this.selectedHandlerListItem.handlerInfoWrapper;
 
       params.mimeInfo = handlerInfo.wrappedHandlerInfo;
-      params.title = gMainPane._prefsBundle.getString("fpTitleChooseApp");
-      params.description = handlerInfo.description;
+      params.title = await document.l10n.formatValue(
+        "applications-select-helper"
+      );
+      if ("id" in handlerInfo.description) {
+        params.description = await document.l10n.formatValue(
+          handlerInfo.description.id,
+          handlerInfo.description.args
+        );
+      } else {
+        params.description = handlerInfo.typeDescription.raw;
+      }
       params.filename = null;
       params.handlerApp = null;
 
@@ -2489,7 +2588,9 @@ var gMainPane = {
         onAppSelected
       );
     } else {
-      let winTitle = gMainPane._prefsBundle.getString("fpTitleChooseApp");
+      let winTitle = await document.l10n.formatValue(
+        "applications-select-helper"
+      );
       let fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
       let fpCallback = aResult => {
         if (
@@ -2969,26 +3070,36 @@ class HandlerListItem {
     let typeDescription = this.handlerInfoWrapper.typeDescription;
     this.setOrRemoveAttributes([
       [null, "type", this.handlerInfoWrapper.type],
-      [".typeContainer", "tooltiptext", typeDescription],
-      [".typeDescription", "value", typeDescription],
       [".typeIcon", "src", this.handlerInfoWrapper.smallIcon],
     ]);
-    this.refreshAction();
+    localizeElement(
+      this.node.querySelector(".typeDescription"),
+      typeDescription
+    );
     this.showActionsMenu = false;
   }
 
   refreshAction() {
-    let { actionIconClass, actionDescription } = this.handlerInfoWrapper;
+    let { actionIconClass } = this.handlerInfoWrapper;
     this.setOrRemoveAttributes([
       [null, APP_ICON_ATTR_NAME, actionIconClass],
-      [".actionContainer", "tooltiptext", actionDescription],
-      [".actionDescription", "value", actionDescription],
       [
         ".actionIcon",
         "src",
         actionIconClass ? null : this.handlerInfoWrapper.actionIcon,
       ],
     ]);
+    const selectedItem = this.node.querySelector("[selected=true]");
+    if (!selectedItem) {
+      Cu.reportError("No selected item for " + this.handlerInfoWrapper.type);
+      return;
+    }
+    const { id, args } = document.l10n.getAttributes(selectedItem);
+    localizeElement(this.node.querySelector(".actionDescription"), {
+      id: id + "-label",
+      args,
+    });
+    localizeElement(this.node.querySelector(".actionsMenu"), { id, args });
   }
 
   set showActionsMenu(value) {
@@ -2996,6 +3107,25 @@ class HandlerListItem {
       [".actionContainer", "hidden", value],
       [".actionsMenuContainer", "hidden", !value],
     ]);
+  }
+}
+
+/**
+ * This API facilitates dual-model of some localization APIs which
+ * may operate on raw strings of l10n id/args pairs.
+ *
+ * The l10n can be:
+ *
+ * {raw: string} - raw strings to be used as text value of the element
+ * {id: string} - l10n-id
+ * {id: string, args: object} - l10n-id + l10n-args
+ */
+function localizeElement(node, l10n) {
+  if (l10n.hasOwnProperty("raw")) {
+    node.removeAttribute("data-l10n-id");
+    node.textContent = l10n.raw;
+  } else {
+    document.l10n.setAttributes(node, l10n.id, l10n.args);
   }
 }
 
@@ -3041,17 +3171,15 @@ class HandlerInfoWrapper {
 
   get description() {
     if (this.wrappedHandlerInfo.description) {
-      return this.wrappedHandlerInfo.description;
+      return { raw: this.wrappedHandlerInfo.description };
     }
 
     if (this.primaryExtension) {
       var extension = this.primaryExtension.toUpperCase();
-      return gMainPane._prefsBundle.getFormattedString("fileEnding", [
-        extension,
-      ]);
+      return { id: "applications-file-ending", args: { extension } };
     }
 
-    return this.type;
+    return { raw: this.type };
   }
 
   /**
@@ -3063,74 +3191,27 @@ class HandlerInfoWrapper {
    */
   get typeDescription() {
     if (this.disambiguateDescription) {
-      return gMainPane._prefsBundle.getFormattedString(
-        "typeDescriptionWithType",
-        [this.description, this.type]
-      );
+      const description = this.description;
+      if (description.id) {
+        // Pass through the arguments:
+        let { args = {} } = description;
+        args.type = this.type;
+        return {
+          id: description.id + "-with-type",
+          args,
+        };
+      }
+
+      return {
+        id: "applications-type-description-with-type",
+        args: {
+          "type-description": description.raw,
+          type: this.type,
+        },
+      };
     }
 
     return this.description;
-  }
-
-  /**
-   * Describe, in a human-readable fashion, the preferred action to take on
-   * the type represented by the given handler info object.
-   */
-  get actionDescription() {
-    // alwaysAskBeforeHandling overrides the preferred action, so if that flag
-    // is set, then describe that behavior instead.
-    if (this.alwaysAskBeforeHandling) {
-      return gMainPane._prefsBundle.getString("alwaysAsk");
-    }
-
-    switch (this.preferredAction) {
-      case Ci.nsIHandlerInfo.saveToDisk:
-        return gMainPane._prefsBundle.getString("saveFile");
-
-      case Ci.nsIHandlerInfo.useHelperApp:
-        var preferredApp = this.preferredApplicationHandler;
-        var name;
-        if (preferredApp instanceof Ci.nsILocalHandlerApp) {
-          name = getFileDisplayName(preferredApp.executable);
-        } else {
-          name = preferredApp.name;
-        }
-        return gMainPane._prefsBundle.getFormattedString("useApp", [name]);
-
-      case Ci.nsIHandlerInfo.handleInternally:
-        if (this instanceof InternalHandlerInfoWrapper) {
-          return gMainPane._prefsBundle.getFormattedString("previewInApp", [
-            gMainPane._brandShortName,
-          ]);
-        }
-
-        // For other types, handleInternally looks like either useHelperApp
-        // or useSystemDefault depending on whether or not there's a preferred
-        // handler app.
-        if (gMainPane.isValidHandlerApp(this.preferredApplicationHandler)) {
-          return this.preferredApplicationHandler.name;
-        }
-
-        return this.defaultDescription;
-
-      // XXX Why don't we say the app will handle the type internally?
-      // Is it because the app can't actually do that?  But if that's true,
-      // then why would a preferredAction ever get set to this value
-      // in the first place?
-
-      case Ci.nsIHandlerInfo.useSystemDefault:
-        return gMainPane._prefsBundle.getFormattedString("useDefault", [
-          this.defaultDescription,
-        ]);
-
-      case kActionUsePlugin:
-        return gMainPane._prefsBundle.getFormattedString("usePluginIn", [
-          this.pluginName,
-          gMainPane._brandShortName,
-        ]);
-      default:
-        throw new Error(`Unexpected preferredAction: ${this.preferredAction}`);
-    }
   }
 
   get actionIconClass() {
@@ -3146,6 +3227,7 @@ class HandlerInfoWrapper {
         if (this instanceof InternalHandlerInfoWrapper) {
           return "ask";
         }
+        break;
 
       case kActionUsePlugin:
         return "plugin";
@@ -3164,10 +3246,10 @@ class HandlerInfoWrapper {
         if (gMainPane.isValidHandlerApp(preferredApp)) {
           return gMainPane._getIconURLForHandlerApp(preferredApp);
         }
-      // Explicit fall-through
 
       // This should never happen, but if preferredAction is set to some weird
       // value, then fall back to the generic application icon.
+      // Explicit fall-through
       default:
         return ICON_URL_APP;
     }
@@ -3452,7 +3534,7 @@ class InternalHandlerInfoWrapper extends HandlerInfoWrapper {
   }
 
   get description() {
-    return gMainPane._prefsBundle.getString(this._appPrefLabel);
+    return { id: this._appPrefLabel };
   }
 }
 
@@ -3466,7 +3548,7 @@ class PDFHandlerInfoWrapper extends InternalHandlerInfoWrapper {
   }
 
   get _appPrefLabel() {
-    return "portableDocumentFormat";
+    return "applications-type-pdf";
   }
 
   get enabled() {

@@ -42,7 +42,13 @@ enum class SectionId {
   GcFeatureOptIn = 42  // Arbitrary, but fits in 7 bits
 };
 
+// WebAssembly type encodings are all single-byte negative SLEB128s, hence:
+//  forall tc:TypeCode. ((tc & SLEB128SignMask) == SLEB128SignBit
+static const uint8_t SLEB128SignMask = 0xc0;
+static const uint8_t SLEB128SignBit = 0x40;
+
 enum class TypeCode {
+
   I32 = 0x7f,  // SLEB128(-0x01)
   I64 = 0x7e,  // SLEB128(-0x02)
   F32 = 0x7d,  // SLEB128(-0x03)
@@ -63,7 +69,7 @@ enum class TypeCode {
   // Type constructor for structure types - unofficial
   Struct = 0x50,  // SLEB128(-0x30)
 
-  // Special code representing the block signature ()->()
+  // The 'empty' case of blocktype.
   BlockVoid = 0x40,  // SLEB128(-0x40)
 
   // Type designator for null - unofficial, will not appear in the binary format
@@ -136,10 +142,22 @@ enum class MemoryTableFlags {
 
 enum class MemoryMasks { AllowUnshared = 0x1, AllowShared = 0x3 };
 
-enum class InitializerKind {
+enum class DataSegmentKind {
   Active = 0x00,
   Passive = 0x01,
-  ActiveWithIndex = 0x02
+  ActiveWithMemoryIndex = 0x02
+};
+
+enum class ElemSegmentKind : uint32_t {
+  Active = 0x0,
+  Passive = 0x1,
+  ActiveWithTableIndex = 0x2,
+  Declared = 0x3,
+};
+
+enum class ElemSegmentPayload : uint32_t {
+  ExternIndex = 0x0,
+  ElemExpression = 0x4,
 };
 
 enum class Op {
@@ -162,7 +180,8 @@ enum class Op {
 
   // Parametric operators
   Drop = 0x1a,
-  Select = 0x1b,
+  SelectNumeric = 0x1b,
+  SelectTyped = 0x1c,
 
   // Variable access
   GetLocal = 0x20,
@@ -402,6 +421,7 @@ enum class ThreadOp {
   Wake = 0x00,
   I32Wait = 0x01,
   I64Wait = 0x02,
+  Fence = 0x03,
 
   // Load and store
   I32AtomicLoad = 0x10,

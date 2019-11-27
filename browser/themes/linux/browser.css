@@ -104,21 +104,6 @@ menuitem.bookmark-item {
   color: HighlightText !important;
 }
 
-/* rules for menupopup drop indicators */
-.menupopup-drop-indicator-bar {
-  position: relative;
-  /* these two margins must together compensate the indicator's height */
-  margin-top: -1px;
-  margin-bottom: -1px;
-}
-
-.menupopup-drop-indicator {
-  list-style-image: none;
-  height: 2px;
-  margin-inline-end: -4em;
-  background-color: Highlight;
-}
-
 /* Bookmarks toolbar */
 #PlacesToolbarDropIndicator {
   list-style-image: url(chrome://browser/skin/places/toolbarDropMarker.png);
@@ -195,66 +180,10 @@ menuitem.bookmark-item {
 
 %include ../shared/urlbar-searchbar.inc.css
 
-#urlbar:not(:-moz-lwtheme):not([focused="true"]),
-#urlbar:not(:-moz-lwtheme).hidden-focus,
+#urlbar:not(.megabar):not(:-moz-lwtheme):not([focused="true"]),
+#urlbar.megabar:not(:-moz-lwtheme):not([focused="true"]) > #urlbar-background,
 #searchbar:not(:-moz-lwtheme):not(:focus-within) {
   border-color: ThreeDShadow;
-}
-
-/* ::::: URL Bar Zoom Reset Button ::::: */
-@keyframes urlbar-zoom-reset-pulse {
-  0% {
-    transform: scale(0);
-  }
-  75% {
-    transform: scale(1.5);
-  }
-  100% {
-    transform: scale(1.0);
-  }
-}
-
-#urlbar-zoom-button {
-  -moz-appearance: none;
-  color: inherit;
-}
-
-#urlbar-search-footer {
-  border-top: 1px solid var(--panel-separator-color);
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings {
-  -moz-appearance: none;
-  -moz-user-focus: ignore;
-  color: GrayText;
-  margin: 0;
-  border: 0;
-  padding: 8px 20px;
-  background: transparent;
-}
-
-#urlbar-search-settings:hover {
-  background-color: var(--arrowpanel-dimmed);
-}
-
-#urlbar-search-settings:hover:active {
-  background-color: var(--arrowpanel-dimmed-further);
-}
-
-#urlbar-display-box {
-  margin-top: -1px;
-  margin-bottom: -1px;
-}
-
-.urlbar-display {
-  margin-inline-start: 0;
-}
-
-%include ../shared/urlbarSearchSuggestionsNotification.inc.css
-
-#search-container {
-  min-width: calc(54px + 11ch);
 }
 
 /* identity box */
@@ -341,6 +270,11 @@ notification[value="translation"] menulist > .menulist-dropmarker {
 /* AutoComplete */
 
 %include ../shared/autocomplete.inc.css
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
+  border-top: 1px solid ThreeDShadow;
+}
+
 %include ../shared/urlbar-autocomplete.inc.css
 
 :root {
@@ -348,20 +282,8 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   --urlbar-popup-action-color: -moz-nativehyperlinktext;
 }
 
-#PopupAutoComplete > richlistbox > richlistitem[originaltype~="datalist-first"] {
-  border-top: 1px solid ThreeDShadow;
-}
-
-.ac-title,
-#urlbarView-results {
+.urlbarView {
   font-size: 1.05em;
-}
-
-.ac-separator,
-.ac-url,
-.ac-action,
-.ac-tags {
-  font-size: 0.9em;
 }
 
 /* Bookmarking panel */
@@ -458,13 +380,6 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   z-index: 3;
 }
 
-/* Tab bar scroll arrows */
-
-.tabbrowser-arrowscrollbox > .scrollbutton-up > .toolbarbutton-icon,
-.tabbrowser-arrowscrollbox > .scrollbutton-down > .toolbarbutton-icon {
-  -moz-appearance: none;
-}
-
 /* All tabs menupopup */
 
 .alltabs-item[selected="true"] {
@@ -545,11 +460,6 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   margin-inline-end: 0 !important;
 }
 
-.browser-extension-panel > .panel-arrowcontainer > .panel-arrowcontent {
-  padding: 0;
-  overflow: hidden;
-}
-
 .webextension-popup-browser,
 .webextension-popup-stack {
   border-radius: inherit;
@@ -572,7 +482,7 @@ notification[value="translation"] menulist > .menulist-dropmarker {
   :root[tabsintitlebar] > #navigator-toolbox > #titlebar {
     -moz-appearance: -moz-window-titlebar-maximized;
   }
-  :root[tabsintitlebar][sizemode="normal"] > #navigator-toolbox > #titlebar {
+  :root[tabsintitlebar][sizemode="normal"]:not([gtktiledwindow="true"]) > #navigator-toolbox > #titlebar {
     -moz-appearance: -moz-window-titlebar;
   }
   :root[tabsintitlebar]:not([inDOMFullscreen]) > #navigator-toolbox > #titlebar:-moz-lwtheme {

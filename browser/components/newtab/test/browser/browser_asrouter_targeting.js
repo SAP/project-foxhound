@@ -37,6 +37,11 @@ ChromeUtils.defineModuleGetter(
   "TelemetryEnvironment",
   "resource://gre/modules/TelemetryEnvironment.jsm"
 );
+ChromeUtils.defineModuleGetter(
+  this,
+  "AppConstants",
+  "resource://gre/modules/AppConstants.jsm"
+);
 
 // ASRouterTargeting.isMatch
 add_task(async function should_do_correct_targeting() {
@@ -445,6 +450,18 @@ add_task(async function checkdevToolsOpenedCount() {
   );
 });
 
+add_task(async function check_platformName() {
+  const message = {
+    id: "foo",
+    targeting: `platformName == "${AppConstants.platform}"`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by platformName"
+  );
+});
+
 AddonTestUtils.initMochitest(this);
 
 add_task(async function checkAddonsInfo() {
@@ -823,19 +840,71 @@ add_task(async function check_hasAccessedFxAPanel() {
   );
 });
 
+add_task(async function check_isFxABadgeEnabled() {
+  is(
+    await ASRouterTargeting.Environment.isFxABadgeEnabled,
+    true,
+    "Default pref value is true"
+  );
+
+  await pushPrefs(["browser.messaging-system.fxatoolbarbadge.enabled", false]);
+
+  is(
+    await ASRouterTargeting.Environment.isFxABadgeEnabled,
+    false,
+    "Value should be false according to pref"
+  );
+});
+
 add_task(async function check_isWhatsNewPanelEnabled() {
   is(
     await ASRouterTargeting.Environment.isWhatsNewPanelEnabled,
-    false,
-    "Not enabled yet"
+    true,
+    "Enabled by default"
   );
 
-  await pushPrefs(["browser.messaging-system.whatsNewPanel.enabled", true]);
+  await pushPrefs(["browser.messaging-system.whatsNewPanel.enabled", false]);
 
   is(
     await ASRouterTargeting.Environment.isWhatsNewPanelEnabled,
-    true,
-    "Should update based on pref"
+    false,
+    "Should update based on pref, e.g., for holdback"
+  );
+});
+
+add_task(async function checkCFRFeaturesUserPref() {
+  await pushPrefs([
+    "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
+    false,
+  ]);
+  is(
+    ASRouterTargeting.Environment.userPrefs.cfrFeatures,
+    false,
+    "cfrFeature should be false according to pref"
+  );
+  const message = { id: "foo", targeting: "userPrefs.cfrFeatures == false" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by cfrFeature"
+  );
+});
+
+add_task(async function checkCFRAddonsUserPref() {
+  await pushPrefs([
+    "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
+    false,
+  ]);
+  is(
+    ASRouterTargeting.Environment.userPrefs.cfrAddons,
+    false,
+    "cfrFeature should be false according to pref"
+  );
+  const message = { id: "foo", targeting: "userPrefs.cfrAddons == false" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by cfrAddons"
   );
 });
 

@@ -17,6 +17,8 @@
 typedef void NSOpenGLContext;
 #endif
 
+class nsIWidget;
+
 namespace mozilla {
 namespace gl {
 

@@ -8,6 +8,7 @@
 #define mozilla_dom_Navigator_h
 
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/dom/AddonManagerBinding.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Fetch.h"
 #include "mozilla/dom/Nullable.h"
@@ -28,6 +29,7 @@ class nsIURI;
 
 namespace mozilla {
 namespace dom {
+class AddonManager;
 class BodyExtractorBase;
 class Geolocation;
 class systemMessageCallback;
@@ -40,6 +42,9 @@ class DOMRequest;
 class CredentialsContainer;
 class Clipboard;
 }  // namespace dom
+namespace webgpu {
+class Instance;
+}  // namespace webgpu
 }  // namespace mozilla
 
 //*****************************************************************************
@@ -75,6 +80,9 @@ class VRDisplay;
 class VRServiceTest;
 class StorageManager;
 class MediaCapabilities;
+class MediaSession;
+struct ShareData;
+class WindowGlobalChild;
 
 class Navigator final : public nsISupports, public nsWrapperCache {
  public:
@@ -125,6 +133,8 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   void GetDoNotTrack(nsAString& aResult);
   Geolocation* GetGeolocation(ErrorResult& aRv);
   Promise* GetBattery(ErrorResult& aRv);
+
+  Promise* Share(const ShareData& aData, ErrorResult& aRv);
 
   static void AppName(nsAString& aAppName, nsIPrincipal* aCallerPrincipal,
                       bool aUsePrefOverriddenValue);
@@ -197,6 +207,7 @@ class Navigator final : public nsISupports, public nsWrapperCache {
 
   mozilla::dom::CredentialsContainer* Credentials();
   dom::Clipboard* Clipboard();
+  webgpu::Instance* Gpu();
 
   static bool Webdriver();
 
@@ -207,6 +218,9 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   static void GetAcceptLanguages(nsTArray<nsString>& aLanguages);
 
   dom::MediaCapabilities* MediaCapabilities();
+  dom::MediaSession* MediaSession();
+
+  AddonManager* GetMozAddonManager(ErrorResult& aRv);
 
   // WebIDL helper methods
   static bool HasUserMediaSupport(JSContext* /* unused */,
@@ -266,6 +280,10 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   nsTArray<uint32_t> mRequestedVibrationPattern;
   RefPtr<StorageManager> mStorageManager;
   RefPtr<dom::MediaCapabilities> mMediaCapabilities;
+  RefPtr<dom::MediaSession> mMediaSession;
+  RefPtr<AddonManager> mAddonManager;
+  RefPtr<webgpu::Instance> mWebGpu;
+  RefPtr<Promise> mSharePromise;  // Web Share API related
 };
 
 }  // namespace dom

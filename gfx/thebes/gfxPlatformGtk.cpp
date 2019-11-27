@@ -22,7 +22,7 @@
 #include "VsyncSource.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "base/task.h"
 #include "base/thread.h"
 #include "base/message_loop.h"
@@ -54,6 +54,7 @@
 
 #  ifdef MOZ_WAYLAND
 #    include <gdk/gdkwayland.h>
+#    include "mozilla/widget/nsWaylandDisplay.h"
 #  endif
 
 #endif /* MOZ_X11 */
@@ -72,17 +73,19 @@ using namespace mozilla::gfx;
 using namespace mozilla::unicode;
 using mozilla::dom::SystemFontListEntry;
 
+static FT_Library gPlatformFTLibrary = nullptr;
+
 gfxPlatformGtk::gfxPlatformGtk() {
   if (!gfxPlatform::IsHeadless()) {
     gtk_init(nullptr, nullptr);
   }
 
   mMaxGenericSubstitutions = UNINITIALIZED_VALUE;
+  mIsX11Display = GDK_IS_X11_DISPLAY(gdk_display_get_default());
 
 #ifdef MOZ_X11
   if (!gfxPlatform::IsHeadless() && XRE_IsParentProcess()) {
-    if (GDK_IS_X11_DISPLAY(gdk_display_get_default()) &&
-        mozilla::Preferences::GetBool("gfx.xrender.enabled")) {
+    if (mIsX11Display && mozilla::Preferences::GetBool("gfx.xrender.enabled")) {
       gfxVars::SetUseXRender(true);
     }
   }
@@ -91,8 +94,7 @@ gfxPlatformGtk::gfxPlatformGtk() {
   InitBackendPrefs(GetBackendPrefs());
 
 #ifdef MOZ_X11
-  if (gfxPlatform::IsHeadless() &&
-      GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (gfxPlatform::IsHeadless() && mIsX11Display) {
     mCompositorDisplay = XOpenDisplay(nullptr);
     MOZ_ASSERT(mCompositorDisplay, "Failed to create compositor display!");
   } else {
@@ -105,6 +107,10 @@ gfxPlatformGtk::gfxPlatformGtk() {
   // Set default display fps to 60
   mWaylandFrameDelay = 1000 / 60;
 #endif
+
+  gPlatformFTLibrary = Factory::NewFTLibrary();
+  MOZ_ASSERT(gPlatformFTLibrary);
+  Factory::SetFTLibrary(gPlatformFTLibrary);
 }
 
 gfxPlatformGtk::~gfxPlatformGtk() {
@@ -113,6 +119,9 @@ gfxPlatformGtk::~gfxPlatformGtk() {
     XCloseDisplay(mCompositorDisplay);
   }
 #endif  // MOZ_X11
+
+  Factory::ReleaseFTLibrary(gPlatformFTLibrary);
+  gPlatformFTLibrary = nullptr;
 }
 
 void gfxPlatformGtk::FlushContentDrawing() {
@@ -123,7 +132,7 @@ void gfxPlatformGtk::FlushContentDrawing() {
 
 void gfxPlatformGtk::InitPlatformGPUProcessPrefs() {
 #ifdef MOZ_WAYLAND
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (!mIsX11Display) {
     FeatureState& gpuProc = gfxConfig::GetFeature(Feature::GPU_PROCESS);
     gpuProc.ForceDisable(FeatureStatus::Blocked,
                          "Wayland does not work in the GPU process",
@@ -243,7 +252,7 @@ void gfxPlatformGtk::GetCommonFallbackFonts(uint32_t aCh, uint32_t aNextCh,
 }
 
 void gfxPlatformGtk::ReadSystemFontList(
-    InfallibleTArray<SystemFontListEntry>* retValue) {
+    nsTArray<SystemFontListEntry>* retValue) {
   gfxFcPlatformFontList::PlatformFontList()->ReadSystemFontList(retValue);
 }
 
@@ -262,10 +271,6 @@ gfxFontGroup* gfxPlatformGtk::CreateFontGroup(
     gfxFloat aDevToCssSize) {
   return new gfxFontGroup(aFontFamilyList, aStyle, aTextPerf, aUserFontSet,
                           aDevToCssSize);
-}
-
-FT_Library gfxPlatformGtk::GetFTLibrary() {
-  return gfxFcPlatformFontList::GetFTLibrary();
 }
 
 static int32_t sDPI = 0;
@@ -302,7 +307,7 @@ double gfxPlatformGtk::GetFontScaleFactor() {
 
 bool gfxPlatformGtk::UseImageOffscreenSurfaces() {
   return GetDefaultContentBackend() != mozilla::gfx::BackendType::CAIRO ||
-         StaticPrefs::layers_use_image_offscreen_surfaces();
+         StaticPrefs::layers_use_image_offscreen_surfaces_AtStartup();
 }
 
 gfxImageFormat gfxPlatformGtk::GetOffscreenFormat() {
@@ -348,7 +353,7 @@ void gfxPlatformGtk::GetPlatformCMSOutputProfile(void*& mem, size_t& size) {
 
 #ifdef MOZ_X11
   GdkDisplay* display = gdk_display_get_default();
-  if (!GDK_IS_X11_DISPLAY(display)) return;
+  if (!mIsX11Display) return;
 
   const char EDID1_ATOM_NAME[] = "XFree86_DDC_EDID1_RAWDATA";
   const char ICC_PROFILE_ATOM_NAME[] = "_ICC_PROFILE";
@@ -468,7 +473,7 @@ bool gfxPlatformGtk::CheckVariationFontSupport() {
   // in older versions, it seems too incomplete/unstable for us to use
   // until at least 2.7.1.
   FT_Int major, minor, patch;
-  FT_Library_Version(GetFTLibrary(), &major, &minor, &patch);
+  FT_Library_Version(Factory::GetFTLibrary(), &major, &minor, &patch);
   return major * 1000000 + minor * 1000 + patch >= 2007001;
 }
 
@@ -740,7 +745,7 @@ class GtkVsyncSource final : public VsyncSource {
 
 already_AddRefed<gfx::VsyncSource> gfxPlatformGtk::CreateHardwareVsyncSource() {
 #  ifdef MOZ_WAYLAND
-  if (!GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+  if (!mIsX11Display) {
     RefPtr<VsyncSource> vsyncSource = new GtkVsyncSource();
     VsyncSource::Display& display = vsyncSource->GetGlobalDisplay();
     static_cast<GtkVsyncSource::GLXDisplay&>(display).SetupWayland();
@@ -767,4 +772,13 @@ already_AddRefed<gfx::VsyncSource> gfxPlatformGtk::CreateHardwareVsyncSource() {
   return gfxPlatform::CreateHardwareVsyncSource();
 }
 
+#endif
+
+#ifdef MOZ_WAYLAND
+bool gfxPlatformGtk::UseWaylandDMABufSurfaces() {
+  if (mIsX11Display) {
+    return false;
+  }
+  return widget::nsWaylandDisplay::IsDMABufEnabled();
+}
 #endif

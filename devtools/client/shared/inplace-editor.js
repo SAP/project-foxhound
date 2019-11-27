@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -161,6 +159,9 @@ function isKeyIn(key, ...keys) {
  *    {Function} getGridLineNames:
  *       Will be called before offering autocomplete sugestions, if the property is
  *       a member of GRID_PROPERTY_NAMES.
+ *    {Boolean} showSuggestCompletionOnEmpty:
+ *       If true, show the suggestions in case that the current text becomes empty.
+ *       Defaults to false.
  */
 function editableField(options) {
   return editableItem(options, function(element, event) {
@@ -205,6 +206,10 @@ function editableItem(options, callback) {
   element.addEventListener(
     "keypress",
     function(evt) {
+      if (evt.target.nodeName === "button") {
+        return;
+      }
+
       if (isKeyIn(evt.keyCode, "RETURN") || isKeyIn(evt.charCode, "SPACE")) {
         callback(element);
       }
@@ -290,6 +295,7 @@ function InplaceEditor(options, event) {
     options.preserveTextStyles === undefined
       ? false
       : !!options.preserveTextStyles;
+  this.showSuggestCompletionOnEmpty = !!options.showSuggestCompletionOnEmpty;
 
   this._onBlur = this._onBlur.bind(this);
   this._onWindowBlur = this._onWindowBlur.bind(this);
@@ -1194,15 +1200,20 @@ InplaceEditor.prototype = {
     }
 
     if (isKeyIn(key, "BACK_SPACE", "DELETE", "LEFT", "RIGHT", "HOME", "END")) {
-      if (isPopupOpen) {
+      if (isPopupOpen && this.currentInputValue !== "") {
         this._hideAutocompletePopup();
       }
     } else if (
-      !cycling &&
-      !multilineNavigation &&
-      !event.metaKey &&
-      !event.altKey &&
-      !event.ctrlKey
+      // We may show the suggestion completion if Ctrl+space is pressed, or if an
+      // otherwise unhandled key is pressed and the user is not cycling through the
+      // options in the pop-up menu, it is not an expanded shorthand property, and no
+      // modifier key is pressed.
+      (event.key === " " && event.ctrlKey) ||
+      (!cycling &&
+        !multilineNavigation &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.ctrlKey)
     ) {
       this._maybeSuggestCompletion(true);
     }
@@ -1392,6 +1403,11 @@ InplaceEditor.prototype = {
     // Call the user's change handler if available.
     if (this.change) {
       this.change(this.currentInputValue);
+    }
+
+    // In case that the current value becomes empty, show the suggestions if needed.
+    if (this.currentInputValue === "" && this.showSuggestCompletionOnEmpty) {
+      this._maybeSuggestCompletion(false);
     }
   },
 

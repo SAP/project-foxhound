@@ -32,6 +32,7 @@ type Props = {
   editor: Object,
   breakpointActions: BreakpointItemActions,
   editorActions: EditorItemActions,
+  canRewind: boolean,
 };
 
 class Breakpoint extends PureComponent<Props> {
@@ -118,7 +119,7 @@ class Breakpoint extends PureComponent<Props> {
   };
 
   addBreakpoint(props: Props) {
-    const { breakpoint, editor, selectedSource } = props;
+    const { breakpoint, editor, selectedSource, canRewind } = props;
     const selectedLocation = getSelectedLocation(breakpoint, selectedSource);
 
     // Hidden Breakpoints are never rendered on the client
@@ -137,10 +138,19 @@ class Breakpoint extends PureComponent<Props> {
     doc.setGutterMarker(line, "breakpoints", this.makeMarker());
 
     editor.codeMirror.addLineClass(line, "line", "new-breakpoint");
+    editor.codeMirror.removeLineClass(line, "line", "breakpoint-disabled");
     editor.codeMirror.removeLineClass(line, "line", "has-condition");
     editor.codeMirror.removeLineClass(line, "line", "has-log");
 
-    if (breakpoint.options.logValue) {
+    if (breakpoint.disabled) {
+      editor.codeMirror.addLineClass(line, "line", "breakpoint-disabled");
+    }
+
+    const isLogPoint = canRewind
+      ? breakpoint.options.logValue != "displayName"
+      : breakpoint.options.logValue;
+
+    if (isLogPoint) {
       editor.codeMirror.addLineClass(line, "line", "has-log");
     } else if (breakpoint.options.condition) {
       editor.codeMirror.addLineClass(line, "line", "has-condition");
@@ -165,6 +175,7 @@ class Breakpoint extends PureComponent<Props> {
 
     doc.setGutterMarker(line, "breakpoints", null);
     doc.removeLineClass(line, "line", "new-breakpoint");
+    doc.removeLineClass(line, "line", "breakpoint-disabled");
     doc.removeLineClass(line, "line", "has-condition");
     doc.removeLineClass(line, "line", "has-log");
   }

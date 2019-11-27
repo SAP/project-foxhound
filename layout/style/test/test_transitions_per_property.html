@@ -42,6 +42,8 @@ https://bugzilla.mozilla.org/show_bug.cgi?id=435441
 <script type="application/javascript">
 
 /* eslint no-shadow: ["error", {"allow": ["prop", "div"]}] */
+/* eslint-disable dot-notation */
+
 
 /** Test for Bug 435441 **/
 
@@ -321,7 +323,35 @@ var supported_properties = {
     "-webkit-text-stroke-color": [ test_color_transition,
                                    test_currentcolor_transition ],
     "text-underline-offset": [ test_length_transition ],
-    "text-decoration-width": [ test_length_transition ],
+    "text-decoration-thickness": [ test_length_transition ],
+    "scroll-margin-top": [
+      test_length_transition,
+    ],
+    "scroll-margin-right": [
+      test_length_transition,
+    ],
+    "scroll-margin-bottom": [
+      test_length_transition,
+    ],
+    "scroll-margin-left": [
+      test_length_transition,
+    ],
+    "scroll-padding-top": [
+      test_length_transition, test_percent_transition,
+      test_length_clamped, test_percent_clamped,
+    ],
+    "scroll-padding-right": [
+      test_length_transition, test_percent_transition,
+      test_length_clamped, test_percent_clamped,
+    ],
+    "scroll-padding-bottom": [
+      test_length_transition, test_percent_transition,
+      test_length_clamped, test_percent_clamped,
+    ],
+    "scroll-padding-left": [
+      test_length_transition, test_percent_transition,
+      test_length_clamped, test_percent_clamped,
+    ],
 };
 
 if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
@@ -372,6 +402,11 @@ if (IsCSSPropertyPrefEnabled("layout.css.motion-path.enabled")) {
   supported_properties["offset-rotate"] =
     [ test_angle_transition,
       test_offset_rotate_transition ];
+
+  // Note: offset-anchor supports "auto | <position>", and the tests for
+  // `auto` are already in wpt, so we don't test it here again.
+  supported_properties["offset-anchor"] =
+    [ test_background_position_transition ];
 }
 
 if (IsCSSPropertyPrefEnabled("layout.css.clip-path-path.enabled")) {
@@ -394,40 +429,12 @@ if (IsCSSPropertyPrefEnabled("layout.css.scrollbar-color.enabled")) {
   ];
 }
 
-if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
-  supported_properties["scroll-margin-top"] = [
-    test_length_transition,
-  ];
-  supported_properties["scroll-margin-right"] = [
-    test_length_transition,
-  ];
-  supported_properties["scroll-margin-bottom"] = [
-    test_length_transition,
-  ];
-  supported_properties["scroll-margin-left"] = [
-    test_length_transition,
-  ];
-  supported_properties["scroll-padding-top"] = [
-    test_length_transition, test_percent_transition,
-    test_length_clamped, test_percent_clamped,
-  ];
-  supported_properties["scroll-padding-right"] = [
-    test_length_transition, test_percent_transition,
-    test_length_clamped, test_percent_clamped,
-  ];
-  supported_properties["scroll-padding-bottom"] = [
-    test_length_transition, test_percent_transition,
-    test_length_clamped, test_percent_clamped,
-  ];
-  supported_properties["scroll-padding-left"] = [
-    test_length_transition, test_percent_transition,
-    test_length_clamped, test_percent_clamped,
-  ];
-}
-
 // For properties which are well-tested by web-platform-tests, we don't need to
 // test animations/transitions again on them.
 var skipped_transitionable_properties = [
+  "border-image-outset",
+  "border-image-slice",
+  "border-image-width",
   "grid-template-columns",
   "grid-template-rows",
 ]
@@ -439,10 +446,8 @@ for (const logical_side of ["inline-start", "inline-end", "block-start", "block-
   supported_properties["margin-" + logical_side] = supported_properties["margin-top"];
   supported_properties["padding-" + logical_side] = supported_properties["padding-top"];
   supported_properties["inset-" + logical_side] = supported_properties["top"];
-  if (IsCSSPropertyPrefEnabled("layout.css.scroll-snap-v1.enabled")) {
-    supported_properties["scroll-margin-" + logical_side] = supported_properties["scroll-margin-top"];
-    supported_properties["scroll-padding-" + logical_side] = supported_properties["scroll-padding-top"];
-  }
+  supported_properties["scroll-margin-" + logical_side] = supported_properties["scroll-margin-top"];
+  supported_properties["scroll-padding-" + logical_side] = supported_properties["scroll-padding-top"];
 }
 
 for (const logical_size of ["inline", "block"]) {
@@ -1830,10 +1835,9 @@ function test_shape_or_url_equals(computedValStr, expected)
   if (expectedList.length == 0) {
     if (computedValStr == "") {
       return true;
-    } else {
-      ok(false, "expected basic shape");
-      return false;
-    }
+    } 
+    ok(false, "expected basic shape");
+    return false;
   }
 
   // The regular expression does not filter out the last parenthesis.
@@ -2492,16 +2496,8 @@ function test_rect_transition(prop) {
                        "rect(3px, 13px, 10px, 5px)",
                        "rect(0px, 4px, 4px, 2px)");
   div.style.setProperty(prop, "rect(0px, 6px, 4px, auto)", "");
-  if (prop == "clip") {
-    is(cs.getPropertyValue(prop), "rect(0px, 6px, 4px, auto)",
-       "rect-valued property " + prop + ": can't interpolate auto components");
-  } else {
-    is(prop, "-moz-image-region");
-    // Bug 1390067: -moz-image-region should behave just like clip does.
-    todo_is(cs.getPropertyValue(prop), "rect(0px, 6px, 4px, auto)",
-            "rect-valued property " + prop +
-            ": can't interpolate auto components");
-  }
+  is(cs.getPropertyValue(prop), "rect(0px, 6px, 4px, auto)",
+     "rect-valued property " + prop + ": can't interpolate auto components");
   div.style.setProperty(prop, "rect(0px, 6px, 4px, 2px)", "");
   div.style.setProperty(prop, "auto", "");
   is(cs.getPropertyValue(prop), "auto",

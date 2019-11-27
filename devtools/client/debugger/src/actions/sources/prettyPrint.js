@@ -30,7 +30,13 @@ import {
 
 import type { Action, ThunkArgs } from "../types";
 import { selectSource } from "./select";
-import type { Source, SourceContent, SourceActor, Context } from "../../types";
+import type {
+  Source,
+  SourceContent,
+  SourceActor,
+  Context,
+  SourceLocation,
+} from "../../types";
 
 export async function prettyPrintSource(
   sourceMaps: typeof SourceMaps,
@@ -45,7 +51,7 @@ export async function prettyPrintSource(
   const url = getPrettySourceURL(generatedSource.url);
   const { code, mappings } = await prettyPrint({
     text: content.value,
-    url: url,
+    url,
   });
   await sourceMaps.applySourceMap(generatedSource.id, url, code, mappings);
 
@@ -63,10 +69,10 @@ export async function prettyPrintSource(
 export function createPrettySource(cx: Context, sourceId: string) {
   return async ({ dispatch, getState, sourceMaps }: ThunkArgs) => {
     const source = getSourceFromId(getState(), sourceId);
-    const url = getPrettySourceURL(source.url);
+    const url = getPrettySourceURL(source.url || source.id);
     const id = generatedToOriginalId(sourceId, url);
 
-    const prettySource: Source = {
+    const prettySource = {
       id,
       url,
       relativeUrl: url,
@@ -80,18 +86,26 @@ export function createPrettySource(cx: Context, sourceId: string) {
     };
 
     dispatch(({ type: "ADD_SOURCE", cx, source: prettySource }: Action));
-    await dispatch(selectSource(cx, prettySource.id));
+
+    await dispatch(selectSource(cx, id));
 
     return prettySource;
   };
 }
 
-function selectPrettyLocation(cx: Context, prettySource: Source) {
+function selectPrettyLocation(
+  cx: Context,
+  prettySource: Source,
+  generatedLocation: ?SourceLocation
+) {
   return async ({ dispatch, sourceMaps, getState }: ThunkArgs) => {
-    let location = getSelectedLocation(getState());
+    let location = generatedLocation
+      ? generatedLocation
+      : getSelectedLocation(getState());
 
-    if (location) {
+    if (location && location.line >= 1) {
       location = await sourceMaps.getOriginalLocation(location);
+
       return dispatch(
         selectSpecificLocation(cx, { ...location, sourceId: prettySource.id })
       );
@@ -125,7 +139,6 @@ export function togglePrettyPrint(cx: Context, sourceId: string) {
     }
 
     await dispatch(loadSourceText({ cx, source }));
-
     assert(
       isGenerated(source),
       "Pretty-printing only allowed on generated sources"
@@ -138,8 +151,9 @@ export function togglePrettyPrint(cx: Context, sourceId: string) {
       return dispatch(selectPrettyLocation(cx, prettySource));
     }
 
+    const selectedLocation = getSelectedLocation(getState());
     const newPrettySource = await dispatch(createPrettySource(cx, sourceId));
-    await dispatch(selectPrettyLocation(cx, newPrettySource));
+    dispatch(selectPrettyLocation(cx, newPrettySource, selectedLocation));
 
     const threadcx = getThreadContext(getState());
     await dispatch(mapFrames(threadcx));

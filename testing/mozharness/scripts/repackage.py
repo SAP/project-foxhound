@@ -31,7 +31,7 @@ class Repackage(BaseScript):
         if self._is_windows():
             mar_path += '.exe'
         if mar_path and os.path.exists(mar_path):
-            self.chmod(mar_path, 0755)
+            self.chmod(mar_path, 0o755)
         if self.config.get("run_configure", True):
             self._get_mozconfig()
             self._run_configure()
@@ -93,6 +93,7 @@ class Repackage(BaseScript):
                 command=command,
                 cwd=dirs['abs_mozilla_dir'],
                 halt_on_failure=True,
+                env=self.query_env(),
             )
 
     def _run_tooltool(self):
@@ -119,8 +120,6 @@ class Repackage(BaseScript):
             cmd.extend([
                 '--tooltool-manifest',
                 os.path.join(dirs['abs_mozilla_dir'], manifest_src),
-                '--tooltool-url',
-                config['tooltool_url'],
             ])
             auth_file = self._get_tooltool_auth_file()
             if auth_file:

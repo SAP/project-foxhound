@@ -47,15 +47,6 @@ class TabContext {
   bool IsMozBrowserElement() const;
 
   /**
-   * Does this TabContext correspond to an isolated mozbrowser?
-   *
-   * <iframe mozbrowser> is a mozbrowser element, but <xul:browser> is not.
-   * <iframe mozbrowser noisolation> does not count as isolated since isolation
-   * is disabled.  Isolation can only be disabled by chrome pages.
-   */
-  bool IsIsolatedMozBrowserElement() const;
-
-  /**
    * Does this TabContext correspond to a mozbrowser?  This is equivalent to
    * IsMozBrowserElement().  Returns false for <xul:browser>, which isn't a
    * mozbrowser.
@@ -82,6 +73,8 @@ class TabContext {
 
   UIStateChangeType ShowFocusRings() const;
 
+  uint32_t MaxTouchPoints() const { return mMaxTouchPoints; }
+
  protected:
   friend class MaybeInvalidTabContext;
 
@@ -107,7 +100,8 @@ class TabContext {
   bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
-                     const nsAString& aPresentationURL);
+                     const nsAString& aPresentationURL,
+                     uint32_t aMaxTouchPoints);
 
   /**
    * Modify this TabContext to match the given TabContext.  This is a special
@@ -129,6 +123,10 @@ class TabContext {
    * (@see TabContext::SetTabContext above for more details).
    */
   bool SetTabContextForJSPluginFrame(int32_t aJSPluginID);
+
+  void SetMaxTouchPoints(uint32_t aMaxTouchPoints) {
+    mMaxTouchPoints = aMaxTouchPoints;
+  }
 
  private:
   /**
@@ -165,6 +163,11 @@ class TabContext {
    * Keyboard indicator state (focus rings).
    */
   UIStateChangeType mShowFocusRings;
+
+  /**
+   * Maximum number of touch points.
+   */
+  uint32_t mMaxTouchPoints;
 };
 
 /**
@@ -181,10 +184,11 @@ class MutableTabContext : public TabContext {
   bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
-                     const nsAString& aPresentationURL = EmptyString()) {
+                     const nsAString& aPresentationURL,
+                     uint32_t aMaxTouchPoints) {
     return TabContext::SetTabContext(aIsMozBrowserElement, aChromeOuterWindowID,
                                      aShowFocusRings, aOriginAttributes,
-                                     aPresentationURL);
+                                     aPresentationURL, aMaxTouchPoints);
   }
 
   bool SetTabContextForJSPluginFrame(uint32_t aJSPluginID) {

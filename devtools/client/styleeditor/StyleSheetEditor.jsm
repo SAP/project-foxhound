@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -494,8 +493,16 @@ StyleSheetEditor.prototype = {
         this._state.selection.end
       );
 
-      if (this.highlighter && this.walker) {
-        sourceEditor.container.addEventListener("mousemove", this._onMouseMove);
+      if (
+        this.highlighter &&
+        this.walker &&
+        sourceEditor.container &&
+        sourceEditor.container.contentWindow
+      ) {
+        sourceEditor.container.contentWindow.addEventListener(
+          "mousemove",
+          this._onMouseMove
+        );
       }
 
       // Add the commands controller for the source-editor.
@@ -837,8 +844,13 @@ StyleSheetEditor.prototype = {
       this._sourceEditor.off("dirty-change", this._onPropertyChange);
       this._sourceEditor.off("saveRequested", this.saveToFile);
       this._sourceEditor.off("change", this.updateStyleSheet);
-      if (this.highlighter && this.walker && this._sourceEditor.container) {
-        this._sourceEditor.container.removeEventListener(
+      if (
+        this.highlighter &&
+        this.walker &&
+        this._sourceEditor.container &&
+        this._sourceEditor.container.contentWindow
+      ) {
+        this._sourceEditor.container.contentWindow.removeEventListener(
           "mousemove",
           this._onMouseMove
         );

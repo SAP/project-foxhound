@@ -8,17 +8,21 @@ import android.provider.Settings
 import android.support.test.InstrumentationRegistry
 import android.support.test.filters.MediumTest
 import android.support.test.runner.AndroidJUnit4
+import android.util.Log
 import org.hamcrest.Matchers.*
 import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.ReuseSession
-import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.WithDevToolsAPI
+import org.mozilla.geckoview.GeckoResult
 import kotlin.math.roundToInt
+import org.mozilla.geckoview.GeckoSession
+import org.mozilla.geckoview.WebRequestError
+import org.mozilla.geckoview.test.rule.GeckoSessionTestRule.AssertCalled
+import org.mozilla.geckoview.test.util.Callbacks
+import java.util.concurrent.atomic.AtomicBoolean
 
 @RunWith(AndroidJUnit4::class)
 @MediumTest
-@ReuseSession(false)
 class RuntimeSettingsTest : BaseSessionTest() {
 
     @Ignore("disable test for frequently failing Bug 1538430")
@@ -74,7 +78,6 @@ class RuntimeSettingsTest : BaseSessionTest() {
                 settings.fontInflationEnabled, `is`(initialFontInflation))
     }
 
-    @WithDevToolsAPI
     @Ignore // Bug 1546297 disabled test on pgo for frequent failures
     @Test fun fontSize() {
         val settings = sessionRule.runtime.settings
@@ -102,45 +105,75 @@ class RuntimeSettingsTest : BaseSessionTest() {
                 fontSize, closeTo(initialFontSize, 0.1))
     }
 
-    @WithDevToolsAPI
     @Test fun fontInflation() {
         val baseFontInflationMinTwips = 120
         val settings = sessionRule.runtime.settings
 
         settings.fontInflationEnabled = false;
         settings.fontSizeFactor = 1.0f
-        val fontInflationPrefJs = "Services.prefs.getIntPref('font.size.inflation.minTwips')"
-        var prefValue = (sessionRule.evaluateChromeJS(fontInflationPrefJs) as Double).roundToInt()
+        val fontInflationPref = "font.size.inflation.minTwips"
+
+        var prefValue = (sessionRule.getPrefs(fontInflationPref)[0] as Int)
         assertThat("Gecko font inflation pref should be turned off",
                 prefValue, `is`(0))
 
         settings.fontInflationEnabled = true;
-        prefValue = (sessionRule.evaluateChromeJS(fontInflationPrefJs) as Double).roundToInt()
+        prefValue = (sessionRule.getPrefs(fontInflationPref)[0] as Int)
         assertThat("Gecko font inflation pref should be turned on",
                 prefValue, `is`(baseFontInflationMinTwips))
 
         settings.fontSizeFactor = 2.0f
-        prefValue = (sessionRule.evaluateChromeJS(fontInflationPrefJs) as Double).roundToInt()
+        prefValue = (sessionRule.getPrefs(fontInflationPref)[0] as Int)
         assertThat("Gecko font inflation pref should scale with increased font size factor",
                 prefValue, greaterThan(baseFontInflationMinTwips))
 
         settings.fontSizeFactor = 0.5f
-        prefValue = (sessionRule.evaluateChromeJS(fontInflationPrefJs) as Double).roundToInt()
+        prefValue = (sessionRule.getPrefs(fontInflationPref)[0] as Int)
         assertThat("Gecko font inflation pref should scale with decreased font size factor",
                 prefValue, lessThan(baseFontInflationMinTwips))
 
         settings.fontSizeFactor = 0.0f
-        prefValue = (sessionRule.evaluateChromeJS(fontInflationPrefJs) as Double).roundToInt()
+        prefValue = (sessionRule.getPrefs(fontInflationPref)[0] as Int)
         assertThat("setting font size factor to 0 turns off font inflation",
                 prefValue, `is`(0))
         assertThat("GeckoRuntimeSettings returns new font inflation state, too",
                 settings.fontInflationEnabled, `is`(false))
 
         settings.fontSizeFactor = 1.0f
-        prefValue = (sessionRule.evaluateChromeJS(fontInflationPrefJs) as Double).roundToInt()
+        prefValue = (sessionRule.getPrefs(fontInflationPref)[0] as Int)
         assertThat("Gecko font inflation pref remains turned off",
                 prefValue, `is`(0))
         assertThat("GeckoRuntimeSettings remains turned off",
                 settings.fontInflationEnabled, `is`(false))
+    }
+
+    @Test
+    fun aboutConfig() {
+        val settings = sessionRule.runtime.settings
+
+        assertThat("about:config should be disabled by default",
+                settings.aboutConfigEnabled, equalTo(false))
+
+        mainSession.loadUri("about:config")
+        mainSession.waitUntilCalled(object : Callbacks.NavigationDelegate {
+            @AssertCalled
+            override fun onLoadError(session: GeckoSession, uri: String?, error: WebRequestError):
+                    GeckoResult<String>? {
+                assertThat("about:config should not load.", uri, equalTo("about:config"))
+                return null
+            }
+        })
+
+        settings.aboutConfigEnabled = true
+
+        mainSession.delegateDuringNextWait(object : Callbacks.ProgressDelegate {
+            @AssertCalled
+            override fun onPageStop(session: GeckoSession, success: Boolean) {
+                assertThat("about:config load should succeed", success, equalTo(true))
+            }
+        })
+
+        mainSession.loadUri("about:config")
+        mainSession.waitForPageStop()
     }
 }

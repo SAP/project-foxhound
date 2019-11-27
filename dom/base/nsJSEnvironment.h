@@ -23,16 +23,14 @@ class nsICycleCollectorListener;
 class nsIDocShell;
 
 namespace mozilla {
+
 template <class>
 class Maybe;
 struct CycleCollectorResults;
+
+static const uint32_t kMajorForgetSkippableCalls = 5;
+
 }  // namespace mozilla
-
-// The amount of time we wait between a request to GC (due to leaving
-// a page) and doing the actual GC.
-#define NS_GC_DELAY 4000  // ms
-
-#define NS_MAJOR_FORGET_SKIPPABLE_CALLS 5
 
 class nsJSContext : public nsIScriptContext {
  public:
@@ -102,7 +100,7 @@ class nsJSContext : public nsIScriptContext {
                                          JS::GCReason aReason);
 
   // The GC should probably run soon, in the zone of object aObj (if given).
-  static void PokeGC(JS::GCReason aReason, JSObject* aObj, int aDelay = 0);
+  static void PokeGC(JS::GCReason aReason, JSObject* aObj, uint32_t aDelay = 0);
   static void KillGCTimer();
 
   static void PokeShrinkingGC();
@@ -155,23 +153,27 @@ class nsJSContext : public nsIScriptContext {
 namespace mozilla {
 namespace dom {
 
+class SerializedStackHolder;
+
 void StartupJSEnvironment();
 void ShutdownJSEnvironment();
 
 // Runnable that's used to do async error reporting
 class AsyncErrorReporter final : public mozilla::Runnable {
  public:
-  // aWindow may be null if this error report is not associated with a window
-  explicit AsyncErrorReporter(xpc::ErrorReport* aReport)
-      : Runnable("dom::AsyncErrorReporter"), mReport(aReport) {}
-
-  NS_IMETHOD Run() override {
-    mReport->LogToConsole();
-    return NS_OK;
-  }
+  explicit AsyncErrorReporter(xpc::ErrorReport* aReport);
+  // SerializeStack is suitable for main or worklet thread use.
+  // Stacks from worker threads are not supported.
+  // See https://bugzilla.mozilla.org/show_bug.cgi?id=1578968
+  void SerializeStack(JSContext* aCx, JS::Handle<JSObject*> aStack);
 
  protected:
+  NS_IMETHOD Run() override;
+
   RefPtr<xpc::ErrorReport> mReport;
+  // This may be used to marshal a stack from an arbitrary thread/runtime into
+  // the main thread/runtime where the console service runs.
+  UniquePtr<SerializedStackHolder> mStackHolder;
 };
 
 }  // namespace dom

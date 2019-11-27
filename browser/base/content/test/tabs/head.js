@@ -277,12 +277,20 @@ function checkBrowserRemoteType(
   message = `Ensures that tab runs in the ${expectedRemoteType} content process.`
 ) {
   // Check both parent and child to ensure that they have the correct remoteType.
-  is(browser.remoteType, expectedRemoteType, message);
-  is(
-    browser.messageManager.remoteType,
-    expectedRemoteType,
-    "Parent and child process should agree on the remote type."
-  );
+  if (expectedRemoteType == E10SUtils.WEB_REMOTE_TYPE) {
+    ok(E10SUtils.isWebRemoteType(browser.remoteType), message);
+    ok(
+      E10SUtils.isWebRemoteType(browser.messageManager.remoteType),
+      "Parent and child process should agree on the remote type."
+    );
+  } else {
+    is(browser.remoteType, expectedRemoteType, message);
+    is(
+      browser.messageManager.remoteType,
+      expectedRemoteType,
+      "Parent and child process should agree on the remote type."
+    );
+  }
 }
 
 function test_url_for_process_types(

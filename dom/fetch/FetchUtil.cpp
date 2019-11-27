@@ -118,11 +118,11 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
   nsAutoString referrer;
   aRequest->GetReferrer(referrer);
 
-  net::ReferrerPolicy policy = aRequest->GetReferrerPolicy();
+  ReferrerPolicy policy = aRequest->ReferrerPolicy_();
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
   if (referrer.IsEmpty()) {
     // This is the case request’s referrer is "no-referrer"
-    referrerInfo = new ReferrerInfo(nullptr, net::RP_No_Referrer);
+    referrerInfo = new ReferrerInfo(nullptr, ReferrerPolicy::No_referrer);
   } else if (referrer.EqualsLiteral(kFETCH_CLIENT_REFERRER_STR)) {
     referrerInfo = ReferrerInfo::CreateForFetch(aPrincipal, aDoc);
     // In the first step, we should use referrer info from requetInit
@@ -133,7 +133,7 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
     // "If request's referrer is a URL, let referrerSource be request's
     // referrer."
     nsCOMPtr<nsIURI> referrerURI;
-    rv = NS_NewURI(getter_AddRefs(referrerURI), referrer, nullptr, nullptr);
+    rv = NS_NewURI(getter_AddRefs(referrerURI), referrer);
     NS_ENSURE_SUCCESS(rv, rv);
     referrerInfo = new ReferrerInfo(referrerURI, policy);
   }
@@ -141,23 +141,16 @@ nsresult FetchUtil::SetRequestReferrer(nsIPrincipal* aPrincipal, Document* aDoc,
   rv = aChannel->SetReferrerInfoWithoutClone(referrerInfo);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsIURI> computedReferrer;
+  nsAutoString computedReferrerSpec;
   referrerInfo = aChannel->GetReferrerInfo();
   if (referrerInfo) {
-    computedReferrer = referrerInfo->GetComputedReferrer();
+    Unused << referrerInfo->GetComputedReferrerSpec(computedReferrerSpec);
   }
 
   // Step 8 https://fetch.spec.whatwg.org/#main-fetch
   // If request’s referrer is not "no-referrer", set request’s referrer to
   // the result of invoking determine request’s referrer.
-  if (computedReferrer) {
-    nsAutoCString spec;
-    rv = computedReferrer->GetSpec(spec);
-    NS_ENSURE_SUCCESS(rv, rv);
-    aRequest->SetReferrer(NS_ConvertUTF8toUTF16(spec));
-  } else {
-    aRequest->SetReferrer(EmptyString());
-  }
+  aRequest->SetReferrer(computedReferrerSpec);
 
   return NS_OK;
 }

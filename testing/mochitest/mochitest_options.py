@@ -45,7 +45,7 @@ ALL_FLAVORS = {
     'chrome': {
         'suite': 'chrome',
         'aliases': ('chrome', 'mochitest-chrome'),
-        'enabled_apps': ('firefox', 'android'),
+        'enabled_apps': ('firefox'),
         'extra_args': {
             'flavor': 'chrome',
         }
@@ -405,6 +405,11 @@ class MochitestArguments(ArgumentContainer):
           "default": True,
           "dest": "e10s",
           "help": "Run tests with electrolysis preferences and test filtering disabled.",
+          }],
+        [["--enable-fission"],
+         {"action": "store_true",
+          "default": False,
+          "help": "Run tests with fission (site isolation) enabled.",
           }],
         [["--store-chrome-manifest"],
          {"action": "store",
@@ -806,12 +811,13 @@ class MochitestArguments(ArgumentContainer):
                     '--use-test-media-devices is only supported on Linux currently')
 
             gst01 = spawn.find_executable("gst-launch-0.1")
+            gst010 = spawn.find_executable("gst-launch-0.10")
             gst10 = spawn.find_executable("gst-launch-1.0")
             pactl = spawn.find_executable("pactl")
 
-            if not (gst01 or gst10):
+            if not (gst01 or gst10 or gst010):
                 parser.error(
-                    'Missing gst-launch-{0.1,1.0}, required for '
+                    'Missing gst-launch-{0.1,0.10,1.0}, required for '
                     '--use-test-media-devices')
 
             if not pactl:
@@ -823,6 +829,11 @@ class MochitestArguments(ArgumentContainer):
         if options.flavor in ('a11y', 'chrome') and options.e10s:
             parser.error("mochitest-{} does not support e10s, try again with "
                          "--disable-e10s.".format(options.flavor))
+
+        if options.enable_fission:
+            options.extraPrefs.append("fission.autostart=true")
+            options.extraPrefs.append("dom.serviceWorkers.parent_intercept=true")
+            options.extraPrefs.append("browser.tabs.documentchannel=true")
 
         options.leakThresholds = {
             "default": options.defaultLeakThreshold,
@@ -852,6 +863,11 @@ class AndroidArguments(ArgumentContainer):
     """Android specific arguments."""
 
     args = [
+        [["--no-install"],
+         {"action": "store_true",
+          "default": False,
+          "help": "Skip the installation of the APK.",
+          }],
         [["--deviceSerial"],
          {"dest": "deviceSerial",
           "help": "adb serial number of remote device. This is required "
@@ -882,11 +898,6 @@ class AndroidArguments(ArgumentContainer):
           "help": "ssl port of the remote web server.",
           "suppress": True,
           }],
-        [["--robocop-apk"],
-         {"dest": "robocopApk",
-          "default": "",
-          "help": "Name of the robocop APK to use.",
-          }],
         [["--remoteTestRoot"],
          {"dest": "remoteTestRoot",
           "default": None,
@@ -898,7 +909,7 @@ class AndroidArguments(ArgumentContainer):
          {"action": "store_true",
           "default": False,
           "help": "Enable collecting code coverage information when running "
-                  "robocop tests.",
+                  "junit tests.",
           }],
         [["--coverage-output-dir"],
          {"action": "store",
@@ -957,18 +968,6 @@ class AndroidArguments(ArgumentContainer):
             f.write("%s" % os.getpid())
             f.close()
 
-        if not options.robocopApk and build_obj:
-            apk = build_obj.substs.get('GRADLE_ANDROID_APP_ANDROIDTEST_APK')
-            if apk and os.path.exists(apk):
-                options.robocopApk = apk
-
-        if options.robocopApk != "":
-            if not os.path.exists(options.robocopApk):
-                parser.error(
-                    "Unable to find robocop APK '%s'" %
-                    options.robocopApk)
-            options.robocopApk = os.path.abspath(options.robocopApk)
-
         if options.coverage_output_dir and not options.enable_coverage:
             parser.error("--coverage-output-dir must be used with --enable-coverage")
         if options.enable_coverage:
@@ -985,7 +984,7 @@ class AndroidArguments(ArgumentContainer):
                     parent_dir)
 
         # allow us to keep original application around for cleanup while
-        # running robocop via 'am'
+        # running tests
         options.remoteappname = options.app
         return options
 

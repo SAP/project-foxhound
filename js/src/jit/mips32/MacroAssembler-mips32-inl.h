@@ -69,6 +69,13 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
 }
 
 // ===============================================================
+// Load instructions
+
+void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
+  load32(src, dest);
+}
+
+// ===============================================================
 // Logical instructions
 
 void MacroAssembler::andPtr(Register src, Register dest) { ma_and(dest, src); }
@@ -839,7 +846,7 @@ void MacroAssembler::branchTestBigIntTruthy(bool b, const ValueOperand& value,
                                             Label* label) {
   Register bi = value.payloadReg();
   SecondScratchRegisterScope scratch2(*this);
-  ma_lw(scratch2, Address(bi, BigInt::offsetOfLengthSignAndReservedBits()));
+  ma_lw(scratch2, Address(bi, BigInt::offsetOfDigitLength()));
   ma_b(scratch2, Imm32(0), label, b ? NotEqual : Equal);
 }
 

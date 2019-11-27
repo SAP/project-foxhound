@@ -5,7 +5,6 @@
 from __future__ import absolute_import
 from firefox_puppeteer import PuppeteerMixin
 from marionette_driver import expected, By, Wait
-from marionette_driver.errors import NoSuchElementException
 from marionette_harness import MarionetteTestCase
 
 
@@ -86,26 +85,18 @@ class TestLocationBar(PuppeteerMixin, MarionetteTestCase):
         self.locationbar = self.browser.navbar.locationbar
 
     def test_elements(self):
-        self.assertEqual(self.locationbar.urlbar.get_property('localName'), 'textbox')
-        self.assertIn('urlbar-input', self.locationbar.urlbar_input.get_property('className'))
+        self.assertEqual(self.locationbar.urlbar_input.get_property('id'), 'urlbar-input')
 
-        self.assertEqual(self.locationbar.connection_icon.get_property('localName'), 'image')
         self.assertEqual(self.locationbar.identity_box.get_property('localName'), 'box')
         self.assertEqual(self.locationbar.identity_country_label.get_property('localName'),
                          'label')
         self.assertEqual(self.locationbar.identity_organization_label.get_property('localName'),
                          'label')
         self.assertEqual(self.locationbar.identity_icon.get_property('localName'), 'image')
-        self.assertEqual(self.locationbar.history_drop_marker.get_property('localName'),
-                         'dropmarker')
         self.assertEqual(self.locationbar.reload_button.get_property('localName'),
                          'toolbarbutton')
         self.assertEqual(self.locationbar.stop_button.get_property('localName'),
                          'toolbarbutton')
-
-        self.assertEqual(self.locationbar.contextmenu.get_property('localName'), 'menupopup')
-        self.assertEqual(self.locationbar.get_contextmenu_entry('paste').get_attribute('cmd'),
-                         'cmd_paste')
 
     def test_reload(self):
         event_types = ["shortcut", "shortcut2", "button"]
@@ -134,73 +125,6 @@ class TestLocationBar(PuppeteerMixin, MarionetteTestCase):
             Wait(self.marionette).until(lambda mn: mn.get_url() == data_uri)
 
 
-class TestAutoCompleteResults(PuppeteerMixin, MarionetteTestCase):
-
-    def setUp(self):
-        super(TestAutoCompleteResults, self).setUp()
-
-        self.browser.navbar.locationbar.clear()
-
-        self.autocomplete_results = self.browser.navbar.locationbar.autocomplete_results
-
-    def tearDown(self):
-        try:
-            self.autocomplete_results.close(force=True)
-        except NoSuchElementException:
-            # TODO: A NoSuchElementException is thrown here when tests accessing the
-            # autocomplete_results element are skipped.
-            pass
-        finally:
-            super(TestAutoCompleteResults, self).tearDown()
-
-    def test_popup_elements(self):
-        self.assertFalse(self.autocomplete_results.is_open)
-        self.browser.navbar.locationbar.urlbar.send_keys('.')
-        Wait(self.marionette).until(lambda _: self.autocomplete_results.is_complete)
-        count_visible_results = len(self.autocomplete_results.visible_results)
-        self.assertTrue(count_visible_results > 0)
-        self.assertLessEqual(count_visible_results,
-                             self.autocomplete_results.element.get_property('maxResults'))
-
-    def test_close(self):
-        self.browser.navbar.locationbar.urlbar.send_keys('a')
-        Wait(self.marionette).until(lambda _: self.autocomplete_results.is_open)
-        # The Wait in the library implementation will fail this if this doesn't
-        # end up closing.
-        self.autocomplete_results.close()
-
-    def test_force_close(self):
-        self.browser.navbar.locationbar.urlbar.send_keys('a')
-        Wait(self.marionette).until(lambda _: self.autocomplete_results.is_open)
-        # The Wait in the library implementation will fail this if this doesn't
-        # end up closing.
-        self.autocomplete_results.close(force=True)
-
-    def test_matching_text(self):
-        # The default profile always has existing bookmarks. So no sites have to
-        # be visited and bookmarked.
-        for input_text in ('about', 'zilla'):
-            self.browser.navbar.locationbar.urlbar.clear()
-            self.browser.navbar.locationbar.urlbar.send_keys(input_text)
-            Wait(self.marionette).until(lambda _: self.autocomplete_results.is_open)
-            Wait(self.marionette).until(lambda _: self.autocomplete_results.is_complete)
-            visible_results = self.autocomplete_results.visible_results
-            self.assertTrue(len(visible_results) > 0)
-
-            for result in visible_results:
-                # check matching text only for results of type bookmark
-                if result.get_attribute('type') != 'bookmark':
-                    continue
-                title_matches = self.autocomplete_results.get_matching_text(result, "title")
-                url_matches = self.autocomplete_results.get_matching_text(result, "url")
-                all_matches = title_matches + url_matches
-                self.assertTrue(len(all_matches) > 0)
-                for match_fragment in all_matches:
-                    self.assertIn(match_fragment.lower(), input_text)
-
-            self.autocomplete_results.close()
-
-
 class TestIdentityPopup(PuppeteerMixin, MarionetteTestCase):
     def setUp(self):
         super(TestIdentityPopup, self).setUp()
@@ -227,7 +151,6 @@ class TestIdentityPopup(PuppeteerMixin, MarionetteTestCase):
         self.assertEqual(main.element.get_property('localName'), 'panelview')
 
         self.assertEqual(main.expander.get_property('localName'), 'button')
-        self.assertEqual(main.host.get_property('localName'), 'label')
         self.assertEqual(main.insecure_connection_label.get_property('localName'),
                          'description')
         self.assertEqual(main.internal_connection_label.get_property('localName'),

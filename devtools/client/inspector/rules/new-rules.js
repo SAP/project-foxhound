@@ -157,7 +157,7 @@ class RulesView {
   }
 
   async initPrintSimulation() {
-    const target = this.inspector.target;
+    const target = this.inspector.currentTarget;
 
     // In order to query if the emulation actor's print simulation methods are supported,
     // we have to call the emulation front so that the actor is lazily loaded. This allows
@@ -328,7 +328,7 @@ class RulesView {
     }
 
     try {
-      const front = this.inspector.inspector;
+      const front = this.inspector.inspectorFront;
       this._selectorHighlighter = await front.getHighlighterByType(
         "SelectorHighlighter"
       );
@@ -379,12 +379,15 @@ class RulesView {
    */
   async onOpenSourceLink(ruleId) {
     const rule = this.elementStyle.getRule(ruleId);
-    if (!rule || !Tools.styleEditor.isTargetSupported(this.inspector.target)) {
+    if (
+      !rule ||
+      !Tools.styleEditor.isTargetSupported(this.inspector.currentTarget)
+    ) {
       return;
     }
 
     const toolbox = await gDevTools.showToolbox(
-      this.inspector.target,
+      this.inspector.currentTarget,
       "styleeditor"
     );
     const styleEditor = toolbox.getCurrentPanel();
@@ -601,7 +604,8 @@ class RulesView {
       advanceChars: advanceValidate,
       contentType: InplaceEditor.CONTENT_TYPES.CSS_VALUE,
       cssProperties: this.cssProperties,
-      cssVariables: this.elementStyle.variables,
+      cssVariables:
+        this.elementStyle.variablesMap.get(rule.pseudoElement) || [],
       defaultIncrement: declaration.name === "opacity" ? 0.1 : 1,
       done: async (value, commit) => {
         if (!commit || !value || !value.trim()) {
@@ -627,6 +631,7 @@ class RulesView {
       multiline: true,
       popup: this.autocompletePopup,
       property: declaration,
+      showSuggestCompletionOnEmpty: true,
     });
   }
 

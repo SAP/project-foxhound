@@ -72,6 +72,16 @@ function loginSort(formHostPort, a, b) {
     return 1;
   }
 
+  if (a.httpRealm !== b.httpRealm) {
+    // Sort HTTP auth. logins after form logins for the same origin.
+    if (b.httpRealm === null) {
+      return 1;
+    }
+    if (a.httpRealm === null) {
+      return -1;
+    }
+  }
+
   let userA = a.username.toLowerCase();
   let userB = b.username.toLowerCase();
 
@@ -136,7 +146,8 @@ class LoginAutocompleteItem extends AutocompleteItem {
     isPasswordField,
     dateAndTimeFormatter,
     duplicateUsernames,
-    messageManager
+    messageManager,
+    isOriginMatched
   ) {
     super(SHOULD_SHOW_ORIGIN ? "loginWithOrigin" : "login");
     this._login = login.QueryInterface(Ci.nsILoginMetaInfo);
@@ -154,7 +165,6 @@ class LoginAutocompleteItem extends AutocompleteItem {
         );
         username = getLocalizedString("loginHostAge", [username, time]);
       }
-
       return username;
     });
 
@@ -163,18 +173,12 @@ class LoginAutocompleteItem extends AutocompleteItem {
     });
 
     XPCOMUtils.defineLazyGetter(this, "comment", () => {
-      let comment = login.origin;
-      try {
-        let uri = Services.io.newURI(login.origin);
-        // Fallback to handle file: URIs
-        comment = uri.displayHostPort || login.origin;
-      } catch (ex) {
-        // Fallback to login.origin set above.
-      }
-
       return JSON.stringify({
         guid: login.guid,
-        comment,
+        comment:
+          isOriginMatched && login.httpRealm === null
+            ? getLocalizedString("displaySameOrigin")
+            : login.displayOrigin,
       });
     });
   }
@@ -198,7 +202,7 @@ class GeneratedPasswordAutocompleteItem extends AutocompleteItem {
     this.value = generatedPassword;
 
     XPCOMUtils.defineLazyGetter(this, "label", () => {
-      return getLocalizedString("useGeneratedPassword");
+      return getLocalizedString("useASecurelyGeneratedPassword");
     });
   }
 }
@@ -218,7 +222,7 @@ class LoginsFooterAutocompleteItem extends AutocompleteItem {
 function LoginAutoCompleteResult(
   aSearchString,
   matchingLogins,
-  formHostPort,
+  formOrigin,
   { generatedPassword, isSecure, messageManager, isPasswordField, hostname }
 ) {
   let hidingFooterOnPWFieldAutoOpened = false;
@@ -263,18 +267,23 @@ function LoginAutoCompleteResult(
   }
 
   // Saved login items
+  let formHostPort = LoginHelper.maybeGetHostPortForURL(formOrigin);
   let logins = matchingLogins.sort(loginSort.bind(null, formHostPort));
   let dateAndTimeFormatter = new Services.intl.DateTimeFormat(undefined, {
     dateStyle: "medium",
   });
   let duplicateUsernames = findDuplicates(matchingLogins);
+
   for (let login of logins) {
     let item = new LoginAutocompleteItem(
       login,
       isPasswordField,
       dateAndTimeFormatter,
       duplicateUsernames,
-      messageManager
+      messageManager,
+      LoginHelper.isOriginMatching(login.origin, formOrigin, {
+        schemeUpgrades: LoginHelper.schemeUpgrades,
+      })
     );
     this._rows.push(item);
   }
@@ -404,6 +413,10 @@ LoginAutoComplete.prototype = {
    */
   startSearch(aSearchString, aPreviousResult, aElement, aCallback) {
     let { isNullPrincipal } = aElement.nodePrincipal;
+    if (aElement.nodePrincipal.schemeIs("about")) {
+      // Don't show autocomplete results for about: pages.
+      return;
+    }
     // Show the insecure login warning in the passwords field on null principal documents.
     let isSecure = !isNullPrincipal;
     // Avoid loading InsecurePasswordUtils.jsm in a sandboxed document (e.g. an ad. frame) if we
@@ -434,14 +447,14 @@ LoginAutoComplete.prototype = {
       if (this._autoCompleteLookupPromise !== autoCompleteLookupPromise) {
         return;
       }
-      let formHostPort = LoginHelper.maybeGetHostPortForURL(
+      let formOrigin = LoginHelper.getLoginOrigin(
         aElement.ownerDocument.documentURI
       );
       this._autoCompleteLookupPromise = null;
       let results = new LoginAutoCompleteResult(
         aSearchString,
         logins,
-        formHostPort,
+        formOrigin,
         {
           generatedPassword,
           messageManager,

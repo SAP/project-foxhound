@@ -7,6 +7,7 @@
 
 var EXPORTED_SYMBOLS = [
   "BrowserUsageTelemetry",
+  "getUniqueDomainsVisitedInPast24Hours",
   "URICountListener",
   "URLBAR_SELECTED_RESULT_TYPES",
   "URLBAR_SELECTED_RESULT_METHODS",
@@ -22,6 +23,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   SearchTelemetry: "resource:///modules/SearchTelemetry.jsm",
   Services: "resource://gre/modules/Services.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
+  clearTimeout: "resource://gre/modules/Timer.jsm",
 });
 
 // This pref is in seconds!
@@ -65,6 +67,7 @@ const KNOWN_SEARCH_SOURCES = [
   "contextmenu",
   "newtab",
   "searchbar",
+  "system",
   "urlbar",
   "webextension",
 ];
@@ -92,6 +95,7 @@ const URLBAR_SELECTED_RESULT_TYPES = {
   remotetab: 9,
   extension: 10,
   "preloaded-top-site": 11,
+  tip: 12,
 };
 
 /**
@@ -165,6 +169,8 @@ let URICountListener = {
   _domain24hrSet: new Set(),
   // A map to keep track of the URIs loaded from the restored tabs.
   _restoredURIsMap: new WeakMap(),
+  // Ongoing expiration timeouts.
+  _timeouts: new Set(),
 
   isHttpURI(uri) {
     // Only consider http(s) schemas.
@@ -180,8 +186,10 @@ let URICountListener = {
   },
 
   onLocationChange(browser, webProgress, request, uri, flags) {
-    // By default, assume we no longer need to track this tab.
-    SearchTelemetry.stopTrackingBrowser(browser);
+    if (!(flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT)) {
+      // By default, assume we no longer need to track this tab.
+      SearchTelemetry.stopTrackingBrowser(browser);
+    }
 
     // Don't count this URI if it's an error page.
     if (flags & Ci.nsIWebProgressListener.LOCATION_CHANGE_ERROR_PAGE) {
@@ -291,9 +299,11 @@ let URICountListener = {
 
     this._domain24hrSet.add(baseDomain);
     if (gRecentVisitedOriginsExpiry) {
-      setTimeout(() => {
+      let timeoutId = setTimeout(() => {
         this._domain24hrSet.delete(baseDomain);
+        this._timeouts.remove(timeoutId);
       }, gRecentVisitedOriginsExpiry * 1000);
+      this._timeouts.add(timeoutId);
     }
   },
 
@@ -316,6 +326,8 @@ let URICountListener = {
    * Resets the number of unique domains visited in this session.
    */
   resetUniqueDomainsVisitedInPast24Hours() {
+    this._timeouts.forEach(timeoutId => clearTimeout(timeoutId));
+    this._timeouts.clear();
     this._domain24hrSet.clear();
   },
 
@@ -524,10 +536,11 @@ let BrowserUsageTelemetry = {
       return;
     }
 
-    const isOneOff = !!details.isOneOff;
-    const countId = getSearchEngineId(engine) + "." + source;
+    const countIdPrefix = getSearchEngineId(engine) + ".";
+    const countIdSource = countIdPrefix + source;
+    let histogram = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS");
 
-    if (isOneOff) {
+    if (details.isOneOff) {
       if (!KNOWN_ONEOFF_SOURCES.includes(source)) {
         // Silently drop the error if this bogus call
         // came from 'urlbar' or 'searchbar'. They're
@@ -535,9 +548,7 @@ let BrowserUsageTelemetry = {
         // code paths because they want to record the search
         // in SEARCH_COUNTS.
         if (["urlbar", "searchbar"].includes(source)) {
-          Services.telemetry
-            .getKeyedHistogramById("SEARCH_COUNTS")
-            .add(countId);
+          histogram.add(countIdSource);
           return;
         }
         throw new Error("Unknown source for one-off search: " + source);
@@ -546,15 +557,15 @@ let BrowserUsageTelemetry = {
       if (!KNOWN_SEARCH_SOURCES.includes(source)) {
         throw new Error("Unknown source for search: " + source);
       }
-      let histogram = Services.telemetry.getKeyedHistogramById("SEARCH_COUNTS");
-      histogram.add(countId);
-
       if (
         details.alias &&
         engine.wrappedJSObject._internalAliases.includes(details.alias)
       ) {
-        let aliasCountId = getSearchEngineId(engine) + ".alias";
-        histogram.add(aliasCountId);
+        // This search uses an internal @search keyword.  Record the source as
+        // "alias", not "urlbar".
+        histogram.add(countIdPrefix + "alias");
+      } else {
+        histogram.add(countIdSource);
       }
     }
 
@@ -590,6 +601,7 @@ let BrowserUsageTelemetry = {
         this._recordSearch(engine, "about_newtab", "enter");
         break;
       case "contextmenu":
+      case "system":
       case "webextension":
         this._recordSearch(engine, source);
         break;
@@ -890,3 +902,8 @@ let BrowserUsageTelemetry = {
     }
   },
 };
+
+// Used by nsIBrowserUsage
+function getUniqueDomainsVisitedInPast24Hours() {
+  return URICountListener.uniqueDomainsVisitedInPast24Hours;
+}

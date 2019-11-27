@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -12,7 +10,13 @@ const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const Message = createFactory(
   require("devtools/client/webconsole/components/Output/Message")
 );
-const { MODE, REPS } = require("devtools/client/shared/components/reps/reps");
+
+loader.lazyGetter(this, "REPS", function() {
+  return require("devtools/client/shared/components/reps/reps").REPS;
+});
+loader.lazyGetter(this, "MODE", function() {
+  return require("devtools/client/shared/components/reps/reps").MODE;
+});
 
 PageError.displayName = "PageError";
 

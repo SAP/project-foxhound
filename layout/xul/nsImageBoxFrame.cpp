@@ -27,7 +27,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsImageMap.h"
-#include "nsILinkHandler.h"
 #include "nsIURL.h"
 #include "nsILoadGroup.h"
 #include "nsContainerFrame.h"
@@ -239,16 +238,17 @@ void nsImageBoxFrame::UpdateImage() {
           mContent, getter_AddRefs(triggeringPrincipal), contentPolicyType,
           &requestContextID);
 
-      nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
       nsCOMPtr<nsIURI> uri;
       nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), src, doc,
-                                                baseURI);
+                                                mContent->GetBaseURI());
       if (uri) {
+        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+        referrerInfo->InitWithNode(mContent);
+
         nsresult rv = nsContentUtils::LoadImage(
             uri, mContent, doc, triggeringPrincipal, requestContextID,
-            doc->GetDocumentURIAsReferrer(), doc->GetReferrerPolicy(),
-            mListener, mLoadFlags, EmptyString(), getter_AddRefs(mImageRequest),
-            contentPolicyType);
+            referrerInfo, mListener, mLoadFlags, EmptyString(),
+            getter_AddRefs(mImageRequest), contentPolicyType);
 
         if (NS_SUCCEEDED(rv) && mImageRequest) {
           nsLayoutUtils::RegisterImageRequestIfAnimated(
@@ -256,20 +256,9 @@ void nsImageBoxFrame::UpdateImage() {
         }
       }
     }
-  } else {
-    // Only get the list-style-image if we aren't being drawn
-    // by a native theme.
-    auto* display = StyleDisplay();
-    if (!(display->HasAppearance() && nsBox::gTheme &&
-          nsBox::gTheme->ThemeSupportsWidget(nullptr, this,
-                                             display->mAppearance))) {
-      // get the list-style-image
-      imgRequestProxy* styleRequest = StyleList()->GetListStyleImage();
-      if (styleRequest) {
-        styleRequest->SyncClone(mListener, mContent->GetComposedDoc(),
-                                getter_AddRefs(mImageRequest));
-      }
-    }
+  } else if (auto* styleRequest = GetRequestFromStyle()) {
+    styleRequest->SyncClone(mListener, mContent->GetComposedDoc(),
+                            getter_AddRefs(mImageRequest));
   }
 
   if (!mImageRequest) {
@@ -277,7 +266,7 @@ void nsImageBoxFrame::UpdateImage() {
     mIntrinsicSize.SizeTo(0, 0);
   } else {
     // We don't want discarding or decode-on-draw for xul images.
-    mImageRequest->StartDecoding(imgIContainer::FLAG_NONE);
+    mImageRequest->StartDecoding(imgIContainer::FLAG_ASYNC_NOTIFY);
     mImageRequest->LockImage();
   }
 
@@ -328,7 +317,8 @@ void nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   nsDisplayList list;
   list.AppendNewToTop<nsDisplayXULImage>(aBuilder, this);
 
-  CreateOwnLayerIfNeeded(aBuilder, &list);
+  CreateOwnLayerIfNeeded(aBuilder, &list,
+                         nsDisplayOwnLayer::OwnLayerForImageBoxFrame);
 
   aLists.Content()->AppendToTop(&list);
 }
@@ -418,7 +408,6 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
   const int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
   LayoutDeviceRect fillRect =
       LayoutDeviceRect::FromAppUnits(dest, appUnitsPerDevPixel);
-  fillRect.Round();
 
   Maybe<SVGImageContext> svgContext;
   gfx::IntSize decodeSize =
@@ -442,12 +431,9 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
   if (key.isNothing()) {
     return result;
   }
-  wr::LayoutRect fill = wr::ToLayoutRect(fillRect);
 
-  LayoutDeviceSize gapSize(0, 0);
-  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(),
-                     wr::ToLayoutSize(fillRect.Size()),
-                     wr::ToLayoutSize(gapSize), rendering, key.value());
+  wr::LayoutRect fill = wr::ToLayoutRect(fillRect);
+  aBuilder.PushImage(fill, fill, !BackfaceIsHidden(), rendering, key.value());
 
   return result;
 }
@@ -605,39 +591,41 @@ bool nsImageBoxFrame::CanOptimizeToImageLayer() {
   return true;
 }
 
-//
-// DidSetComputedStyle
-//
-// When the ComputedStyle changes, make sure that all of our image is up to
-// date.
-//
+imgRequestProxy* nsImageBoxFrame::GetRequestFromStyle() {
+  const nsStyleDisplay* disp = StyleDisplay();
+  if (disp->HasAppearance() && nsBox::gTheme &&
+      nsBox::gTheme->ThemeSupportsWidget(nullptr, this, disp->mAppearance)) {
+    return nullptr;
+  }
+
+  return StyleList()->GetListStyleImage();
+}
+
 /* virtual */
-void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
-  nsLeafBoxFrame::DidSetComputedStyle(aOldComputedStyle);
+void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
+  nsLeafBoxFrame::DidSetComputedStyle(aOldStyle);
 
   // Fetch our subrect.
   const nsStyleList* myList = StyleList();
-  mSubRect = myList->mImageRegion;  // before |mSuppressStyleCheck| test!
+  mSubRect = myList->GetImageRegion();  // before |mSuppressStyleCheck| test!
 
   if (mUseSrcAttr || mSuppressStyleCheck)
     return;  // No more work required, since the image isn't specified by style.
 
-  // If we're using a native theme implementation, we shouldn't draw anything.
-  const nsStyleDisplay* disp = StyleDisplay();
-  if (disp->HasAppearance() && nsBox::gTheme &&
-      nsBox::gTheme->ThemeSupportsWidget(nullptr, this, disp->mAppearance))
-    return;
-
-  // If list-style-image changes, we have a new image.
+  // If the image to use changes, we have a new image.
   nsCOMPtr<nsIURI> oldURI, newURI;
-  if (mImageRequest) mImageRequest->GetURI(getter_AddRefs(oldURI));
-  if (myList->GetListStyleImage())
-    myList->GetListStyleImage()->GetURI(getter_AddRefs(newURI));
+  if (mImageRequest) {
+    mImageRequest->GetURI(getter_AddRefs(oldURI));
+  }
+  if (auto* newImage = GetRequestFromStyle()) {
+    newImage->GetURI(getter_AddRefs(newURI));
+  }
   bool equal;
   if (newURI == oldURI ||  // handles null==null
       (newURI && oldURI && NS_SUCCEEDED(newURI->Equals(oldURI, &equal)) &&
-       equal))
+       equal)) {
     return;
+  }
 
   UpdateImage();
 }  // DidSetComputedStyle

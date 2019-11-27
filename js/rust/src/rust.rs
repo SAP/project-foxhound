@@ -137,7 +137,7 @@ impl Runtime {
                     }
 
                     let context = JS_NewContext(
-                        DEFAULT_HEAPSIZE, ChunkSize as u32, ptr::null_mut());
+                        DEFAULT_HEAPSIZE, ptr::null_mut());
                     assert!(!context.is_null());
                     JS::InitSelfHostedCode(context);
                     PARENT.set(context);
@@ -160,7 +160,6 @@ impl Runtime {
             assert_eq!(IsDebugBuild(), cfg!(feature = "debugmozjs"));
 
             let js_context = JS_NewContext(DEFAULT_HEAPSIZE,
-                                           ChunkSize as u32,
                                            JS_GetParentRuntime(PARENT.get()));
             assert!(!js_context.is_null());
 
@@ -177,11 +176,6 @@ impl Runtime {
                 STACK_QUOTA,
                 STACK_QUOTA - SYSTEM_CODE_BUFFER,
                 STACK_QUOTA - SYSTEM_CODE_BUFFER - TRUSTED_SCRIPT_BUFFER);
-
-            let opts = JS::ContextOptionsRef(js_context);
-            (*opts).set_baseline_(true);
-            (*opts).set_ion_(true);
-            (*opts).set_nativeRegExp_(true);
 
             CONTEXT.with(|context| {
                 assert!(context.get().is_null());
@@ -289,7 +283,7 @@ impl RootKind for *mut JSObject {
     fn rootKind() -> JS::RootKind { JS::RootKind::Object }
 }
 
-impl RootKind for *mut JSFlatString {
+impl RootKind for *mut JSLinearString {
     #[inline(always)]
     fn rootKind() -> JS::RootKind { JS::RootKind::String }
 }
@@ -563,12 +557,6 @@ impl Default for JS::Value {
 impl Default for JS::RealmOptions {
     fn default() -> Self { unsafe { ::std::mem::zeroed() } }
 }
-
-const ChunkShift: usize = 20;
-const ChunkSize: usize = 1 << ChunkShift;
-
-#[cfg(target_pointer_width = "32")]
-const ChunkLocationOffset: usize = ChunkSize - 2 * 4 - 8;
 
 pub trait GCMethods {
     unsafe fn initial() -> Self;
@@ -1053,7 +1041,9 @@ pub static SIMPLE_GLOBAL_CLASS: JSClass = JSClass {
     name: b"Global\0" as *const u8 as *const _,
     flags: (JSCLASS_IS_GLOBAL | ((JSCLASS_GLOBAL_SLOT_COUNT & JSCLASS_RESERVED_SLOTS_MASK) << JSCLASS_RESERVED_SLOTS_SHIFT)) as u32,
     cOps: &SIMPLE_GLOBAL_CLASS_OPS as *const JSClassOps,
-    reserved: [0 as *mut _; 3]
+    spec: 0 as *mut _,
+    ext: 0 as *mut _,
+    oOps: 0 as *mut _
 };
 
 #[inline]

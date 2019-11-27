@@ -342,7 +342,13 @@ void MacroAssemblerMIPS64::ma_dctz(Register rd, Register rs) {
   as_dclz(rd, rd);
   ma_dnegu(SecondScratchReg, rd);
   ma_daddu(SecondScratchReg, Imm32(0x3f));
-  as_movn(rd, SecondScratchReg, ScratchRegister);
+#ifdef MIPS64
+    as_selnez(SecondScratchReg, SecondScratchReg, ScratchRegister);
+    as_seleqz(rd, rd, ScratchRegister);
+    as_or(rd, rd, SecondScratchReg);
+#else
+    as_movn(rd, SecondScratchReg, ScratchRegister);
+#endif
 }
 
 // Arithmetic-based ops.
@@ -412,7 +418,13 @@ void MacroAssemblerMIPS64::ma_subTestOverflow(Register rd, Register rs,
 
 void MacroAssemblerMIPS64::ma_dmult(Register rs, Imm32 imm) {
   ma_li(ScratchRegister, imm);
+#ifdef MIPSR6
+  as_dmul(rs, ScratchRegister, SecondScratchReg);
+  as_dmuh(rs, ScratchRegister, rs);
+  ma_move(rs, SecondScratchReg);
+#else
   as_dmult(rs, ScratchRegister);
+#endif
 }
 
 // Memory.
@@ -967,7 +979,6 @@ void MacroAssemblerMIPS64Compat::loadPtr(wasm::SymbolicAddress address,
 void MacroAssemblerMIPS64Compat::loadPrivate(const Address& address,
                                              Register dest) {
   loadPtr(address, dest);
-  ma_dsll(dest, dest, Imm32(1));
 }
 
 void MacroAssemblerMIPS64Compat::loadUnalignedDouble(
@@ -1156,6 +1167,14 @@ void MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output) {
   as_roundwd(ScratchDoubleReg, input);
   ma_li(ScratchRegister, Imm32(255));
   as_mfc1(output, ScratchDoubleReg);
+#ifdef MIPSR6
+  as_slti(SecondScratchReg, output, 0);
+  as_seleqz(output, output, SecondScratchReg);
+  as_sltiu(SecondScratchReg, output, 255);
+  as_selnez(output, output, SecondScratchReg);
+  as_seleqz(ScratchRegister, ScratchRegister, SecondScratchReg);
+  as_or(output, output, ScratchRegister);
+#else
   zeroDouble(ScratchDoubleReg);
   as_sltiu(SecondScratchReg, output, 255);
   as_colt(DoubleFloat, ScratchDoubleReg, input);
@@ -1163,6 +1182,7 @@ void MacroAssembler::clampDoubleToUint8(FloatRegister input, Register output) {
   as_movz(output, ScratchRegister, SecondScratchReg);
   // if !(input > 0); res = 0;
   as_movf(output, zero);
+#endif
 }
 
 void MacroAssemblerMIPS64Compat::testNullSet(Condition cond,
@@ -1316,11 +1336,6 @@ void MacroAssemblerMIPS64Compat::unboxValue(const ValueOperand& src,
   }
 }
 
-void MacroAssemblerMIPS64Compat::unboxPrivate(const ValueOperand& src,
-                                              Register dest) {
-  ma_dsll(dest, src.valueReg(), Imm32(1));
-}
-
 void MacroAssemblerMIPS64Compat::boxDouble(FloatRegister src,
                                            const ValueOperand& dest,
                                            FloatRegister) {
@@ -1426,18 +1441,6 @@ Register MacroAssemblerMIPS64Compat::extractTag(const BaseIndex& address,
                                                 Register scratch) {
   computeScaledAddress(address, scratch);
   return extractTag(Address(scratch, address.offset), scratch);
-}
-
-CodeOffsetJump MacroAssemblerMIPS64Compat::jumpWithPatch(RepatchLabel* label) {
-  // Only one branch per label.
-  MOZ_ASSERT(!label->used());
-
-  BufferOffset bo = nextOffset();
-  label->use(bo.getOffset());
-  ma_liPatchable(ScratchRegister, ImmWord(LabelBase::INVALID_OFFSET));
-  as_jr(ScratchRegister);
-  as_nop();
-  return CodeOffsetJump(bo.getOffset());
 }
 
 /////////////////////////////////////////////////////////////////
@@ -2257,7 +2260,7 @@ void MacroAssemblerMIPS64Compat::wasmLoadI64Impl(
     const wasm::MemoryAccessDesc& access, Register memoryBase, Register ptr,
     Register ptrScratch, Register64 output, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2316,7 +2319,7 @@ void MacroAssemblerMIPS64Compat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.

@@ -1,6 +1,6 @@
+import { FullPageInterrupt } from "content-src/asrouter/templates/FullPageInterrupt/FullPageInterrupt";
 import { Interrupt } from "content-src/asrouter/templates/FirstRun/Interrupt";
 import { ReturnToAMO } from "content-src/asrouter/templates/ReturnToAMO/ReturnToAMO";
-import { StartupOverlay } from "content-src/asrouter/templates/StartupOverlay/StartupOverlay";
 import { Trailhead } from "content-src/asrouter/templates//Trailhead/Trailhead";
 import { shallow } from "enzyme";
 import React from "react";
@@ -21,11 +21,13 @@ describe("<Interrupt>", () => {
     );
     assert.lengthOf(wrapper.find(Trailhead), 1);
   });
-  it("should render StartupOverlay when the message has a template of fxa_overlay", () => {
+  it("should render Full Page interrupt when the message has a template of full_page_interrupt", () => {
     wrapper = shallow(
-      <Interrupt message={{ id: "FOO", template: "fxa_overlay" }} />
+      <Interrupt
+        message={{ id: "FOO", content: {}, template: "full_page_interrupt" }}
+      />
     );
-    assert.lengthOf(wrapper.find(StartupOverlay), 1);
+    assert.lengthOf(wrapper.find(FullPageInterrupt), 1);
   });
   it("should throw an error if another type of message is dispatched", () => {
     assert.throws(() => {

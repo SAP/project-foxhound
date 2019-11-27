@@ -35,7 +35,6 @@
 #include "jsfriendapi.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCRTGlue.h"
-#include "nsDirectoryServiceDefs.h"
 #include "nsIFile.h"
 #include "nsIOutputStream.h"
 #include "nsISupportsImpl.h"
@@ -44,6 +43,7 @@
 #include "prerror.h"
 #include "prio.h"
 #include "prtypes.h"
+#include "SpecialSystemDirectory.h"
 
 namespace mozilla {
 namespace devtools {
@@ -1287,7 +1287,13 @@ class MOZ_STACK_CLASS HeapSnapshotHandler {
     if (!first) return true;
 
     CoreDumpWriter::EdgePolicy policy;
-    if (!ShouldIncludeEdge(compartments, origin, edge, &policy)) return true;
+    if (!ShouldIncludeEdge(compartments, origin, edge, &policy)) {
+      // Because ShouldIncludeEdge considers the |origin| node as well, we don't
+      // want to consider this node 'visited' until we write it to the core
+      // dump.
+      traversal.doNotMarkReferentAsVisited();
+      return true;
+    }
 
     nodeCount++;
 
@@ -1334,8 +1340,9 @@ static unsigned long msSinceProcessCreation(const TimeStamp& now) {
 already_AddRefed<nsIFile> HeapSnapshot::CreateUniqueCoreDumpFile(
     ErrorResult& rv, const TimeStamp& now, nsAString& outFilePath,
     nsAString& outSnapshotId) {
+  MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
   nsCOMPtr<nsIFile> file;
-  rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(file));
+  rv = GetSpecialSystemDirectory(OS_TemporaryDirectory, getter_AddRefs(file));
   if (NS_WARN_IF(rv.Failed())) return nullptr;
 
   nsAutoString tempPath;

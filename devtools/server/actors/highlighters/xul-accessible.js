@@ -102,7 +102,13 @@ const ACCESSIBLE_BOUNDS_SHEET =
     color: hsl(210, 30%, 85%);
   }
 
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty):before {
+  .accessible-infobar-audit .accessible-contrast-ratio:empty::before,
+  .accessible-infobar-audit .accessible-contrast-ratio:empty::after,
+  .accessible-infobar-name:empty {
+    display: none;
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio::before {
     content: "";
     height: 8px;
     width: 8px;
@@ -115,70 +121,85 @@ const ACCESSIBLE_BOUNDS_SHEET =
     margin-inline-end: 9px;
   }
 
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty):after {
+  .accessible-infobar-audit .accessible-contrast-ratio::after {
     margin-inline-start: 2px;
   }
 
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AA:after,
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AAA:after {
+  .accessible-infobar-audit .accessible-contrast-ratio.AA::after,
+  .accessible-infobar-audit .accessible-contrast-ratio.AAA::after {
     color: #90E274;
   }
 
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).fail:after {
-    color: #E57180;
-    content: "⚠️";
-  }
-
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AA:after {
-    content: "AA\u2713";
-  }
-
-  .accessible-infobar-audit .accessible-contrast-ratio:not(:empty).AAA:after {
-    content: "AAA\u2713";
-  }
-
-  .accessible-infobar-audit .accessible-contrast-ratio-label,
-  .accessible-infobar-audit .accessible-contrast-ratio-separator:before {
-    margin-inline-end: 3px;
-  }
-
-  .accessible-infobar-audit .accessible-contrast-ratio-separator:before {
-    content: "-";
-    margin-inline-start: 3px;
-  }
-
-  .accessible-infobar-name:not(:empty) {
-    border-inline-start: 1px solid #5a6169;
-    margin-inline-start: 6px;
-    padding-inline-start: 6px;
-  }
-
-  .accessible-infobar-audit .accessible-text-label:before {
+  .accessible-infobar-audit .accessible-audit::before,
+  .accessible-infobar-audit .accessible-contrast-ratio.FAIL::after {
     display: inline-block;
     width: 12px;
     height: 12px;
     content: "";
-    margin-inline-end: 4px;
     vertical-align: -2px;
-    background-image: none;
     background-position: center;
     background-repeat: no-repeat;
     -moz-context-properties: fill;
-    fill: currentColor;
   }
 
-  .accessible-infobar-audit .accessible-text-label.fail:before {
+  .accessible-infobar-audit .accessible-contrast-ratio.FAIL:after {
+    color: #E57180;
+    margin-inline-start: 3px;
     background-image: url(chrome://devtools/skin/images/error-small.svg);
     fill: var(--red-40);
   }
 
-  .accessible-infobar-audit .accessible-text-label.WARNING:before {
+  .accessible-infobar-audit .accessible-contrast-ratio.AA::after {
+    content: "AA\u2713";
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio.AAA::after {
+    content: "AAA\u2713";
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio-label,
+  .accessible-infobar-audit .accessible-contrast-ratio-separator::before {
+    margin-inline-end: 3px;
+  }
+
+  .accessible-infobar-audit .accessible-contrast-ratio-separator::before {
+    content: "-";
+    margin-inline-start: 3px;
+  }
+
+  .accessible-infobar-audit .accessible-audit {
+    display: block;
+    padding-block-end: 5px;
+  }
+
+  .accessible-infobar-audit .accessible-audit:last-child {
+    padding-block-end: 0;
+  }
+
+  .accessible-infobar-audit .accessible-audit::before {
+    margin-inline-end: 4px;
+    background-image: none;
+    fill: currentColor;
+  }
+
+  .accessible-infobar-audit .accessible-audit.FAIL::before {
+    background-image: url(chrome://devtools/skin/images/error-small.svg);
+    fill: var(--red-40);
+  }
+
+  .accessible-infobar-audit .accessible-audit.WARNING::before {
     background-image: url(chrome://devtools/skin/images/alert-small.svg);
     fill: var(--yellow-60);
   }
 
-  .accessible-infobar-audit .accessible-text-label.BEST_PRACTICES:before {
+  .accessible-infobar-audit .accessible-audit.BEST_PRACTICES::before {
     background-image: url(chrome://devtools/skin/images/info-small.svg);
+  }
+
+  .accessible-infobar-name {
+    border-inline-start: 1px solid #5a6169;
+    margin-inline-start: 6px;
+    padding-inline-start: 6px;
   }`);
 
 /**

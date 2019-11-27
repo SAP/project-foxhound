@@ -50,6 +50,9 @@ using namespace JS;
 static JSObject* UnwrapNativeCPOW(nsISupports* wrapper) {
   nsCOMPtr<nsIXPConnectWrappedJS> underware = do_QueryInterface(wrapper);
   if (underware) {
+    // The analysis falsely believes that ~nsCOMPtr can GC because it could
+    // drop the refcount to zero, but that can't happen here.
+    JS::AutoSuppressGCAnalysis nogc;
     JSObject* mainObj = underware->GetJSObject();
     if (mainObj && mozilla::jsipc::IsWrappedCPOW(mainObj)) {
       return mainObj;
@@ -62,7 +65,7 @@ static JSObject* UnwrapNativeCPOW(nsISupports* wrapper) {
 
 // static
 bool XPCConvert::GetISupportsFromJSObject(JSObject* obj, nsISupports** iface) {
-  const JSClass* jsclass = js::GetObjectJSClass(obj);
+  const JSClass* jsclass = js::GetObjectClass(obj);
   MOZ_ASSERT(jsclass, "obj has no class");
   if (jsclass && (jsclass->flags & JSCLASS_HAS_PRIVATE) &&
       (jsclass->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS)) {
@@ -261,7 +264,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       // almost always ASCII, so the inexact allocations below
       // should be fine.
 
-      if (IsUTF8Latin1(*utf8String)) {
+      if (IsUtf8Latin1(*utf8String)) {
         using UniqueLatin1Chars =
             js::UniquePtr<JS::Latin1Char[], JS::FreePolicy>;
 
@@ -271,7 +274,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
           return false;
         }
 
-        size_t written = LossyConvertUTF8toLatin1(
+        size_t written = LossyConvertUtf8toLatin1(
             *utf8String, MakeSpan(reinterpret_cast<char*>(buffer.get()), len));
         buffer[written] = 0;
 
@@ -310,7 +313,7 @@ bool XPCConvert::NativeData2JS(JSContext* cx, MutableHandleValue d,
       // code units in the source. That's why it's OK to claim the
       // output buffer has len + 1 space but then still expect to
       // have space for the zero terminator.
-      size_t written = ConvertUTF8toUTF16(
+      size_t written = ConvertUtf8toUtf16(
           *utf8String, MakeSpan(buffer.get(), allocLen.value()));
       MOZ_RELEASE_ASSERT(written <= len);
       buffer[written] = 0;
@@ -706,16 +709,17 @@ bool XPCConvert::JSData2Native(JSContext* cx, void* d, HandleValue s,
         return true;
       }
 
-      JSFlatString* flat = JS_FlattenString(cx, str);
-      if (!flat) {
+      JSLinearString* linear = JS_EnsureLinearString(cx, str);
+      if (!linear) {
         return false;
       }
 
-      size_t utf8Length = JS::GetDeflatedUTF8StringLength(flat);
+      size_t utf8Length = JS::GetDeflatedUTF8StringLength(linear);
       rs->SetLength(utf8Length);
 
-      JS::DeflateStringToUTF8Buffer(
-          flat, mozilla::RangedPtr<char>(rs->BeginWriting(), utf8Length));
+      mozilla::DebugOnly<size_t> written = JS::DeflateStringToUTF8Buffer(
+          linear, mozilla::MakeSpan(rs->BeginWriting(), utf8Length));
+      MOZ_ASSERT(written == utf8Length);
 
       return true;
     }

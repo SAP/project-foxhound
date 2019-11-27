@@ -27,6 +27,7 @@ const test = new SearchConfigTest({
             "ast",
             "az",
             "ca",
+            "ca-valencia",
             "cak",
             "da",
             "de",
@@ -97,6 +98,7 @@ const test = new SearchConfigTest({
     {
       included: [{}],
       domain: "bing.com",
+      telemetryId: "bing",
       codes: {
         searchbar: "form=MOZSBR",
         keyword: "form=MOZLBR",
@@ -115,5 +117,6 @@ add_task(async function setup() {
 });
 
 add_task(async function test_searchConfig_bing() {
-  await test.run();
+  await test.run(false);
+  await test.run(true);
 });

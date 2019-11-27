@@ -56,10 +56,10 @@ from manifestparser.filters import (
 try:
     from marionette_driver.addons import Addons
     from marionette_harness import Marionette
-except ImportError as e:
+except ImportError as e:  # noqa
     # Defer ImportError until attempt to use Marionette
     def reraise(*args, **kwargs):
-        raise(e)
+        raise(e)  # noqa
     Marionette = reraise
 
 from leaks import ShutdownLeaks, LSANLeaks
@@ -184,6 +184,11 @@ class MessageLogger(object):
                 'action'] in MessageLogger.VALID_ACTIONS):
             raise ValueError
 
+    def _fix_subtest_name(self, message):
+        """Make sure subtest name is a string"""
+        if 'subtest' in message and not isinstance(message['subtest'], six.string_types):
+            message['subtest'] = str(message['subtest'])
+
     def _fix_test_name(self, message):
         """Normalize a logged test path to match the relative path from the sourcedir.
         """
@@ -232,6 +237,7 @@ class MessageLogger(object):
                         message=fragment,
                     )
 
+            self._fix_subtest_name(message)
             self._fix_test_name(message)
             self._fix_message_format(message)
             messages.append(message)
@@ -785,9 +791,12 @@ def findTestMediaDevices(log):
 
     # Feed it a frame of output so it has something to display
     gst01 = spawn.find_executable("gst-launch-0.1")
+    gst010 = spawn.find_executable("gst-launch-0.10")
     gst10 = spawn.find_executable("gst-launch-1.0")
     if gst01:
         gst = gst01
+    if gst010:
+        gst = gst010
     else:
         gst = gst10
     subprocess.check_call([gst, 'videotestsrc',
@@ -795,22 +804,29 @@ def findTestMediaDevices(log):
                            'v4l2sink', 'device=%s' % device])
     info['video'] = name
 
-    pactl = spawn.find_executable("pactl")
+    if platform.linux_distribution()[0] == 'debian':
+        # Debian 10 doesn't seem to appreciate starting pactl here.
+        # Still WIP (bug 1565332)
+        pass
+    else:
+        # Use pactl to see if the PulseAudio module-null-sink module is loaded.
+        pactl = spawn.find_executable("pactl")
 
-    # Use pactl to see if the PulseAudio module-null-sink module is loaded.
-    def null_sink_loaded():
-        o = subprocess.check_output(
-            [pactl, 'list', 'short', 'modules'])
-        return filter(lambda x: 'module-null-sink' in x, o.splitlines())
+        def null_sink_loaded():
+            o = subprocess.check_output(
+                [pactl, 'list', 'short', 'modules'])
+            return filter(lambda x: 'module-null-sink' in x, o.splitlines())
 
-    if not null_sink_loaded():
-        # Load module-null-sink
-        subprocess.check_call([pactl, 'load-module',
-                               'module-null-sink'])
+        if not null_sink_loaded():
+            subprocess.check_call([
+                pactl,
+                'load-module',
+                'module-null-sink'
+            ])
 
-    if not null_sink_loaded():
-        log.error('Couldn\'t load module-null-sink')
-        return None
+        if not null_sink_loaded():
+            log.error('Couldn\'t load module-null-sink')
+            return None
 
     # Hardcode the name since it's always the same.
     info['audio'] = 'Monitor of Null Output'
@@ -1421,17 +1437,7 @@ toolbar#nav-bar {
 
             info = mozinfo.info
 
-            # Bug 1089034 - imptest failure expectations are encoded as
-            # test manifests, even though they aren't tests. This gross
-            # hack causes several problems in automation including
-            # throwing off the chunking numbers. Remove them manually
-            # until bug 1089034 is fixed.
-            def remove_imptest_failure_expectations(tests, values):
-                return (t for t in tests
-                        if 'imptests/failures' not in t['path'])
-
             filters = [
-                remove_imptest_failure_expectations,
                 subsuite(options.subsuite),
             ]
 
@@ -1622,21 +1628,15 @@ toolbar#nav-bar {
     def buildBrowserEnv(self, options, debugger=False, env=None):
         """build the environment variables for the specific test and operating system"""
         if mozinfo.info["asan"] and mozinfo.isLinux and mozinfo.bits == 64:
-            lsanPath = SCRIPT_DIR
+            useLSan = True
         else:
-            lsanPath = None
-
-        if mozinfo.info["ubsan"]:
-            ubsanPath = SCRIPT_DIR
-        else:
-            ubsanPath = None
+            useLSan = False
 
         browserEnv = self.environment(
             xrePath=options.xrePath,
             env=env,
             debugger=debugger,
-            lsanPath=lsanPath,
-            ubsanPath=ubsanPath)
+            useLSan=useLSan)
 
         if hasattr(options, "topsrcdir"):
             browserEnv["MOZ_DEVELOPER_REPO_DIR"] = options.topsrcdir
@@ -1924,6 +1924,10 @@ toolbar#nav-bar {
             # failing connection attempts, and hangs (bug 1397201)
             "marionette.log.level": "Trace",
         }
+
+        # Ideally we should set this in a manifest, but a11y tests do not run by manifest.
+        if options.flavor == 'a11y':
+            prefs["plugin.load_flash_only"] = False
 
         if options.flavor == 'browser' and options.timeout:
             prefs["testing.browserTestHarness.timeout"] = options.timeout
@@ -2362,7 +2366,7 @@ toolbar#nav-bar {
 
         if marionette_exception is not None:
             exc, value, tb = marionette_exception
-            raise exc, value, tb
+            raise exc(value).with_traceback(tb)
 
         return status, self.lastTestSeen
 
@@ -2586,10 +2590,20 @@ toolbar#nav-bar {
             "e10s": options.e10s,
             "fission": self.extraPrefs.get('fission.autostart', False),
             "headless": options.headless,
+
+            # Until the test harness can understand default pref values,
+            # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
+            # should by synchronized with the default pref value indicated in
+            # StaticPrefList.yaml.
+            #
+            # Currently for automation, the pref defaults to true in nightly
+            # builds and false otherwise (but can be overridden with --setpref).
             "serviceworker_e10s": self.extraPrefs.get(
-                'dom.serviceWorkers.parent_intercept', False),
+                'dom.serviceWorkers.parent_intercept', mozinfo.info['nightly_build']),
+
             "socketprocess_e10s": self.extraPrefs.get(
                 'network.process.enabled', False),
+            "verify": options.verify,
             "webrender": options.enable_webrender,
         })
 
@@ -2608,6 +2622,13 @@ toolbar#nav-bar {
 
         tests = self.getActiveTests(options)
         self.logPreamble(tests)
+
+        if mozinfo.info['fission'] and not mozinfo.info['e10s']:
+            # Make sure this is logged *after* suite_start so it gets associated with the
+            # current suite in the summary formatters.
+            self.log.error("Fission is not supported without e10s.")
+            return 1
+
         tests = [t for t in tests if 'disabled' not in t]
 
         # Until we have all green, this does not run on a11y (for perf reasons)
@@ -2791,8 +2812,11 @@ toolbar#nav-bar {
             # code coverage is not enabled.
             detectShutdownLeaks = False
             if options.jscov_dir_prefix is None:
-                detectShutdownLeaks = mozinfo.info[
-                    "debug"] and options.flavor == 'browser'
+                detectShutdownLeaks = (
+                    mozinfo.info['debug'] and
+                    options.flavor == 'browser' and
+                    options.subsuite != 'thunderbird'
+                )
 
             self.start_script_kwargs['flavor'] = self.normflavor(options.flavor)
             marionette_args = {
@@ -2823,6 +2847,8 @@ toolbar#nav-bar {
 
                 self.log.info("runtests.py | Running with scheme: {}".format(scheme))
                 self.log.info("runtests.py | Running with e10s: {}".format(options.e10s))
+                self.log.info("runtests.py | Running with fission: {}".format(
+                    mozinfo.info.get('fission', False)))
                 self.log.info("runtests.py | Running with serviceworker_e10s: {}".format(
                     mozinfo.info.get('serviceworker_e10s', False)))
                 self.log.info("runtests.py | Running with socketprocess_e10s: {}".format(

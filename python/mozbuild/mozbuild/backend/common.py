@@ -36,7 +36,6 @@ from mozbuild.frontend.data import (
     IPDLCollection,
     LocalizedPreprocessedFiles,
     LocalizedFiles,
-    RustLibrary,
     SharedLibrary,
     StaticLibrary,
     UnifiedSources,
@@ -204,9 +203,7 @@ class CommonBackend(BuildBackend):
         if len(self._idl_manager.modules):
             self._write_rust_xpidl_summary(self._idl_manager)
             self._handle_idl_manager(self._idl_manager)
-            self._handle_generated_sources(
-                mozpath.join(self.environment.topobjdir, 'dist/include/%s.h' % stem)
-                for stem in self._idl_manager.idl_stems())
+            self._handle_xpidl_sources()
 
         for config in self._configs:
             self.backend_input_files.add(config.source)
@@ -252,7 +249,7 @@ class CommonBackend(BuildBackend):
 
         def expand(lib, recurse_objs, system_libs):
             if isinstance(lib, (HostLibrary, StaticLibrary)):
-                if not isinstance(lib, HostLibrary) and lib.no_expand_lib:
+                if lib.no_expand_lib:
                     static_libs.append(lib)
                     recurse_objs = False
                 elif recurse_objs:
@@ -276,9 +273,7 @@ class CommonBackend(BuildBackend):
 
         system_libs = not isinstance(input_bin, (HostLibrary, StaticLibrary))
         for lib in input_bin.linked_libraries:
-            if isinstance(lib, RustLibrary):
-                continue
-            elif isinstance(lib, (HostLibrary, StaticLibrary)):
+            if isinstance(lib, (HostLibrary, StaticLibrary)):
                 expand(lib, True, system_libs)
             elif isinstance(lib, SharedLibrary):
                 if lib not in seen_libs:
@@ -329,6 +324,22 @@ class CommonBackend(BuildBackend):
     def _handle_generated_sources(self, files):
         self._generated_sources.update(mozpath.relpath(
             f, self.environment.topobjdir) for f in files)
+
+    def _handle_xpidl_sources(self):
+        bindings_rt_dir = mozpath.join(self.environment.topobjdir, 'dist', 'xpcrs', 'rt')
+        bindings_bt_dir = mozpath.join(self.environment.topobjdir, 'dist', 'xpcrs', 'bt')
+        include_dir = mozpath.join(self.environment.topobjdir, 'dist', 'include')
+
+        self._handle_generated_sources(
+            itertools.chain.from_iterable(
+                (
+                    mozpath.join(include_dir, '%s.h' % stem),
+                    mozpath.join(bindings_rt_dir, '%s.rs' % stem),
+                    mozpath.join(bindings_bt_dir, '%s.rs' % stem),
+                )
+                for stem in self._idl_manager.idl_stems()
+            )
+        )
 
     def _handle_webidl_collection(self, webidls):
 

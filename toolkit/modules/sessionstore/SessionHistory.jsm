@@ -115,10 +115,7 @@ var SessionHistoryInternal = {
     // If either the session history isn't available yet or doesn't have any
     // valid entries, make sure we at least include the current page,
     // unless of course we just skipped all entries because aFromIdx was big enough.
-    if (
-      data.entries.length == 0 &&
-      (skippedCount != entryCount || aFromIdx < 0)
-    ) {
+    if (!data.entries.length && (skippedCount != entryCount || aFromIdx < 0)) {
       let uri = webNavigation.currentURI.displaySpec;
       let body = webNavigation.document.body;
       // We landed here because the history is inaccessible or there are no
@@ -233,7 +230,7 @@ var SessionHistoryInternal = {
               Object.getOwnPropertyNames(presState).length > 1
           );
 
-        if (presStates.length > 0) {
+        if (presStates.length) {
           entry.presState = presStates;
         }
       }
@@ -243,6 +240,12 @@ var SessionHistoryInternal = {
     if (shEntry.principalToInherit) {
       entry.principalToInherit_base64 = E10SUtils.serializePrincipal(
         shEntry.principalToInherit
+      );
+    }
+
+    if (shEntry.storagePrincipalToInherit) {
+      entry.storagePrincipalToInherit_base64 = E10SUtils.serializePrincipal(
+        shEntry.storagePrincipalToInherit
       );
     }
 
@@ -519,6 +522,11 @@ var SessionHistoryInternal = {
           );
           return Services.scriptSecurityManager.createNullPrincipal({});
         }
+      );
+    }
+    if (entry.storagePrincipalToInherit_base64) {
+      shEntry.storagePrincipalToInherit = E10SUtils.deserializePrincipal(
+        entry.storagePrincipalToInherit_base64
       );
     }
     if (entry.principalToInherit_base64) {

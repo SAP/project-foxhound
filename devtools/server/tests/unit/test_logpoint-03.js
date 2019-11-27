@@ -10,7 +10,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 function run_test() {
   initTestDebuggerServer();
@@ -20,9 +20,9 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-logpoint", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
+      gThreadFront = threadFront;
       test_simple_breakpoint();
     });
   });
@@ -41,11 +41,11 @@ function test_simple_breakpoint() {
     },
   };
 
-  gThreadClient.once("paused", async function(packet) {
-    const source = await getSourceById(gThreadClient, packet.frame.where.actor);
+  gThreadFront.once("paused", async function(packet) {
+    const source = await getSourceById(gThreadFront, packet.frame.where.actor);
 
     // Set a logpoint which should throw an error message.
-    await gThreadClient.setBreakpoint(
+    await gThreadFront.setBreakpoint(
       {
         sourceUrl: source.url,
         line: 3,
@@ -54,22 +54,21 @@ function test_simple_breakpoint() {
     );
 
     // Execute the rest of the code.
-    await gThreadClient.resume();
+    await gThreadFront.resume();
     Assert.equal(lastMessage.level, "logPointError");
-    Assert.equal(
-      lastMessage.arguments[0],
-      "[Logpoint threw]: c is not defined"
-    );
+    Assert.equal(lastMessage.arguments[0], "c is not defined");
     finishClient(gClient);
   });
 
   /* eslint-disable */
-  Cu.evalInSandbox("debugger;\n" + // 1
-                   "var a = 'three';\n" +  // 2
-                   "var b = 2;\n", // 3
-                   gDebuggee,
-                   "1.8",
-                   "test.js",
-                   1);
+  Cu.evalInSandbox(
+    "debugger;\n" + // 1
+    "var a = 'three';\n" + // 2
+      "var b = 2;\n", // 3
+    gDebuggee,
+    "1.8",
+    "test.js",
+    1
+  );
   /* eslint-enable */
 }

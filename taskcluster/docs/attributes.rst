@@ -247,7 +247,7 @@ artifact_prefix
 Most taskcluster artifacts are public, so we've hardcoded ``public/build`` in a
 lot of places. To support private artifacts, we've moved this to the
 ``artifact_prefix`` attribute. It will default to ``public/build`` but will be
-overrideable per-task.
+overridable per-task.
 
 artifact_map
 ===============
@@ -290,6 +290,16 @@ attribute.
 update-channel
 ==============
 The update channel the build is configured to use.
+
+mar-channel-id
+==============
+The mar-channel-id the build is configured to use.
+
+accepted-mar-channel-ids
+========================
+The mar-channel-ids this build will accept updates to. It should usually be the same as
+the value mar_channel_id.  If more than one ID is needed, then you should use a
+comma separated list of values.
 
 openh264_rev
 ============

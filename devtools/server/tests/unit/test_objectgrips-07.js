@@ -14,16 +14,16 @@ registerCleanupFunction(() => {
 });
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
+  threadFrontTest(async ({ threadFront, debuggee, client }) => {
     return new Promise(resolve => {
-      threadClient.once("paused", function(packet) {
+      threadFront.once("paused", async function(packet) {
         const [f, s, ne, e] = packet.frame.arguments;
         const [
           fClient,
           sClient,
           neClient,
           eClient,
-        ] = packet.frame.arguments.map(a => threadClient.pauseGrip(a));
+        ] = packet.frame.arguments.map(a => threadFront.pauseGrip(a));
 
         Assert.ok(!f.extensible);
         Assert.ok(!fClient.isExtensible);
@@ -37,7 +37,8 @@ add_task(
         Assert.ok(e.extensible);
         Assert.ok(eClient.isExtensible);
 
-        threadClient.resume().then(resolve);
+        await threadFront.resume();
+        resolve();
       });
 
       debuggee.eval(

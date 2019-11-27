@@ -7,8 +7,7 @@
 #ifndef GFX_FRAMEMETRICS_H
 #define GFX_FRAMEMETRICS_H
 
-#include <stdint.h>  // for uint8_t, uint32_t, uint64_t
-#include <map>
+#include <stdint.h>                 // for uint8_t, uint32_t, uint64_t
 #include "Units.h"                  // for CSSRect, CSSPixel, etc
 #include "mozilla/DefineEnum.h"     // for MOZ_DEFINE_ENUM
 #include "mozilla/HashFunctions.h"  // for HashGeneric
@@ -21,6 +20,7 @@
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 #include "mozilla/StaticPtr.h"                   // for StaticAutoPtr
 #include "mozilla/TimeStamp.h"                   // for TimeStamp
+#include "nsDataHashtable.h"                     // for nsDataHashtable
 #include "nsString.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "PLDHashTable.h"  // for PLDHashNumber
@@ -721,10 +721,6 @@ struct ScrollSnapInfo {
   bool operator==(const ScrollSnapInfo& aOther) const {
     return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
            mScrollSnapStrictnessY == aOther.mScrollSnapStrictnessY &&
-           mScrollSnapIntervalX == aOther.mScrollSnapIntervalX &&
-           mScrollSnapIntervalY == aOther.mScrollSnapIntervalY &&
-           mScrollSnapDestination == aOther.mScrollSnapDestination &&
-           mScrollSnapCoordinates == aOther.mScrollSnapCoordinates &&
            mSnapPositionX == aOther.mSnapPositionX &&
            mSnapPositionY == aOther.mSnapPositionY &&
            mXRangeWiderThanSnapport == aOther.mXRangeWiderThanSnapport &&
@@ -753,18 +749,6 @@ struct ScrollSnapInfo {
       mozilla::StyleScrollSnapStrictness::None;
   mozilla::StyleScrollSnapStrictness mScrollSnapStrictnessY =
       mozilla::StyleScrollSnapStrictness::None;
-
-  // The intervals derived from the scroll frame's scroll-snap-points.
-  Maybe<nscoord> mScrollSnapIntervalX;
-  Maybe<nscoord> mScrollSnapIntervalY;
-
-  // The scroll frame's scroll-snap-destination, in cooked form (to avoid
-  // shipping the raw style value over IPC).
-  nsPoint mScrollSnapDestination;
-
-  // The scroll-snap-coordinates of any descendant frames of the scroll frame,
-  // relative to the origin of the scrolled frame.
-  nsTArray<nsPoint> mScrollSnapCoordinates;
 
   // The scroll positions corresponding to scroll-snap-align values.
   nsTArray<nscoord> mSnapPositionX;
@@ -896,7 +880,6 @@ struct ScrollMetadata {
         mHasScrollgrab(false),
         mIsLayersIdRoot(false),
         mIsAutoDirRootContentRTL(false),
-        mUsesContainerScrolling(false),
         mForceDisableApz(false),
         mResolutionUpdated(false),
         mOverscrollBehavior() {}
@@ -912,7 +895,6 @@ struct ScrollMetadata {
            mHasScrollgrab == aOther.mHasScrollgrab &&
            mIsLayersIdRoot == aOther.mIsLayersIdRoot &&
            mIsAutoDirRootContentRTL == aOther.mIsAutoDirRootContentRTL &&
-           mUsesContainerScrolling == aOther.mUsesContainerScrolling &&
            mForceDisableApz == aOther.mForceDisableApz &&
            mResolutionUpdated == aOther.mResolutionUpdated &&
            mDisregardedDirection == aOther.mDisregardedDirection &&
@@ -987,10 +969,6 @@ struct ScrollMetadata {
     mIsAutoDirRootContentRTL = aValue;
   }
   bool IsAutoDirRootContentRTL() const { return mIsAutoDirRootContentRTL; }
-  // Implemented out of line because the implementation needs StaticPrefs.h
-  // and we don't want to include that from FrameMetrics.h.
-  void SetUsesContainerScrolling(bool aValue);
-  bool UsesContainerScrolling() const { return mUsesContainerScrolling; }
   void SetForceDisableApz(bool aForceDisable) {
     mForceDisableApz = aForceDisable;
   }
@@ -1065,10 +1043,6 @@ struct ScrollMetadata {
   // and so we need to know if the writing mode is RTL or not.
   bool mIsAutoDirRootContentRTL : 1;
 
-  // True if scrolling using containers, false otherwise. This can be removed
-  // when containerful scrolling is eliminated.
-  bool mUsesContainerScrolling : 1;
-
   // Whether or not the compositor should actually do APZ-scrolling on this
   // scrollframe.
   bool mForceDisableApz : 1;
@@ -1099,7 +1073,7 @@ struct ScrollMetadata {
   // Please add new fields above this comment.
 };
 
-typedef std::map<ScrollableLayerGuid::ViewID, ScrollUpdateInfo>
+typedef nsDataHashtable<ScrollableLayerGuid::ViewIDHashKey, ScrollUpdateInfo>
     ScrollUpdatesMap;
 
 }  // namespace layers

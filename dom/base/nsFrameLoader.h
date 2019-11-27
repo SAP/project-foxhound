@@ -93,22 +93,25 @@ class nsFrameLoader final : public nsStubMutationObserver,
                             public nsWrapperCache {
   friend class AutoResetInShow;
   friend class AutoResetInFrameSwap;
+  friend class nsFrameLoaderOwner;
   typedef mozilla::dom::Document Document;
+  typedef mozilla::dom::Element Element;
   typedef mozilla::dom::BrowserParent BrowserParent;
   typedef mozilla::dom::BrowserBridgeChild BrowserBridgeChild;
   typedef mozilla::dom::BrowsingContext BrowsingContext;
 
  public:
   // Called by Frame Elements to create a new FrameLoader.
-  static nsFrameLoader* Create(mozilla::dom::Element* aOwner,
-                               mozilla::dom::BrowsingContext* aOpener,
-                               bool aNetworkCreated);
+  static already_AddRefed<nsFrameLoader> Create(Element* aOwner,
+                                                BrowsingContext* aOpener,
+                                                bool aNetworkCreated);
 
   // Called by nsFrameLoaderOwner::ChangeRemoteness when switching out
   // FrameLoaders.
-  static nsFrameLoader* Create(mozilla::dom::Element* aOwner,
-                               BrowsingContext* aPreservedBrowsingContext,
-                               const mozilla::dom::RemotenessOptions& aOptions);
+  static already_AddRefed<nsFrameLoader> Recreate(Element* aOwner,
+                                                  BrowsingContext* aContext,
+                                                  const nsAString& aRemoteType,
+                                                  bool aNetworkCreated);
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_FRAMELOADER_IID)
 
@@ -128,9 +131,20 @@ class nsFrameLoader final : public nsStubMutationObserver,
   GetBrowserChildMessageManager() const {
     return mChildMessageManager;
   }
-  nsresult CreateStaticClone(nsFrameLoader* aDest);
   nsresult UpdatePositionAndSize(nsSubDocumentFrame* aIFrame);
   void SendIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
+
+  // When creating a nsFrameLoader which is a static clone, two methods are
+  // called at different stages. The `CreateStaticClone` method is first called
+  // on the source nsFrameLoader, passing in the destination frameLoader as the
+  // `aDest` argument. This is done during the static clone operation on the
+  // original document.
+  //
+  // After the original document's clone is complete, the `FinishStaticClone`
+  // method is called on the target nsFrameLoader, which clones the inner
+  // document of the source nsFrameLoader.
+  nsresult CreateStaticClone(nsFrameLoader* aDest);
+  nsresult FinishStaticClone();
 
   // WebIDL methods
 
@@ -197,13 +211,11 @@ class nsFrameLoader final : public nsStubMutationObserver,
 
   bool RequestTabStateFlush(uint32_t aFlushId, bool aIsFinal = false);
 
+  void RequestEpochUpdate(uint32_t aEpoch);
+
   void Print(uint64_t aOuterWindowID, nsIPrintSettings* aPrintSettings,
              nsIWebProgressListener* aProgressListener,
              mozilla::ErrorResult& aRv);
-
-  already_AddRefed<mozilla::dom::Promise> DrawSnapshot(
-      double aX, double aY, double aW, double aH, double aScale,
-      const nsAString& aBackgroundColor, mozilla::ErrorResult& aRv);
 
   void StartPersistence(uint64_t aOuterWindowID,
                         nsIWebBrowserPersistDocumentReceiver* aRecv,
@@ -224,6 +236,8 @@ class nsFrameLoader final : public nsStubMutationObserver,
   bool DepthTooGreat() const { return mDepthTooGreat; }
 
   bool IsDead() const { return mDestroyCalled; }
+
+  bool IsNetworkCreated() const { return mNetworkCreated; }
 
   /**
    * Is this a frame loader for a bona fide <iframe mozbrowser>?
@@ -397,24 +411,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
  private:
   nsFrameLoader(mozilla::dom::Element* aOwner,
                 mozilla::dom::BrowsingContext* aBrowsingContext,
-                bool aNetworkCreated);
-  nsFrameLoader(mozilla::dom::Element* aOwner,
-                mozilla::dom::BrowsingContext* aBrowsingContext,
-                const mozilla::dom::RemotenessOptions& aOptions);
+                const nsAString& aRemoteType, bool aNetworkCreated);
   ~nsFrameLoader();
 
   void SetOwnerContent(mozilla::dom::Element* aContent);
-
-  bool ShouldUseRemoteProcess();
-
-  /**
-   * Is this a frame loader for an isolated <iframe mozbrowser>?
-   *
-   * By default, mozbrowser frames are isolated.  Isolation can be disabled by
-   * setting the frame's noisolation attribute.  Disabling isolation is
-   * only allowed if the containing document is chrome.
-   */
-  bool OwnerIsIsolatedMozBrowserFrame();
 
   /**
    * Get our owning element's app manifest URL, or return the empty string if
@@ -496,6 +496,10 @@ class nsFrameLoader final : public nsStubMutationObserver,
   // enables us to detect whether the frame has moved documents during
   // a reframe, so that we know not to restore the presentation.
   RefPtr<Document> mContainerDocWhileDetached;
+
+  // When performing a static clone, this holds the other nsFrameLoader which
+  // this object is a static clone of.
+  RefPtr<nsFrameLoader> mStaticCloneOf;
 
   // When performing a process switch, this value is used rather than mURIToLoad
   // to identify the process-switching load which should be resumed in the

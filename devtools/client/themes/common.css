@@ -79,6 +79,13 @@
 }
 
 /**
+ * Override global.css input styles
+ */
+html|input {
+  margin: revert;
+}
+
+/**
  * Override wrong system font from forms.css
  * Bug 1458224: buttons use a wrong default font-size on Linux
  */
@@ -779,7 +786,7 @@ checkbox:-moz-focusring {
 .devtools-sidepanel-no-result {
   font-style: italic;
   padding: 0.5em 21px;
-  -moz-user-select: none;
+  user-select: none;
   font-size: 12px;
 }
 

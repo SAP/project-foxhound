@@ -42,7 +42,9 @@ enum class FeatureStatus {
   BlockedOverride,
   BlockedReleaseChannelIntel,
   BlockedReleaseChannelAMD,
+  BlockedReleaseChannelNvidia,
   BlockedReleaseChannelBattery,
+  BlockedReleaseChannelAndroid,
 
   // This feature has been blocked by the graphics blacklist.
   Blacklisted,

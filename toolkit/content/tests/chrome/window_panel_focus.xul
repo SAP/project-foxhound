@@ -3,7 +3,8 @@
 <?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 
 <window title="Panel Focus Tests"
-        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml">
 
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
@@ -24,7 +25,7 @@
 
 <panel id="noautofocusPanel" noautofocus="true"
        onpopupshown="noautofocusPanelShown()" onpopuphidden="noautofocusPanelHidden()">
-  <textbox id="tb3"/>
+  <html:input id="tb3"/>
 </panel>
 
 <checkbox id="b2" label="Item 2" popup="panel" onblur="gButtonBlur++;"/>
@@ -81,11 +82,11 @@ function panelShown()
 }
 
 function ok(condition, message) {
-  window.opener.wrappedJSObject.SimpleTest.ok(condition, message);
+  window.arguments[0].SimpleTest.ok(condition, message);
 }
 
 function is(left, right, message) {
-  window.opener.wrappedJSObject.SimpleTest.is(left, right, message);
+  window.arguments[0].SimpleTest.is(left, right, message);
 }
 
 function panelHidden()
@@ -111,10 +112,10 @@ function noautofocusPanelShown()
 function noautofocusPanelHidden()
 {
   window.close();
-  window.opener.wrappedJSObject.SimpleTest.finish();
+  window.arguments[0].SimpleTest.finish();
 }
 
-window.opener.wrappedJSObject.SimpleTest.waitForFocus(showPanel, window);
+window.arguments[0].SimpleTest.waitForFocus(showPanel, window);
 
 ]]>
 </script>

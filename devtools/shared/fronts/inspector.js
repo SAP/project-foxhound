@@ -1,18 +1,12 @@
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
+const Services = require("Services");
+const defer = require("devtools/shared/defer");
 const Telemetry = require("devtools/client/shared/telemetry");
-const telemetry = new Telemetry();
-const { NodePicker } = require("devtools/shared/fronts/inspector/node-picker");
-const TELEMETRY_EYEDROPPER_OPENED = "DEVTOOLS_EYEDROPPER_OPENED_COUNT";
-const TELEMETRY_EYEDROPPER_OPENED_MENU =
-  "DEVTOOLS_MENU_EYEDROPPER_OPENED_COUNT";
-const SHOW_ALL_ANONYMOUS_CONTENT_PREF =
-  "devtools.inspector.showAllAnonymousContent";
-const SHOW_UA_SHADOW_ROOTS_PREF = "devtools.inspector.showUserAgentShadowRoots";
-
 const {
   FrontClassWithSpec,
   types,
@@ -23,20 +17,25 @@ const {
   walkerSpec,
 } = require("devtools/shared/specs/inspector");
 
-const Services = require("Services");
-const defer = require("devtools/shared/defer");
 loader.lazyRequireGetter(
   this,
   "nodeConstants",
   "devtools/shared/dom-node-constants"
 );
-loader.lazyRequireGetter(
-  this,
-  "Selection",
-  "devtools/client/framework/selection",
-  true
-);
 loader.lazyRequireGetter(this, "flags", "devtools/shared/flags");
+
+const TELEMETRY_EYEDROPPER_OPENED = "DEVTOOLS_EYEDROPPER_OPENED_COUNT";
+const TELEMETRY_EYEDROPPER_OPENED_MENU =
+  "DEVTOOLS_MENU_EYEDROPPER_OPENED_COUNT";
+const SHOW_ALL_ANONYMOUS_CONTENT_PREF =
+  "devtools.inspector.showAllAnonymousContent";
+const SHOW_UA_SHADOW_ROOTS_PREF = "devtools.inspector.showUserAgentShadowRoots";
+const BROWSER_FISSION_ENABLED_PREF = "devtools.browsertoolbox.fission";
+const CONTENT_FISSION_ENABLED_PREF = "devtools.contenttoolbox.fission";
+const USE_NEW_BOX_MODEL_HIGHLIGHTER_PREF =
+  "devtools.inspector.use-new-box-model-highlighter";
+
+const telemetry = new Telemetry();
 
 /**
  * Client side of the DOM walker.
@@ -52,8 +51,8 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
     });
   }
 
-  constructor(client) {
-    super(client);
+  constructor(client, targetFront, parentFront) {
+    super(client, targetFront, parentFront);
     this._createRootNodePromise();
     this._orphaned = new Set();
     this._retainedOrphans = new Set();
@@ -182,6 +181,21 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
     return super.getNodeActorFromWindowID(windowID).then(response => {
       return response ? response.node : null;
     });
+  }
+
+  getNodeActorFromContentDomReference(contentDomReference) {
+    if (!this.traits.retrieveNodeFromContentDomReference) {
+      console.error(
+        "The server is too old to retrieve a node from a contentDomReference"
+      );
+      return Promise.resolve(null);
+    }
+
+    return super
+      .getNodeActorFromContentDomReference(contentDomReference)
+      .then(response => {
+        return response ? response.node : null;
+      });
   }
 
   getStyleSheetOwnerNode(styleSheetActorID) {
@@ -452,6 +466,45 @@ class WalkerFront extends FrontClassWithSpec(walkerSpec) {
       nextSibling: nextSibling,
     };
   }
+
+  async children(node, options) {
+    if (!node.remoteFrame) {
+      return super.children(node, options);
+    }
+    const remoteTarget = await node.connectToRemoteFrame();
+    const walker = (await remoteTarget.getFront("inspector")).walker;
+
+    // Finally retrieve the NodeFront of the remote frame's document
+    const documentNode = await walker.getRootNode();
+
+    // Force reparenting through the remote frame boundary.
+    documentNode.reparent(node);
+
+    // And return the same kind of response `walker.children` returns
+    return {
+      nodes: [documentNode],
+      hasFirst: true,
+      hasLast: true,
+    };
+  }
+
+  async reparentRemoteFrame() {
+    // Get the parent target, which most likely runs in another process
+    const descriptorFront = this.targetFront.descriptorFront;
+    const parentTarget = await descriptorFront.getParentTarget();
+    // Get the NodeFront for the embedder element
+    // i.e. the <iframe> element which is hosting the document that
+    const parentWalker = (await parentTarget.getFront("inspector")).walker;
+    // As this <iframe> most likely runs in another process, we have to get it through the parent
+    // target's WalkerFront.
+    const parentNode = (await parentWalker.getEmbedderElement(
+      descriptorFront.id
+    )).node;
+
+    // Finally, set this embedder element's node front as the
+    const documentNode = await this.getRootNode();
+    documentNode.reparent(parentNode);
+  }
 }
 
 exports.WalkerFront = WalkerFront;
@@ -462,8 +515,8 @@ registerFront(WalkerFront);
  * inspector-related actors, including the walker.
  */
 class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
-  constructor(client) {
-    super(client);
+  constructor(client, targetFront, parentFront) {
+    super(client, targetFront, parentFront);
 
     this._client = client;
     this._highlighters = new Map();
@@ -474,14 +527,31 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
 
   // async initialization
   async initialize() {
-    await Promise.all([this._getWalker(), this._getHighlighter()]);
+    await Promise.all([
+      this._getWalker(),
+      this._getHighlighter(),
+      this._getPageStyle(),
+    ]);
+  }
 
-    this.selection = new Selection(this.walker);
-    this.nodePicker = new NodePicker(
-      this.highlighter,
-      this.walker,
-      this.selection
-    );
+  get isBrowserFissionEnabled() {
+    if (this._isBrowserFissionEnabled === undefined) {
+      this._isBrowserFissionEnabled = Services.prefs.getBoolPref(
+        BROWSER_FISSION_ENABLED_PREF
+      );
+    }
+
+    return this._isBrowserFissionEnabled;
+  }
+
+  get isContentFissionEnabled() {
+    if (this._isContentFissionEnabled === undefined) {
+      this._isContentFissionEnabled = Services.prefs.getBoolPref(
+        CONTENT_FISSION_ENABLED_PREF
+      );
+    }
+
+    return this._isContentFissionEnabled;
   }
 
   async _getWalker() {
@@ -499,17 +569,21 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
 
   async _getHighlighter() {
     const autohide = !flags.testing;
-    this.highlighter = await this.getHighlighter(autohide);
+    this.highlighter = await this.getHighlighter(
+      autohide,
+      Services.prefs.getBoolPref(USE_NEW_BOX_MODEL_HIGHLIGHTER_PREF)
+    );
   }
 
   hasHighlighter(type) {
     return this._highlighters.has(type);
   }
 
+  async _getPageStyle() {
+    this.pageStyle = await super.getPageStyle();
+  }
+
   destroy() {
-    // Selection isn't a Front and so isn't managed by InspectorFront
-    // and has to be destroyed manually
-    this.selection.destroy();
     // Highlighter fronts are managed by InspectorFront and so will be
     // automatically destroyed. But we have to clear the `_highlighters`
     // Map as well as explicitly call `finalize` request on all of them.
@@ -559,6 +633,90 @@ class InspectorFront extends FrontClassWithSpec(inspectorSpec) {
     } else {
       telemetry.getHistogramById(TELEMETRY_EYEDROPPER_OPENED).add(true);
     }
+  }
+
+  /**
+   * Get the list of InspectorFront instances that correspond to all of the inspectable
+   * targets in remote frames nested within the document inspected here.
+   *
+   * Note that this only returns a non-empty array if the used from the Browser Toolbox
+   * and with the FISSION_ENABLED pref on.
+   *
+   * @return {Array} The list of InspectorFront instances.
+   */
+  async getChildInspectors() {
+    const childInspectors = [];
+    const target = this.targetFront;
+
+    // this line can be removed when we are ready for fission frames
+    if (this.isBrowserFissionEnabled && target.chrome && !target.isAddon) {
+      const { frames } = await target.listRemoteFrames();
+      // attempt to get targets and filter by targets that could connect
+      for (const descriptor of frames) {
+        const remoteTarget = await descriptor.getTarget();
+        if (remoteTarget) {
+          // get inspector
+          const remoteInspectorFront = await remoteTarget.getFront("inspector");
+          await remoteInspectorFront.walker.reparentRemoteFrame();
+          childInspectors.push(remoteInspectorFront);
+        }
+      }
+    }
+    return childInspectors;
+  }
+
+  /**
+   * Get the list of InspectorFront instances that correspond to all of the inspectable
+   * targets in remote frames nested within the document inspected here, as well as the
+   * current InspectorFront instance.
+   *
+   * @return {Array} The list of InspectorFront instances.
+   */
+  async getAllInspectorFronts() {
+    const remoteInspectors = await this.getChildInspectors();
+    return [this, ...remoteInspectors];
+  }
+
+  /**
+   * Given a node grip, return a NodeFront on the right context.
+   *
+   * @param {Object} grip: The node grip.
+   * @returns {Promise<NodeFront|null>} A promise that resolves with  a NodeFront or null
+   *                                    if the NodeFront couldn't be created/retrieved.
+   */
+  async getNodeFrontFromNodeGrip(grip) {
+    const gripHasContentDomReference = "contentDomReference" in grip;
+
+    if (!this.isContentFissionEnabled || !gripHasContentDomReference) {
+      // Backward compatibility ( < Firefox 71):
+      // If the grip does not have a contentDomReference, we can't know in which browsing
+      // context id the node lives. We fall back on gripToNodeFront that might retrieve
+      // the expected nodeFront.
+      return this.walker.gripToNodeFront(grip);
+    }
+
+    const { contentDomReference } = grip;
+    const { browsingContextId } = contentDomReference;
+
+    // If the grip lives in the same browsing context id than the current one, we can
+    // directly use the current walker.
+    // TODO: When Bug 1578745 lands, we might want to force using `this.walker` as well
+    // when the new pref is set to false.
+    if (this.targetFront.browsingContextID === browsingContextId) {
+      return this.walker.getNodeActorFromContentDomReference(
+        contentDomReference
+      );
+    }
+
+    // If the contentDomReference has a different browsing context than the current one,
+    // we are either in Fission or in the Omniscient Browser Toolbox, so we need to
+    // retrieve the walker of the BrowsingContextTarget.
+    const descriptor = await this.targetFront.client.mainRoot.getBrowsingContextDescriptor(
+      browsingContextId
+    );
+    const target = await descriptor.getTarget();
+    const { walker } = await target.getFront("inspector");
+    return walker.getNodeActorFromContentDomReference(contentDomReference);
   }
 }
 

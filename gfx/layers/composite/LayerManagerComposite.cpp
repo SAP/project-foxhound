@@ -29,10 +29,12 @@
 #ifdef XP_MACOSX
 #  include "gfxPlatformMac.h"
 #endif
-#include "gfxRect.h"                    // for gfxRect
-#include "gfxUtils.h"                   // for frame color util
-#include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
-#include "mozilla/RefPtr.h"             // for RefPtr, already_AddRefed
+#include "gfxRect.h"             // for gfxRect
+#include "gfxUtils.h"            // for frame color util
+#include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
+#include "mozilla/RefPtr.h"      // for RefPtr, already_AddRefed
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/gfx/2D.h"             // for DrawTarget
 #include "mozilla/gfx/Matrix.h"         // for Matrix4x4
 #include "mozilla/gfx/Point.h"          // for IntSize, Point
@@ -128,6 +130,13 @@ void HostLayerManager::RecordUpdateTime(float aValue) {
   mDiagnostics->RecordUpdateTime(aValue);
 }
 
+void HostLayerManager::WriteCollectedFrames() {
+  if (mCompositionRecorder) {
+    mCompositionRecorder->WriteCollectedFrames();
+    mCompositionRecorder = nullptr;
+  }
+}
+
 /**
  * LayerManagerComposite
  */
@@ -145,6 +154,7 @@ LayerManagerComposite::LayerManagerComposite(Compositor* aCompositor)
   mTextRenderer = new TextRenderer();
   mDiagnostics = MakeUnique<Diagnostics>();
   MOZ_ASSERT(aCompositor);
+  mNativeLayerRoot = aCompositor->GetWidget()->GetNativeLayerRoot();
 
 #ifdef USE_SKIA
   mPaintCounter = nullptr;
@@ -163,6 +173,26 @@ void LayerManagerComposite::Destroy() {
     mRoot = nullptr;
     mClonedLayerTreeProperties = nullptr;
     mProfilerScreenshotGrabber.Destroy();
+
+    if (mNativeLayerRoot) {
+      if (mGPUStatsLayer) {
+        mNativeLayerRoot->RemoveLayer(mGPUStatsLayer);
+        mGPUStatsLayer = nullptr;
+      }
+      if (mUnusedTransformWarningLayer) {
+        mNativeLayerRoot->RemoveLayer(mUnusedTransformWarningLayer);
+        mUnusedTransformWarningLayer = nullptr;
+      }
+      if (mDisabledApzWarningLayer) {
+        mNativeLayerRoot->RemoveLayer(mDisabledApzWarningLayer);
+        mDisabledApzWarningLayer = nullptr;
+      }
+      for (const auto& nativeLayer : mNativeLayers) {
+        mNativeLayerRoot->RemoveLayer(nativeLayer);
+      }
+      mNativeLayers.clear();
+      mNativeLayerRoot = nullptr;
+    }
     mDestroyed = true;
 
 #ifdef USE_SKIA
@@ -211,7 +241,6 @@ void LayerManagerComposite::BeginTransactionWithDrawTarget(
   }
 
   mIsCompositorReady = true;
-  mCompositor->SetTargetContext(aTarget, aRect);
   mTarget = aTarget;
   mTargetBounds = aRect;
 }
@@ -522,7 +551,6 @@ void LayerManagerComposite::EndTransaction(const TimeStamp& aTimeStamp,
     mCompositor->FlushPendingNotifyNotUsed();
   }
 
-  mCompositor->ClearTargetContext();
   mTarget = nullptr;
 
 #ifdef MOZ_LAYERS_HAVE_LOG
@@ -537,7 +565,6 @@ void LayerManagerComposite::UpdateAndRender() {
     return;
   }
 
-  nsIntRegion invalid;
   // The results of our drawing always go directly into a pixel buffer,
   // so we don't need to pass any global transform here.
   mRoot->ComputeEffectiveTransforms(gfx::Matrix4x4());
@@ -550,56 +577,66 @@ void LayerManagerComposite::UpdateAndRender() {
     // immediately use the resulting damage area, since ComputeDifferences
     // is also responsible for invalidates intermediate surfaces in
     // ContainerLayers.
-    nsIntRegion changed;
 
+    nsIntRegion changed;
     const bool overflowed = !mClonedLayerTreeProperties->ComputeDifferences(
         mRoot, changed, nullptr);
 
     if (overflowed) {
-      changed = mTarget ? mTargetBounds : mRenderBounds;
+      changed = mRenderBounds;
     }
 
-    if (mTarget) {
-      // Since we're composing to an external target, we're not going to use
-      // the damage region from layers changes - we want to composite
-      // everything in the target bounds. Instead we accumulate the layers
-      // damage region for the next window composite.
-      mInvalidRegion.Or(mInvalidRegion, changed);
-    } else {
-      invalid = std::move(changed);
-    }
+    mInvalidRegion.Or(mInvalidRegion, changed);
   }
 
+  nsIntRegion invalid;
   if (mTarget) {
-    invalid.Or(invalid, mTargetBounds);
+    // Since we're composing to an external target, we're not going to use
+    // the damage region from layers changes - we want to composite
+    // everything in the target bounds. The layers damage region has been
+    // stored in mInvalidRegion and will be picked up by the next window
+    // composite.
+    invalid = mTargetBounds;
   } else {
-    // If we didn't have a previous layer tree, invalidate the entire render
-    // area.
     if (!mClonedLayerTreeProperties) {
-      invalid.Or(invalid, mRenderBounds);
+      // If we didn't have a previous layer tree, invalidate the entire render
+      // area.
+      mInvalidRegion = mRenderBounds;
     }
 
-    // Add any additional invalid rects from the window manager or previous
-    // damage computed during ComposeToTarget().
-    invalid.Or(invalid, mInvalidRegion);
-    mInvalidRegion.SetEmpty();
+    invalid = mInvalidRegion;
   }
 
   if (invalid.IsEmpty() && !mWindowOverlayChanged) {
     // Composition requested, but nothing has changed. Don't do any work.
     mClonedLayerTreeProperties = LayerProperties::CloneFrom(GetRoot());
+    mProfilerScreenshotGrabber.NotifyEmptyFrame();
+
+    // Discard the current payloads. These payloads did not require a composite
+    // (they caused no changes to anything visible), so we don't want to measure
+    // their latency.
+    mPayload.Clear();
+
     return;
   }
 
   // We don't want our debug overlay to cause more frames to happen
   // so we will invalidate after we've decided if something changed.
-  InvalidateDebugOverlay(invalid, mRenderBounds);
+  // Only invalidate if we're not using native layers. When using native layers,
+  // UpdateDebugOverlayNativeLayers will repaint the appropriate layer areas.
+  if (!mNativeLayerRoot) {
+    InvalidateDebugOverlay(invalid, mRenderBounds);
+  }
 
-  Render(invalid, opaque);
+  bool rendered = Render(invalid, opaque);
 #if defined(MOZ_WIDGET_ANDROID)
   RenderToPresentationSurface();
 #endif
-  mWindowOverlayChanged = false;
+
+  if (!mTarget && rendered) {
+    mInvalidRegion.SetEmpty();
+    mWindowOverlayChanged = false;
+  }
 
   // Update cached layer tree information.
   mClonedLayerTreeProperties = LayerProperties::CloneFrom(GetRoot());
@@ -651,6 +688,49 @@ void LayerManagerComposite::DrawPaintTimes(Compositor* aCompositor) {
 }
 #endif
 
+static Rect RectWithEdges(int32_t aTop, int32_t aRight, int32_t aBottom,
+                          int32_t aLeft) {
+  return Rect(aLeft, aTop, aRight - aLeft, aBottom - aTop);
+}
+
+void LayerManagerComposite::DrawBorder(const IntRect& aOuter,
+                                       int32_t aBorderWidth,
+                                       const Color& aColor,
+                                       const Matrix4x4& aTransform) {
+  EffectChain effects;
+  effects.mPrimaryEffect = new EffectSolidColor(aColor);
+
+  IntRect inner(aOuter);
+  inner.Deflate(aBorderWidth);
+  // Top and bottom border sides
+  mCompositor->DrawQuad(
+      RectWithEdges(aOuter.Y(), aOuter.XMost(), inner.Y(), aOuter.X()), aOuter,
+      effects, 1, aTransform);
+  mCompositor->DrawQuad(
+      RectWithEdges(inner.YMost(), aOuter.XMost(), aOuter.YMost(), aOuter.X()),
+      aOuter, effects, 1, aTransform);
+  // Left and right border sides
+  mCompositor->DrawQuad(
+      RectWithEdges(inner.Y(), inner.X(), inner.YMost(), aOuter.X()), aOuter,
+      effects, 1, aTransform);
+  mCompositor->DrawQuad(
+      RectWithEdges(inner.Y(), aOuter.XMost(), inner.YMost(), inner.XMost()),
+      aOuter, effects, 1, aTransform);
+}
+
+void LayerManagerComposite::DrawTranslationWarningOverlay(
+    const IntRect& aBounds) {
+  // Black blorder
+  IntRect blackBorderBounds(aBounds);
+  blackBorderBounds.Deflate(4);
+  DrawBorder(blackBorderBounds, 6, Color(0, 0, 0, 1), Matrix4x4());
+
+  // Warning border, yellow to red
+  IntRect warnBorder(aBounds);
+  warnBorder.Deflate(5);
+  DrawBorder(warnBorder, 4, Color(1, 1.f - mWarningLevel, 0, 1), Matrix4x4());
+}
+
 static uint16_t sFrameCount = 0;
 void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
   bool drawFps = StaticPrefs::layers_acceleration_draw_fps();
@@ -662,55 +742,11 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
   }
 
   if (drawFps) {
-    float alpha = 1;
 #ifdef ANDROID
     // Draw a translation delay warning overlay
-    int width;
-    int border;
-
-    TimeStamp now = TimeStamp::Now();
-    if (!mWarnTime.IsNull() &&
-        (now - mWarnTime).ToMilliseconds() < kVisualWarningDuration) {
-      EffectChain effects;
-
-      // Black blorder
-      border = 4;
-      width = 6;
-      effects.mPrimaryEffect = new EffectSolidColor(gfx::Color(0, 0, 0, 1));
-      mCompositor->DrawQuad(
-          gfx::Rect(border, border, aBounds.Width() - 2 * border, width),
-          aBounds, effects, alpha, gfx::Matrix4x4());
-      mCompositor->DrawQuad(gfx::Rect(border, aBounds.Height() - border - width,
-                                      aBounds.Width() - 2 * border, width),
-                            aBounds, effects, alpha, gfx::Matrix4x4());
-      mCompositor->DrawQuad(
-          gfx::Rect(border, border + width, width,
-                    aBounds.Height() - 2 * border - width * 2),
-          aBounds, effects, alpha, gfx::Matrix4x4());
-      mCompositor->DrawQuad(
-          gfx::Rect(aBounds.Width() - border - width, border + width, width,
-                    aBounds.Height() - 2 * border - 2 * width),
-          aBounds, effects, alpha, gfx::Matrix4x4());
-
-      // Content
-      border = 5;
-      width = 4;
-      effects.mPrimaryEffect =
-          new EffectSolidColor(gfx::Color(1, 1.f - mWarningLevel, 0, 1));
-      mCompositor->DrawQuad(
-          gfx::Rect(border, border, aBounds.Width() - 2 * border, width),
-          aBounds, effects, alpha, gfx::Matrix4x4());
-      mCompositor->DrawQuad(gfx::Rect(border, aBounds.height - border - width,
-                                      aBounds.Width() - 2 * border, width),
-                            aBounds, effects, alpha, gfx::Matrix4x4());
-      mCompositor->DrawQuad(
-          gfx::Rect(border, border + width, width,
-                    aBounds.Height() - 2 * border - width * 2),
-          aBounds, effects, alpha, gfx::Matrix4x4());
-      mCompositor->DrawQuad(
-          gfx::Rect(aBounds.Width() - border - width, border + width, width,
-                    aBounds.Height() - 2 * border - 2 * width),
-          aBounds, effects, alpha, gfx::Matrix4x4());
+    if (!mWarnTime.IsNull() && (TimeStamp::Now() - mWarnTime).ToMilliseconds() <
+                                   kVisualWarningDuration) {
+      DrawTranslationWarningOverlay(aBounds);
       SetDebugOverlayWantsNextFrame(true);
     }
 #endif
@@ -723,6 +759,7 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
     mTextRenderer->RenderText(mCompositor, text, IntPoint(2, 5), Matrix4x4(),
                               24, 600, TextRenderer::FontType::FixedWidth);
 
+    float alpha = 1;
     if (mUnusedApzTransformWarning) {
       // If we have an unused APZ transform on this composite, draw a 20x20 red
       // box in the top-right corner
@@ -756,9 +793,7 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
         new EffectSolidColor(gfxUtils::GetColorForFrameNumber(sFrameCount));
     mCompositor->DrawQuad(Rect(sideRect), sideRect, effects, 1.0,
                           gfx::Matrix4x4());
-  }
 
-  if (drawFrameColorBars) {
     // We intentionally overflow at 2^16.
     sFrameCount++;
   }
@@ -769,6 +804,96 @@ void LayerManagerComposite::RenderDebugOverlay(const IntRect& aBounds) {
     DrawPaintTimes(mCompositor);
   }
 #endif
+}
+
+void LayerManagerComposite::UpdateDebugOverlayNativeLayers() {
+  // Remove all debug layers first because PlaceNativeLayers might have changed
+  // the z-order. By removing and re-adding, we keep the debug overlay layers
+  // on top.
+  if (mGPUStatsLayer) {
+    mNativeLayerRoot->RemoveLayer(mGPUStatsLayer);
+  }
+  if (mUnusedTransformWarningLayer) {
+    mNativeLayerRoot->RemoveLayer(mUnusedTransformWarningLayer);
+  }
+  if (mDisabledApzWarningLayer) {
+    mNativeLayerRoot->RemoveLayer(mDisabledApzWarningLayer);
+  }
+
+  bool drawFps = StaticPrefs::layers_acceleration_draw_fps();
+
+  if (drawFps) {
+    if (!mGPUStatsLayer) {
+      mGPUStatsLayer = mNativeLayerRoot->CreateLayer();
+    }
+
+    GPUStats stats;
+    stats.mScreenPixels = mRenderBounds.Area();
+    mCompositor->GetFrameStats(&stats);
+
+    std::string text = mDiagnostics->GetFrameOverlayString(stats);
+    IntSize size = mTextRenderer->ComputeSurfaceSize(
+        text, 600, TextRenderer::FontType::FixedWidth);
+
+    mGPUStatsLayer->SetRect(IntRect(IntPoint(2, 5), size));
+    RefPtr<DrawTarget> dt =
+        mGPUStatsLayer->NextSurfaceAsDrawTarget(BackendType::SKIA);
+    mTextRenderer->RenderTextToDrawTarget(dt, text, 600,
+                                          TextRenderer::FontType::FixedWidth);
+    mGPUStatsLayer->NotifySurfaceReady();
+    mNativeLayerRoot->AppendLayer(mGPUStatsLayer);
+
+    // The two warning layers are created on demand and their content is only
+    // drawn once. After that, they only get moved (if the window size changes)
+    // and conditionally shown.
+    // The drawing would be unnecessary if we had native "color layers".
+    if (mUnusedApzTransformWarning) {
+      // If we have an unused APZ transform on this composite, draw a 20x20 red
+      // box in the top-right corner.
+      if (!mUnusedTransformWarningLayer) {
+        mUnusedTransformWarningLayer = mNativeLayerRoot->CreateLayer();
+        mUnusedTransformWarningLayer->SetRect(IntRect(0, 0, 20, 20));
+        mUnusedTransformWarningLayer->SetOpaqueRegion(IntRect(0, 0, 20, 20));
+        RefPtr<DrawTarget> dt =
+            mUnusedTransformWarningLayer->NextSurfaceAsDrawTarget(
+                BackendType::SKIA);
+        dt->FillRect(Rect(0, 0, 20, 20), ColorPattern(Color(1, 0, 0, 1)));
+        mUnusedTransformWarningLayer->NotifySurfaceReady();
+      }
+      mUnusedTransformWarningLayer->SetRect(
+          IntRect(mRenderBounds.XMost() - 20, mRenderBounds.Y(), 20, 20));
+      mNativeLayerRoot->AppendLayer(mUnusedTransformWarningLayer);
+
+      mUnusedApzTransformWarning = false;
+      SetDebugOverlayWantsNextFrame(true);
+    }
+
+    if (mDisabledApzWarning) {
+      // If we have a disabled APZ on this composite, draw a 20x20 yellow box
+      // in the top-right corner, to the left of the unused-apz-transform
+      // warning box.
+      if (!mDisabledApzWarningLayer) {
+        mDisabledApzWarningLayer = mNativeLayerRoot->CreateLayer();
+        mDisabledApzWarningLayer->SetRect(IntRect(0, 0, 20, 20));
+        mDisabledApzWarningLayer->SetOpaqueRegion(IntRect(0, 0, 20, 20));
+        RefPtr<DrawTarget> dt =
+            mDisabledApzWarningLayer->NextSurfaceAsDrawTarget(
+                BackendType::SKIA);
+        dt->FillRect(Rect(0, 0, 20, 20), ColorPattern(Color(1, 1, 0, 1)));
+        mDisabledApzWarningLayer->NotifySurfaceReady();
+      }
+      mDisabledApzWarningLayer->SetRect(
+          IntRect(mRenderBounds.XMost() - 40, mRenderBounds.Y(), 20, 20));
+      mNativeLayerRoot->AppendLayer(mDisabledApzWarningLayer);
+
+      mDisabledApzWarning = false;
+      SetDebugOverlayWantsNextFrame(true);
+    }
+  } else {
+    mGPUStatsLayer = nullptr;
+    mUnusedTransformWarningLayer = nullptr;
+    mDisabledApzWarningLayer = nullptr;
+  }
 }
 
 RefPtr<CompositingRenderTarget>
@@ -848,6 +973,47 @@ void LayerManagerComposite::PopGroupForLayerEffects(
                         aClipRect, effectChain, 1., Matrix4x4());
 }
 
+void LayerManagerComposite::PlaceNativeLayers(
+    const IntRegion& aRegion, bool aOpaque,
+    std::deque<RefPtr<NativeLayer>>* aLayersToRecycle,
+    IntRegion* aWindowInvalidRegion) {
+  IntSize tileSize(StaticPrefs::layers_compositing_tiles_width(),
+                   StaticPrefs::layers_compositing_tiles_height());
+  IntRect regionBounds = aRegion.GetBounds();
+  for (int32_t y = 0; y < regionBounds.YMost(); y += tileSize.height) {
+    for (int32_t x = 0; x < regionBounds.XMost(); x += tileSize.width) {
+      IntRegion tileRegion;
+      tileRegion.And(aRegion, IntRect(IntPoint(x, y), tileSize));
+      for (auto iter = tileRegion.RectIter(); !iter.Done(); iter.Next()) {
+        PlaceNativeLayer(iter.Get(), aOpaque, aLayersToRecycle,
+                         aWindowInvalidRegion);
+      }
+    }
+  }
+}
+
+void LayerManagerComposite::PlaceNativeLayer(
+    const IntRect& aRect, bool aOpaque,
+    std::deque<RefPtr<NativeLayer>>* aLayersToRecycle,
+    IntRegion* aWindowInvalidRegion) {
+  RefPtr<NativeLayer> layer;
+  if (aLayersToRecycle->empty()) {
+    layer = mNativeLayerRoot->CreateLayer();
+    mNativeLayerRoot->AppendLayer(layer);
+  } else {
+    layer = aLayersToRecycle->front();
+    aLayersToRecycle->pop_front();
+  }
+  IntRect oldRect = layer->GetRect();
+  if (!aRect.IsEqualInterior(oldRect)) {
+    aWindowInvalidRegion->OrWith(oldRect);
+    aWindowInvalidRegion->OrWith(aRect);
+  }
+  layer->SetRect(aRect);
+  layer->SetOpaqueRegion(aOpaque ? aRect - aRect.TopLeft() : IntRect());
+  mNativeLayers.push_back(layer);
+}
+
 // Used to clear the 'mLayerComposited' flag at the beginning of each Render().
 static void ClearLayerFlags(Layer* aLayer) {
   ForEachNode<ForwardIterator>(aLayer, [](Layer* layer) {
@@ -887,13 +1053,13 @@ class ScopedCompositorRenderOffset {
 };
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
+bool LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
                                    const nsIntRegion& aOpaqueRegion) {
   AUTO_PROFILER_LABEL("LayerManagerComposite::Render", GRAPHICS);
 
   if (mDestroyed || !mCompositor || mCompositor->IsDestroyed()) {
     NS_WARNING("Call on destroyed layer manager");
-    return;
+    return false;
   }
 
   mCompositor->RequestAllowFrameRecording(!!mCompositionRecorder);
@@ -937,16 +1103,11 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
     AUTO_PROFILER_LABEL("LayerManagerComposite::Render:Prerender", GRAPHICS);
 
     if (!mCompositor->GetWidget()->PreRender(&widgetContext)) {
-      return;
+      return false;
     }
   }
 
-  ParentLayerIntRect clipRect;
-  IntRect bounds(mRenderBounds.X(), mRenderBounds.Y(), mRenderBounds.Width(),
-                 mRenderBounds.Height());
-  IntRect actualBounds;
-
-  CompositorBench(mCompositor, bounds);
+  CompositorBench(mCompositor, mRenderBounds);
 
   MOZ_ASSERT(mRoot->GetOpacity() == 1);
 #if defined(MOZ_WIDGET_ANDROID)
@@ -957,88 +1118,143 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
     mCompositor->SetClearColorToDefault();
   }
 #endif
-  if (mRoot->GetClipRect()) {
-    clipRect = *mRoot->GetClipRect();
-    IntRect rect(clipRect.X(), clipRect.Y(), clipRect.Width(),
-                 clipRect.Height());
-    mCompositor->BeginFrame(aInvalidRegion, &rect, bounds, aOpaqueRegion,
-                            nullptr, &actualBounds);
+
+  Maybe<IntRect> rootLayerClip = mRoot->GetClipRect().map(
+      [](const ParentLayerIntRect& r) { return r.ToUnknownRect(); });
+  Maybe<IntRect> maybeBounds;
+  bool usingNativeLayers = false;
+  if (mTarget) {
+    maybeBounds = mCompositor->BeginFrameForTarget(
+        aInvalidRegion, rootLayerClip, mRenderBounds, aOpaqueRegion, mTarget,
+        mTargetBounds);
+  } else if (mNativeLayerRoot) {
+    if (aInvalidRegion.Intersects(mRenderBounds)) {
+      mCompositor->BeginFrameForNativeLayers();
+      maybeBounds = Some(mRenderBounds);
+      usingNativeLayers = true;
+    }
   } else {
-    gfx::IntRect rect;
-    mCompositor->BeginFrame(aInvalidRegion, nullptr, bounds, aOpaqueRegion,
-                            &rect, &actualBounds);
-    clipRect =
-        ParentLayerIntRect(rect.X(), rect.Y(), rect.Width(), rect.Height());
+    maybeBounds = mCompositor->BeginFrameForWindow(
+        aInvalidRegion, rootLayerClip, mRenderBounds, aOpaqueRegion);
   }
+
+  if (!maybeBounds) {
+    mProfilerScreenshotGrabber.NotifyEmptyFrame();
+    mCompositor->GetWidget()->PostRender(&widgetContext);
+
+    // Discard the current payloads. These payloads did not require a composite
+    // (they caused no changes to anything visible), so we don't want to measure
+    // their latency.
+    mPayload.Clear();
+
+    return true;
+  }
+
+  IntRect bounds = *maybeBounds;
+  IntRect clipRect = rootLayerClip.valueOr(bounds);
 #if defined(MOZ_WIDGET_ANDROID)
   ScreenCoord offset = GetContentShiftForToolbar();
   ScopedCompositorRenderOffset scopedOffset(mCompositor->AsCompositorOGL(),
                                             ScreenPoint(0.0f, offset));
 #endif
 
-  if (actualBounds.IsEmpty()) {
-    mProfilerScreenshotGrabber.NotifyEmptyFrame();
-    mCompositor->GetWidget()->PostRender(&widgetContext);
-    return;
-  }
-
-  // Allow widget to render a custom background.
-  mCompositor->GetWidget()->DrawWindowUnderlay(
-      &widgetContext, LayoutDeviceIntRect::FromUnknownRect(actualBounds));
-
-  RefPtr<CompositingRenderTarget> previousTarget;
-  if (haveLayerEffects) {
-    previousTarget = PushGroupForLayerEffects();
-  } else {
-    mTwoPassTmpTarget = nullptr;
-  }
-
-  // Render our layers.
+  // Prepare our layers.
   {
     Diagnostics::Record record(mRenderStartTime);
-    RootLayer()->Prepare(ViewAs<RenderTargetPixel>(
-        clipRect, PixelCastJustification::RenderTargetIsParentLayerForRoot));
+    RootLayer()->Prepare(RenderTargetIntRect::FromUnknownRect(clipRect));
     if (record.Recording()) {
       mDiagnostics->RecordPrepareTime(record.Duration());
     }
   }
-  // Execute draw commands.
+
+  auto RenderOnce = [&](const IntRect& aClipRect) {
+    RefPtr<CompositingRenderTarget> previousTarget;
+    if (haveLayerEffects) {
+      previousTarget = PushGroupForLayerEffects();
+    } else {
+      mTwoPassTmpTarget = nullptr;
+    }
+
+    // Execute draw commands.
+    RootLayer()->RenderLayer(aClipRect, Nothing());
+
+    if (mTwoPassTmpTarget) {
+      MOZ_ASSERT(haveLayerEffects);
+      PopGroupForLayerEffects(previousTarget, aClipRect, grayscaleVal,
+                              invertVal, contrastVal);
+    }
+    if (!mRegionToClear.IsEmpty()) {
+      for (auto iter = mRegionToClear.RectIter(); !iter.Done(); iter.Next()) {
+        mCompositor->ClearRect(Rect(iter.Get()));
+      }
+    }
+    mCompositor->NormalDrawingDone();
+  };
+
   {
     Diagnostics::Record record;
-    RootLayer()->RenderLayer(clipRect.ToUnknownRect(), Nothing());
+
+    if (usingNativeLayers) {
+      // Update the placement of our native layers, so that transparent and
+      // opaque parts of the window are covered by different layers and we can
+      // update those parts separately.
+      IntRegion opaqueRegion;
+#ifdef XP_MACOSX
+      opaqueRegion =
+          mCompositor->GetWidget()->GetOpaqueWidgetRegion().ToUnknownRegion();
+#endif
+      opaqueRegion.AndWith(mRenderBounds);
+
+      // Limit the complexity of these regions. Usually, opaqueRegion should be
+      // only one or two rects, so this SimplifyInward call will not change the
+      // region if everything looks as expected.
+      opaqueRegion.SimplifyInward(4);
+
+      IntRegion transparentRegion;
+      transparentRegion.Sub(mRenderBounds, opaqueRegion);
+      std::deque<RefPtr<NativeLayer>> layersToRecycle =
+          std::move(mNativeLayers);
+      IntRegion invalidRegion = aInvalidRegion;
+      PlaceNativeLayers(opaqueRegion, true, &layersToRecycle, &invalidRegion);
+      PlaceNativeLayers(transparentRegion, false, &layersToRecycle,
+                        &invalidRegion);
+      for (const auto& unusedLayer : layersToRecycle) {
+        mNativeLayerRoot->RemoveLayer(unusedLayer);
+      }
+
+      for (const auto& nativeLayer : mNativeLayers) {
+        Maybe<IntRect> maybeLayerRect =
+            mCompositor->BeginRenderingToNativeLayer(
+                invalidRegion, rootLayerClip, aOpaqueRegion, nativeLayer);
+        if (!maybeLayerRect) {
+          continue;
+        }
+
+        if (rootLayerClip) {
+          RenderOnce(rootLayerClip->Intersect(*maybeLayerRect));
+        } else {
+          RenderOnce(*maybeLayerRect);
+        }
+        mCompositor->EndRenderingToNativeLayer();
+      }
+    } else {
+      RenderOnce(clipRect);
+    }
+
     if (record.Recording()) {
       mDiagnostics->RecordCompositeTime(record.Duration());
     }
   }
+
   RootLayer()->Cleanup();
-
-  if (!mRegionToClear.IsEmpty()) {
-    for (auto iter = mRegionToClear.RectIter(); !iter.Done(); iter.Next()) {
-      const IntRect& r = iter.Get();
-      mCompositor->ClearRect(Rect(r.X(), r.Y(), r.Width(), r.Height()));
-    }
-  }
-
-  if (mTwoPassTmpTarget) {
-    MOZ_ASSERT(haveLayerEffects);
-    PopGroupForLayerEffects(previousTarget, clipRect.ToUnknownRect(),
-                            grayscaleVal, invertVal, contrastVal);
-  }
-
-  // Allow widget to render a custom foreground.
-  mCompositor->GetWidget()->DrawWindowOverlay(
-      &widgetContext, LayoutDeviceIntRect::FromUnknownRect(actualBounds));
 
   mProfilerScreenshotGrabber.MaybeGrabScreenshot(mCompositor);
 
   if (mCompositionRecorder) {
-    bool hasContentPaint = false;
-    for (CompositionPayload& payload : mPayload) {
-      if (payload.mType == CompositionPayloadType::eContentPaint) {
-        hasContentPaint = true;
-        break;
-      }
-    }
+    bool hasContentPaint = std::any_of(
+        mPayload.begin(), mPayload.end(), [](CompositionPayload& payload) {
+          return payload.mType == CompositionPayloadType::eContentPaint;
+        });
 
     if (hasContentPaint) {
       if (RefPtr<RecordedFrame> frame =
@@ -1048,19 +1264,25 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
     }
   }
 
-  mCompositor->NormalDrawingDone();
+  if (usingNativeLayers) {
+    UpdateDebugOverlayNativeLayers();
+  } else {
+    // Allow widget to render a custom foreground.
+    mCompositor->GetWidget()->DrawWindowOverlay(
+        &widgetContext, LayoutDeviceIntRect::FromUnknownRect(bounds));
 
 #if defined(MOZ_WIDGET_ANDROID)
-  // Depending on the content shift the toolbar may be rendered on top of
-  // some of the content so it must be rendered after the content.
-  if (jni::IsFennec()) {
-    RenderToolbar();
-  }
-  HandlePixelsTarget();
+    if (AndroidDynamicToolbarAnimator::IsEnabled()) {
+      // Depending on the content shift the toolbar may be rendered on top of
+      // some of the content so it must be rendered after the content.
+      RenderToolbar();
+    }
+    HandlePixelsTarget();
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
-  // Debugging
-  RenderDebugOverlay(actualBounds);
+    // Debugging
+    RenderDebugOverlay(bounds);
+  }
 
   {
     AUTO_PROFILER_LABEL("LayerManagerComposite::Render:EndFrame", GRAPHICS);
@@ -1078,6 +1300,10 @@ void LayerManagerComposite::Render(const nsIntRegion& aInvalidRegion,
 
   // Our payload has now been presented.
   mPayload.Clear();
+
+  mCompositor->WaitForGPU();
+
+  return true;
 }
 
 #if defined(MOZ_WIDGET_ANDROID)
@@ -1201,10 +1427,9 @@ void LayerManagerComposite::RenderToPresentationSurface() {
 
   nsIntRegion invalid;
   IntRect bounds = IntRect::Truncate(0, 0, scale * pageWidth, actualHeight);
-  IntRect rect, actualBounds;
   MOZ_ASSERT(mRoot->GetOpacity() == 1);
-  mCompositor->BeginFrame(invalid, nullptr, bounds, nsIntRegion(), &rect,
-                          &actualBounds);
+  Unused << mCompositor->BeginFrameForWindow(invalid, Nothing(), bounds,
+                                             nsIntRegion());
 
   // The Java side of Fennec sets a scissor rect that accounts for
   // chrome such as the URL bar. Override that so that the entire frame buffer
@@ -1223,14 +1448,14 @@ void LayerManagerComposite::RenderToPresentationSurface() {
 
 ScreenCoord LayerManagerComposite::GetContentShiftForToolbar() {
   ScreenCoord result(0.0f);
-  // If we're not in Fennec, we don't have a dynamic toolbar so there isn't a
-  // content offset.
-  if (!jni::IsFennec()) {
+
+  if (!AndroidDynamicToolbarAnimator::IsEnabled()) {
     return result;
   }
-  // If GetTargetContext return is not null we are not drawing to the screen so
+
+  // If mTarget not null we are not drawing to the screen so
   // there will not be any content offset.
-  if (mCompositor->GetTargetContext() != nullptr) {
+  if (mTarget) {
     return result;
   }
 
@@ -1245,9 +1470,9 @@ ScreenCoord LayerManagerComposite::GetContentShiftForToolbar() {
 }
 
 void LayerManagerComposite::RenderToolbar() {
-  // If GetTargetContext return is not null we are not drawing to the screen so
+  // If mTarget is not null we are not drawing to the screen so
   // don't draw the toolbar.
-  if (mCompositor->GetTargetContext() != nullptr) {
+  if (mTarget) {
     return;
   }
 
@@ -1384,12 +1609,7 @@ LayerManagerComposite::AutoAddMaskEffect::~AutoAddMaskEffect() {
   mCompositable->RemoveMaskEffect();
 }
 
-bool LayerManagerComposite::IsCompositingToScreen() const {
-  if (!mCompositor) {
-    return true;
-  }
-  return !mCompositor->GetTargetContext();
-}
+bool LayerManagerComposite::IsCompositingToScreen() const { return !mTarget; }
 
 LayerComposite::LayerComposite(LayerManagerComposite* aManager)
     : HostLayer(aManager),

@@ -74,6 +74,7 @@ namespace indexedDB {
 struct StructuredCloneReadInfo;
 class SerializedStructuredCloneReadInfo;
 class ObjectStoreCursorResponse;
+class IndexCursorResponse;
 }  // namespace indexedDB
 }  // namespace dom
 }  // namespace mozilla
@@ -495,6 +496,26 @@ class nsTArray_base {
   static Header* EmptyHdr() { return &sEmptyTArrayHeader; }
 };
 
+namespace detail {
+
+// Used for argument checking in nsTArrayElementTraits::Emplace.
+template <typename... T>
+struct ChooseFirst;
+
+template <>
+struct ChooseFirst<> {
+  // Choose a default type that is guaranteed to not match E* for any
+  // nsTArray<E>.
+  typedef void Type;
+};
+
+template <typename A, typename... Args>
+struct ChooseFirst<A, Args...> {
+  typedef A Type;
+};
+
+}  // namespace detail
+
 //
 // This class defines convenience functions for element specific operations.
 // Specialize this template if necessary.
@@ -520,6 +541,17 @@ class nsTArrayElementTraits {
                   "For safety, we disallow constructing nsTArray<E> elements "
                   "from E* pointers. See bug 960591.");
     new (static_cast<void*>(aE)) E(std::forward<A>(aArg));
+  }
+  // Construct in place.
+  template <class... Args>
+  static inline void Emplace(E* aE, Args&&... aArgs) {
+    typedef typename mozilla::RemoveCV<E>::Type E_NoCV;
+    typedef typename mozilla::RemoveCV<
+        typename ::detail::ChooseFirst<Args...>::Type>::Type A_NoCV;
+    static_assert(!mozilla::IsSame<E_NoCV*, A_NoCV>::value,
+                  "For safety, we disallow constructing nsTArray<E> elements "
+                  "from E* pointers. See bug 960591.");
+    new (static_cast<void*>(aE)) E(std::forward<Args>(aArgs)...);
   }
   // Invoke the destructor in place.
   static inline void Destruct(E* aE) { aE->~E(); }
@@ -695,6 +727,7 @@ DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::ClonedMessageData)
 DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::indexedDB::StructuredCloneReadInfo);
 DECLARE_USE_COPY_CONSTRUCTORS(
     mozilla::dom::indexedDB::ObjectStoreCursorResponse)
+DECLARE_USE_COPY_CONSTRUCTORS(mozilla::dom::indexedDB::IndexCursorResponse)
 DECLARE_USE_COPY_CONSTRUCTORS(
     mozilla::dom::indexedDB::SerializedStructuredCloneReadInfo);
 DECLARE_USE_COPY_CONSTRUCTORS(JSStructuredCloneData)
@@ -927,7 +960,7 @@ class nsTArray_Impl
   }
   // And we have to do this for our subclasses too
   operator const nsTArray<E>&() const {
-    return *reinterpret_cast<const InfallibleTArray<E>*>(this);
+    return *reinterpret_cast<const nsTArray<E>*>(this);
   }
   operator const FallibleTArray<E>&() const {
     return *reinterpret_cast<const FallibleTArray<E>*>(this);
@@ -1629,6 +1662,17 @@ class nsTArray_Impl
     return AppendElements<Item, Allocator>(std::move(aArray));
   }
 
+  // Append a new element, constructed in place from the provided arguments.
+ protected:
+  template <class... Args, typename ActualAlloc = Alloc>
+  elem_type* EmplaceBack(Args&&... aItem);
+
+ public:
+  template <class... Args>
+  MOZ_MUST_USE elem_type* EmplaceBack(Args&&... aArgs, mozilla::fallible_t&) {
+    return EmplaceBack<Args..., FallibleAlloc>(std::forward<Args>(aArgs)...);
+  }
+
   // Append a new element, move constructing if possible.
  protected:
   template <class Item, typename ActualAlloc = Alloc>
@@ -1679,6 +1723,29 @@ class nsTArray_Impl
   /* MOZ_MUST_USE */
   elem_type* AppendElement(const mozilla::fallible_t&) {
     return AppendElement<FallibleAlloc>();
+  }
+
+  // This method removes a single element from this array, like
+  // std::vector::erase.
+  // @param pos to the element to remove
+  const_iterator RemoveElementAt(const_iterator pos) {
+    MOZ_ASSERT(pos.GetArray() == this);
+
+    RemoveElementAt(pos.GetIndex());
+    return pos;
+  }
+
+  // This method removes a range of elements from this array, like
+  // std::vector::erase.
+  // @param first iterator to the first of elements to remove
+  // @param last iterator to the last of elements to remove
+  const_iterator RemoveElementsAt(const_iterator first, const_iterator last) {
+    MOZ_ASSERT(first.GetArray() == this);
+    MOZ_ASSERT(last.GetArray() == this);
+    MOZ_ASSERT(last.GetIndex() >= first.GetIndex());
+
+    RemoveElementsAt(first.GetIndex(), last.GetIndex() - first.GetIndex());
+    return first;
   }
 
   // This method removes a range of elements from this array.
@@ -2400,6 +2467,20 @@ auto nsTArray_Impl<E, Alloc>::AppendElement(Item&& aItem) -> elem_type* {
   return elem;
 }
 
+template <typename E, class Alloc>
+template <class... Args, typename ActualAlloc>
+auto nsTArray_Impl<E, Alloc>::EmplaceBack(Args&&... aArgs) -> elem_type* {
+  // Length() + 1 is guaranteed to not overflow, so EnsureCapacity is OK.
+  if (!ActualAlloc::Successful(this->template EnsureCapacity<ActualAlloc>(
+          Length() + 1, sizeof(elem_type)))) {
+    return nullptr;
+  }
+  elem_type* elem = Elements() + Length();
+  elem_traits::Emplace(elem, std::forward<Args>(aArgs)...);
+  this->mHdr->mLength += 1;
+  return elem;
+}
+
 template <typename E, typename Alloc>
 inline void ImplCycleCollectionUnlink(nsTArray_Impl<E, Alloc>& aField) {
   aField.Clear();
@@ -2461,6 +2542,7 @@ class nsTArray : public nsTArray_Impl<E, nsTArrayInfallibleAllocator> {
 
   using base_type::AppendElement;
   using base_type::AppendElements;
+  using base_type::EmplaceBack;
   using base_type::EnsureLengthAtLeast;
   using base_type::InsertElementAt;
   using base_type::InsertElementsAt;

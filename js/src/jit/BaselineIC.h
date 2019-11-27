@@ -921,7 +921,7 @@ class ICStubCompilerBase {
 
   void pushCallArguments(MacroAssembler& masm,
                          AllocatableGeneralRegisterSet regs, Register argcReg,
-                         bool isJitCall, bool isConstructing = false);
+                         bool isConstructing);
 
   // Push a payload specialized per compiler needed to execute stubs.
   void PushStubPayload(MacroAssembler& masm, Register scratch);
@@ -1025,16 +1025,6 @@ class ICStubCompiler : public ICStubCompilerBase {
   }
 };
 
-// WarmUpCounter_Fallback
-
-// A WarmUpCounter IC chain has only the fallback stub.
-class ICWarmUpCounter_Fallback : public ICFallbackStub {
-  friend class ICStubSpace;
-
-  explicit ICWarmUpCounter_Fallback(TrampolinePtr stubCode)
-      : ICFallbackStub(ICStub::WarmUpCounter_Fallback, stubCode) {}
-};
-
 // Monitored fallback stubs - as the name implies.
 class ICMonitoredFallbackStub : public ICFallbackStub {
  protected:
@@ -1048,9 +1038,6 @@ class ICMonitoredFallbackStub : public ICFallbackStub {
 
  public:
   MOZ_MUST_USE bool initMonitoringChain(JSContext* cx, JSScript* script);
-  MOZ_MUST_USE bool addMonitorStubForValue(JSContext* cx, BaselineFrame* frame,
-                                           StackTypeSet* types,
-                                           HandleValue val);
 
   ICTypeMonitor_Fallback* maybeFallbackMonitorStub() const {
     return fallbackMonitorStub_;
@@ -1846,21 +1833,15 @@ inline bool IsCacheableDOMProxy(JSObject* obj) {
 
 struct IonOsrTempData;
 
-// Write an arbitrary value to a typed array or typed object address at dest.
-// If the value could not be converted to the appropriate format, jump to
-// failure.
-template <typename T>
-void StoreToTypedArray(JSContext* cx, MacroAssembler& masm, Scalar::Type type,
-                       const ValueOperand& value, const T& dest,
-                       Register scratch, Label* failure);
+extern MOZ_MUST_USE bool TypeMonitorResult(JSContext* cx,
+                                           ICMonitoredFallbackStub* stub,
+                                           BaselineFrame* frame,
+                                           HandleScript script, jsbytecode* pc,
+                                           HandleValue val);
 
 extern bool DoTypeUpdateFallback(JSContext* cx, BaselineFrame* frame,
                                  ICCacheIR_Updated* stub, HandleValue objval,
                                  HandleValue value);
-
-extern bool DoWarmUpCounterFallbackOSR(JSContext* cx, BaselineFrame* frame,
-                                       ICWarmUpCounter_Fallback* stub,
-                                       IonOsrTempData** infoPtr);
 
 extern bool DoCallFallback(JSContext* cx, BaselineFrame* frame,
                            ICCall_Fallback* stub, uint32_t argc, Value* vp,

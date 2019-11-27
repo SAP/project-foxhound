@@ -821,7 +821,7 @@ bool nsCaret::IsMenuPopupHidingCaret() {
     nsMenuPopupFrame* popupFrame = static_cast<nsMenuPopupFrame*>(popups[i]);
     nsIContent* popupContent = popupFrame->GetContent();
 
-    if (nsContentUtils::ContentIsDescendantOf(caretContent, popupContent)) {
+    if (caretContent->IsInclusiveDescendantOf(popupContent)) {
       // The caret is in this popup. There were no menu popups before this
       // popup, so don't hide the caret.
       return false;
@@ -878,8 +878,7 @@ void nsCaret::ComputeCaretRects(nsIFrame* aFrame, int32_t aFrameOffset,
     // right The height of the hook rectangle is the same as the width of the
     // caret rectangle.
     if (isVertical) {
-      bool isSidewaysLR = wm.IsVerticalLR() && !wm.IsLineInverted();
-      if (isSidewaysLR) {
+      if (wm.IsSidewaysLR()) {
         aHookRect->SetRect(aCaretRect->x + bidiIndicatorSize,
                            aCaretRect->y + (!isCaretRTL ? bidiIndicatorSize * -1
                                                         : aCaretRect->height),

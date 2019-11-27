@@ -41,14 +41,6 @@ using dom::AutoJSAPI;
 using dom::Promise;
 using std::string;
 
-extern "C" {
-// This function is defined in the profiler rust module at
-// tools/profiler/rust-helper. nsProfiler::SymbolTable and CompactSymbolTable
-// have identical memory layout.
-bool profiler_get_symbol_table(const char* debug_path, const char* breakpad_id,
-                               nsProfiler::SymbolTable* symbol_table);
-}
-
 NS_IMPL_ISUPPORTS(nsProfiler, nsIProfiler, nsIObserver)
 
 nsProfiler::nsProfiler()
@@ -181,7 +173,7 @@ nsProfiler::ResumeSampling() {
 
 NS_IMETHODIMP
 nsProfiler::AddMarker(const char* aMarker) {
-  profiler_add_marker(aMarker, JS::ProfilingCategoryPair::OTHER);
+  PROFILER_ADD_MARKER(aMarker, OTHER);
   return NS_OK;
 }
 
@@ -228,6 +220,30 @@ nsProfiler::GetSharedLibraries(JSContext* aCx,
     return NS_ERROR_FAILURE;
   }
   aResult.setObject(*obj);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsProfiler::GetActiveConfiguration(JSContext* aCx,
+                                   JS::MutableHandle<JS::Value> aResult) {
+  JS::RootedValue jsValue(aCx);
+  {
+    nsString buffer;
+    JSONWriter writer(MakeUnique<StringWriteFunc>(buffer));
+    profiler_write_active_configuration(writer);
+    MOZ_ALWAYS_TRUE(JS_ParseJSON(aCx,
+                                 static_cast<const char16_t*>(buffer.get()),
+                                 buffer.Length(), &jsValue));
+  }
+  if (jsValue.isNull()) {
+    aResult.setNull();
+  } else {
+    JS::RootedObject obj(aCx, &jsValue.toObject());
+    if (!obj) {
+      return NS_ERROR_FAILURE;
+    }
+    aResult.setObject(*obj);
+  }
   return NS_OK;
 }
 
@@ -711,10 +727,14 @@ RefPtr<nsProfiler::GatheringPromise> nsProfiler::StartGathering(
 
   mWriter.emplace();
 
+  UniquePtr<ProfilerCodeAddressService> service =
+      profiler_code_address_service_for_presymbolication();
+
   // Start building up the JSON result and grab the profile from this process.
   mWriter->Start();
   if (!profiler_stream_json_for_this_process(*mWriter, aSinceTime,
-                                             /* aIsShuttingDown */ false)) {
+                                             /* aIsShuttingDown */ false,
+                                             service.get())) {
     // The profiler is inactive. This either means that it was inactive even
     // at the time that ProfileGatherer::Start() was called, or that it was
     // stopped on a different thread since that call. Either way, we need to

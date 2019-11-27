@@ -159,7 +159,6 @@ var gShouldResetEnv = undefined;
 var gAddedEnvXRENoWindowsCrashDialog = false;
 var gEnvXPCOMDebugBreak;
 var gEnvXPCOMMemLeakLog;
-var gEnvDyldLibraryPath;
 
 const URL_HTTP_UPDATE_SJS = "http://test_details/";
 const DATA_URI_SPEC = Services.io.newFileURI(do_get_file("", false)).spec;
@@ -855,7 +854,7 @@ function setupTestCommon(aAppUpdateAutoEnabled = false, aAllowBits = false) {
     .split(".")[0];
 
   if (gDebugTestLog && !gIsServiceTest) {
-    if (gTestsToLog.length == 0 || gTestsToLog.includes(gTestID)) {
+    if (!gTestsToLog.length || gTestsToLog.includes(gTestID)) {
       let logFile = do_get_file(gTestID + ".log", true);
       if (!logFile.exists()) {
         logFile.create(Ci.nsIFile.NORMAL_FILE_TYPE, PERMS_FILE);
@@ -921,6 +920,18 @@ function setupTestCommon(aAppUpdateAutoEnabled = false, aAllowBits = false) {
     );
   }
 
+  if (gIsServiceTest) {
+    let exts = ["id", "log", "status"];
+    for (let i = 0; i < exts.length; ++i) {
+      let file = getSecureOutputFile(exts[i]);
+      if (file.exists()) {
+        try {
+          file.remove(false);
+        } catch (e) {}
+      }
+    }
+  }
+
   adjustGeneralPaths();
   createWorldWritableAppUpdateDir();
 
@@ -983,6 +994,18 @@ function cleanupTestCommon() {
   if (AppConstants.platform == "macosx" || AppConstants.platform == "linux") {
     // This will delete the launch script if it exists.
     getLaunchScript();
+  }
+
+  if (gIsServiceTest) {
+    let exts = ["id", "log", "status"];
+    for (let i = 0; i < exts.length; ++i) {
+      let file = getSecureOutputFile(exts[i]);
+      if (file.exists()) {
+        try {
+          file.remove(false);
+        } catch (e) {}
+      }
+    }
   }
 
   if (AppConstants.platform == "win" && MOZ_APP_BASENAME) {
@@ -1506,6 +1529,37 @@ function getMaintSvcDir() {
 }
 
 /**
+ * Reads the current update operation/state in the status file in the secure
+ * update log directory.
+ *
+ * @return The status value.
+ */
+function readSecureStatusFile() {
+  let file = getSecureOutputFile("status");
+  if (!file.exists()) {
+    debugDump("update status file does not exist, path: " + file.path);
+    return STATE_NONE;
+  }
+  return readFile(file).split("\n")[0];
+}
+
+/**
+ * Get an nsIFile for a file in the secure update log directory. The file name
+ * is always the value of gTestID and the file extension is specified by the
+ * aFileExt parameter.
+ *
+ * @param  aFileExt
+ *         The file extension.
+ * @return The nsIFile of the secure update file.
+ */
+function getSecureOutputFile(aFileExt) {
+  let file = getMaintSvcDir();
+  file.append("UpdateLogs");
+  file.append(gTestID + "." + aFileExt);
+  return file;
+}
+
+/**
  * Get the nsIFile for a Windows special folder determined by the CSIDL
  * passed.
  *
@@ -1774,59 +1828,25 @@ function removeUpdateInProgressLockFile(aDir) {
 }
 
 /**
- * Gets the test updater from the test data direcory.
- *
- * @return  nsIFIle for the test updater.
- */
-function getTestUpdater() {
-  let updater = getTestDirFile("updater.app", true);
-  if (!updater.exists()) {
-    updater = getTestDirFile(FILE_UPDATER_BIN);
-    if (!updater.exists()) {
-      do_throw("Unable to find the updater binary!");
-    }
-  }
-  Assert.ok(updater.exists(), MSG_SHOULD_EXIST + getMsgPath(updater.path));
-  return updater;
-}
-
-/**
  * Copies the test updater to the GRE binary directory and returns the nsIFile
  * for the copied test updater.
  *
  * @return  nsIFIle for the copied test updater.
  */
 function copyTestUpdaterToBinDir() {
-  let testUpdater = getTestUpdater();
+  let updaterLeafName =
+    AppConstants.platform == "macosx" ? "updater.app" : FILE_UPDATER_BIN;
+  let testUpdater = getTestDirFile(updaterLeafName);
   let updater = getGREBinDir();
-  updater.append(testUpdater.leafName);
+  updater.append(updaterLeafName);
   if (!updater.exists()) {
-    testUpdater.copyToFollowingLinks(updater.parent, updater.leafName);
+    testUpdater.copyToFollowingLinks(updater.parent, updaterLeafName);
   }
-  return updater;
-}
-
-/**
- * Copies the test updater to the location where it will be launched to apply an
- * update and returns the nsIFile for the copied test updater.
- *
- * @return  nsIFIle for the copied test updater.
- */
-function copyTestUpdaterForRunUsingUpdater() {
-  if (AppConstants.platform == "win" || AppConstants.platform == "linux") {
-    return copyTestUpdaterToBinDir();
+  if (AppConstants.platform == "macosx") {
+    updater.append("Contents");
+    updater.append("MacOS");
+    updater.append("org.mozilla.updater");
   }
-
-  let testUpdater = getTestUpdater();
-  let updater = getUpdateDirFile(DIR_PATCH);
-  updater.append(testUpdater.leafName);
-  if (!updater.exists()) {
-    testUpdater.copyToFollowingLinks(updater.parent, updater.leafName);
-  }
-
-  updater.append("Contents");
-  updater.append("MacOS");
-  updater.append("org.mozilla.updater");
   return updater;
 }
 
@@ -1845,7 +1865,7 @@ function logUpdateLog(aLogLeafName) {
     updateLogContents = replaceLogPaths(updateLogContents);
     let aryLogContents = updateLogContents.split("\n");
     logTestInfo("contents of " + updateLog.path + ":");
-    aryLogContents.forEach(function RU_LC_FE(aLine) {
+    aryLogContents.forEach(function LU_ULC_FE(aLine) {
       logTestInfo(aLine);
     });
   } else {
@@ -1853,6 +1873,23 @@ function logUpdateLog(aLogLeafName) {
   }
 
   if (gIsServiceTest) {
+    let secureStatus = readSecureStatusFile();
+    logTestInfo("secure update status: " + secureStatus);
+
+    updateLog = getSecureOutputFile("log");
+    if (updateLog.exists()) {
+      // xpcshell tests won't display the entire contents so log each line.
+      let updateLogContents = readFileBytes(updateLog).replace(/\r\n/g, "\n");
+      updateLogContents = replaceLogPaths(updateLogContents);
+      let aryLogContents = updateLogContents.split("\n");
+      logTestInfo("contents of " + updateLog.path + ":");
+      aryLogContents.forEach(function LU_SULC_FE(aLine) {
+        logTestInfo(aLine);
+      });
+    } else {
+      logTestInfo("secure update log doesn't exist, path: " + updateLog.path);
+    }
+
     let serviceLog = getMaintSvcDir();
     serviceLog.append("logs");
     serviceLog.append("maintenanceservice.log");
@@ -1862,7 +1899,7 @@ function logUpdateLog(aLogLeafName) {
       serviceLogContents = replaceLogPaths(serviceLogContents);
       let aryLogContents = serviceLogContents.split("\n");
       logTestInfo("contents of " + serviceLog.path + ":");
-      aryLogContents.forEach(function RU_LC_FE(aLine) {
+      aryLogContents.forEach(function LU_MSLC_FE(aLine) {
         logTestInfo(aLine);
       });
     } else {
@@ -1943,8 +1980,7 @@ function runUpdate(
     gEnv.set("MOZ_TEST_SHORTER_WAIT_PID", "1");
   }
 
-  // Copy the updater binary to the directory where it will apply updates.
-  let updateBin = copyTestUpdaterForRunUsingUpdater();
+  let updateBin = copyTestUpdaterToBinDir();
   Assert.ok(updateBin.exists(), MSG_SHOULD_EXIST + getMsgPath(updateBin.path));
 
   let updatesDirPath = aPatchDirPath || getUpdateDirFile(DIR_PATCH).path;
@@ -2003,7 +2039,7 @@ function runUpdate(
   let status = readStatusFile();
   if (
     (!gIsServiceTest && process.exitValue != aExpectedExitValue) ||
-    status != aExpectedStatus
+    (status != aExpectedStatus && !gIsServiceTest && !isInvalidArgTest)
   ) {
     if (process.exitValue != aExpectedExitValue) {
       logTestInfo(
@@ -2024,12 +2060,23 @@ function runUpdate(
     logUpdateLog(FILE_LAST_UPDATE_LOG);
   }
 
+  if (gIsServiceTest && isInvalidArgTest) {
+    let secureStatus = readSecureStatusFile();
+    if (secureStatus != STATE_NONE) {
+      status = secureStatus;
+    }
+  }
+
   if (!gIsServiceTest) {
     Assert.equal(
       process.exitValue,
       aExpectedExitValue,
       "the process exit value" + MSG_SHOULD_EQUAL
     );
+  }
+
+  if (status != aExpectedStatus) {
+    logUpdateLog(FILE_UPDATE_LOG);
   }
   Assert.equal(status, aExpectedStatus, "the update status" + MSG_SHOULD_EQUAL);
 
@@ -3285,8 +3332,8 @@ function checkUpdateLogContents(
     // The FindFile results when enumerating the filesystem on Windows is not
     // determistic so the results matching the following need to be fixed.
     let re = new RegExp(
-      // eslint-disable-next-line no-useless-concat
-      "([^\n]* 7/7text1[^\n]*)\n" + "([^\n]* 7/7text0[^\n]*)\n",
+      // eslint-disable-next-line no-control-regex
+      "([^\n]* 7/7text1[^\n]*)\n([^\n]* 7/7text0[^\n]*)\n",
       "g"
     );
     updateLogContents = updateLogContents.replace(re, "$2\n$1\n");
@@ -4056,6 +4103,7 @@ function start_httpserver() {
   gTestserver.registerPathHandler("/" + gHTTPHandlerPath, pathHandler);
   gTestserver.start(-1);
   let testserverPort = gTestserver.identity.primaryPort;
+  // eslint-disable-next-line no-global-assign
   gURLData = URL_HOST + ":" + testserverPort + "/";
   debugDump("http server port = " + testserverPort);
 }
@@ -4582,30 +4630,6 @@ function setEnvironment() {
     gEnv.set("XRE_NO_WINDOWS_CRASH_DIALOG", "1");
   }
 
-  if (AppConstants.platform == "macosx") {
-    let shouldSetEnv = true;
-    let appGreBinDir = gGREBinDirOrig.clone();
-    let envGreBinDir = Cc["@mozilla.org/file/local;1"].createInstance(
-      Ci.nsIFile
-    );
-    if (gEnv.exists("DYLD_LIBRARY_PATH")) {
-      gEnvDyldLibraryPath = gEnv.get("DYLD_LIBRARY_PATH");
-      envGreBinDir.initWithPath(gEnvDyldLibraryPath);
-      if (envGreBinDir.path == appGreBinDir.path) {
-        gEnvDyldLibraryPath = null;
-        shouldSetEnv = false;
-      }
-    }
-
-    if (shouldSetEnv) {
-      debugDump(
-        "setting DYLD_LIBRARY_PATH environment variable value to " +
-          appGreBinDir.path
-      );
-      gEnv.set("DYLD_LIBRARY_PATH", appGreBinDir.path);
-    }
-  }
-
   if (gEnv.exists("XPCOM_MEM_LEAK_LOG")) {
     gEnvXPCOMMemLeakLog = gEnv.get("XPCOM_MEM_LEAK_LOG");
     debugDump(
@@ -4667,20 +4691,6 @@ function resetEnvironment() {
   } else if (gEnv.exists("XPCOM_DEBUG_BREAK")) {
     debugDump("clearing the XPCOM_DEBUG_BREAK environment variable");
     gEnv.set("XPCOM_DEBUG_BREAK", "");
-  }
-
-  if (AppConstants.platform == "macosx") {
-    if (gEnvDyldLibraryPath) {
-      debugDump(
-        "setting DYLD_LIBRARY_PATH environment variable value " +
-          "back to " +
-          gEnvDyldLibraryPath
-      );
-      gEnv.set("DYLD_LIBRARY_PATH", gEnvDyldLibraryPath);
-    } else if (gEnvDyldLibraryPath !== null) {
-      debugDump("removing DYLD_LIBRARY_PATH environment variable");
-      gEnv.set("DYLD_LIBRARY_PATH", "");
-    }
   }
 
   if (AppConstants.platform == "win" && gAddedEnvXRENoWindowsCrashDialog) {

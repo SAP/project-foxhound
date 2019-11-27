@@ -9,7 +9,7 @@
 #include "mozilla/gfx/Logging.h"
 #include "nsITimer.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "VRGPUChild.h"
 #include "ProcessUtils.h"
 
@@ -62,7 +62,8 @@ bool GPUProcessHost::WaitForLaunch() {
     return !!mGPUChild;
   }
 
-  int32_t timeoutMs = StaticPrefs::layers_gpu_process_startup_timeout_ms();
+  int32_t timeoutMs =
+      StaticPrefs::layers_gpu_process_startup_timeout_ms_AtStartup();
 
   // If one of the following environment variables are set we can effectively
   // ignore the timeout - as we can guarantee the compositor process will be

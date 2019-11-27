@@ -10,7 +10,7 @@
 #include "mozilla/AbstractThread.h"
 #include "mozilla/PerformanceUtils.h"
 #include "mozilla/ThrottledEventQueue.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "nsIDocShell.h"
 #include "nsDOMMutationObserver.h"
@@ -49,8 +49,9 @@ void DocGroup::RemoveDocument(Document* aDocument) {
   mDocuments.RemoveElement(aDocument);
 }
 
-DocGroup::DocGroup(TabGroup* aTabGroup, const nsACString& aKey)
-    : mKey(aKey), mTabGroup(aTabGroup) {
+DocGroup::DocGroup(TabGroup* aTabGroup, const nsACString& aKey,
+                   const nsID& aAgentClusterId)
+    : mKey(aKey), mTabGroup(aTabGroup), mAgentClusterId(aAgentClusterId) {
   // This method does not add itself to mTabGroup->mDocGroups as the caller does
   // it for us.
   mPerformanceCounter =
@@ -106,7 +107,7 @@ RefPtr<PerformanceInfoPromise> DocGroup::ReportPerformanceInfo() {
     if (!win) {
       continue;
     }
-    top = win->GetTop();
+    top = win->GetInProcessTop();
     if (!top) {
       continue;
     }

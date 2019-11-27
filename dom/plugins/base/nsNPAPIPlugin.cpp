@@ -751,7 +751,7 @@ NPUTF8* _utf8fromidentifier(NPIdentifier id) {
 
   JSString* str = NPIdentifierToString(id);
   nsAutoString autoStr;
-  AssignJSFlatString(autoStr, JS_ASSERT_STRING_IS_FLAT(str));
+  AssignJSLinearString(autoStr, JS_ASSERT_STRING_IS_LINEAR(str));
 
   return ToNewUTF8String(autoStr);
 }
@@ -965,9 +965,7 @@ bool _evaluate(NPP npp, NPObject* npobj, NPString* script, NPVariant* result) {
     // chrome code anyways.
 
     uri = doc->GetDocumentURI();
-    bool isChrome = false;
-
-    if (uri && NS_SUCCEEDED(uri->SchemeIs("chrome", &isChrome)) && isChrome) {
+    if (uri && uri->SchemeIs("chrome")) {
       uri->GetSpec(specStr);
       spec = specStr.get();
     } else {

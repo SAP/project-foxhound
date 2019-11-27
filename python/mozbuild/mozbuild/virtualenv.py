@@ -26,6 +26,8 @@ MINIMUM_PYTHON_VERSIONS = {
     3: LooseVersion('3.5.0')
 }
 
+PY2 = sys.version_info[0] == 2
+PY3 = sys.version_info[0] == 3
 
 UPGRADE_WINDOWS = '''
 Please upgrade to the latest MozillaBuild development environment. See
@@ -116,7 +118,8 @@ class VirtualenvManager(object):
         on OS X our python path may end up being a different or modified
         executable.
         """
-        ver = subprocess.check_output([python, '-c', 'import sys; print(sys.hexversion)']).rstrip()
+        ver = subprocess.check_output([python, '-c', 'import sys; print(sys.hexversion)'],
+                                      universal_newlines=True).rstrip()
         with open(self.exe_info_path, 'w') as fh:
             fh.write("%s\n" % ver)
             fh.write("%s\n" % os.path.getsize(python))
@@ -217,7 +220,8 @@ class VirtualenvManager(object):
         return self.virtualenv_root
 
     def packages(self):
-        with open(self.manifest_path, 'rU') as fh:
+        mode = 'rU' if PY2 else 'r'
+        with open(self.manifest_path, mode) as fh:
             packages = [line.rstrip().split(':')
                         for line in fh]
         return packages
@@ -345,8 +349,7 @@ class VirtualenvManager(object):
 
             if package[0] in ('python2', 'python3'):
                 for_python3 = package[0].endswith('3')
-                is_python3 = sys.version_info[0] > 2
-                if is_python3 == for_python3:
+                if PY3 == for_python3:
                     handle_package(package[1:])
                 return True
 
@@ -496,8 +499,8 @@ class VirtualenvManager(object):
         and call .ensure() and .activate() to make the virtualenv active.
         """
 
-        execfile(self.activate_path, dict(__file__=self.activate_path))
-        if isinstance(os.environ['PATH'], unicode):
+        exec(open(self.activate_path).read(), dict(__file__=self.activate_path))
+        if PY2 and isinstance(os.environ['PATH'], unicode):
             os.environ['PATH'] = os.environ['PATH'].encode('utf-8')
 
     def install_pip_package(self, package, vendored=False):
@@ -575,7 +578,8 @@ class VirtualenvManager(object):
         # It /might/ be possible to cheat and set sys.executable to
         # self.python_path. However, this seems more risk than it's worth.
         pip = os.path.join(self.bin_path, 'pip')
-        subprocess.check_call([pip] + args, stderr=subprocess.STDOUT, cwd=self.topsrcdir)
+        subprocess.check_call([pip] + args, stderr=subprocess.STDOUT, cwd=self.topsrcdir,
+                              universal_newlines=PY3)
 
     def activate_pipenv(self, pipfile=None, populate=False, python=None):
         """Activate a virtual environment managed by pipenv

@@ -216,8 +216,8 @@ char* nsLineBox::StateToString(char* aBuf, int32_t aBufSize) const {
   snprintf(aBuf, aBufSize, "%s,%s,%s,%s,%s,before:%s,after:%s[0x%x]",
            IsBlock() ? "block" : "inline", IsDirty() ? "dirty" : "clean",
            IsPreviousMarginDirty() ? "prevmargindirty" : "prevmarginclean",
-           IsImpactedByFloat() ? "impacted" : "not impacted",
-           IsLineWrapped() ? "wrapped" : "not wrapped",
+           IsImpactedByFloat() ? "impacted" : "not-impacted",
+           IsLineWrapped() ? "wrapped" : "not-wrapped",
            BreakTypeToString(GetBreakTypeBefore()),
            BreakTypeToString(GetBreakTypeAfter()), mAllFlags);
   return aBuf;
@@ -298,6 +298,20 @@ int32_t nsLineBox::IndexOf(nsIFrame* aFrame) const {
       return i;
     }
     frame = frame->GetNextSibling();
+  }
+  return -1;
+}
+
+int32_t nsLineBox::RIndexOf(nsIFrame* aFrame,
+                            nsIFrame* aLastFrameInLine) const {
+  nsIFrame* frame = aLastFrameInLine;
+  for (int32_t i = GetChildCount() - 1; i >= 0; --i) {
+    MOZ_ASSERT(i != 0 || frame == mFirstChild,
+               "caller provided incorrect last frame");
+    if (frame == aFrame) {
+      return i;
+    }
+    frame = frame->GetPrevSibling();
   }
   return -1;
 }

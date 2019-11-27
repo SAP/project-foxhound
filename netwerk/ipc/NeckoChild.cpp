@@ -28,7 +28,7 @@
 #include "mozilla/net/SocketProcessBridgeChild.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/net/StunAddrsRequestChild.h"
-#  include "mozilla/net/WebrtcProxyChannelChild.h"
+#  include "mozilla/net/WebrtcTCPSocketChild.h"
 #endif
 
 #include "SerializedLoadContext.h"
@@ -59,7 +59,10 @@ NeckoChild::~NeckoChild() {
 }
 
 void NeckoChild::InitNeckoChild() {
-  MOZ_ASSERT(IsNeckoChild(), "InitNeckoChild called by non-child!");
+  if (!IsNeckoChild()) {
+    MOZ_ASSERT(false, "InitNeckoChild called by non-child!");
+    return;
+  }
 
   if (!gNeckoChild) {
     mozilla::dom::ContentChild* cpc =
@@ -72,25 +75,6 @@ void NeckoChild::InitNeckoChild() {
     NS_ASSERTION(gNeckoChild, "PNecko Protocol init failed!");
     SocketProcessBridgeChild::GetSocketProcessBridge();
   }
-}
-
-PHttpChannelChild* NeckoChild::AllocPHttpChannelChild(
-    const PBrowserOrId& browser, const SerializedLoadContext& loadContext,
-    const HttpChannelCreationArgs& aOpenArgs) {
-  // We don't allocate here: instead we always use IPDL constructor that takes
-  // an existing HttpChildChannel
-  MOZ_ASSERT_UNREACHABLE(
-      "AllocPHttpChannelChild should not be called on "
-      "child");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPHttpChannelChild(PHttpChannelChild* channel) {
-  MOZ_ASSERT(IsNeckoChild(), "DeallocPHttpChannelChild called by non-child!");
-
-  HttpChannelChild* child = static_cast<HttpChannelChild*>(channel);
-  child->Release();
-  return true;
 }
 
 PStunAddrsRequestChild* NeckoChild::AllocPStunAddrsRequestChild() {
@@ -110,21 +94,19 @@ bool NeckoChild::DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor) {
   return true;
 }
 
-PWebrtcProxyChannelChild* NeckoChild::AllocPWebrtcProxyChannelChild(
-    const TabId& tabId) {
+PWebrtcTCPSocketChild* NeckoChild::AllocPWebrtcTCPSocketChild(
+    const Maybe<TabId>& tabId) {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing object
   MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcProxyChannelChild should not be called on"
+      "AllocPWebrtcTCPSocketChild should not be called on"
       " child");
   return nullptr;
 }
 
-bool NeckoChild::DeallocPWebrtcProxyChannelChild(
-    PWebrtcProxyChannelChild* aActor) {
+bool NeckoChild::DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelChild* child =
-      static_cast<WebrtcProxyChannelChild*>(aActor);
+  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
   child->ReleaseIPDLReference();
 #endif
   return true;
@@ -144,6 +126,13 @@ bool NeckoChild::DeallocPAltDataOutputStreamChild(
       static_cast<AltDataOutputStreamChild*>(aActor);
   child->ReleaseIPDLReference();
   return true;
+}
+
+already_AddRefed<PDocumentChannelChild> NeckoChild::AllocPDocumentChannelChild(
+    const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+    const DocumentChannelCreationArgs& args) {
+  MOZ_ASSERT_UNREACHABLE("AllocPDocumentChannelChild should not be called");
+  return nullptr;
 }
 
 PFTPChannelChild* NeckoChild::AllocPFTPChannelChild(
@@ -213,28 +202,6 @@ bool NeckoChild::DeallocPWebSocketEventListenerChild(
   RefPtr<WebSocketEventListenerChild> c =
       dont_AddRef(static_cast<WebSocketEventListenerChild*>(aActor));
   MOZ_ASSERT(c);
-  return true;
-}
-
-PDataChannelChild* NeckoChild::AllocPDataChannelChild(
-    const uint32_t& channelId) {
-  MOZ_ASSERT_UNREACHABLE("Should never get here");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPDataChannelChild(PDataChannelChild* child) {
-  static_cast<DataChannelChild*>(child)->Release();
-  return true;
-}
-
-PFileChannelChild* NeckoChild::AllocPFileChannelChild(
-    const uint32_t& channelId) {
-  MOZ_ASSERT_UNREACHABLE("Should never get here");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPFileChannelChild(PFileChannelChild* child) {
-  static_cast<FileChannelChild*>(child)->Release();
   return true;
 }
 
@@ -414,8 +381,9 @@ mozilla::ipc::IPCResult NeckoChild::RecvNetworkChangeNotification(
 }
 
 PClassifierDummyChannelChild* NeckoChild::AllocPClassifierDummyChannelChild(
-    nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
-    const Maybe<LoadInfoArgs>& aLoadInfo) {
+    nsIURI* aURI, nsIURI* aTopWindowURI,
+    nsIPrincipal* aContentBlockingAllowListPrincipal,
+    const nsresult& aTopWindowURIResult, const Maybe<LoadInfoArgs>& aLoadInfo) {
   return new ClassifierDummyChannelChild();
 }
 

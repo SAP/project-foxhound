@@ -75,6 +75,7 @@ const SSL_ERROR_NO_CYPHER_OVERLAP = SSL_ERROR_BASE + 2;
 const SSL_ERROR_BAD_CERT_DOMAIN = SSL_ERROR_BASE + 12;
 const SSL_ERROR_BAD_CERT_ALERT = SSL_ERROR_BASE + 17;
 const SSL_ERROR_WEAK_SERVER_CERT_KEY = SSL_ERROR_BASE + 132;
+const SSL_ERROR_DC_INVALID_KEY_USAGE = SSL_ERROR_BASE + 184;
 
 const MOZILLA_PKIX_ERROR_KEY_PINNING_FAILURE = MOZILLA_PKIX_ERROR_BASE + 0;
 const MOZILLA_PKIX_ERROR_CA_CERT_USED_AS_END_ENTITY =
@@ -529,10 +530,6 @@ function add_connection_test(
       if (aAfterStreamOpen) {
         aAfterStreamOpen(this.transport);
       }
-      let sslSocketControl = this.transport.securityInfo.QueryInterface(
-        Ci.nsISSLSocketControl
-      );
-      sslSocketControl.proxyStartSSL();
       this.outputStream.write("0", 1);
       let inStream = this.transport
         .openInputStream(0, 0, 0)
@@ -836,25 +833,6 @@ function stopOCSPResponder(responder) {
     responder.stop(resolve);
   });
 }
-
-// A prototype for a fake, error-free secInfo
-var FakeTransportSecurityInfo = function(certificate) {
-  this.serverCert = certificate;
-};
-
-FakeTransportSecurityInfo.prototype = {
-  serverCert: null,
-  cipherName: null,
-  keyLength: 2048,
-  isDomainMismatch: false,
-  isNotValidAtThisTime: false,
-  isUntrusted: false,
-  isExtendedValidation: false,
-  getInterface(aIID) {
-    return this.QueryInterface(aIID);
-  },
-  QueryInterface: ChromeUtils.generateQI(["nsITransportSecurityInfo"]),
-};
 
 // Utility functions for adding tests relating to certificate error overrides
 

@@ -27,7 +27,7 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
     SetScrollHandoff(layers[1], root);
     registration = MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0},
                                                            root, mcc);
-    manager->UpdateHitTestingTree(root, false, LayersId{0}, 0);
+    UpdateHitTestingTree();
     rootApzc = ApzcOf(root);
     rootApzc->GetFrameMetrics().SetIsRootContent(
         true);  // make root APZC zoomable
@@ -53,7 +53,7 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
     // No ScopedLayerTreeRegistration as that just needs to be done once per
     // test and this is the second layer tree for a particular test.
     MOZ_ASSERT(registration);
-    manager->UpdateHitTestingTree(root, false, LayersId{0}, 0);
+    UpdateHitTestingTree();
     rootApzc = ApzcOf(root);
   }
 
@@ -88,7 +88,7 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
     SetScrollHandoff(layers[4], layers[3]);
     registration = MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0},
                                                            root, mcc);
-    manager->UpdateHitTestingTree(root, false, LayersId{0}, 0);
+    UpdateHitTestingTree();
   }
 
   // Creates a layer tree with a parent layer that is only scrollable
@@ -107,7 +107,7 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
     SetScrollHandoff(layers[1], root);
     registration = MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0},
                                                            root, mcc);
-    manager->UpdateHitTestingTree(root, false, LayersId{0}, 0);
+    UpdateHitTestingTree();
     rootApzc = ApzcOf(root);
   }
 
@@ -128,7 +128,7 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
     SetScrollHandoff(layers[1], root);
     registration = MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0},
                                                            root, mcc);
-    manager->UpdateHitTestingTree(root, false, LayersId{0}, 0);
+    UpdateHitTestingTree();
     rootApzc = ApzcOf(root);
     rootApzc->GetScrollMetadata().SetHasScrollgrab(true);
   }
@@ -188,6 +188,8 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
 // wait for content to send a prevent-default message, overscroll is still
 // handed off correctly when the block is processed.
 TEST_F(APZScrollHandoffTester, DeferredInputEventProcessing) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
+
   // Set up the APZC tree.
   CreateScrollHandoffLayerTree1();
 
@@ -216,6 +218,8 @@ TEST_F(APZScrollHandoffTester, DeferredInputEventProcessing) {
 // the original layer structure while overscroll handoff for the second block
 // follows the new layer structure.
 TEST_F(APZScrollHandoffTester, LayerStructureChangesWhileEventsArePending) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
+
   // Set up an initial APZC tree.
   CreateScrollHandoffLayerTree1();
 
@@ -287,12 +291,12 @@ TEST_F(APZScrollHandoffTester, StuckInOverscroll_Bug1073250) {
       SingleTouchData(0, ScreenIntPoint(10, 40), ScreenSize(0, 0), 0, 0));
   secondFingerDown.mTouches.AppendElement(
       SingleTouchData(1, ScreenIntPoint(30, 20), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(secondFingerDown, nullptr, nullptr);
+  manager->ReceiveInputEvent(secondFingerDown);
 
   // Release the fingers.
   MultiTouchInput fingersUp = secondFingerDown;
   fingersUp.mType = MultiTouchInput::MULTITOUCH_END;
-  manager->ReceiveInputEvent(fingersUp, nullptr, nullptr);
+  manager->ReceiveInputEvent(fingersUp);
 
   // Allow any animations to run their course.
   child->AdvanceAnimationsUntilEnd();
@@ -330,12 +334,12 @@ TEST_F(APZScrollHandoffTester, StuckInOverscroll_Bug1231228) {
       SingleTouchData(0, ScreenIntPoint(10, 40), ScreenSize(0, 0), 0, 0));
   secondFingerDown.mTouches.AppendElement(
       SingleTouchData(1, ScreenIntPoint(30, 20), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(secondFingerDown, nullptr, nullptr);
+  manager->ReceiveInputEvent(secondFingerDown);
 
   // Release the fingers.
   MultiTouchInput fingersUp = secondFingerDown;
   fingersUp.mType = MultiTouchInput::MULTITOUCH_END;
-  manager->ReceiveInputEvent(fingersUp, nullptr, nullptr);
+  manager->ReceiveInputEvent(fingersUp);
 
   // Allow any animations to run their course.
   child->AdvanceAnimationsUntilEnd();
@@ -413,12 +417,12 @@ TEST_F(APZScrollHandoffTester, StuckInOverscroll_Bug1240202b) {
       SingleTouchData(0, ScreenIntPoint(10, 90), ScreenSize(0, 0), 0, 0));
   secondFingerDown.mTouches.AppendElement(
       SingleTouchData(1, ScreenIntPoint(10, 80), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(secondFingerDown, nullptr, nullptr);
+  manager->ReceiveInputEvent(secondFingerDown);
 
   // Release the fingers.
   MultiTouchInput fingersUp = secondFingerDown;
   fingersUp.mType = MultiTouchInput::MULTITOUCH_END;
-  manager->ReceiveInputEvent(fingersUp, nullptr, nullptr);
+  manager->ReceiveInputEvent(fingersUp);
 
   // Allow any animations to run their course.
   child->AdvanceAnimationsUntilEnd();
@@ -476,6 +480,7 @@ TEST_F(APZScrollHandoffTester, PartialFlingHandoff) {
 // Here we test that if two flings are happening simultaneously, overscroll
 // is handed off correctly for each.
 TEST_F(APZScrollHandoffTester, SimultaneousFlings) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
 
   // Set up an initial APZC tree.
@@ -508,6 +513,8 @@ TEST_F(APZScrollHandoffTester, SimultaneousFlings) {
 }
 
 TEST_F(APZScrollHandoffTester, Scrollgrab) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
+
   // Set up the layer tree
   CreateScrollgrabLayerTree();
 
@@ -523,6 +530,7 @@ TEST_F(APZScrollHandoffTester, Scrollgrab) {
 }
 
 TEST_F(APZScrollHandoffTester, ScrollgrabFling) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
 
   // Set up the layer tree
@@ -539,6 +547,7 @@ TEST_F(APZScrollHandoffTester, ScrollgrabFling) {
 }
 
 TEST_F(APZScrollHandoffTester, ScrollgrabFlingAcceleration1) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   SCOPED_GFX_VAR(UseWebRender, bool, false);
   CreateScrollgrabLayerTree(true /* make parent scrollable */);
@@ -546,6 +555,7 @@ TEST_F(APZScrollHandoffTester, ScrollgrabFlingAcceleration1) {
 }
 
 TEST_F(APZScrollHandoffTester, ScrollgrabFlingAcceleration2) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   SCOPED_GFX_VAR(UseWebRender, bool, false);
   CreateScrollgrabLayerTree(false /* do not make parent scrollable */);

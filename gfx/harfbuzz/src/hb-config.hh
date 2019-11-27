@@ -58,6 +58,7 @@
 #define HB_NO_BITMAP
 #define HB_NO_CFF
 #define HB_NO_COLOR
+#define HB_NO_ERRNO
 #define HB_NO_FACE_COLLECT_UNICODES
 #define HB_NO_GETENV
 #define HB_NO_HINTING
@@ -66,6 +67,8 @@
 #define HB_NO_LAYOUT_COLLECT_GLYPHS
 #define HB_NO_LAYOUT_UNUSED
 #define HB_NO_MATH
+#define HB_NO_META
+#define HB_NO_METRICS
 #define HB_NO_MMAP
 #define HB_NO_NAME
 #define HB_NO_OPEN
@@ -93,7 +96,7 @@
 
 #ifdef HB_NO_AAT
 #define HB_NO_OT_NAME_LANGUAGE_AAT
-#define HB_NO_SHAPE_AAT
+#define HB_NO_AAT_SHAPE
 #endif
 
 #ifdef HB_NO_BITMAP
@@ -119,6 +122,17 @@
 
 #ifdef HB_NO_NAME
 #define HB_NO_OT_NAME_LANGUAGE
+#endif
+
+#ifdef HB_NO_OT
+#define HB_NO_OT_FONT
+#define HB_NO_OT_LAYOUT
+#define HB_NO_OT_TAG
+#define HB_NO_OT_SHAPE
+#endif
+
+#ifdef HB_NO_OT_SHAPE
+#define HB_NO_AAT_SHAPE
 #endif
 
 #ifdef HB_NO_OT_SHAPE_FALLBACK

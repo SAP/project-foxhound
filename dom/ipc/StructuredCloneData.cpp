@@ -114,8 +114,7 @@ void StructuredCloneData::Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                 ErrorResult& aRv) {
   MOZ_ASSERT(!mInitialized);
 
-  StructuredCloneHolder::Write(aCx, aValue, aTransfer,
-                               JS::CloneDataPolicy().denySharedArrayBuffer(),
+  StructuredCloneHolder::Write(aCx, aValue, aTransfer, JS::CloneDataPolicy(),
                                aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
@@ -175,7 +174,7 @@ bool BuildClonedMessageData(M* aManager, StructuredCloneData& aData,
       return false;
     }
 
-    InfallibleTArray<IPCStream>& streams = aClonedData.inputStreams();
+    nsTArray<IPCStream>& streams = aClonedData.inputStreams();
     uint32_t length = inputStreams.Length();
     streams.SetCapacity(length);
     for (uint32_t i = 0; i < length; ++i) {
@@ -262,8 +261,7 @@ template <MemoryFlavorEnum MemoryFlavor, ActorFlavorEnum Flavor>
 static void UnpackClonedMessageData(
     typename MemoryTraits<MemoryFlavor>::ClonedMessageType& aClonedData,
     StructuredCloneData& aData) {
-  const InfallibleTArray<MessagePortIdentifier>& identifiers =
-      aClonedData.identfiers();
+  const nsTArray<MessagePortIdentifier>& identifiers = aClonedData.identfiers();
 
   MemoryTraits<MemoryFlavor>::ProvideBuffer(aClonedData, aData);
 
@@ -283,7 +281,7 @@ static void UnpackClonedMessageData(
     }
   }
 
-  const InfallibleTArray<IPCStream>& streams = aClonedData.inputStreams();
+  const nsTArray<IPCStream>& streams = aClonedData.inputStreams();
   if (!streams.IsEmpty()) {
     uint32_t length = streams.Length();
     aData.InputStreams().SetCapacity(length);

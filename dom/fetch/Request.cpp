@@ -84,9 +84,9 @@ already_AddRefed<nsIURI> ParseURLFromDocument(Document* aDocument,
   MOZ_ASSERT(aDocument);
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsCOMPtr<nsIURI> baseURI = aDocument->GetBaseURI();
   nsCOMPtr<nsIURI> resolvedURI;
-  aRv = NS_NewURI(getter_AddRefs(resolvedURI), aInput, nullptr, baseURI);
+  aRv = NS_NewURI(getter_AddRefs(resolvedURI), aInput, nullptr,
+                  aDocument->GetBaseURI());
   if (NS_WARN_IF(aRv.Failed())) {
     aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
@@ -130,7 +130,7 @@ already_AddRefed<nsIURI> ParseURLFromChrome(const nsAString& aInput,
                                             ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
   nsCOMPtr<nsIURI> uri;
-  aRv = NS_NewURI(getter_AddRefs(uri), aInput, nullptr, nullptr);
+  aRv = NS_NewURI(getter_AddRefs(uri), aInput);
   if (aRv.Failed()) {
     aRv.ThrowTypeError<MSG_INVALID_URL>(aInput);
   }
@@ -428,8 +428,7 @@ already_AddRefed<Request> Request::Constructor(const GlobalObject& aGlobal,
     WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
     if (worker) {
       worker->AssertIsOnWorkerThread();
-      request->SetEnvironmentReferrerPolicy(
-          static_cast<net::ReferrerPolicy>(worker->GetReferrerPolicy()));
+      request->SetEnvironmentReferrerPolicy(worker->GetReferrerPolicy());
       principalInfo =
           MakeUnique<mozilla::ipc::PrincipalInfo>(worker->GetPrincipalInfo());
     }
@@ -542,7 +541,7 @@ already_AddRefed<Request> Request::Constructor(const GlobalObject& aGlobal,
     request->GetMethod(method);
     // method is guaranteed to be uppercase due to step 14.2 above.
     if (method.EqualsLiteral("HEAD") || method.EqualsLiteral("GET")) {
-      aRv.ThrowTypeError<MSG_NO_BODY_ALLOWED_FOR_GET_AND_HEAD>();
+      aRv.ThrowTypeError(u"HEAD or GET Request cannot have a body.");
       return nullptr;
     }
   }

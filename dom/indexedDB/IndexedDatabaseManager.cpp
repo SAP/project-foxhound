@@ -8,7 +8,6 @@
 
 #include "chrome/common/ipc_channel.h"  // for IPC::Channel::kMaximumMessageSize
 #include "nsIConsoleService.h"
-#include "nsIDOMWindow.h"
 #include "nsIScriptError.h"
 #include "nsIScriptGlobalObject.h"
 
@@ -123,6 +122,7 @@ const char kPrefMaxSerilizedMsgSize[] =
     IDB_PREF_BRANCH_ROOT "maxSerializedMsgSize";
 const char kPrefErrorEventToSelfError[] =
     IDB_PREF_BRANCH_ROOT "errorEventToSelfError";
+const char kPreprocessingPref[] = IDB_PREF_BRANCH_ROOT "preprocessing";
 
 #define IDB_PREF_LOGGING_BRANCH_ROOT IDB_PREF_BRANCH_ROOT "logging."
 
@@ -147,6 +147,7 @@ Atomic<bool> gFileHandleEnabled(false);
 Atomic<bool> gPrefErrorEventToSelfError(false);
 Atomic<int32_t> gDataThresholdBytes(0);
 Atomic<int32_t> gMaxSerializedMsgSize(0);
+Atomic<bool> gPreprocessingEnabled(false);
 
 void AtomicBoolPrefChangedCallback(const char* aPrefName,
                                    Atomic<bool>* aClosure) {
@@ -281,6 +282,10 @@ nsresult IndexedDatabaseManager::Init() {
   Preferences::RegisterCallbackAndCall(MaxSerializedMsgSizePrefChangeCallback,
                                        kPrefMaxSerilizedMsgSize);
 
+  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
+                                       kPreprocessingPref,
+                                       &gPreprocessingEnabled);
+
   nsAutoCString acceptLang;
   Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
 
@@ -335,6 +340,9 @@ void IndexedDatabaseManager::Destroy() {
 
   Preferences::UnregisterCallback(MaxSerializedMsgSizePrefChangeCallback,
                                   kPrefMaxSerilizedMsgSize);
+
+  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback,
+                                  kPreprocessingPref, &gPreprocessingEnabled);
 
   delete this;
 }
@@ -615,6 +623,15 @@ uint32_t IndexedDatabaseManager::MaxSerializedMsgSize() {
   MOZ_ASSERT(gMaxSerializedMsgSize > 0);
 
   return gMaxSerializedMsgSize;
+}
+
+// static
+bool IndexedDatabaseManager::PreprocessingEnabled() {
+  MOZ_ASSERT(gDBManager,
+             "PreprocessingEnabled() called before indexedDB has been "
+             "initialized!");
+
+  return gPreprocessingEnabled;
 }
 
 void IndexedDatabaseManager::ClearBackgroundActor() {

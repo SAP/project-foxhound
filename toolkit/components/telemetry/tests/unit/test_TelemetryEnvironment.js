@@ -9,6 +9,7 @@ ChromeUtils.import("resource://gre/modules/Preferences.jsm", this);
 ChromeUtils.import("resource://gre/modules/PromiseUtils.jsm", this);
 ChromeUtils.import("resource://gre/modules/Timer.jsm", this);
 ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm", this);
+ChromeUtils.import("resource://testing-common/ContentTaskUtils.jsm", this);
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
 ChromeUtils.import("resource://testing-common/MockRegistrar.jsm", this);
 const { FileUtils } = ChromeUtils.import(
@@ -169,11 +170,8 @@ var SysInfo = {
     if (name in this.overrides) {
       return this.overrides[name];
     }
-    try {
-      return this._genuine.getProperty(name);
-    } catch (ex) {
-      throw ex;
-    }
+
+    return this._genuine.getProperty(name);
   },
 
   getPropertyAsUint32(name) {
@@ -186,6 +184,14 @@ var SysInfo = {
 
   get diskInfo() {
     return this._genuine.QueryInterface(Ci.nsISystemInfo).diskInfo;
+  },
+
+  get osInfo() {
+    return this._genuine.QueryInterface(Ci.nsISystemInfo).osInfo;
+  },
+
+  get processInfo() {
+    return this._genuine.QueryInterface(Ci.nsISystemInfo).processInfo;
   },
 
   QueryInterface: ChromeUtils.generateQI(["nsIPropertyBag2", "nsISystemInfo"]),
@@ -489,6 +495,10 @@ function checkSettingsSection(data) {
     Assert.equal(typeof data.settings.defaultSearchEngineData, "object");
   }
 
+  if ("defaultPrivateSearchEngineData" in data.settings) {
+    Assert.equal(typeof data.settings.defaultPrivateSearchEngineData, "object");
+  }
+
   if (gIsWindows && AppConstants.MOZ_BUILD_APP == "browser") {
     Assert.equal(typeof data.settings.attribution, "object");
     Assert.equal(data.settings.attribution.source, "google.com");
@@ -593,7 +603,7 @@ function checkGfxAdapter(data) {
   }
 }
 
-function checkSystemSection(data) {
+function checkSystemSection(data, assertProcessData) {
   const EXPECTED_FIELDS = [
     "memoryMB",
     "cpu",
@@ -634,16 +644,18 @@ function checkSystemSection(data) {
     }
 
     if (gIsWindows) {
-      Assert.equal(
-        typeof data.system.isWow64,
-        "boolean",
-        "isWow64 must be available on Windows and have the correct type."
-      );
-      Assert.equal(
-        typeof data.system.isWowARM64,
-        "boolean",
-        "isWowARM64 must be available on Windows and have the correct type."
-      );
+      if (assertProcessData) {
+        Assert.equal(
+          typeof data.system.isWow64,
+          "boolean",
+          "isWow64 must be available on Windows and have the correct type."
+        );
+        Assert.equal(
+          typeof data.system.isWowARM64,
+          "boolean",
+          "isWowARM64 must be available on Windows and have the correct type."
+        );
+      }
       Assert.ok(
         "virtualMaxMB" in data.system,
         "virtualMaxMB must be available."
@@ -742,7 +754,7 @@ function checkSystemSection(data) {
 
   Assert.ok("adapters" in gfxData);
   Assert.ok(
-    gfxData.adapters.length > 0,
+    !!gfxData.adapters.length,
     "There must be at least one GFX adapter."
   );
   for (let adapter of gfxData.adapters) {
@@ -985,7 +997,7 @@ function checkAddonsSection(data, expectBrokenAddons, partialAddonsRecords) {
 function checkExperimentsSection(data) {
   // We don't expect the experiments section to be always available.
   let experiments = data.experiments || {};
-  if (Object.keys(experiments).length == 0) {
+  if (!Object.keys(experiments).length) {
     return;
   }
 
@@ -1009,13 +1021,17 @@ function checkExperimentsSection(data) {
 }
 
 function checkEnvironmentData(data, options = {}) {
-  const { isInitial = false, expectBrokenAddons = false } = options;
+  const {
+    isInitial = false,
+    expectBrokenAddons = false,
+    assertProcessData = false,
+  } = options;
 
   checkBuildSection(data);
   checkSettingsSection(data);
   checkProfileSection(data);
   checkPartnerSection(data, isInitial);
-  checkSystemSection(data);
+  checkSystemSection(data, assertProcessData);
   checkAddonsSection(data, expectBrokenAddons);
 }
 
@@ -1107,7 +1123,7 @@ add_task(async function test_checkEnvironment() {
   Services.obs.notifyObservers(null, DISTRIBUTION_CUSTOMIZATION_COMPLETE_TOPIC);
 
   environmentData = TelemetryEnvironment.currentEnvironment;
-  checkEnvironmentData(environmentData);
+  checkEnvironmentData(environmentData, { assertProcessData: true });
 });
 
 add_task(async function test_prefWatchPolicies() {
@@ -1383,29 +1399,26 @@ add_task(async function test_pluginsWatch_Add() {
   );
   gInstalledPlugins.push(newPlugin);
 
-  let deferred = PromiseUtils.defer();
   let receivedNotifications = 0;
   let callback = (reason, data) => {
     receivedNotifications++;
-    Assert.equal(reason, "addons-changed");
-    deferred.resolve();
   };
   TelemetryEnvironment.registerChangeListener("testWatchPlugins_Add", callback);
 
   Services.obs.notifyObservers(null, PLUGIN_UPDATED_TOPIC);
-  await deferred.promise;
 
-  Assert.equal(
-    TelemetryEnvironment.currentEnvironment.addons.activePlugins.length,
-    2
-  );
+  await ContentTaskUtils.waitForCondition(() => {
+    return (
+      TelemetryEnvironment.currentEnvironment.addons.activePlugins.length == 2
+    );
+  });
 
   TelemetryEnvironment.unregisterChangeListener("testWatchPlugins_Add");
 
   Assert.equal(
     receivedNotifications,
-    1,
-    "We must only receive one notification."
+    0,
+    "We must not receive any notifications."
   );
 });
 
@@ -1415,6 +1428,11 @@ add_task(async function test_pluginsWatch_Remove() {
     return;
   }
 
+  Assert.equal(
+    TelemetryEnvironment.currentEnvironment.addons.activePlugins.length,
+    2
+  );
+
   // Find the test plugin.
   let plugin = gInstalledPlugins.find(p => p.name == PLUGIN2_NAME);
   Assert.ok(plugin, "The test plugin must exist.");
@@ -1422,11 +1440,9 @@ add_task(async function test_pluginsWatch_Remove() {
   // Remove it from the PluginHost.
   gInstalledPlugins = gInstalledPlugins.filter(p => p != plugin);
 
-  let deferred = PromiseUtils.defer();
   let receivedNotifications = 0;
   let callback = () => {
     receivedNotifications++;
-    deferred.resolve();
   };
   TelemetryEnvironment.registerChangeListener(
     "testWatchPlugins_Remove",
@@ -1434,14 +1450,19 @@ add_task(async function test_pluginsWatch_Remove() {
   );
 
   Services.obs.notifyObservers(null, PLUGIN_UPDATED_TOPIC);
-  await deferred.promise;
+
+  await ContentTaskUtils.waitForCondition(() => {
+    return (
+      TelemetryEnvironment.currentEnvironment.addons.activePlugins.length == 1
+    );
+  });
 
   TelemetryEnvironment.unregisterChangeListener("testWatchPlugins_Remove");
 
   Assert.equal(
     receivedNotifications,
-    1,
-    "We must only receive one notification."
+    0,
+    "We must not receive any notifications."
   );
 });
 
@@ -1858,7 +1879,7 @@ add_task(async function test_collectionWithbrokenAddonData() {
   await addon.uninstall();
 });
 
-add_task(async function test_defaultSearchEngine() {
+async function checkDefaultSearch(privateOn, reInitSearchService) {
   // Check that no default engine is in the environment before the search service is
   // initialized.
   let searchExtensions = do_get_cwd();
@@ -1872,15 +1893,27 @@ add_task(async function test_defaultSearchEngine() {
     Services.io.newURI("file://" + searchExtensions.path)
   );
 
+  // Start off with separate default engine for private browsing turned off.
+  Preferences.set(
+    "browser.search.separatePrivateDefault.ui.enabled",
+    privateOn
+  );
+  Preferences.set("browser.search.separatePrivateDefault", privateOn);
+
   let data = await TelemetryEnvironment.testCleanRestart().onInitialized();
   checkEnvironmentData(data);
   Assert.ok(!("defaultSearchEngine" in data.settings));
   Assert.ok(!("defaultSearchEngineData" in data.settings));
+  Assert.ok(!("defaultPrivateSearchEngine" in data.settings));
+  Assert.ok(!("defaultPrivateSearchEngineData" in data.settings));
 
   // Load the engines definitions from a xpcshell data: that's needed so that
   // the search provider reports an engine identifier.
 
   // Initialize the search service.
+  if (reInitSearchService) {
+    Services.search.reset();
+  }
   await Services.search.init();
   await promiseNextTick();
 
@@ -1901,6 +1934,26 @@ add_task(async function test_defaultSearchEngine() {
     data.settings.defaultSearchEngineData,
     expectedSearchEngineData
   );
+  if (privateOn) {
+    Assert.equal(
+      data.settings.defaultPrivateSearchEngine,
+      "telemetrySearchIdentifier"
+    );
+    Assert.deepEqual(
+      data.settings.defaultPrivateSearchEngineData,
+      expectedSearchEngineData,
+      "Should have the correct data for the private search engine"
+    );
+  } else {
+    Assert.ok(
+      !("defaultPrivateSearchEngine" in data.settings),
+      "Should not have private name recorded as the pref for separate is off"
+    );
+    Assert.ok(
+      !("defaultPrivateSearchEngineData" in data.settings),
+      "Should not have private data recorded as the pref for separate is off"
+    );
+  }
 
   // Remove all the search engines.
   for (let engine of await Services.search.getEngines()) {
@@ -1914,6 +1967,13 @@ add_task(async function test_defaultSearchEngine() {
     "browser-search-engine-modified",
     "engine-default"
   );
+  if (privateOn) {
+    Services.obs.notifyObservers(
+      null,
+      "browser-search-engine-modified",
+      "engine-default-private"
+    );
+  }
   await promiseNextTick();
 
   // Then check that no default engine is reported if none is available.
@@ -1921,10 +1981,17 @@ add_task(async function test_defaultSearchEngine() {
   checkEnvironmentData(data);
   Assert.equal(data.settings.defaultSearchEngine, "NONE");
   Assert.deepEqual(data.settings.defaultSearchEngineData, { name: "NONE" });
-
+  if (privateOn) {
+    Assert.equal(data.settings.defaultPrivateSearchEngine, "NONE");
+    Assert.deepEqual(data.settings.defaultPrivateSearchEngineData, {
+      name: "NONE",
+    });
+  }
   // Add a new search engine (this will have no engine identifier).
   const SEARCH_ENGINE_ID = "telemetry_default";
-  const SEARCH_ENGINE_URL = "http://www.example.org/?search={searchTerms}";
+  const SEARCH_ENGINE_URL = `http://www.example.org/${
+    privateOn ? "private" : ""
+  }?search={searchTerms}`;
   await Services.search.addEngineWithDetails(SEARCH_ENGINE_ID, {
     method: "get",
     template: SEARCH_ENGINE_URL,
@@ -1936,27 +2003,63 @@ add_task(async function test_defaultSearchEngine() {
     "testWatch_SearchDefault",
     deferred.resolve
   );
-  await Services.search.setDefault(
-    Services.search.getEngineByName(SEARCH_ENGINE_ID)
-  );
+  if (privateOn) {
+    // As we had no default and no search engines, the normal mode engine will
+    // assume the same as the added engine. To ensure the telemetry is different
+    // we enforce a different default here.
+    const engine = await Services.search.getEngineByName(
+      "telemetrySearchIdentifier"
+    );
+    engine.hidden = false;
+    await Services.search.setDefault(engine);
+    await Services.search.setDefaultPrivate(
+      Services.search.getEngineByName(SEARCH_ENGINE_ID)
+    );
+  } else {
+    await Services.search.setDefault(
+      Services.search.getEngineByName(SEARCH_ENGINE_ID)
+    );
+  }
   await deferred.promise;
 
   data = TelemetryEnvironment.currentEnvironment;
   checkEnvironmentData(data);
 
   const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
-  Assert.equal(data.settings.defaultSearchEngine, EXPECTED_SEARCH_ENGINE);
-
   const EXPECTED_SEARCH_ENGINE_DATA = {
     name: "telemetry_default",
     loadPath: "[other]addEngineWithDetails",
     origin: "verified",
   };
-  Assert.deepEqual(
-    data.settings.defaultSearchEngineData,
-    EXPECTED_SEARCH_ENGINE_DATA
-  );
+  if (privateOn) {
+    Assert.equal(
+      data.settings.defaultSearchEngine,
+      "telemetrySearchIdentifier"
+    );
+    Assert.deepEqual(
+      data.settings.defaultSearchEngineData,
+      expectedSearchEngineData
+    );
+    Assert.equal(
+      data.settings.defaultPrivateSearchEngine,
+      EXPECTED_SEARCH_ENGINE
+    );
+    Assert.deepEqual(
+      data.settings.defaultPrivateSearchEngineData,
+      EXPECTED_SEARCH_ENGINE_DATA
+    );
+  } else {
+    Assert.equal(data.settings.defaultSearchEngine, EXPECTED_SEARCH_ENGINE);
+    Assert.deepEqual(
+      data.settings.defaultSearchEngineData,
+      EXPECTED_SEARCH_ENGINE_DATA
+    );
+  }
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
+}
+
+add_task(async function test_defaultSearchEngine() {
+  await checkDefaultSearch(false);
 
   // Cleanly install an engine from an xml file, and check if origin is
   // recorded as "verified".
@@ -1993,7 +2096,7 @@ add_task(async function test_defaultSearchEngine() {
   await Services.search.setDefault(engine);
   await promise;
   TelemetryEnvironment.unregisterChangeListener("testWatch_SearchDefault");
-  data = TelemetryEnvironment.currentEnvironment;
+  let data = TelemetryEnvironment.currentEnvironment;
   checkEnvironmentData(data);
   Assert.deepEqual(data.settings.defaultSearchEngineData, {
     name: "engine-telemetry",
@@ -2029,7 +2132,7 @@ add_task(async function test_defaultSearchEngine() {
 
   // Watch the test preference.
   await TelemetryEnvironment.testWatchPreferences(PREFS_TO_WATCH);
-  deferred = PromiseUtils.defer();
+  let deferred = PromiseUtils.defer();
   TelemetryEnvironment.registerChangeListener(
     "testSearchEngine_pref",
     deferred.resolve
@@ -2042,6 +2145,8 @@ add_task(async function test_defaultSearchEngine() {
   // Check that the search engine information is correctly retained when prefs change.
   data = TelemetryEnvironment.currentEnvironment;
   checkEnvironmentData(data);
+  const SEARCH_ENGINE_ID = "telemetry_default";
+  const EXPECTED_SEARCH_ENGINE = "other-" + SEARCH_ENGINE_ID;
   Assert.equal(data.settings.defaultSearchEngine, EXPECTED_SEARCH_ENGINE);
 
   // Check that by default we are not sending a cohort identifier...
@@ -2075,6 +2180,10 @@ add_task(async function test_defaultSearchEngine() {
   // ... the setting and experiment are updated.
   Assert.equal(data.settings.searchCohort, "testcohort2");
   Assert.equal(data.experiments.searchCohort.branch, "testcohort2");
+});
+
+add_task(async function test_defaultPrivateSearchEngine() {
+  await checkDefaultSearch(true, true);
 });
 
 add_task(
@@ -2394,7 +2503,101 @@ if (gIsWindows) {
       checkString(data.system.hdd[k].type);
     }
   });
+
+  add_task(async function test_environmentProcessInfo() {
+    await TelemetryEnvironment.testCleanRestart().onInitialized();
+    let data = TelemetryEnvironment.currentEnvironment;
+    Assert.deepEqual(data.system.isWow64, null, "Should have no data yet.");
+    await TelemetryEnvironment.delayedInit();
+    data = TelemetryEnvironment.currentEnvironment;
+    Assert.equal(
+      typeof data.system.isWow64,
+      "boolean",
+      "isWow64 must be a boolean."
+    );
+    Assert.equal(
+      typeof data.system.isWowARM64,
+      "boolean",
+      "isWowARM64 must be a boolean."
+    );
+  });
+
+  add_task(async function test_environmentOSInfo() {
+    await TelemetryEnvironment.testCleanRestart().onInitialized();
+    let data = TelemetryEnvironment.currentEnvironment;
+    Assert.deepEqual(
+      data.system.os.installYear,
+      null,
+      "Should have no data yet."
+    );
+    await TelemetryEnvironment.delayedInit();
+    data = TelemetryEnvironment.currentEnvironment;
+    Assert.ok(
+      Number.isFinite(data.system.os.installYear),
+      "Install year must be a number."
+    );
+  });
 }
+
+add_task(
+  { skip_if: () => AppConstants.MOZ_APP_NAME == "thunderbird" },
+  async function test_environmentServicesInfo() {
+    let cache = TelemetryEnvironment.testCleanRestart();
+    await cache.onInitialized();
+    let oldGetFxaSignedInUser = cache._getFxaSignedInUser;
+    try {
+      // Test the 'yes to both' case.
+
+      // This makes the weave service return that the usere is definitely a sync user
+      Preferences.set("services.sync.username", "c00lperson123@example.com");
+      let calledFxa = false;
+      cache._getFxaSignedInUser = () => {
+        calledFxa = true;
+        return null;
+      };
+
+      await cache._updateServicesInfo();
+      ok(
+        !calledFxa,
+        "Shouldn't need to ask FxA if they're definitely signed in"
+      );
+      deepEqual(cache.currentEnvironment.services, {
+        accountEnabled: true,
+        syncEnabled: true,
+      });
+
+      // Test the fxa-but-not-sync case.
+      Preferences.reset("services.sync.username");
+      // We don't actually inspect the returned object, just t
+      cache._getFxaSignedInUser = async () => {
+        return {};
+      };
+      await cache._updateServicesInfo();
+      deepEqual(cache.currentEnvironment.services, {
+        accountEnabled: true,
+        syncEnabled: false,
+      });
+      // Test the "no to both" case.
+      cache._getFxaSignedInUser = async () => {
+        return null;
+      };
+      await cache._updateServicesInfo();
+      deepEqual(cache.currentEnvironment.services, {
+        accountEnabled: false,
+        syncEnabled: false,
+      });
+      // And finally, the 'fxa is in an error state' case.
+      cache._getFxaSignedInUser = () => {
+        throw new Error("You'll never know");
+      };
+      await cache._updateServicesInfo();
+      equal(cache.currentEnvironment.services, null);
+    } finally {
+      cache._getFxaSignedInUser = oldGetFxaSignedInUser;
+      Preferences.reset("services.sync.username");
+    }
+  }
+);
 
 add_task(async function test_environmentShutdown() {
   // Define and reset the test preference.

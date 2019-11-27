@@ -66,13 +66,8 @@ add_task(async function switchToTab() {
   let element = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1);
   is(
     await getResultText(element),
-    UrlbarPrefs.get("quantumbar")
-      ? // The extra spaces are here due to bug 1550644.
-        "about : about— Switch to Tab"
-      : "about:about about:about Tab",
-    UrlbarPrefs.get("quantumbar")
-      ? "Result a11y label should be: <title>— Switch to Tab"
-      : "Result a11y label should be: <title> <url> Tab"
+    "about : about— Switch to Tab",
+    "Result a11y label should be: <title>— Switch to Tab"
   );
 
   await UrlbarTestUtils.promisePopupClose(window);
@@ -105,11 +100,12 @@ add_task(async function searchSuggestions() {
   );
   // The first expected search is the search term itself since the heuristic
   // result will come before the search suggestions.
+  let searchTerm = "foo";
   let expectedSearches = [
-    "foo",
-    "foofoo",
-    // The extra spaces is here due to bug 1550644.
-    UrlbarPrefs.get("quantumbar") ? "foo bar " : "foobar",
+    searchTerm,
+    // The extra space is here due to bug 1550644.
+    "foofoo ",
+    "foo bar",
   ];
   for (let i = 0; i < length; i++) {
     let result = await UrlbarTestUtils.getDetailsOfResultAt(window, i);
@@ -119,7 +115,7 @@ add_task(async function searchSuggestions() {
         0,
         "Should still have expected searches remaining"
       );
-      let suggestion = expectedSearches.shift();
+
       let element = await UrlbarTestUtils.waitForAutocompleteResultAt(
         window,
         i
@@ -129,21 +125,25 @@ add_task(async function searchSuggestions() {
         // Simulate the result being selected so we see the expanded text.
         element.toggleAttribute("selected", true);
       }
-      Assert.equal(
-        await getResultText(element),
-        UrlbarPrefs.get("quantumbar")
-          ? suggestion +
-              "— Search with browser_searchSuggestionEngine searchSuggestionEngine.xml"
-          : suggestion +
-              " browser_searchSuggestionEngine searchSuggestionEngine.xml Search",
-        UrlbarPrefs.get("quantumbar")
-          ? "Result label should be: <search term>— Search with <engine name>"
-          : "Result label should be: <search term> <engine name> Search"
-      );
+      if (result.searchParams.inPrivateWindow) {
+        Assert.equal(
+          await getResultText(element),
+          searchTerm + "— Search in a Private Window",
+          "Check result label"
+        );
+      } else {
+        let suggestion = expectedSearches.shift();
+        Assert.equal(
+          await getResultText(element),
+          suggestion +
+            "— Search with browser_searchSuggestionEngine searchSuggestionEngine.xml",
+          "Check result label"
+        );
+      }
       if (!selected) {
         element.toggleAttribute("selected", false);
       }
     }
   }
-  Assert.ok(expectedSearches.length == 0);
+  Assert.ok(!expectedSearches.length);
 });

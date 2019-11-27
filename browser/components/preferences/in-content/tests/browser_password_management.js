@@ -9,6 +9,7 @@ var passwordsDialog;
 
 add_task(async function test_setup() {
   Services.logins.removeAllLogins();
+  Services.prefs.setCharPref(PREF_MANAGEMENT_URI, "");
 
   // add login data
   let nsLoginInfo = new Components.Constructor(
@@ -107,10 +108,7 @@ add_task(async function test_openPasswordManagement_overrideURI() {
   );
   await openPreferencesViaOpenPreferencesAPI("privacy", { leaveOpen: true });
 
-  let tabOpenPromise = BrowserTestUtils.waitForNewTab(
-    gBrowser,
-    "about:logins?filter="
-  );
+  let tabOpenPromise = BrowserTestUtils.waitForNewTab(gBrowser, "about:logins");
 
   await ContentTask.spawn(gBrowser.selectedBrowser, null, function() {
     let doc = content.document;

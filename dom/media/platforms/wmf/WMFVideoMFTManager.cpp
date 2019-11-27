@@ -26,7 +26,7 @@
 #include "mozilla/AbstractThread.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
@@ -139,6 +139,7 @@ WMFVideoMFTManager::WMFVideoMFTManager(
       mColorSpace(aConfig.mColorSpace != gfx::YUVColorSpace::UNKNOWN
                       ? Some(aConfig.mColorSpace)
                       : Nothing()),
+      mColorRange(aConfig.mColorRange),
       mImageContainer(aImageContainer),
       mKnowsCompositor(aKnowsCompositor),
       mDXVAEnabled(aDXVAEnabled &&
@@ -176,28 +177,6 @@ WMFVideoMFTManager::~WMFVideoMFTManager() {
   if (mDXVA2Manager) {
     DeleteOnMainThread(mDXVA2Manager);
   }
-
-  // Record whether the video decoder successfully decoded, or output null
-  // samples but did/didn't recover.
-  uint32_t telemetry =
-      (mNullOutputCount == 0)
-          ? 0
-          : (mGotValidOutputAfterNullOutput && mGotExcessiveNullOutput)
-                ? 1
-                : mGotExcessiveNullOutput
-                      ? 2
-                      : mGotValidOutputAfterNullOutput ? 3 : 4;
-
-  nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction(
-      "WMFVideoMFTManager::~WMFVideoMFTManager", [=]() -> void {
-        LOG(nsPrintfCString(
-                "Reporting telemetry VIDEO_MFT_OUTPUT_NULL_SAMPLES=%d",
-                telemetry)
-                .get());
-        Telemetry::Accumulate(
-            Telemetry::HistogramID::VIDEO_MFT_OUTPUT_NULL_SAMPLES, telemetry);
-      });
-  SystemGroup::Dispatch(TaskCategory::Other, task.forget());
 }
 
 const GUID& WMFVideoMFTManager::GetMFTGUID() {
@@ -588,7 +567,7 @@ MediaResult WMFVideoMFTManager::InitInternal() {
                     WMFDecoderModule::GetNumDecoderThreads());
     bool lowLatency =
         (StaticPrefs::media_wmf_low_latency_enabled() || IsWin10OrLater()) &&
-        !StaticPrefs::media_mwf_low_latency_force_disabled();
+        !StaticPrefs::media_wmf_low_latency_force_disabled();
     if (mLowLatency || lowLatency) {
       hr = attr->SetUINT32(CODECAPI_AVLowLatencyMode, TRUE);
       if (SUCCEEDED(hr)) {
@@ -661,8 +640,11 @@ MediaResult WMFVideoMFTManager::InitInternal() {
 
   if (mUseHwAccel) {
     hr = mDXVA2Manager->ConfigureForSize(
-        outputType, mColorSpace.refOr(gfx::YUVColorSpace::BT601),
-        mVideoInfo.ImageRect().width, mVideoInfo.ImageRect().height);
+        outputType,
+        mColorSpace.refOr(
+            DefaultColorSpace({mImageSize.width, mImageSize.height})),
+        mColorRange, mVideoInfo.ImageRect().width,
+        mVideoInfo.ImageRect().height);
     NS_ENSURE_TRUE(SUCCEEDED(hr),
                    MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                                RESULT_DETAIL("Fail to configure image size for "
@@ -753,7 +735,8 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
   RefPtr<IMFSample> inputSample;
   HRESULT hr = mDecoder->CreateInputSample(
       aSample->Data(), uint32_t(aSample->Size()),
-      aSample->mTime.ToMicroseconds(), &inputSample);
+      aSample->mTime.ToMicroseconds(), aSample->mDuration.ToMicroseconds(),
+      &inputSample);
   NS_ENSURE_TRUE(SUCCEEDED(hr) && inputSample != nullptr, hr);
 
   if (!mColorSpace && aSample->mTrackInfo) {
@@ -761,6 +744,7 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
     // band, while for VP9 it's only available within the VP9 bytestream.
     // The info would have been updated by the MediaChangeMonitor.
     mColorSpace = Some(aSample->mTrackInfo->GetAsVideoInfo()->mColorSpace);
+    mColorRange = aSample->mTrackInfo->GetAsVideoInfo()->mColorRange;
   }
   mLastDuration = aSample->mDuration;
 
@@ -929,8 +913,10 @@ WMFVideoMFTManager::CreateBasicVideoFrame(IMFSample* aSample,
   }
 
   // YuvColorSpace
-  b.mYUVColorSpace = *mColorSpace;
+  b.mYUVColorSpace =
+      mColorSpace.refOr(DefaultColorSpace({videoWidth, videoHeight}));
   b.mColorDepth = colorDepth;
+  b.mColorRange = mColorRange;
 
   TimeUnit pts = GetSampleTime(aSample);
   NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
@@ -1042,8 +1028,11 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
 
       if (mUseHwAccel) {
         hr = mDXVA2Manager->ConfigureForSize(
-            outputType, mColorSpace.refOr(gfx::YUVColorSpace::BT601),
-            mVideoInfo.ImageRect().width, mVideoInfo.ImageRect().height);
+            outputType,
+            mColorSpace.refOr(
+                DefaultColorSpace({mImageSize.width, mImageSize.height})),
+            mColorRange, mVideoInfo.ImageRect().width,
+            mVideoInfo.ImageRect().height);
         NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
       } else {
         // The stride may have changed, recheck for it.

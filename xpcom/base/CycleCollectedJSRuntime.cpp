@@ -152,7 +152,7 @@ struct NoteWeakMapChildrenTracer : public JS::CallbackTracer {
         mKeyDelegate(nullptr) {
     setCanSkipJsids(true);
   }
-  void onChild(const JS::GCCellPtr& aThing) override;
+  bool onChild(const JS::GCCellPtr& aThing) override;
   nsCycleCollectionNoteRootCallback& mCb;
   bool mTracedAny;
   JSObject* mMap;
@@ -160,13 +160,13 @@ struct NoteWeakMapChildrenTracer : public JS::CallbackTracer {
   JSObject* mKeyDelegate;
 };
 
-void NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
+bool NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
   if (aThing.is<JSString>()) {
-    return;
+    return true;
   }
 
   if (!JS::GCThingIsMarkedGray(aThing) && !mCb.WantAllTraces()) {
-    return;
+    return true;
   }
 
   if (JS::IsCCTraceKind(aThing.kind())) {
@@ -175,6 +175,7 @@ void NoteWeakMapChildrenTracer::onChild(const JS::GCCellPtr& aThing) {
   } else {
     JS::TraceChildren(this, aThing);
   }
+  return true;
 }
 
 struct NoteWeakMapsTracer : public js::WeakMapTracer {
@@ -388,20 +389,20 @@ struct TraversalTracer : public JS::CallbackTracer {
       : JS::CallbackTracer(aRt, DoNotTraceWeakMaps), mCb(aCb) {
     setCanSkipJsids(true);
   }
-  void onChild(const JS::GCCellPtr& aThing) override;
+  bool onChild(const JS::GCCellPtr& aThing) override;
   nsCycleCollectionTraversalCallback& mCb;
 };
 
-void TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
+bool TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   // Checking strings and symbols for being gray is rather slow, and we don't
   // need either of them for the cycle collector.
   if (aThing.is<JSString>() || aThing.is<JS::Symbol>()) {
-    return;
+    return true;
   }
 
   // Don't traverse non-gray objects, unless we want all traces.
   if (!JS::GCThingIsMarkedGray(aThing) && !mCb.WantAllTraces()) {
-    return;
+    return true;
   }
 
   /*
@@ -430,6 +431,7 @@ void TraversalTracer::onChild(const JS::GCCellPtr& aThing) {
   } else {
     JS::TraceChildren(this, aThing);
   }
+  return true;
 }
 
 static void NoteJSChildGrayWrapperShim(void* aData, JS::GCCellPtr aThing) {
@@ -533,12 +535,35 @@ CycleCollectedJSRuntime::CycleCollectedJSRuntime(JSContext* aCx)
 #endif  // MOZ_JS_DEV_ERROR_INTERCEPTOR
 }
 
+#ifdef NS_BUILD_REFCNT_LOGGING
+class JSLeakTracer : public JS::CallbackTracer {
+ public:
+  explicit JSLeakTracer(JSRuntime* aRuntime)
+      : JS::CallbackTracer(aRuntime, TraceWeakMapKeysValues) {}
+
+ private:
+  bool onChild(const JS::GCCellPtr& thing) override {
+    const char* kindName = JS::GCTraceKindToAscii(thing.kind());
+    size_t size = JS::GCTraceKindSize(thing.kind());
+    MOZ_LOG_CTOR(thing.asCell(), kindName, size);
+    return true;
+  }
+};
+#endif
+
 void CycleCollectedJSRuntime::Shutdown(JSContext* cx) {
 #ifdef MOZ_JS_DEV_ERROR_INTERCEPTOR
   mErrorInterceptor.Shutdown(mJSRuntime);
 #endif  // MOZ_JS_DEV_ERROR_INTERCEPTOR
-  JS_RemoveExtraGCRootsTracer(cx, TraceBlackJS, this);
-  JS_RemoveExtraGCRootsTracer(cx, TraceGrayJS, this);
+
+  // There should not be any roots left to trace at this point. Ensure any that
+  // remain are flagged as leaks.
+#ifdef NS_BUILD_REFCNT_LOGGING
+  JSLeakTracer tracer(Runtime());
+  TraceNativeBlackRoots(&tracer);
+  TraceNativeGrayRoots(&tracer);
+#endif
+
 #ifdef DEBUG
   mShutdownCalled = true;
 #endif
@@ -595,7 +620,7 @@ void CycleCollectedJSRuntime::DescribeGCThing(
   if (aThing.is<JSObject>()) {
     JSObject* obj = &aThing.as<JSObject>();
     compartmentAddress = (uint64_t)js::GetObjectCompartment(obj);
-    const js::Class* clasp = js::GetObjectClass(obj);
+    const JSClass* clasp = js::GetObjectClass(obj);
 
     // Give the subclass a chance to do something
     if (DescribeCustomObjects(obj, clasp, name)) {
@@ -604,9 +629,9 @@ void CycleCollectedJSRuntime::DescribeGCThing(
       JSFunction* fun = JS_GetObjectFunction(obj);
       JSString* str = JS_GetFunctionDisplayId(fun);
       if (str) {
-        JSFlatString* flat = JS_ASSERT_STRING_IS_FLAT(str);
+        JSLinearString* linear = JS_ASSERT_STRING_IS_LINEAR(str);
         nsAutoString chars;
-        AssignJSFlatString(chars, flat);
+        AssignJSLinearString(chars, linear);
         NS_ConvertUTF16toUTF8 fname(chars);
         SprintfLiteral(name, "JS Object (Function - %s)", fname.get());
       } else {
@@ -616,7 +641,7 @@ void CycleCollectedJSRuntime::DescribeGCThing(
       SprintfLiteral(name, "JS Object (%s)", clasp->name);
     }
   } else {
-    SprintfLiteral(name, "JS %s", JS::GCTraceKindToAscii(aThing.kind()));
+    SprintfLiteral(name, "%s", JS::GCTraceKindToAscii(aThing.kind()));
   }
 
   // Disable printing global for objects while we figure out ObjShrink fallout.
@@ -630,12 +655,14 @@ void CycleCollectedJSRuntime::NoteGCThingJSChildren(
 }
 
 void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
-    const js::Class* aClasp, JSObject* aObj,
+    const JSClass* aClasp, JSObject* aObj,
     nsCycleCollectionTraversalCallback& aCb) const {
   MOZ_ASSERT(aClasp);
   MOZ_ASSERT(aClasp == js::GetObjectClass(aObj));
 
-  if (NoteCustomGCThingXPCOMChildren(aClasp, aObj, aCb)) {
+  JS::Rooted<JSObject*> obj(RootingCx(), aObj);
+
+  if (NoteCustomGCThingXPCOMChildren(aClasp, obj, aCb)) {
     // Nothing else to do!
     return;
   }
@@ -645,7 +672,7 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
   if (aClasp->flags & JSCLASS_HAS_PRIVATE &&
       aClasp->flags & JSCLASS_PRIVATE_IS_NSISUPPORTS) {
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "js::GetObjectPrivate(obj)");
-    aCb.NoteXPCOMChild(static_cast<nsISupports*>(js::GetObjectPrivate(aObj)));
+    aCb.NoteXPCOMChild(static_cast<nsISupports*>(js::GetObjectPrivate(obj)));
     return;
   }
 
@@ -658,21 +685,21 @@ void CycleCollectedJSRuntime::NoteGCThingXPCOMChildren(
     // that case, since NoteXPCOMChild/NoteNativeChild are null-safe.
     if (domClass->mDOMObjectIsISupports) {
       aCb.NoteXPCOMChild(
-          UnwrapPossiblyNotInitializedDOMObject<nsISupports>(aObj));
+          UnwrapPossiblyNotInitializedDOMObject<nsISupports>(obj));
     } else if (domClass->mParticipant) {
-      aCb.NoteNativeChild(UnwrapPossiblyNotInitializedDOMObject<void>(aObj),
+      aCb.NoteNativeChild(UnwrapPossiblyNotInitializedDOMObject<void>(obj),
                           domClass->mParticipant);
     }
     return;
   }
 
-  if (IsRemoteObjectProxy(aObj)) {
+  if (IsRemoteObjectProxy(obj)) {
     auto handler =
-        static_cast<const RemoteObjectProxyBase*>(js::GetProxyHandler(aObj));
-    return handler->NoteChildren(aObj, aCb);
+        static_cast<const RemoteObjectProxyBase*>(js::GetProxyHandler(obj));
+    return handler->NoteChildren(obj, aCb);
   }
 
-  JS::Value value = js::MaybeGetScriptPrivate(aObj);
+  JS::Value value = js::MaybeGetScriptPrivate(obj);
   if (!value.isUndefined()) {
     aCb.NoteXPCOMChild(static_cast<nsISupports*>(value.toPrivate()));
   }
@@ -816,17 +843,15 @@ void CycleCollectedJSRuntime::GCSliceCallback(JSContext* aContext,
 #ifdef MOZ_GECKO_PROFILER
   if (profiler_thread_is_being_profiled()) {
     if (aProgress == JS::GC_CYCLE_END) {
-      profiler_add_marker(
-          "GCMajor", JS::ProfilingCategoryPair::GCCC,
-          MakeUnique<GCMajorMarkerPayload>(aDesc.startTime(aContext),
-                                           aDesc.endTime(aContext),
-                                           aDesc.formatJSONProfiler(aContext)));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "GCMajor", GCCC, GCMajorMarkerPayload,
+          (aDesc.startTime(aContext), aDesc.endTime(aContext),
+           aDesc.formatJSONProfiler(aContext)));
     } else if (aProgress == JS::GC_SLICE_END) {
-      profiler_add_marker(
-          "GCSlice", JS::ProfilingCategoryPair::GCCC,
-          MakeUnique<GCSliceMarkerPayload>(
-              aDesc.lastSliceStart(aContext), aDesc.lastSliceEnd(aContext),
-              aDesc.sliceToJSONProfiler(aContext)));
+      PROFILER_ADD_MARKER_WITH_PAYLOAD(
+          "GCSlice", GCCC, GCSliceMarkerPayload,
+          (aDesc.lastSliceStart(aContext), aDesc.lastSliceEnd(aContext),
+           aDesc.sliceToJSONProfiler(aContext)));
     }
   }
 #endif
@@ -905,10 +930,10 @@ void CycleCollectedJSRuntime::GCNurseryCollectionCallback(
 #ifdef MOZ_GECKO_PROFILER
   else if (aProgress == JS::GCNurseryProgress::GC_NURSERY_COLLECTION_END &&
            profiler_thread_is_being_profiled()) {
-    profiler_add_marker("GCMinor", JS::ProfilingCategoryPair::GCCC,
-                        MakeUnique<GCMinorMarkerPayload>(
-                            self->mLatestNurseryCollectionStart,
-                            TimeStamp::Now(), JS::MinorGcToJSON(aContext)));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD(
+        "GCMinor", GCCC, GCMinorMarkerPayload,
+        (self->mLatestNurseryCollectionStart, TimeStamp::Now(),
+         JS::MinorGcToJSON(aContext)));
   }
 #endif
 
@@ -960,10 +985,9 @@ struct JsGcTracer : public TraceCallbacks {
                      void* aClosure) const override {
     JS::TraceEdge(static_cast<JSTracer*>(aClosure), aPtr, aName);
   }
-  virtual void Trace(JSObject** aPtr, const char* aName,
+  virtual void Trace(nsWrapperCache* aPtr, const char* aName,
                      void* aClosure) const override {
-    js::UnsafeTraceManuallyBarrieredEdge(static_cast<JSTracer*>(aClosure), aPtr,
-                                         aName);
+    aPtr->TraceWrapper(static_cast<JSTracer*>(aClosure), aName);
   }
   virtual void Trace(JS::TenuredHeap<JSObject*>* aPtr, const char* aName,
                      void* aClosure) const override {
@@ -1030,9 +1054,9 @@ struct ClearJSHolder : public TraceCallbacks {
     *aPtr = nullptr;
   }
 
-  virtual void Trace(JSObject** aPtr, const char* aName,
+  virtual void Trace(nsWrapperCache* aPtr, const char* aName,
                      void* aClosure) const override {
-    *aPtr = nullptr;
+    aPtr->ClearWrapper();
   }
 
   virtual void Trace(JS::TenuredHeap<JSObject*>* aPtr, const char*,
@@ -1160,7 +1184,7 @@ void CycleCollectedJSRuntime::JSObjectsTenured() {
     MOZ_DIAGNOSTIC_ASSERT(wrapper || recordreplay::IsReplaying());
     if (!JS::ObjectIsTenured(wrapper)) {
       MOZ_ASSERT(!cache->PreservingWrapper());
-      const JSClass* jsClass = js::GetObjectJSClass(wrapper);
+      const JSClass* jsClass = js::GetObjectClass(wrapper);
       jsClass->doFinalize(nullptr, wrapper);
     }
   }
@@ -1190,6 +1214,8 @@ void CycleCollectedJSRuntime::NurseryWrapperPreserved(JSObject* aWrapper) {
 void CycleCollectedJSRuntime::DeferredFinalize(
     DeferredFinalizeAppendFunction aAppendFunc, DeferredFinalizeFunction aFunc,
     void* aThing) {
+  // Tell the analysis that the function pointers will not GC.
+  JS::AutoSuppressGCAnalysis suppress;
   if (auto entry = mDeferredFinalizerTable.LookupForAdd(aFunc)) {
     aAppendFunc(entry.Data(), aThing);
   } else {
@@ -1331,13 +1357,6 @@ void CycleCollectedJSRuntime::FinalizeDeferredThings(
       // we need to just continue processing it.
       return;
     }
-  }
-
-  // When recording or replaying, execute triggers that were activated recently
-  // by mozilla::DeferredFinalize. This will populate the deferred finalizer
-  // table with a consistent set of entries between the recording and replay.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::ExecuteTriggers();
   }
 
   if (mDeferredFinalizerTable.Count() == 0) {

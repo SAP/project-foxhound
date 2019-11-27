@@ -57,10 +57,9 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
   virtual ~nsWebBrowserPersist();
   nsresult SaveURIInternal(nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal,
                            nsContentPolicyType aContentPolicyType,
-                           uint32_t aCacheKey, nsIURI* aReferrer,
-                           uint32_t aReferrerPolicy, nsIInputStream* aPostData,
-                           const char* aExtraHeaders, nsIURI* aFile,
-                           bool aCalcFileExt, bool aIsPrivate);
+                           uint32_t aCacheKey, nsIReferrerInfo* aReferrerInfo,
+                           nsIInputStream* aPostData, const char* aExtraHeaders,
+                           nsIURI* aFile, bool aCalcFileExt, bool aIsPrivate);
   nsresult SaveChannelInternal(nsIChannel* aChannel, nsIURI* aFile,
                                bool aCalcFileExt);
   nsresult SaveDocumentInternal(nsIWebBrowserPersistDocument* aDocument,
@@ -76,7 +75,6 @@ class nsWebBrowserPersist final : public nsIInterfaceRequestor,
   struct UploadData;
   struct URIData;
   struct WalkData;
-  struct URIFixupData;
 
   class OnWalk;
   class OnWrite;

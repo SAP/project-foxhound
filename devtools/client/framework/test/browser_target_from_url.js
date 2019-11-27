@@ -46,17 +46,20 @@ add_task(async function() {
   is(target.isLocalTab, false);
   is(target.chrome, true);
   is(target.isBrowsingContext, true);
+  await target.client.close();
 
   info("Test tab");
   windowId = browser.outerWindowID;
   target = await targetFromURL(new URL("http://foo?type=tab&id=" + windowId));
   assertTarget(target, TEST_URI);
+  await target.client.close();
 
   info("Test tab with chrome privileges");
   target = await targetFromURL(
     new URL("http://foo?type=tab&id=" + windowId + "&chrome")
   );
   assertTarget(target, TEST_URI, true);
+  await target.client.close();
 
   info("Test invalid tab id");
   try {
@@ -73,6 +76,7 @@ add_task(async function() {
   target = await targetFromURL(new URL("http://foo?type=process"));
   const topWindow = Services.wm.getMostRecentWindow("navigator:browser");
   assertTarget(target, topWindow.location.href, true);
+  await target.client.close();
 
   await testRemoteTCP();
   await testRemoteWebSocket();
@@ -83,7 +87,7 @@ add_task(async function() {
 async function setupDebuggerServer(webSocket) {
   info("Create a separate loader instance for the DebuggerServer.");
   const loader = new DevToolsLoader();
-  const { DebuggerServer } = loader.require("devtools/server/main");
+  const { DebuggerServer } = loader.require("devtools/server/debugger-server");
   const { SocketListener } = loader.require("devtools/shared/security/socket");
 
   DebuggerServer.init();

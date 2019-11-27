@@ -51,7 +51,7 @@ nsMappedAttributes::nsMappedAttributes(const nsMappedAttributes& aCopy)
       // This is only called by ::Clone, which is used to create independent
       // nsMappedAttributes objects which should not share a DeclarationBlock
       mServoStyle(nullptr) {
-  NS_ASSERTION(mBufferSize >= aCopy.mAttrCount, "can't fit attributes");
+  MOZ_ASSERT(mBufferSize >= aCopy.mAttrCount, "can't fit attributes");
   MOZ_ASSERT(mRefCnt == 0);  // Ensure caching works as expected.
 
   uint32_t i;
@@ -79,7 +79,7 @@ nsMappedAttributes* nsMappedAttributes::Clone(bool aWillAddAttr) {
 }
 
 void* nsMappedAttributes::operator new(size_t aSize,
-                                       uint32_t aAttrCount) CPP_THROW_NEW {
+                                       uint32_t aAttrCount) noexcept(true) {
   size_t size = aSize + aAttrCount * sizeof(InternalAttr);
 
   // aSize will include the mAttrs buffer so subtract that.
@@ -146,7 +146,7 @@ void nsMappedAttributes::SetAndSwapAttr(nsAtom* aAttrName, nsAttrValue& aValue,
     }
   }
 
-  NS_ASSERTION(mBufferSize >= mAttrCount + 1, "can't fit attributes");
+  MOZ_ASSERT(mBufferSize >= mAttrCount + 1, "can't fit attributes");
 
   if (mAttrCount != i) {
     memmove(&Attrs()[i + 1], &Attrs()[i],
@@ -260,8 +260,7 @@ int32_t nsMappedAttributes::IndexOfAttr(const nsAtom* aLocalName) const {
 
 size_t nsMappedAttributes::SizeOfIncludingThis(
     MallocSizeOf aMallocSizeOf) const {
-  NS_ASSERTION(mAttrCount == mBufferSize,
-               "mBufferSize and mAttrCount are expected to be the same.");
+  MOZ_ASSERT(mBufferSize >= mAttrCount, "can't fit attributes");
 
   size_t n = aMallocSizeOf(this);
   for (uint16_t i = 0; i < mAttrCount; ++i) {

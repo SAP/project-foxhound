@@ -27,7 +27,7 @@ from .util.schema import validate_schema, Schema
 from .util.taskcluster import get_artifact
 from .util.taskgraph import find_decision_task, find_existing_tasks_from_previous_kinds
 from .util.yaml import load_yaml
-from voluptuous import Required, Optional
+from voluptuous import Required, Optional, Url
 
 
 logger = logging.getLogger(__name__)
@@ -117,10 +117,27 @@ PER_PROJECT_PARAMETERS = {
     }
 }
 
+visual_metrics_jobs_schema = Schema({
+        Required('jobs'): [
+            {
+                Required('browsertime_json_url'): Url(),
+                Required('video_url'): Url(),
+            }
+        ]
+})
+
 try_task_config_schema = Schema({
     Required('tasks'): [basestring],
     Optional('templates'): {basestring: object},
     Optional('disable-pgo'): bool,
+    Optional('browsertime'): bool,
+    Optional('gecko-profile'): bool,
+    # Keep in sync with JOB_SCHEMA in taskcluster/docker/visual-metrics/run-visual-metrics.py.
+    Optional('visual-metrics-jobs'): visual_metrics_jobs_schema,
+    Optional(
+        "debian-tests",
+        description="Run linux desktop tests on debian 10 (buster)."
+        ): bool,
 })
 
 
@@ -171,7 +188,9 @@ def taskgraph_decision(options, parameters=None):
      * calling TaskCluster APIs to create the graph
     """
 
-    parameters = parameters or (lambda config: get_decision_parameters(config, options))
+    parameters = parameters or (
+        lambda graph_config: get_decision_parameters(graph_config, options)
+    )
 
     # create a TaskGraphGenerator instance
     tgg = TaskGraphGenerator(
@@ -206,13 +225,13 @@ def taskgraph_decision(options, parameters=None):
     create_tasks(tgg.graph_config, tgg.morphed_task_graph, tgg.label_to_taskid, tgg.parameters)
 
 
-def get_decision_parameters(config, options):
+def get_decision_parameters(graph_config, options):
     """
     Load parameters from the command-line options for 'taskgraph decision'.
     This also applies per-project parameters, based on the given project.
 
     """
-    product_dir = config['product-dir']
+    product_dir = graph_config['product-dir']
 
     parameters = {n: options[n] for n in [
         'base_repository',
@@ -299,7 +318,7 @@ def get_decision_parameters(config, options):
         parameters['target_tasks_method'] = 'nothing'
 
     if options.get('include_push_tasks'):
-        get_existing_tasks(options.get('rebuild_kinds', []), parameters, config)
+        get_existing_tasks(options.get('rebuild_kinds', []), parameters, graph_config)
 
     # If the target method is nightly, we should build partials. This means
     # knowing what has been released previously.

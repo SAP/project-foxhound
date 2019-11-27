@@ -50,6 +50,8 @@ bitflags! {
     pub struct StreamPrefs: ffi::cubeb_stream_prefs {
         const NONE = ffi::CUBEB_STREAM_PREF_NONE;
         const LOOPBACK = ffi::CUBEB_STREAM_PREF_LOOPBACK;
+        const DISABLE_DEVICE_SWITCHING = ffi::CUBEB_STREAM_PREF_DISABLE_DEVICE_SWITCHING;
+        const VOICE = ffi::CUBEB_STREAM_PREF_VOICE;
     }
 }
 
@@ -144,17 +146,6 @@ impl StreamRef {
     /// Set the volume for a stream.
     pub fn set_volume(&self, volume: f32) -> Result<()> {
         unsafe { call!(ffi::cubeb_stream_set_volume(self.as_ptr(), volume)) }
-    }
-
-    /// If the stream is stereo, set the left/right panning. If the stream is mono,
-    /// this has no effect.
-    ///
-    /// panning a number from -1.0 to 1.0. -1.0 means that the stream is
-    /// fully mixed in the left channel, 1.0 means the stream is fully
-    /// mixed in the right channel. 0.0 is equal power in the right
-    /// and left channel (default).
-    pub fn set_panning(&self, panning: f32) -> Result<()> {
-        unsafe { call!(ffi::cubeb_stream_set_panning(self.as_ptr(), panning)) }
     }
 
     /// Get the current output device for this stream.

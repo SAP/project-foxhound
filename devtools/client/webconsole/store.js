@@ -22,10 +22,12 @@ const { getPrefsService } = require("devtools/client/webconsole/utils/prefs");
 // Reducers
 const { reducers } = require("./reducers/index");
 
-// Middleware
+// Middlewares
 const eventTelemetry = require("./middleware/event-telemetry");
 const historyPersistence = require("./middleware/history-persistence");
-const thunk = require("./middleware/thunk");
+const {
+  thunkWithOptions,
+} = require("devtools/client/shared/redux/middleware/thunk-with-options");
 
 // Enhancers
 const enableBatching = require("./enhancers/batching");
@@ -45,21 +47,17 @@ function configureStore(webConsoleUI, options = {}) {
   const logLimit =
     options.logLimit || Math.max(getIntPref("devtools.hud.loglimit"), 1);
   const sidebarToggle = getBoolPref(PREFS.FEATURES.SIDEBAR_TOGGLE);
-  const jstermCodeMirror = getBoolPref(PREFS.FEATURES.JSTERM_CODE_MIRROR);
   const autocomplete = getBoolPref(PREFS.FEATURES.AUTOCOMPLETE);
   const groupWarnings = getBoolPref(PREFS.FEATURES.GROUP_WARNINGS);
-  const editor = getBoolPref(PREFS.FEATURES.EDITOR);
   const historyCount = getIntPref(PREFS.UI.INPUT_HISTORY_COUNT);
 
   const initialState = {
     prefs: PrefState({
       logLimit,
       sidebarToggle,
-      jstermCodeMirror,
       autocomplete,
       historyCount,
       groupWarnings,
-      editor,
     }),
     filters: FilterState({
       error: getBoolPref(PREFS.FILTER.ERROR),
@@ -78,23 +76,16 @@ function configureStore(webConsoleUI, options = {}) {
         ? getBoolPref(PREFS.UI.CONTENT_MESSAGES)
         : true,
       editor: getBoolPref(PREFS.UI.EDITOR),
+      editorWidth: getIntPref(PREFS.UI.EDITOR_WIDTH),
+      showEditorOnboarding: getBoolPref(PREFS.UI.EDITOR_ONBOARDING),
       timestampsVisible: getBoolPref(PREFS.UI.MESSAGE_TIMESTAMP),
     }),
   };
 
-  // Prepare middleware.
-  const services = options.services || {};
-
   const middleware = applyMiddleware(
-    thunk.bind(null, {
+    thunkWithOptions.bind(null, {
       prefsService,
-      services,
-      // Needed for the ObjectInspector
-      client: {
-        createObjectClient: services.createObjectClient,
-        createLongStringClient: services.createLongStringClient,
-        releaseActor: services.releaseActor,
-      },
+      ...options.thunkArgs,
     }),
     historyPersistence,
     eventTelemetry.bind(null, options.telemetry, options.sessionId)

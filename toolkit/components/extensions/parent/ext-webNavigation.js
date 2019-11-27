@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 // This file expects tabTracker to be defined in the global scope (e.g.
@@ -137,6 +141,7 @@ class WebNavigationEventManager extends EventManager {
         if (
           chromeWin &&
           chromeWin.gBrowser &&
+          chromeWin.gBrowserInit &&
           chromeWin.gBrowserInit.isAdoptingTab() &&
           chromeWin.gBrowser.selectedBrowser === data.browser
         ) {

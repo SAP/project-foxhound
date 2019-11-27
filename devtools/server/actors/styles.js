@@ -129,6 +129,9 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     // Stores the association of DOM objects -> actors
     this.refMap = new Map();
 
+    // Latest node queried for its applied styles.
+    this.selectedElement = null;
+
     // Maps document elements to style elements, used to add new rules.
     this.styleElements = new WeakMap();
 
@@ -138,6 +141,7 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     this.inspector.targetActor.on("will-navigate", this.onFrameUnload);
     this.inspector.targetActor.on("stylesheet-added", this.onStyleSheetAdded);
 
+    this._observedRules = [];
     this._styleApplied = this._styleApplied.bind(this);
     this._watchedSheets = new Set();
   },
@@ -152,12 +156,15 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     this.inspector = null;
     this.walker = null;
     this.refMap = null;
+    this.selectedElement = null;
     this.cssLogic = null;
     this.styleElements = null;
 
     for (const sheet of this._watchedSheets) {
       sheet.off("style-applied", this._styleApplied);
     }
+
+    this._observedRules = [];
     this._watchedSheets.clear();
   },
 
@@ -349,11 +356,13 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     const windows = this.inspector.targetActor.windows;
     let fontsList = [];
     for (const win of windows) {
-      fontsList = [
-        ...fontsList,
-        ...this.getUsedFontFaces(win.document.body, options),
-      ];
+      // Fall back to the documentElement for XUL documents.
+      const node = win.document.body
+        ? win.document.body
+        : win.document.documentElement;
+      fontsList = [...fontsList, ...this.getUsedFontFaces(node, options)];
     }
+
     return fontsList;
   },
 
@@ -571,6 +580,12 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
    *   `skipPseudo`: Exclude styles applied to pseudo elements of the provided node.
    */
   async getApplied(node, options) {
+    // Clear any previous references to StyleRuleActor instances for CSS rules.
+    // Assume the consumer has switched context to a new node and no longer
+    // interested in state changes of previous rules.
+    this._observedRules = [];
+    this.selectedElement = node.rawNode;
+
     if (!node) {
       return { entries: [], rules: [], sheets: [] };
     }
@@ -586,6 +601,12 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
       // See the comment in |form| to understand this.
       await rule.getAuthoredCssText();
     }
+
+    // Reference to instances of StyleRuleActor for CSS rules matching the node.
+    // Assume these are used by a consumer which wants to be notified when their
+    // state or declarations change either directly or indirectly.
+    this._observedRules = result.rules;
+
     return result;
   },
 
@@ -701,7 +722,12 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
    * @returns Array
    */
   _getElementRules: function(node, pseudo, inherited, options) {
-    const domRules = InspectorUtils.getCSSStyleRules(node, pseudo);
+    const domRules = InspectorUtils.getCSSStyleRules(
+      node,
+      pseudo,
+      CssLogic.hasVisitedState(node)
+    );
+
     if (!domRules) {
       return [];
     }
@@ -733,6 +759,7 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
       }
 
       const ruleActor = this._styleRef(domRule);
+
       rules.push({
         rule: ruleActor,
         inherited: inherited,
@@ -816,14 +843,17 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
         const { bindingElement, pseudo } = CssLogic.getBindingElementAndPseudo(
           element
         );
+        const relevantLinkVisited = CssLogic.hasVisitedState(bindingElement);
         entry.matchedSelectors = [];
+
         for (let i = 0; i < selectors.length; i++) {
           if (
             InspectorUtils.selectorMatchesElement(
               bindingElement,
               domRule,
               i,
-              pseudo
+              pseudo,
+              relevantLinkVisited
             )
           ) {
             entry.matchedSelectors.push(selectors[i]);
@@ -1080,6 +1110,26 @@ var PageStyleActor = protocol.ActorClassWithSpec(pageStyleSpec, {
     });
 
     return this.getNewAppliedProps(node, cssRule);
+  },
+
+  /**
+   * Cause all StyleRuleActor instances of observed CSS rules to check whether the
+   * states of their declarations have changed.
+   *
+   * Observed rules are the latest rules returned by a call to PageStyleActor.getApplied()
+   *
+   * This is necessary because changes in one rule can cause the declarations in another
+   * to not be applicable (inactive CSS). The observers of those rules should be notified.
+   * Rules will fire a "declarations-updated" event if their declarations changed states.
+   *
+   * Call this method whenever a CSS rule is mutated:
+   * - a CSS declaration is added/changed/disabled/removed
+   * - a selector is added/changed/removed
+   */
+  refreshObservedRules() {
+    for (const rule of this._observedRules) {
+      rule.refresh();
+    }
   },
 });
 exports.PageStyleActor = PageStyleActor;
@@ -1385,7 +1435,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
         cssText,
         true
       );
-      const el = this.pageStyle.cssLogic.viewedElement;
+      const el = this.pageStyle.selectedElement;
       const style = this.pageStyle.cssLogic.computedStyle;
 
       // We need to grab CSS from the window, since calling supports() on the
@@ -1395,6 +1445,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
         // Use the 1-arg CSS.supports() call so that we also accept !important
         // in the value.
         decl.isValid = CSS.supports(`${decl.name}:${decl.value}`);
+        // TODO: convert from Object to Boolean. See Bug 1574471
         decl.isUsed = inactivePropertyHelper.isPropertyUsed(
           el,
           style,
@@ -1648,6 +1699,7 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
     }
 
     this.authoredText = newText;
+    this.pageStyle.refreshObservedRules();
 
     return this;
   },
@@ -1702,6 +1754,8 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
         this.rawStyle.removeProperty(mod.name);
       }
     }
+
+    this.pageStyle.refreshObservedRules();
 
     return this;
   },
@@ -1945,6 +1999,39 @@ var StyleRuleActor = protocol.ActorClassWithSpec(styleRuleSpec, {
 
       return { ruleProps, isMatching };
     });
+  },
+
+  /**
+   * Using the latest computed style applicable to the selected element,
+   * check the states of declarations in this CSS rule.
+   *
+   * If any have changed their used/unused state, potentially as a result of changes in
+   * another rule, fire a "declarations-updated" event with all declarations and their
+   * updated states.
+   */
+  refresh() {
+    let hasChanged = false;
+    const el = this.pageStyle.selectedElement;
+    const style = CssLogic.getComputedStyle(el);
+
+    for (const decl of this._declarations) {
+      // TODO: convert from Object to Boolean. See Bug 1574471
+      const isUsed = inactivePropertyHelper.isPropertyUsed(
+        el,
+        style,
+        this.rawRule,
+        decl.name
+      );
+
+      if (decl.isUsed.used !== isUsed.used) {
+        decl.isUsed = isUsed;
+        hasChanged = true;
+      }
+    }
+
+    if (hasChanged) {
+      this.emit("declarations-updated", this._declarations);
+    }
   },
 });
 

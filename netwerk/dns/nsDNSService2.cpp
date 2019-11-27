@@ -42,6 +42,8 @@
 #include "mozilla/net/DNSListenerProxy.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/TextUtils.h"
+#include "mozilla/Utf8.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -523,15 +525,19 @@ NS_IMPL_ISUPPORTS(nsDNSService, nsIDNSService, nsPIDNSService, nsIObserver,
 static StaticRefPtr<nsDNSService> gDNSService;
 
 already_AddRefed<nsIDNSService> nsDNSService::GetXPCOMSingleton() {
-  if (IsNeckoChild()) {
+  if (XRE_IsParentProcess()) {
+    return GetSingleton();
+  }
+
+  if (XRE_IsContentProcess() || XRE_IsSocketProcess()) {
     return ChildDNSService::GetSingleton();
   }
 
-  return GetSingleton();
+  return nullptr;
 }
 
 already_AddRefed<nsDNSService> nsDNSService::GetSingleton() {
-  NS_ASSERTION(!IsNeckoChild(), "not a parent process");
+  NS_ASSERTION(XRE_IsParentProcess(), "not a parent process");
 
   if (!gDNSService) {
     gDNSService = new nsDNSService();
@@ -772,12 +778,12 @@ nsresult nsDNSService::PreprocessHostname(bool aLocalDomain,
     }
   }
 
-  if (!aIDN || IsASCII(aInput)) {
+  if (!aIDN || IsAscii(aInput)) {
     aACE = aInput;
     return NS_OK;
   }
 
-  if (!(IsUTF8(aInput) && NS_SUCCEEDED(aIDN->ConvertUTF8toACE(aInput, aACE)))) {
+  if (!(IsUtf8(aInput) && NS_SUCCEEDED(aIDN->ConvertUTF8toACE(aInput, aACE)))) {
     return NS_ERROR_FAILURE;
   }
   return NS_OK;
@@ -1199,6 +1205,14 @@ nsDNSService::GetDNSCacheEntries(
 NS_IMETHODIMP
 nsDNSService::ClearCache(bool aTrrToo) {
   mResolver->FlushCache(aTrrToo);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDNSService::ReloadParentalControlEnabled() {
+  if (mTrrService) {
+    mTrrService->GetParentalControlEnabledInternal();
+  }
   return NS_OK;
 }
 

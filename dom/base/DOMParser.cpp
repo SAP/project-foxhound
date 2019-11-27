@@ -9,6 +9,7 @@
 #include "nsNetUtil.h"
 #include "nsDOMString.h"
 #include "MainThreadUtils.h"
+#include "SystemPrincipal.h"
 #include "nsIStreamListener.h"
 #include "nsStringStream.h"
 #include "nsIScriptError.h"
@@ -33,7 +34,8 @@ DOMParser::DOMParser(nsIGlobalObject* aOwner, nsIPrincipal* aDocPrincipal,
       mPrincipal(aDocPrincipal),
       mDocumentURI(aDocumentURI),
       mBaseURI(aBaseURI),
-      mForceEnableXULXBL(false) {
+      mForceEnableXULXBL(false),
+      mForceEnableDTD(false) {
   MOZ_ASSERT(aDocPrincipal);
   MOZ_ASSERT(aDocumentURI);
 }
@@ -69,6 +71,10 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
       document->ForceEnableXULXBL();
     }
 
+    if (mForceEnableDTD) {
+      document->ForceSkipDTDSecurityChecks();
+    }
+
     nsresult rv = nsContentUtils::ParseDocumentHTML(aStr, document, false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       aRv.Throw(rv);
@@ -96,6 +102,22 @@ already_AddRefed<Document> DOMParser::ParseFromString(const nsAString& aStr,
 
   return ParseFromStream(stream, NS_LITERAL_STRING("UTF-8"), utf8str.Length(),
                          aType, aRv);
+}
+
+already_AddRefed<Document> DOMParser::ParseFromSafeString(const nsAString& aStr,
+                                                          SupportedType aType,
+                                                          ErrorResult& aRv) {
+  // Since we disable cross docGroup node adoption, it is safe to create
+  // new document with the system principal, then the new document will be
+  // placed in the same docGroup as the chrome document.
+  nsCOMPtr<nsIPrincipal> docPrincipal = mPrincipal;
+  if (!nsContentUtils::IsSystemPrincipal(mPrincipal)) {
+    mPrincipal = SystemPrincipal::Create();
+  }
+
+  RefPtr<Document> ret = ParseFromString(aStr, aType, aRv);
+  mPrincipal = docPrincipal;
+  return ret.forget();
 }
 
 already_AddRefed<Document> DOMParser::ParseFromBuffer(const Uint8Array& aBuf,
@@ -181,6 +203,10 @@ already_AddRefed<Document> DOMParser::ParseFromStream(nsIInputStream* aStream,
   // Keep the XULXBL state in sync with the HTML case
   if (mForceEnableXULXBL) {
     document->ForceEnableXULXBL();
+  }
+
+  if (mForceEnableDTD) {
+    document->ForceSkipDTDSecurityChecks();
   }
 
   // Have to pass false for reset here, else the reset will remove

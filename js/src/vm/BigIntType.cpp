@@ -83,11 +83,13 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/MemoryChecking.h"
 #include "mozilla/Range.h"
 #include "mozilla/RangedPtr.h"
 #include "mozilla/WrappingOperations.h"
 
 #include <functional>
+#include <limits>
 #include <math.h>
 #include <memory>
 
@@ -126,17 +128,17 @@ static inline unsigned DigitLeadingZeroes(BigInt::Digit x) {
                         : mozilla::CountLeadingZeroes64(x);
 }
 
-BigInt* BigInt::createUninitialized(JSContext* cx, size_t length,
+BigInt* BigInt::createUninitialized(JSContext* cx, size_t digitLength,
                                     bool isNegative) {
-  if (length > MaxDigitLength) {
+  if (digitLength > MaxDigitLength) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_BIGINT_TOO_LARGE);
     return nullptr;
   }
 
   UniquePtr<Digit[], JS::FreePolicy> heapDigits;
-  if (length > InlineDigitsLength) {
-    heapDigits = cx->make_pod_array<Digit>(length);
+  if (digitLength > InlineDigitsLength) {
+    heapDigits = cx->make_pod_array<Digit>(digitLength);
     if (!heapDigits) {
       return nullptr;
     }
@@ -149,14 +151,14 @@ BigInt* BigInt::createUninitialized(JSContext* cx, size_t length,
     return nullptr;
   }
 
-  x->lengthSignAndReservedBits_ =
-      (length << LengthShift) | (isNegative ? SignBit : 0);
-  MOZ_ASSERT(x->digitLength() == length);
+  x->setLengthAndFlags(digitLength, isNegative ? SignBit : 0);
+
+  MOZ_ASSERT(x->digitLength() == digitLength);
   MOZ_ASSERT(x->isNegative() == isNegative);
 
   if (heapDigits) {
     x->heapDigits_ = heapDigits.release();
-    AddCellMemory(x, length * sizeof(Digit), js::MemoryUse::BigIntDigits);
+    AddCellMemory(x, digitLength * sizeof(Digit), js::MemoryUse::BigIntDigits);
   }
 
   return x;
@@ -167,7 +169,7 @@ void BigInt::initializeDigitsToZero() {
   std::uninitialized_fill_n(digs.begin(), digs.Length(), 0);
 }
 
-void BigInt::finalize(js::FreeOp* fop) {
+void BigInt::finalize(JSFreeOp* fop) {
   if (hasHeapDigits()) {
     size_t size = digitLength() * sizeof(Digit);
     fop->free_(this, heapDigits_, size, js::MemoryUse::BigIntDigits);
@@ -213,7 +215,7 @@ BigInt* BigInt::neg(JSContext* cx, HandleBigInt x) {
   if (!result) {
     return nullptr;
   }
-  result->lengthSignAndReservedBits_ ^= SignBit;
+  result->toggleFlagBit(SignBit);
   return result;
 }
 
@@ -1518,6 +1520,45 @@ BigInt* BigInt::parseLiteral(JSContext* cx, const Range<const CharT> chars,
                             haveParseError);
 }
 
+template <typename CharT>
+bool BigInt::literalIsZeroNoRadix(const Range<const CharT> chars) {
+  MOZ_ASSERT(chars.length());
+
+  RangedPtr<const CharT> start = chars.begin();
+  RangedPtr<const CharT> end = chars.end();
+
+  // Skipping leading zeroes.
+  while (start[0] == '0') {
+    start++;
+    if (start == end) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// trim and remove radix selection prefix.
+template <typename CharT>
+bool BigInt::literalIsZero(const Range<const CharT> chars) {
+  RangedPtr<const CharT> start = chars.begin();
+  const RangedPtr<const CharT> end = chars.end();
+
+  MOZ_ASSERT(chars.length());
+
+  // Skip over radix selector.
+  if (end - start > 2 && start[0] == '0') {
+    if (start[1] == 'b' || start[1] == 'B' || start[1] == 'x' ||
+        start[1] == 'X' || start[1] == 'o' || start[1] == 'O') {
+      return literalIsZeroNoRadix(Range<const CharT>(start + 2, end));
+    }
+  }
+
+  return literalIsZeroNoRadix(Range<const CharT>(start, end));
+}
+
+template bool BigInt::literalIsZero(const Range<const char16_t> chars);
+
 // BigInt proposal section 5.1.1
 static bool IsInteger(double d) {
   // Step 1 is an assertion checked by the caller.
@@ -1649,7 +1690,7 @@ BigInt* BigInt::createFromInt64(JSContext* cx, int64_t n) {
   }
 
   if (n < 0) {
-    res->lengthSignAndReservedBits_ |= SignBit;
+    res->setFlagBit(SignBit);
   }
   MOZ_ASSERT(res->isNegative() == (n < 0));
 
@@ -2242,6 +2283,43 @@ uint64_t BigInt::toUint64(BigInt* x) {
   return digit;
 }
 
+bool BigInt::isInt64(BigInt* x, int64_t* result) {
+  MOZ_MAKE_MEM_UNDEFINED(result, sizeof(*result));
+
+  size_t length = x->digitLength();
+  if (length > (DigitBits == 32 ? 2 : 1)) {
+    return false;
+  }
+
+  if (length == 0) {
+    *result = 0;
+    return true;
+  }
+
+  uint64_t magnitude = x->digit(0);
+  if (DigitBits == 32 && length > 1) {
+    magnitude |= static_cast<uint64_t>(x->digit(1)) << 32;
+  }
+
+  if (x->isNegative()) {
+    constexpr uint64_t Int64MinMagnitude = uint64_t(1) << 63;
+    if (magnitude <= Int64MinMagnitude) {
+      *result = magnitude == Int64MinMagnitude
+                    ? std::numeric_limits<int64_t>::min()
+                    : -AssertedCast<int64_t>(magnitude);
+      return true;
+    }
+  } else {
+    if (magnitude <=
+        static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+      *result = AssertedCast<int64_t>(magnitude);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 // Compute `2**bits - (x & (2**bits - 1))`.  Used when treating BigInt values as
 // arbitrary-precision two's complement signed integers.
 BigInt* BigInt::truncateAndSubFromPowerOfTwo(JSContext* cx, HandleBigInt x,
@@ -2736,7 +2814,7 @@ double BigInt::numberValue(BigInt* x) {
   if (length <= 64 / DigitBits) {
     uint64_t magnitude = x->digit(0);
     if (DigitBits == 32 && length > 1) {
-      magnitude |= uint64_t(x->digit(1)) << 32;
+      magnitude |= static_cast<uint64_t>(x->digit(1)) << 32;
     }
     const uint64_t MaxIntegralPrecisionDouble = uint64_t(1)
                                                 << (SignificandWidth + 1);
@@ -3340,6 +3418,12 @@ BigInt* js::ParseBigIntLiteral(JSContext* cx,
   }
   MOZ_RELEASE_ASSERT(!parseError);
   return res;
+}
+
+// Check a already validated numeric literal for a non-zero value. Used by
+// the parsers node folder in deferred mode.
+bool js::BigIntLiteralIsZero(const mozilla::Range<const char16_t>& chars) {
+  return BigInt::literalIsZero(chars);
 }
 
 template <js::AllowGC allowGC>

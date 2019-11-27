@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,7 +27,6 @@ body {
   color: var(--theme-selection-color);
 }
 
-.theme-bg-contrast,
 .variable-or-property:not([overridden])[changed] {
   background: var(--theme-contrast-background);
 }
@@ -159,8 +157,12 @@ body {
   border-color: var(--theme-splitter-color);
 }
 
-.theme-fg-contrast { /* To be used for text on theme-bg-contrast */
-  color: black;
+.theme-bg-contrast {
+  background: var(--theme-contrast-background);
+}
+
+.theme-fg-contrast {
+  color: var(--theme-contrast-color);
 }
 
 .ruleview-swatch,
@@ -178,7 +180,9 @@ body {
   background: transparent;
 }
 
-.CodeMirror.cm-s-mozilla  pre {
+.CodeMirror.cm-s-mozilla  pre,
+.CodeMirror.cm-s-mozilla  pre.CodeMirror-line,
+.CodeMirror.cm-s-mozilla  pre.CodeMirror-line-like {
   color: var(--theme-text-color-strong);
 }
 

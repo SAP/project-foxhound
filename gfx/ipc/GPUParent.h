@@ -34,8 +34,8 @@ class GPUParent final : public PGPUParent {
             MessageLoop* aIOLoop, IPC::Channel* aChannel);
   void NotifyDeviceReset();
 
-  PAPZInputBridgeParent* AllocPAPZInputBridgeParent(const LayersId& aLayersId);
-  bool DeallocPAPZInputBridgeParent(PAPZInputBridgeParent* aActor);
+  already_AddRefed<PAPZInputBridgeParent> AllocPAPZInputBridgeParent(
+      const LayersId& aLayersId);
 
   mozilla::ipc::IPCResult RecvInit(nsTArray<GfxVarUpdate>&& vars,
                                    const DevicePrefs& devicePrefs,
@@ -81,6 +81,11 @@ class GPUParent final : public PGPUParent {
       const uint64_t& aMask);
   mozilla::ipc::IPCResult RecvCollectPerfStatsJSON(
       CollectPerfStatsJSONResolver&& aResolver);
+
+#if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
+  mozilla::ipc::IPCResult RecvInitSandboxTesting(
+      Endpoint<PSandboxTestingChild>&& aEndpoint);
+#endif
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

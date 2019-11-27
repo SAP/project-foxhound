@@ -1,10 +1,10 @@
-#!/bin/sh
+#!/bin/bash
 # Script to update mp4parse-rust sources to latest upstream
 
 set -e
 
 # Default version.
-VER="26e614bbcb4d7322dc2e4b7e15391bdb30b9f7be"
+VER="201556d3215310115521eb3a17a9f4ea9c460016"
 
 # Accept version or commit from the command line.
 if test -n "$1"; then

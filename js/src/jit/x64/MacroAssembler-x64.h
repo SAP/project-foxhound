@@ -546,12 +546,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   // Common interface.
   /////////////////////////////////////////////////////////////////
 
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label) {
-    JmpSrc src = jmpSrc(label);
-    return CodeOffsetJump(size(),
-                          addPatchableJump(src, RelocationKind::HARDCODED));
-  }
-
   void movePtr(Register src, Register dest) { movq(src, dest); }
   void movePtr(Register src, const Operand& dest) { movq(src, dest); }
   void movePtr(ImmWord imm, Register dest) { mov(imm, dest); }
@@ -577,10 +571,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void loadPtr(const BaseIndex& src, Register dest) {
     movq(Operand(src), dest);
   }
-  void loadPrivate(const Address& src, Register dest) {
-    loadPtr(src, dest);
-    shlq(Imm32(1), dest);
-  }
+  void loadPrivate(const Address& src, Register dest) { loadPtr(src, dest); }
   void load32(AbsoluteAddress address, Register dest) {
     if (X86Encoding::IsAddressImmediate(address.addr)) {
       movl(Operand(address), dest);
@@ -756,10 +747,6 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
 
   void unboxDouble(const ValueOperand& src, FloatRegister dest) {
     vmovq(src.valueReg(), dest);
-  }
-  void unboxPrivate(const ValueOperand& src, const Register dest) {
-    movq(src.valueReg(), dest);
-    shlq(Imm32(1), dest);
   }
 
   void notBoolean(const ValueOperand& val) { xorq(Imm32(1), val.valueReg()); }
@@ -956,8 +943,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   Condition testBigIntTruthy(bool truthy, const ValueOperand& value) {
     ScratchRegisterScope scratch(asMasm());
     unboxBigInt(value, scratch);
-    cmpPtr(Operand(scratch, BigInt::offsetOfLengthSignAndReservedBits()),
-           ImmWord(0));
+    cmp32(Operand(scratch, BigInt::offsetOfDigitLength()), Imm32(0));
     return truthy ? Assembler::NotEqual : Assembler::Equal;
   }
 

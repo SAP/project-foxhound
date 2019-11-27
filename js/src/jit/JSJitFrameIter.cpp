@@ -13,6 +13,8 @@
 #include "jit/JitScript.h"
 #include "jit/Safepoints.h"
 
+#include "vm/JSScript-inl.h"
+
 using namespace js;
 using namespace js::jit;
 
@@ -122,14 +124,6 @@ void JSJitFrameIter::baselineScriptAndPc(JSScript** scriptRes,
 
   MOZ_ASSERT(pcRes);
 
-  // Use the frame's override pc, if we have one. This should only happen
-  // when we're in FinishBailoutToBaseline, handling an exception or toggling
-  // debug mode.
-  if (jsbytecode* overridePc = baselineFrame()->maybeOverridePc()) {
-    *pcRes = overridePc;
-    return;
-  }
-
   // The Baseline Interpreter stores the bytecode pc in the frame.
   if (baselineFrame()->runningInInterpreter()) {
     MOZ_ASSERT(baselineFrame()->interpreterScript() == script);
@@ -137,10 +131,10 @@ void JSJitFrameIter::baselineScriptAndPc(JSScript** scriptRes,
     return;
   }
 
-  // Else, there must be a BaselineScript with a VMCallEntry for the current
-  // return address.
+  // There must be a BaselineScript with a RetAddrEntry for the current return
+  // address.
   uint8_t* retAddr = resumePCinCurrentFrame();
-  RetAddrEntry& entry =
+  const RetAddrEntry& entry =
       script->baselineScript()->retAddrEntryFromReturnAddress(retAddr);
   *pcRes = entry.pc(script);
 }
@@ -153,6 +147,22 @@ uint8_t* JSJitFrameIter::prevFp() const {
 
 void JSJitFrameIter::operator++() {
   MOZ_ASSERT(!isEntry());
+
+  // Compute BaselineFrame size, the size stored in the descriptor excluding
+  // VMFunction arguments pushed for VM calls.
+  //
+  // In debug builds this is equivalent to BaselineFrame::debugFrameSize_. This
+  // is asserted at the end of this method.
+  if (current()->prevType() == FrameType::BaselineJS) {
+    uint32_t frameSize = prevFrameLocalSize();
+    if (isExitFrame() && exitFrame()->isWrapperExit()) {
+      const VMFunctionData* data = exitFrame()->footer()->function();
+      frameSize -= data->explicitStackSlots() * sizeof(void*);
+    }
+    baselineFrameSize_ = mozilla::Some(frameSize);
+  } else {
+    baselineFrameSize_ = mozilla::Nothing();
+  }
 
   frameSize_ = prevFrameLocalSize();
   cachedSafepointIndex_ = nullptr;
@@ -167,6 +177,9 @@ void JSJitFrameIter::operator++() {
   type_ = current()->prevType();
   resumePCinCurrentFrame_ = current()->returnAddress();
   current_ = prevFp();
+
+  MOZ_ASSERT_IF(isBaselineJS(),
+                baselineFrame()->debugFrameSize() == *baselineFrameSize_);
 }
 
 uintptr_t* JSJitFrameIter::spillBase() const {
@@ -308,12 +321,10 @@ void JSJitFrameIter::dumpBaseline() const {
 
   fprintf(stderr, "  actual args: %d\n", numActualArgs());
 
-  BaselineFrame* frame = baselineFrame();
-
-  for (unsigned i = 0; i < frame->numValueSlots(); i++) {
+  for (unsigned i = 0; i < baselineFrameNumValueSlots(); i++) {
     fprintf(stderr, "  slot %u: ", i);
 #if defined(DEBUG) || defined(JS_JITSPEW)
-    Value* v = frame->valueSlot(i);
+    Value* v = baselineFrame()->valueSlot(i);
     DumpValue(*v);
 #else
     fprintf(stderr, "?\n");
@@ -516,7 +527,7 @@ JSJitProfilingFrameIterator::JSJitProfilingFrameIterator(JSContext* cx,
   if (frameScript()->hasBaselineScript()) {
     resumePCinCurrentFrame_ = frameScript()->baselineScript()->method()->raw();
   } else {
-    MOZ_ASSERT(JitOptions.baselineInterpreter);
+    MOZ_ASSERT(IsBaselineInterpreterEnabled());
     resumePCinCurrentFrame_ =
         cx->runtime()->jitRuntime()->baselineInterpreter().codeRaw();
   }
@@ -627,37 +638,6 @@ bool JSJitProfilingFrameIterator::tryInitWithTable(JitcodeGlobalTable* table,
   return false;
 }
 
-void JSJitProfilingFrameIterator::fixBaselineReturnAddress() {
-  MOZ_ASSERT(type_ == FrameType::BaselineJS);
-  BaselineFrame* bl = (BaselineFrame*)(fp_ - BaselineFrame::FramePointerOffset -
-                                       BaselineFrame::Size());
-
-  // Debug mode OSR for Baseline uses a "continuation fixer" and stashes the
-  // actual return address in an auxiliary structure.
-  if (BaselineDebugModeOSRInfo* info = bl->getDebugModeOSRInfo()) {
-    resumePCinCurrentFrame_ = info->resumeAddr;
-    return;
-  }
-
-  // Certain exception handling cases such as debug OSR or resuming a generator
-  // with .throw() will use BaselineFrame::setOverridePc() to indicate the
-  // effective |pc|. We translate the effective-pc into a Baseline code
-  // address. Don't do this for frames running in the Baseline Interpreter,
-  // because we don't use the return address in that case.
-  jsbytecode* overridePC = bl->maybeOverridePc();
-  if (overridePC && !bl->runningInInterpreter()) {
-    PCMappingSlotInfo slotInfo;
-    JSScript* script = bl->script();
-    BaselineScript* blScript = script->baselineScript();
-    resumePCinCurrentFrame_ =
-        blScript->nativeCodeForPC(script, overridePC, &slotInfo);
-
-    // NOTE: The stack may not be synced at this PC. For the purpose of
-    // profiler sampling this is fine.
-    return;
-  }
-}
-
 const char* JSJitProfilingFrameIterator::baselineInterpreterLabel() const {
   MOZ_ASSERT(type_ == FrameType::BaselineJS);
   return frameScript()->jitScript()->profileString();
@@ -752,7 +732,6 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
     resumePCinCurrentFrame_ = frame->returnAddress();
     fp_ = GetPreviousRawFrame<uint8_t*>(frame);
     type_ = FrameType::BaselineJS;
-    fixBaselineReturnAddress();
     return;
   }
 
@@ -765,7 +744,6 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
     fp_ = ((uint8_t*)stubFrame->reverseSavedFramePtr()) +
           jit::BaselineFrame::FramePointerOffset;
     type_ = FrameType::BaselineJS;
-    fixBaselineReturnAddress();
     return;
   }
 
@@ -788,7 +766,6 @@ void JSJitProfilingFrameIterator::moveToNextFrame(CommonFrameLayout* frame) {
       fp_ = ((uint8_t*)stubFrame->reverseSavedFramePtr()) +
             jit::BaselineFrame::FramePointerOffset;
       type_ = FrameType::BaselineJS;
-      fixBaselineReturnAddress();
       return;
     }
 

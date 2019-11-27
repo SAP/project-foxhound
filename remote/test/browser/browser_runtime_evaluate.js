@@ -5,11 +5,11 @@
 
 // Test the Runtime execution context events
 
-const TEST_URI = "data:text/html;charset=utf-8,default-test-page";
+const TEST_DOC = toDataURL("default-test-page");
 
 add_task(async function() {
   // Open a test page, to prevent debugging the random default page
-  await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_URI);
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, TEST_DOC);
 
   // Start the CDP server
   await RemoteAgent.listen(Services.io.newURI("http://localhost:9222"));
@@ -21,7 +21,7 @@ add_task(async function() {
   const client = await CDP({
     target(list) {
       // Ensure debugging the right target, i.e. the one for our test tab.
-      return list.find(target => target.url == TEST_URI);
+      return list.find(target => target.url == TEST_DOC);
     },
   });
   ok(true, "CDP client has been instantiated");
@@ -29,7 +29,8 @@ add_task(async function() {
   const firstContext = await testRuntimeEnable(client);
   const contextId = firstContext.id;
 
-  await testEvaluate(client, contextId);
+  await testEvaluate(client);
+  await testEvaluateWithContextId(client, contextId);
   await testEvaluateInvalidContextId(client, contextId);
 
   await testCallFunctionOn(client, contextId);
@@ -117,15 +118,24 @@ async function testRuntimeEnable({ Runtime }) {
   return context;
 }
 
-async function testEvaluate({ Runtime }, contextId) {
+async function testEvaluate({ Runtime }) {
+  const { result } = await Runtime.evaluate({ expression: "location.href" });
+  is(
+    result.value,
+    TEST_DOC,
+    "Runtime.evaluate works against the current document"
+  );
+}
+
+async function testEvaluateWithContextId({ Runtime }, contextId) {
   const { result } = await Runtime.evaluate({
     contextId,
     expression: "location.href",
   });
   is(
     result.value,
-    TEST_URI,
-    "Runtime.evaluate works and is against the test page"
+    TEST_DOC,
+    "Runtime.evaluate works against the targetted document"
   );
 }
 
@@ -148,7 +158,7 @@ async function testCallFunctionOn({ Runtime }, executionContextId) {
   });
   is(
     result.value,
-    TEST_URI,
+    TEST_DOC,
     "Runtime.callFunctionOn works and is against the test page"
   );
 }

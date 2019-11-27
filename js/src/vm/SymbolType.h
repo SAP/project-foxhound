@@ -34,7 +34,7 @@ namespace JS {
 class Symbol : public js::gc::TenuredCell {
  private:
   // User description of symbol. Also meets gc::Cell requirements.
-  JSAtom* description_;
+  js::GCPtrAtom description_;
 
   SymbolCode code_;
 
@@ -85,11 +85,9 @@ class Symbol : public js::gc::TenuredCell {
 
   static const JS::TraceKind TraceKind = JS::TraceKind::Symbol;
   inline void traceChildren(JSTracer* trc) {
-    if (description_) {
-      js::TraceManuallyBarrieredEdge(trc, &description_, "description");
-    }
+    TraceNullableEdge(trc, &description_, "symbol description");
   }
-  inline void finalize(js::FreeOp*) {}
+  inline void finalize(JSFreeOp*) {}
 
   static MOZ_ALWAYS_INLINE void writeBarrierPre(Symbol* thing) {
     if (thing && !thing->isWellKnownSymbol()) {

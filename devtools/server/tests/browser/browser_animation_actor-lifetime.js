@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -62,7 +61,7 @@ add_task(async function setup() {
         const { require } = ChromeUtils.import(
           "resource://devtools/shared/Loader.jsm"
         );
-        const { DebuggerServer } = require("devtools/server/main");
+        const { DebuggerServer } = require("devtools/server/debugger-server");
         // Convert actorID to current compartment string otherwise
         // searchAllConnectionsForActor is confused and won't find the actor.
         actorID = String(actorID);

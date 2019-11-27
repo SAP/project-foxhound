@@ -8,25 +8,13 @@
 
 <html xmlns="http://www.w3.org/1999/xhtml">
     <head>
-        <meta http-equiv="Content-Security-Policy" content="default-src chrome:" />
+        <meta http-equiv="Content-Security-Policy" content="default-src chrome:; object-src 'none'" />
         <title data-l10n-id="title"/>
-        <link rel="stylesheet" href="chrome://mozapps/skin/aboutNetworking.css" type="text/css" />
+        <link rel="stylesheet" href="chrome://global/skin/aboutNetworking.css" type="text/css" />
         <script src="chrome://global/content/aboutNetworking.js" />
         <link rel="localization"  href="toolkit/about/aboutNetworking.ftl"/>
     </head>
     <body id="body">
-        <div id="warning_message" class="warningBackground" hidden="true">
-            <div class="container">
-                <h1 class="title" data-l10n-id="warning"/>
-                <div class="toggle-container-with-text">
-                    <input id="warncheck" type="checkbox" checked="yes" role="checkbox" />
-                    <label for="warncheck" data-l10n-id="show-next-time-checkbox"/>
-                </div>
-                <div>
-                    <button id="confpref" autofocus="autofocus" data-l10n-id="ok"/>
-                </div>
-            </div>
-        </div>
         <div id="categories">
             <div class="category" selected="true" id="category-http">
                 <span class="category-name" data-l10n-id="http"/>
@@ -49,6 +37,9 @@
             </div>
             <div class="category" id="category-rcwn">
                 <span class="category-name" data-l10n-id="rcwn"/>
+            </div>
+            <div class="category" id="category-networkid">
+                <span class="category-name" data-l10n-id="networkid"/>
             </div>
         </div>
         <div class="main-content">
@@ -94,6 +85,15 @@
           </div>
 
           <div id="dns" class="tab" hidden="true">
+              <table>
+                  <thead>
+                      <tr>
+                          <th data-l10n-id="dnssuffix"/>
+                      </tr>
+                  </thead>
+                  <tbody id="dns_suffix_content" />
+              </table>
+              <br/><br/>
               <table>
                   <thead>
                       <tr>
@@ -239,6 +239,25 @@
               <input type="text" name="log-modules" id="log-modules" value="timestamp,sync,nsHttp:5,cache2:5,nsSocketTransport:5,nsHostResolver:5"></input>
               <button id="set-log-modules-button" data-l10n-id="set-log-modules"/>
             </div>
+          </div>
+
+          <div id="networkid" class="tab" hidden="true">
+              <table>
+                  <thead>
+                      <tr>
+                          <th data-l10n-id="networkid-isUp"/>
+                          <th data-l10n-id="networkid-statusKnown"/>
+                          <th data-l10n-id="networkid-id"/>
+                      </tr>
+                  </thead>
+                  <tbody id="networkid_content">
+                      <tr>
+                          <td id="networkid_isUp"> </td>
+                          <td id="networkid_statusKnown"> </td>
+                          <td id="networkid_id"> </td>
+                      </tr>
+                  </tbody>
+              </table>
           </div>
 
         </div>

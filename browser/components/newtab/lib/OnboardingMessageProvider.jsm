@@ -3,10 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 /* globals Localization */
-const { AttributionCode } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "AttributionCode",
   "resource:///modules/AttributionCode.jsm"
 );
-const { AddonRepository } = ChromeUtils.import(
+ChromeUtils.defineModuleGetter(
+  this,
+  "AddonRepository",
   "resource://gre/modules/addons/AddonRepository.jsm"
 );
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
@@ -18,50 +22,85 @@ const L10N = new Localization([
   "browser/newtab/onboarding.ftl",
 ]);
 
+const TRAILHEAD_ONBOARDING_TEMPLATE = {
+  trigger: { id: "firstRun" },
+  template: "trailhead",
+  includeBundle: {
+    length: 3,
+    template: "onboarding",
+    trigger: { id: "showOnboarding" },
+  },
+};
+
+const TRAILHEAD_MODAL_VARIANT_CONTENT = {
+  className: "joinCohort",
+  benefits: ["sync", "monitor", "lockwise"].map(id => ({
+    id,
+    title: { string_id: `onboarding-benefit-${id}-title` },
+    text: { string_id: `onboarding-benefit-${id}-text` },
+  })),
+  learn: {
+    text: { string_id: "onboarding-welcome-modal-family-learn-more" },
+    url: "https://www.mozilla.org/firefox/accounts/",
+  },
+  form: {
+    title: { string_id: "onboarding-welcome-form-header" },
+    text: { string_id: "onboarding-join-form-body" },
+    email: { string_id: "onboarding-join-form-email" },
+    button: { string_id: "onboarding-join-form-continue" },
+  },
+  skipButton: { string_id: "onboarding-start-browsing-button-label" },
+};
+
+const TRAILHEAD_FULL_PAGE_CONTENT = {
+  title: { string_id: "onboarding-welcome-body" },
+  learn: {
+    text: { string_id: "onboarding-welcome-learn-more" },
+    url: "https://www.mozilla.org/firefox/accounts/",
+  },
+  form: {
+    title: { string_id: "onboarding-welcome-form-header" },
+    text: { string_id: "onboarding-join-form-body" },
+    email: { string_id: "onboarding-fullpage-form-email" },
+    button: { string_id: "onboarding-join-form-continue" },
+  },
+};
+
+const JOIN_CONTENT = {
+  className: "joinCohort",
+  title: { string_id: "onboarding-welcome-body" },
+  benefits: ["products", "knowledge", "privacy"].map(id => ({
+    id,
+    title: { string_id: `onboarding-benefit-${id}-title` },
+    text: { string_id: `onboarding-benefit-${id}-text` },
+  })),
+  learn: {
+    text: { string_id: "onboarding-welcome-learn-more" },
+    url: "https://www.mozilla.org/firefox/accounts/",
+  },
+  form: {
+    title: { string_id: "onboarding-join-form-header" },
+    text: { string_id: "onboarding-join-form-body" },
+    email: { string_id: "onboarding-join-form-email" },
+    button: { string_id: "onboarding-join-form-continue" },
+  },
+  skipButton: { string_id: "onboarding-start-browsing-button-label" },
+};
+
 const ONBOARDING_MESSAGES = () => [
   {
     id: "TRAILHEAD_1",
-    template: "trailhead",
-    targeting: "trailheadInterrupt == 'join'",
-    trigger: { id: "firstRun" },
-    includeBundle: {
-      length: 3,
-      template: "onboarding",
-      trigger: { id: "showOnboarding" },
-    },
     utm_term: "trailhead-join",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
     content: {
-      className: "joinCohort",
-      title: { string_id: "onboarding-welcome-body" },
-      benefits: ["products", "knowledge", "privacy"].map(id => ({
-        id,
-        title: { string_id: `onboarding-benefit-${id}-title` },
-        text: { string_id: `onboarding-benefit-${id}-text` },
-      })),
-      learn: {
-        text: { string_id: "onboarding-welcome-learn-more" },
-        url: "https://www.mozilla.org/firefox/accounts/",
-      },
-      form: {
-        title: { string_id: "onboarding-join-form-header" },
-        text: { string_id: "onboarding-join-form-body" },
-        email: { string_id: "onboarding-join-form-email" },
-        button: { string_id: "onboarding-join-form-continue" },
-      },
-      skipButton: { string_id: "onboarding-start-browsing-button-label" },
+      ...JOIN_CONTENT,
     },
   },
   {
     id: "TRAILHEAD_2",
-    template: "trailhead",
     targeting: "trailheadInterrupt == 'sync'",
-    trigger: { id: "firstRun" },
-    includeBundle: {
-      length: 3,
-      template: "onboarding",
-      trigger: { id: "showOnboarding" },
-    },
     utm_term: "trailhead-sync",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
     content: {
       className: "syncCohort",
       title: { string_id: "onboarding-sync-welcome-header" },
@@ -82,21 +121,85 @@ const ONBOARDING_MESSAGES = () => [
   },
   {
     id: "TRAILHEAD_3",
-    template: "trailhead",
     targeting: "trailheadInterrupt == 'cards'",
-    trigger: { id: "firstRun" },
-    includeBundle: {
-      length: 3,
-      template: "onboarding",
-      trigger: { id: "showOnboarding" },
-    },
     utm_term: "trailhead-cards",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
   },
   {
     id: "TRAILHEAD_4",
     template: "trailhead",
     targeting: "trailheadInterrupt == 'nofirstrun'",
     trigger: { id: "firstRun" },
+  },
+  {
+    id: "TRAILHEAD_5",
+    targeting: "trailheadInterrupt == 'modal_control'",
+    utm_term: "trailhead-modal_control",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      ...JOIN_CONTENT,
+    },
+  },
+  {
+    id: "TRAILHEAD_6",
+    targeting: "trailheadInterrupt == 'modal_variant_a'",
+    utm_term: "trailhead-modal_variant_a",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      ...TRAILHEAD_MODAL_VARIANT_CONTENT,
+      title: { string_id: "onboarding-welcome-modal-get-body" },
+    },
+  },
+  {
+    id: "TRAILHEAD_7",
+    targeting: "trailheadInterrupt == 'modal_variant_b'",
+    utm_term: "trailhead-modal_variant_b",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      ...TRAILHEAD_MODAL_VARIANT_CONTENT,
+      title: { string_id: "onboarding-welcome-modal-supercharge-body" },
+    },
+  },
+  {
+    id: "TRAILHEAD_8",
+    targeting: "trailheadInterrupt == 'modal_variant_c'",
+    utm_term: "trailhead-modal_variant_c",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      ...TRAILHEAD_MODAL_VARIANT_CONTENT,
+      title: { string_id: "onboarding-welcome-modal-privacy-body" },
+    },
+  },
+  {
+    id: "TRAILHEAD_9",
+    targeting: "trailheadInterrupt == 'modal_variant_f'",
+    utm_term: "trailhead-modal_variant_f",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      ...JOIN_CONTENT,
+      form: TRAILHEAD_MODAL_VARIANT_CONTENT.form,
+    },
+  },
+  {
+    id: "FULL_PAGE_1",
+    targeting: "trailheadInterrupt == 'full_page_d'",
+    utm_term: "trailhead-full_page_d",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      ...TRAILHEAD_FULL_PAGE_CONTENT,
+    },
+    template: "full_page_interrupt",
+  },
+  {
+    id: "FULL_PAGE_2",
+    targeting: "trailheadInterrupt == 'full_page_e'",
+    utm_term: "trailhead-full_page_e",
+    ...TRAILHEAD_ONBOARDING_TEMPLATE,
+    content: {
+      className: "fullPageCardsAtTop",
+      ...TRAILHEAD_FULL_PAGE_CONTENT,
+    },
+    template: "full_page_interrupt",
   },
   {
     id: "EXTENDED_TRIPLETS_1",
@@ -109,7 +212,7 @@ const ONBOARDING_MESSAGES = () => [
       template: "onboarding",
       trigger: { id: "showOnboarding" },
     },
-    frequency: { lifetime: 20 },
+    frequency: { lifetime: 5 },
     utm_term: "trailhead-cards",
   },
   {
@@ -173,7 +276,7 @@ const ONBOARDING_MESSAGES = () => [
     order: 2,
     content: {
       title: { string_id: "onboarding-firefox-monitor-title" },
-      text: { string_id: "onboarding-firefox-monitor-text" },
+      text: { string_id: "onboarding-firefox-monitor-text2" },
       icon: "ffmonitor",
       primary_button: {
         label: { string_id: "onboarding-firefox-monitor-button" },
@@ -338,17 +441,6 @@ const ONBOARDING_MESSAGES = () => [
     trigger: { id: "showOnboarding" },
   },
   {
-    id: "FXA_1",
-    template: "fxa_overlay",
-    content: {},
-    trigger: { id: "firstRun" },
-    includeBundle: {
-      length: 3,
-      template: "onboarding",
-      trigger: { id: "showOnboarding" },
-    },
-  },
-  {
     id: "RETURN_TO_AMO_1",
     template: "return_to_amo_overlay",
     content: {
@@ -379,6 +471,31 @@ const ONBOARDING_MESSAGES = () => [
     targeting:
       "attributionData.campaign == 'non-fx-button' && attributionData.source == 'addons.mozilla.org'",
     trigger: { id: "firstRun" },
+  },
+  {
+    id: "FXA_ACCOUNTS_BADGE",
+    template: "toolbar_badge",
+    content: {
+      delay: 10000, // delay for 10 seconds
+      target: "fxa-toolbar-menu-button",
+    },
+    // Never accessed the FxA panel && doesn't use Firefox sync & has FxA enabled
+    targeting: `isFxABadgeEnabled && !hasAccessedFxAPanel && !usesFirefoxSync && isFxAEnabled == true`,
+    trigger: { id: "toolbarBadgeUpdate" },
+  },
+  {
+    id: "PROTECTIONS_PANEL_1",
+    template: "protections_panel",
+    content: {
+      title: { string_id: "cfr-protections-panel-header" },
+      body: { string_id: "cfr-protections-panel-body" },
+      link_text: { string_id: "cfr-protections-panel-link-text" },
+      cta_url: `${Services.urlFormatter.formatURLPref(
+        "app.support.baseURL"
+      )}etp-promotions?as=u&utm_source=inproduct`,
+      cta_type: "OPEN_URL",
+    },
+    trigger: { id: "protectionsPanelOpen" },
   },
 ];
 

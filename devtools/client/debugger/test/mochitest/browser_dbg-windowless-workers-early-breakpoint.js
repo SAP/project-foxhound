@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -8,11 +6,6 @@ add_task(async function() {
   const dbg = await initDebugger("doc-windowless-workers-early-breakpoint.html", "simple-worker.js");
 
   const workerSource = findSource(dbg, "simple-worker.js");
-
-  // NOTE: by default we do not wait on worker
-  // commands to complete because the thread could be
-  // shutting down.
-  dbg.client.waitForWorkers(true);
 
   await selectSource(dbg, "simple-worker.js");
   await waitForSelectedSource(dbg, "simple-worker.js");

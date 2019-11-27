@@ -134,9 +134,21 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-  bool getBigIntEnabled() const { return bigint_; }
-  RealmCreationOptions& setBigIntEnabled(bool flag) {
-    bigint_ = flag;
+  bool getReadableByteStreamsEnabled() const { return readableByteStreams_; }
+  RealmCreationOptions& setReadableByteStreamsEnabled(bool flag) {
+    readableByteStreams_ = flag;
+    return *this;
+  }
+
+  bool getBYOBStreamReadersEnabled() const { return byobStreamReaders_; }
+  RealmCreationOptions& setBYOBStreamReadersEnabled(bool enabled) {
+    byobStreamReaders_ = enabled;
+    return *this;
+  }
+
+  bool getWritableStreamsEnabled() const { return writableStreams_; }
+  RealmCreationOptions& setWritableStreamsEnabled(bool enabled) {
+    writableStreams_ = enabled;
     return *this;
   }
 
@@ -162,12 +174,6 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-  bool clampAndJitterTime() const { return clampAndJitterTime_; }
-  RealmCreationOptions& setClampAndJitterTime(bool flag) {
-    clampAndJitterTime_ = flag;
-    return *this;
-  }
-
  private:
   JSTraceOp traceGlobal_ = nullptr;
   CompartmentSpecifier compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
@@ -181,11 +187,12 @@ class JS_PUBLIC_API RealmCreationOptions {
   bool cloneSingletons_ = false;
   bool sharedMemoryAndAtomics_ = false;
   bool streams_ = false;
-  bool bigint_ = false;
+  bool readableByteStreams_ = false;
+  bool byobStreamReaders_ = false;
+  bool writableStreams_ = false;
   bool fields_ = false;
   bool awaitFix_ = false;
   bool secureContext_ = false;
-  bool clampAndJitterTime_ = true;
 };
 
 /**
@@ -207,6 +214,18 @@ class JS_PUBLIC_API RealmBehaviors {
   bool disableLazyParsing() const { return disableLazyParsing_; }
   RealmBehaviors& setDisableLazyParsing(bool flag) {
     disableLazyParsing_ = flag;
+    return *this;
+  }
+
+  bool deferredParserAlloc() const { return deferredParserAlloc_; }
+  RealmBehaviors& setDeferredParserAlloc(bool flag) {
+    deferredParserAlloc_ = flag;
+    return *this;
+  }
+
+  bool clampAndJitterTime() const { return clampAndJitterTime_; }
+  RealmBehaviors& setClampAndJitterTime(bool flag) {
+    clampAndJitterTime_ = flag;
     return *this;
   }
 
@@ -254,6 +273,7 @@ class JS_PUBLIC_API RealmBehaviors {
  private:
   bool discardSource_ = false;
   bool disableLazyParsing_ = false;
+  bool clampAndJitterTime_ = true;
   Override extraWarningsOverride_ = {};
 
   // To XDR singletons, we need to ensure that all singletons are all used as
@@ -261,6 +281,7 @@ class JS_PUBLIC_API RealmBehaviors {
   // singleton, instead of returning the value which is baked in the JSScript.
   bool singletonsAsTemplates_ = true;
   bool isNonLive_ = false;
+  bool deferredParserAlloc_ = false;
 };
 
 /**

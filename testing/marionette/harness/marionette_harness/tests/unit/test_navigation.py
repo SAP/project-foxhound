@@ -15,7 +15,7 @@ from marionette_harness import (
     MarionetteTestCase,
     run_if_e10s,
     run_if_manage_instance,
-    skip_if_mobile,
+    skip,
     WindowManagerMixin,
 )
 
@@ -258,14 +258,12 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.go_back()
         self.assertEqual(self.marionette.get_url(), self.test_page_push_state)
 
-    @skip_if_mobile("Test file is only located on host machine")
     def test_navigate_file_url(self):
         self.marionette.navigate(self.test_page_file_url)
         self.marionette.find_element(By.ID, "file-url")
         self.marionette.navigate(self.test_page_remote)
 
     @run_if_e10s("Requires e10s mode enabled")
-    @skip_if_mobile("Test file is only located on host machine")
     def test_navigate_file_url_remoteness_change(self):
         self.marionette.navigate("about:robots")
         self.assertFalse(self.is_remote_tab)
@@ -283,7 +281,6 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.navigate("about:blank")
 
     @run_if_manage_instance("Only runnable if Marionette manages the instance")
-    @skip_if_mobile("Bug 1322993 - Missing temporary folder")
     def test_focus_after_navigation(self):
         self.marionette.restart()
 
@@ -299,13 +296,12 @@ class TestNavigate(BaseNavigationTestCase):
         self.marionette.switch_to_window(self.new_tab)
         self.marionette.navigate(self.test_page_remote)
 
-    @skip_if_mobile("Interacting with chrome elements not available for Fennec")
     def test_type_to_non_remote_tab(self):
         self.marionette.navigate(self.test_page_not_remote)
         self.assertFalse(self.is_remote_tab)
 
         with self.marionette.using_context("chrome"):
-            urlbar = self.marionette.find_element(By.ID, "urlbar")
+            urlbar = self.marionette.find_element(By.ID, "urlbar-input")
             urlbar.send_keys(self.mod_key + "a")
             urlbar.send_keys(self.mod_key + "x")
             urlbar.send_keys("about:support" + Keys.ENTER)
@@ -315,13 +311,12 @@ class TestNavigate(BaseNavigationTestCase):
             message="'about:support' hasn't been loaded")
         self.assertFalse(self.is_remote_tab)
 
-    @skip_if_mobile("Interacting with chrome elements not available for Fennec")
     @run_if_e10s("Requires e10s mode enabled")
     def test_type_to_remote_tab(self):
         self.assertTrue(self.is_remote_tab)
 
         with self.marionette.using_context("chrome"):
-            urlbar = self.marionette.find_element(By.ID, "urlbar")
+            urlbar = self.marionette.find_element(By.ID, "urlbar-input")
             urlbar.send_keys(self.mod_key + "a")
             urlbar.send_keys(self.mod_key + "x")
             urlbar.send_keys(self.test_page_remote + Keys.ENTER)
@@ -415,6 +410,7 @@ class TestBackForwardNavigation(BaseNavigationTestCase):
 
         self.run_bfcache_test(test_pages)
 
+    @skip("Bug 1484927: Maybe causes crash in [@ mozilla::ShutdownXPCOM(nsIServiceManager*)]")
     def test_data_urls(self):
         test_pages = [
             {"url": inline("<p>foobar</p>")},
@@ -431,7 +427,6 @@ class TestBackForwardNavigation(BaseNavigationTestCase):
         ]
         self.run_bfcache_test(test_pages)
 
-    @skip_if_mobile("Test file is only located on host machine")
     def test_file_url(self):
         test_pages = [
             {"url": self.test_page_remote},
@@ -521,7 +516,6 @@ class TestBackForwardNavigation(BaseNavigationTestCase):
         ]
         self.run_bfcache_test(test_pages)
 
-    @skip_if_mobile("Bug 1333209 - Process killed because of connection loss")
     def test_non_remote_about_pages(self):
         test_pages = [
             {"url": "about:preferences", "is_remote": False},
@@ -620,7 +614,6 @@ class TestRefresh(BaseNavigationTestCase):
         self.marionette.refresh()
         self.marionette.find_element(By.NAME, "third")
 
-    @skip_if_mobile("Test file is only located on host machine")
     def test_file_url(self):
         self.marionette.navigate(self.test_page_file_url)
         self.assertEqual(self.test_page_file_url, self.marionette.get_url())

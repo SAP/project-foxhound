@@ -19,7 +19,7 @@ color_dict = {
     'log_process_output': 'blue',
     'log_test_status_pass': 'green',
     'log_test_status_unexpected_fail': 'red',
-    'log_test_status_known_intermittent': 'orange',
+    'log_test_status_known_intermittent': 'yellow',
     'time': 'cyan',
     'action': 'yellow',
     'pid': 'cyan',
@@ -172,6 +172,7 @@ class MachFormatter(base.BaseFormatter):
         count = summary['counts']
         logs = summary['unexpected_logs']
         intermittent_logs = summary['intermittent_logs']
+        harness_errors = summary['harness_errors']
 
         rv = [
             "",
@@ -214,7 +215,7 @@ class MachFormatter(base.BaseFormatter):
                 rv.append("  {}: {} ({})".format(
                           key, sum(count[key]['unexpected'].values()), status_str))
 
-        # Format status
+        # Format intermittents
         if intermittents > 0:
             heading = "Known Intermittent Results"
             rv.extend(["", self.color_formatter.heading(heading),
@@ -233,9 +234,12 @@ class MachFormatter(base.BaseFormatter):
                     assert "subtest" not in data
                     rv.append(self._format_status(test, data).rstrip())
 
-        if not any(count[key]["unexpected"] for key in ('test', 'subtest', 'assert')):
+        # Format status
+        testfailed = any(count[key]["unexpected"] for key in ('test', 'subtest', 'assert'))
+        if not testfailed and not harness_errors:
             rv.append(self.color_formatter.log_test_status_pass("OK"))
         else:
+            # Format test failures
             heading = "Unexpected Results"
             rv.extend(["", self.color_formatter.heading(heading),
                        self.color_formatter.heading("-" * len(heading))])
@@ -252,6 +256,11 @@ class MachFormatter(base.BaseFormatter):
                     data = results[0]
                     assert "subtest" not in data
                     rv.append(self._format_status(test, data).rstrip())
+
+            # Format harness errors
+            if harness_errors:
+                for data in harness_errors:
+                    rv.append(self.log(data))
 
         return "\n".join(rv)
 
@@ -438,7 +447,7 @@ class MachFormatter(base.BaseFormatter):
         else:
             success = False
 
-        rv = ["pid:%s. Test:%s. Minidump anaylsed:%s. Signature:[%s]" %
+        rv = ["pid:%s. Test:%s. Minidump analysed:%s. Signature:[%s]" %
               (data.get("pid", None), test, success, data["signature"])]
 
         if data.get("minidump_path"):

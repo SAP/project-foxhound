@@ -10,15 +10,15 @@
 #include "nsContentUtils.h"
 #include "nsDeviceSensors.h"
 
-#include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIServiceManager.h"
 #include "nsIServiceManager.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_device.h"
 #include "mozilla/Attributes.h"
 #include "nsIPermissionManager.h"
+#include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/DeviceLightEvent.h"
 #include "mozilla/dom/DeviceOrientationEvent.h"
 #include "mozilla/dom/DeviceProximityEvent.h"
@@ -31,6 +31,8 @@
 using namespace mozilla;
 using namespace mozilla::dom;
 using namespace hal;
+
+class nsIDOMWindow;
 
 #undef near
 
@@ -150,8 +152,6 @@ class DeviceSensorTestEvent : public Runnable {
   uint32_t mType;
 };
 
-static bool sTestSensorEvents = false;
-
 NS_IMETHODIMP nsDeviceSensors::AddWindowListener(uint32_t aType,
                                                  nsIDOMWindow* aWindow) {
   if (!IsSensorAllowedByPref(aType, aWindow)) return NS_OK;
@@ -164,14 +164,7 @@ NS_IMETHODIMP nsDeviceSensors::AddWindowListener(uint32_t aType,
 
   mWindowListeners[aType]->AppendElement(aWindow);
 
-  static bool sPrefCacheInitialized = false;
-  if (!sPrefCacheInitialized) {
-    sPrefCacheInitialized = true;
-    Preferences::AddBoolVarCache(&sTestSensorEvents,
-                                 "device.sensors.test.events", false);
-  }
-
-  if (sTestSensorEvents) {
+  if (StaticPrefs::device_sensors_test_events()) {
     nsCOMPtr<nsIRunnable> event = new DeviceSensorTestEvent(this, aType);
     NS_DispatchToCurrentThread(event);
   }
@@ -211,10 +204,16 @@ static bool WindowCannotReceiveSensorEvent(nsPIDOMWindowInner* aWindow) {
     return true;
   }
 
-  // Check to see if this window is a cross-origin iframe
-  nsCOMPtr<nsPIDOMWindowOuter> top = aWindow->GetScriptableTop();
+  // Check to see if this window is a cross-origin iframe:
+
+  auto topBC = aWindow->GetBrowsingContext()->Top();
+  if (!topBC->IsInProcess()) {
+    return true;
+  }
+
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
-  nsCOMPtr<nsIScriptObjectPrincipal> topSop = do_QueryInterface(top);
+  nsCOMPtr<nsIScriptObjectPrincipal> topSop =
+      do_QueryInterface(topBC->GetDOMWindow());
   if (!sop || !topSop) {
     return true;
   }
@@ -297,7 +296,7 @@ static Orientation RotationVectorToOrientation(double aX, double aY, double aZ,
 void nsDeviceSensors::Notify(const mozilla::hal::SensorData& aSensorData) {
   uint32_t type = aSensorData.sensor();
 
-  const InfallibleTArray<float>& values = aSensorData.values();
+  const nsTArray<float>& values = aSensorData.values();
   size_t len = values.Length();
   double x = len > 0 ? values[0] : 0.0;
   double y = len > 1 ? values[1] : 0.0;
@@ -446,7 +445,7 @@ void nsDeviceSensors::FireDOMMotionEvent(Document* doc, EventTarget* target,
       TimeDuration::FromMilliseconds(DEFAULT_SENSOR_POLL);
   bool fireEvent =
       (TimeStamp::Now() > mLastDOMMotionEventTime + sensorPollDuration) ||
-      sTestSensorEvents;
+      StaticPrefs::device_sensors_test_events();
 
   switch (type) {
     case nsIDeviceSensorData::TYPE_LINEAR_ACCELERATION:
@@ -573,5 +572,7 @@ bool nsDeviceSensors::IsSensorAllowedByPref(uint32_t aType,
     return true;
   }
 
-  return !nsContentUtils::ShouldResistFingerprinting(window->GetDocShell());
+  nsCOMPtr<nsIScriptObjectPrincipal> soPrincipal = do_QueryInterface(window);
+  return !nsContentUtils::ShouldResistFingerprinting(
+      soPrincipal->GetPrincipal());
 }

@@ -11,7 +11,7 @@
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/ErrorResult.h"
 #include "GeckoProfiler.h"
 #include "nsAttrValueInlines.h"
@@ -294,9 +294,9 @@ nsresult nsGenericHTMLFrameElement::AfterSetAttr(
   if (aNameSpaceID == kNameSpaceID_None) {
     if (aName == nsGkAtoms::scrolling) {
       if (mFrameLoader) {
+        // FIXME(bug 1588791): This should work for fission iframes.
         nsIDocShell* docshell = mFrameLoader->GetExistingDocShell();
-        nsCOMPtr<nsIScrollable> scrollable = do_QueryInterface(docshell);
-        if (scrollable) {
+        if (nsCOMPtr<nsIScrollable> scrollable = do_QueryInterface(docshell)) {
           int32_t cur;
           scrollable->GetDefaultScrollbarPreferences(
               nsIScrollable::ScrollOrientation_X, &cur);
@@ -353,15 +353,14 @@ void nsGenericHTMLFrameElement::AfterMaybeChangeAttr(
         LoadSrc();
       }
     } else if (aName == nsGkAtoms::name) {
-      // Propagate "name" to the docshell to make browsing context names live,
-      // per HTML5.
-      nsIDocShell* docShell =
-          mFrameLoader ? mFrameLoader->GetExistingDocShell() : nullptr;
-      if (docShell) {
+      // Propagate "name" to the browsing context per HTML5.
+      RefPtr<BrowsingContext> bc =
+          mFrameLoader ? mFrameLoader->GetBrowsingContext() : nullptr;
+      if (bc) {
         if (aValue) {
-          docShell->SetName(aValue->String());
+          bc->SetName(aValue->String());
         } else {
-          docShell->SetName(EmptyString());
+          bc->SetName(EmptyString());
         }
       }
     }
@@ -385,7 +384,7 @@ nsresult nsGenericHTMLFrameElement::CopyInnerTo(Element* aDest) {
   if (doc->IsStaticDocument() && mFrameLoader) {
     nsGenericHTMLFrameElement* dest =
         static_cast<nsGenericHTMLFrameElement*>(aDest);
-    nsFrameLoader* fl = nsFrameLoader::Create(dest, nullptr, false);
+    RefPtr<nsFrameLoader> fl = nsFrameLoader::Create(dest, nullptr, false);
     NS_ENSURE_STATE(fl);
     dest->mFrameLoader = fl;
     mFrameLoader->CreateStaticClone(fl);
@@ -419,19 +418,6 @@ bool nsGenericHTMLFrameElement::IsHTMLFocusable(bool aWithMouse,
 /* [infallible] */
 nsresult nsGenericHTMLFrameElement::GetReallyIsBrowser(bool* aOut) {
   *aOut = mReallyIsBrowser;
-  return NS_OK;
-}
-
-/* [infallible] */
-NS_IMETHODIMP nsGenericHTMLFrameElement::GetIsolated(bool* aOut) {
-  *aOut = true;
-
-  if (!nsContentUtils::IsSystemPrincipal(NodePrincipal())) {
-    return NS_OK;
-  }
-
-  // Isolation is only disabled if the attribute is present
-  *aOut = !HasAttr(kNameSpaceID_None, nsGkAtoms::noisolation);
   return NS_OK;
 }
 

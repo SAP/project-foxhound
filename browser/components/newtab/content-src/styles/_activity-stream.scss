@@ -157,10 +157,14 @@ input {
 @import '../components/DiscoveryStreamComponents/TopSites/TopSites';
 @import '../components/DiscoveryStreamComponents/DSLinkMenu/DSLinkMenu';
 @import '../components/DiscoveryStreamComponents/DSCard/DSCard';
+@import '../components/DiscoveryStreamComponents/DSContextFooter/DSContextFooter';
 @import '../components/DiscoveryStreamComponents/DSImage/DSImage';
+@import '../components/DiscoveryStreamComponents/DSDismiss/DSDismiss';
 @import '../components/DiscoveryStreamComponents/DSMessage/DSMessage';
 @import '../components/DiscoveryStreamImpressionStats/ImpressionStats';
 @import '../components/DiscoveryStreamComponents/DSEmptyState/DSEmptyState';
+@import '../components/DiscoveryStreamComponents/DSTextPromo/DSTextPromo';
+@import '../components/DiscoveryStreamComponents/DSPrivacyModal/DSPrivacyModal';
 
 // AS Router
 @import '../asrouter/components/Button/Button';
@@ -172,5 +176,6 @@ input {
 @import '../asrouter/templates/SubmitFormSnippet/SubmitFormSnippet';
 @import '../asrouter/templates/OnboardingMessage/OnboardingMessage';
 @import '../asrouter/templates/EOYSnippet/EOYSnippet';
-@import '../asrouter/templates/StartupOverlay/StartupOverlay';
+@import '../asrouter/components/FxASignupForm/FxASignupForm';
 @import '../asrouter/templates/Trailhead/Trailhead';
+@import '../asrouter/templates/FullPageInterrupt/FullPageInterrupt';

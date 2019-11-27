@@ -55,13 +55,13 @@ const gClientAuthDialogs = {
   },
 
   chooseCertificate(
-    ctx,
     hostname,
     port,
     organization,
     issuerOrg,
     certList,
-    selectedIndex
+    selectedIndex,
+    rememberClientAuthCertificate
   ) {
     this.chooseCertificateCalled = true;
     Assert.notEqual(
@@ -70,14 +70,7 @@ const gClientAuthDialogs = {
       "chooseCertificate() should be called only when expected"
     );
 
-    let caud = ctx.QueryInterface(Ci.nsIClientAuthUserDecision);
-    Assert.notEqual(
-      caud,
-      null,
-      "nsIClientAuthUserDecision should be queryable from the " +
-        "given context"
-    );
-    caud.rememberClientAuthCertificate = this.rememberClientAuthCertificate;
+    rememberClientAuthCertificate.value = this.rememberClientAuthCertificate;
 
     Assert.equal(
       hostname,
@@ -153,13 +146,17 @@ async function testHelper(prefValue, expectedURL, options = undefined) {
     "https://requireclientcert.example.com:443"
   );
 
-  // |loadedURL| will be a string URL if browserLoaded() wins the race, or
-  // |undefined| if waitForErrorPage() wins the race.
-  let loadedURL = await Promise.race([
-    BrowserTestUtils.browserLoaded(win.gBrowser.selectedBrowser),
-    BrowserTestUtils.waitForErrorPage(win.gBrowser.selectedBrowser),
-  ]);
-  Assert.equal(expectedURL, loadedURL, "Expected and actual URLs should match");
+  await BrowserTestUtils.browserLoaded(
+    win.gBrowser.selectedBrowser,
+    false,
+    "https://requireclientcert.example.com/",
+    true
+  );
+  let loadedURL = win.gBrowser.selectedBrowser.documentURI.spec;
+  Assert.ok(
+    loadedURL.startsWith(expectedURL),
+    "Expected and actual URLs should match"
+  );
   Assert.equal(
     gClientAuthDialogs.chooseCertificateCalled,
     prefValue == "Ask Every Time",
@@ -191,7 +188,10 @@ add_task(async function testCertChosenAutomatically() {
 // an error page is displayed.
 add_task(async function testCertNotChosenByUser() {
   gClientAuthDialogs.state = DialogState.RETURN_CERT_NOT_SELECTED;
-  await testHelper("Ask Every Time", undefined);
+  await testHelper(
+    "Ask Every Time",
+    "about:neterror?e=nssFailure2&u=https%3A//requireclientcert.example.com/"
+  );
   sdr.logoutAndTeardown();
 });
 

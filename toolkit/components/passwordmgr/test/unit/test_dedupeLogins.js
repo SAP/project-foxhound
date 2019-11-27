@@ -77,6 +77,12 @@ const DOMAIN2_HTTPS_LOGIN = TestData.formLogin({
   origin: "https://www4.example.com",
   formActionOrigin: "https://www4.example.com",
 });
+const DOMAIN2_HTTPS_LOGIN_NEWER = TestData.formLogin({
+  origin: "https://www4.example.com",
+  formActionOrigin: "https://www4.example.com",
+  timePasswordChanged: 4000,
+  timeLastUsed: 4000,
+});
 const DOMAIN2_HTTPS_TO_HTTPS_U2_P2 = TestData.formLogin({
   origin: "https://www4.example.com",
   formActionOrigin: "https://www4.example.com",
@@ -172,6 +178,11 @@ add_task(async function test_dedupeLogins_resolveBy() {
   Assert.ok(
     DOMAIN1_HTTP_TO_HTTP_U1_P1.timePasswordChanged <
       DOMAIN1_HTTPS_TO_HTTP_U1_P1.timePasswordChanged,
+    "Sanity check timePasswordChanged difference"
+  );
+  Assert.ok(
+    DOMAIN1_HTTPS_LOGIN.timePasswordChanged <
+      DOMAIN2_HTTPS_LOGIN_NEWER.timePasswordChanged,
     "Sanity check timePasswordChanged difference"
   );
 
@@ -301,6 +312,14 @@ add_task(async function test_dedupeLogins_resolveBy() {
       DOMAIN2_HTTPS_LOGIN.origin,
     ],
     [
+      "resolveBy subdomain+timePasswordChanged, different subdomains, same login, subdomain1 preferred",
+      [DOMAIN1_HTTPS_LOGIN],
+      [DOMAIN1_HTTPS_LOGIN, DOMAIN2_HTTPS_LOGIN_NEWER],
+      undefined,
+      ["subdomain", "timePasswordChanged"],
+      DOMAIN1_HTTPS_LOGIN.origin,
+    ],
+    [
       "resolveBy subdomain, same subdomain, different schemes",
       [DOMAIN1_HTTPS_LOGIN],
       [DOMAIN1_HTTPS_LOGIN, DOMAIN1_HTTP_LOGIN],
@@ -333,7 +352,7 @@ add_task(async function test_dedupeLogins_resolveBy() {
       DOMAIN1_HTTPS_AUTH.origin,
     ],
     [
-      "resolveBy matching _searchAndDedupeLogins, prefer https: scheme over http: in primary and subdomains",
+      "resolveBy matching searchAndDedupeLogins, prefer domain matches then https: scheme over http:",
       // expected:
       [DOMAIN1_HTTPS_TO_HTTPS_U1_P1, DOMAIN2_HTTPS_TO_HTTPS_U2_P2],
       // logins:
@@ -346,7 +365,7 @@ add_task(async function test_dedupeLogins_resolveBy() {
       // uniqueKeys:
       undefined,
       // resolveBy:
-      ["actionOrigin", "scheme", "subdomain", "timePasswordChanged"],
+      ["subdomain", "actionOrigin", "scheme", "timePasswordChanged"],
       // preferredOrigin:
       DOMAIN1_HTTPS_TO_HTTPS_U1_P1.origin,
     ],

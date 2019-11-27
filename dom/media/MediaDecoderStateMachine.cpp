@@ -18,21 +18,24 @@
 #include "mozilla/NotNull.h"
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/Tuple.h"
 #include "nsIMemoryReporter.h"
 #include "nsPrintfCString.h"
 #include "nsTArray.h"
+#include "AudioSegment.h"
 #include "DOMMediaStream.h"
 #include "ImageContainer.h"
 #include "MediaDecoder.h"
 #include "MediaDecoderStateMachine.h"
 #include "MediaShutdownManager.h"
+#include "MediaTrackGraph.h"
 #include "MediaTimer.h"
 #include "ReaderProxy.h"
 #include "TimeUnits.h"
+#include "VideoSegment.h"
 #include "VideoUtils.h"
 
 namespace mozilla {
@@ -2589,7 +2592,6 @@ RefPtr<ShutdownPromise> MediaDecoderStateMachine::ShutdownState::Enter() {
   master->mVolume.DisconnectIfConnected();
   master->mPreservesPitch.DisconnectIfConnected();
   master->mLooping.DisconnectIfConnected();
-  master->mSameOriginMedia.DisconnectIfConnected();
 
   master->mDuration.DisconnectAll();
   master->mCurrentPosition.DisconnectAll();
@@ -2639,7 +2641,6 @@ MediaDecoderStateMachine::MediaDecoderStateMachine(MediaDecoder* aDecoder,
       INIT_MIRROR(mVolume, 1.0),
       INIT_MIRROR(mPreservesPitch, true),
       INIT_MIRROR(mLooping, false),
-      INIT_MIRROR(mSameOriginMedia, false),
       INIT_CANONICAL(mDuration, NullableTimeUnit()),
       INIT_CANONICAL(mCurrentPosition, TimeUnit::Zero()),
       INIT_CANONICAL(mIsAudioDataAudible, false),
@@ -2670,7 +2671,6 @@ void MediaDecoderStateMachine::InitializationTask(MediaDecoder* aDecoder) {
   mVolume.Connect(aDecoder->CanonicalVolume());
   mPreservesPitch.Connect(aDecoder->CanonicalPreservesPitch());
   mLooping.Connect(aDecoder->CanonicalLooping());
-  mSameOriginMedia.Connect(aDecoder->CanonicalSameOriginMedia());
 
   // Initialize watchers.
   mWatchManager.Watch(mBuffered,
@@ -2711,10 +2711,9 @@ already_AddRefed<MediaSink> MediaDecoderStateMachine::CreateMediaSink(
     bool aAudioCaptured, OutputStreamManager* aManager) {
   MOZ_ASSERT_IF(aAudioCaptured, aManager);
   RefPtr<MediaSink> audioSink =
-      aAudioCaptured
-          ? new DecodedStream(mTaskQueue, mAbstractMainThread, mAudioQueue,
-                              mVideoQueue, aManager, mSameOriginMedia.Ref())
-          : CreateAudioSink();
+      aAudioCaptured ? new DecodedStream(mTaskQueue, mAbstractMainThread,
+                                         mAudioQueue, mVideoQueue, aManager)
+                     : CreateAudioSink();
 
   RefPtr<MediaSink> mediaSink =
       new VideoSink(mTaskQueue, audioSink, mVideoQueue, mVideoFrameContainer,
@@ -3343,7 +3342,6 @@ RefPtr<ShutdownPromise> MediaDecoderStateMachine::BeginShutdown() {
   MOZ_ASSERT(NS_IsMainThread());
   if (mOutputStreamManager) {
     mOutputStreamManager->Disconnect();
-    mNextOutputStreamTrackID = mOutputStreamManager->NextTrackID();
   }
   return InvokeAsync(OwnerThread(), this, __func__,
                      &MediaDecoderStateMachine::Shutdown);
@@ -3739,19 +3737,12 @@ RefPtr<GenericPromise> MediaDecoderStateMachine::RequestDebugInfo(
 }
 
 void MediaDecoderStateMachine::SetOutputStreamPrincipal(
-    const nsCOMPtr<nsIPrincipal>& aPrincipal) {
+    nsIPrincipal* aPrincipal) {
   MOZ_ASSERT(NS_IsMainThread());
   mOutputStreamPrincipal = aPrincipal;
   if (mOutputStreamManager) {
     mOutputStreamManager->SetPrincipal(mOutputStreamPrincipal);
   }
-}
-
-void MediaDecoderStateMachine::SetOutputStreamCORSMode(CORSMode aCORSMode) {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(mOutputStreamCORSMode == CORS_NONE);
-  MOZ_ASSERT(!mOutputStreamManager);
-  mOutputStreamCORSMode = aCORSMode;
 }
 
 void MediaDecoderStateMachine::AddOutputStream(DOMMediaStream* aStream) {
@@ -3788,14 +3779,13 @@ void MediaDecoderStateMachine::RemoveOutputStream(DOMMediaStream* aStream) {
 }
 
 void MediaDecoderStateMachine::EnsureOutputStreamManager(
-    MediaStreamGraph* aGraph) {
+    SharedDummyTrack* aDummyStream) {
   MOZ_ASSERT(NS_IsMainThread());
   if (mOutputStreamManager) {
     return;
   }
   mOutputStreamManager = new OutputStreamManager(
-      aGraph->CreateSourceStream(), mNextOutputStreamTrackID,
-      mOutputStreamPrincipal, mOutputStreamCORSMode, mAbstractMainThread);
+      aDummyStream, mOutputStreamPrincipal, mAbstractMainThread);
 }
 
 void MediaDecoderStateMachine::EnsureOutputStreamManagerHasTracks(
@@ -3812,31 +3802,18 @@ void MediaDecoderStateMachine::EnsureOutputStreamManagerHasTracks(
   }
   if (aLoadedInfo.HasAudio()) {
     MOZ_ASSERT(!mOutputStreamManager->HasTrackType(MediaSegment::AUDIO));
-    mOutputStreamManager->AddTrack(MediaSegment::AUDIO);
-    LOG("Pre-created audio track with id %d",
-        mOutputStreamManager->GetLiveTrackIDFor(MediaSegment::AUDIO));
+    RefPtr<SourceMediaTrack> dummy =
+        mOutputStreamManager->AddTrack(MediaSegment::AUDIO);
+    LOG("Pre-created audio track with underlying track %p", dummy.get());
+    Unused << dummy;
   }
   if (aLoadedInfo.HasVideo()) {
     MOZ_ASSERT(!mOutputStreamManager->HasTrackType(MediaSegment::VIDEO));
-    mOutputStreamManager->AddTrack(MediaSegment::VIDEO);
-    LOG("Pre-created video track with id %d",
-        mOutputStreamManager->GetLiveTrackIDFor(MediaSegment::VIDEO));
+    RefPtr<SourceMediaTrack> dummy =
+        mOutputStreamManager->AddTrack(MediaSegment::VIDEO);
+    LOG("Pre-created video track with underlying track %p", dummy.get());
+    Unused << dummy;
   }
-}
-
-void MediaDecoderStateMachine::SetNextOutputStreamTrackID(
-    TrackID aNextTrackID) {
-  MOZ_ASSERT(NS_IsMainThread());
-  LOG("SetNextOutputStreamTrackID aNextTrackID=%d", aNextTrackID);
-  mNextOutputStreamTrackID = aNextTrackID;
-}
-
-TrackID MediaDecoderStateMachine::GetNextOutputStreamTrackID() {
-  MOZ_ASSERT(NS_IsMainThread());
-  if (mOutputStreamManager) {
-    return mOutputStreamManager->NextTrackID();
-  }
-  return mNextOutputStreamTrackID;
 }
 
 class VideoQueueMemoryFunctor : public nsDequeFunctor {

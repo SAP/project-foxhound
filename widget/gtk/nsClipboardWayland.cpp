@@ -195,6 +195,12 @@ void WaylandDataOffer::SetDragStatus(GdkDragAction aAction, uint32_t aTime) {
   uint32_t all_actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_COPY |
                          WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE;
 
+  /* Default to move D&D action (Bug 1576268).
+   */
+  if (dnd_actions == 0) {
+    all_actions = WL_DATA_DEVICE_MANAGER_DND_ACTION_MOVE;
+  }
+
   wl_data_offer_set_actions(mWaylandDataOffer, all_actions, dnd_actions);
 
   /* Workaround Wayland D&D architecture here. To get the data_device_drop()
@@ -469,6 +475,7 @@ void nsRetrievalContextWayland::ClearDragAndDropDataOffer(void) {
 static void data_device_data_offer(void* data,
                                    struct wl_data_device* data_device,
                                    struct wl_data_offer* offer) {
+  LOGCLIP(("data_device_data_offer() callback\n"));
   nsRetrievalContextWayland* context =
       static_cast<nsRetrievalContextWayland*>(data);
   context->RegisterNewDataOffer(offer);
@@ -478,6 +485,7 @@ static void data_device_data_offer(void* data,
 static void data_device_selection(void* data,
                                   struct wl_data_device* wl_data_device,
                                   struct wl_data_offer* offer) {
+  LOGCLIP(("data_device_selection() callback\n"));
   nsRetrievalContextWayland* context =
       static_cast<nsRetrievalContextWayland*>(data);
   context->SetClipboardDataOffer(offer);
@@ -535,7 +543,6 @@ static void data_device_motion(void* data, struct wl_data_device* data_device,
 static void data_device_drop(void* data, struct wl_data_device* data_device) {
   nsRetrievalContextWayland* context =
       static_cast<nsRetrievalContextWayland*>(data);
-
   nsWaylandDragContext* dropContext = context->GetDragContext();
 
   uint32_t time;
@@ -575,6 +582,7 @@ static void primary_selection_data_offer(
     void* data,
     struct gtk_primary_selection_device* gtk_primary_selection_device,
     struct gtk_primary_selection_offer* gtk_primary_offer) {
+  LOGCLIP(("primary_selection_data_offer() callback\n"));
   // create and add listener
   nsRetrievalContextWayland* context =
       static_cast<nsRetrievalContextWayland*>(data);
@@ -585,6 +593,7 @@ static void primary_selection_selection(
     void* data,
     struct gtk_primary_selection_device* gtk_primary_selection_device,
     struct gtk_primary_selection_offer* gtk_primary_offer) {
+  LOGCLIP(("primary_selection_selection() callback\n"));
   nsRetrievalContextWayland* context =
       static_cast<nsRetrievalContextWayland*>(data);
   context->SetPrimaryDataOffer(gtk_primary_offer);
@@ -684,6 +693,7 @@ struct FastTrackClipboard {
 
 static void wayland_clipboard_contents_received(
     GtkClipboard* clipboard, GtkSelectionData* selection_data, gpointer data) {
+  LOGCLIP(("wayland_clipboard_contents_received() callback\n"));
   FastTrackClipboard* fastTrack = static_cast<FastTrackClipboard*>(data);
   fastTrack->mRetrievalContex->TransferFastTrackClipboard(
       fastTrack->mClipboardRequestNumber, selection_data);
@@ -711,6 +721,8 @@ const char* nsRetrievalContextWayland::GetClipboardData(
     const char* aMimeType, int32_t aWhichClipboard, uint32_t* aContentLength) {
   NS_ASSERTION(mClipboardData == nullptr && mClipboardDataLength == 0,
                "Looks like we're leaking clipboard data here!");
+
+  LOGCLIP(("nsRetrievalContextWayland::GetClipboardData\n"));
 
   /* If actual clipboard data is owned by us we don't need to go
    * through Wayland but we ask Gtk+ to directly call data
@@ -745,6 +757,8 @@ const char* nsRetrievalContextWayland::GetClipboardData(
 
 const char* nsRetrievalContextWayland::GetClipboardText(
     int32_t aWhichClipboard) {
+  LOGCLIP(("nsRetrievalContextWayland::GetClipboardText\n"));
+
   GdkAtom selection = GetSelectionAtom(aWhichClipboard);
   DataOffer* dataOffer =
       (selection == GDK_SELECTION_PRIMARY) ? mPrimaryOffer : mClipboardOffer;
@@ -761,6 +775,8 @@ const char* nsRetrievalContextWayland::GetClipboardText(
 
 void nsRetrievalContextWayland::ReleaseClipboardData(
     const char* aClipboardData) {
+  LOGCLIP(("nsRetrievalContextWayland::ReleaseClipboardData\n"));
+
   NS_ASSERTION(aClipboardData == mClipboardData,
                "Releasing unknown clipboard data!");
   g_free((void*)aClipboardData);

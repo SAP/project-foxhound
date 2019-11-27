@@ -150,11 +150,11 @@ class AnimationInspector {
     this.provider = provider;
 
     this.inspector.sidebar.on("select", this.onSidebarSelectionChanged);
-    this.inspector.inspector.nodePicker.on(
+    this.inspector.toolbox.nodePicker.on(
       "picker-started",
       this.onElementPickerStarted
     );
-    this.inspector.inspector.nodePicker.on(
+    this.inspector.toolbox.nodePicker.on(
       "picker-stopped",
       this.onElementPickerStopped
     );
@@ -165,12 +165,12 @@ class AnimationInspector {
     if (this.animationsFrontPromise) {
       return this.animationsFrontPromise;
     }
-    this.animationsFrontPromise = new Promise(async resolve => {
-      const target = this.inspector.target;
+    this.animationsFrontPromise = (async () => {
+      const target = this.inspector.currentTarget;
       const front = await target.getFront("animations");
       front.setWalkerActor(this.inspector.walker);
-      resolve(front);
-    });
+      return front;
+    })();
     return this.animationsFrontPromise;
   }
 
@@ -183,11 +183,11 @@ class AnimationInspector {
       "inspector-sidebar-resized",
       this.onSidebarResized
     );
-    this.inspector.inspector.nodePicker.off(
+    this.inspector.toolbox.nodePicker.off(
       "picker-started",
       this.onElementPickerStarted
     );
-    this.inspector.inspector.nodePicker.off(
+    this.inspector.toolbox.nodePicker.off(
       "picker-stopped",
       this.onElementPickerStopped
     );
@@ -525,7 +525,7 @@ class AnimationInspector {
 
   async setAnimationsPlayState(doPlay) {
     if (typeof this.hasPausePlaySome === "undefined") {
-      this.hasPausePlaySome = await this.inspector.target.actorHasMethod(
+      this.hasPausePlaySome = await this.inspector.currentTarget.actorHasMethod(
         "animations",
         "pauseSome"
       );
@@ -711,7 +711,7 @@ class AnimationInspector {
   }
 
   toggleElementPicker() {
-    this.inspector.inspector.nodePicker.togglePicker();
+    this.inspector.toolbox.nodePicker.togglePicker();
   }
 
   async update() {

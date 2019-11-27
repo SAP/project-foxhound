@@ -30,6 +30,7 @@
 #include "lowpbe.h" /* We do PBE below */
 #include "pkcs11t.h"
 #include "secoid.h"
+#include "cmac.h"
 #include "alghmac.h"
 #include "softoken.h"
 #include "secasn1.h"
@@ -39,7 +40,7 @@
 #include "prenv.h"
 
 #define __PASTE(x, y) x##y
-
+#define BAD_PARAM_CAST(pMech, typeSize) (!pMech->pParameter || pMech->ulParameterLen < typeSize)
 /*
  * we renamed all our internal functions, get the correct
  * definitions for them...
@@ -782,6 +783,10 @@ sftk_CryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
     PRBool useNewKey = PR_FALSE;
     int t;
 
+    if (!pMechanism) {
+        return CKR_MECHANISM_PARAM_INVALID;
+    }
+
     crv = sftk_MechAllowsOperation(pMechanism->mechanism, mechUsage);
     if (crv != CKR_OK)
         return crv;
@@ -895,6 +900,11 @@ sftk_CryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
                 crv = CKR_KEY_HANDLE_INVALID;
                 break;
             }
+
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_RC2_CBC_PARAMS))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
             rc2_param = (CK_RC2_CBC_PARAMS *)pMechanism->pParameter;
             effectiveKeyLength = (rc2_param->ulEffectiveBits + 7) / 8;
             context->cipherInfo =
@@ -922,6 +932,11 @@ sftk_CryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
             att = sftk_FindAttribute(key, CKA_VALUE);
             if (att == NULL) {
                 crv = CKR_KEY_HANDLE_INVALID;
+                break;
+            }
+
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_RC5_CBC_PARAMS))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
                 break;
             }
             rc5_param = (CK_RC5_CBC_PARAMS *)pMechanism->pParameter;
@@ -1121,6 +1136,13 @@ sftk_CryptInit(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
         case CKM_AES_CTS:
         case CKM_AES_CTR:
         case CKM_AES_GCM:
+            if ((pMechanism->mechanism == CKM_AES_GCM && BAD_PARAM_CAST(pMechanism, sizeof(CK_GCM_PARAMS))) ||
+                (pMechanism->mechanism == CKM_AES_CTR && BAD_PARAM_CAST(pMechanism, sizeof(CK_AES_CTR_PARAMS))) ||
+                ((pMechanism->mechanism == CKM_AES_CBC || pMechanism->mechanism == CKM_AES_CTS) && BAD_PARAM_CAST(pMechanism, AES_BLOCK_SIZE))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
+
             if (pMechanism->mechanism == CKM_AES_GCM) {
                 context->multi = PR_FALSE;
             }
@@ -1321,7 +1343,7 @@ NSC_EncryptUpdate(CK_SESSION_HANDLE hSession,
             }
             /* encrypt the current padded data */
             rv = (*context->update)(context->cipherInfo, pEncryptedPart,
-                                    &padoutlen, context->blockSize, context->padBuf,
+                                    &padoutlen, maxout, context->padBuf,
                                     context->blockSize);
             if (rv != SECSuccess) {
                 return sftk_MapCryptError(PORT_GetError());
@@ -1583,6 +1605,68 @@ NSC_DecryptUpdate(CK_SESSION_HANDLE hSession,
     return CKR_OK;
 }
 
+/* From ssl3con.c: Constant-time helper macro that copies the MSB of x to all
+ * other bits. */
+#define DUPLICATE_MSB_TO_ALL(x) ((unsigned int)((int)(x) >> (sizeof(int) * 8 - 1)))
+/* CK_RVToMask returns, in constant time, a mask value of
+ * all ones if rv == CKR_OK.  Otherwise it returns zero. */
+static unsigned int
+CK_RVToMask(CK_RV rv)
+{
+    unsigned int good;
+    /* rv ^ CKR_OK is zero iff rv == CKR_OK. Subtracting one results
+     * in the MSB being set to one iff it was zero before. */
+    good = rv ^ CKR_OK;
+    good--;
+    return DUPLICATE_MSB_TO_ALL(good);
+}
+/* Constant-time helper macro that selects l or r depending on all-1 or all-0
+ * mask m */
+#define CT_SEL(m, l, r) (((m) & (l)) | (~(m) & (r)))
+/* Constant-time helper macro that returns all-1s if x is not 0; and all-0s
+ * otherwise. */
+#define CT_NOT_ZERO(x) (DUPLICATE_MSB_TO_ALL(((x) | (0 - x))))
+
+/* sftk_CheckCBCPadding checks, in constant time, the padding validity and
+ * accordingly sets the pad length. */
+static CK_RV
+sftk_CheckCBCPadding(CK_BYTE_PTR pLastPart,
+                     unsigned int blockSize, unsigned int *outPadSize)
+{
+    PORT_Assert(outPadSize);
+
+    unsigned int padSize = (unsigned int)pLastPart[blockSize - 1];
+
+    /* If padSize <= blockSize, set goodPad to all-1s and all-0s otherwise.*/
+    unsigned int goodPad = DUPLICATE_MSB_TO_ALL(~(blockSize - padSize));
+    /* padSize should not be 0 */
+    goodPad &= CT_NOT_ZERO(padSize);
+
+    unsigned int i;
+    for (i = 0; i < blockSize; i++) {
+        /* If i < padSize, set loopMask to all-1s and all-0s otherwise.*/
+        unsigned int loopMask = DUPLICATE_MSB_TO_ALL(~(padSize - 1 - i));
+        /* Get the padding value (should be padSize) from buffer */
+        unsigned int padVal = pLastPart[blockSize - 1 - i];
+        /* Update goodPad only if i < padSize */
+        goodPad &= CT_SEL(loopMask, ~(padVal ^ padSize), goodPad);
+    }
+
+    /* If any of the final padding bytes had the wrong value, one or more
+     * of the lower eight bits of |goodPad| will be cleared. We AND the
+     * bottom 8 bits together and duplicate the result to all the bits. */
+    goodPad &= goodPad >> 4;
+    goodPad &= goodPad >> 2;
+    goodPad &= goodPad >> 1;
+    goodPad <<= sizeof(goodPad) * 8 - 1;
+    goodPad = DUPLICATE_MSB_TO_ALL(goodPad);
+
+    /* Set outPadSize to padSize or 0 */
+    *outPadSize = CT_SEL(goodPad, padSize, 0);
+    /* Return OK if the pad is valid */
+    return CT_SEL(goodPad, CKR_OK, CKR_ENCRYPTED_DATA_INVALID);
+}
+
 /* NSC_DecryptFinal finishes a multiple-part decryption operation. */
 CK_RV
 NSC_DecryptFinal(CK_SESSION_HANDLE hSession,
@@ -1621,24 +1705,10 @@ NSC_DecryptFinal(CK_SESSION_HANDLE hSession,
             if (rv != SECSuccess) {
                 crv = sftk_MapDecryptError(PORT_GetError());
             } else {
-                unsigned int padSize =
-                    (unsigned int)pLastPart[context->blockSize - 1];
-                if ((padSize > context->blockSize) || (padSize == 0)) {
-                    crv = CKR_ENCRYPTED_DATA_INVALID;
-                } else {
-                    unsigned int i;
-                    unsigned int badPadding = 0; /* used as a boolean */
-                    for (i = 0; i < padSize; i++) {
-                        badPadding |=
-                            (unsigned int)pLastPart[context->blockSize - 1 - i] ^
-                            padSize;
-                    }
-                    if (badPadding) {
-                        crv = CKR_ENCRYPTED_DATA_INVALID;
-                    } else {
-                        *pulLastPartLen = outlen - padSize;
-                    }
-                }
+                unsigned int padSize = 0;
+                crv = sftk_CheckCBCPadding(&pLastPart[outlen - context->blockSize], context->blockSize, &padSize);
+                /* Update pulLastPartLen, in constant time, if crv is OK */
+                *pulLastPartLen = CT_SEL(CK_RVToMask(crv), outlen - padSize, *pulLastPartLen);
             }
         }
     }
@@ -1671,7 +1741,7 @@ NSC_Decrypt(CK_SESSION_HANDLE hSession,
         return crv;
 
     if (!pData) {
-        outlen = ulEncryptedDataLen + context->blockSize;
+        *pulDataLen = (CK_ULONG)(ulEncryptedDataLen + context->blockSize);
         goto done;
     }
 
@@ -1699,29 +1769,19 @@ NSC_Decrypt(CK_SESSION_HANDLE hSession,
                             pEncryptedData, ulEncryptedDataLen);
     /* XXX need to do MUCH better error mapping than this. */
     crv = (rv == SECSuccess) ? CKR_OK : sftk_MapDecryptError(PORT_GetError());
-    if (rv == SECSuccess && context->doPad) {
-        unsigned int padding = pData[outlen - 1];
-        if (padding > context->blockSize || !padding) {
-            crv = CKR_ENCRYPTED_DATA_INVALID;
+    if (rv == SECSuccess) {
+        if (context->doPad) {
+            unsigned int padSize = 0;
+            crv = sftk_CheckCBCPadding(&pData[outlen - context->blockSize], context->blockSize, &padSize);
+            /* Update pulDataLen, in constant time, if crv is OK */
+            *pulDataLen = CT_SEL(CK_RVToMask(crv), outlen - padSize, *pulDataLen);
         } else {
-            unsigned int i;
-            unsigned int badPadding = 0; /* used as a boolean */
-            for (i = 0; i < padding; i++) {
-                badPadding |= (unsigned int)pData[outlen - 1 - i] ^ padding;
-            }
-            if (badPadding) {
-                crv = CKR_ENCRYPTED_DATA_INVALID;
-            } else {
-                outlen -= padding;
-            }
+            *pulDataLen = (CK_ULONG)outlen;
         }
     }
     sftk_TerminateOp(session, SFTK_DECRYPT, context);
 done:
     sftk_FreeSession(session);
-    if (crv == CKR_OK) {
-        *pulDataLen = (CK_ULONG)outlen;
-    }
     return crv;
 }
 
@@ -1930,7 +1990,7 @@ static SECStatus
 sftk_HMACCmp(CK_ULONG *copyLen, unsigned char *sig, unsigned int sigLen,
              unsigned char *hash, unsigned int hashLen)
 {
-    return (PORT_Memcmp(sig, hash, *copyLen) == 0) ? SECSuccess : SECFailure;
+    return (NSS_SecureMemcmp(sig, hash, *copyLen) == 0) ? SECSuccess : SECFailure;
 }
 
 /*
@@ -1982,6 +2042,84 @@ sftk_doHMACInit(SFTKSessionContext *context, HASH_HashType hash,
     context->verify = (SFTKVerify)sftk_HMACCmp;
     context->maxLen = hashObj->length;
     HMAC_Begin(HMACcontext);
+    return CKR_OK;
+}
+
+/*
+ * common CMAC initialization routine
+ */
+static CK_RV
+sftk_doCMACInit(SFTKSessionContext *session, CMACCipher type,
+                SFTKObject *key, CK_ULONG mac_size)
+{
+    SFTKAttribute *keyval;
+    CMACContext *cmacContext;
+    CK_ULONG *intpointer;
+
+    /* Unlike HMAC, CMAC doesn't need to check key sizes as the underlying
+     * block cipher does this for us: block ciphers support only a single
+     * key size per variant.
+     *
+     * To introduce support for a CMAC based on a new block cipher, first add
+     * support for the relevant block cipher to CMAC in the freebl layer. Then
+     * update the switch statement at the end of this function. Also remember
+     * to update the switch statement in NSC_SignInit with the PKCS#11
+     * mechanism constants.
+     */
+
+    keyval = sftk_FindAttribute(key, CKA_VALUE);
+    if (keyval == NULL) {
+        return CKR_KEY_SIZE_RANGE;
+    }
+
+    /* Create the underlying CMACContext and associate it with the
+     * SFTKSessionContext's hashInfo field */
+    cmacContext = CMAC_Create(type,
+                              (const unsigned char *)keyval->attrib.pValue,
+                              keyval->attrib.ulValueLen);
+    sftk_FreeAttribute(keyval);
+
+    if (cmacContext == NULL) {
+        if (PORT_GetError() == SEC_ERROR_INVALID_ARGS) {
+            return CKR_KEY_SIZE_RANGE;
+        }
+
+        return CKR_HOST_MEMORY;
+    }
+    session->hashInfo = cmacContext;
+
+    /* MACs all behave roughly the same. However, CMAC can fail because
+     * the underlying cipher can fail. In practice, this shouldn't occur
+     * because we're not using any chaining modes, letting us safely ignore
+     * the return value. */
+    session->multi = PR_TRUE;
+    session->hashUpdate = (SFTKHash)CMAC_Update;
+    session->end = (SFTKEnd)CMAC_Finish;
+    session->hashdestroy = (SFTKDestroy)CMAC_Destroy;
+
+    intpointer = PORT_New(CK_ULONG);
+    if (intpointer == NULL) {
+        return CKR_HOST_MEMORY;
+    }
+    *intpointer = mac_size;
+    session->cipherInfo = intpointer;
+
+    /* Since we're only "hashing", copy the result from session->end to the
+     * caller using sftk_SignCopy. */
+    session->update = (SFTKCipher)sftk_SignCopy;
+    session->verify = (SFTKVerify)sftk_HMACCmp;
+    session->destroy = (SFTKDestroy)sftk_Space;
+
+    /* Will need to be updated for additional block ciphers in the future. */
+    switch (type) {
+        case CMAC_AES:
+            session->maxLen = AES_BLOCK_SIZE;
+            break;
+        default:
+            PORT_Assert(0);
+            return CKR_KEY_SIZE_RANGE;
+    }
+
     return CKR_OK;
 }
 
@@ -2046,7 +2184,7 @@ sftk_SSLMACVerify(SFTKSSLMACInfo *info, unsigned char *sig, unsigned int sigLen,
     info->update(info->hashContext, ssl_pad_2, info->padSize);
     info->update(info->hashContext, hash, hashLen);
     info->end(info->hashContext, tmpBuf, &out, SFTK_MAX_MAC_LENGTH);
-    return (PORT_Memcmp(sig, tmpBuf, info->macSize) == 0) ? SECSuccess : SECFailure;
+    return (NSS_SecureMemcmp(sig, tmpBuf, info->macSize) == 0) ? SECSuccess : SECFailure;
 }
 
 /*
@@ -2137,9 +2275,13 @@ sftk_InitCBCMac(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
     unsigned int blockSize;
     PRBool isXCBC = PR_FALSE;
 
+    if (!pMechanism) {
+        return CKR_MECHANISM_PARAM_INVALID;
+    }
+
     switch (pMechanism->mechanism) {
         case CKM_RC2_MAC_GENERAL:
-            if (!pMechanism->pParameter) {
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_RC2_MAC_GENERAL_PARAMS))) {
                 return CKR_MECHANISM_PARAM_INVALID;
             }
             mac_bytes =
@@ -2159,12 +2301,18 @@ sftk_InitCBCMac(CK_SESSION_HANDLE hSession, CK_MECHANISM_PTR pMechanism,
             break;
 #if NSS_SOFTOKEN_DOES_RC5
         case CKM_RC5_MAC_GENERAL:
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_RC5_MAC_GENERAL_PARAMS))) {
+                return CKR_MECHANISM_PARAM_INVALID;
+            }
             mac_bytes =
                 ((CK_RC5_MAC_GENERAL_PARAMS *)pMechanism->pParameter)->ulMacLength;
         /* fall through */
         case CKM_RC5_MAC:
             /* this works because ulEffectiveBits is in the same place in both the
              * CK_RC5_MAC_GENERAL_PARAMS and CK_RC5_CBC_PARAMS */
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_RC5_MAC_GENERAL_PARAMS))) {
+                return CKR_MECHANISM_PARAM_INVALID;
+            }
             rc5_mac = (CK_RC5_MAC_GENERAL_PARAMS *)pMechanism->pParameter;
             rc5_params.ulWordsize = rc5_mac->ulWordsize;
             rc5_params.ulRounds = rc5_mac->ulRounds;
@@ -2744,7 +2892,7 @@ NSC_SignInit(CK_SESSION_HANDLE hSession,
 
         case CKM_SHA_1_HMAC_GENERAL:
             PORT_Assert(pMechanism->pParameter);
-            if (!pMechanism->pParameter) {
+            if (!pMechanism->pParameter || pMechanism->ulParameterLen != sizeof(CK_MAC_GENERAL_PARAMS)) {
                 crv = CKR_MECHANISM_PARAM_INVALID;
                 break;
             }
@@ -2754,7 +2902,17 @@ NSC_SignInit(CK_SESSION_HANDLE hSession,
         case CKM_SHA_1_HMAC:
             crv = sftk_doHMACInit(context, HASH_AlgSHA1, key, SHA1_LENGTH);
             break;
-
+        case CKM_AES_CMAC_GENERAL:
+            PORT_Assert(pMechanism->pParameter);
+            if (!pMechanism->pParameter || pMechanism->ulParameterLen != sizeof(CK_MAC_GENERAL_PARAMS)) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
+            crv = sftk_doCMACInit(context, CMAC_AES, key, *(CK_ULONG *)pMechanism->pParameter);
+            break;
+        case CKM_AES_CMAC:
+            crv = sftk_doCMACInit(context, CMAC_AES, key, AES_BLOCK_SIZE);
+            break;
         case CKM_SSL3_MD5_MAC:
             PORT_Assert(pMechanism->pParameter);
             if (!pMechanism->pParameter) {
@@ -3558,7 +3716,7 @@ NSC_VerifyFinal(CK_SESSION_HANDLE hSession,
         /* must be block cipher MACing */
         crv = CKR_SIGNATURE_LEN_RANGE;
     } else if (CKR_OK == (crv = sftk_MACFinal(context))) {
-        if (PORT_Memcmp(pSignature, context->macBuf, ulSignatureLen))
+        if (NSS_SecureMemcmp(pSignature, context->macBuf, ulSignatureLen))
             crv = CKR_SIGNATURE_INVALID;
     }
 
@@ -3758,11 +3916,17 @@ nsc_pbe_key_gen(NSSPKCS5PBEParameter *pkcs5_pbe, CK_MECHANISM_PTR pMechanism,
     iv.len = 0;
 
     if (pMechanism->mechanism == CKM_PKCS5_PBKD2) {
+        if (BAD_PARAM_CAST(pMechanism, sizeof(CK_PKCS5_PBKD2_PARAMS))) {
+            return CKR_MECHANISM_PARAM_INVALID;
+        }
         pbkd2_params = (CK_PKCS5_PBKD2_PARAMS *)pMechanism->pParameter;
         pwitem.data = (unsigned char *)pbkd2_params->pPassword;
         /* was this a typo in the PKCS #11 spec? */
         pwitem.len = *pbkd2_params->ulPasswordLen;
     } else {
+        if (BAD_PARAM_CAST(pMechanism, sizeof(CK_PBE_PARAMS))) {
+            return CKR_MECHANISM_PARAM_INVALID;
+        }
         pbe_params = (CK_PBE_PARAMS *)pMechanism->pParameter;
         pwitem.data = (unsigned char *)pbe_params->pPassword;
         pwitem.len = pbe_params->ulPasswordLen;
@@ -4062,6 +4226,10 @@ nsc_SetupHMACKeyGen(CK_MECHANISM_PTR pMechanism, NSSPKCS5PBEParameter **pbe)
         PORT_FreeArena(arena, PR_TRUE);
         return CKR_HOST_MEMORY;
     }
+    if (BAD_PARAM_CAST(pMechanism, sizeof(CK_PBE_PARAMS))) {
+        PORT_FreeArena(arena, PR_TRUE);
+        return CKR_MECHANISM_PARAM_INVALID;
+    }
 
     params->poolp = arena;
     params->ivLen = 0;
@@ -4141,10 +4309,10 @@ nsc_SetupPBEKeyGen(CK_MECHANISM_PTR pMechanism, NSSPKCS5PBEParameter **pbe,
     }
 
     if (pMechanism->mechanism == CKM_PKCS5_PBKD2) {
-        pbkd2_params = (CK_PKCS5_PBKD2_PARAMS *)pMechanism->pParameter;
-        if (pbkd2_params == NULL) {
+        if (BAD_PARAM_CAST(pMechanism, sizeof(CK_PKCS5_PBKD2_PARAMS))) {
             return CKR_MECHANISM_PARAM_INVALID;
         }
+        pbkd2_params = (CK_PKCS5_PBKD2_PARAMS *)pMechanism->pParameter;
         switch (pbkd2_params->prf) {
             case CKP_PKCS5_PBKD2_HMAC_SHA1:
                 hashType = HASH_AlgSHA1;
@@ -4171,6 +4339,9 @@ nsc_SetupPBEKeyGen(CK_MECHANISM_PTR pMechanism, NSSPKCS5PBEParameter **pbe,
         salt.len = (unsigned int)pbkd2_params->ulSaltSourceDataLen;
         iteration = pbkd2_params->iterations;
     } else {
+        if (BAD_PARAM_CAST(pMechanism, sizeof(CK_PBE_PARAMS))) {
+            return CKR_MECHANISM_PARAM_INVALID;
+        }
         pbe_params = (CK_PBE_PARAMS *)pMechanism->pParameter;
         salt.data = (unsigned char *)pbe_params->pSalt;
         salt.len = (unsigned int)pbe_params->ulSaltLen;
@@ -4290,8 +4461,7 @@ NSC_GenerateKey(CK_SESSION_HANDLE hSession,
             break;
     }
     if (crv != CKR_OK) {
-        sftk_FreeObject(key);
-        return crv;
+        goto loser;
     }
 
     /* make sure we don't have any class, key_type, or value fields */
@@ -4404,8 +4574,7 @@ NSC_GenerateKey(CK_SESSION_HANDLE hSession,
     }
 
     if (crv != CKR_OK) {
-        sftk_FreeObject(key);
-        return crv;
+        goto loser;
     }
 
     /* if there was no error,
@@ -4423,6 +4592,10 @@ NSC_GenerateKey(CK_SESSION_HANDLE hSession,
             break;
         case nsc_ssl:
             rsa_pms = (SSL3RSAPreMasterSecret *)buf;
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_VERSION))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                goto loser;
+            }
             version = (CK_VERSION *)pMechanism->pParameter;
             rsa_pms->client_version[0] = version->major;
             rsa_pms->client_version[1] = version->minor;
@@ -4441,6 +4614,10 @@ NSC_GenerateKey(CK_SESSION_HANDLE hSession,
             crv = nsc_parameter_gen(key_type, key);
             break;
         case nsc_jpake:
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_NSS_JPAKERound1Params))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                goto loser;
+            }
             crv = jpake_Round1(hashType,
                                (CK_NSS_JPAKERound1Params *)pMechanism->pParameter,
                                key);
@@ -4448,34 +4625,30 @@ NSC_GenerateKey(CK_SESSION_HANDLE hSession,
     }
 
     if (crv != CKR_OK) {
-        sftk_FreeObject(key);
-        return crv;
+        goto loser;
     }
 
     /* Add the class, key_type, and value */
     crv = sftk_AddAttributeType(key, CKA_CLASS, &objclass, sizeof(CK_OBJECT_CLASS));
     if (crv != CKR_OK) {
-        sftk_FreeObject(key);
-        return crv;
+        goto loser;
     }
     crv = sftk_AddAttributeType(key, CKA_KEY_TYPE, &key_type, sizeof(CK_KEY_TYPE));
     if (crv != CKR_OK) {
-        sftk_FreeObject(key);
-        return crv;
+        goto loser;
     }
     if (key_length != 0) {
         crv = sftk_AddAttributeType(key, CKA_VALUE, buf, key_length);
         if (crv != CKR_OK) {
-            sftk_FreeObject(key);
-            return crv;
+            goto loser;
         }
     }
 
     /* get the session */
     session = sftk_SessionFromHandle(hSession);
     if (session == NULL) {
-        sftk_FreeObject(key);
-        return CKR_SESSION_HANDLE_INVALID;
+        crv = CKR_SESSION_HANDLE_INVALID;
+        goto loser;
     }
 
     /*
@@ -4492,6 +4665,7 @@ NSC_GenerateKey(CK_SESSION_HANDLE hSession,
     if (crv == CKR_OK) {
         *phKey = key->handle;
     }
+loser:
     sftk_FreeObject(key);
     return crv;
 }
@@ -5605,8 +5779,8 @@ NSC_WrapKey(CK_SESSION_HANDLE hSession,
     }
 
     key = sftk_ObjectFromHandle(hKey, session);
-    sftk_FreeSession(session);
     if (key == NULL) {
+        sftk_FreeSession(session);
         return CKR_KEY_HANDLE_INVALID;
     }
 
@@ -5712,7 +5886,7 @@ NSC_WrapKey(CK_SESSION_HANDLE hSession,
             break;
     }
     sftk_FreeObject(key);
-
+    sftk_FreeSession(session);
     return sftk_mapWrap(crv);
 }
 
@@ -6521,7 +6695,6 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
     CK_KEY_TYPE keyType = CKK_GENERIC_SECRET;
     CK_OBJECT_CLASS classType = CKO_SECRET_KEY;
     CK_KEY_DERIVATION_STRING_DATA *stringPtr;
-    CK_MECHANISM_TYPE mechanism = pMechanism->mechanism;
     PRBool isTLS = PR_FALSE;
     PRBool isDH = PR_FALSE;
     HASH_HashType tlsPrfHash = HASH_AlgNULL;
@@ -6539,6 +6712,11 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
     if (!slot) {
         return CKR_SESSION_HANDLE_INVALID;
     }
+    if (!pMechanism) {
+        return CKR_MECHANISM_PARAM_INVALID;
+    }
+    CK_MECHANISM_TYPE mechanism = pMechanism->mechanism;
+
     /*
      * now lets create an object to hang the attributes off of
      */
@@ -6712,6 +6890,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
 
             if ((mechanism == CKM_TLS12_MASTER_KEY_DERIVE) ||
                 (mechanism == CKM_TLS12_MASTER_KEY_DERIVE_DH)) {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_TLS12_MASTER_KEY_DERIVE_PARAMS))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 CK_TLS12_MASTER_KEY_DERIVE_PARAMS *tls12_master =
                     (CK_TLS12_MASTER_KEY_DERIVE_PARAMS *)pMechanism->pParameter;
                 tlsPrfHash = GetHashTypeFromMechanism(tls12_master->prfHashMechanism);
@@ -6979,6 +7161,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             unsigned char crsrdata[SSL3_RANDOM_LENGTH * 2];
 
             if (mechanism == CKM_TLS12_KEY_AND_MAC_DERIVE) {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_TLS12_KEY_MAT_PARAMS))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 CK_TLS12_KEY_MAT_PARAMS *tls12_keys =
                     (CK_TLS12_KEY_MAT_PARAMS *)pMechanism->pParameter;
                 tlsPrfHash = GetHashTypeFromMechanism(tls12_keys->prfHashMechanism);
@@ -7020,6 +7206,13 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             if (sha == NULL) {
                 MD5_DestroyContext(md5, PR_TRUE);
                 crv = CKR_HOST_MEMORY;
+                break;
+            }
+
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_SSL3_KEY_MAT_PARAMS))) {
+                MD5_DestroyContext(md5, PR_TRUE);
+                SHA1_DestroyContext(sha, PR_TRUE);
+                crv = CKR_MECHANISM_PARAM_INVALID;
                 break;
             }
             ssl3_keys = (CK_SSL3_KEY_MAT_PARAMS *)pMechanism->pParameter;
@@ -7216,6 +7409,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             CK_ULONG len;
 
             if (mechanism == CKM_DES3_ECB_ENCRYPT_DATA) {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)
                                 pMechanism->pParameter;
                 mode = NSS_DES_EDE3;
@@ -7265,10 +7462,18 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             if (mechanism == CKM_AES_ECB_ENCRYPT_DATA) {
                 mode = NSS_AES;
                 iv = NULL;
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)pMechanism->pParameter;
                 data = stringPtr->pData;
                 len = stringPtr->ulLen;
             } else {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_AES_CBC_ENCRYPT_DATA_PARAMS))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 aesEncryptPtr =
                     (CK_AES_CBC_ENCRYPT_DATA_PARAMS *)pMechanism->pParameter;
                 mode = NSS_AES_CBC;
@@ -7301,6 +7506,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             CK_ULONG len;
 
             if (mechanism == CKM_CAMELLIA_ECB_ENCRYPT_DATA) {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)
                                 pMechanism->pParameter;
                 aesEncryptPtr = NULL;
@@ -7309,6 +7518,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 len = stringPtr->ulLen;
                 iv = NULL;
             } else {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_AES_CBC_ENCRYPT_DATA_PARAMS))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 stringPtr = NULL;
                 aesEncryptPtr = (CK_AES_CBC_ENCRYPT_DATA_PARAMS *)
                                     pMechanism->pParameter;
@@ -7342,6 +7555,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             CK_ULONG len;
 
             if (mechanism == CKM_SEED_ECB_ENCRYPT_DATA) {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 mode = NSS_SEED;
                 stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)
                                 pMechanism->pParameter;
@@ -7350,6 +7567,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 len = stringPtr->ulLen;
                 iv = NULL;
             } else {
+                if (BAD_PARAM_CAST(pMechanism, sizeof(CK_AES_CBC_ENCRYPT_DATA_PARAMS))) {
+                    crv = CKR_MECHANISM_PARAM_INVALID;
+                    break;
+                }
                 mode = NSS_SEED_CBC;
                 aesEncryptPtr = (CK_AES_CBC_ENCRYPT_DATA_PARAMS *)
                                     pMechanism->pParameter;
@@ -7441,6 +7662,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             if (crv != CKR_OK)
                 break;
 
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
             stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)pMechanism->pParameter;
             tmpKeySize = att->attrib.ulValueLen + stringPtr->ulLen;
             if (keySize == 0)
@@ -7467,6 +7692,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             if (crv != CKR_OK)
                 break;
 
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
             stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)pMechanism->pParameter;
             tmpKeySize = att->attrib.ulValueLen + stringPtr->ulLen;
             if (keySize == 0)
@@ -7493,6 +7722,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             if (crv != CKR_OK)
                 break;
 
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_KEY_DERIVATION_STRING_DATA))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
             stringPtr = (CK_KEY_DERIVATION_STRING_DATA *)pMechanism->pParameter;
             tmpKeySize = PR_MIN(att->attrib.ulValueLen, stringPtr->ulLen);
             if (keySize == 0)
@@ -7517,6 +7750,10 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             break;
 
         case CKM_EXTRACT_KEY_FROM_KEY: {
+            if (BAD_PARAM_CAST(pMechanism, sizeof(CK_EXTRACT_PARAMS))) {
+                crv = CKR_MECHANISM_PARAM_INVALID;
+                break;
+            }
             /* the following assumes 8 bits per byte */
             CK_ULONG extract = *(CK_EXTRACT_PARAMS *)pMechanism->pParameter;
             CK_ULONG shift = extract & 0x7; /* extract mod 8 the fast way */
@@ -7863,7 +8100,9 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
             CK_BYTE hashbuf[HASH_LENGTH_MAX];
             CK_BYTE *prk; /* psuedo-random key */
             CK_ULONG prkLen;
-            CK_BYTE *okm; /* output keying material */
+            CK_BYTE *okm;                 /* output keying material */
+            unsigned allocated_space = 0; /* If we need more work space, track it */
+            unsigned char *key_buf = &key_block[0];
 
             rawHash = HASH_GetRawHashObject(hashType);
             if (rawHash == NULL || rawHash->length > sizeof(hashbuf)) {
@@ -7879,7 +8118,7 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 crv = CKR_MECHANISM_PARAM_INVALID;
                 break;
             }
-            if (keySize == 0 || keySize > sizeof key_block ||
+            if (keySize == 0 ||
                 (!params->bExpand && keySize > hashLen) ||
                 (params->bExpand && keySize > 255 * hashLen)) {
                 crv = CKR_TEMPLATE_INCONSISTENT;
@@ -7929,34 +8168,49 @@ NSC_DeriveKey(CK_SESSION_HANDLE hSession,
                 /* T(1) = HMAC-Hash(prk, "" | info | 0x01)
                  * T(n) = HMAC-Hash(prk, T(n-1) | info | n
                  * key material = T(1) | ... | T(n)
+                 *
+                 * If the requested output length does not fit
+                 * within |key_block|, allocate space for expansion.
                  */
                 HMACContext *hmac;
                 CK_BYTE bi;
-                unsigned iterations = PR_ROUNDUP(keySize, hashLen) / hashLen;
+                unsigned n_bytes = PR_ROUNDUP(keySize, hashLen);
+                unsigned iterations = n_bytes / hashLen;
                 hmac = HMAC_Create(rawHash, prk, prkLen, isFIPS);
                 if (hmac == NULL) {
                     crv = CKR_HOST_MEMORY;
                     break;
                 }
-                for (bi = 1; bi <= iterations; ++bi) {
+                if (n_bytes > sizeof(key_block)) {
+                    key_buf = PORT_Alloc(n_bytes);
+                    if (key_buf == NULL) {
+                        crv = CKR_HOST_MEMORY;
+                        break;
+                    }
+                    allocated_space = n_bytes;
+                }
+                for (bi = 1; bi <= iterations && bi > 0; ++bi) {
                     unsigned len;
                     HMAC_Begin(hmac);
                     if (bi > 1) {
-                        HMAC_Update(hmac, key_block + ((bi - 2) * hashLen), hashLen);
+                        HMAC_Update(hmac, key_buf + ((bi - 2) * hashLen), hashLen);
                     }
                     if (params->ulInfoLen != 0) {
                         HMAC_Update(hmac, params->pInfo, params->ulInfoLen);
                     }
                     HMAC_Update(hmac, &bi, 1);
-                    HMAC_Finish(hmac, key_block + ((bi - 1) * hashLen), &len,
+                    HMAC_Finish(hmac, key_buf + ((bi - 1) * hashLen), &len,
                                 hashLen);
                     PORT_Assert(len == hashLen);
                 }
                 HMAC_Destroy(hmac, PR_TRUE);
-                okm = key_block;
+                okm = key_buf;
             }
             /* key material = prk */
             crv = sftk_forceAttribute(key, CKA_VALUE, okm, keySize);
+            if (allocated_space) {
+                PORT_ZFree(key_buf, allocated_space);
+            }
             break;
         } /* end of CKM_NSS_HKDF_* */
 

@@ -9,12 +9,15 @@
 #include "nsIWidget.h"
 #include <OpenGL/gl.h>
 #include "gfxFailure.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_gl.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "prenv.h"
 #include "GeckoProfiler.h"
-#include "mozilla/gfx/MacIOSurface.h"
+#include "MozFramebuffer.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/widget/CompositorWidget.h"
+#include "ScopedGLHelpers.h"
 
 #include <OpenGL/OpenGL.h>
 
@@ -113,7 +116,15 @@ bool GLContextCGL::IsDoubleBuffered() const { return sCGLLibrary.UseDoubleBuffer
 bool GLContextCGL::SwapBuffers() {
   AUTO_PROFILER_LABEL("GLContextCGL::SwapBuffers", GRAPHICS);
 
-  [mContext flushBuffer];
+  if (StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
+    // We do not have a framebuffer zero. Just do a flush.
+    // Flushing is necessary if we want our IOSurfaces to have the correct
+    // content once they're picked up by the WindowServer from our CALayers.
+    fFlush();
+  } else {
+    [mContext flushBuffer];
+  }
+
   return true;
 }
 
@@ -187,10 +198,14 @@ already_AddRefed<GLContext> GLContextProviderCGL::CreateForWindow(nsIWidget* aWi
 #endif
 
   const NSOpenGLPixelFormatAttribute* attribs;
+  SurfaceCaps caps = SurfaceCaps::ForRGBA();
   if (sCGLLibrary.UseDoubleBufferedWindows()) {
     if (aWebRender) {
-      attribs =
-          aForceAccelerated ? kAttribs_doubleBuffered_accel_webrender : kAttribs_doubleBuffered;
+      MOZ_RELEASE_ASSERT(aForceAccelerated,
+                         "At the moment, aForceAccelerated is always true if aWebRender is true. "
+                         "If this changes, please update the code here.");
+      attribs = kAttribs_doubleBuffered_accel_webrender;
+      caps.depth = true;
     } else {
       attribs = aForceAccelerated ? kAttribs_doubleBuffered_accel : kAttribs_doubleBuffered;
     }
@@ -205,8 +220,7 @@ already_AddRefed<GLContext> GLContextProviderCGL::CreateForWindow(nsIWidget* aWi
   GLint opaque = StaticPrefs::gfx_compositor_glcontext_opaque();
   [context setValues:&opaque forParameter:NSOpenGLCPSurfaceOpacity];
 
-  RefPtr<GLContextCGL> glContext =
-      new GLContextCGL(CreateContextFlags::NONE, SurfaceCaps::ForRGBA(), context, false);
+  RefPtr<GLContextCGL> glContext = new GLContextCGL(CreateContextFlags::NONE, caps, context, false);
 
   if (!glContext->Init()) {
     glContext = nullptr;

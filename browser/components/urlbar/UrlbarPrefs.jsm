@@ -61,6 +61,11 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // "heuristic" result).  We fetch it as fast as possible.
   ["delay", 50],
 
+  // Some performance tests disable this because extending the urlbar needs
+  // layout information that we can't get before the first paint. (Or we could
+  // but this would mean flushing layout.)
+  ["disableExtendForTests", false],
+
   // If true, this optimizes for replacing the full URL rather than selecting a
   // portion of it. This also copies the urlbar value to the selection
   // clipboard on systems that support it.
@@ -98,6 +103,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // The maximum number of results in the urlbar popup.
   ["maxRichResults", 10],
 
+  // Whether the quantum bar displays the major design update.
+  ["megabar", false],
+
   // One-off search buttons enabled status.
   ["oneOffSearches", false],
 
@@ -107,9 +115,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Whether to open the urlbar view when the input field is focused by the user.
   ["openViewOnFocus", false],
-
-  // Whether the quantum bar is enabled.
-  ["quantumbar", false],
 
   // Whether speculative connections should be enabled.
   ["speculativeConnect.enabled", true],
@@ -148,7 +153,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
 const PREF_OTHER_DEFAULTS = new Map([
   ["keyword.enabled", true],
   ["browser.search.suggest.enabled", true],
+  ["browser.search.suggest.enabled.private", false],
   ["ui.popup.disable_autohide", false],
+  ["browser.fixup.dns_first_for_single_words", false],
 ]);
 
 // Maps preferences under browser.urlbar.suggest to behavior names, as defined

@@ -119,6 +119,26 @@ else
         DEFINES += -DNSS_X86
 endif
 endif
+ifeq ($(CPU_ARCH),aarch64)
+    DEFINES += -DUSE_HW_AES
+    EXTRA_SRCS += aes-armv8.c gcm-aarch64.c
+endif
+ifeq ($(CPU_ARCH),arm)
+    ifdef CC_IS_CLANG
+        DEFINES += -DUSE_HW_AES
+        EXTRA_SRCS += aes-armv8.c
+    else ifeq (1,$(CC_IS_GCC))
+        # Old compiler doesn't support ARM AES.
+        ifneq (,$(filter 4.9,$(word 1,$(GCC_VERSION)).$(word 2,$(GCC_VERSION))))
+            DEFINES += -DUSE_HW_AES
+            EXTRA_SRCS += aes-armv8.c
+        endif
+        ifeq (,$(filter 0 1 2 3 4,$(word 1,$(GCC_VERSION))))
+            DEFINES += -DUSE_HW_AES
+            EXTRA_SRCS += aes-armv8.c
+        endif
+    endif
+endif
 
 ifeq ($(OS_TARGET),OSF1)
     DEFINES += -DMP_ASSEMBLY_MULTIPLY -DMP_NO_MP_WORD
@@ -495,7 +515,7 @@ endif # target == SunO
 ifdef USE_64
 # no __int128 at least up to lcc 1.23 (pretending to be gcc5)
 # NB: CC_NAME is not defined here
-ifneq ($(shell $(CC) -? 2>&1 >/dev/null | sed -e 's/:.*//;1q'),lcc)
+ifneq ($(shell $(CC) -? 2>&1 >/dev/null </dev/null | sed -e 's/:.*//;1q'),lcc)
     ifdef CC_IS_CLANG
             HAVE_INT128_SUPPORT = 1
             DEFINES += -DHAVE_INT128_SUPPORT
@@ -756,4 +776,12 @@ ifdef INTEL_GCM_CLANG_CL
 # clang-cl needs -mssse3
 #
 $(OBJDIR)/$(PROG_PREFIX)intel-gcm-wrap$(OBJ_SUFFIX): CFLAGS += -mssse3
+endif
+
+ifeq ($(CPU_ARCH),arm)
+$(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a -mfpu=crypto-neon-fp-armv8
+endif
+ifeq ($(CPU_ARCH),aarch64)
+$(OBJDIR)/$(PROG_PREFIX)aes-armv8$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
+$(OBJDIR)/$(PROG_PREFIX)gcm-aarch64$(OBJ_SUFFIX): CFLAGS += -march=armv8-a+crypto
 endif

@@ -350,24 +350,17 @@ let ProfileAutocomplete = {
     }
   },
 
-  _frameMMFromWindow(contentWindow) {
-    return contentWindow.docShell.messageManager;
+  getActorFromWindow(contentWindow) {
+    return contentWindow.getWindowGlobalChild().getActor("AutoComplete");
   },
 
   _getSelectedIndex(contentWindow) {
-    let mm = this._frameMMFromWindow(contentWindow);
-    let selectedIndexResult = mm.sendSyncMessage(
-      "FormAutoComplete:GetSelectedIndex",
-      {}
-    );
-    if (
-      selectedIndexResult.length != 1 ||
-      !Number.isInteger(selectedIndexResult[0])
-    ) {
+    let actor = this.getActorFromWindow(contentWindow);
+    if (!actor) {
       throw new Error("Invalid autocomplete selectedIndex");
     }
 
-    return selectedIndexResult[0];
+    return actor.selectedIndex;
   },
 
   _fillFromAutocompleteRow(focusedInput) {
@@ -587,14 +580,8 @@ var FormAutofillContent = {
       this._activeItems = {};
       return;
     }
-    let handler = this._getFormHandler(element);
-    if (handler) {
-      handler.focusedInput = element;
-    }
     this._activeItems = {
-      handler,
       elementWeakRef: Cu.getWeakReference(element),
-      section: handler ? handler.activeSection : null,
       fieldDetail: null,
     };
   },
@@ -605,11 +592,25 @@ var FormAutofillContent = {
   },
 
   get activeHandler() {
-    return this._activeItems.handler;
+    const activeInput = this.activeInput;
+    if (!activeInput) {
+      return null;
+    }
+
+    // XXX: We are recomputing the activeHandler every time to avoid keeping a
+    // reference on the active element. This might be called quite frequently
+    // so if _getFormHandler/findRootForField become more costly, we should
+    // look into caching this result (eg by adding a weakmap).
+    let handler = this._getFormHandler(activeInput);
+    if (handler) {
+      handler.focusedInput = activeInput;
+    }
+    return handler;
   },
 
   get activeSection() {
-    return this._activeItems.section;
+    let formHandler = this.activeHandler;
+    return formHandler ? formHandler.activeSection : null;
   },
 
   /**

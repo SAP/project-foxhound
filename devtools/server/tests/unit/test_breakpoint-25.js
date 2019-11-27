@@ -10,9 +10,9 @@
  */
 
 add_task(
-  threadClientTest(({ threadClient, client, debuggee, targetFront }) => {
+  threadFrontTest(({ threadFront, client, debuggee, targetFront }) => {
     return new Promise(resolve => {
-      threadClient.once("paused", async function(packet) {
+      threadFront.once("paused", async function(packet) {
         ok(true, "The page is paused");
         ok(!debuggee.foo, "foo is still false after we hit the breakpoint");
 
@@ -45,9 +45,9 @@ add_task(
 );
 
 add_task(
-  threadClientTest(({ threadClient, client, debuggee }) => {
+  threadFrontTest(({ threadFront, client, debuggee }) => {
     return new Promise(resolve => {
-      threadClient.once("paused", async function(packet) {
+      threadFront.once("paused", async function(packet) {
         ok(true, "The page is paused");
         ok(!debuggee.foo, "foo is still false after we hit the breakpoint");
 

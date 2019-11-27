@@ -43,29 +43,13 @@ const ContentBlockingAllowList = {
     }
   },
 
-  _baseURIForAntiTrackingCommon(browser) {
-    // Convert document URI into the format used by
-    // AntiTrackingCommon::IsOnContentBlockingAllowList.
-    // Any scheme turned into https is correct.
-    try {
-      return Services.io.newURI("https://" + browser.currentURI.hostPort);
-    } catch (e) {
-      // Getting the hostPort for about: and file: URIs fails, but TP doesn't work with
-      // these URIs anyway, so just return null here.
-      return null;
-    }
-  },
-
   _basePrincipalForAntiTrackingCommon(browser) {
-    let baseURI = this._baseURIForAntiTrackingCommon(browser);
-    if (!baseURI) {
+    let principal = browser.contentBlockingAllowListPrincipal;
+    // We can only use content principals for this purpose.
+    if (!principal || !principal.isContentPrincipal) {
       return null;
     }
-    let attrs = browser.contentPrincipal.originAttributes;
-    return Services.scriptSecurityManager.createCodebasePrincipal(
-      baseURI,
-      attrs
-    );
+    return principal;
   },
 
   _permissionTypeFor(browser) {
@@ -127,5 +111,42 @@ const ContentBlockingAllowList = {
       Services.perms.testExactPermissionFromPrincipal(prin, type) ==
       Services.perms.ALLOW_ACTION
     );
+  },
+
+  /**
+   * Returns a list of all non-private browsing principals that are on the
+   * content blocking allow list.
+   */
+  getAllowListedPrincipals() {
+    const exceptions = Services.perms
+      .getAllWithTypePrefix("trackingprotection")
+      .filter(
+        // Only export non-private exceptions for security reasons.
+        p => p.type == "trackingprotection"
+      );
+    return exceptions.map(e => e.principal);
+  },
+
+  /**
+   * Takes a list of nsIPrincipals and uses it to update the content blocking allow
+   * list.
+   */
+  addAllowListPrincipals(principals) {
+    principals.forEach(p =>
+      Services.perms.addFromPrincipal(
+        p,
+        "trackingprotection",
+        Services.perms.ALLOW_ACTION,
+        Ci.nsIPermissionManager.EXPIRE_SESSION
+      )
+    );
+  },
+
+  /**
+   * Removes all content blocking exceptions.
+   */
+  wipeLists() {
+    Services.perms.removeByType("trackingprotection");
+    Services.perms.removeByType("trackingprotection-pb");
   },
 };

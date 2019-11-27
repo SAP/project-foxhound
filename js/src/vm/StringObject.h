@@ -7,14 +7,14 @@
 #ifndef vm_StringObject_h
 #define vm_StringObject_h
 
-#include "builtin/String.h"
-
 #include "vm/JSObject.h"
 #include "vm/Shape.h"
 
 namespace js {
 
 class GlobalObject;
+
+JSObject* InitStringClass(JSContext* cx, Handle<GlobalObject*> global);
 
 class StringObject : public NativeObject {
   static const unsigned PRIMITIVE_VALUE_SLOT = 0;
@@ -23,7 +23,7 @@ class StringObject : public NativeObject {
  public:
   static const unsigned RESERVED_SLOTS = 2;
 
-  static const Class class_;
+  static const JSClass class_;
 
   /*
    * Creates a new String object boxing the given string.  The object's

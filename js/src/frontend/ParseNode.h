@@ -8,10 +8,13 @@
 #define frontend_ParseNode_h
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Variant.h"
 
 #include "frontend/Token.h"
+#include "util/Text.h"
 #include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"
+#include "vm/JSContext.h"
 #include "vm/Printer.h"
 #include "vm/Scope.h"
 
@@ -43,6 +46,7 @@ namespace js {
 namespace frontend {
 
 class ParseContext;
+class ParserSharedBase;
 class FullParseHandler;
 class FunctionBox;
 class ObjectBox;
@@ -1517,12 +1521,65 @@ class NumericLiteral : public ParseNode {
   void setDecimalPoint(DecimalPoint d) { decimalPoint_ = d; }
 };
 
+// This owns a set of characters guaranteed to parse into a BigInt via
+// ParseBigIntLiteral. Used to avoid allocating the BigInt on the
+// GC heap during parsing.
+class BigIntCreationData {
+  UniqueTwoByteChars buf_;
+  size_t length_ = 0;
+
+ public:
+  BigIntCreationData() = default;
+
+  MOZ_MUST_USE bool init(JSContext* cx, const Vector<char16_t, 32>& buf) {
+#ifdef DEBUG
+    // Assert we have no separators; if we have a separator then the algorithm
+    // used in BigInt::literalIsZero will be incorrect.
+    for (char16_t c : buf) {
+      MOZ_ASSERT(c != '_');
+    }
+#endif
+    length_ = buf.length();
+    buf_ = js::DuplicateString(cx, buf.begin(), buf.length());
+    return buf_ != nullptr;
+  }
+
+  BigInt* createBigInt(JSContext* cx) {
+    mozilla::Range<const char16_t> source(buf_.get(), length_);
+
+    return js::ParseBigIntLiteral(cx, source);
+  }
+
+  bool isZero() {
+    mozilla::Range<const char16_t> source(buf_.get(), length_);
+    return js::BigIntLiteralIsZero(source);
+  }
+};
+
 class BigIntLiteral : public ParseNode {
-  BigIntBox* box_;
+  mozilla::Variant<mozilla::Nothing, BigIntCreationData, BigIntBox*> data_;
+
+  BigIntBox* box() const { return data_.as<BigIntBox*>(); }
 
  public:
   BigIntLiteral(BigIntBox* bibox, const TokenPos& pos)
-      : ParseNode(ParseNodeKind::BigIntExpr, pos), box_(bibox) {}
+      : ParseNode(ParseNodeKind::BigIntExpr, pos),
+        data_(mozilla::AsVariant(bibox)) {}
+
+  // Used to allocate a BigIntCreationData in two phase initialization to enusre
+  // clear ownership of data in an allocation failure.
+  explicit BigIntLiteral(const TokenPos& pos)
+      : ParseNode(ParseNodeKind::BigIntExpr, pos),
+        data_(AsVariant(mozilla::Nothing())) {}
+
+  void init(BigIntCreationData data) {
+    data_ = mozilla::AsVariant(std::move(data));
+  }
+
+  bool isDeferred() {
+    MOZ_ASSERT(!data_.is<mozilla::Nothing>());
+    return data_.is<BigIntCreationData>();
+  }
 
   static bool test(const ParseNode& node) {
     return node.isKind(ParseNodeKind::BigIntExpr);
@@ -1539,18 +1596,37 @@ class BigIntLiteral : public ParseNode {
   void dumpImpl(GenericPrinter& out, int indent);
 #endif
 
-  BigIntBox* box() const { return box_; }
+  // Get the contained BigInt value: Assumes it was created with one,
+  // and cannot be used when deferred allocation mode is enabled.
+  BigInt* value();
+
+  // Get the contained BigIntValue, or parse it from the creation data
+  // Can be used when deferred allocation mode is enabled.
+  BigInt* getOrCreateBigInt(JSContext* cx) {
+    if (data_.is<BigIntBox*>()) {
+      return value();
+    }
+    return data_.as<BigIntCreationData>().createBigInt(cx);
+  }
+
+  BigIntCreationData creationData() {
+    return std::move(data_.as<BigIntCreationData>());
+  }
+  bool isZero();
 };
 
 class LexicalScopeNode : public ParseNode {
   LexicalScope::Data* bindings;
   ParseNode* body;
+  ScopeKind kind_;
 
  public:
-  LexicalScopeNode(LexicalScope::Data* bindings, ParseNode* body)
+  LexicalScopeNode(LexicalScope::Data* bindings, ParseNode* body,
+                   ScopeKind kind = ScopeKind::Lexical)
       : ParseNode(ParseNodeKind::LexicalScope, body->pn_pos),
         bindings(bindings),
-        body(body) {}
+        body(body),
+        kind_(kind) {}
 
   static bool test(const ParseNode& node) {
     return node.isKind(ParseNodeKind::LexicalScope);
@@ -1581,6 +1657,8 @@ class LexicalScopeNode : public ParseNode {
   void setScopeBody(ParseNode* body) { this->body = body; }
 
   bool isEmptyScope() const { return !bindings; }
+
+  ScopeKind kind() const { return kind_; }
 };
 
 class LabeledStatement : public NameNode {
@@ -2166,14 +2244,21 @@ inline bool ParseNode::isConstant() {
 }
 
 class TraceListNode {
+  friend class ParserSharedBase;
+
  protected:
+  enum NodeType { Object, BigInt, Function, LastNodeType };
+
   js::gc::Cell* gcThing;
   TraceListNode* traceLink;
+  NodeType type_;
 
-  TraceListNode(js::gc::Cell* gcThing, TraceListNode* traceLink);
+  TraceListNode(js::gc::Cell* gcThing, TraceListNode* traceLink, NodeType type);
 
-  bool isBigIntBox() const { return gcThing->is<BigInt>(); }
-  bool isObjectBox() const { return gcThing->is<JSObject>(); }
+  bool isBigIntBox() const { return type_ == NodeType::BigInt; }
+  bool isObjectBox() const {
+    return type_ == NodeType::Object || type_ == NodeType::Function;
+  }
 
   BigIntBox* asBigIntBox();
   ObjectBox* asObjectBox();
@@ -2186,8 +2271,8 @@ class TraceListNode {
 
 class BigIntBox : public TraceListNode {
  public:
-  BigIntBox(BigInt* bi, TraceListNode* link);
-  BigInt* value() const { return gcThing->as<BigInt>(); }
+  BigIntBox(JS::BigInt* bi, TraceListNode* link);
+  JS::BigInt* value() const { return gcThing->as<JS::BigInt>(); }
 };
 
 class ObjectBox : public TraceListNode {
@@ -2195,14 +2280,17 @@ class ObjectBox : public TraceListNode {
   friend struct GCThingList;
   ObjectBox* emitLink;
 
-  ObjectBox(JSFunction* function, TraceListNode* link);
+  ObjectBox(JSObject* obj, TraceListNode* link, TraceListNode::NodeType type);
 
  public:
-  ObjectBox(JSObject* obj, TraceListNode* link);
+  ObjectBox(JSObject* obj, TraceListNode* link)
+      : ObjectBox(obj, link, TraceListNode::NodeType::Object) {}
+
+  bool hasObject() const { return gcThing != nullptr; }
 
   JSObject* object() const { return gcThing->as<JSObject>(); }
 
-  bool isFunctionBox() const { return object()->is<JSFunction>(); }
+  bool isFunctionBox() const { return type_ == NodeType::Function; }
   FunctionBox* asFunctionBox();
 };
 

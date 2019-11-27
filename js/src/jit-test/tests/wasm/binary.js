@@ -230,9 +230,18 @@ assertErrorMessage(() => wasmEval(moduleWithSections([
     nameSection([moduleNameSubsection('hi')])])
 ).f(), RuntimeError, /unreachable/);
 
-// Diagnose nonstandard block signature types.
-for (var bad of [0xff, 0, 1, 0x3f])
-    assertErrorMessage(() => wasmEval(moduleWithSections([sigSection([v2vSig]), declSection([0]), bodySection([funcBody({locals:[], body:[BlockCode, bad, EndCode]})])])), CompileError, /invalid inline block type/);
+// Diagnose invalid block signature types.
+for (var bad of [0xff, 1, 0x3f])
+    assertErrorMessage(() => wasmEval(moduleWithSections([sigSection([v2vSig]), declSection([0]), bodySection([funcBody({locals:[], body:[BlockCode, bad, EndCode]})])])), CompileError, /invalid .*block type/);
+
+if (wasmMultiValueEnabled()) {
+    // In this test module, 0 denotes a void-to-void block type.
+    let binary = moduleWithSections([sigSection([v2vSig]), declSection([0]), bodySection([funcBody({locals:[], body:[BlockCode, 0, EndCode]})])]);
+    assertEq(WebAssembly.validate(binary), true);
+} else {
+    const bad = 0;
+    assertErrorMessage(() => wasmEval(moduleWithSections([sigSection([v2vSig]), declSection([0]), bodySection([funcBody({locals:[], body:[BlockCode, bad, EndCode]})])])), CompileError, /invalid .*block type/);
+}
 
 // Ensure all invalid opcodes rejected
 for (let op of undefinedOpcodes) {
@@ -256,10 +265,10 @@ function checkIllegalPrefixed(prefix, opcode) {
 //
 // June 2017 threads draft:
 //
-//  0x00 .. 0x02 are wait/wake ops
+//  0x00 .. 0x03 are wait/wake/fence ops
 //  0x10 .. 0x4f are primitive atomic ops
 
-for (let i = 3; i < 0x10; i++)
+for (let i = 0x4; i < 0x10; i++)
     checkIllegalPrefixed(ThreadPrefix, i);
 
 for (let i = 0x4f; i < 0x100; i++)

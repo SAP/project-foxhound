@@ -28,6 +28,7 @@ const gRequestNetworkingData = {
   dnslookuptool: () => {},
   logging: () => {},
   rcwn: gDashboard.requestRcwnStats,
+  networkid: displayNetworkID,
 };
 const gDashboardCallbacks = {
   http: displayHttp,
@@ -87,6 +88,21 @@ function displaySockets(data) {
 }
 
 function displayDns(data) {
+  let suffixContent = document.getElementById("dns_suffix_content");
+  let suffixParent = suffixContent.parentNode;
+  let suffixes = [];
+  try {
+    suffixes = gNetLinkSvc.dnsSuffixList; // May throw
+  } catch (e) {}
+  let suffix_tbody = document.createElement("tbody");
+  suffix_tbody.id = "dns_suffix_content";
+  for (let suffix of suffixes) {
+    let row = document.createElement("tr");
+    row.appendChild(col(suffix));
+    suffix_tbody.appendChild(row);
+  }
+  suffixParent.replaceChild(suffix_tbody, suffixContent);
+
   let cont = document.getElementById("dns_content");
   let parent = cont.parentNode;
   let new_cont = document.createElement("tbody");
@@ -177,6 +193,16 @@ function displayRcwnStats(data) {
   }
 }
 
+function displayNetworkID() {
+  let linkIsUp = gNetLinkSvc.isLinkUp;
+  let linkStatusKnown = gNetLinkSvc.linkStatusKnown;
+  let networkID = gNetLinkSvc.networkID;
+
+  document.getElementById("networkid_isUp").innerText = linkIsUp;
+  document.getElementById("networkid_statusKnown").innerText = linkStatusKnown;
+  document.getElementById("networkid_id").innerText = networkID;
+}
+
 function requestAllNetworkingData() {
   for (let id in gRequestNetworkingData) {
     requestNetworkingDataForTab(id);
@@ -194,12 +220,6 @@ function init() {
   }
   gInited = true;
   gDashboard.enableLogging = true;
-  if (Services.prefs.getBoolPref("network.warnOnAboutNetworking")) {
-    let div = document.getElementById("warning_message");
-    div.classList.add("active");
-    div.hidden = false;
-    document.getElementById("confpref").addEventListener("click", confirm);
-  }
 
   requestAllNetworkingData();
 
@@ -291,7 +311,7 @@ function updateLogFile() {
 
   // If the log file was set from an env var, we disable the ability to set it
   // at runtime.
-  if (logPath.length > 0) {
+  if (logPath.length) {
     currentLogFile.innerText = logPath;
     setLogFileButton.disabled = true;
   } else {
@@ -308,7 +328,7 @@ function updateLogModules() {
     gEnv.get("NSPR_LOG_MODULES");
   let currentLogModules = document.getElementById("current-log-modules");
   let setLogModulesButton = document.getElementById("set-log-modules-button");
-  if (logModules.length > 0) {
+  if (logModules.length) {
     currentLogModules.innerText = logModules;
     // If the log modules are set by an environment variable at startup, do not
     // allow changing them throught a pref. It would be difficult to figure out
@@ -412,14 +432,6 @@ function stopLogging() {
   // clear the log file as well
   Services.prefs.clearUserPref("logging.config.LOG_FILE");
   updateLogFile();
-}
-
-function confirm() {
-  let div = document.getElementById("warning_message");
-  div.classList.remove("active");
-  div.hidden = true;
-  let warnBox = document.getElementById("warncheck");
-  Services.prefs.setBoolPref("network.warnOnAboutNetworking", warnBox.checked);
 }
 
 function show(button) {

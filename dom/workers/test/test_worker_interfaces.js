@@ -213,14 +213,13 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PromiseRejectionEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushManager", insecureContext: true, fennecOrDesktop: true },
+  { name: "PushManager", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscription", insecureContext: true, fennecOrDesktop: true },
+  { name: "PushSubscription", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "PushSubscriptionOptions",
     insecureContext: true,
-    fennecOrDesktop: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Request", insecureContext: true },
@@ -311,7 +310,7 @@ function createInterfaceMap({
           // false.  That way entries without an insecureContext annotation
           // will get treated as "insecureContext: false", which means exposed
           // only in secure contexts.
-          (isInsecureContext && !Boolean(entry.insecureContext)) ||
+          (isInsecureContext && !entry.insecureContext) ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

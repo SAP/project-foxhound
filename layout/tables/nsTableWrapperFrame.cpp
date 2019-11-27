@@ -127,9 +127,9 @@ void nsTableWrapperFrame::AppendFrames(ChildListID aListID,
   MarkNeedsDisplayItemRebuild();
 }
 
-void nsTableWrapperFrame::InsertFrames(ChildListID aListID,
-                                       nsIFrame* aPrevFrame,
-                                       nsFrameList& aFrameList) {
+void nsTableWrapperFrame::InsertFrames(
+    ChildListID aListID, nsIFrame* aPrevFrame,
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
   MOZ_ASSERT(kCaptionList == aListID, "unexpected child list");
   MOZ_ASSERT(aFrameList.IsEmpty() || aFrameList.FirstChild()->IsTableCaption(),
              "inserting non-caption frame into captionList");
@@ -166,13 +166,14 @@ void nsTableWrapperFrame::RemoveFrame(ChildListID aListID,
 
 void nsTableWrapperFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                            const nsDisplayListSet& aLists) {
-  // No border, background or outline are painted because they all belong
-  // to the inner table.
+  // No border or background is painted because they belong to the inner table.
+  // The outline belongs to the wrapper frame so it can contain the caption.
 
   // If there's no caption, take a short cut to avoid having to create
   // the special display list set and then sort it.
   if (mCaptionFrames.IsEmpty()) {
     BuildDisplayListForInnerTable(aBuilder, aLists);
+    DisplayOutline(aBuilder, aLists);
     return;
   }
 
@@ -193,6 +194,8 @@ void nsTableWrapperFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   set.PositionedDescendants()->SortByContentOrder(GetContent());
   set.Outlines()->SortByContentOrder(GetContent());
   set.MoveTo(aLists);
+
+  DisplayOutline(aBuilder, aLists);
 }
 
 void nsTableWrapperFrame::BuildDisplayListForInnerTable(
@@ -766,7 +769,7 @@ void nsTableWrapperFrame::OuterDoReflowChild(nsPresContext* aPresContext,
 
   // Use the current position as a best guess for placement.
   LogicalPoint childPt = aChildFrame->GetLogicalPosition(wm, zeroCSize);
-  uint32_t flags = NS_FRAME_NO_MOVE_FRAME;
+  ReflowChildFlags flags = ReflowChildFlags::NoMoveFrame;
 
   // We don't want to delete our next-in-flow's child if it's an inner table
   // frame, because table wrapper frames always assume that their inner table
@@ -774,7 +777,7 @@ void nsTableWrapperFrame::OuterDoReflowChild(nsPresContext* aPresContext,
   // a next-in-flow of an already complete table wrapper frame, then it will
   // take care of removing it's inner table frame.
   if (aChildFrame == InnerTableFrame()) {
-    flags |= NS_FRAME_NO_DELETE_NEXT_IN_FLOW_CHILD;
+    flags |= ReflowChildFlags::NoDeleteNextInFlowChild;
   }
 
   ReflowChild(aChildFrame, aPresContext, aMetrics, aChildRI, wm, childPt,
@@ -960,7 +963,8 @@ void nsTableWrapperFrame::Reflow(nsPresContext* aPresContext,
     GetCaptionOrigin(captionSide, containSize, innerSize, innerMargin,
                      captionSize, captionMargin, captionOrigin, wm);
     FinishReflowChild(mCaptionFrames.FirstChild(), aPresContext, *captionMet,
-                      captionRI.ptr(), wm, captionOrigin, containerSize, 0);
+                      captionRI.ptr(), wm, captionOrigin, containerSize,
+                      ReflowChildFlags::Default);
     captionRI.reset();
   }
   // XXX If the bsize is constrained then we need to check whether
@@ -970,7 +974,7 @@ void nsTableWrapperFrame::Reflow(nsPresContext* aPresContext,
   GetInnerOrigin(captionSide, containSize, captionSize, captionMargin,
                  innerSize, innerMargin, innerOrigin, wm);
   FinishReflowChild(InnerTableFrame(), aPresContext, innerMet, innerRI.ptr(),
-                    wm, innerOrigin, containerSize, 0);
+                    wm, innerOrigin, containerSize, ReflowChildFlags::Default);
   innerRI.reset();
 
   if (mCaptionFrames.NotEmpty()) {
@@ -983,7 +987,8 @@ void nsTableWrapperFrame::Reflow(nsPresContext* aPresContext,
 
   if (GetPrevInFlow()) {
     ReflowOverflowContainerChildren(aPresContext, aOuterRI,
-                                    aDesiredSize.mOverflowAreas, 0, aStatus);
+                                    aDesiredSize.mOverflowAreas,
+                                    ReflowChildFlags::Default, aStatus);
   }
 
   FinishReflowWithAbsoluteFrames(aPresContext, aDesiredSize, aOuterRI, aStatus);

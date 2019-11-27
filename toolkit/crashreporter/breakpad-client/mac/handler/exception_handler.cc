@@ -41,6 +41,10 @@
 #include "common/mac/scoped_task_suspend-inl.h"
 #include "google_breakpad/common/minidump_exception_mac.h"
 
+#ifdef MOZ_PHC
+#include "replace_malloc_bridge.h"
+#endif
+
 #include "mozilla/RecordReplay.h"
 
 #ifndef __EXCEPTIONS
@@ -343,10 +347,23 @@ bool ExceptionHandler::WriteMinidumpForChild(mach_port_t child,
 
   if (callback) {
     return callback(dump_path.c_str(), dump_id.c_str(),
-                    callback_context, result);
+                    callback_context, nullptr, result);
   }
   return result;
 }
+
+#ifdef MOZ_PHC
+static void GetPHCAddrInfo(int64_t exception_subcode,
+                           mozilla::phc::AddrInfo* addr_info) {
+  // Is this a crash involving a PHC allocation?
+  if (exception_subcode) {
+    // `exception_subcode` is only non-zero when it's a bad access, in which
+    // case it holds the address of the bad access.
+    char* addr = reinterpret_cast<char*>(exception_subcode);
+    ReplaceMalloc::IsPHCAllocation(addr, addr_info);
+  }
+}
+#endif
 
 bool ExceptionHandler::WriteMinidumpWithException(
     int exception_type,
@@ -363,6 +380,11 @@ bool ExceptionHandler::WriteMinidumpWithException(
   exit_after_write = false;
 #endif
 
+    mozilla::phc::AddrInfo addr_info;
+#ifdef MOZ_PHC
+    GetPHCAddrInfo(exception_subcode, &addr_info);
+#endif
+
   if (directCallback_) {
     if (directCallback_(callback_context_,
                         exception_type,
@@ -377,7 +399,7 @@ bool ExceptionHandler::WriteMinidumpWithException(
     if (exception_type && exception_code) {
       // If this is a real exception, give the filter (if any) a chance to
       // decide if this should be sent.
-      if (filter_ && !filter_(callback_context_))
+      if (filter_ && !filter_(callback_context_, &addr_info))
         return false;
       result = crash_generation_client_->RequestDumpForException(
           exception_type,
@@ -402,7 +424,7 @@ bool ExceptionHandler::WriteMinidumpWithException(
       if (exception_type && exception_code) {
         // If this is a real exception, give the filter (if any) a chance to
         // decide if this should be sent.
-        if (filter_ && !filter_(callback_context_))
+        if (filter_ && !filter_(callback_context_, nullptr))
           return false;
 
         md.SetExceptionInformation(exception_type, exception_code,
@@ -418,7 +440,7 @@ bool ExceptionHandler::WriteMinidumpWithException(
       // (rather than just writing out the file), then we should exit without
       // forwarding the exception to the next handler.
       if (callback_(dump_path_c_, next_minidump_id_c_, callback_context_,
-                    result)) {
+                    &addr_info, result)) {
         if (exit_after_write)
           _exit(exception_type);
       }
@@ -690,9 +712,9 @@ bool ExceptionHandler::InstallHandler() {
     return false;
   }
 
-  // Don't modify exception ports when replaying, to avoid interfering with the
-  // record/replay system's exception handler.
-  if (mozilla::recordreplay::IsReplaying()) {
+  // Don't modify exception ports when recording or replaying, to avoid
+  // interfering with the record/replay system's exception handler.
+  if (mozilla::recordreplay::IsRecordingOrReplaying()) {
     return true;
   }
 

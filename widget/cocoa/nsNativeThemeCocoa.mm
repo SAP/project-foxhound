@@ -35,7 +35,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLMeterElement.h"
 #include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsLookAndFeel.h"
 #include "VibrancyManager.h"
 
@@ -3436,8 +3436,8 @@ bool nsNativeThemeCocoa::CreateWebRenderCommandsForWidget(
     mozilla::layers::RenderRootStateManager* aManager, nsIFrame* aFrame,
     StyleAppearance aAppearance, const nsRect& aRect) {
   nsPresContext* presContext = aFrame->PresContext();
-  wr::LayoutRect bounds = wr::ToRoundedLayoutRect(
-      LayoutDeviceRect::FromAppUnits(aRect, presContext->AppUnitsPerDevPixel()));
+  wr::LayoutRect bounds =
+      wr::ToLayoutRect(LayoutDeviceRect::FromAppUnits(aRect, presContext->AppUnitsPerDevPixel()));
 
   EventStates eventState = GetContentState(aFrame, aAppearance);
 

@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,6 +33,16 @@ loader.lazyRequireGetter(
   "stringify",
   "devtools/server/actors/object/stringifiers"
 );
+
+// ContentDOMReference requires ChromeUtils, which isn't available in worker context.
+if (!isWorker) {
+  loader.lazyRequireGetter(
+    this,
+    "ContentDOMReference",
+    "resource://gre/modules/ContentDOMReference.jsm",
+    true
+  );
+}
 
 const {
   getArrayLength,
@@ -73,13 +81,13 @@ const proto = {
   initialize(
     obj,
     {
+      thread,
       createValueGrip: createValueGripHook,
       sources,
       createEnvironmentActor,
       getGripDepth,
       incrementGripDepth,
       decrementGripDepth,
-      getGlobalDebugObject,
     },
     conn
   ) {
@@ -91,6 +99,7 @@ const proto = {
 
     this.conn = conn;
     this.obj = obj;
+    this.thread = thread;
     this.hooks = {
       createValueGrip: createValueGripHook,
       sources,
@@ -98,12 +107,97 @@ const proto = {
       getGripDepth,
       incrementGripDepth,
       decrementGripDepth,
-      getGlobalDebugObject,
     };
+    this._originalDescriptors = new Map();
   },
 
   rawValue: function() {
     return this.obj.unsafeDereference();
+  },
+
+  addWatchpoint(property, label, watchpointType) {
+    // We promote the object actor to the thread pool
+    // so that it lives for the lifetime of the watchpoint.
+    this.thread.threadObjectGrip(this);
+
+    if (this._originalDescriptors.has(property)) {
+      return;
+    }
+
+    const obj = this.rawValue();
+    const desc =
+      Object.getOwnPropertyDescriptor(obj, property) ||
+      this.obj.getOwnPropertyDescriptor(property);
+
+    if (desc.set || desc.get || !desc.configurable) {
+      return;
+    }
+
+    this._originalDescriptors.set(property, { desc, watchpointType });
+
+    const pauseAndRespond = type => {
+      const frame = this.thread.dbg.getNewestFrame();
+      this.thread._pauseAndRespond(frame, {
+        type: type,
+        message: label,
+      });
+    };
+
+    if (watchpointType === "get") {
+      this.obj.defineProperty(property, {
+        configurable: desc.configurable,
+        enumerable: desc.enumerable,
+        set: this.obj.makeDebuggeeValue(v => {
+          desc.value = v;
+        }),
+        get: this.obj.makeDebuggeeValue(() => {
+          const frame = this.thread.dbg.getNewestFrame();
+
+          if (!this.thread.hasMoved(frame, "getWatchpoint")) {
+            return false;
+          }
+
+          pauseAndRespond("getWatchpoint");
+          return desc.value;
+        }),
+      });
+    }
+
+    if (watchpointType === "set") {
+      this.obj.defineProperty(property, {
+        configurable: desc.configurable,
+        enumerable: desc.enumerable,
+        set: this.obj.makeDebuggeeValue(v => {
+          const frame = this.thread.dbg.getNewestFrame();
+
+          if (!this.thread.hasMoved(frame, "setWatchpoint")) {
+            return;
+          }
+
+          pauseAndRespond("setWatchpoint");
+          desc.value = v;
+        }),
+        get: this.obj.makeDebuggeeValue(() => {
+          return desc.value;
+        }),
+      });
+    }
+  },
+
+  removeWatchpoint(property) {
+    if (!this._originalDescriptors.has(property)) {
+      return;
+    }
+
+    const desc = this._originalDescriptors.get(property).desc;
+    this._originalDescriptors.delete(property);
+    this.obj.defineProperty(property, desc);
+  },
+
+  removeWatchpoints() {
+    this._originalDescriptors.forEach(property =>
+      this.removeWatchpoint(property)
+    );
   },
 
   /**
@@ -121,6 +215,7 @@ const proto = {
       g.class = "CPOW";
       return g;
     }
+
     const unwrapped = DevToolsUtils.unwrap(this.obj);
     if (unwrapped === undefined) {
       // Objects belonging to an invisible-to-debugger compartment might be proxies,
@@ -128,6 +223,7 @@ const proto = {
       g.class = "InvisibleToDebugger: " + this.obj.class;
       return g;
     }
+
     if (unwrapped && unwrapped.isProxy) {
       // Proxy objects can run traps when accessed, so just create a preview with
       // the target and the handler.
@@ -138,45 +234,74 @@ const proto = {
       return g;
     }
 
-    // If the debuggee does not subsume the object's compartment, most properties won't
-    // be accessible. Cross-orgin Window and Location objects might expose some, though.
-    // Change the displayed class, but when creating the preview use the original one.
-    if (unwrapped === null) {
-      g.class = "Restricted";
-    } else {
-      g.class = this.obj.class;
-    }
+    const ownPropertyLength = this._getOwnPropertyLength();
+
+    Object.assign(g, {
+      // If the debuggee does not subsume the object's compartment, most properties won't
+      // be accessible. Cross-orgin Window and Location objects might expose some, though.
+      // Change the displayed class, but when creating the preview use the original one.
+      class: unwrapped === null ? "Restricted" : this.obj.class,
+      ownPropertyLength: Number.isFinite(ownPropertyLength)
+        ? ownPropertyLength
+        : undefined,
+      extensible: this.obj.isExtensible(),
+      frozen: this.obj.isFrozen(),
+      sealed: this.obj.isSealed(),
+    });
 
     this.hooks.incrementGripDepth();
-
-    g.extensible = this.obj.isExtensible();
-    g.frozen = this.obj.isFrozen();
-    g.sealed = this.obj.isSealed();
 
     if (g.class == "Promise") {
       g.promiseState = this._createPromiseState();
     }
 
-    // FF40+: Allow to know how many properties an object has to lazily display them
-    // when there is a bunch.
-    if (isTypedArray(g)) {
-      // Bug 1348761: getOwnPropertyNames is unnecessary slow on TypedArrays
-      g.ownPropertyLength = getArrayLength(this.obj);
-    } else if (isStorage(g)) {
-      g.ownPropertyLength = getStorageLength(this.obj);
-    } else if (isReplaying) {
-      // When replaying we can get the number of properties directly, to avoid
-      // needing to enumerate all of them.
-      g.ownPropertyLength = this.obj.getOwnPropertyNamesCount();
-    } else {
+    const raw = this.getRawObject();
+    this._populateGripPreview(g, raw);
+    this.hooks.decrementGripDepth();
+
+    if (raw && Node.isInstance(raw) && ContentDOMReference) {
+      // ContentDOMReference.get takes a DOM element and returns an object with
+      // its browsing context id, as well as a unique identifier. We are putting it in
+      // the grip here in order to be able to retrieve the node later, potentially from a
+      // different DebuggerServer running in the same process.
+      // If ContentDOMReference.get throws, we simply don't add the property to the grip.
       try {
-        g.ownPropertyLength = this.obj.getOwnPropertyNames().length;
-      } catch (err) {
-        // The above can throw when the debuggee does not subsume the object's
-        // compartment, or for some WrappedNatives like Cu.Sandbox.
-      }
+        g.contentDomReference = ContentDOMReference.get(raw);
+      } catch (e) {}
     }
 
+    return g;
+  },
+
+  _getOwnPropertyLength: function() {
+    // FF40+: Allow to know how many properties an object has to lazily display them
+    // when there is a bunch.
+    if (isTypedArray(this.obj)) {
+      // Bug 1348761: getOwnPropertyNames is unnecessary slow on TypedArrays
+      return getArrayLength(this.obj);
+    }
+
+    if (isStorage(this.obj)) {
+      return getStorageLength(this.obj);
+    }
+
+    if (isReplaying) {
+      // When replaying we can get the number of properties directly, to avoid
+      // needing to enumerate all of them.
+      return this.obj.getOwnPropertyNamesCount();
+    }
+
+    try {
+      return this.obj.getOwnPropertyNames().length;
+    } catch (err) {
+      // The above can throw when the debuggee does not subsume the object's
+      // compartment, or for some WrappedNatives like Cu.Sandbox.
+    }
+
+    return null;
+  },
+
+  getRawObject: function() {
     let raw = this.obj.unsafeDereference();
 
     // If Cu is not defined, we are running on a worker thread, where xrays
@@ -190,19 +315,25 @@ const proto = {
       raw = null;
     }
 
-    for (const fn of previewers[this.obj.class] || previewers.Object) {
+    return raw;
+  },
+
+  /**
+   * Populate the `preview` property on `grip` given its type.
+   */
+  _populateGripPreview: function(grip, raw) {
+    for (const previewer of previewers[this.obj.class] || previewers.Object) {
       try {
-        if (fn(this, g, raw)) {
-          break;
+        const previewerResult = previewer(this, grip, raw);
+        if (previewerResult) {
+          return;
         }
       } catch (e) {
-        const msg = "ObjectActor.prototype.grip previewer function";
+        const msg =
+          "ObjectActor.prototype._populateGripPreview previewer function";
         DevToolsUtils.reportException(msg, e);
       }
     }
-
-    this.hooks.decrementGripDepth();
-    return g;
   },
 
   /**
@@ -370,13 +501,6 @@ const proto = {
 
     // Do not search safe getters in unsafe objects.
     if (!DevToolsUtils.isSafeDebuggerObject(obj)) {
-      return safeGetterValues;
-    }
-
-    // Do not search for safe getters while replaying. While this would be nice
-    // to support, it involves a lot of back-and-forth between processes and
-    // would be better to do entirely in the replaying process.
-    if (isReplaying) {
       return safeGetterValues;
     }
 
@@ -730,10 +854,19 @@ const proto = {
     if ("value" in desc) {
       retval.writable = desc.writable;
       retval.value = this.hooks.createValueGrip(desc.value);
+    } else if (this._originalDescriptors.has(name.toString())) {
+      name = name.toString();
+      const watchpointType = this._originalDescriptors.get(name).watchpointType;
+      desc = this._originalDescriptors.get(name).desc;
+      retval.value = this.hooks.createValueGrip(
+        this.obj.makeDebuggeeValue(desc.value)
+      );
+      retval.watchpoint = watchpointType;
     } else {
       if ("get" in desc) {
         retval.get = this.hooks.createValueGrip(desc.get);
       }
+
       if ("set" in desc) {
         retval.set = this.hooks.createValueGrip(desc.set);
       }
@@ -801,144 +934,6 @@ const proto = {
   },
 
   /**
-   * Handle a protocol request to get the list of dependent promises of a
-   * promise.
-   *
-   * @return object
-   *         Returns an object containing an array of object grips of the
-   *         dependent promises
-   */
-  dependentPromises: function() {
-    if (this.obj.class != "Promise") {
-      return this.throwError(
-        "objectNotPromise",
-        "'dependentPromises' request is only valid for grips with a 'Promise' class."
-      );
-    }
-
-    const promises = this.obj.promiseDependentPromises.map(p =>
-      this.hooks.createValueGrip(p)
-    );
-
-    return { promises };
-  },
-
-  /**
-   * Handle a protocol request to get the allocation stack of a promise.
-   */
-  allocationStack: function() {
-    if (this.obj.class != "Promise") {
-      return this.throwError(
-        "objectNotPromise",
-        "'allocationStack' request is only valid for grips with a 'Promise' class."
-      );
-    }
-
-    let stack = this.obj.promiseAllocationSite;
-    const allocationStacks = [];
-
-    while (stack) {
-      if (stack.source) {
-        const source = this._getSourceOriginalLocation(stack);
-
-        if (source) {
-          allocationStacks.push(source);
-        }
-      }
-      stack = stack.parent;
-    }
-
-    return Promise.all(allocationStacks);
-  },
-
-  /**
-   * Handle a protocol request to get the fulfillment stack of a promise.
-   */
-  fulfillmentStack: function() {
-    if (this.obj.class != "Promise") {
-      return this.throwError(
-        "objectNotPromise",
-        "'fulfillmentStack' request is only valid for grips with a 'Promise' class."
-      );
-    }
-
-    let stack = this.obj.promiseResolutionSite;
-    const fulfillmentStacks = [];
-
-    while (stack) {
-      if (stack.source) {
-        const source = this._getSourceOriginalLocation(stack);
-
-        if (source) {
-          fulfillmentStacks.push(source);
-        }
-      }
-      stack = stack.parent;
-    }
-
-    return Promise.all(fulfillmentStacks);
-  },
-
-  /**
-   * Handle a protocol request to get the rejection stack of a promise.
-   */
-  rejectionStack: function() {
-    if (this.obj.class != "Promise") {
-      return this.throwError(
-        "objectNotPromise",
-        "'rejectionStack' request is only valid for grips with a 'Promise' class."
-      );
-    }
-
-    let stack = this.obj.promiseResolutionSite;
-    const rejectionStacks = [];
-
-    while (stack) {
-      if (stack.source) {
-        const source = this._getSourceOriginalLocation(stack);
-
-        if (source) {
-          rejectionStacks.push(source);
-        }
-      }
-      stack = stack.parent;
-    }
-
-    return Promise.all(rejectionStacks);
-  },
-
-  /**
-   * Helper function for fetching the source location of a SavedFrame stack.
-   *
-   * @param SavedFrame stack
-   *        The promise allocation stack frame
-   * @return object
-   *         Returns an object containing the source location of the SavedFrame
-   *         stack.
-   */
-  _getSourceOriginalLocation: function(stack) {
-    let source;
-
-    // Catch any errors if the source actor cannot be found
-    try {
-      source = this.hooks.sources().getSourceActorsByURL(stack.source)[0];
-    } catch (e) {
-      // ignored
-    }
-
-    if (!source) {
-      return null;
-    }
-
-    return {
-      source,
-      line: stack.line,
-      column: stack.column,
-      functionDisplayName: stack.functionDisplayName,
-    };
-  },
-
-  /**
    * Handle a protocol request to get the target and handler internal slots of a proxy.
    */
   proxySlots: function() {
@@ -962,7 +957,9 @@ const proto = {
    * Release the actor, when it isn't needed anymore.
    * Protocol.js uses this release method to call the destroy method.
    */
-  release: function() {},
+  release: function() {
+    this.removeWatchpoints();
+  },
 };
 
 exports.ObjectActor = protocol.ActorClassWithSpec(objectSpec, proto);

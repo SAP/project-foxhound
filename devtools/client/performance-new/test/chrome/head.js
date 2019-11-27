@@ -183,10 +183,13 @@ function createPerfComponent() {
   const React = require("devtools/client/shared/vendor/react");
   const ReactDOM = require("devtools/client/shared/vendor/react-dom");
   const ReactRedux = require("devtools/client/shared/vendor/react-redux");
-  const createStore = require("devtools/client/shared/redux/create-store")();
+  const createStore = require("devtools/client/shared/redux/create-store");
   const reducers = require("devtools/client/performance-new/store/reducers");
   const actions = require("devtools/client/performance-new/store/actions");
   const selectors = require("devtools/client/performance-new/store/selectors");
+  const { getDefaultRecordingPreferences } = ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/background.jsm.js"
+  );
 
   const perfFrontMock = new MockPerfFront();
   const store = createStore(reducers);
@@ -202,15 +205,16 @@ function createPerfComponent() {
     recordingPreferencesCalls.push(settings);
   }
 
+  const noop = () => {};
+
   function mountComponent() {
     store.dispatch(
       actions.initializeStore({
         perfFront: perfFrontMock,
         receiveProfile: receiveProfileMock,
-        recordingSettingsFromPreferences: selectors.getRecordingSettings(
-          store.getState()
-        ),
+        recordingPreferences: getDefaultRecordingPreferences(),
         setRecordingPreferences: recordingPreferencesMock,
+        getSymbolTableGetter: () => noop,
       })
     );
 

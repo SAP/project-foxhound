@@ -39,12 +39,14 @@ class SearchBox extends PureComponent {
       learnMoreUrl: PropTypes.string,
       onBlur: PropTypes.func,
       onChange: PropTypes.func.isRequired,
+      onClearButtonClick: PropTypes.func,
       onFocus: PropTypes.func,
       onKeyDown: PropTypes.func,
       placeholder: PropTypes.string.isRequired,
       summary: PropTypes.string,
       summaryTooltip: PropTypes.string,
       type: PropTypes.string,
+      value: PropTypes.string,
     };
   }
 
@@ -52,7 +54,7 @@ class SearchBox extends PureComponent {
     super(props);
 
     this.state = {
-      value: "",
+      value: props.value || "",
       focused: false,
     };
 
@@ -76,7 +78,7 @@ class SearchBox extends PureComponent {
     });
     this.shortcuts.on(this.props.keyShortcut, event => {
       event.preventDefault();
-      this.inputRef.current.focus();
+      this.focus();
     });
   }
 
@@ -88,6 +90,12 @@ class SearchBox extends PureComponent {
     // Clean up an existing timeout.
     if (this.searchTimeout) {
       clearTimeout(this.searchTimeout);
+    }
+  }
+
+  focus() {
+    if (this.inputRef) {
+      this.inputRef.current.focus();
     }
   }
 
@@ -119,6 +127,10 @@ class SearchBox extends PureComponent {
 
   onClearButtonClick() {
     this.onChange("");
+
+    if (this.props.onClearButtonClick) {
+      this.props.onClearButtonClick();
+    }
   }
 
   onFocus() {
@@ -139,7 +151,7 @@ class SearchBox extends PureComponent {
 
   onKeyDown(e) {
     if (this.props.onKeyDown) {
-      this.props.onKeyDown();
+      this.props.onKeyDown(e);
     }
 
     const autocomplete = this.autocompleteRef.current;

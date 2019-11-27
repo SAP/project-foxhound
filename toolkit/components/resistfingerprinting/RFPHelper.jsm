@@ -21,7 +21,6 @@ const kPrefLetterboxingDimensions =
 const kPrefLetterboxingTesting =
   "privacy.resistFingerprinting.letterboxing.testing";
 const kTopicDOMWindowOpened = "domwindowopened";
-const kEventLetterboxingSizeUpdate = "Letterboxing:ContentSizeUpdated";
 
 var logConsole;
 function log(msg) {
@@ -116,17 +115,6 @@ class _RFPHelper {
     }
   }
 
-  receiveMessage(aMessage) {
-    switch (aMessage.name) {
-      case kEventLetterboxingSizeUpdate:
-        let win = aMessage.target.ownerGlobal;
-        this._updateMarginsForTabsInWindow(win);
-        break;
-      default:
-        break;
-    }
-  }
-
   _handlePrefChanged(data) {
     switch (data) {
       case kPrefResistFingerprinting:
@@ -141,6 +129,10 @@ class _RFPHelper {
       default:
         break;
     }
+  }
+
+  contentSizeUpdated(win) {
+    this._updateMarginsForTabsInWindow(win);
   }
 
   // ============================================================================
@@ -179,6 +171,7 @@ class _RFPHelper {
       case 0: // will prompt
       // This should only happen when turning privacy.resistFingerprinting off.
       // Works like disabling accept-language spoofing.
+      // fall through
       case 1: // don't spoof
         if (
           Services.prefs.prefHasUserValue("javascript.use_us_english_locale")
@@ -578,10 +571,6 @@ class _RFPHelper {
   _attachWindow(aWindow) {
     aWindow.gBrowser.addTabsProgressListener(this);
     aWindow.addEventListener("TabOpen", this);
-    aWindow.messageManager.addMessageListener(
-      kEventLetterboxingSizeUpdate,
-      this
-    );
 
     // Rounding the content viewport.
     this._updateMarginsForTabsInWindow(aWindow);
@@ -605,10 +594,6 @@ class _RFPHelper {
     let tabBrowser = aWindow.gBrowser;
     tabBrowser.removeTabsProgressListener(this);
     aWindow.removeEventListener("TabOpen", this);
-    aWindow.messageManager.removeMessageListener(
-      kEventLetterboxingSizeUpdate,
-      this
-    );
 
     // Clear all margins and tooltip for all browsers.
     for (let tab of tabBrowser.tabs) {
@@ -631,8 +616,7 @@ class _RFPHelper {
     }
   }
 
-  _handleDOMWindowOpened(aSubject) {
-    let win = aSubject.QueryInterface(Ci.nsIDOMWindow);
+  _handleDOMWindowOpened(win) {
     let self = this;
 
     win.addEventListener(

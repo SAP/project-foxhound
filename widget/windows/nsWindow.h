@@ -330,6 +330,7 @@ class nsWindow final : public nsWindowBase {
   virtual nsresult OnWindowedPluginKeyEvent(
       const mozilla::NativeEventData& aKeyEventData,
       nsIKeyEventInPluginCallback* aCallback) override;
+  void DispatchPluginSettingEvents();
 
   void GetCompositorWidgetInitData(
       mozilla::widget::CompositorWidgetInitData* aInitData) override;
@@ -411,7 +412,7 @@ class nsWindow final : public nsWindowBase {
                               LRESULT* aRetValue);
   bool ExternalHandlerProcessMessage(UINT aMessage, WPARAM& aWParam,
                                      LPARAM& aLParam, MSGResult& aResult);
-  bool ProcessMessageForPlugin(const MSG& aMsg, MSGResult& aResult);
+  bool ProcessMessageForPlugin(MSG aMsg, MSGResult& aResult);
   LRESULT ProcessCharMessage(const MSG& aMsg, bool* aEventDispatched);
   LRESULT ProcessKeyUpMessage(const MSG& aMsg, bool* aEventDispatched);
   LRESULT ProcessKeyDownMessage(const MSG& aMsg, bool* aEventDispatched);
@@ -424,6 +425,10 @@ class nsWindow final : public nsWindowBase {
   static void UpdateFirstEventTime(DWORD aEventTime);
   void FinishLiveResizing(ResizeState aNewState);
   nsIntPoint GetTouchCoordinates(WPARAM wParam, LPARAM lParam);
+  Maybe<mozilla::PanGestureInput> ConvertTouchToPanGesture(
+      const mozilla::MultiTouchInput& aTouchInput, PTOUCHINPUT aOriginalEvent);
+  void DispatchTouchOrPanGestureInput(mozilla::MultiTouchInput& aTouchInput,
+                                      PTOUCHINPUT aOSEvent);
 
   /**
    * Event handlers
@@ -528,6 +533,9 @@ class nsWindow final : public nsWindowBase {
 
   already_AddRefed<SourceSurface> GetFallbackScrollSnapshot(
       const RECT& aRequiredClip);
+
+  void CreateCompositor() override;
+  void RequestFxrOutput();
 
  protected:
   nsCOMPtr<nsIWidget> mParent;
@@ -683,9 +691,16 @@ class nsWindow final : public nsWindowBase {
   static void InitMouseWheelScrollData();
 
   double mSizeConstraintsScale;  // scale in effect when setting constraints
+  int32_t mMaxTextureSize;
 
   // Pointer events processing and management
   WinPointerEvents mPointerEvents;
+
+  ScreenPoint mLastPanGestureFocus;
+
+  // When true, used to indicate an async call to RequestFxrOutput to the GPU
+  // process after the Compositor is created
+  bool mRequestFxrOutputPending;
 };
 
 #endif  // Window_h__

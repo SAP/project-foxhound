@@ -150,7 +150,9 @@ already_AddRefed<DocGroup> TabGroup::AddDocument(const nsACString& aKey,
   if (entry->mDocGroup) {
     docGroup = entry->mDocGroup;
   } else {
-    docGroup = new DocGroup(this, aKey);
+    const nsID agentClusterId = nsContentUtils::GenerateUUID();
+
+    docGroup = new DocGroup(this, aKey, agentClusterId);
     entry->mDocGroup = docGroup;
   }
 
@@ -191,10 +193,14 @@ void TabGroup::Leave(nsPIDOMWindowOuter* aWindow) {
     mForegroundCount--;
   }
 
+  MaybeDestroy();
+}
+
+void TabGroup::MaybeDestroy() {
   // The Chrome TabGroup doesn't have cyclical references through mEventTargets
   // to itself, meaning that we don't have to worry about nulling mEventTargets
   // out after the last window leaves.
-  if (!mIsChrome && mWindows.IsEmpty()) {
+  if (!mIsChrome && !mLastWindowLeft && mWindows.IsEmpty()) {
     mLastWindowLeft = true;
     Shutdown(false);
   }
@@ -215,7 +221,7 @@ nsresult TabGroup::FindItemWithName(const nsAString& aName,
 
   for (nsPIDOMWindowOuter* outerWindow : mWindows) {
     // Ignore non-toplevel windows
-    if (outerWindow->GetScriptableParentOrNull()) {
+    if (outerWindow->GetInProcessScriptableParentOrNull()) {
       continue;
     }
 
@@ -224,8 +230,13 @@ nsresult TabGroup::FindItemWithName(const nsAString& aName,
       continue;
     }
 
+    BrowsingContext* bc = outerWindow->GetBrowsingContext();
+    if (!bc || !bc->IsTargetable()) {
+      continue;
+    }
+
     nsCOMPtr<nsIDocShellTreeItem> root;
-    docshell->GetSameTypeRootTreeItem(getter_AddRefs(root));
+    docshell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
     MOZ_RELEASE_ASSERT(docshell == root);
     if (root && aRequestor != root) {
       root->FindItemWithName(aName, aRequestor, aOriginalRequestor,
@@ -245,7 +256,7 @@ nsTArray<nsPIDOMWindowOuter*> TabGroup::GetTopLevelWindows() const {
 
   for (nsPIDOMWindowOuter* outerWindow : mWindows) {
     if (outerWindow->GetDocShell() &&
-        !outerWindow->GetScriptableParentOrNull()) {
+        !outerWindow->GetInProcessScriptableParentOrNull()) {
       array.AppendElement(outerWindow);
     }
   }

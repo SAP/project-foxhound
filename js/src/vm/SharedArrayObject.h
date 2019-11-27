@@ -91,8 +91,9 @@ class SharedArrayRawBuffer {
   };
 
   // max must be Something for wasm, Nothing for other uses
-  static SharedArrayRawBuffer* Allocate(uint32_t initial,
-                                        const mozilla::Maybe<uint32_t>& max);
+  static SharedArrayRawBuffer* Allocate(
+      uint32_t length, const mozilla::Maybe<uint32_t>& maxSize,
+      const mozilla::Maybe<size_t>& mappedSize);
 
   // This may be called from multiple threads.  The caller must take
   // care of mutual exclusion.
@@ -114,15 +115,9 @@ class SharedArrayRawBuffer {
 
   size_t mappedSize() const { return mappedSize_; }
 
-#ifndef WASM_HUGE_MEMORY
-  uint32_t boundsCheckLimit() const { return mappedSize_ - wasm::GuardSize; }
-#endif
-
   bool isWasm() const { return preparedForWasm_; }
 
-#ifndef WASM_HUGE_MEMORY
   void tryGrowMaxSizeInPlace(uint32_t deltaMaxSize);
-#endif
 
   bool wasmGrowToSizeInPlace(const Lock&, uint32_t newLength);
 
@@ -169,8 +164,8 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static const uint8_t RESERVED_SLOTS = 2;
 
-  static const Class class_;
-  static const Class protoClass_;
+  static const JSClass class_;
+  static const JSClass protoClass_;
 
   static bool byteLengthGetter(JSContext* cx, unsigned argc, Value* vp);
 
@@ -187,7 +182,7 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
                                       uint32_t length,
                                       HandleObject proto = nullptr);
 
-  static void Finalize(FreeOp* fop, JSObject* obj);
+  static void Finalize(JSFreeOp* fop, JSObject* obj);
 
   static void addSizeOfExcludingThis(JSObject* obj,
                                      mozilla::MallocSizeOf mallocSizeOf,
@@ -232,10 +227,6 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
   }
 
   size_t wasmMappedSize() const { return rawBufferObject()->mappedSize(); }
-
-#ifndef WASM_HUGE_MEMORY
-  uint32_t wasmBoundsCheckLimit() const;
-#endif
 
  private:
   void acceptRawBuffer(SharedArrayRawBuffer* buffer, uint32_t length);

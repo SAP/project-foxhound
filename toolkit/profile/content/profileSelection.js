@@ -188,6 +188,7 @@ function onProfilesKey(aEvent) {
       if (AppConstants.platform != "macosx") {
         break;
       }
+    // fall through
     case KeyEvent.DOM_VK_DELETE:
       ConfirmDelete();
       break;
@@ -209,7 +210,8 @@ function CreateProfileWizard() {
     "chrome://mozapps/content/profile/createProfileWizard.xul",
     "",
     "centerscreen,chrome,modal,titlebar",
-    gProfileService
+    gProfileService,
+    { CreateProfile }
   );
 }
 

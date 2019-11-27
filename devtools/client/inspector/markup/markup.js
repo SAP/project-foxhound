@@ -23,6 +23,18 @@ const RootContainer = require("devtools/client/inspector/markup/views/root-conta
 
 loader.lazyRequireGetter(
   this,
+  "createDOMMutationBreakpoint",
+  "devtools/client/framework/actions/index",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "deleteDOMMutationBreakpoint",
+  "devtools/client/framework/actions/index",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "MarkupContextMenu",
   "devtools/client/inspector/markup/markup-context-menu"
 );
@@ -90,6 +102,131 @@ const DRAG_DROP_HEIGHT_TO_SPEED_MAX = 1;
 const ATTR_COLLAPSE_ENABLED_PREF = "devtools.markup.collapseAttributes";
 const ATTR_COLLAPSE_LENGTH_PREF = "devtools.markup.collapseAttributeLength";
 const BEAUTIFY_HTML_ON_COPY_PREF = "devtools.markup.beautifyOnCopy";
+
+/**
+ * These functions are called when a shortcut (as defined in `_initShortcuts`) occurs.
+ * Each property in the following object corresponds to one of the shortcut that is
+ * handled by the markup-view.
+ * Each property value is a function that takes the markup-view instance as only
+ * argument, and returns a boolean that signifies whether the event should be consumed.
+ * By default, the event gets consumed after the shortcut handler returns,
+ * this means its propagation is stopped. If you do want the shortcut event
+ * to continue propagating through DevTools, then return true from the handler.
+ */
+const shortcutHandlers = {
+  // Localizable keys
+  "markupView.hide.key": markupView => {
+    const node = markupView._selectedContainer.node;
+    const walkerFront = node.walkerFront;
+
+    if (node.hidden) {
+      walkerFront.unhideNode(node);
+    } else {
+      walkerFront.hideNode(node);
+    }
+  },
+  "markupView.edit.key": markupView => {
+    markupView.beginEditingOuterHTML(markupView._selectedContainer.node);
+  },
+  "markupView.scrollInto.key": markupView => {
+    markupView.scrollNodeIntoView();
+  },
+  // Generic keys
+  Delete: markupView => {
+    markupView.deleteNodeOrAttribute();
+  },
+  Backspace: markupView => {
+    markupView.deleteNodeOrAttribute(true);
+  },
+  Home: markupView => {
+    const rootContainer = markupView.getContainer(markupView._rootNode);
+    markupView.navigate(rootContainer.children.firstChild.container);
+  },
+  Left: markupView => {
+    if (markupView._selectedContainer.expanded) {
+      markupView.collapseNode(markupView._selectedContainer.node);
+    } else {
+      const parent = markupView._selectionWalker().parentNode();
+      if (parent) {
+        markupView.navigate(parent.container);
+      }
+    }
+  },
+  Right: markupView => {
+    if (
+      !markupView._selectedContainer.expanded &&
+      markupView._selectedContainer.hasChildren
+    ) {
+      markupView._expandContainer(markupView._selectedContainer);
+    } else {
+      const next = markupView._selectionWalker().nextNode();
+      if (next) {
+        markupView.navigate(next.container);
+      }
+    }
+  },
+  Up: markupView => {
+    const previousNode = markupView._selectionWalker().previousNode();
+    if (previousNode) {
+      markupView.navigate(previousNode.container);
+    }
+  },
+  Down: markupView => {
+    const nextNode = markupView._selectionWalker().nextNode();
+    if (nextNode) {
+      markupView.navigate(nextNode.container);
+    }
+  },
+  PageUp: markupView => {
+    const walker = markupView._selectionWalker();
+    let selection = markupView._selectedContainer;
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      const previousNode = walker.previousNode();
+      if (!previousNode) {
+        break;
+      }
+      selection = previousNode.container;
+    }
+    markupView.navigate(selection);
+  },
+  PageDown: markupView => {
+    const walker = markupView._selectionWalker();
+    let selection = markupView._selectedContainer;
+    for (let i = 0; i < PAGE_SIZE; i++) {
+      const nextNode = walker.nextNode();
+      if (!nextNode) {
+        break;
+      }
+      selection = nextNode.container;
+    }
+    markupView.navigate(selection);
+  },
+  Enter: markupView => {
+    if (!markupView._selectedContainer.canFocus) {
+      markupView._selectedContainer.canFocus = true;
+      markupView._selectedContainer.focus();
+      return false;
+    }
+    return true;
+  },
+  Space: markupView => {
+    if (!markupView._selectedContainer.canFocus) {
+      markupView._selectedContainer.canFocus = true;
+      markupView._selectedContainer.focus();
+      return false;
+    }
+    return true;
+  },
+  Esc: markupView => {
+    if (markupView.isDragging) {
+      markupView.cancelDragging();
+      return false;
+    }
+    // Prevent cancelling the event when not
+    // dragging, to allow the split console to be toggled.
+    return true;
+  },
+};
 
 /**
  * Vocabulary for the purposes of this file:
@@ -178,16 +315,13 @@ function MarkupView(inspector, frame, controllerWindow) {
   this._elt.addEventListener("mouseout", this._onMouseOut);
   this._frame.addEventListener("focus", this._onFocus);
   this.inspector.selection.on("new-node-front", this._onNewSelection);
-  this.walker.on("display-change", this._onWalkerNodeStatesChanged);
-  this.walker.on("scrollable-change", this._onWalkerNodeStatesChanged);
-  this.walker.on("mutations", this._mutationObserver);
   this.win.addEventListener("copy", this._onCopy);
   this.win.addEventListener("mouseup", this._onMouseUp);
-  this.inspector.inspector.nodePicker.on(
+  this.inspector.toolbox.nodePicker.on(
     "picker-node-canceled",
     this._onToolboxPickerCanceled
   );
-  this.inspector.inspector.nodePicker.on(
+  this.inspector.toolbox.nodePicker.on(
     "picker-node-hovered",
     this._onToolboxPickerHover
   );
@@ -264,6 +398,22 @@ MarkupView.prototype = {
     return this._undo;
   },
 
+  init: async function() {
+    try {
+      this.inspectorFronts = await this.inspector.inspectorFront.getAllInspectorFronts();
+    } catch (e) {
+      // This call might fail if called asynchrously after the toolbox is finished
+      // closing.
+      return;
+    }
+
+    for (const { walker } of this.inspectorFronts) {
+      walker.on("display-change", this._onWalkerNodeStatesChanged);
+      walker.on("scrollable-change", this._onWalkerNodeStatesChanged);
+      walker.on("mutations", this._mutationObserver);
+    }
+  },
+
   /**
    * Handle promise rejections for various asynchronous actions, and only log errors if
    * the markup view still exists.
@@ -271,7 +421,7 @@ MarkupView.prototype = {
    * destroyed while still initializing (and making protocol requests).
    */
   _handleRejectionIfNotDestroyed: function(e) {
-    if (!this._destroyer) {
+    if (!this._destroyed) {
       console.error(e);
     }
   },
@@ -563,7 +713,10 @@ MarkupView.prototype = {
    *         requests queued up
    */
   _showBoxModel: function(nodeFront) {
-    return this.toolbox.highlighter
+    // Hold onto a reference to the highlighted NodeFront so that we can get the correct
+    // HighlighterFront when calling _hideBoxModel.
+    this._highlightedNodeFront = nodeFront;
+    return nodeFront.highlighterFront
       .highlight(nodeFront)
       .catch(this._handleRejectionIfNotDestroyed);
   },
@@ -578,7 +731,11 @@ MarkupView.prototype = {
    *         requests queued up
    */
   _hideBoxModel: function(forceHide) {
-    return this.toolbox.highlighter
+    if (!this._highlightedNodeFront) {
+      return Promise.resolve();
+    }
+
+    return this._highlightedNodeFront.highlighterFront
       .unhighlight(forceHide)
       .catch(this._handleRejectionIfNotDestroyed);
   },
@@ -771,6 +928,19 @@ MarkupView.prototype = {
    */
   _onNewSelection: function(nodeFront, reason) {
     const selection = this.inspector.selection;
+    // this will probably leak.
+    // TODO: use resource api listeners?
+    if (nodeFront) {
+      nodeFront.walkerFront.on(
+        "display-change",
+        this._onWalkerNodeStatesChanged
+      );
+      nodeFront.walkerFront.on(
+        "scrollable-change",
+        this._onWalkerNodeStatesChanged
+      );
+      nodeFront.walkerFront.on("mutations", this._mutationObserver);
+    }
 
     if (this.htmlEditor) {
       this.htmlEditor.hide();
@@ -798,7 +968,7 @@ MarkupView.prototype = {
     const onShow = this.showNode(selection.nodeFront, { slotted, smoothScroll })
       .then(() => {
         // We could be destroyed by now.
-        if (this._destroyer) {
+        if (this._destroyed) {
           return promise.reject("markupview destroyed");
         }
 
@@ -819,7 +989,7 @@ MarkupView.prototype = {
    * Maybe make selected the current node selection's MarkupContainer depending
    * on why the current node got selected.
    */
-  maybeNavigateToNewSelection: function() {
+  maybeNavigateToNewSelection: async function() {
     const { reason, nodeFront } = this.inspector.selection;
 
     // The list of reasons that should lead to navigating to the node.
@@ -841,7 +1011,9 @@ MarkupView.prototype = {
     }
 
     if (reasonsToNavigate.includes(reason)) {
-      this.getContainer(this._rootNode).elt.focus();
+      // not sure this is necessary
+      const root = await nodeFront.walkerFront.getRootNode();
+      this.getContainer(root).elt.focus();
       this.navigate(this.getContainer(nodeFront));
     }
   },
@@ -894,7 +1066,7 @@ MarkupView.prototype = {
 
     switch (node.nodeType) {
       case nodeConstants.ELEMENT_NODE:
-        copyLongHTMLString(this.walker.outerHTML(node));
+        copyLongHTMLString(node.walkerFront.outerHTML(node));
         break;
       case nodeConstants.COMMENT_NODE:
         getLongString(node.getNodeValue()).then(comment => {
@@ -911,13 +1083,12 @@ MarkupView.prototype = {
    * Copy the innerHTML of the selected Node to the clipboard.
    */
   copyInnerHTML: function() {
+    const nodeFront = this.inspector.selection.nodeFront;
     if (!this.inspector.selection.isNode()) {
       return;
     }
 
-    copyLongHTMLString(
-      this.walker.innerHTML(this.inspector.selection.nodeFront)
-    );
+    copyLongHTMLString(nodeFront.walkerFront.innerHTML(nodeFront));
   },
 
   /**
@@ -930,9 +1101,10 @@ MarkupView.prototype = {
       return;
     }
 
+    const nodeFront = this.inspector.selection.nodeFront;
     if (type === "uri" || type === "cssresource" || type === "jsresource") {
       // Open link in a new tab.
-      this.inspector.inspector
+      nodeFront.inspectorFront
         .resolveRelativeURL(link, this.inspector.selection.nodeFront)
         .then(url => {
           if (type === "uri") {
@@ -947,10 +1119,10 @@ MarkupView.prototype = {
         .catch(console.error);
     } else if (type == "idref") {
       // Select the node in the same document.
-      this.walker
-        .document(this.inspector.selection.nodeFront)
+      nodeFront.walkerFront
+        .document(nodeFront)
         .then(doc => {
-          return this.walker
+          return nodeFront.walkerFront
             .querySelector(doc, "#" + CSS.escape(link))
             .then(node => {
               if (!node) {
@@ -1006,139 +1178,20 @@ MarkupView.prototype = {
   /**
    * Key shortcut listener.
    */
-  /* eslint-disable complexity */
   _onShortcut(name, event) {
     if (this._isInputOrTextarea(event.target)) {
       return;
     }
-    switch (name) {
-      // Localizable keys
-      case "markupView.hide.key": {
-        const node = this._selectedContainer.node;
-        if (node.hidden) {
-          this.walker.unhideNode(node);
-        } else {
-          this.walker.hideNode(node);
-        }
-        break;
-      }
-      case "markupView.edit.key": {
-        this.beginEditingOuterHTML(this._selectedContainer.node);
-        break;
-      }
-      case "markupView.scrollInto.key": {
-        this.scrollNodeIntoView();
-        break;
-      }
-      // Generic keys
-      case "Delete": {
-        this.deleteNodeOrAttribute();
-        break;
-      }
-      case "Backspace": {
-        this.deleteNodeOrAttribute(true);
-        break;
-      }
-      case "Home": {
-        const rootContainer = this.getContainer(this._rootNode);
-        this.navigate(rootContainer.children.firstChild.container);
-        break;
-      }
-      case "Left": {
-        if (this._selectedContainer.expanded) {
-          this.collapseNode(this._selectedContainer.node);
-        } else {
-          const parent = this._selectionWalker().parentNode();
-          if (parent) {
-            this.navigate(parent.container);
-          }
-        }
-        break;
-      }
-      case "Right": {
-        if (
-          !this._selectedContainer.expanded &&
-          this._selectedContainer.hasChildren
-        ) {
-          this._expandContainer(this._selectedContainer);
-        } else {
-          const next = this._selectionWalker().nextNode();
-          if (next) {
-            this.navigate(next.container);
-          }
-        }
-        break;
-      }
-      case "Up": {
-        const previousNode = this._selectionWalker().previousNode();
-        if (previousNode) {
-          this.navigate(previousNode.container);
-        }
-        break;
-      }
-      case "Down": {
-        const nextNode = this._selectionWalker().nextNode();
-        if (nextNode) {
-          this.navigate(nextNode.container);
-        }
-        break;
-      }
-      case "PageUp": {
-        const walker = this._selectionWalker();
-        let selection = this._selectedContainer;
-        for (let i = 0; i < PAGE_SIZE; i++) {
-          const previousNode = walker.previousNode();
-          if (!previousNode) {
-            break;
-          }
-          selection = previousNode.container;
-        }
-        this.navigate(selection);
-        break;
-      }
-      case "PageDown": {
-        const walker = this._selectionWalker();
-        let selection = this._selectedContainer;
-        for (let i = 0; i < PAGE_SIZE; i++) {
-          const nextNode = walker.nextNode();
-          if (!nextNode) {
-            break;
-          }
-          selection = nextNode.container;
-        }
-        this.navigate(selection);
-        break;
-      }
-      case "Enter":
-      case "Space": {
-        if (!this._selectedContainer.canFocus) {
-          this._selectedContainer.canFocus = true;
-          this._selectedContainer.focus();
-        } else {
-          // Return early to prevent cancelling the event.
-          return;
-        }
-        break;
-      }
-      case "Esc": {
-        if (this.isDragging) {
-          this.cancelDragging();
-        } else {
-          // Return early to prevent cancelling the event when not
-          // dragging, to allow the split console to be toggled.
-          return;
-        }
-        break;
-      }
-      default:
-        console.error("Unexpected markup-view key shortcut", name);
-        return;
+
+    const handler = shortcutHandlers[name];
+    const shouldPropagate = handler(this);
+    if (shouldPropagate) {
+      return;
     }
-    // Prevent default for this action
+
     event.stopPropagation();
     event.preventDefault();
   },
-  /* eslint-enable complexity */
 
   /**
    * Check if a node is an input or textarea
@@ -1200,14 +1253,14 @@ MarkupView.prototype = {
     const container = this.getContainer(node);
 
     // Retain the node so we can undo this...
-    this.walker
+    node.walkerFront
       .retainNode(node)
       .then(() => {
         const parent = node.parentNode();
         let nextSibling = null;
         this.undo.do(
           () => {
-            this.walker.removeNode(node).then(siblings => {
+            node.walkerFront.removeNode(node).then(siblings => {
               nextSibling = siblings.nextSibling;
               const prevSibling = siblings.previousSibling;
               let focusNode = moveBackward ? prevSibling : nextSibling;
@@ -1243,7 +1296,7 @@ MarkupView.prototype = {
           () => {
             const isValidSibling = nextSibling && !nextSibling.isPseudoElement;
             nextSibling = isValidSibling ? nextSibling : null;
-            this.walker.insertBefore(node, parent, nextSibling);
+            node.walkerFront.insertBefore(node, parent, nextSibling);
           }
         );
       })
@@ -1266,11 +1319,14 @@ MarkupView.prototype = {
       return;
     }
 
+    const toolboxStore = this.inspector.toolbox.store;
     const nodeFront = this.inspector.selection.nodeFront;
-    const mutationBreakpoints = nodeFront.mutationBreakpoints;
-    await this.walker.setMutationBreakpoints(nodeFront, {
-      [name]: !mutationBreakpoints[name],
-    });
+
+    if (nodeFront.mutationBreakpoints[name]) {
+      toolboxStore.dispatch(deleteDOMMutationBreakpoint(nodeFront, name));
+    } else {
+      toolboxStore.dispatch(createDOMMutationBreakpoint(nodeFront, name));
+    }
   },
 
   /**
@@ -1323,9 +1379,11 @@ MarkupView.prototype = {
 
     let container;
     const { nodeType, isPseudoElement } = node;
-    if (node === this.walker.rootNode) {
+    if (node === node.walkerFront.rootNode) {
       container = new RootContainer(this, node);
       this._elt.appendChild(container.elt);
+    }
+    if (node === this.walker.rootNode) {
       this._rootNode = node;
     } else if (slotted) {
       container = new SlottedNodeContainer(this, node, this.inspector);
@@ -1384,7 +1442,8 @@ MarkupView.prototype = {
         type === "characterData" ||
         type === "customElementDefined" ||
         type === "events" ||
-        type === "pseudoClassLock"
+        type === "pseudoClassLock" ||
+        type === "mutationBreakpoint"
       ) {
         container.update();
       } else if (
@@ -1408,7 +1467,7 @@ MarkupView.prototype = {
     }
 
     this._waitForChildren().then(() => {
-      if (this._destroyer) {
+      if (this._destroyed) {
         // Could not fully update after markup mutations, the markup-view was destroyed
         // while waiting for children. Bail out silently.
         return;
@@ -1508,7 +1567,7 @@ MarkupView.prototype = {
 
     return this._waitForChildren()
       .then(() => {
-        if (this._destroyer) {
+        if (this._destroyed) {
           return promise.reject("markupview destroyed");
         }
         return this._ensureVisible(node);
@@ -1535,7 +1594,7 @@ MarkupView.prototype = {
    */
   _expandContainer: function(container) {
     return this._updateChildren(container, { expand: true }).then(() => {
-      if (this._destroyer) {
+      if (this._destroyed) {
         // Could not expand the node, the markup-view was destroyed in the meantime. Just
         // silently give up.
         return;
@@ -1626,9 +1685,9 @@ MarkupView.prototype = {
     let walkerPromise = null;
 
     if (isOuter) {
-      walkerPromise = this.walker.outerHTML(node);
+      walkerPromise = node.walkerFront.outerHTML(node);
     } else {
-      walkerPromise = this.walker.innerHTML(node);
+      walkerPromise = node.walkerFront.innerHTML(node);
     }
 
     return getLongString(walkerPromise);
@@ -1752,7 +1811,7 @@ MarkupView.prototype = {
     // Changing the outerHTML removes the node which outerHTML was changed.
     // Listen to this removal to reselect the right node afterwards.
     this.reselectOnRemoved(node, "outerhtml");
-    return this.walker.setOuterHTML(node, newValue).catch(() => {
+    return node.walkerFront.setOuterHTML(node, newValue).catch(() => {
       this.cancelReselectOnRemoved();
     });
   },
@@ -1777,10 +1836,10 @@ MarkupView.prototype = {
     return new Promise((resolve, reject) => {
       container.undo.do(
         () => {
-          this.walker.setInnerHTML(node, newValue).then(resolve, reject);
+          node.walkerFront.setInnerHTML(node, newValue).then(resolve, reject);
         },
         () => {
-          this.walker.setInnerHTML(node, oldValue);
+          node.walkerFront.setInnerHTML(node, oldValue);
         }
       );
     });
@@ -1811,7 +1870,7 @@ MarkupView.prototype = {
       container.undo.do(
         () => {
           // eslint-disable-next-line no-unsanitized/method
-          this.walker
+          node.walkerFront
             .insertAdjacentHTML(node, position, value)
             .then(nodeArray => {
               injectedNodes = nodeArray.nodes;
@@ -1820,7 +1879,7 @@ MarkupView.prototype = {
             .then(resolve, reject);
         },
         () => {
-          this.walker.removeNodes(injectedNodes);
+          node.walkerFront.removeNodes(injectedNodes);
         }
       );
     });
@@ -2172,13 +2231,18 @@ MarkupView.prototype = {
   /**
    * Return a list of the children to display for this container.
    */
-  _getVisibleChildren: function(container, centered) {
+  _getVisibleChildren: async function(container, centered) {
     let maxChildren = container.maxChildren || this.maxChildren;
     if (maxChildren == -1) {
       maxChildren = undefined;
     }
 
-    return this.walker.children(container.node, {
+    // We have to use node's walker and not a top level walker
+    // as for fission frames, we are going to have multiple walkers
+    const inspectorFront = await container.node.targetFront.getFront(
+      "inspector"
+    );
+    return inspectorFront.walker.children(container.node, {
       maxNodes: maxChildren,
       center: centered,
     });
@@ -2200,14 +2264,15 @@ MarkupView.prototype = {
    * Tear down the markup panel.
    */
   destroy: function() {
-    if (this._destroyer) {
-      return this._destroyer;
+    if (this._destroyed) {
+      return;
     }
 
-    this._destroyer = promise.resolve();
+    this._destroyed = true;
 
     this._clearBriefBoxModelTimer();
 
+    this._highlightedNodeFront = null;
     this._hoveredContainer = null;
 
     if (this._contextMenu) {
@@ -2245,15 +2310,18 @@ MarkupView.prototype = {
     this._elt.removeEventListener("mouseout", this._onMouseOut);
     this._frame.removeEventListener("focus", this._onFocus);
     this.inspector.selection.off("new-node-front", this._onNewSelection);
-    this.inspector.inspector.nodePicker.off(
+    this.inspector.toolbox.nodePicker.off(
       "picker-node-hovered",
       this._onToolboxPickerHover
     );
-    this.walker.off("display-change", this._onWalkerNodeStatesChanged);
-    this.walker.off("scrollable-change", this._onWalkerNodeStatesChanged);
-    this.walker.off("mutations", this._mutationObserver);
     this.win.removeEventListener("copy", this._onCopy);
     this.win.removeEventListener("mouseup", this._onMouseUp);
+
+    for (const { walker } of this.inspectorFronts) {
+      walker.off("display-change", this._onWalkerNodeStatesChanged);
+      walker.off("scrollable-change", this._onWalkerNodeStatesChanged);
+      walker.off("mutations", this._mutationObserver);
+    }
 
     this._prefObserver.off(
       ATTR_COLLAPSE_ENABLED_PREF,
@@ -2276,12 +2344,11 @@ MarkupView.prototype = {
     this.controllerWindow = null;
     this.doc = null;
     this.highlighters = null;
+    this.inspectorFronts = null;
     this.win = null;
 
     this._lastDropTarget = null;
     this._lastDragTarget = null;
-
-    return this._destroyer;
   },
 
   /**

@@ -129,6 +129,7 @@ class nsWindow final : public nsBaseWidget {
   virtual void ConstrainPosition(bool aAllowSlop, int32_t* aX,
                                  int32_t* aY) override;
   virtual void SetSizeConstraints(const SizeConstraints& aConstraints) override;
+  virtual void LockAspectRatio(bool aShouldLock) override;
   virtual void Move(double aX, double aY) override;
   virtual void Show(bool aState) override;
   virtual void Resize(double aWidth, double aHeight, bool aRepaint) override;
@@ -221,9 +222,13 @@ class nsWindow final : public nsBaseWidget {
       mozilla::layers::BufferMode* aBufferMode) override;
   virtual void EndRemoteDrawingInRegion(
       mozilla::gfx::DrawTarget* aDrawTarget,
-      LayoutDeviceIntRegion& aInvalidRegion) override;
+      const LayoutDeviceIntRegion& aInvalidRegion) override;
 
   void SetProgress(unsigned long progressPercent);
+
+#ifdef MOZ_WAYLAND
+  void SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
+#endif
 
  private:
   void UpdateAlpha(mozilla::gfx::SourceSurface* aSourceSurface,
@@ -275,6 +280,7 @@ class nsWindow final : public nsBaseWidget {
   nsIFrame* GetFrame();
   bool IsDestroyed() { return mIsDestroyed; }
   bool IsWaylandPopup();
+  bool IsPIPWindow() { return mIsPIPWindow; };
 
   void DispatchDragEvent(mozilla::EventMessage aMsg,
                          const LayoutDeviceIntPoint& aRefPoint, guint aTime);
@@ -392,6 +398,9 @@ class nsWindow final : public nsBaseWidget {
   static bool HideTitlebarByDefault();
   static bool GetTopLevelWindowActiveState(nsIFrame* aFrame);
   static bool TitlebarCanUseShapeMask();
+#ifdef MOZ_WAYLAND
+  virtual nsresult GetScreenRect(LayoutDeviceIntRect* aRect) override;
+#endif
 
  protected:
   virtual ~nsWindow();
@@ -402,14 +411,14 @@ class nsWindow final : public nsBaseWidget {
   void DispatchResized();
   void MaybeDispatchResized();
 
-  // Helper for SetParent and ReparentNativeWidget.
-  void ReparentNativeWidgetInternal(nsIWidget* aNewParent,
-                                    GtkWidget* aNewContainer,
-                                    GdkWindow* aNewParentWindow,
-                                    GtkWidget* aOldContainer);
-
   virtual void RegisterTouchWindow() override;
-
+  virtual bool CompositorInitiallyPaused() override {
+#ifdef MOZ_WAYLAND
+    return mCompositorInitiallyPaused;
+#else
+    return false;
+#endif
+  }
   nsCOMPtr<nsIWidget> mParent;
   // Is this a toplevel window?
   bool mIsTopLevel;
@@ -437,6 +446,7 @@ class nsWindow final : public nsBaseWidget {
   bool mIsX11Display;
 #ifdef MOZ_WAYLAND
   bool mNeedsUpdatingEGLSurface;
+  bool mCompositorInitiallyPaused;
 #endif
 
  private:
@@ -473,7 +483,7 @@ class nsWindow final : public nsBaseWidget {
 
   void SetCompositorHint(WindowComposeRequest aState);
 #endif
-  nsCString mGtkWindowTypeName;
+  nsCString mGtkWindowAppName;
   nsCString mGtkWindowRoleName;
   void RefreshWindowClass();
 
@@ -485,7 +495,7 @@ class nsWindow final : public nsBaseWidget {
 
   uint32_t mHasMappedToplevel : 1, mIsFullyObscured : 1, mRetryPointerGrab : 1;
   nsSizeMode mSizeState;
-
+  float mAspectRatio;
   nsIntPoint mClientOffset;
 
 #if GTK_CHECK_VERSION(3, 4, 0)
@@ -520,6 +530,8 @@ class nsWindow final : public nsBaseWidget {
   bool mTitlebarBackdropState;
   // Draggable titlebar region maintained by UpdateWindowDraggingRegion
   LayoutDeviceIntRegion mDraggableRegion;
+  // It's PictureInPicture window.
+  bool mIsPIPWindow;
 
 #ifdef ACCESSIBILITY
   RefPtr<mozilla::a11y::Accessible> mRootAccessible;
@@ -613,10 +625,15 @@ class nsWindow final : public nsBaseWidget {
 
   void ForceTitlebarRedraw();
 
+  void SetPopupWindowDecoration(bool aShowOnTaskbar);
+
+  bool IsMainMenuWindow();
   GtkWidget* ConfigureWaylandPopupWindows();
   void HideWaylandWindow();
   void HideWaylandTooltips();
   void HideWaylandPopupAndAllChildren();
+  void CleanupWaylandPopups();
+  GtkWindow* GetCurrentTopmostWindow();
 
   /**
    * |mIMContext| takes all IME related stuff.

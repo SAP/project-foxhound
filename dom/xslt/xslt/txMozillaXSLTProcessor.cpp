@@ -895,7 +895,7 @@ uint32_t txMozillaXSLTProcessor::Flags(SystemCallerGuarantee) { return mFlags; }
 NS_IMETHODIMP
 txMozillaXSLTProcessor::LoadStyleSheet(nsIURI* aUri,
                                        Document* aLoaderDocument) {
-  mozilla::net::ReferrerPolicy refpol = mozilla::net::RP_Unset;
+  mozilla::dom::ReferrerPolicy refpol = mozilla::dom::ReferrerPolicy::_empty;
   if (mStylesheetDocument) {
     refpol = mStylesheetDocument->GetReferrerPolicy();
   }
@@ -1099,7 +1099,7 @@ DocGroup* txMozillaXSLTProcessor::GetDocGroup() const {
 
 /* static */
 already_AddRefed<txMozillaXSLTProcessor> txMozillaXSLTProcessor::Constructor(
-    const GlobalObject& aGlobal, mozilla::ErrorResult& aRv) {
+    const GlobalObject& aGlobal) {
   RefPtr<txMozillaXSLTProcessor> processor =
       new txMozillaXSLTProcessor(aGlobal.GetAsSupports());
   return processor.forget();

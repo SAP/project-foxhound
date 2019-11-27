@@ -272,6 +272,11 @@ class nsLineBox final : public nsLineLink {
   void ClearHasLineClampEllipsis() { mFlags.mHasLineClampEllipsis = false; }
   bool HasLineClampEllipsis() const { return mFlags.mHasLineClampEllipsis; }
 
+  // mMovedFragments bit
+  void SetMovedFragments() { mFlags.mMovedFragments = true; }
+  void ClearMovedFragments() { mFlags.mMovedFragments = false; }
+  bool MovedFragments() const { return mFlags.mMovedFragments; }
+
  private:
   // Add a hash table for fast lookup when the line has more frames than this.
   static const uint32_t kMinChildCountForHashtable = 200;
@@ -525,10 +530,14 @@ class nsLineBox final : public nsLineLink {
 
   void AddSizeOfExcludingThis(nsWindowSizes& aSizes) const;
 
- private:
+  // Find the index of aFrame within the line, starting search at the start.
   int32_t IndexOf(nsIFrame* aFrame) const;
 
- public:
+  // Find the index of aFrame within the line, starting search at the end.
+  // (Produces the same result as IndexOf, but with different performance
+  // characteristics.)  The caller must provide the last frame in the line.
+  int32_t RIndexOf(nsIFrame* aFrame, nsIFrame* aLastFrameInLine) const;
+
   bool Contains(nsIFrame* aFrame) const {
     return MOZ_UNLIKELY(mFlags.mHasHashedFrames) ? mFrames->Contains(aFrame)
                                                  : IndexOf(aFrame) >= 0;
@@ -620,6 +629,9 @@ class nsLineBox final : public nsLineLink {
     // line in the set of lines found by LineClampLineIterator for a given
     // block will have this flag set.
     bool mHasLineClampEllipsis : 1;
+    // Has this line moved to a different fragment of the block since
+    // the last time it was reflowed?
+    bool mMovedFragments : 1;
     StyleClear mBreakType;
   };
 
@@ -831,6 +843,12 @@ class nsLineList_iterator {
     return mCurrent != aOther.mCurrent;
   }
 
+#ifdef DEBUG
+  bool IsInSameList(const iterator_self_type aOther) const {
+    return mListLink == aOther.mListLink;
+  }
+#endif
+
  private:
   link_type* mCurrent;
 #ifdef DEBUG
@@ -964,6 +982,12 @@ class nsLineList_reverse_iterator {
     return mCurrent != aOther.mCurrent;
   }
 
+#ifdef DEBUG
+  bool IsInSameList(const iterator_self_type aOther) const {
+    return mListLink == aOther.mListLink;
+  }
+#endif
+
  private:
   link_type* mCurrent;
 #ifdef DEBUG
@@ -1094,6 +1118,12 @@ class nsLineList_const_iterator {
     return mCurrent != aOther.mCurrent;
   }
 
+#ifdef DEBUG
+  bool IsInSameList(const iterator_self_type aOther) const {
+    return mListLink == aOther.mListLink;
+  }
+#endif
+
  private:
   const link_type* mCurrent;
 #ifdef DEBUG
@@ -1213,6 +1243,12 @@ class nsLineList_const_reverse_iterator {
                  "comparing iterators over different lists");
     return mCurrent != aOther.mCurrent;
   }
+
+#ifdef DEBUG
+  bool IsInSameList(const iterator_self_type aOther) const {
+    return mListLink == aOther.mListLink;
+  }
+#endif
 
   // private:
   const link_type* mCurrent;

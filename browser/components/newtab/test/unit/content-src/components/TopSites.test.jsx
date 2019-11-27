@@ -22,6 +22,7 @@ import { mount, shallow } from "enzyme";
 import { TopSiteForm } from "content-src/components/TopSites/TopSiteForm";
 import { TopSiteFormInput } from "content-src/components/TopSites/TopSiteFormInput";
 import { _TopSites as TopSites } from "content-src/components/TopSites/TopSites";
+import { ContextMenuButton } from "content-src/components/ContextMenu/ContextMenuButton";
 
 const perfSvc = {
   mark() {},
@@ -462,7 +463,7 @@ describe("<TopSiteLink>", () => {
   it("should have rtl direction automatically set for text", () => {
     const wrapper = shallow(<TopSiteLink link={link} />);
 
-    assert.isTrue(wrapper.find("[dir='auto']").length > 0);
+    assert.isTrue(!!wrapper.find("[dir='auto']").length);
   });
   it("should render a title", () => {
     const wrapper = shallow(<TopSiteLink link={link} title="foobar" />);
@@ -724,24 +725,14 @@ describe("<TopSite>", () => {
   });
   it("should render a context menu button", () => {
     const wrapper = shallow(<TopSite link={link} />);
-    assert.equal(wrapper.find(".context-menu-button").length, 1);
+    assert.equal(wrapper.find(ContextMenuButton).length, 1);
   });
-  it("should render a link menu when button is clicked", () => {
+  it("should render a link menu", () => {
     const wrapper = shallow(<TopSite link={link} />);
-    let button = wrapper.find(".context-menu-button");
-    assert.equal(wrapper.find(LinkMenu).length, 0);
-    button.simulate("click", { preventDefault: () => {} });
     assert.equal(wrapper.find(LinkMenu).length, 1);
-  });
-  it("should not render a link menu by default", () => {
-    const wrapper = shallow(<TopSite link={link} />);
-    assert.equal(wrapper.find(LinkMenu).length, 0);
   });
   it("should pass onUpdate, site, options, and index to LinkMenu", () => {
     const wrapper = shallow(<TopSite link={link} />);
-    wrapper
-      .find(".context-menu-button")
-      .simulate("click", { preventDefault: () => {} });
     const linkMenuProps = wrapper.find(LinkMenu).props();
     ["onUpdate", "site", "index", "options"].forEach(prop =>
       assert.property(linkMenuProps, prop)
@@ -749,9 +740,6 @@ describe("<TopSite>", () => {
   });
   it("should pass through the correct menu options to LinkMenu", () => {
     const wrapper = shallow(<TopSite link={link} />);
-    wrapper
-      .find(".context-menu-button")
-      .simulate("click", { preventDefault: () => {} });
     const linkMenuProps = wrapper.find(LinkMenu).props();
     assert.deepEqual(linkMenuProps.options, [
       "CheckPinTopSite",
@@ -828,6 +816,31 @@ describe("<TopSite>", () => {
       assert.propertyVal(action.data.value, "card_type", "search");
       assert.propertyVal(action.data.value, "icon_type", "tippytop");
       assert.propertyVal(action.data.value, "search_vendor", "google");
+    });
+    it("should dispatch a UserEventAction with the right data for SPOC top site", () => {
+      const dispatch = sinon.stub();
+      const siteInfo = {
+        iconType: "custom_screenshot",
+        type: "SPOC",
+      };
+      const wrapper = shallow(
+        <TopSite
+          link={Object.assign({}, link, siteInfo)}
+          index={0}
+          dispatch={dispatch}
+        />
+      );
+
+      wrapper.find(TopSiteLink).simulate("click", { preventDefault() {} });
+
+      const [action] = dispatch.firstCall.args;
+      assert.isUserEventAction(action);
+
+      assert.propertyVal(action.data, "event", "CLICK");
+      assert.propertyVal(action.data, "source", "TOP_SITES");
+      assert.propertyVal(action.data, "action_position", 0);
+      assert.propertyVal(action.data.value, "card_type", "spoc");
+      assert.propertyVal(action.data.value, "icon_type", "custom_screenshot");
     });
     it("should dispatch OPEN_LINK with the right data", () => {
       const dispatch = sinon.stub();

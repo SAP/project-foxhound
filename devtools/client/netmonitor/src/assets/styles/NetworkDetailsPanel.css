@@ -44,6 +44,10 @@
   margin: 1px 3px;
 }
 
+.network-monitor .sidebar-toggle:dir(rtl) {
+  transform: scaleX(-1);
+}
+
 /* Empty notices in tab panels */
 
 .network-monitor .empty-notice {
@@ -131,6 +135,11 @@
   fill: var(--theme-icon-dimmed-color);
 }
 
+/* Make the twisties rotate to the right in code-only sections on RTL. */
+.network-monitor .tab-panel.panel-with-code tr:not(.tree-section).hasChildren .theme-twisty:not(.open):dir(rtl) {
+  transform: rotate(-90deg);
+}
+
 .network-monitor .tree-container .treeTable .treeValueCell {
   /* FIXME: Make value cell can be reduced to shorter width */
   max-width: 0;
@@ -139,6 +148,11 @@
 
 .network-monitor .tree-container .treeTable .treeRow.hasChildren > .treeLabelCell > .treeLabel:hover {
   text-decoration: none;
+}
+
+.network-monitor .tab-panel.panel-with-code .tree-container .treeTable tr:not(.tree-section):dir(rtl) {
+  direction: ltr;
+  text-align: left;
 }
 
 /* Source editor in tab panels */
@@ -186,6 +200,13 @@
   padding-inline-start: 4px;
 }
 
+.network-monitor .tabpanel-summary-container .tracking-resource {
+  margin-inline-start: -2px;
+  margin-inline-end: 2px;
+  vertical-align: text-bottom;
+  fill: var(--theme-icon-color);
+}
+
 .network-monitor .tabpanel-summary-labelvalue {
   white-space: pre-wrap;
 }
@@ -193,7 +214,6 @@
 .network-monitor .tabpanel-summary-label {
   display: inline-block;
   padding-inline-end: 3px;
-  font-weight: 600;
 }
 
 .network-monitor .tabpanel-summary-value {
@@ -210,14 +230,6 @@
   color: inherit;
   margin-top: 2px;
   margin-bottom: 2px;
-}
-
-.theme-dark .network-monitor .tracking-protection .tracking-resource {
-  filter: brightness(500%);
-}
-
-.theme-light .network-monitor .tracking-protection .tracking-resource {
-  filter: brightness(0);
 }
 
 .theme-dark .network-monitor .edit-and-resend-button  {
@@ -328,7 +340,7 @@
 
 .network-monitor .headers-summary .status-text {
     width: auto!important;
-    margin-left: 4px;
+    margin-inline-start: 4px;
 }
 
 /* Params and Response error messages */
@@ -423,6 +435,45 @@
   transition: width 0.2s ease-out;
 }
 
+.network-monitor .label-separator {
+  margin-inline-start: 4px;
+  font-weight: 600;
+  margin-top: 5px;
+  margin-bottom: 5px;
+  color: var(--theme-comment);
+}
+
+.theme-light .network-monitor .requests-list-timings-box {
+  --timing-server-color-1: rgba(104, 195, 179, 0.8); /* teal */
+  --timing-server-color-2: rgba(123, 102, 167, 0.8); /* purple */
+  --timing-server-color-3: rgba(233, 236, 130, 0.8); /* yellow */
+  --timing-server-color-total: rgba(186, 90, 140, 0.8); /* pink */
+}
+
+.theme-dark .network-monitor .requests-list-timings-box {
+  --timing-server-color-1: rgba(74, 228, 201, 0.8); /* teal */
+  --timing-server-color-2: rgba(156, 119, 233, 0.8); /* purple */
+  --timing-server-color-3: rgba(234, 239, 73, 0.8); /* yellow */
+  --timing-server-color-total: rgba(186, 74, 133, 0.8); /* pink */
+}
+
+.network-monitor .server-timings-color-1 {
+  background: var(--timing-server-color-1);
+}
+
+.network-monitor .server-timings-color-2 {
+  background: var(--timing-server-color-2);
+}
+
+.network-monitor .server-timings-color-3 {
+  background: var(--timing-server-color-3);
+}
+
+.network-monitor .server-timings-color-total {
+  background: var(--timing-server-color-total);
+}
+
+
 /* Stack trace panel */
 
 .network-monitor .stack-trace {
@@ -431,6 +482,7 @@
      Make sure this whitespace doesn't affect the HTML rendering */
   white-space: normal;
   padding: 5px;
+  direction: ltr;
 }
 
 .network-monitor .stack-trace .frame-link-source,

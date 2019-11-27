@@ -314,10 +314,19 @@ types.addActorType = function(name) {
       // existing front on the connection, and create the front
       // if it isn't found.
       const actorID = typeof v === "string" ? v : v.actor;
-      let front = ctx.conn.getActor(actorID);
+      // `ctx.conn` is a DebuggerClient
+      let front = ctx.conn.getFrontByID(actorID);
+
+      // When the type `${name}#actorid` is used, `v` is a string refering to the
+      // actor ID. We cannot read form information in this case and the actorID was
+      // already set when creating the front, so no need to do anything.
+      let form = null;
+      if (detail != "actorid") {
+        form = identityWrite(v);
+      }
+
       if (!front) {
         // If front isn't instantiated yet, create one.
-
         // Try lazy loading front if not already loaded.
         // The front module will synchronously call `FrontClassWithSpec` and
         // augment `type` with the `frontClass` attribute.
@@ -325,19 +334,18 @@ types.addActorType = function(name) {
           lazyLoadFront(name);
         }
 
+        const parentFront = ctx.marshallPool();
+        const targetFront = parentFront.targetFront;
+
         // Use intermediate Class variable to please eslint requiring
         // a capital letter for all constructors.
         const Class = type.frontClass;
-        front = new Class(ctx.conn);
+        front = new Class(ctx.conn, targetFront, parentFront);
         front.actorID = actorID;
-        ctx.marshallPool().manage(front);
-      }
 
-      // When the type `${name}#actorid` is used, `v` is a string refering to the
-      // actor ID. We only set the actorID just before and so do not need anything else.
-      if (detail != "actorid") {
-        v = identityWrite(v);
-        front.form(v, ctx);
+        parentFront.manage(front, form, ctx);
+      } else if (form) {
+        front.form(form, ctx);
       }
 
       return front;
@@ -490,19 +498,22 @@ exports.registerFront = function(cls) {
  * @param json form
  *    If we want to instantiate a global actor's front, this is the root front's form,
  *    otherwise we are instantiating a target-scoped front from the target front's form.
+ * @param [Target|null] target
+ *    If we are instantiating a target-scoped front, this is a reference to the front's
+ *    Target instance, otherwise this is null.
  */
-function getFront(client, typeName, form) {
+async function getFront(client, typeName, form, target = null) {
   const type = types.getType(typeName);
   if (!type) {
     throw new Error(`No spec for front type '${typeName}'.`);
-  }
-  if (!type.frontClass) {
+  } else if (!type.frontClass) {
     lazyLoadFront(typeName);
   }
+
   // Use intermediate Class variable to please eslint requiring
   // a capital letter for all constructors.
   const Class = type.frontClass;
-  const instance = new Class(client);
+  const instance = new Class(client, target, target);
   const { formAttributeName } = instance;
   if (!formAttributeName) {
     throw new Error(`Can't find the form attribute name for ${typeName}`);
@@ -515,15 +526,13 @@ function getFront(client, typeName, form) {
         ` actor's form.`
     );
   }
-  // Historically, all global and target scoped front were the first protocol.js in the
-  // hierarchy of fronts. So that they have to self-own themself. But now, Root and Target
-  // are fronts and should own them. The only issue here is that we should manage the
-  // front *before* calling initialize which is going to try managing child fronts.
-  instance.manage(instance);
 
-  if (typeof instance.initialize == "function") {
-    return instance.initialize().then(() => instance);
+  if (!target) {
+    await instance.manage(instance);
+  } else {
+    await target.manage(instance);
   }
+
   return instance;
 }
 exports.getFront = getFront;

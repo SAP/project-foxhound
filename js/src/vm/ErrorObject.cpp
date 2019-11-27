@@ -134,7 +134,7 @@ ErrorObject* js::ErrorObject::create(JSContext* cx, JSExnType errorType,
 
   Rooted<ErrorObject*> errObject(cx);
   {
-    const Class* clasp = ErrorObject::classForType(errorType);
+    const JSClass* clasp = ErrorObject::classForType(errorType);
     JSObject* obj = NewObjectWithGivenProto(cx, clasp, proto);
     if (!obj) {
       return nullptr;
@@ -180,9 +180,6 @@ JSErrorReport* js::ErrorObject::getOrCreateErrorReport(JSContext* cx) {
   RootedString message(cx, getMessage());
   if (!message) {
     message = cx->runtime()->emptyString;
-  }
-  if (!message->ensureFlat(cx)) {
-    return nullptr;
   }
 
   UniqueChars utf8 = StringToNewUTF8CharsZ(cx, *message);

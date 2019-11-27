@@ -63,7 +63,8 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
         """Perform a search via the browser's URL bar."""
 
         with self.marionette.using_context(self.marionette.CONTEXT_CHROME):
-            urlbar = self.marionette.find_element(By.ID, "urlbar")
+            self.marionette.execute_script("gURLBar.select();")
+            urlbar = self.marionette.find_element(By.ID, "urlbar-input")
             urlbar.send_keys(keys.Keys.DELETE)
             urlbar.send_keys(text + keys.Keys.ENTER)
 
@@ -166,6 +167,14 @@ class TelemetryTestCase(WindowManagerMixin, MarionetteTestCase):
             )
         else:
             self.addon_ids.append(addon_id)
+
+    def set_persistent_profile_preferences(self, preferences):
+        """Wrapper for setting persistent preferences on a user profile"""
+        return self.marionette.instance.profile.set_persistent_preferences(preferences)
+
+    def set_preferences(self, preferences):
+        """Wrapper for setting persistent preferences on a user profile"""
+        return self.marionette.set_prefs(preferences)
 
     @property
     def client_id(self):

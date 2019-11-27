@@ -100,24 +100,110 @@ void DocumentL10n::TriggerInitialDocumentTranslation() {
 
   Element* elem = mDocument->GetDocumentElement();
   if (!elem) {
+    InitialDocumentTranslationCompleted();
+    mReady->MaybeRejectWithUndefined();
     return;
   }
 
-  Sequence<OwningNonNull<Element>> elements;
   ErrorResult rv;
 
+  // 1. Collect all localizable elements.
+  Sequence<OwningNonNull<Element>> elements;
   GetTranslatables(*elem, elements, rv);
-
-  ConnectRoot(*elem, rv);
-
-  RefPtr<Promise> promise = TranslateElements(elements, rv);
-  if (!promise) {
+  if (NS_WARN_IF(rv.Failed())) {
+    InitialDocumentTranslationCompleted();
+    mReady->MaybeRejectWithUndefined();
     return;
   }
 
-  RefPtr<PromiseNativeHandler> l10nReadyHandler =
-      new L10nReadyHandler(mReady, this);
-  promise->AppendNativeHandler(l10nReadyHandler);
+  RefPtr<nsXULPrototypeDocument> proto = mDocument->GetPrototype();
+
+  RefPtr<Promise> promise;
+
+  // 2. Check if the document has a prototype that may cache
+  //    translated elements.
+  if (proto) {
+    // 2.1. Handle the case when we have proto.
+
+    // 2.1.1. Move elements that are not in the proto to a separate
+    //        array.
+    Sequence<OwningNonNull<Element>> nonProtoElements;
+
+    uint32_t i = elements.Length();
+    while (i > 0) {
+      Element* elem = elements.ElementAt(i - 1);
+      MOZ_RELEASE_ASSERT(elem->HasAttr(nsGkAtoms::datal10nid));
+      if (!elem->HasElementCreatedFromPrototypeAndHasUnmodifiedL10n()) {
+        nonProtoElements.AppendElement(*elem, fallible);
+        elements.RemoveElement(elem);
+      }
+      i--;
+    }
+
+    // We populate the sequence in reverse order. Let's bring it
+    // back to top->bottom one.
+    nonProtoElements.Reverse();
+
+    nsTArray<RefPtr<Promise>> promises;
+
+    // 2.1.2. If we're not loading from cache, push the elements that
+    //        are in the prototype to be translated and cached.
+    if (!proto->WasL10nCached() && !elements.IsEmpty()) {
+      RefPtr<Promise> translatePromise = TranslateElements(elements, proto, rv);
+      if (NS_WARN_IF(!translatePromise || rv.Failed())) {
+        InitialDocumentTranslationCompleted();
+        mReady->MaybeRejectWithUndefined();
+        return;
+      }
+      promises.AppendElement(translatePromise);
+    }
+
+    // 2.1.3. If there are elements that are not in the prototype,
+    //        localize them without attempting to cache and
+    //        independently of if we're loading from cache.
+    if (!nonProtoElements.IsEmpty()) {
+      RefPtr<Promise> nonProtoTranslatePromise =
+          TranslateElements(nonProtoElements, nullptr, rv);
+      if (NS_WARN_IF(!nonProtoTranslatePromise || rv.Failed())) {
+        InitialDocumentTranslationCompleted();
+        mReady->MaybeRejectWithUndefined();
+        return;
+      }
+      promises.AppendElement(nonProtoTranslatePromise);
+    }
+
+    // 2.1.4. Collect promises with Promise::All (maybe empty).
+    AutoEntryScript aes(mGlobal,
+                        "DocumentL10n InitialDocumentTranslationCompleted");
+    promise = Promise::All(aes.cx(), promises, rv);
+  } else {
+    // 2.2. Handle the case when we don't have proto.
+
+    // 2.2.1. Otherwise, translate all available elements,
+    //        without attempting to cache them.
+    promise = TranslateElements(elements, nullptr, rv);
+  }
+
+  if (NS_WARN_IF(!promise || rv.Failed())) {
+    InitialDocumentTranslationCompleted();
+    mReady->MaybeRejectWithUndefined();
+    return;
+  }
+
+  // 3. Connect the root to L10nMutations observer.
+  ConnectRoot(*elem, rv);
+
+  // 4. Check if the promise is already resolved.
+  if (promise->State() == Promise::PromiseState::Resolved) {
+    // 4.1. If it is, resolved immediatelly.
+    InitialDocumentTranslationCompleted();
+    mReady->MaybeResolveWithUndefined();
+  } else {
+    // 4.2. If not, schedule the L10nReadyHandler.
+    RefPtr<PromiseNativeHandler> l10nReadyHandler =
+        new L10nReadyHandler(mReady, this);
+    promise->AppendNativeHandler(l10nReadyHandler);
+  }
 }
 
 void DocumentL10n::InitialDocumentTranslationCompleted() {

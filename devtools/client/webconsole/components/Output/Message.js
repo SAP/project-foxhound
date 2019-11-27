@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -81,13 +79,17 @@ class Message extends Component {
       timeStamp: PropTypes.number,
       timestampsVisible: PropTypes.bool.isRequired,
       serviceContainer: PropTypes.shape({
-        emitNewMessage: PropTypes.func.isRequired,
+        emitEvent: PropTypes.func.isRequired,
+        onViewSource: PropTypes.func.isRequired,
         onViewSourceInDebugger: PropTypes.func,
         onViewSourceInScratchpad: PropTypes.func,
         onViewSourceInStyleEditor: PropTypes.func,
         openContextMenu: PropTypes.func.isRequired,
         openLink: PropTypes.func.isRequired,
         sourceMapService: PropTypes.any,
+        canRewind: PropTypes.func.isRequired,
+        jumpToExecutionPoint: PropTypes.func,
+        onMessageHover: PropTypes.func,
       }),
       notes: PropTypes.arrayOf(
         PropTypes.shape({
@@ -121,15 +123,8 @@ class Message extends Component {
       if (this.props.scrollToMessage) {
         this.messageNode.scrollIntoView();
       }
-      // Event used in tests. Some message types don't pass it in because existing tests
-      // did not emit for them.
-      if (this.props.serviceContainer) {
-        this.props.serviceContainer.emitNewMessage(
-          this.messageNode,
-          this.props.messageId,
-          this.props.timeStamp
-        );
-      }
+
+      this.emitNewMessage(this.messageNode);
     }
   }
 
@@ -137,9 +132,20 @@ class Message extends Component {
     this.setState({ error: e });
   }
 
+  // Event used in tests. Some message types don't pass it in because existing tests
+  // did not emit for them.
+  emitNewMessage(node) {
+    const { serviceContainer, messageId, timeStamp } = this.props;
+    serviceContainer.emitEvent(
+      "new-messages",
+      new Set([{ node, messageId, timeStamp }])
+    );
+  }
+
   onLearnMoreClick(e) {
     const { exceptionDocURL } = this.props;
     this.props.serviceContainer.openLink(exceptionDocURL, e);
+    e.preventDefault();
   }
 
   toggleMessage(e) {
@@ -147,6 +153,13 @@ class Message extends Component {
     // making difficult for screen reader users to review output
     e.stopPropagation();
     const { open, dispatch, messageId, onToggle } = this.props;
+
+    // Early exit the function to avoid the message to collapse if the user is
+    // selecting a range in the toggle message.
+    const window = e.target.ownerDocument.defaultView;
+    if (window.getSelection && window.getSelection().type === "Range") {
+      return;
+    }
 
     // If defined on props, we let the onToggle() method handle the toggling,
     // otherwise we toggle the message open/closed ourselves.
@@ -160,11 +173,18 @@ class Message extends Component {
   }
 
   onContextMenu(e) {
-    const { serviceContainer, source, request, messageId } = this.props;
+    const {
+      serviceContainer,
+      source,
+      request,
+      messageId,
+      executionPoint,
+    } = this.props;
     const messageInfo = {
       source,
       request,
       messageId,
+      executionPoint,
     };
     serviceContainer.openContextMenu(e, messageInfo);
     e.stopPropagation();
@@ -172,9 +192,9 @@ class Message extends Component {
   }
 
   onMouseEvent(ev) {
-    const { messageId, serviceContainer, executionPoint } = this.props;
+    const { message, serviceContainer, executionPoint } = this.props;
     if (serviceContainer.canRewind() && executionPoint) {
-      serviceContainer.onMessageHover(ev.type, messageId);
+      serviceContainer.onMessageHover(ev.type, message);
     }
   }
 
@@ -407,6 +427,7 @@ class Message extends Component {
             sourceMapService: serviceContainer
               ? serviceContainer.sourceMapService
               : undefined,
+            messageSource: source,
           })
         : null
     );
@@ -416,6 +437,7 @@ class Message extends Component {
       learnMore = dom.a(
         {
           className: "learn-more-link webconsole-learn-more-link",
+          href: exceptionDocURL,
           title: exceptionDocURL.split("?")[0],
           onClick: this.onLearnMoreClick,
         },

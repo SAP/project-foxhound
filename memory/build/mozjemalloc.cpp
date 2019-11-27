@@ -130,6 +130,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DoublyLinkedList.h"
+#include "mozilla/HelperMacros.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/RandomNum.h"
@@ -4511,6 +4512,8 @@ static void replace_malloc_init_funcs(malloc_table_t*);
 extern "C" void logalloc_init(malloc_table_t*, ReplaceMallocBridge**);
 
 extern "C" void dmd_init(malloc_table_t*, ReplaceMallocBridge**);
+
+extern "C" void phc_init(malloc_table_t*, ReplaceMallocBridge**);
 #  endif
 
 bool Equals(const malloc_table_t& aTable1, const malloc_table_t& aTable2) {
@@ -4547,6 +4550,11 @@ static void init() {
 #    ifdef MOZ_DMD
   if (Equals(tempTable, gDefaultMallocTable)) {
     dmd_init(&tempTable, &gReplaceMallocBridge);
+  }
+#    endif
+#    ifdef MOZ_PHC
+  if (Equals(tempTable, gDefaultMallocTable)) {
+    phc_init(&tempTable, &gReplaceMallocBridge);
   }
 #    endif
 #  endif
@@ -4665,26 +4673,45 @@ static void replace_malloc_init_funcs(malloc_table_t* table) {
 #endif  // MOZ_REPLACE_MALLOC
 // ***************************************************************************
 // Definition of all the _impl functions
+// GENERIC_MALLOC_DECL2_MINGW is only used for the MinGW build, and aliases
+// the malloc funcs (e.g. malloc) to the je_ versions. It does not generate
+// aliases for the other functions (jemalloc and arena functions).
+//
+// We do need aliases for the other mozglue.def-redirected functions though,
+// these are done at the bottom of mozmemory_wrap.cpp
+#define GENERIC_MALLOC_DECL2_MINGW(name, name_impl, return_type, ...) \
+  return_type name(ARGS_HELPER(TYPED_ARGS, ##__VA_ARGS__))            \
+      __attribute__((alias(MOZ_STRINGIFY(name_impl))));
 
-#define GENERIC_MALLOC_DECL2(name, name_impl, return_type, ...)   \
-  return_type name_impl(ARGS_HELPER(TYPED_ARGS, ##__VA_ARGS__)) { \
-    return DefaultMalloc::name(ARGS_HELPER(ARGS, ##__VA_ARGS__)); \
+#define GENERIC_MALLOC_DECL2(attributes, name, name_impl, return_type, ...)  \
+  return_type name_impl(ARGS_HELPER(TYPED_ARGS, ##__VA_ARGS__)) attributes { \
+    return DefaultMalloc::name(ARGS_HELPER(ARGS, ##__VA_ARGS__));            \
   }
 
-#define GENERIC_MALLOC_DECL(name, return_type, ...) \
-  GENERIC_MALLOC_DECL2(name, name##_impl, return_type, ##__VA_ARGS__)
+#ifndef __MINGW32__
+#  define GENERIC_MALLOC_DECL(attributes, name, return_type, ...)    \
+    GENERIC_MALLOC_DECL2(attributes, name, name##_impl, return_type, \
+                         ##__VA_ARGS__)
+#else
+#  define GENERIC_MALLOC_DECL(attributes, name, return_type, ...)    \
+    GENERIC_MALLOC_DECL2(attributes, name, name##_impl, return_type, \
+                         ##__VA_ARGS__)                              \
+    GENERIC_MALLOC_DECL2_MINGW(name, name##_impl, return_type, ##__VA_ARGS__)
+#endif
 
+#define NOTHROW_MALLOC_DECL(...) \
+  MOZ_MEMORY_API MACRO_CALL(GENERIC_MALLOC_DECL, (noexcept(true), __VA_ARGS__))
 #define MALLOC_DECL(...) \
-  MOZ_MEMORY_API MACRO_CALL(GENERIC_MALLOC_DECL, (__VA_ARGS__))
+  MOZ_MEMORY_API MACRO_CALL(GENERIC_MALLOC_DECL, (, __VA_ARGS__))
 #define MALLOC_FUNCS MALLOC_FUNCS_MALLOC
 #include "malloc_decls.h"
 
 #undef GENERIC_MALLOC_DECL
-#define GENERIC_MALLOC_DECL(name, return_type, ...) \
-  GENERIC_MALLOC_DECL2(name, name, return_type, ##__VA_ARGS__)
+#define GENERIC_MALLOC_DECL(attributes, name, return_type, ...) \
+  GENERIC_MALLOC_DECL2(attributes, name, name, return_type, ##__VA_ARGS__)
 
 #define MALLOC_DECL(...) \
-  MOZ_JEMALLOC_API MACRO_CALL(GENERIC_MALLOC_DECL, (__VA_ARGS__))
+  MOZ_JEMALLOC_API MACRO_CALL(GENERIC_MALLOC_DECL, (, __VA_ARGS__))
 #define MALLOC_FUNCS (MALLOC_FUNCS_JEMALLOC | MALLOC_FUNCS_ARENA)
 #include "malloc_decls.h"
 // ***************************************************************************

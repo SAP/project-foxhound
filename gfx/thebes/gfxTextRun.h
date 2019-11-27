@@ -16,6 +16,7 @@
 #include "gfxSkipChars.h"
 #include "gfxPlatform.h"
 #include "gfxPlatformFontList.h"
+#include "gfxUserFontSet.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/RefPtr.h"
 #include "nsPoint.h"
@@ -34,8 +35,6 @@
 
 class gfxContext;
 class gfxFontGroup;
-class gfxUserFontEntry;
-class gfxUserFontSet;
 class nsAtom;
 class nsLanguageAtomService;
 class gfxMissingFontRecorder;
@@ -472,15 +471,65 @@ class gfxTextRun : public gfxShapedText {
     mozilla::gfx::ShapedTextFlags
         mOrientation;  // gfxTextRunFactory::TEXT_ORIENT_* value
     FontMatchType mMatchType;
+    bool mIsCJK;  // Whether the text was a CJK script run (used to decide if
+                  // text-decoration-skip-ink should not be applied)
+
+    // Set up the properties (but NOT offset) of the GlyphRun.
+    void SetProperties(gfxFont* aFont,
+                       mozilla::gfx::ShapedTextFlags aOrientation, bool aIsCJK,
+                       FontMatchType aMatchType) {
+      mFont = aFont;
+      mOrientation = aOrientation;
+      mIsCJK = aIsCJK;
+      mMatchType = aMatchType;
+    }
+
+    // Return whether the GlyphRun matches the given properties;
+    // the given FontMatchType will be added to the run if not present.
+    bool Matches(gfxFont* aFont, mozilla::gfx::ShapedTextFlags aOrientation,
+                 bool aIsCJK, FontMatchType aMatchType) {
+      if (mFont == aFont && mOrientation == aOrientation && mIsCJK == aIsCJK) {
+        mMatchType.kind |= aMatchType.kind;
+        if (mMatchType.generic == mozilla::StyleGenericFontFamily::None) {
+          mMatchType.generic = aMatchType.generic;
+        }
+        return true;
+      }
+      return false;
+    }
   };
+
+  // Script run codes that we will mark as CJK to suppress skip-ink behavior.
+  static inline bool IsCJKScript(Script aScript) {
+    switch (aScript) {
+      case Script::BOPOMOFO:
+      case Script::HAN:
+      case Script::HANGUL:
+      case Script::HIRAGANA:
+      case Script::KATAKANA:
+      case Script::KATAKANA_OR_HIRAGANA:
+      case Script::SIMPLIFIED_HAN:
+      case Script::TRADITIONAL_HAN:
+      case Script::JAPANESE:
+      case Script::KOREAN:
+      case Script::HAN_WITH_BOPOMOFO:
+      case Script::JAMO:
+        return true;
+      default:
+        return false;
+    }
+  }
 
   class MOZ_STACK_CLASS GlyphRunIterator {
    public:
-    GlyphRunIterator(const gfxTextRun* aTextRun, Range aRange)
+    GlyphRunIterator(const gfxTextRun* aTextRun, Range aRange,
+                     bool aReverse = false)
         : mTextRun(aTextRun),
+          mDirection(aReverse ? -1 : 1),
           mStartOffset(aRange.start),
           mEndOffset(aRange.end) {
-      mNextIndex = mTextRun->FindFirstGlyphRunContaining(aRange.start);
+      mNextIndex = mTextRun->FindFirstGlyphRunContaining(
+          aReverse ? aRange.end - 1 : aRange.start);
     }
     bool NextRun();
     const GlyphRun* GetGlyphRun() const { return mGlyphRun; }
@@ -492,7 +541,8 @@ class gfxTextRun : public gfxShapedText {
     MOZ_INIT_OUTSIDE_CTOR const GlyphRun* mGlyphRun;
     MOZ_INIT_OUTSIDE_CTOR uint32_t mStringStart;
     MOZ_INIT_OUTSIDE_CTOR uint32_t mStringEnd;
-    uint32_t mNextIndex;
+    const int32_t mDirection;
+    int32_t mNextIndex;
     uint32_t mStartOffset;
     uint32_t mEndOffset;
   };
@@ -526,9 +576,9 @@ class gfxTextRun : public gfxShapedText {
    * are added before any further operations are performed with this
    * TextRun.
    */
-  nsresult AddGlyphRun(gfxFont* aFont, FontMatchType aMatchType,
-                       uint32_t aUTF16Offset, bool aForceNewRun,
-                       mozilla::gfx::ShapedTextFlags aOrientation);
+  void AddGlyphRun(gfxFont* aFont, FontMatchType aMatchType,
+                   uint32_t aUTF16Offset, bool aForceNewRun,
+                   mozilla::gfx::ShapedTextFlags aOrientation, bool aIsCJK);
   void ResetGlyphRuns() {
     if (mHasGlyphRunArray) {
       MOZ_ASSERT(mGlyphRunArray.Length() > 1);
@@ -612,6 +662,13 @@ class gfxTextRun : public gfxShapedText {
       return &mSingleGlyphRun;
     }
   }
+
+  const GlyphRun* TrailingGlyphRun() const {
+    uint32_t count;
+    const GlyphRun* runs = GetGlyphRuns(&count);
+    return count ? runs + count - 1 : nullptr;
+  }
+
   // Returns the index of the GlyphRun containing the given offset.
   // Returns mGlyphRuns.Length() when aOffset is mCharacterCount.
   uint32_t FindFirstGlyphRunContaining(uint32_t aOffset) const;
@@ -1213,6 +1270,17 @@ class gfxFontGroup final : public gfxTextRunFactory {
     bool CheckForFallbackFaces() const { return mCheckForFallbackFaces; }
     void SetCheckForFallbackFaces() { mCheckForFallbackFaces = true; }
 
+    // Return true if we're currently loading (or waiting for) a resource that
+    // may support the given character.
+    bool IsLoadingFor(uint32_t aCh) {
+      if (!IsLoading()) {
+        return false;
+      }
+      MOZ_ASSERT(IsUserFontContainer());
+      return static_cast<gfxUserFontEntry*>(FontEntry())
+          ->CharacterInUnicodeRange(aCh);
+    }
+
     void SetFont(gfxFont* aFont) {
       NS_ASSERTION(aFont, "font pointer must not be null");
       NS_ADDREF(aFont);
@@ -1308,14 +1376,21 @@ class gfxFontGroup final : public gfxTextRunFactory {
   // Initialize the list of fonts
   void BuildFontList();
 
-  // Get the font at index i within the fontlist.
+  // Get the font at index i within the fontlist, for character aCh (in case
+  // of fonts with multiple resources and unicode-range partitioning).
   // Will initiate userfont load if not already loaded.
-  // May return null if userfont not loaded or if font invalid
-  gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20);
+  // May return null if userfont not loaded or if font invalid.
+  // If *aLoading is true, a relevant resource is already being loaded so no
+  // new download will be initiated; if a download is started, *aLoading will
+  // be set to true on return.
+  gfxFont* GetFontAt(int32_t i, uint32_t aCh, bool* aLoading);
 
-  // Whether there's a font loading for a given family in the fontlist
-  // for a given character
-  bool FontLoadingForFamily(const FamilyFace& aFamily, uint32_t aCh) const;
+  // Simplified version of GetFontAt() for use where we just need a font for
+  // metrics, math layout tables, etc.
+  gfxFont* GetFontAt(int32_t i, uint32_t aCh = 0x20) {
+    bool loading = false;
+    return GetFontAt(i, aCh, &loading);
+  }
 
   // will always return a font or force a shutdown
   gfxFont* GetDefaultFont();

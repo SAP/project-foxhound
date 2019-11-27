@@ -10,7 +10,6 @@ const InspectorUtils = require("InspectorUtils");
 const protocol = require("devtools/shared/protocol");
 const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const { nodeSpec, nodeListSpec } = require("devtools/shared/specs/node");
-
 loader.lazyRequireGetter(
   this,
   "getCssPath",
@@ -93,6 +92,12 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(
   this,
   "isXBLAnonymous",
+  "devtools/shared/layout/utils",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "isRemoteFrame",
   "devtools/shared/layout/utils",
   true
 );
@@ -263,6 +268,14 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
       form.isDocumentElement = true;
     }
 
+    // Flag the remote frame and declare at least one child (the #document element) so
+    // that they can be expanded.
+    if (this.isRemoteFrame) {
+      form.remoteFrame = true;
+      form.numChildren = 1;
+      form.browsingContextID = this.rawNode.browsingContext.id;
+    }
+
     return form;
   },
 
@@ -293,6 +306,17 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
   watchSlotchange: function(callback) {
     this.slotchangeListener = callback;
     this.rawNode.addEventListener("slotchange", this.slotchangeListener);
+  },
+
+  /**
+   * Check if the current node is representing a remote frame.
+   * In the context of the browser toolbox, a remote frame can be the <browser remote>
+   * element found inside each tab.
+   * In the context of the content toolbox, a remote frame can be a <iframe> that contains
+   * a different origin document.
+   */
+  get isRemoteFrame() {
+    return isRemoteFrame(this.rawNode);
   },
 
   // Estimate the number of children that the walker will return without making
@@ -369,8 +393,8 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
     if (
       SUBGRID_ENABLED &&
       (display === "grid" || display === "inline-grid") &&
-      (style.gridTemplateRows === "subgrid" ||
-        style.gridTemplateColumns === "subgrid")
+      (style.gridTemplateRows.startsWith("subgrid") ||
+        style.gridTemplateColumns.startsWith("subgrid"))
     ) {
       display = "subgrid";
     }
@@ -657,6 +681,19 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
    */
   getClosestBackgroundColor: function() {
     return InspectorActorUtils.getClosestBackgroundColor(this.rawNode);
+  },
+
+  /**
+   * Finds the background color range for the parent of a single text node
+   * (i.e. for multi-colored backgrounds with gradients, images) or a single
+   * background color for single-colored backgrounds. Defaults to the closest
+   * background color if an error is encountered.
+   *
+   * @return {Object}
+   *         Object with one or more of the following properties: value, min, max
+   */
+  getBackgroundColor: function() {
+    return InspectorActorUtils.getBackgroundColor(this);
   },
 
   /**

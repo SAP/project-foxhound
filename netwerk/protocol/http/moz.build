@@ -51,6 +51,7 @@ EXPORTS.mozilla.net += [
     'HttpInfo.h',
     'nsServerTiming.h',
     'NullHttpChannel.h',
+    'ParentChannelListener.h',
     'PHttpChannelParams.h',
     'PSpdyPush.h',
     'TimingStruct.h',
@@ -82,7 +83,6 @@ UNIFIED_SOURCES += [
     'HttpBaseChannel.cpp',
     'HttpChannelChild.cpp',
     'HttpChannelParent.cpp',
-    'HttpChannelParentListener.cpp',
     'HttpInfo.cpp',
     'HttpTrafficAnalyzer.cpp',
     'InterceptedChannel.cpp',
@@ -107,6 +107,8 @@ UNIFIED_SOURCES += [
     'nsServerTiming.cpp',
     'NullHttpChannel.cpp',
     'NullHttpTransaction.cpp',
+    'ParentChannelListener.cpp',
+    'QuicSocketControl.cpp',
     'TunnelUtils.cpp',
 ]
 
@@ -122,11 +124,6 @@ IPDL_SOURCES += [
     'PHttpChannel.ipdl',
 ]
 
-EXTRA_JS_MODULES += [
-    'UserAgentOverrides.jsm',
-    'UserAgentUpdates.jsm',
-]
-
 include('/ipc/chromium/chromium-config.mozbuild')
 
 FINAL_LIBRARY = 'xul'
@@ -136,11 +133,11 @@ LOCAL_INCLUDES += [
     '/extensions/auth',
     '/netwerk/base',
     '/netwerk/cookie',
+    '/netwerk/ipc',
     '/netwerk/url-classifier',
 ]
 
 EXTRA_JS_MODULES += [
-    'UAOverridesBootstrapper.jsm',
     'WellKnownOpportunisticUtils.jsm',
 ]
 

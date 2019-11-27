@@ -118,14 +118,14 @@ hpp:
 
         using Tokenizer = Tok;
 
-        using BinASTFields = typename Tokenizer::BinASTFields;
         using AutoList = typename Tokenizer::AutoList;
         using AutoTaggedTuple = typename Tokenizer::AutoTaggedTuple;
         using Chars = typename Tokenizer::Chars;
-        using Context = typename BinASTTokenReaderBase::Context;
         using ListContext = typename BinASTTokenReaderBase::ListContext;
         using FieldContext = typename BinASTTokenReaderBase::FieldContext;
         using RootContext = typename BinASTTokenReaderBase::RootContext;
+        using FieldOrRootContext = BinASTTokenReaderBase::FieldOrRootContext;
+        using FieldOrListContext = BinASTTokenReaderBase::FieldOrListContext;
 
        public:
         // Auto-generated types.
@@ -141,11 +141,11 @@ hpp:
         using AssertedScopeKind = typename Base::AssertedScopeKind;
 
        public:
-        BinASTParser(JSContext* cx, LifoAlloc& alloc, UsedNameTracker& usedNames,
+        BinASTParser(JSContext* cx, ParseInfo& parseInfo,
                      const JS::ReadOnlyCompileOptions& options,
                      HandleScriptSourceObject sourceObject,
                      Handle<LazyScript*> lazyScript = nullptr)
-            : BinASTParserPerTokenizer<Tok>(cx, alloc, usedNames, options,
+            : BinASTParserPerTokenizer<Tok>(cx, parseInfo, options,
                                             sourceObject, lazyScript) {}
         ~BinASTParser() {}
 
@@ -183,8 +183,11 @@ hpp:
         using Base::raiseError;
 
         using Base::makeEmptyFunctionNode;
-        using Base::buildFunction;
+        using Base::setFunctionParametersAndBody;
         using Base::buildFunctionBox;
+        using Base::finishEagerFunction;
+        using Base::finishLazyFunction;
+
         using Base::addScopeName;
         using Base::captureFunctionName;
 
@@ -199,6 +202,9 @@ hpp:
         using Base::prependDirectivesToBody;
 
         using Base::forceStrictIfNecessary;
+
+        using Base::isInvalidKindPossible;
+        using Base::isInvalidVariantPossible;
 
        public:
     footer: |
@@ -357,6 +363,21 @@ hpp:
        * Return a string describing a `BinASTVariant`.
        */
       const char* describeBinASTVariant(const BinASTVariant& variant);
+
+      /**
+       * Return a string describing a `BinASTList`.
+       */
+      const char* describeBinASTList(const BinASTList& list);
+
+      /**
+       * Return a sort key for sorting `BinASTKind`s alphabetically.
+       */
+      size_t getBinASTKindSortKey(const BinASTKind& kind);
+
+      /**
+       * Return a sort key for sorting `BinASTVariant`s alphabetically.
+       */
+      size_t getBinASTVariantSortKey(const BinASTVariant& variant);
 
       } // namespace frontend
       } // namespace js
@@ -641,7 +662,7 @@ BreakStatement:
       block:
         replace: |
           RootedAtom label(cx_);
-          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom(Context(FieldContext(BinASTInterfaceAndField::BreakStatement__Label))));
+          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom(FieldContext(BinASTInterfaceAndField::BreakStatement__Label)));
 
   build: |
     if (label) {
@@ -785,7 +806,7 @@ ContinueStatement:
       block:
         replace: |
           RootedAtom label(cx_);
-          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom(Context(FieldContext(BinASTInterfaceAndField::ContinueStatement__Label))));
+          MOZ_TRY_VAR(label, tokenizer_->readMaybeAtom(FieldContext(BinASTInterfaceAndField::ContinueStatement__Label)));
 
   build: |
     if (label) {
@@ -953,12 +974,15 @@ EagerFunctionExpression:
       after: |
         MOZ_TRY(prependDirectivesToBody(body, directives));
   build: |
+    uint32_t nargs = params->count();
+
     BINJS_TRY_DECL(lexicalScopeData,
                    NewLexicalScopeData(cx_, lexicalScope, alloc_, pc_));
     BINJS_TRY_DECL(bodyScope,
                    handler_.newLexicalScope(*lexicalScopeData, body));
-    BINJS_MOZ_TRY_DECL(result,
-                       buildFunction(start, kind, name, params, bodyScope));
+    BINJS_MOZ_TRY_DECL(result, makeEmptyFunctionNode(start, syntax, funbox));
+    MOZ_TRY(setFunctionParametersAndBody(result, params, bodyScope));
+    MOZ_TRY(finishEagerFunction(funbox, nargs));
 
 LazyFunctionExpression:
   init: |
@@ -979,6 +1003,9 @@ LazyFunctionExpression:
         replace:
           // Don't parse the contents until we delazify.
   build: |
+    // TODO: This will become incorrect in the face of ES6 features.
+    uint32_t nargs = length;
+
     BINJS_MOZ_TRY_DECL(funbox, buildFunctionBox(
       isGenerator ? GeneratorKind::Generator
                   : GeneratorKind::NotGenerator,
@@ -988,26 +1015,11 @@ LazyFunctionExpression:
 
     forceStrictIfNecessary(funbox, directives);
 
-    RootedFunction fun(cx_, funbox->function());
-
-    // TODO: This will become incorrect in the face of ES6 features.
-    fun->setArgCount(length);
+    BINJS_MOZ_TRY_DECL(result, makeEmptyFunctionNode(start, syntax, funbox));
 
     auto skipStart = contentsSkip.startOffset();
-    BINJS_TRY_DECL(lazy, LazyScript::Create(
-      cx_, fun, sourceObject_,
-      pc_->closedOverBindingsForLazy(),
-      pc_->innerFunctionsForLazy,
-      skipStart, skipStart + contentsSkip.length(),
-      skipStart, 0, skipStart, ParseGoal::Script));
-
-    if (funbox->strict()) {
-      lazy->setStrict();
-    }
-    lazy->setIsBinAST();
-    funbox->function()->initLazyScript(lazy);
-
-    BINJS_MOZ_TRY_DECL(result, makeEmptyFunctionNode(skipStart, kind, funbox));
+    auto skipEnd = skipStart + contentsSkip.length();
+    MOZ_TRY(finishLazyFunction(funbox, nargs, skipStart, skipEnd));
 
 EagerGetter:
   init: |
@@ -1024,15 +1036,18 @@ EagerMethod:
     const auto accessorType = AccessorType::None;
   inherits: EagerFunctionExpression
   build: |
+    uint32_t nargs = params->count();
+
     BINJS_TRY_DECL(lexicalScopeData,
                    NewLexicalScopeData(cx_, lexicalScope, alloc_, pc_));
     BINJS_TRY_DECL(bodyScope,
                    handler_.newLexicalScope(*lexicalScopeData, body));
-    BINJS_MOZ_TRY_DECL(method,
-                       buildFunction(start, kind, name, params, bodyScope));
+    BINJS_MOZ_TRY_DECL(method, makeEmptyFunctionNode(start, syntax, funbox));
+    MOZ_TRY(setFunctionParametersAndBody(method, params, bodyScope));
     BINJS_TRY_DECL(result,
                    handler_.newObjectMethodOrPropertyDefinition(name, method,
                                                                 accessorType));
+    MOZ_TRY(finishEagerFunction(funbox, nargs));
 
 EagerSetter:
   init: |
@@ -1049,7 +1064,7 @@ EmptyStatement:
 ExpressionStatement:
   build: |
     BINJS_TRY_DECL(result,
-                   handler_.newExprStatement(expression, tokenizer_->offset()));
+                   handler_.newExprStatement(expression));
 
 ForInOfBinding:
   init:
@@ -1297,27 +1312,24 @@ LiteralRegExpExpression:
     flags:
       block:
         replace: |
-          Chars flags(cx_);
-          MOZ_TRY(tokenizer_->readChars(flags, Context(FieldContext(BinASTInterfaceAndField::BreakStatement__Label))));
+          RegExpFlags reflags = JS::RegExpFlag::NoFlags;
+          auto flagsContext = FieldContext(BinASTInterfaceAndField::LiteralRegExpExpression__Flags);
+          if (mozilla::IsSame<Tok, BinASTTokenReaderContext>::value) {
+            // Hack: optimized `readChars` is not implemented for `BinASTTokenReaderContext`.
+            RootedAtom flags(cx_);
+            MOZ_TRY_VAR(flags, tokenizer_->readAtom(flagsContext));
+            if (!this->parseRegExpFlags(flags, &reflags)) {
+              return raiseError("Invalid regexp flags");
+            }
+          } else {
+            Chars flags(cx_);
+            MOZ_TRY(tokenizer_->readChars(flags, flagsContext));
+            if (!this->parseRegExpFlags(flags, &reflags)) {
+              return raiseError("Invalid regexp flags");
+            }
+          }
+
   build: |
-    RegExpFlags reflags = RegExpFlag::NoFlags;
-    for (auto c : flags) {
-      if (c == 'g' && !reflags.global()) {
-        reflags |= RegExpFlag::Global;
-      } else if (c == 'i' && !reflags.ignoreCase()) {
-        reflags |= RegExpFlag::IgnoreCase;
-      } else if (c == 'm' && !reflags.multiline()) {
-        reflags |= RegExpFlag::Multiline;
-      } else if (c == 'u' && !reflags.unicode()) {
-        reflags |= RegExpFlag::Unicode;
-      } else if (c == 'y' && !reflags.sticky()) {
-        reflags |= RegExpFlag::Sticky;
-      } else {
-        return raiseError("Invalid regexp flags");
-      }
-    }
-
-
     Rooted<RegExpObject*> reobj(cx_);
     BINJS_TRY_VAR(reobj,
                   RegExpObject::create(cx_, pattern, reflags, TenuredObject));
@@ -1360,7 +1372,7 @@ ReturnStatement:
   init: |
     if (!pc_->isFunctionBox()) {
       // Return statements are permitted only inside functions.
-      return raiseInvalidKind("Toplevel Statement", kind);
+      return raiseInvalidKind("Toplevel Statement", BinASTKind::ReturnStatement);
     }
 
     pc_->functionBox()->usesReturn = true;

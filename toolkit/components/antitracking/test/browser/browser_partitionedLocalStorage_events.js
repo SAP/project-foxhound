@@ -5,11 +5,7 @@ function log(test) {
         test.withStoragePrincipalEnabled
           ? "with storage principal enabled"
           : "without storage principal"
-      } ` +
-        `with the ${
-          test.lsngEnabled ? "new" : "old"
-        } localStorage backend and prefValue: ${test.prefValue} ` +
-        `(Test #${test.iteration + 1})`
+      } with prefValue: ${test.prefValue} (Test #${test.iteration + 1})`
     );
     test.iteration++;
   } else {
@@ -18,7 +14,7 @@ function log(test) {
   }
 }
 
-function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
+function runAllTests(withStoragePrincipalEnabled, prefValue) {
   const storagePrincipalTest =
     prefValue == Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
   const dynamicFPITest =
@@ -30,7 +26,7 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     return;
   }
 
-  const test = { withStoragePrincipalEnabled, lsngEnabled, prefValue };
+  const test = { withStoragePrincipalEnabled, prefValue };
 
   // For dynamic FPI tests, we want to test the conditions as if
   // storage principal was enabled, so from now on we set this variable to
@@ -79,7 +75,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -181,6 +176,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
 
     BrowserTestUtils.removeTab(trackerTab);
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // Two ePartitionOrDeny iframes in the same tab in the same origin don't see
@@ -204,7 +201,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -302,6 +298,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // Same as the previous test but with a cookie behavior of BEHAVIOR_ACCEPT
@@ -325,7 +323,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -411,6 +408,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // An ePartitionOrDeny iframe navigated between two distinct pages on the same
@@ -433,7 +432,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -506,6 +504,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // Like the previous test, but accepting trackers
@@ -527,7 +527,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -595,6 +594,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // An ePartitionOrDeny iframe on the same origin that is navigated to itself
@@ -618,7 +619,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -691,6 +691,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // Like the previous test, but accepting trackers
@@ -712,7 +714,6 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
           "privacy.storagePrincipal.enabledForTrackers",
           storagePrincipalPrefValue,
         ],
-        ["dom.storage.next_gen", lsngEnabled],
       ],
     });
 
@@ -780,6 +781,8 @@ function runAllTests(withStoragePrincipalEnabled, lsngEnabled, prefValue) {
     );
 
     BrowserTestUtils.removeTab(normalTab);
+
+    UrlClassifierTestUtils.cleanupTestTrackers();
   });
 
   // Cleanup data.
@@ -796,8 +799,6 @@ for (let pref of [
   Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
   Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
 ]) {
-  runAllTests(false, true, pref);
-  runAllTests(false, false, pref);
-  runAllTests(true, true, pref);
-  runAllTests(true, false, pref);
+  runAllTests(false, pref);
+  runAllTests(true, pref);
 }

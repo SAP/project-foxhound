@@ -317,6 +317,10 @@ static void DecommitPages(void* addr, size_t bytes) {
   }
 }
 #else  // !XP_WIN
+#  ifndef MAP_NORESERVE
+#    define MAP_NORESERVE 0
+#  endif
+
 static void* ComputeRandomAllocationAddress() {
   uint64_t rand = js::GenerateRandomSeed();
 
@@ -344,8 +348,8 @@ static void* ReserveProcessExecutableMemory(size_t bytes) {
   // mmap will pick a different address.
   void* randomAddr = ComputeRandomAllocationAddress();
   void* p = MozTaggedAnonymousMmap(randomAddr, bytes, PROT_NONE,
-                                   MAP_PRIVATE | MAP_ANON, -1, 0,
-                                   "js-executable-memory");
+                                   MAP_NORESERVE | MAP_PRIVATE | MAP_ANON, -1,
+                                   0, "js-executable-memory");
   if (p == MAP_FAILED) {
     return nullptr;
   }
@@ -709,7 +713,14 @@ bool js::jit::CanLikelyAllocateMoreExecutableMemory() {
 }
 
 bool js::jit::ReprotectRegion(void* start, size_t size,
-                              ProtectionSetting protection) {
+                              ProtectionSetting protection,
+                              MustFlushICache flushICache) {
+  // Flush ICache when making code executable, before we modify |size|.
+  if (flushICache == MustFlushICache::Yes) {
+    MOZ_ASSERT(protection == ProtectionSetting::Executable);
+    jit::FlushICache(start, size);
+  }
+
   // Calculate the start of the page containing this region,
   // and account for this extra memory within size.
   size_t pageSize = gc::SystemPageSize();

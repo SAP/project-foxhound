@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 const path = require("path");
 const webpack = require("webpack");
 
@@ -14,7 +18,12 @@ module.exports = (env = {}) => ({
   },
   // TODO: switch to eval-source-map for faster builds. Requires CSP changes
   devtool: env.development ? "inline-source-map" : false,
-  plugins: [new webpack.optimize.ModuleConcatenationPlugin()],
+  plugins: [
+    new webpack.BannerPlugin(
+      `THIS FILE IS AUTO-GENERATED: ${path.basename(__filename)}`
+    ),
+    new webpack.optimize.ModuleConcatenationPlugin(),
+  ],
   module: {
     rules: [
       {
@@ -57,5 +66,6 @@ module.exports = (env = {}) => ({
     "react-dom": "ReactDOM",
     redux: "Redux",
     "react-redux": "ReactRedux",
+    "react-transition-group": "ReactTransitionGroup",
   },
 });

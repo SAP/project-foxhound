@@ -60,6 +60,7 @@
   grid-row-start: inherit;
   grid-row-end: inherit;
   order: inherit;
+  outline: inherit;
   column-span: inherit; /* needed if <table> has "column-span:all" */
   contain: inherit; /* needed if table has 'contain:layout' or 'paint' */
 }
@@ -205,11 +206,11 @@
   /* Please keep the Multicol/Flex/Grid/Align sections below in sync with
      ::-moz-fieldset-content/::-moz-button-content in forms.css */
   /* Multicol container */
-  -moz-column-count: inherit;
-  -moz-column-width: inherit;
-  -moz-column-gap: inherit;
-  -moz-column-rule: inherit;
-  -moz-column-fill: inherit;
+  column-count: inherit;
+  column-width: inherit;
+  column-gap: inherit;
+  column-rule: inherit;
+  column-fill: inherit;
   /* Flex container */
   flex-direction: inherit;
   flex-wrap: inherit;
@@ -256,8 +257,8 @@
   /* make unicode-bidi inherit, otherwise it has no effect on column boxes */
   unicode-bidi: inherit;
   text-overflow: inherit;
-  /* inherit the outer frame's display, otherwise we turn into an inline */
-  display: inherit;
+  /* Both -moz-column-set and -moz-column-content need to be blocks. */
+  display: block;
   /* -moz-column-set and -moz-column-content's max block size cannot exceed
    * ColumnSetWrapperFrame's block size. */
   max-block-size: 100%;
@@ -341,6 +342,14 @@
   box-sizing: border-box !important;
   object-fit: contain;
   transform: none !important;
+}
+
+xul|*:fullscreen:not(:root):not([hidden="true"]) {
+  /* The position: fixed; property above used to force the computed display
+   * value to block. It is no longer the case now, so we manually set it here to
+   * maintain the old behaviour. We should probably not do this, but we don't
+   * fullscreen XUL element that frequently either. */
+  display: block;
 }
 
 /* Selectors here should match the check in

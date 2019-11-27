@@ -38,6 +38,22 @@ typedef _MacSandboxInfo MacSandboxInfo;
 namespace mozilla {
 namespace ipc {
 
+struct LaunchError {};
+typedef mozilla::MozPromise<base::ProcessHandle, LaunchError, false>
+    ProcessHandlePromise;
+
+struct LaunchResults {
+  base::ProcessHandle mHandle = 0;
+#ifdef XP_MACOSX
+  task_t mChildTask = MACH_PORT_NULL;
+#endif
+#if defined(XP_WIN) && defined(MOZ_SANDBOX)
+  RefPtr<AbstractSandboxBroker> mSandboxBroker;
+#endif
+};
+typedef mozilla::MozPromise<LaunchResults, LaunchError, false>
+    ProcessLaunchPromise;
+
 class GeckoChildProcessHost : public ChildProcessHost,
                               public LinkedListElement<GeckoChildProcessHost> {
  protected:
@@ -94,20 +110,16 @@ class GeckoChildProcessHost : public ChildProcessHost,
   virtual void OnChannelError() override;
   virtual void GetQueuedMessages(std::queue<IPC::Message>& queue) override;
 
-  struct LaunchError {};
-  template <typename T>
-  using LaunchPromise = mozilla::MozPromise<T, LaunchError, /* excl: */ false>;
-  using HandlePromise = LaunchPromise<base::ProcessHandle>;
-
   // Resolves to the process handle when it's available (see
   // LaunchAndWaitForProcessHandle); use with AsyncLaunch.
-  RefPtr<HandlePromise> WhenProcessHandleReady();
+  RefPtr<ProcessHandlePromise> WhenProcessHandleReady();
 
   virtual void InitializeChannel();
 
   virtual bool CanShutdown() override { return true; }
 
   IPC::Channel* GetChannel() { return channelp(); }
+  std::wstring GetChannelId() { return channel_id(); }
 
   // Returns a "borrowed" handle to the child process - the handle returned
   // by this function must not be closed by the caller.
@@ -162,6 +174,9 @@ class GeckoChildProcessHost : public ChildProcessHost,
   // so you need to make sure the callback is as fast as possible.
   static void GetAll(const GeckoProcessCallback& aCallback);
 
+  friend class BaseProcessLauncher;
+  friend class PosixProcessLauncher;
+
  protected:
   ~GeckoChildProcessHost();
   GeckoProcessType mProcessType;
@@ -191,8 +206,6 @@ class GeckoChildProcessHost : public ChildProcessHost,
     PROCESS_ERROR
   } mProcessState;
 
-  static int32_t mChildCounter;
-
   void PrepareLaunch();
 
 #ifdef XP_WIN
@@ -211,7 +224,7 @@ class GeckoChildProcessHost : public ChildProcessHost,
 #if defined(OS_MACOSX)
   task_t mChildTask;
 #endif
-  RefPtr<HandlePromise::Private> mHandlePromise;
+  RefPtr<ProcessHandlePromise> mHandlePromise;
 
   bool OpenPrivilegedHandle(base::ProcessId aPid);
 
@@ -233,21 +246,6 @@ class GeckoChildProcessHost : public ChildProcessHost,
  private:
   DISALLOW_EVIL_CONSTRUCTORS(GeckoChildProcessHost);
 
-  // Does the actual work for AsyncLaunch; run in a thread pool
-  // (or, on Windows, a dedicated thread).
-  bool PerformAsyncLaunch(StringVector aExtraOpts);
-
-  // Called on the I/O thread; creates channel, dispatches
-  // PerformAsyncLaunch, and consolidates error handling.
-  void RunPerformAsyncLaunch(StringVector aExtraOpts);
-
-  static BinPathType GetPathToBinary(FilePath& exePath,
-                                     GeckoProcessType processType);
-
-  // The buffer is passed to preserve its lifetime until we are done
-  // with launching the sub-process.
-  void GetChildLogName(const char* origLogName, nsACString& buffer);
-
   // Removes the instance from sGeckoChildProcessHosts
   void RemoveFromProcessList();
 
@@ -260,10 +258,10 @@ class GeckoChildProcessHost : public ChildProcessHost,
   // FIXME/cjones: this strongly indicates bad design.  Shame on us.
   std::queue<IPC::Message> mQueue;
 
-  // Set this up before we're called from a different thread.
-#if defined(OS_LINUX)
+  // Linux-Only. Set this up before we're called from a different thread.
   nsCString mTmpDirName;
-#endif
+  // Mac-Only. Set this up before we're called from a different thread.
+  nsCOMPtr<nsIFile> mProfileDir;
 
   mozilla::Atomic<bool> mDestroying;
 
@@ -271,12 +269,6 @@ class GeckoChildProcessHost : public ChildProcessHost,
   static StaticAutoPtr<LinkedList<GeckoChildProcessHost>>
       sGeckoChildProcessHosts;
   static StaticMutex sMutex;
-#if defined(MOZ_WIDGET_ANDROID)
-  void LaunchAndroidService(
-      const char* type, const std::vector<std::string>& argv,
-      const base::file_handle_mapping_vector& fds_to_remap,
-      ProcessHandle* process_handle);
-#endif  // defined(MOZ_WIDGET_ANDROID)
 };
 
 } /* namespace ipc */

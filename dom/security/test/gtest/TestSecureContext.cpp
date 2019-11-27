@@ -26,7 +26,7 @@ struct TestExpectations {
 
 // ============================= TestDirectives ========================
 
-TEST(SecureContext, IsOriginPotentiallyTrustworthyWithCodeBasePrincipal)
+TEST(SecureContext, IsOriginPotentiallyTrustworthyWithContentPrincipal)
 {
   // boolean isOriginPotentiallyTrustworthy(in nsIPrincipal aPrincipal);
 
@@ -41,6 +41,14 @@ TEST(SecureContext, IsOriginPotentiallyTrustworthyWithCodeBasePrincipal)
       {"http://localhost", true},
       {"http://xyzzy.localhost", false},
       {"http://127.0.0.1", true},
+      {"http://127.0.0.2", true},
+      {"http://127.1.0.1", true},
+      {"http://128.0.0.1", false},
+      {"http://[::1]", true},
+      {"http://[::ffff:127.0.0.1]", false},
+      {"http://[::ffff:127.0.0.2]", false},
+      {"http://[::ffff:7f00:1]", false},
+      {"http://[::ffff:7f00:2]", false},
       {"resource://xyzzy", true},
       {"moz-extension://xyzzy", true},
       {"data:data:text/plain;charset=utf-8;base64,eHl6enk=", false},
@@ -60,7 +68,7 @@ TEST(SecureContext, IsOriginPotentiallyTrustworthyWithCodeBasePrincipal)
     nsCOMPtr<nsIPrincipal> prin;
     nsAutoCString uri(uris[i].uri);
     rv = nsScriptSecurityManager::GetScriptSecurityManager()
-             ->CreateCodebasePrincipalFromOrigin(uri, getter_AddRefs(prin));
+             ->CreateContentPrincipalFromOrigin(uri, getter_AddRefs(prin));
     bool isPotentiallyTrustworthy = false;
     rv = csManager->IsOriginPotentiallyTrustworthy(prin,
                                                    &isPotentiallyTrustworthy);

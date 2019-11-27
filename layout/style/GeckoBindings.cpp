@@ -55,7 +55,7 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ServoElementSnapshot.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/RestyleManager.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/StyleAnimationValue.h"
@@ -151,6 +151,10 @@ const Element* Gecko_GetMarkerPseudo(const Element* aElement) {
   MOZ_ASSERT(aElement->HasProperties());
 
   return nsLayoutUtils::GetMarkerPseudo(aElement);
+}
+
+bool Gecko_IsInAnonymousSubtree(const Element* aElement) {
+  return aElement->IsInAnonymousSubtree();
 }
 
 nsTArray<nsIContent*>* Gecko_GetAnonymousContentForElement(
@@ -1028,14 +1032,12 @@ gfxFontFeatureValueSet* Gecko_ConstructFontFeatureValueSet() {
   return new gfxFontFeatureValueSet();
 }
 
-nsTArray<unsigned int>* Gecko_AppendFeatureValueHashEntry(
+nsTArray<uint32_t>* Gecko_AppendFeatureValueHashEntry(
     gfxFontFeatureValueSet* aFontFeatureValues, nsAtom* aFamily,
     uint32_t aAlternate, nsAtom* aName) {
   MOZ_ASSERT(NS_IsMainThread());
-  static_assert(sizeof(unsigned int) == sizeof(uint32_t),
-                "sizeof unsigned int and uint32_t must be the same");
-  return aFontFeatureValues->AppendFeatureValueHashEntry(
-      nsAtomCString(aFamily), nsDependentAtomString(aName), aAlternate);
+  return aFontFeatureValues->AppendFeatureValueHashEntry(nsAtomCString(aFamily),
+                                                         aName, aAlternate);
 }
 
 float Gecko_FontStretch_ToFloat(FontStretch aStretch) {
@@ -1077,22 +1079,6 @@ float Gecko_FontWeight_ToFloat(FontWeight aWeight) { return aWeight.ToFloat(); }
 
 void Gecko_FontWeight_SetFloat(FontWeight* aWeight, float aFloat) {
   *aWeight = FontWeight(aFloat);
-}
-
-void Gecko_ClearAlternateValues(nsFont* aFont, size_t aLength) {
-  aFont->alternateValues.Clear();
-  aFont->alternateValues.SetCapacity(aLength);
-}
-
-void Gecko_AppendAlternateValues(nsFont* aFont, uint32_t aAlternateName,
-                                 nsAtom* aAtom) {
-  aFont->alternateValues.AppendElement(
-      gfxAlternateValue{aAlternateName, nsDependentAtomString(aAtom)});
-}
-
-void Gecko_CopyAlternateValuesFrom(nsFont* aDest, const nsFont* aSrc) {
-  aDest->alternateValues.Clear();
-  aDest->alternateValues.AppendElements(aSrc->alternateValues);
 }
 
 void Gecko_SetCounterStyleToName(CounterStylePtr* aPtr, nsAtom* aName) {
@@ -1170,7 +1156,9 @@ void Gecko_CopyImageValueFrom(nsStyleImage* aImage,
 
 void Gecko_InitializeImageCropRect(nsStyleImage* aImage) {
   MOZ_ASSERT(aImage);
-  aImage->SetCropRect(MakeUnique<nsStyleImage::CropRect>());
+  auto zero = StyleNumberOrPercentage::Number(0);
+  aImage->SetCropRect(MakeUnique<nsStyleImage::CropRect>(
+      nsStyleImage::CropRect{zero, zero, zero, zero}));
 }
 
 void Gecko_SetCursorArrayLength(nsStyleUI* aStyleUI, size_t aLen) {
@@ -1262,34 +1250,6 @@ void Gecko_ResizeAtomArray(nsTArray<RefPtr<nsAtom>>* aArray, uint32_t aLength) {
   aArray->SetLength(aLength);
 }
 
-void Gecko_SetStyleGridTemplate(UniquePtr<nsStyleGridTemplate>* aGridTemplate,
-                                nsStyleGridTemplate* aValue) {
-  aGridTemplate->reset(aValue);
-}
-
-nsStyleGridTemplate* Gecko_CreateStyleGridTemplate(uint32_t aTrackSizes,
-                                                   uint32_t aNameSize) {
-  nsStyleGridTemplate* result = new nsStyleGridTemplate;
-  result->mTrackSizingFunctions.SetCapacity(aTrackSizes);
-  auto auto_ = StyleTrackSize::Breadth(StyleTrackBreadth::Auto());
-  for (auto i : IntegerRange(aTrackSizes)) {
-    Unused << i;
-    result->mTrackSizingFunctions.AppendElement(auto_);
-  }
-  result->mLineNameLists.SetLength(aNameSize);
-  return result;
-}
-
-void Gecko_CopyStyleGridTemplateValues(
-    UniquePtr<nsStyleGridTemplate>* aGridTemplate,
-    const nsStyleGridTemplate* aOther) {
-  if (aOther) {
-    *aGridTemplate = MakeUnique<nsStyleGridTemplate>(*aOther);
-  } else {
-    *aGridTemplate = nullptr;
-  }
-}
-
 void Gecko_ClearAndResizeStyleContents(nsStyleContent* aContent,
                                        uint32_t aHowMany) {
   aContent->AllocateContents(aHowMany);
@@ -1303,57 +1263,6 @@ void Gecko_CopyStyleContentsFrom(nsStyleContent* aContent,
 
   for (uint32_t i = 0; i < count; ++i) {
     aContent->ContentAt(i) = aOther->ContentAt(i);
-  }
-}
-
-void Gecko_ClearAndResizeCounterIncrements(nsStyleContent* aContent,
-                                           uint32_t aHowMany) {
-  aContent->AllocateCounterIncrements(aHowMany);
-}
-
-void Gecko_CopyCounterIncrementsFrom(nsStyleContent* aContent,
-                                     const nsStyleContent* aOther) {
-  uint32_t count = aOther->CounterIncrementCount();
-
-  aContent->AllocateCounterIncrements(count);
-
-  for (uint32_t i = 0; i < count; ++i) {
-    const nsStyleCounterData& data = aOther->CounterIncrementAt(i);
-    aContent->SetCounterIncrementAt(i, data.mCounter, data.mValue);
-  }
-}
-
-void Gecko_ClearAndResizeCounterResets(nsStyleContent* aContent,
-                                       uint32_t aHowMany) {
-  aContent->AllocateCounterResets(aHowMany);
-}
-
-void Gecko_CopyCounterResetsFrom(nsStyleContent* aContent,
-                                 const nsStyleContent* aOther) {
-  uint32_t count = aOther->CounterResetCount();
-
-  aContent->AllocateCounterResets(count);
-
-  for (uint32_t i = 0; i < count; ++i) {
-    const nsStyleCounterData& data = aOther->CounterResetAt(i);
-    aContent->SetCounterResetAt(i, data.mCounter, data.mValue);
-  }
-}
-
-void Gecko_ClearAndResizeCounterSets(nsStyleContent* aContent,
-                                     uint32_t aHowMany) {
-  aContent->AllocateCounterSets(aHowMany);
-}
-
-void Gecko_CopyCounterSetsFrom(nsStyleContent* aContent,
-                               const nsStyleContent* aOther) {
-  uint32_t count = aOther->CounterSetCount();
-
-  aContent->AllocateCounterSets(count);
-
-  for (uint32_t i = 0; i < count; ++i) {
-    const nsStyleCounterData& data = aOther->CounterSetAt(i);
-    aContent->SetCounterSetAt(i, data.mCounter, data.mValue);
   }
 }
 
@@ -1539,6 +1448,21 @@ void Gecko_nsIURI_Debug(nsIURI* aURI, nsCString* aOut) {
 // subclasses have the HasThreadSafeRefCnt bits.
 void Gecko_AddRefnsIURIArbitraryThread(nsIURI* aPtr) { NS_ADDREF(aPtr); }
 void Gecko_ReleasensIURIArbitraryThread(nsIURI* aPtr) { NS_RELEASE(aPtr); }
+void Gecko_AddRefnsIReferrerInfoArbitraryThread(nsIReferrerInfo* aPtr) {
+  NS_ADDREF(aPtr);
+}
+void Gecko_ReleasensIReferrerInfoArbitraryThread(nsIReferrerInfo* aPtr) {
+  NS_RELEASE(aPtr);
+}
+
+void Gecko_nsIReferrerInfo_Debug(nsIReferrerInfo* aReferrerInfo,
+                                 nsCString* aOut) {
+  if (aReferrerInfo) {
+    if (nsCOMPtr<nsIURI> referrer = aReferrerInfo->GetComputedReferrer()) {
+      *aOut = referrer->GetSpecOrDefault();
+    }
+  }
+}
 
 template <typename ElementLike>
 void DebugListAttributes(const ElementLike& aElement, nsCString& aOut) {
@@ -1738,8 +1662,7 @@ void Gecko_StyleSheet_FinishAsyncParse(
         MOZ_ASSERT(NS_IsMainThread());
         SheetLoadData* data = d->get();
         if (Document* doc = data->mLoader->GetDocument()) {
-          if (const StyleUseCounters* docCounters =
-                  doc->GetStyleUseCounters()) {
+          if (const auto* docCounters = doc->GetStyleUseCounters()) {
             Servo_UseCounters_Merge(docCounters, counters.get());
           }
         }
@@ -1761,7 +1684,7 @@ static already_AddRefed<StyleSheet> LoadImportSheet(
 
   StyleSheet* previousFirstChild = aParent->GetFirstChild();
   if (NS_SUCCEEDED(rv)) {
-    rv = aLoader->LoadChildSheet(aParent, aParentLoadData, uri, media,
+    rv = aLoader->LoadChildSheet(*aParent, aParentLoadData, uri, media,
                                  aReusableSheets);
   }
 
@@ -1782,6 +1705,9 @@ static already_AddRefed<StyleSheet> LoadImportSheet(
     }
     emptySheet->SetURIs(uri, uri, uri);
     emptySheet->SetPrincipal(aURL.ExtraData().Principal());
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        ReferrerInfo::CreateForExternalCSSResources(emptySheet);
+    emptySheet->SetReferrerInfo(referrerInfo);
     emptySheet->SetComplete();
     aParent->PrependStyleSheet(emptySheet);
     return emptySheet.forget();

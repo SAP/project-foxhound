@@ -38,6 +38,9 @@ class ChildMessagePort extends MessagePort {
     Cu.exportFunction(this.getIntPref.bind(this), window, {
       defineAs: "RPMGetIntPref",
     });
+    Cu.exportFunction(this.getStringPref.bind(this), window, {
+      defineAs: "RPMGetStringPref",
+    });
     Cu.exportFunction(this.getBoolPref.bind(this), window, {
       defineAs: "RPMGetBoolPref",
     });
@@ -55,6 +58,9 @@ class ChildMessagePort extends MessagePort {
     });
     Cu.exportFunction(this.getFxAccountsEndpoint.bind(this), window, {
       defineAs: "RPMGetFxAccountsEndpoint",
+    });
+    Cu.exportFunction(this.recordTelemetryEvent.bind(this), window, {
+      defineAs: "RPMRecordTelemetryEvent",
     });
 
     // Send a message for load events

@@ -11,7 +11,7 @@
 #include "mozilla/gfx/GPUChild.h"
 #include "mozilla/ipc/ProtocolTypes.h"
 #include "mozilla/ipc/ProtocolUtils.h"  // for IToplevelProtocol
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/Unused.h"
 #include "ProcessUtils.h"
@@ -81,7 +81,8 @@ bool VRProcessParent::WaitForLaunch() {
     return !!mVRChild;
   }
 
-  int32_t timeoutMs = StaticPrefs::dom_vr_process_startup_timeout_ms();
+  int32_t timeoutMs =
+      StaticPrefs::dom_vr_process_startup_timeout_ms_AtStartup();
 
   // If one of the following environment variables are set we can effectively
   // ignore the timeout - as we can guarantee the compositor process will be
@@ -95,7 +96,7 @@ bool VRProcessParent::WaitForLaunch() {
   // immediately set up the IPDL actor and fire callbacks. The IO thread will
   // still dispatch a notification to the main thread - we'll just ignore it.
   bool result = GeckoChildProcessHost::WaitUntilConnected(timeoutMs);
-  InitAfterConnect(result);
+  result &= InitAfterConnect(result);
   return result;
 }
 
@@ -137,7 +138,7 @@ void VRProcessParent::DestroyProcess() {
   }
 }
 
-void VRProcessParent::InitAfterConnect(bool aSucceeded) {
+bool VRProcessParent::InitAfterConnect(bool aSucceeded) {
   MOZ_ASSERT(mLaunchPhase == LaunchPhase::Waiting);
   MOZ_ASSERT(!mVRChild);
 
@@ -145,6 +146,14 @@ void VRProcessParent::InitAfterConnect(bool aSucceeded) {
   mPrefSerializer = nullptr;
 
   if (aSucceeded) {
+    GPUChild* gpuChild = GPUProcessManager::Get()->GetGPUChild();
+    if (!gpuChild) {
+      NS_WARNING(
+          "GPU process haven't connected with the parent process yet"
+          "when creating VR process.");
+      return false;
+    }
+
     mVRChild = MakeUnique<VRChild>(this);
 
     DebugOnly<bool> rv =
@@ -158,9 +167,6 @@ void VRProcessParent::InitAfterConnect(bool aSucceeded) {
     }
 
     // Make vr-gpu process connection
-    GPUChild* gpuChild = GPUProcessManager::Get()->GetGPUChild();
-    MOZ_ASSERT(gpuChild);
-
     Endpoint<PVRGPUChild> vrGPUBridge;
     VRProcessManager* vpm = VRProcessManager::Get();
     DebugOnly<bool> opened =
@@ -169,6 +175,8 @@ void VRProcessParent::InitAfterConnect(bool aSucceeded) {
 
     Unused << gpuChild->SendInitVR(std::move(vrGPUBridge));
   }
+
+  return true;
 }
 
 void VRProcessParent::KillHard(const char* aReason) {

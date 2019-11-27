@@ -18,7 +18,6 @@
 #include "mozilla/dom/URL.h"
 #include "nsIConsoleService.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMWindow.h"
 #include "nsIObserverService.h"
 #include "nsIScriptError.h"
 #include "nsIWindowMediator.h"
@@ -134,11 +133,7 @@ nsresult nsChromeRegistry::GetProviderAndPath(nsIURI* aChromeURL,
                                               nsACString& aPath) {
   nsresult rv;
 
-#ifdef DEBUG
-  bool isChrome;
-  aChromeURL->SchemeIs("chrome", &isChrome);
-  NS_ASSERTION(isChrome, "Non-chrome URI?");
-#endif
+  NS_ASSERTION(aChromeURL->SchemeIs("chrome"), "Non-chrome URI?");
 
   nsAutoCString path;
   rv = aChromeURL->GetPathQueryRef(path);
@@ -284,11 +279,8 @@ nsChromeRegistry::AllowScriptsForPackage(nsIURI* aChromeURI, bool* aResult) {
   nsresult rv;
   *aResult = false;
 
-#ifdef DEBUG
-  bool isChrome;
-  aChromeURI->SchemeIs("chrome", &isChrome);
-  NS_ASSERTION(isChrome, "Non-chrome URI passed to AllowScriptsForPackage!");
-#endif
+  NS_ASSERTION(aChromeURI->SchemeIs("chrome"),
+               "Non-chrome URI passed to AllowScriptsForPackage!");
 
   nsCOMPtr<nsIURL> url(do_QueryInterface(aChromeURI));
   NS_ENSURE_TRUE(url, NS_NOINTERFACE);
@@ -308,11 +300,8 @@ nsChromeRegistry::AllowContentToAccess(nsIURI* aURI, bool* aResult) {
 
   *aResult = false;
 
-#ifdef DEBUG
-  bool isChrome;
-  aURI->SchemeIs("chrome", &isChrome);
-  NS_ASSERTION(isChrome, "Non-chrome URI passed to AllowContentToAccess!");
-#endif
+  NS_ASSERTION(aURI->SchemeIs("chrome"),
+               "Non-chrome URI passed to AllowContentToAccess!");
 
   nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
   if (!url) {
@@ -339,11 +328,8 @@ nsChromeRegistry::CanLoadURLRemotely(nsIURI* aURI, bool* aResult) {
 
   *aResult = false;
 
-#ifdef DEBUG
-  bool isChrome;
-  aURI->SchemeIs("chrome", &isChrome);
-  NS_ASSERTION(isChrome, "Non-chrome URI passed to CanLoadURLRemotely!");
-#endif
+  NS_ASSERTION(aURI->SchemeIs("chrome"),
+               "Non-chrome URI passed to CanLoadURLRemotely!");
 
   nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
   if (!url) {
@@ -370,11 +356,8 @@ nsChromeRegistry::MustLoadURLRemotely(nsIURI* aURI, bool* aResult) {
 
   *aResult = false;
 
-#ifdef DEBUG
-  bool isChrome;
-  aURI->SchemeIs("chrome", &isChrome);
-  NS_ASSERTION(isChrome, "Non-chrome URI passed to MustLoadURLRemotely!");
-#endif
+  NS_ASSERTION(aURI->SchemeIs("chrome"),
+               "Non-chrome URI passed to MustLoadURLRemotely!");
 
   nsCOMPtr<nsIURL> url = do_QueryInterface(aURI);
   if (!url) {

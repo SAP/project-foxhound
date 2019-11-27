@@ -4,7 +4,7 @@
 
 // This file defines these globals on the window object.
 // Define them here so that ESLint can find them:
-/* globals MozXULElement, MozElements */
+/* globals MozXULElement, MozHTMLElement, MozElements */
 
 "use strict";
 
@@ -372,8 +372,9 @@
 
         for (let [selector, newAttr] of list) {
           if (!(selector in this._inheritedElements)) {
-            let parent = this.shadowRoot || this;
-            this._inheritedElements[selector] = parent.querySelector(selector);
+            this._inheritedElements[
+              selector
+            ] = this.getElementForAttrInheritance(selector);
           }
           let el = this._inheritedElements[selector];
           if (el) {
@@ -386,6 +387,51 @@
             }
           }
         }
+      }
+
+      /**
+       * Used in setting up attribute inheritance. Takes a selector and returns
+       * an element for that selector from shadow DOM if there is a shadowRoot,
+       * or from the light DOM if not.
+       *
+       * Here's one problem this solves. ElementB extends ElementA which extends
+       * MozXULElement. ElementA has a shadowRoot. ElementB tries to inherit
+       * attributes in light DOM by calling `initializeAttributeInheritance`
+       * but that fails because it defaults to inheriting from the shadow DOM
+       * and not the light DOM. (See bug 1545824.)
+       *
+       * To solve this, ElementB can override `getElementForAttrInheritance` so
+       * it queries the light DOM for some selectors as needed. For example:
+       *
+       *  class ElementA extends MozXULElement {
+       *    static get inheritedAttributes() {
+       *      return { ".one": "attr" };
+       *    }
+       *  }
+       *
+       *  class ElementB extends customElements.get("elementa") {
+       *    static get inheritedAttributes() {
+       *      return Object.assign({}, super.inheritedAttributes(), {
+       *        ".two": "attr",
+       *      });
+       *    }
+       *    getElementForAttrInheritance(selector) {
+       *      if (selector == ".two") {
+       *        return this.querySelector(selector)
+       *      } else {
+       *        return super.getElementForAttrInheritance(selector);
+       *      }
+       *    }
+       *  }
+       *
+       * @param {string} selector
+       *        A selector used to query an element.
+       *
+       * @return {Element} The element found by the selector.
+       */
+      getElementForAttrInheritance(selector) {
+        let parent = this.shadowRoot || this;
+        return parent.querySelector(selector);
       }
 
       /**
@@ -411,6 +457,18 @@
 
       get isConnectedAndReady() {
         return gIsDOMContentLoaded && this.isConnected;
+      }
+
+      /**
+       * Passes DOM events to the on_<event type> methods.
+       */
+      handleEvent(event) {
+        let methodName = "on_" + event.type;
+        if (methodName in this) {
+          this[methodName](event);
+        } else {
+          throw new Error("Unrecognized event: " + event.type);
+        }
       }
 
       /**
@@ -440,7 +498,7 @@
        *         but excluding any text node.
        */
       static parseXULToFragment(str, entities = []) {
-        let doc = gXULDOMParser.parseFromString(
+        let doc = gXULDOMParser.parseFromSafeString(
           `
       ${
         entities.length
@@ -570,6 +628,7 @@
   };
 
   const MozXULElement = MozElements.MozElementMixin(XULElement);
+  const MozHTMLElement = MozElements.MozElementMixin(HTMLElement);
 
   /**
    * Given an object, add a proxy that reflects interface implementations
@@ -691,6 +750,7 @@
 
   // Attach the base class to the window so other scripts can use it:
   window.MozXULElement = MozXULElement;
+  window.MozHTMLElement = MozHTMLElement;
 
   customElements.setElementCreationCallback("browser", () => {
     Services.scriptloader.loadSubScript(
@@ -705,6 +765,7 @@
     document.documentURI == "chrome://extensions/content/dummy.xul";
   if (!isDummyDocument) {
     for (let script of [
+      "chrome://global/content/elements/arrowscrollbox.js",
       "chrome://global/content/elements/dialog.js",
       "chrome://global/content/elements/general.js",
       "chrome://global/content/elements/button.js",
@@ -712,6 +773,7 @@
       "chrome://global/content/elements/menu.js",
       "chrome://global/content/elements/menupopup.js",
       "chrome://global/content/elements/notificationbox.js",
+      "chrome://global/content/elements/panel.js",
       "chrome://global/content/elements/popupnotification.js",
       "chrome://global/content/elements/radio.js",
       "chrome://global/content/elements/richlistbox.js",
@@ -731,6 +793,10 @@
       ["findbar", "chrome://global/content/elements/findbar.js"],
       ["menulist", "chrome://global/content/elements/menulist.js"],
       ["search-textbox", "chrome://global/content/elements/search-textbox.js"],
+      [
+        "autocomplete-input",
+        "chrome://global/content/elements/autocomplete-input.js",
+      ],
       ["stringbundle", "chrome://global/content/elements/stringbundle.js"],
       [
         "printpreview-toolbar",

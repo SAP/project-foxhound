@@ -7,13 +7,13 @@
 
 #include "GLContext.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "WebGLContext.h"
 
 namespace mozilla {
 
-WebGLExtensionBase::WebGLExtensionBase(WebGLContext* context)
-    : WebGLContextBoundObject(context), mIsLost(false) {}
+WebGLExtensionBase::WebGLExtensionBase(WebGLContext* webgl)
+    : WebGLContextBoundObject(webgl), mIsLost(false), mIsExplicit(false) {}
 
 WebGLExtensionBase::~WebGLExtensionBase() {}
 
@@ -83,9 +83,6 @@ WebGLExtensionFBORenderMipmap::~WebGLExtensionFBORenderMipmap() = default;
 bool WebGLExtensionFBORenderMipmap::IsSupported(
     const WebGLContext* const webgl) {
   if (webgl->IsWebGL2()) return false;
-  if (!StaticPrefs::webgl_enable_draft_extensions()) {
-    return false;
-  }
 
   const auto& gl = webgl->gl;
   if (!gl->IsGLES()) return true;
@@ -106,9 +103,6 @@ WebGLExtensionMultiview::~WebGLExtensionMultiview() = default;
 
 bool WebGLExtensionMultiview::IsSupported(const WebGLContext* const webgl) {
   if (!webgl->IsWebGL2()) return false;
-  if (!StaticPrefs::webgl_enable_draft_extensions()) {
-    return false;
-  }
 
   const auto& gl = webgl->gl;
   return gl->IsSupported(gl::GLFeature::multiview);

@@ -32,6 +32,10 @@
 
 namespace js {
 
+namespace coverage {
+class LCovRealm;
+}  // namespace coverage
+
 namespace jit {
 class JitRealm;
 }  // namespace jit
@@ -54,17 +58,17 @@ struct NativeIterator;
 class DtoaCache {
   double d;
   int base;
-  JSFlatString* s;  // if s==nullptr, d and base are not valid
+  JSLinearString* s;  // if s==nullptr, d and base are not valid
 
  public:
   DtoaCache() : s(nullptr) {}
   void purge() { s = nullptr; }
 
-  JSFlatString* lookup(int base, double d) {
+  JSLinearString* lookup(int base, double d) {
     return this->s && base == this->base && d == this->d ? this->s : nullptr;
   }
 
-  void cache(int base, double d, JSFlatString* s) {
+  void cache(int base, double d, JSLinearString* s) {
     this->base = base;
     this->d = d;
     this->s = s;
@@ -87,7 +91,7 @@ class NewProxyCache {
   mozilla::UniquePtr<Entry[], JS::FreePolicy> entries_;
 
  public:
-  MOZ_ALWAYS_INLINE bool lookup(const Class* clasp, TaggedProto proto,
+  MOZ_ALWAYS_INLINE bool lookup(const JSClass* clasp, TaggedProto proto,
                                 ObjectGroup** group, Shape** shape) const {
     if (!entries_) {
       return false;
@@ -255,7 +259,7 @@ class ObjectRealm {
 
   using IteratorCache =
       js::HashSet<js::PropertyIteratorObject*, js::IteratorHashPolicy,
-                  js::SystemAllocPolicy>;
+                  js::ZoneAllocPolicy>;
   IteratorCache iteratorCache;
 
   static inline ObjectRealm& get(const JSObject* obj);
@@ -268,7 +272,7 @@ class ObjectRealm {
   void finishRoots();
   void trace(JSTracer* trc);
   void sweepAfterMinorGC();
-  void sweepNativeIterators();
+  void traceWeakNativeIterators(JSTracer* trc);
 
   void addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
                               size_t* innerViewsArg,
@@ -330,7 +334,8 @@ class JS::Realm : public JS::shadow::Realm {
   // Names are only removed from this list by a |delete IdentifierReference|
   // that successfully removes that global property.
   using VarNamesSet =
-      JS::GCHashSet<JSAtom*, js::DefaultHasher<JSAtom*>, js::SystemAllocPolicy>;
+      GCHashSet<js::HeapPtr<JSAtom*>, js::DefaultHasher<JSAtom*>,
+                js::ZoneAllocPolicy>;
   VarNamesSet varNames_;
 
   friend class js::AutoSetNewObjectMetadata;
@@ -385,6 +390,13 @@ class JS::Realm : public JS::shadow::Realm {
   // stack.
   unsigned enterRealmDepthIgnoringJit_ = 0;
 
+ public:
+  using DebuggerVector =
+      js::Vector<js::WeakHeapPtr<js::Debugger*>, 0, js::ZoneAllocPolicy>;
+
+ private:
+  DebuggerVector debuggers_;
+
   enum {
     IsDebuggee = 1 << 0,
     DebuggerObservesAllExecution = 1 << 1,
@@ -401,13 +413,11 @@ class JS::Realm : public JS::shadow::Realm {
   bool isSelfHostingRealm_ = false;
   bool isSystem_ = false;
 
+  js::UniquePtr<js::coverage::LCovRealm> lcovRealm_ = nullptr;
+
  public:
   // WebAssembly state for the realm.
   js::wasm::Realm wasm;
-
-  // Aggregated output used to collect JSScript hit counts when code coverage
-  // is enabled.
-  js::coverage::LCovRealm lcovOutput;
 
   js::RegExpRealm regExps;
 
@@ -415,13 +425,6 @@ class JS::Realm : public JS::shadow::Realm {
   js::NewProxyCache newProxyCache;
   js::ArraySpeciesLookup arraySpeciesLookup;
   js::PromiseLookup promiseLookup;
-
-  js::UniquePtr<js::ScriptCountsMap> scriptCountsMap;
-  js::UniquePtr<js::ScriptNameMap> scriptNameMap;
-  js::UniquePtr<js::DebugScriptMap> debugScriptMap;
-#ifdef MOZ_VTUNE
-  js::UniquePtr<js::ScriptVTuneIdMap> scriptVTuneIdMap;
-#endif
 
   /*
    * Lazily initialized script source object to use for scripts cloned
@@ -441,7 +444,6 @@ class JS::Realm : public JS::shadow::Realm {
    */
   uint32_t globalWriteBarriered = 0;
 
-  uint32_t warnedAboutArrayGenericsMethods = 0;
 #ifdef DEBUG
   bool firedOnNewGlobalObject = false;
 #endif
@@ -462,19 +464,16 @@ class JS::Realm : public JS::shadow::Realm {
   ~Realm();
 
   MOZ_MUST_USE bool init(JSContext* cx, JSPrincipals* principals);
-  void destroy(js::FreeOp* fop);
+  void destroy(JSFreeOp* fop);
   void clearTables();
 
-  void addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
-                              size_t* tiAllocationSiteTables,
-                              size_t* tiArrayTypeTables,
-                              size_t* tiObjectTypeTables, size_t* realmObject,
-                              size_t* realmTables, size_t* innerViews,
-                              size_t* lazyArrayBuffers,
-                              size_t* objectMetadataTables,
-                              size_t* savedStacksSet, size_t* varNamesSet,
-                              size_t* nonSyntacticLexicalScopes,
-                              size_t* jitRealm, size_t* scriptCountsMapArg);
+  void addSizeOfIncludingThis(
+      mozilla::MallocSizeOf mallocSizeOf, size_t* tiAllocationSiteTables,
+      size_t* tiArrayTypeTables, size_t* tiObjectTypeTables,
+      size_t* realmObject, size_t* realmTables, size_t* innerViewsArg,
+      size_t* lazyArrayBuffersArg, size_t* objectMetadataTablesArg,
+      size_t* savedStacksSet, size_t* varNamesSet,
+      size_t* nonSyntacticLexicalEnvironmentsArg, size_t* jitRealm);
 
   JS::Zone* zone() { return zone_; }
   const JS::Zone* zone() const { return zone_; }
@@ -534,7 +533,7 @@ class JS::Realm : public JS::shadow::Realm {
    */
   void traceGlobal(JSTracer* trc);
 
-  void sweepGlobalObject();
+  void traceWeakObjects(JSTracer* trc);
   void fixupGlobal();
 
   /*
@@ -550,31 +549,29 @@ class JS::Realm : public JS::shadow::Realm {
 
   void sweepAfterMinorGC();
   void sweepDebugEnvironments();
-  void sweepObjectRealm();
-  void sweepRegExps();
-  void sweepSelfHostingScriptSource();
-  void sweepTemplateObjects();
+  void traceWeakObjectRealm(JSTracer* trc);
+  void traceWeakRegExps(JSTracer* trc);
+  void traceWeakSelfHostingScriptSource(JSTracer* trc);
+  void traceWeakTemplateObjects(JSTracer* trc);
 
-  void sweepObjectGroups() { objectGroups_.sweep(); }
+  void traceWeakObjectGroups(JSTracer* trc) { objectGroups_.traceWeak(trc); }
 
   void clearScriptCounts();
-  void clearScriptNames();
+  void clearScriptLCov();
 
   void purge();
 
-  void fixupAfterMovingGC();
-  void fixupScriptMapsAfterMovingGC();
+  void fixupAfterMovingGC(JSTracer* trc);
 
 #ifdef JSGC_HASH_TABLE_CHECKS
   void checkObjectGroupTablesAfterMovingGC() {
     objectGroups_.checkTablesAfterMovingGC();
   }
-  void checkScriptMapsAfterMovingGC();
 #endif
 
   // Add a name to [[VarNames]].  Reports OOM on failure.
   MOZ_MUST_USE bool addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name);
-  void sweepVarNames();
+  void tracekWeakVarNames(JSTracer* trc);
 
   void removeFromVarNames(JS::Handle<JSAtom*> name) { varNames_.remove(name); }
 
@@ -716,6 +713,8 @@ class JS::Realm : public JS::shadow::Realm {
   void setIsDebuggee();
   void unsetIsDebuggee();
 
+  DebuggerVector& getDebuggers() { return debuggers_; };
+
   // True if this compartment's global is a debuggee of some Debugger
   // object with a live hook that observes all execution; e.g.,
   // onEnterFrame.
@@ -768,8 +767,11 @@ class JS::Realm : public JS::shadow::Realm {
   // scripts.
   bool ensureDelazifyScriptsForDebugger(JSContext* cx);
 
-  void clearBreakpointsIn(js::FreeOp* fop, js::Debugger* dbg,
-                          JS::HandleObject handler);
+  // Get or allocate the associated LCovRealm.
+  js::coverage::LCovRealm* lcovRealm();
+
+  // Collect coverage info from a script and aggregate into this realm.
+  void collectCodeCoverageInfo(JSScript* script, const char* name);
 
   // Initializes randomNumberGenerator if needed.
   mozilla::non_crypto::XorShift128PlusRNG& getOrCreateRandomNumberGenerator();
@@ -787,7 +789,7 @@ class JS::Realm : public JS::shadow::Realm {
   void setValidAccessPtr(bool* accessp) { validAccessPtr_ = accessp; }
 
   bool ensureJitRealmExists(JSContext* cx);
-  void sweepJitRealm();
+  void traceWeakEdgesInJitRealm(JSTracer* trc);
 
   js::jit::JitRealm* jitRealm() { return jitRealm_.get(); }
 
@@ -805,7 +807,7 @@ class JS::Realm : public JS::shadow::Realm {
     savedStacks_.chooseSamplingProbability(this);
   }
 
-  void sweepSavedStacks();
+  void traceWeakSavedStacks(JSTracer* trc);
 
   static constexpr size_t offsetOfCompartment() {
     return offsetof(JS::Realm, compartment_);

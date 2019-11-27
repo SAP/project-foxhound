@@ -177,11 +177,11 @@ class ScrollFrameHelper : public nsIReflowCallback {
   nsPoint GetVisualViewportOffset() const;
 
   /**
-   * Return the 'optimal viewing region' [1] as a rect suitable for use by
+   * Return the 'optimal viewing region' as a rect suitable for use by
    * scroll anchoring. This rect is in the same coordinate space as
-   * 'GetScrollPortRect'.
+   * 'GetScrollPortRect', and accounts for 'scroll-padding' as defined by:
    *
-   * [1] https://drafts.csswg.org/css-scroll-snap-1/#optimal-viewing-region
+   * https://drafts.csswg.org/css-scroll-snap-1/#optimal-viewing-region
    */
   nsRect GetVisualOptimalViewingRect() const;
 
@@ -204,6 +204,8 @@ class ScrollFrameHelper : public nsIReflowCallback {
   bool HasPendingScrollRestoration() const {
     return mRestorePos != nsPoint(-1, -1);
   }
+
+  bool IsProcessingScrollEvent() const { return mProcessingScrollEvent; }
 
  protected:
   nsRect GetVisualScrollRange() const;
@@ -428,7 +430,7 @@ class ScrollFrameHelper : public nsIReflowCallback {
   void SetZoomableByAPZ(bool aZoomable);
   void SetHasOutOfFlowContentInsideFilter();
 
-  bool UsesContainerScrolling() const;
+  bool UsesOverlayScrollbars() const;
 
   // In the case where |aDestination| is given, elements which are entirely out
   // of view when the scroll position is moved to |aDestination| are not going
@@ -516,7 +518,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // if there is overflow-x:hidden region.
   void UpdateMinimumScaleSize(const nsRect& aScrollableOverflow,
                               const nsSize& aICBSize);
-
 
   // Return the scroll frame's "true outer size".
   // This is mOuter->GetSize(), except when mOuter has been sized to reflect
@@ -659,12 +660,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // descendant scrollframes also have their displayports removed.
   bool mIsScrollParent : 1;
 
-  // Whether we are the root scroll frame that is used for containerful
-  // scrolling with a display port. If true, the scrollable frame
-  // shouldn't attach frame metrics to its layers because the container
-  // will already have the necessary frame metrics.
-  bool mIsScrollableLayerInRootContainer : 1;
-
   // If true, add clipping in ScrollFrameHelper::ClipLayerToDisplayPort.
   bool mAddClipRectToLayer : 1;
 
@@ -698,6 +693,9 @@ class ScrollFrameHelper : public nsIReflowCallback {
 
   // True if the minimum scale size has been changed since the last reflow.
   bool mMinimumScaleSizeChanged : 1;
+
+  // True if we're processing an scroll event.
+  bool mProcessingScrollEvent : 1;
 
   mozilla::layout::ScrollVelocityQueue mVelocityQueue;
 
@@ -754,10 +752,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // visibility.
   static uint32_t sHorzExpandScrollPort;
   static uint32_t sVertExpandScrollPort;
-  // The fraction of the scrollport we allow to scroll by before we schedule
-  // an update of frame visibility.
-  static int32_t sHorzScrollFraction;
-  static int32_t sVertScrollFraction;
 };
 
 }  // namespace mozilla
@@ -846,6 +840,7 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
@@ -1069,9 +1064,6 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   }
   virtual void MarkScrollbarsDirtyForReflow() const override {
     mHelper.MarkScrollbarsDirtyForReflow();
-  }
-  virtual bool UsesContainerScrolling() const override {
-    return mHelper.UsesContainerScrolling();
   }
   virtual bool DecideScrollableLayer(nsDisplayListBuilder* aBuilder,
                                      nsRect* aVisibleRect, nsRect* aDirtyRect,
@@ -1301,6 +1293,7 @@ class nsXULScrollFrame final : public nsBoxFrame,
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
@@ -1617,9 +1610,6 @@ class nsXULScrollFrame final : public nsBoxFrame,
 
   virtual void SetTransformingByAPZ(bool aTransforming) override {
     mHelper.SetTransformingByAPZ(aTransforming);
-  }
-  virtual bool UsesContainerScrolling() const override {
-    return mHelper.UsesContainerScrolling();
   }
   bool IsTransformingByAPZ() const override {
     return mHelper.IsTransformingByAPZ();

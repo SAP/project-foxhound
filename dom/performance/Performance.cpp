@@ -94,10 +94,7 @@ DOMHighResTimeStamp Performance::Now() {
     return rawTime;
   }
 
-  const double maxResolutionMs = 0.020;
-  DOMHighResTimeStamp minimallyClamped =
-      floor(rawTime / maxResolutionMs) * maxResolutionMs;
-  return nsRFPService::ReduceTimePrecisionAsMSecs(minimallyClamped,
+  return nsRFPService::ReduceTimePrecisionAsMSecs(rawTime,
                                                   GetRandomTimelineSeed());
 }
 
@@ -173,6 +170,9 @@ void Performance::GetEntriesByName(
     return;
   }
 
+  // ::Measure expects that results from this function are already
+  // passed through ReduceTimePrecision. mResourceEntries and mUserEntries
+  // are, so the invariant holds.
   for (PerformanceEntry* entry : mResourceEntries) {
     if (entry->GetName().Equals(aName) &&
         (!aEntryType.WasPassed() ||
@@ -224,15 +224,13 @@ void Performance::Mark(const nsAString& aName, ErrorResult& aRv) {
   InsertUserEntry(performanceMark);
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active()) {
-    nsCOMPtr<EventTarget> et = do_QueryInterface(GetOwner());
-    nsCOMPtr<nsIDocShell> docShell =
-        nsContentUtils::GetDocShellForEventTarget(et);
-    DECLARE_DOCSHELL_AND_HISTORY_ID(docShell);
-    profiler_add_marker(
-        "UserTiming", JS::ProfilingCategoryPair::DOM,
-        MakeUnique<UserTimingMarkerPayload>(aName, TimeStamp::Now(), docShellId,
-                                            docShellHistoryId));
+  if (profiler_can_accept_markers()) {
+    Maybe<uint64_t> innerWindowId;
+    if (GetOwner()) {
+      innerWindowId = Some(GetOwner()->WindowID());
+    }
+    PROFILER_ADD_MARKER_WITH_PAYLOAD("UserTiming", DOM, UserTimingMarkerPayload,
+                                     (aName, TimeStamp::Now(), innerWindowId));
   }
 #endif
 }
@@ -305,7 +303,7 @@ void Performance::Measure(const nsAString& aName,
   InsertUserEntry(performanceMeasure);
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active()) {
+  if (profiler_can_accept_markers()) {
     TimeStamp startTimeStamp =
         CreationTimeStamp() + TimeDuration::FromMilliseconds(startTime);
     TimeStamp endTimeStamp =
@@ -322,14 +320,13 @@ void Performance::Measure(const nsAString& aName,
       endMark.emplace(aEndMark.Value());
     }
 
-    nsCOMPtr<EventTarget> et = do_QueryInterface(GetOwner());
-    nsCOMPtr<nsIDocShell> docShell =
-        nsContentUtils::GetDocShellForEventTarget(et);
-    DECLARE_DOCSHELL_AND_HISTORY_ID(docShell);
-    profiler_add_marker("UserTiming", JS::ProfilingCategoryPair::DOM,
-                        MakeUnique<UserTimingMarkerPayload>(
-                            aName, startMark, endMark, startTimeStamp,
-                            endTimeStamp, docShellId, docShellHistoryId));
+    Maybe<uint64_t> innerWindowId;
+    if (GetOwner()) {
+      innerWindowId = Some(GetOwner()->WindowID());
+    }
+    PROFILER_ADD_MARKER_WITH_PAYLOAD("UserTiming", DOM, UserTimingMarkerPayload,
+                                     (aName, startMark, endMark, startTimeStamp,
+                                      endTimeStamp, innerWindowId));
   }
 #endif
 }

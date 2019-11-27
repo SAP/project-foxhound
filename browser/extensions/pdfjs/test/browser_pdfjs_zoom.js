@@ -189,3 +189,74 @@ add_task(async function test() {
     }
   );
 });
+
+async function waitForRenderAndGetWidth(newTabBrowser) {
+  return ContentTask.spawn(newTabBrowser, null, async function() {
+    function waitForRender(document) {
+      return new Promise(resolve => {
+        document.addEventListener(
+          "pagerendered",
+          function onPageRendered(e) {
+            if (e.detail.pageNumber !== 1) {
+              return;
+            }
+
+            document.removeEventListener("pagerendered", onPageRendered, true);
+            resolve();
+          },
+          true
+        );
+      });
+    }
+    // check that PDF is opened with internal viewer
+    Assert.ok(
+      content.document.querySelector("div#viewer"),
+      "document content has viewer UI"
+    );
+
+    await waitForRender(content.document);
+
+    return parseInt(
+      content.document.querySelector("div.page[data-page-number='1']").style
+        .width
+    );
+  });
+}
+
+add_task(async function test_browser_zoom() {
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:blank" },
+    async function(newTabBrowser) {
+      await waitForPdfJS(newTabBrowser, TESTROOT + "file_pdfjs_test.pdf");
+
+      const initialWidth = await waitForRenderAndGetWidth(newTabBrowser);
+
+      // Zoom in
+      let newWidthPromise = waitForRenderAndGetWidth(newTabBrowser);
+      FullZoom.enlarge();
+      ok(
+        (await newWidthPromise) > initialWidth,
+        "Zoom in makes the page bigger."
+      );
+
+      // Reset
+      newWidthPromise = waitForRenderAndGetWidth(newTabBrowser);
+      FullZoom.reset();
+      is(await newWidthPromise, initialWidth, "Zoom reset restores page.");
+
+      // Zoom out
+      newWidthPromise = waitForRenderAndGetWidth(newTabBrowser);
+      FullZoom.reduce();
+      ok(
+        (await newWidthPromise) < initialWidth,
+        "Zoom out makes the page smaller."
+      );
+
+      // Clean-up after the PDF viewer.
+      await ContentTask.spawn(newTabBrowser, null, function() {
+        const viewer = content.wrappedJSObject.PDFViewerApplication;
+        return viewer.close();
+      });
+    }
+  );
+});

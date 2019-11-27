@@ -52,6 +52,7 @@ class WebRenderTextureHost : public TextureHost {
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
 
   gfx::YUVColorSpace GetYUVColorSpace() const override;
+  gfx::ColorRange GetColorRange() const override;
 
   gfx::IntSize GetSize() const override;
 
@@ -80,8 +81,6 @@ class WebRenderTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
-
-  bool SupportsWrNativeTexture() override;
 
   bool NeedsYFlip() const override;
 

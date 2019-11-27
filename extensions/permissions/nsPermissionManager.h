@@ -77,8 +77,9 @@ class nsPermissionManager final : public nsIPermissionManager,
     static PermissionKey* CreateFromPrincipal(nsIPrincipal* aPrincipal,
                                               nsresult& aResult);
     static PermissionKey* CreateFromURI(nsIURI* aURI, nsresult& aResult);
-    static PermissionKey* CreateFromOriginNoSuffix(
-        const nsACString& aOriginNoSuffix);
+    static PermissionKey* CreateFromURIAndOriginAttributes(
+        nsIURI* aURI, const mozilla::OriginAttributes* aOriginAttributes,
+        nsresult& aResult);
 
     explicit PermissionKey(const nsACString& aOrigin)
         : mOrigin(aOrigin), mHashCode(mozilla::HashString(aOrigin)) {}
@@ -192,12 +193,16 @@ class nsPermissionManager final : public nsIPermissionManager,
                                 false, true);
   }
 
+  nsresult LegacyTestPermissionFromURI(
+      nsIURI* aURI, const mozilla::OriginAttributes* aOriginAttributes,
+      const nsACString& aType, uint32_t* aPermission);
+
   /**
    * Initialize the permission-manager service.
-   * The permission manager is always initialized at startup because when it was
-   * lazy-initialized on demand, it was possible for it to be created once
-   * shutdown had begun, resulting in the manager failing to correctly shutdown
-   * because it missed its shutdown observer notification.
+   * The permission manager is always initialized at startup because when it
+   * was lazy-initialized on demand, it was possible for it to be created
+   * once shutdown had begun, resulting in the manager failing to correctly
+   * shutdown because it missed its shutdown observer notification.
    */
   static void Startup();
 
@@ -279,6 +284,15 @@ class nsPermissionManager final : public nsIPermissionManager,
   // From ContentChild.
   nsresult RemoveAllFromIPC();
 
+  /**
+   * Returns false if this permission manager wouldn't have the permission
+   * requested available.
+   *
+   * If aType is empty, checks that the permission manager would have all
+   * permissions available for the given principal.
+   */
+  bool PermissionAvailable(nsIPrincipal* aPrincipal, const nsACString& aType);
+
  private:
   virtual ~nsPermissionManager();
 
@@ -327,9 +341,9 @@ class nsPermissionManager final : public nsIPermissionManager,
 
   PermissionHashKey* GetPermissionHashKey(nsIPrincipal* aPrincipal,
                                           uint32_t aType, bool aExactHostMatch);
-  PermissionHashKey* GetPermissionHashKey(nsIURI* aURI,
-                                          const nsACString& aOriginNoSuffix,
-                                          uint32_t aType, bool aExactHostMatch);
+  PermissionHashKey* GetPermissionHashKey(
+      nsIURI* aURI, const mozilla::OriginAttributes* aOriginAttributes,
+      uint32_t aType, bool aExactHostMatch);
 
   // The int32_t is the type index, the nsresult is an early bail-out return
   // code.
@@ -436,8 +450,8 @@ class nsPermissionManager final : public nsIPermissionManager,
     }
 
     return CommonTestPermissionInternal(
-        aPrincipal, nullptr, EmptyCString(), preparationResult.as<int32_t>(),
-        aType, aPermission, aExactHostMatch, aIncludingSession);
+        aPrincipal, nullptr, nullptr, preparationResult.as<int32_t>(), aType,
+        aPermission, aExactHostMatch, aIncludingSession);
   }
   // If aTypeIndex is passed -1, we try to inder the type index from aType.
   nsresult CommonTestPermission(nsIURI* aURI, int32_t aTypeIndex,
@@ -453,19 +467,35 @@ class nsPermissionManager final : public nsIPermissionManager,
     }
 
     return CommonTestPermissionInternal(
-        nullptr, aURI, EmptyCString(), preparationResult.as<int32_t>(), aType,
+        nullptr, aURI, nullptr, preparationResult.as<int32_t>(), aType,
         aPermission, aExactHostMatch, aIncludingSession);
+  }
+  nsresult CommonTestPermission(
+      nsIURI* aURI, const mozilla::OriginAttributes* aOriginAttributes,
+      int32_t aTypeIndex, const nsACString& aType, uint32_t* aPermission,
+      uint32_t aDefaultPermission, bool aDefaultPermissionIsValid,
+      bool aExactHostMatch, bool aIncludingSession) {
+    auto preparationResult = CommonPrepareToTestPermission(
+        nullptr, aTypeIndex, aType, aPermission, aDefaultPermission,
+        aDefaultPermissionIsValid, aExactHostMatch, aIncludingSession);
+    if (preparationResult.is<nsresult>()) {
+      return preparationResult.as<nsresult>();
+    }
+
+    return CommonTestPermissionInternal(
+        nullptr, aURI, aOriginAttributes, preparationResult.as<int32_t>(),
+        aType, aPermission, aExactHostMatch, aIncludingSession);
   }
   // Only one of aPrincipal or aURI is allowed to be passed in.
   nsresult CommonTestPermissionInternal(
-      nsIPrincipal* aPrincipal, nsIURI* aURI, const nsACString& aOriginNoSuffix,
-      int32_t aTypeIndex, const nsACString& aType, uint32_t* aPermission,
-      bool aExactHostMatch, bool aIncludingSession);
+      nsIPrincipal* aPrincipal, nsIURI* aURI,
+      const mozilla::OriginAttributes* aOriginAttributes, int32_t aTypeIndex,
+      const nsACString& aType, uint32_t* aPermission, bool aExactHostMatch,
+      bool aIncludingSession);
 
   nsresult OpenDatabase(nsIFile* permissionsFile);
   nsresult InitDB(bool aRemoveFile);
   nsresult CreateTable();
-  nsresult Import();
   nsresult ImportDefaults();
   nsresult _DoImport(nsIInputStream* inputStream, mozIStorageConnection* aConn);
   nsresult Read();
@@ -497,16 +527,8 @@ class nsPermissionManager final : public nsIPermissionManager,
   template <class T>
   nsresult RemovePermissionEntries(T aCondition);
 
-  /**
-   * Returns false if this permission manager wouldn't have the permission
-   * requested available.
-   *
-   * If aType is nullptr, checks that the permission manager would have all
-   * permissions available for the given principal.
-   */
-  bool PermissionAvailable(nsIPrincipal* aPrincipal, const nsACString& aType);
-
-  nsRefPtrHashtable<nsCStringHashKey, mozilla::GenericPromise::Private>
+  nsRefPtrHashtable<nsCStringHashKey,
+                    mozilla::GenericNonExclusivePromise::Private>
       mPermissionKeyPromiseMap;
 
   nsCOMPtr<mozIStorageConnection> mDBConn;

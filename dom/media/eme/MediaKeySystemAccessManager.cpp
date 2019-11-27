@@ -9,7 +9,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/DetailedPromise.h"
 #ifdef XP_WIN
 #  include "mozilla/WindowsVersion.h"
@@ -22,6 +22,7 @@
 #include "nsIScriptError.h"
 #include "mozilla/Unused.h"
 #include "nsDataHashtable.h"
+#include "mozilla/dom/BrowserChild.h"
 
 namespace mozilla {
 namespace dom {
@@ -72,17 +73,58 @@ void MediaKeySystemAccessManager::Request(
   EME_LOG("MediaKeySystemAccessManager::Request %s",
           NS_ConvertUTF16toUTF8(aKeySystem).get());
 
+  // In Windows OS, some Firefox windows that host content cannot support
+  // protected content, so check the status of support for this window.
+  // On other platforms windows should always support protected media.
+#ifdef XP_WIN
+  RefPtr<BrowserChild> browser(BrowserChild::GetFrom(mWindow));
+
+  RefPtr<MediaKeySystemAccessManager> self(this);
+  nsString keySystem(aKeySystem);
+  RefPtr<DetailedPromise> promise(aPromise);
+  Sequence<MediaKeySystemConfiguration> configs(aConfigs);
+
+  browser->DoesWindowSupportProtectedMedia()->Then(
+      GetCurrentThreadSerialEventTarget(), __func__,
+      [self, promise, keySystem, configs, aType](bool isSupported) {
+        self->RequestCallback(isSupported, promise, keySystem, configs, aType);
+      },
+      [self, promise, keySystem, configs,
+       aType](const mozilla::ipc::ResponseRejectReason reason) {
+        // We're likely here because the tab/window was closed as we were
+        // performing the check. Try to gracefully handle.
+        EME_LOG(
+            "Failed to make IPC call to IsWindowSupportingProtectedMedia: "
+            "reason=%d",
+            static_cast<int>(reason));
+        // Treat as failure.
+        self->RequestCallback(false, promise, keySystem, configs, aType);
+      });
+#else
+  RequestCallback(true, aPromise, aKeySystem, aConfigs, aType);
+#endif
+}
+
+void MediaKeySystemAccessManager::RequestCallback(
+    bool aIsSupportedInWindow, DetailedPromise* aPromise,
+    const nsAString& aKeySystem,
+    const Sequence<MediaKeySystemConfiguration>& aConfigs, RequestType aType) {
+  if (!aIsSupportedInWindow) {
+    aPromise->MaybeReject(
+        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
+        NS_LITERAL_CSTRING("EME is not supported in this window"));
+    return;
+  }
+
   if (aKeySystem.IsEmpty()) {
-    aPromise->MaybeReject(NS_ERROR_DOM_TYPE_ERR,
-                          NS_LITERAL_CSTRING("Key system string is empty"));
+    aPromise->MaybeRejectWithTypeError(u"Key system string is empty");
     // Don't notify DecoderDoctor, as there's nothing we or the user can
     // do to fix this situation; the site is using the API wrong.
     return;
   }
   if (aConfigs.IsEmpty()) {
-    aPromise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING("Candidate MediaKeySystemConfigs is empty"));
+    aPromise->MaybeRejectWithTypeError(
+        u"Candidate MediaKeySystemConfigs is empty");
     // Don't notify DecoderDoctor, as there's nothing we or the user can
     // do to fix this situation; the site is using the API wrong.
     return;
@@ -190,25 +232,6 @@ void MediaKeySystemAccessManager::Request(
     aPromise->MaybeResolve(access);
     diagnostics.StoreMediaKeySystemAccess(mWindow->GetExtantDoc(), aKeySystem,
                                           true, __func__);
-
-    // Accumulate telemetry to report whether we hit deprecation warnings.
-    if (warnings.Get("MediaEMENoCapabilitiesDeprecatedWarning")) {
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIA_EME_REQUEST_DEPRECATED_WARNINGS, 1);
-      EME_LOG(
-          "MEDIA_EME_REQUEST_DEPRECATED_WARNINGS "
-          "MediaEMENoCapabilitiesDeprecatedWarning");
-    } else if (warnings.Get("MediaEMENoCodecsDeprecatedWarning")) {
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIA_EME_REQUEST_DEPRECATED_WARNINGS, 2);
-      EME_LOG(
-          "MEDIA_EME_REQUEST_DEPRECATED_WARNINGS "
-          "MediaEMENoCodecsDeprecatedWarning");
-    } else {
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIA_EME_REQUEST_DEPRECATED_WARNINGS, 0);
-      EME_LOG("MEDIA_EME_REQUEST_DEPRECATED_WARNINGS No warnings");
-    }
     return;
   }
   // Not to inform user, because nothing to do if the corresponding keySystem

@@ -69,6 +69,11 @@ bool HasReftypesSupport(JSContext* cx);
 
 bool HasGcSupport(JSContext* cx);
 
+// Returns true if WebAssembly as configured by compile-time flags and run-time
+// options can support multi-value block and function returns (evolving).
+
+bool HasMultiValueSupport(JSContext* cx);
+
 // Compiles the given binary wasm module given the ArrayBufferObject
 // and links the module's imports with the given import object.
 
@@ -116,7 +121,7 @@ bool IsSharedWasmMemoryObject(JSObject* obj);
 
 // The class of the WebAssembly global namespace object.
 
-extern const Class WebAssemblyClass;
+extern const JSClass WebAssemblyClass;
 
 JSObject* InitWebAssemblyClass(JSContext* cx, Handle<GlobalObject*> global);
 
@@ -126,15 +131,15 @@ JSObject* InitWebAssemblyClass(JSContext* cx, Handle<GlobalObject*> global);
 
 class WasmModuleObject : public NativeObject {
   static const unsigned MODULE_SLOT = 0;
-  static const ClassOps classOps_;
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static const JSClassOps classOps_;
+  static void finalize(JSFreeOp* fop, JSObject* obj);
   static bool imports(JSContext* cx, unsigned argc, Value* vp);
   static bool exports(JSContext* cx, unsigned argc, Value* vp);
   static bool customSections(JSContext* cx, unsigned argc, Value* vp);
 
  public:
   static const unsigned RESERVED_SLOTS = 1;
-  static const Class class_;
+  static const JSClass class_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
@@ -161,8 +166,8 @@ class WasmGlobalObject : public NativeObject {
   static const unsigned MUTABLE_SLOT = 1;
   static const unsigned CELL_SLOT = 2;
 
-  static const ClassOps classOps_;
-  static void finalize(FreeOp*, JSObject* obj);
+  static const JSClassOps classOps_;
+  static void finalize(JSFreeOp*, JSObject* obj);
   static void trace(JSTracer* trc, JSObject* obj);
 
   static bool valueGetterImpl(JSContext* cx, const CallArgs& args);
@@ -184,7 +189,7 @@ class WasmGlobalObject : public NativeObject {
   };
 
   static const unsigned RESERVED_SLOTS = 3;
-  static const Class class_;
+  static const JSClass class_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
@@ -214,11 +219,11 @@ class WasmInstanceObject : public NativeObject {
   static const unsigned INSTANCE_SCOPE_SLOT = 4;
   static const unsigned GLOBALS_SLOT = 5;
 
-  static const ClassOps classOps_;
+  static const JSClassOps classOps_;
   static bool exportsGetterImpl(JSContext* cx, const CallArgs& args);
   static bool exportsGetter(JSContext* cx, unsigned argc, Value* vp);
   bool isNewborn() const;
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
   static void trace(JSTracer* trc, JSObject* obj);
 
   // ExportMap maps from function index to exported function object.
@@ -239,7 +244,7 @@ class WasmInstanceObject : public NativeObject {
 
  public:
   static const unsigned RESERVED_SLOTS = 6;
-  static const Class class_;
+  static const JSClass class_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
@@ -276,7 +281,8 @@ class WasmInstanceObject : public NativeObject {
   static WasmFunctionScope* getFunctionScope(
       JSContext* cx, HandleWasmInstanceObject instanceObj, uint32_t funcIndex);
 
-  using GlobalObjectVector = GCVector<WasmGlobalObject*, 0, ZoneAllocPolicy>;
+  using GlobalObjectVector =
+      GCVector<HeapPtr<WasmGlobalObject*>, 0, ZoneAllocPolicy>;
   GlobalObjectVector& indirectGlobals() const;
 };
 
@@ -286,8 +292,8 @@ class WasmInstanceObject : public NativeObject {
 class WasmMemoryObject : public NativeObject {
   static const unsigned BUFFER_SLOT = 0;
   static const unsigned OBSERVERS_SLOT = 1;
-  static const ClassOps classOps_;
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static const JSClassOps classOps_;
+  static void finalize(JSFreeOp* fop, JSObject* obj);
   static bool bufferGetterImpl(JSContext* cx, const CallArgs& args);
   static bool bufferGetter(JSContext* cx, unsigned argc, Value* vp);
   static bool growImpl(JSContext* cx, const CallArgs& args);
@@ -304,7 +310,7 @@ class WasmMemoryObject : public NativeObject {
 
  public:
   static const unsigned RESERVED_SLOTS = 2;
-  static const Class class_;
+  static const JSClass class_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];
@@ -329,7 +335,9 @@ class WasmMemoryObject : public NativeObject {
   uint32_t volatileMemoryLength() const;
 
   bool isShared() const;
+  bool isHuge() const;
   bool movingGrowable() const;
+  uint32_t boundsCheckLimit() const;
 
   // If isShared() is true then obtain the underlying buffer object.
   SharedArrayRawBuffer* sharedArrayRawBuffer() const;
@@ -345,9 +353,9 @@ class WasmMemoryObject : public NativeObject {
 
 class WasmTableObject : public NativeObject {
   static const unsigned TABLE_SLOT = 0;
-  static const ClassOps classOps_;
+  static const JSClassOps classOps_;
   bool isNewborn() const;
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
   static void trace(JSTracer* trc, JSObject* obj);
   static bool lengthGetterImpl(JSContext* cx, const CallArgs& args);
   static bool lengthGetter(JSContext* cx, unsigned argc, Value* vp);
@@ -360,7 +368,7 @@ class WasmTableObject : public NativeObject {
 
  public:
   static const unsigned RESERVED_SLOTS = 1;
-  static const Class class_;
+  static const JSClass class_;
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec static_methods[];

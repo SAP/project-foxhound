@@ -18,6 +18,7 @@
 #include "gc/Barrier.h"
 #include "gc/Heap.h"
 #include "gc/Marking.h"
+#include "gc/ZoneAllocator.h"
 #include "js/Value.h"
 #include "vm/JSObject.h"
 #include "vm/Shape.h"
@@ -411,7 +412,6 @@ static_assert(ObjectElements::VALUES_PER_HEADER * sizeof(HeapSlot) ==
 extern HeapSlot* const emptyObjectElements;
 extern HeapSlot* const emptyObjectElementsShared;
 
-struct Class;
 class AutoCheckShapeConsistency;
 class GCMarker;
 class Shape;
@@ -1115,7 +1115,7 @@ class NativeObject : public JSObject {
    */
   static MOZ_ALWAYS_INLINE uint32_t dynamicSlotsCount(uint32_t nfixed,
                                                       uint32_t span,
-                                                      const Class* clasp);
+                                                      const JSClass* clasp);
   static MOZ_ALWAYS_INLINE uint32_t dynamicSlotsCount(Shape* shape);
 
   /* Elements accessors. */
@@ -1488,7 +1488,7 @@ class NativeObject : public JSObject {
 // 'new Object()', 'Object.create', etc.
 class PlainObject : public NativeObject {
  public:
-  static const js::Class class_;
+  static const JSClass class_;
 
   /* Return the allocKind we would use if we were to tenure this object. */
   inline js::gc::AllocKind allocKindForTenure() const;
@@ -1646,6 +1646,39 @@ extern bool CopyDataPropertiesNative(JSContext* cx, HandlePlainObject target,
                                      HandleNativeObject from,
                                      HandlePlainObject excludedItems,
                                      bool* optimized);
+
+// Initialize an object's reserved slot with a private value pointing to
+// malloc-allocated memory and associate the memory with the object.
+//
+// This call should be matched with a call to JSFreeOp::free_/delete_ in the
+// object's finalizer to free the memory and update the memory accounting.
+
+inline void InitReservedSlot(NativeObject* obj, uint32_t slot, void* ptr,
+                             size_t nbytes, MemoryUse use) {
+  AddCellMemory(obj, nbytes, use);
+  obj->initReservedSlot(slot, PrivateValue(ptr));
+}
+template <typename T>
+inline void InitReservedSlot(NativeObject* obj, uint32_t slot, T* ptr,
+                             MemoryUse use) {
+  InitReservedSlot(obj, slot, ptr, sizeof(T), use);
+}
+
+// Initialize an object's private slot with a pointer to malloc-allocated memory
+// and associate the memory with the object.
+//
+// This call should be matched with a call to JSFreeOp::free_/delete_ in the
+// object's finalizer to free the memory and update the memory accounting.
+
+inline void InitObjectPrivate(NativeObject* obj, void* ptr, size_t nbytes,
+                              MemoryUse use) {
+  AddCellMemory(obj, nbytes, use);
+  obj->initPrivate(ptr);
+}
+template <typename T>
+inline void InitObjectPrivate(NativeObject* obj, T* ptr, MemoryUse use) {
+  InitObjectPrivate(obj, ptr, sizeof(T), use);
+}
 
 }  // namespace js
 

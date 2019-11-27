@@ -53,6 +53,10 @@ class nsTypeAheadFind : public nsITypeAheadFind,
   nsresult GetWebBrowserFind(nsIDocShell* aDocShell,
                              nsIWebBrowserFind** aWebBrowserFind);
 
+  nsresult FindInternal(uint32_t aMode, const nsAString& aSearchString,
+                        bool aLinksOnly, bool aDontIterateFrames,
+                        uint16_t* aResult);
+
   void RangeStartsInsideLink(nsRange* aRange, bool* aIsInsideLink,
                              bool* aIsStartingLink);
 
@@ -61,15 +65,14 @@ class nsTypeAheadFind : public nsITypeAheadFind,
                     mozilla::dom::Selection** aDomSel);
   // *aNewRange may not be collapsed.  If you want to collapse it in a
   // particular way, you need to do it yourself.
-  bool IsRangeVisible(mozilla::PresShell* aPresShell,
-                      nsPresContext* aPresContext, nsRange* aRange,
-                      bool aMustBeVisible, bool aGetTopVisibleLeaf,
-                      nsRange** aNewRange, bool* aUsesIndependentSelection);
-  bool IsRangeRendered(mozilla::PresShell* aPresShell,
-                       nsPresContext* aPresContext, nsRange* aRange);
+  bool IsRangeVisible(nsRange* aRange, bool aMustBeVisible,
+                      bool aGetTopVisibleLeaf, nsRange** aNewRange,
+                      bool* aUsesIndependentSelection);
+  bool IsRangeRendered(nsRange* aRange);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  nsresult FindItNow(bool aIsLinksOnly, bool aIsFirstVisiblePreferred,
-                     bool aFindPrev, uint16_t* aResult);
+  nsresult FindItNow(uint32_t aMode, bool aIsLinksOnly,
+                     bool aIsFirstVisiblePreferred, bool aDontIterateFrames,
+                     uint16_t* aResult);
   nsresult GetSearchContainers(nsISupports* aContainer,
                                nsISelectionController* aSelectionController,
                                bool aIsFirstVisiblePreferred, bool aFindPrev,

@@ -6,7 +6,7 @@
 
 var gDebuggee;
 var gClient;
-var gThreadClient;
+var gThreadFront;
 
 Services.prefs.setBoolPref("security.allow_eval_with_system_principal", true);
 
@@ -25,9 +25,9 @@ function run_test() {
     attachTestTabAndResume(gClient, "test-closures", function(
       response,
       targetFront,
-      threadClient
+      threadFront
     ) {
-      gThreadClient = threadClient;
+      gThreadFront = threadFront;
       test_object_grip();
     });
   });
@@ -35,42 +35,43 @@ function run_test() {
 }
 
 function test_object_grip() {
-  gThreadClient.once("paused", function(packet) {
+  gThreadFront.once("paused", async function(packet) {
     const person = packet.frame.environment.bindings.variables.person;
 
     Assert.equal(person.value.class, "Object");
 
-    const personClient = gThreadClient.pauseGrip(person.value);
-    personClient.getPrototypeAndProperties(response => {
-      Assert.equal(response.ownProperties.getName.value.class, "Function");
+    const personClient = gThreadFront.pauseGrip(person.value);
+    let response = await personClient.getPrototypeAndProperties();
+    Assert.equal(response.ownProperties.getName.value.class, "Function");
 
-      Assert.equal(response.ownProperties.getAge.value.class, "Function");
+    Assert.equal(response.ownProperties.getAge.value.class, "Function");
 
-      Assert.equal(response.ownProperties.getFoo.value.class, "Function");
+    Assert.equal(response.ownProperties.getFoo.value.class, "Function");
 
-      const getNameClient = gThreadClient.pauseGrip(
-        response.ownProperties.getName.value
-      );
-      const getAgeClient = gThreadClient.pauseGrip(
-        response.ownProperties.getAge.value
-      );
-      const getFooClient = gThreadClient.pauseGrip(
-        response.ownProperties.getFoo.value
-      );
-      getNameClient.getScope(response => {
-        Assert.equal(response.scope.bindings.arguments[0].name.value, "Bob");
+    const getNameClient = gThreadFront.pauseGrip(
+      response.ownProperties.getName.value
+    );
+    const getAgeClient = gThreadFront.pauseGrip(
+      response.ownProperties.getAge.value
+    );
+    const getFooClient = gThreadFront.pauseGrip(
+      response.ownProperties.getFoo.value
+    );
 
-        getAgeClient.getScope(response => {
-          Assert.equal(response.scope.bindings.arguments[1].age.value, 58);
+    response = await getNameClient.getScope();
+    let bindings = await response.scope.bindings();
+    Assert.equal(bindings.arguments[0].name.value, "Bob");
 
-          getFooClient.getScope(response => {
-            Assert.equal(response.scope.bindings.variables.foo.value, 10);
+    response = await getAgeClient.getScope();
+    bindings = await response.scope.bindings();
+    Assert.equal(bindings.arguments[1].age.value, 58);
 
-            gThreadClient.resume().then(() => finishClient(gClient));
-          });
-        });
-      });
-    });
+    response = await getFooClient.getScope();
+    bindings = await response.scope.bindings();
+    Assert.equal(bindings.variables.foo.value, 10);
+
+    await gThreadFront.resume();
+    finishClient(gClient);
   });
 
   /* eslint-disable */

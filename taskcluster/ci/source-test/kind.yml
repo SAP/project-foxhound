@@ -7,7 +7,6 @@ loader: taskgraph.loader.transform:loader
 transforms:
     - taskgraph.transforms.try_job:transforms
     - taskgraph.transforms.source_test:transforms
-    - taskgraph.transforms.use_toolchains:transforms
     - taskgraph.transforms.job:transforms
     - taskgraph.transforms.task:transforms
 
@@ -24,11 +23,14 @@ jobs-from:
     - infer.yml
     - jsshell.yml
     - mozlint.yml
+    - mozlint-android.yml
     - node.yml
     - python.yml
+    - remote.yml
+    - shadow-scheduler.yml
     - webidl.yml
-    - wpt-metadata.yml
     - wpt-manifest.yml
+    - wpt-metadata.yml
 
 job-defaults:
     attributes:

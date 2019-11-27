@@ -7,13 +7,10 @@
 #include <math.h>
 
 #include "HTMLEditorEventListener.h"
-#include "HTMLEditRules.h"
 #include "HTMLEditUtils.h"
-#include "TextEditUtils.h"
 #include "mozilla/EditAction.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/TextEditRules.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/EventTarget.h"
@@ -28,7 +25,6 @@
 #include "nsIContent.h"
 #include "nsROCSSPrimitiveValue.h"
 #include "nsIDOMEventListener.h"
-#include "nsIDOMWindow.h"
 #include "nsIHTMLObjectResizer.h"
 #include "nsINode.h"
 #include "nsIPrincipal.h"
@@ -55,36 +51,20 @@ nsresult HTMLEditor::SetSelectionToAbsoluteOrStaticAsAction(
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this);
-  AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
-      *this,
-      aEnabled ? EditSubAction::eSetPositionToAbsolute
-               : EditSubAction::eSetPositionToStatic,
-      nsIEditor::eNext);
-
-  // the line below does not match the code; should it be removed?
-  // Find out if the selection is collapsed:
-
-  EditSubActionInfo subActionInfo(aEnabled
-                                      ? EditSubAction::eSetPositionToAbsolute
-                                      : EditSubAction::eSetPositionToStatic);
-  bool cancel, handled;
-  // Protect the edit rules object from dying
-  RefPtr<TextEditRules> rules(mRules);
-  nsresult rv = rules->WillDoAction(subActionInfo, &cancel, &handled);
-  if (NS_FAILED(rv) || cancel) {
-    return EditorBase::ToGenericNSResult(rv);
+  if (aEnabled) {
+    EditActionResult result = SetSelectionToAbsoluteAsSubAction();
+    NS_WARNING_ASSERTION(result.Succeeded(),
+                         "SetSelectionToAbsoluteAsSubAction() failed");
+    return result.Rv();
   }
-
-  rv = rules->DidDoAction(subActionInfo, rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return EditorBase::ToGenericNSResult(rv);
-  }
-  return NS_OK;
+  EditActionResult result = SetSelectionToStaticAsSubAction();
+  NS_WARNING_ASSERTION(result.Succeeded(),
+                       "SetSelectionToStaticAsSubAction() failed");
+  return result.Rv();
 }
 
 already_AddRefed<Element>
-HTMLEditor::GetAbsolutelyPositionedSelectionContainer() {
+HTMLEditor::GetAbsolutelyPositionedSelectionContainer() const {
   AutoEditActionDataSetter editActionData(*this, EditAction::eNotEditing);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return nullptr;
@@ -154,30 +134,9 @@ nsresult HTMLEditor::AddZIndexAsAction(int32_t aChange,
     return NS_ERROR_NOT_INITIALIZED;
   }
 
-  AutoPlaceholderBatch treatAsOneTransaction(*this);
-  AutoTopLevelEditSubActionNotifier maybeTopLevelEditSubAction(
-      *this,
-      aChange < 0 ? EditSubAction::eDecreaseZIndex
-                  : EditSubAction::eIncreaseZIndex,
-      nsIEditor::eNext);
-
-  // brade: can we get rid of this comment?
-  // Find out if the selection is collapsed:
-  EditSubActionInfo subActionInfo(aChange < 0 ? EditSubAction::eDecreaseZIndex
-                                              : EditSubAction::eIncreaseZIndex);
-  bool cancel, handled;
-  // Protect the edit rules object from dying
-  RefPtr<TextEditRules> rules(mRules);
-  nsresult rv = rules->WillDoAction(subActionInfo, &cancel, &handled);
-  if (cancel || NS_FAILED(rv)) {
-    return EditorBase::ToGenericNSResult(rv);
-  }
-
-  rv = rules->DidDoAction(subActionInfo, rv);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return EditorBase::ToGenericNSResult(rv);
-  }
-  return NS_OK;
+  EditActionResult result = AddZIndexAsSubAction(aChange);
+  NS_WARNING_ASSERTION(result.Succeeded(), "AddZIndexAsSubAction() failed");
+  return EditorBase::ToGenericNSResult(result.Rv());
 }
 
 int32_t HTMLEditor::GetZIndex(Element& aElement) {
@@ -528,7 +487,7 @@ nsresult HTMLEditor::SetPositionToAbsolute(Element& aElement) {
   nsINode* parentNode = aElement.GetParentNode();
   if (parentNode->GetChildCount() == 1) {
     RefPtr<Element> newBrElement =
-        InsertBrElementWithTransaction(EditorDOMPoint(parentNode, 0));
+        InsertBRElementWithTransaction(EditorDOMPoint(parentNode, 0));
     if (NS_WARN_IF(!newBrElement)) {
       return NS_ERROR_FAILURE;
     }
@@ -553,16 +512,25 @@ nsresult HTMLEditor::SetPositionToStatic(Element& aElement) {
                                      EmptyString());
   }
 
-  if (aElement.IsHTMLElement(nsGkAtoms::div) &&
-      !HasStyleOrIdOrClass(&aElement)) {
-    RefPtr<HTMLEditRules> htmlRules = static_cast<HTMLEditRules*>(mRules.get());
-    NS_ENSURE_TRUE(htmlRules, NS_ERROR_FAILURE);
-    nsresult rv = htmlRules->MakeSureElemStartsAndEndsOnCR(aElement);
-    NS_ENSURE_SUCCESS(rv, rv);
-    rv = RemoveContainerWithTransaction(aElement);
-    NS_ENSURE_SUCCESS(rv, rv);
+  if (!aElement.IsHTMLElement(nsGkAtoms::div) ||
+      HTMLEditor::HasStyleOrIdOrClassAttribute(aElement)) {
+    return NS_OK;
   }
-  return NS_OK;
+
+  // Make sure the first fild and last child of aElement starts/ends hard
+  // line(s) even after removing `aElement`.
+  nsresult rv = EnsureHardLineBeginsWithFirstChildOf(aElement);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  rv = EnsureHardLineEndsWithLastChildOf(aElement);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+  rv = RemoveContainerWithTransaction(aElement);
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "RemoveContainerWithTransaction() failed");
+  return rv;
 }
 
 NS_IMETHODIMP

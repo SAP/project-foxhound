@@ -2591,7 +2591,7 @@ addAsyncAnimTest(async function() {
 
   gDiv.style.translate = "200px";
   gDiv.style.scale = "2 2";
-  gDiv.style.transform = "translate(300px)";
+  gDiv.style.transform = "translate(100px)";
   await waitForPaintsFlushed();
 
   omta_is("transform", { compositorValue: { tx: 300 },
@@ -2601,18 +2601,13 @@ addAsyncAnimTest(async function() {
 
   advance_clock(5000);
 
-  if (isGeckoView()) {
-    todo(false,
-         "Bug 1536392: GeckoView with e10s: cannot get correct OMTA style");
-  } else {
-    omta_is("transform",
-            // The order is: translate, scale, transform.
-            // So the translate() in transform should be multiplied by 1.5.
-            { compositorValue: [ 1.5, 0, 0, 1.5, (150 + 250*1.5), 0 ],
-              usesMultipleProperties: true },
-            RunningOn.Compositor,
-            "transform-like properties on compositor at 5s");
-  }
+  omta_is("transform",
+          // The order is: translate, scale, transform.
+          // So the translate() in transform should be multiplied by 1.5.
+          { compositorValue: [ 1.5, 0, 0, 1.5, (150 + 150*1.5), 0 ],
+            usesMultipleProperties: true },
+          RunningOn.Compositor,
+          "transform-like properties on compositor at 5s");
 
   done_div();
 });
@@ -2638,18 +2633,13 @@ addAsyncAnimTest(async function() {
 
   advance_clock(5000);
 
-  if (isGeckoView()) {
-    todo(false,
-         "Bug 1536392: GeckoView with e10s: cannot get correct OMTA style");
-  } else {
-    omta_is("transform",
-            // The order is: translate, scale, transform.
-            // So the translate() in transform should be multiplied by 1.5.
-            { compositorValue: [ 1.5, 0, 0, 1.5, (150 + 200*1.5), 0 ],
-              usesMultipleProperties: true },
-            RunningOn.Compositor,
-            "transform-like properties on compositor at 5s");
-  }
+  omta_is("transform",
+          // The order is: translate, scale, transform.
+          // So the translate() in transform should be multiplied by 1.5.
+          { compositorValue: [ 1.5, 0, 0, 1.5, (150 + 200*1.5), 0 ],
+            usesMultipleProperties: true },
+          RunningOn.Compositor,
+          "transform-like properties on compositor at 5s");
 
   done_div();
 });
@@ -2689,28 +2679,48 @@ addAsyncAnimTest(async function() {
 
   advance_clock(2500);
 
-  if (isGeckoView()) {
-    todo(false,
-         "Bug 1536392: GeckoView with e10s: cannot get correct OMTA style");
-  } else {
-    omta_is("transform", { compositorValue: [ 1.25, 0, 0, 1.25, 100, 0 ],
-                           usesMultipleProperties: true },
-            RunningOn.Compositor,
-            "transform-like properties on compositor at 2.5s");
-  }
+  omta_is("transform", { compositorValue: [ 1.25, 0, 0, 1.25, 100, 0 ],
+                         usesMultipleProperties: true },
+          RunningOn.Compositor,
+          "transform-like properties on compositor at 2.5s");
 
   advance_clock(5000);
 
-  if (isGeckoView()) {
-    todo(false,
-         "Bug 1536392: GeckoView with e10s: cannot get correct OMTA style");
-  } else {
-    omta_is("transform",
-            { compositorValue: [ 1.75, 0, 0, 1.75, 100, 0 ],
-              usesMultipleProperties: true },
-            RunningOn.Compositor,
-            "transform-like properties on compositor at 7.5s");
-  }
+  omta_is("transform",
+          { compositorValue: [ 1.75, 0, 0, 1.75, 100, 0 ],
+            usesMultipleProperties: true },
+          RunningOn.Compositor,
+          "transform-like properties on compositor at 7.5s");
+
+  done_div();
+});
+
+// Multiple transform-like properties animation. The motion-path shouldn't be
+// overridden by other transform animations. So, in this case, we should fall
+// back transform animations to main thread if offset-path presents.
+// FIXME: Bug 1429305: Run animations of motion path on the compositor thread.
+addAsyncAnimTest(async function() {
+  new_div("translate: 0px; " +
+          "offset-path: path('M50 0v100');" +
+          "transform: translateX(0px); " +
+          "transition: all 10s linear");
+  await waitForPaintsFlushed();
+
+  gDiv.style.translate = "0px 100px";
+  gDiv.style.transform = "translateX(-100px)";
+  await waitForPaintsFlushed();
+
+  omta_is("translate", "0px" , RunningOn.MainThread,
+          "translate transition doesn't run on compositor thread");
+  omta_is("transform", { tx: 0 }, RunningOn.MainThread,
+          "transform transition doesn't run on compositor thread");
+
+  advance_clock(5000);
+
+  omta_is("translate", "0px 50px" , RunningOn.MainThread,
+          "translate on main thread at 5s");
+  omta_is("transform", { tx: -50 }, RunningOn.MainThread,
+          "transform on main thread at 5s");
 
   done_div();
 });

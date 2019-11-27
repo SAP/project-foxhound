@@ -7,6 +7,7 @@
 #include "RuntimeService.h"
 
 #include "nsAutoPtr.h"
+#include "nsContentSecurityUtils.h"
 #include "nsIChannel.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsICookieService.h"
@@ -57,7 +58,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/Monitor.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsDOMJSUtils.h"
@@ -287,6 +287,8 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
   JS::ContextOptions contextOptions;
   contextOptions.setAsmJS(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs")))
       .setWasm(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm")))
+      .setWasmForTrustedPrinciples(
+          GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_trustedprincipals")))
       .setWasmBaseline(
           GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_baselinejit")))
       .setWasmIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_ionjit")))
@@ -300,9 +302,6 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
       .setWasmVerbose(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_verbose")))
       .setThrowOnAsmJSValidationFailure(GetWorkerPref<bool>(
           NS_LITERAL_CSTRING("throw_on_asmjs_validation_failure")))
-      .setBaseline(GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit")))
-      .setIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion")))
-      .setNativeRegExp(GetWorkerPref<bool>(NS_LITERAL_CSTRING("native_regexp")))
       .setAsyncStack(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asyncstack")))
       .setWerror(GetWorkerPref<bool>(NS_LITERAL_CSTRING("werror")))
 #ifdef FUZZING
@@ -433,14 +432,6 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
                            ? uint32_t(-1)
                            : uint32_t(prefValue) * 1024 * 1024;
       UpdateOtherJSGCMemoryOption(rts, JSGC_MAX_BYTES, value);
-      continue;
-    }
-
-    matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX "high_water_mark");
-    if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 1)) {
-      int32_t prefValue = GetWorkerPref(matchName, 128);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_MAX_MALLOC_BYTES,
-                                  uint32_t(prefValue) * 1024 * 1024);
       continue;
     }
 
@@ -605,19 +596,24 @@ bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleValue aValue) {
   WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
   worker->AssertIsOnWorkerThread();
 
+  JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, aValue));
+  if (NS_WARN_IF(!jsString)) {
+    JS_ClearPendingException(aCx);
+    return false;
+  }
+
+  nsAutoJSString scriptSample;
+  if (NS_WARN_IF(!scriptSample.init(aCx, jsString))) {
+    JS_ClearPendingException(aCx);
+    return false;
+  }
+
+  if (!nsContentSecurityUtils::IsEvalAllowed(aCx, worker->UsesSystemPrincipal(),
+                                             scriptSample)) {
+    return false;
+  }
+
   if (worker->GetReportCSPViolations()) {
-    JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, aValue));
-    if (NS_WARN_IF(!jsString)) {
-      JS_ClearPendingException(aCx);
-      return false;
-    }
-
-    nsAutoJSString scriptSample;
-    if (NS_WARN_IF(!scriptSample.init(aCx, jsString))) {
-      JS_ClearPendingException(aCx);
-      return false;
-    }
-
     nsString fileName;
     uint32_t lineNum = 0;
     uint32_t columnNum = 0;
@@ -826,15 +822,15 @@ static bool PreserveWrapper(JSContext* cx, JS::HandleObject obj) {
   return mozilla::dom::TryPreserveWrapper(obj);
 }
 
-static bool IsWorkerDebuggerGlobalOrSandbox(JSObject* aGlobal) {
+static bool IsWorkerDebuggerGlobalOrSandbox(JS::HandleObject aGlobal) {
   return IsWorkerDebuggerGlobal(aGlobal) || IsWorkerDebuggerSandbox(aGlobal);
 }
 
 JSObject* Wrap(JSContext* cx, JS::HandleObject existing, JS::HandleObject obj) {
-  JSObject* targetGlobal = JS::CurrentGlobalOrNull(cx);
+  JS::RootedObject targetGlobal(cx, JS::CurrentGlobalOrNull(cx));
 
   // Note: the JS engine unwraps CCWs before calling this callback.
-  JSObject* originGlobal = JS::GetNonCCWObjectGlobal(obj);
+  JS::RootedObject originGlobal(cx, JS::GetNonCCWObjectGlobal(obj));
 
   const js::Wrapper* wrapper = nullptr;
   if (IsWorkerDebuggerGlobalOrSandbox(targetGlobal) &&
@@ -975,7 +971,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     JSContext* cx = Context();
 
     js::SetPreserveWrapperCallback(cx, PreserveWrapper);
-    JS_InitDestroyPrincipalsCallback(cx, DestroyWorkerPrincipals);
+    JS_InitDestroyPrincipalsCallback(cx, WorkerPrincipal::Destroy);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     if (mWorkerPrivate->IsDedicatedWorker()) {
       JS_SetFutexCanWait(cx);
@@ -1018,6 +1014,11 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
 
   bool IsSystemCaller() const override {
     return mWorkerPrivate->UsesSystemPrincipal();
+  }
+
+  void ReportError(JSErrorReport* aReport,
+                   JS::ConstUTF8CharsZ aToStringResult) override {
+    mWorkerPrivate->ReportError(Context(), aToStringResult, aReport);
   }
 
   WorkerPrivate* GetWorkerPrivate() const { return mWorkerPrivate; }
@@ -1442,11 +1443,7 @@ bool RuntimeService::ScheduleWorker(WorkerPrivate* aWorkerPrivate) {
     }
   }
 
-  int32_t priority = aWorkerPrivate->IsChromeWorker()
-                         ? nsISupportsPriority::PRIORITY_NORMAL
-                         : nsISupportsPriority::PRIORITY_LOW;
-
-  if (NS_FAILED(thread->SetPriority(priority))) {
+  if (NS_FAILED(thread->SetPriority(nsISupportsPriority::PRIORITY_NORMAL))) {
     NS_WARNING("Could not set the thread's priority!");
   }
 
@@ -1612,14 +1609,11 @@ nsresult RuntimeService::Init() {
   // We assume atomic 32bit reads/writes. If this assumption doesn't hold on
   // some wacky platform then the worst that could happen is that the close
   // handler will run for a slightly different amount of time.
-  if (NS_FAILED(Preferences::AddIntVarCache(
-          &sDefaultJSSettings.content.maxScriptRuntime,
-          PREF_MAX_SCRIPT_RUN_TIME_CONTENT, MAX_SCRIPT_RUN_TIME_SEC)) ||
-      NS_FAILED(Preferences::AddIntVarCache(
-          &sDefaultJSSettings.chrome.maxScriptRuntime,
-          PREF_MAX_SCRIPT_RUN_TIME_CHROME, -1))) {
-    NS_WARNING("Failed to register timeout cache!");
-  }
+  Preferences::AddIntVarCache(&sDefaultJSSettings.content.maxScriptRuntime,
+                              PREF_MAX_SCRIPT_RUN_TIME_CONTENT,
+                              MAX_SCRIPT_RUN_TIME_SEC);
+  Preferences::AddIntVarCache(&sDefaultJSSettings.chrome.maxScriptRuntime,
+                              PREF_MAX_SCRIPT_RUN_TIME_CHROME, -1);
 
   int32_t maxPerDomain =
       Preferences::GetInt(PREF_WORKERS_MAX_PER_DOMAIN, MAX_WORKERS_PER_DOMAIN);

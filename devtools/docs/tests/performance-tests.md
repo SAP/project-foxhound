@@ -48,7 +48,7 @@ to focus on just one subtest run:
 ## How to run it on try?
 
 ```bash
-./mach try -b o -p linux64 -u none -t damp --rebuild-talos 6
+./mach try fuzzy --query "'linux64/ 'damp" --rebuild 6 --artifact
 ```
 * Linux appears to build and run quickly, and offers quite stable results over the other OSes.
 The vast majority of performance issues for DevTools are OS agnostic, so it doesn't really matter which one you run them on.
@@ -147,7 +147,7 @@ Compared to the other test suites, it isn't run on the cloud, but on dedicated h
 This is to ensure performance numbers are stable over time and between two runs.
 Talos runs various types of tests. More specifically, DAMP is a [Page loader test](https://wiki.mozilla.org/Buildbot/Talos/Tests#Page_Load_Tests).
 The [source code](http://searchfox.org/mozilla-central/source/testing/talos/talos/tests/devtools/) for DAMP is also in mozilla-central.
-The [main script](http://searchfox.org/mozilla-central/source/testing/talos/talos/tests/devtools/addon/content/damp.js) contains the implementation of all the tests described in "What does it do?" paragraph.
+See [Writing new performance test](./writing-perf-tests.md) for more information about the implementation of DAMP tests.
 
 ## How to see the performance trends?
 

@@ -3,15 +3,31 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include ClientIPCTypes;
+include IPCServiceWorkerDescriptor;
+include IPCServiceWorkerRegistrationDescriptor;
 include PBackgroundSharedTypes;
 include URIParams;
 include DOMTypes;
+include ProtocolTypes;
 
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using mozilla::StorageAccess from "mozilla/dom/ClientIPCUtils.h";
 
 namespace mozilla {
 namespace dom {
+
+struct ServiceWorkerData {
+  IPCServiceWorkerDescriptor descriptor;
+  IPCServiceWorkerRegistrationDescriptor registrationDescriptor;
+  nsString cacheName;
+  uint32_t loadFlags;
+  nsString id;
+};
+
+union OptionalServiceWorkerData {
+  void_t;
+  ServiceWorkerData;
+};
 
 struct RemoteWorkerData
 {
@@ -45,7 +61,9 @@ struct RemoteWorkerData
 
   StorageAccess storageAccess;
 
-  bool isSharedWorker;
+  OptionalServiceWorkerData serviceWorkerData;
+
+  nsID agentClusterId;
 };
 
 // ErrorData/ErrorDataNote correspond to WorkerErrorReport/WorkerErrorNote

@@ -35,10 +35,10 @@ interface nsITypeAheadFind : nsISupports
 
   /* Find aSearchString in page.  If aLinksOnly is true, only search the page's
    * hyperlinks for the string. */
-  unsigned short find(in AString aSearchString, in boolean aLinksOnly);
-
-  /* Find another match in the page. */
-  unsigned short findAgain(in boolean findBackwards, in boolean aLinksOnly);
+  unsigned short find(in AString aSearchString,
+                      in boolean aLinksOnly,
+                      in unsigned long aMode,
+                      in boolean aDontIterateFrames);
 
   /* Return the range of the most recent match. */
   Range getFoundRange();
@@ -80,6 +80,13 @@ interface nsITypeAheadFind : nsISupports
 
 
   /******************************* Constants *******************************/
+
+  /* Modes for Find() */
+  const unsigned long FIND_INITIAL = 0;
+  const unsigned long FIND_NEXT = 1;
+  const unsigned long FIND_PREVIOUS = 2;
+  const unsigned long FIND_FIRST = 3;
+  const unsigned long FIND_LAST = 4;
 
   /* Find return codes */
   const unsigned short FIND_FOUND    = 0;

@@ -43,6 +43,11 @@ run_schema = Schema({
     # control (.dsc), or a tarball.
     Required(Any('dsc', 'tarball')): source_definition,
 
+    # Package name. Normally derived from the source control or tarball file
+    # name. Use in case the name doesn't match DSC_PACKAGE_RE or
+    # SOURCE_PACKAGE_RE.
+    Optional('name'): basestring,
+
     # Patch to apply to the extracted source.
     Optional('patch'): basestring,
 
@@ -110,7 +115,9 @@ def docker_worker_debian_package(config, job, taskdesc):
     src_url = src['url']
     src_file = os.path.basename(src_url)
     src_sha256 = src['sha256']
-    package = package_re.match(src_file).group(0)
+    package = run.get('name')
+    if not package:
+        package = package_re.match(src_file).group(0)
     unpack = unpack.format(src_file=src_file, package=package)
 
     resolver = run.get('resolver', 'apt-get')
@@ -127,10 +134,8 @@ def docker_worker_debian_package(config, job, taskdesc):
     if 'patch' in run:
         # We don't use robustcheckout or run-task to get a checkout. So for
         # this one file we'd need from a checkout, download it.
-        env['PATCH_URL'] = '{head_repo}/raw-file/{head_rev}/build/debian-packages/{patch}'.format(
-            head_repo=config.params['head_repository'],
-            head_rev=config.params['head_rev'],
-            patch=run['patch'],
+        env["PATCH_URL"] = config.params.file_url(
+            "build/debian-packages/{patch}".format(patch=run["patch"]),
         )
         adjust += 'curl -sL $PATCH_URL | patch -p1 && '
     if 'pre-build-command' in run:

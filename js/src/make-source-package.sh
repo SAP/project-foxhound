@@ -94,13 +94,11 @@ case $cmd in
     cp -pPR \
         ${TOPSRCDIR}/memory/moz.build \
         ${TOPSRCDIR}/memory/build \
-        ${TOPSRCDIR}/memory/fallible \
         ${TOPSRCDIR}/memory/mozalloc \
         ${tgtpath}/memory/
 
     ${MKDIR} -p ${tgtpath}/modules
     cp -pPR \
-        ${TOPSRCDIR}/modules/brotli \
         ${TOPSRCDIR}/modules/fdlibm \
         ${TOPSRCDIR}/modules/zlib \
         ${tgtpath}/modules/

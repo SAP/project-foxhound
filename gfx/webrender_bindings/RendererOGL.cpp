@@ -20,7 +20,7 @@ namespace mozilla {
 namespace wr {
 
 wr::WrExternalImage wr_renderer_lock_external_image(
-    void* aObj, wr::WrExternalImageId aId, uint8_t aChannelIndex,
+    void* aObj, wr::ExternalImageId aId, uint8_t aChannelIndex,
     wr::ImageRendering aRendering) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
@@ -33,7 +33,7 @@ wr::WrExternalImage wr_renderer_lock_external_image(
   return texture->Lock(aChannelIndex, renderer->gl(), aRendering);
 }
 
-void wr_renderer_unlock_external_image(void* aObj, wr::WrExternalImageId aId,
+void wr_renderer_unlock_external_image(void* aObj, wr::ExternalImageId aId,
                                        uint8_t aChannelIndex) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
@@ -58,6 +58,12 @@ RendererOGL::RendererOGL(RefPtr<RenderThread>&& aThread,
   MOZ_ASSERT(mRenderer);
   MOZ_ASSERT(mBridge);
   MOZ_COUNT_CTOR(RendererOGL);
+
+  mNativeLayerRoot = mCompositor->GetWidget()->GetNativeLayerRoot();
+  if (mNativeLayerRoot) {
+    mNativeLayerForEntireWindow = mNativeLayerRoot->CreateLayer();
+    mNativeLayerRoot->AppendLayer(mNativeLayerForEntireWindow);
+  }
 }
 
 RendererOGL::~RendererOGL() {
@@ -67,6 +73,11 @@ RendererOGL::~RendererOGL() {
         << "Failed to make render context current during destroying.";
     // Leak resources!
     return;
+  }
+  if (mNativeLayerRoot) {
+    mNativeLayerRoot->RemoveLayer(mNativeLayerForEntireWindow);
+    mNativeLayerForEntireWindow = nullptr;
+    mNativeLayerRoot = nullptr;
   }
   wr_renderer_delete(mRenderer);
 }
@@ -78,6 +89,7 @@ wr::WrExternalImageHandler RendererOGL::GetExternalImageHandler() {
 }
 
 void RendererOGL::Update() {
+  mCompositor->Update();
   if (mCompositor->MakeCurrent()) {
     wr_renderer_update(mRenderer);
   }
@@ -109,7 +121,20 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   }
   // XXX set clear color if MOZ_WIDGET_ANDROID is defined.
 
-  if (!mCompositor->BeginFrame()) {
+  if (mNativeLayerForEntireWindow) {
+    gfx::IntRect bounds({}, mCompositor->GetBufferSize().ToUnknownSize());
+    mNativeLayerForEntireWindow->SetRect(bounds);
+#ifdef XP_MACOSX
+    mNativeLayerForEntireWindow->SetOpaqueRegion(
+        mCompositor->GetWidget()->GetOpaqueWidgetRegion().ToUnknownRegion());
+#endif
+  }
+
+  if (!mCompositor->BeginFrame(mNativeLayerForEntireWindow)) {
+    if (mCompositor->IsContextLost()) {
+      RenderThread::Get()->HandleDeviceReset("BeginFrame", /* aNotify */ true);
+    }
+    mCompositor->GetWidget()->PostRender(&widgetContext);
     return false;
   }
 
@@ -120,6 +145,7 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
                           aOutStats)) {
     RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
+    mCompositor->GetWidget()->PostRender(&widgetContext);
     return false;
   }
 
@@ -172,7 +198,13 @@ void RendererOGL::CheckGraphicsResetStatus() {
   }
 }
 
-void RendererOGL::WaitForGPU() { mCompositor->WaitForGPU(); }
+void RendererOGL::WaitForGPU() {
+  if (!mCompositor->WaitForGPU()) {
+    if (mCompositor->IsContextLost()) {
+      RenderThread::Get()->HandleDeviceReset("WaitForGPU", /* aNotify */ true);
+    }
+  }
+}
 
 void RendererOGL::Pause() { mCompositor->Pause(); }
 
@@ -199,7 +231,7 @@ RefPtr<WebRenderPipelineInfo> RendererOGL::FlushPipelineInfo() {
 }
 
 RenderTextureHost* RendererOGL::GetRenderTexture(
-    wr::WrExternalImageId aExternalImageId) {
+    wr::ExternalImageId aExternalImageId) {
   return mThread->GetRenderTexture(aExternalImageId);
 }
 

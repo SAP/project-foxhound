@@ -104,7 +104,7 @@ add_task(async function test_principal_cookies() {
   Assert.equal(Services.cookies.countCookiesFromHost("example.net"), 1);
 
   let uri = Services.io.newURI("http://example.com");
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     uri,
     {}
   );
@@ -124,7 +124,7 @@ add_task(async function test_principal_cookies() {
 
   // Now we delete all.
   uri = Services.io.newURI("http://example.net");
-  principal = Services.scriptSecurityManager.createCodebasePrincipal(uri, {});
+  principal = Services.scriptSecurityManager.createContentPrincipal(uri, {});
   await new Promise(aResolve => {
     Services.clearData.deleteDataFromPrincipal(
       principal,
@@ -138,4 +138,31 @@ add_task(async function test_principal_cookies() {
   });
 
   Assert.equal(Services.cookies.countCookiesFromHost("example.net"), 0);
+});
+
+add_task(async function test_localfile_cookies() {
+  const expiry = Date.now() + 24 * 60 * 60;
+  Services.cookies.add(
+    "", // local file
+    "path",
+    "name",
+    "value",
+    false /* secure */,
+    false /* http only */,
+    false /* session */,
+    expiry,
+    {},
+    Ci.nsICookie.SAMESITE_NONE
+  );
+
+  Assert.notEqual(Services.cookies.countCookiesFromHost(""), 0);
+
+  await new Promise(aResolve => {
+    Services.clearData.deleteDataFromLocalFiles(
+      true,
+      Ci.nsIClearDataService.CLEAR_COOKIES,
+      aResolve
+    );
+  });
+  Assert.equal(Services.cookies.countCookiesFromHost(""), 0);
 });

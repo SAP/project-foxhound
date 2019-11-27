@@ -3,12 +3,10 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 title = About Networking
-warning = This is very experimental. Do not use without adult supervision.
-show-next-time-checkbox = Show this warning next time
-ok = OK
 http = HTTP
 sockets = Sockets
 dns = DNS
+dnssuffix = DNS suffix
 websockets = WebSockets
 refresh = Refresh
 auto-refresh = Autorefresh every 3 seconds
@@ -59,3 +57,12 @@ rcwn-avg-long = Long Average
 rcwn-std-dev-long = Long Standard Deviation
 rcwn-cache-slow = Cache slow count
 rcwn-cache-not-slow = Cache not slow count
+networkid = Network ID
+networkid-id = Network ID
+
+## Link is intended as "network link"
+
+networkid-isUp = Link is up
+networkid-statusKnown = Link status is known
+
+##

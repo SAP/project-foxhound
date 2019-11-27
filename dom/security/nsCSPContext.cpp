@@ -45,7 +45,6 @@
 #include "mozilla/dom/CSPReportBinding.h"
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "nsINetworkInterceptController.h"
 #include "nsSandboxFlags.h"
 #include "nsIScriptElement.h"
@@ -53,6 +52,7 @@
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/Element.h"
 #include "nsXULAppAPI.h"
+#include "nsJSUtils.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -117,8 +117,7 @@ static void BlockedContentSourceToString(
 NS_IMETHODIMP
 nsCSPContext::ShouldLoad(nsContentPolicyType aContentType,
                          nsICSPEventListener* aCSPEventListener,
-                         nsIURI* aContentLocation, nsIURI* aRequestOrigin,
-                         nsISupports* aRequestContext,
+                         nsIURI* aContentLocation, nsISupports* aRequestContext,
                          const nsACString& aMimeTypeGuess,
                          nsIURI* aOriginalURIIfRedirect,
                          bool aSendViolationReports, const nsAString& aNonce,
@@ -211,6 +210,15 @@ bool nsCSPContext::permitsInternal(
       // decision may be wrong due to the inability to get the nonce, and will
       // incorrectly fail the unit tests.
       if (!aIsPreload && aSendViolationReports) {
+        uint32_t lineNumber = 0;
+        uint32_t columnNumber = 0;
+        nsAutoString spec;
+        JSContext* cx = nsContentUtils::GetCurrentJSContext();
+        if (cx) {
+          nsJSUtils::GetCallingLocation(cx, spec, &lineNumber, &columnNumber);
+          // If GetCallingLocation fails linenumber & columnNumber are set to 0
+          // anyway so we can skip checking if that is the case.
+        }
         AsyncReportViolation(
             aTriggeringElement, aCSPEventListener,
             (aSendContentLocationInViolationReports ? aContentLocation
@@ -220,10 +228,10 @@ bool nsCSPContext::permitsInternal(
                                        null */
             violatedDirective, p,   /* policy index        */
             EmptyString(),          /* no observer subject */
-            EmptyString(),          /* no source file      */
+            spec,                   /* source file      */
             EmptyString(),          /* no script sample    */
-            0,                      /* no line number      */
-            0);                     /* no column number    */
+            lineNumber,             /* line number      */
+            columnNumber);          /*  column number    */
       }
     }
   }
@@ -240,6 +248,7 @@ NS_IMPL_ISUPPORTS_CI(nsCSPContext, nsIContentSecurityPolicy, nsISerializable)
 
 nsCSPContext::nsCSPContext()
     : mInnerWindowID(0),
+      mSkipAllowInlineStyleCheck(false),
       mLoadingContext(nullptr),
       mLoadingPrincipal(nullptr),
       mQueueUpMessages(true) {
@@ -300,6 +309,8 @@ nsresult nsCSPContext::InitFromOther(nsCSPContext* aOtherContext) {
         aOtherContext->mReferrer, aOtherContext->mInnerWindowID);
   }
   NS_ENSURE_SUCCESS(rv, rv);
+
+  mSkipAllowInlineStyleCheck = aOtherContext->mSkipAllowInlineStyleCheck;
 
   for (auto policy : aOtherContext->mPolicies) {
     nsAutoString policyStr;
@@ -481,10 +492,21 @@ void nsCSPContext::reportInlineViolation(
             : NS_LITERAL_STRING(STYLE_HASH_VIOLATION_OBSERVER_TOPIC);
   }
 
-  // use selfURI as the sourceFile
-  nsAutoCString sourceFile;
-  if (mSelfURI) {
-    mSelfURI->GetSpec(sourceFile);
+  nsAutoString sourceFile;
+  uint32_t lineNumber;
+  uint32_t columnNumber;
+
+  JSContext* cx = nsContentUtils::GetCurrentJSContext();
+  if (!cx || !nsJSUtils::GetCallingLocation(cx, sourceFile, &lineNumber,
+                                            &columnNumber)) {
+    // use selfURI as the sourceFile
+    if (mSelfURI) {
+      nsAutoCString cSourceFile;
+      mSelfURI->GetSpec(cSourceFile);
+      sourceFile.Assign(NS_ConvertUTF8toUTF16(cSourceFile));
+    }
+    lineNumber = aLineNumber;
+    columnNumber = aColumnNumber;
   }
 
   AsyncReportViolation(aTriggeringElement, aCSPEventListener,
@@ -494,10 +516,10 @@ void nsCSPContext::reportInlineViolation(
                        aViolatedDirective,             // aViolatedDirective
                        aViolatedPolicyIndex,           // aViolatedPolicyIndex
                        observerSubject,                // aObserverSubject
-                       NS_ConvertUTF8toUTF16(sourceFile),  // aSourceFile
-                       aContent,                           // aScriptSample
-                       aLineNumber,                        // aLineNum
-                       aColumnNumber);                     // aColumnNum
+                       sourceFile,                     // aSourceFile
+                       aContent,                       // aScriptSample
+                       lineNumber,                     // aLineNum
+                       columnNumber);                  // aColumnNum
 }
 
 NS_IMETHODIMP
@@ -574,6 +596,91 @@ nsCSPContext::GetAllowsInline(nsContentPolicyType aContentType,
                             violatedDirective, i, aLineNumber, aColumnNumber);
     }
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsCSPContext::GetAllowsNavigateTo(nsIURI* aURI, nsILoadInfo* aLoadInfo,
+                                  bool aWasRedirected, bool aEnforceWhitelist,
+                                  bool* outAllowsNavigateTo) {
+  /*
+   * The matrix below shows the different values of (aWasRedirect,
+   * aEnforceWhitelist) for the three different checks we do.
+   *
+   *  Navigation    | Start Loading  | Initiate Redirect | Document
+   *                | (nsDocShell)   | (nsCSPService)    |
+   *  -----------------------------------------------------------------
+   *  A -> B          (false,false)    -                   (false,true)
+   *  A -> ... -> B   (false,false)    (true,false)        (true,true)
+   */
+  *outAllowsNavigateTo = false;
+
+  EnsureIPCPoliciesRead();
+  // The 'form-action' directive overrules 'navigate-to' for form submissions.
+  // So in case this is a form submission and the directive 'form-action' is
+  // present then there is nothing for us to do here, see: 6.3.3.1.2
+  // https://www.w3.org/TR/CSP3/#navigate-to-pre-navigate
+  if (aLoadInfo->GetIsFormSubmission()) {
+    for (unsigned long i = 0; i < mPolicies.Length(); i++) {
+      if (mPolicies[i]->hasDirective(
+              nsIContentSecurityPolicy::FORM_ACTION_DIRECTIVE)) {
+        *outAllowsNavigateTo = true;
+        return NS_OK;
+      }
+    }
+  }
+
+  bool atLeastOneBlock = false;
+  for (unsigned long i = 0; i < mPolicies.Length(); i++) {
+    if (!mPolicies[i]->allowsNavigateTo(aURI, aWasRedirected,
+                                        aEnforceWhitelist)) {
+      if (!mPolicies[i]->getReportOnlyFlag()) {
+        atLeastOneBlock = true;
+      }
+
+      // If the load encountered a server side redirect, the spec suggests to
+      // remove the path component from the URI, see:
+      // https://www.w3.org/TR/CSP3/#source-list-paths-and-redirects
+      nsCOMPtr<nsIURI> blockedURIForReporting = aURI;
+      if (aWasRedirected) {
+        nsAutoCString prePathStr;
+        nsCOMPtr<nsIURI> prePathURI;
+        nsresult rv = aURI->GetPrePath(prePathStr);
+        NS_ENSURE_SUCCESS(rv, rv);
+        rv = NS_NewURI(getter_AddRefs(blockedURIForReporting), prePathStr);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+      // Lines numbers and source file for the violation report
+      uint32_t lineNumber = 0;
+      uint32_t columnNumber = 0;
+      nsAutoCString spec;
+      JSContext* cx = nsContentUtils::GetCurrentJSContext();
+      if (cx) {
+        nsJSUtils::GetCallingLocation(cx, spec, &lineNumber, &columnNumber);
+        // If GetCallingLocation fails linenumber & columnNumber are set to 0
+        // anyway so we can skip checking if that is the case.
+      }
+
+      // Report the violation
+      nsresult rv = AsyncReportViolation(
+          nullptr,                                    // aTriggeringElement
+          nullptr,                                    // aCSPEventListener
+          blockedURIForReporting,                     // aBlockedURI
+          nsCSPContext::BlockedContentSource::eSelf,  // aBlockedSource
+          nullptr,                                    // aOriginalURI
+          NS_LITERAL_STRING("navigate-to"),           // aViolatedDirective
+          i,                                          // aViolatedPolicyIndex
+          EmptyString(),                              // aObserverSubject
+          NS_ConvertUTF8toUTF16(spec),                // aSourceFile
+          EmptyString(),                              // aScriptSample
+          lineNumber,                                 // aLineNum
+          columnNumber);                              // aColumnNum
+      NS_ENSURE_SUCCESS(rv, rv);
+    }
+  }
+
+  *outAllowsNavigateTo = !atLeastOneBlock;
   return NS_OK;
 }
 
@@ -762,6 +869,15 @@ nsCSPContext::GetReferrer(nsAString& outReferrer) {
 
 uint64_t nsCSPContext::GetInnerWindowID() { return mInnerWindowID; }
 
+bool nsCSPContext::GetSkipAllowInlineStyleCheck() {
+  return mSkipAllowInlineStyleCheck;
+}
+
+void nsCSPContext::SetSkipAllowInlineStyleCheck(
+    bool aSkipAllowInlineStyleCheck) {
+  mSkipAllowInlineStyleCheck = aSkipAllowInlineStyleCheck;
+}
+
 NS_IMETHODIMP
 nsCSPContext::EnsureEventTarget(nsIEventTarget* aEventTarget) {
   NS_ENSURE_ARG(aEventTarget);
@@ -861,12 +977,8 @@ void StripURIForReporting(nsIURI* aURI, nsIURI* aSelfURI,
   // aURI has a scheme of data, blob, or filesystem), then return the
   // ASCII serialization of uri’s scheme.
   bool isHttpFtpOrWs =
-      (NS_SUCCEEDED(aURI->SchemeIs("http", &isHttpFtpOrWs)) && isHttpFtpOrWs) ||
-      (NS_SUCCEEDED(aURI->SchemeIs("https", &isHttpFtpOrWs)) &&
-       isHttpFtpOrWs) ||
-      (NS_SUCCEEDED(aURI->SchemeIs("ftp", &isHttpFtpOrWs)) && isHttpFtpOrWs) ||
-      (NS_SUCCEEDED(aURI->SchemeIs("ws", &isHttpFtpOrWs)) && isHttpFtpOrWs) ||
-      (NS_SUCCEEDED(aURI->SchemeIs("wss", &isHttpFtpOrWs)) && isHttpFtpOrWs);
+      (aURI->SchemeIs("http") || aURI->SchemeIs("https") ||
+       aURI->SchemeIs("ftp") || aURI->SchemeIs("ws") || aURI->SchemeIs("wss"));
 
   if (!isHttpFtpOrWs) {
     // not strictly spec compliant, but what we really care about is
@@ -1087,10 +1199,7 @@ nsresult nsCSPContext::SendReports(
 
     // log a warning to console if scheme is not http or https
     bool isHttpScheme =
-        (NS_SUCCEEDED(reportURI->SchemeIs("http", &isHttpScheme)) &&
-         isHttpScheme) ||
-        (NS_SUCCEEDED(reportURI->SchemeIs("https", &isHttpScheme)) &&
-         isHttpScheme);
+        reportURI->SchemeIs("http") || reportURI->SchemeIs("https");
 
     if (!isHttpScheme) {
       AutoTArray<nsString, 1> params = {reportURIs[r]};
@@ -1310,8 +1419,7 @@ class CSPReportSenderRunnable final : public Runnable {
       mBlockedURI->GetSpec(blockedContentSource);
       if (blockedContentSource.Length() >
           nsCSPContext::ScriptSampleMaxLength()) {
-        bool isData = false;
-        rv = mBlockedURI->SchemeIs("data", &isData);
+        bool isData = mBlockedURI->SchemeIs("data");
         if (NS_SUCCEEDED(rv) && isData &&
             blockedContentSource.Length() >
                 nsCSPContext::ScriptSampleMaxLength()) {
@@ -1448,7 +1556,8 @@ nsCSPContext::PermitsAncestry(nsIDocShell* aDocShell,
   nsCOMPtr<nsIURI> uriClone;
 
   // iterate through each docShell parent item
-  while (NS_SUCCEEDED(treeItem->GetParent(getter_AddRefs(parentTreeItem))) &&
+  while (NS_SUCCEEDED(
+             treeItem->GetInProcessParent(getter_AddRefs(parentTreeItem))) &&
          parentTreeItem != nullptr) {
     // stop when reaching chrome
     if (parentTreeItem->ItemType() == nsIDocShellTreeItem::typeChrome) {

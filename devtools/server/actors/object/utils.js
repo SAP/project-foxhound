@@ -1,12 +1,10 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const { assert } = DevToolsUtils;
 
@@ -200,8 +198,10 @@ function getArrayLength(object) {
     throw new Error("Expected an array, got a " + object.class);
   }
 
-  // Real arrays have a reliable `length` own property.
-  if (object.class === "Array") {
+  // Real arrays have a reliable `length` own property. When replaying, always
+  // get the length property, as we can't invoke getters on the proxy returned
+  // by unsafeDereference().
+  if (object.class === "Array" || isReplaying) {
     return DevToolsUtils.getProperty(object, "length");
   }
 

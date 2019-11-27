@@ -44,6 +44,44 @@ import mozpack.path as mozpath
 BROWSERTIME_ROOT = os.path.dirname(__file__)
 
 
+def node_path():
+    from mozbuild.nodeutil import find_node_executable
+    node, _ = find_node_executable()
+
+    return os.path.abspath(node)
+
+
+def package_path():
+    '''The path to the `browsertime` directory.
+
+    Override the default with the `BROWSERTIME` environment variable.'''
+    override = os.environ.get('BROWSERTIME', None)
+    if override:
+        return override
+
+    return mozpath.join(BROWSERTIME_ROOT, 'node_modules', 'browsertime')
+
+
+def browsertime_path():
+    '''The path to the `browsertime.js` script.'''
+    # On Windows, invoking `node_modules/.bin/browsertime{.cmd}`
+    # doesn't work when invoked as an argument to our specific
+    # binary.  Since we want our version of node, invoke the
+    # actual script directly.
+    return mozpath.join(
+        package_path(),
+        'bin',
+        'browsertime.js')
+
+
+def visualmetrics_path():
+    '''The path to the `visualmetrics.py` script.'''
+    return mozpath.join(
+        package_path(),
+        'vendor',
+        'visualmetrics.py')
+
+
 def host_platform():
     is_64bits = sys.maxsize > 2**32
 
@@ -64,7 +102,7 @@ host_fetches = {
     'darwin': {
         'ffmpeg': {
             'type': 'static-url',
-            'url': 'https://ffmpeg.zeranoe.com/builds/macos64/static/ffmpeg-4.1.1-macos64-static.zip',  # noqa
+            'url': 'https://github.com/ncalexan/geckodriver/releases/download/v0.24.0-android/ffmpeg-4.1.1-macos64-static.zip',  # noqa
             # An extension to `fetch` syntax.
             'path': 'ffmpeg-4.1.1-macos64-static',
         },
@@ -81,9 +119,9 @@ host_fetches = {
     'linux64': {
         'ffmpeg': {
             'type': 'static-url',
-            'url': 'https://www.johnvansickle.com/ffmpeg/old-releases/ffmpeg-4.0.3-64bit-static.tar.xz',  # noqa
+            'url': 'https://github.com/ncalexan/geckodriver/releases/download/v0.24.0-android/ffmpeg-4.1.4-i686-static.tar.xz',  # noqa
             # An extension to `fetch` syntax.
-            'path': 'ffmpeg-4.0.3-64bit-static',
+            'path': 'ffmpeg-4.1.4-i686-static',
         },
         # TODO: install a static ImageMagick.  All easily available binaries are
         # not statically linked, so they will (mostly) fail at runtime due to
@@ -93,7 +131,7 @@ host_fetches = {
     'win64': {
         'ffmpeg': {
             'type': 'static-url',
-            'url': 'https://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-4.1.1-win64-static.zip',  # noqa
+            'url': 'https://github.com/ncalexan/geckodriver/releases/download/v0.24.0-android/ffmpeg-4.1.1-win64-static.zip',  # noqa
             # An extension to `fetch` syntax.
             'path': 'ffmpeg-4.1.1-win64-static',
         },
@@ -126,27 +164,31 @@ class MachBrowsertime(MachCommandBase):
     def setup(self, should_clobber=False):
         r'''Install browsertime and visualmetrics.py requirements.'''
 
+        automation = bool(os.environ.get('MOZ_AUTOMATION'))
+
         from mozbuild.action.tooltool import unpack_file
         from mozbuild.artifact_cache import ArtifactCache
         sys.path.append(mozpath.join(self.topsrcdir, 'tools', 'lint', 'eslint'))
         import setup_helper
 
-        if host_platform().startswith('linux'):
+        if not os.environ.get('MOZ_AUTOMATION') and host_platform().startswith('linux'):
             # On Linux ImageMagick needs to be installed manually, and `mach bootstrap` doesn't
             # do that (yet).  Provide some guidance.
-            import which
-            im_programs = ('compare', 'convert', 'mogrify')
             try:
-                for im_program in im_programs:
-                    which.which(im_program)
-            except which.WhichError as e:
-                print('Error: {} On Linux, ImageMagick must be on the PATH. '
-                      'Install ImageMagick manually and try again (or update PATH). '
-                      'On Ubuntu and Debian, try `sudo apt-get install imagemagick`. '
-                      'On Fedora, try `sudo dnf install imagemagick`. '
-                      'On CentOS, try `sudo yum install imagemagick`.'
-                      .format(e))
-                return 1
+                from shutil import which
+            except ImportError:
+                from shutil_which import which
+
+            im_programs = ('compare', 'convert', 'mogrify')
+            for im_program in im_programs:
+                prog = which(im_program)
+                if not prog:
+                    print('Error: On Linux, ImageMagick must be on the PATH. '
+                          'Install ImageMagick manually and try again (or update PATH). '
+                          'On Ubuntu and Debian, try `sudo apt-get install imagemagick`. '
+                          'On Fedora, try `sudo dnf install imagemagick`. '
+                          'On CentOS, try `sudo yum install imagemagick`.')
+                    return 1
 
         # Download the visualmetrics.py requirements.
         artifact_cache = ArtifactCache(self.artifact_cache_path,
@@ -188,59 +230,25 @@ class MachBrowsertime(MachCommandBase):
         status = setup_helper.package_setup(
             BROWSERTIME_ROOT,
             'browsertime',
-            should_clobber=should_clobber)
+            should_clobber=should_clobber,
+            no_optional=automation)
 
         if status:
             return status
 
+        if automation:
+            return 0
+
         return self.check()
-
-    @property
-    def node_path(self):
-        from mozbuild.nodeutil import find_node_executable
-        node, _ = find_node_executable()
-
-        return os.path.abspath(node)
 
     def node(self, args):
         r'''Invoke node (interactively) with the given arguments.'''
         return self.run_process(
-            [self.node_path] + args,
+            [node_path()] + args,
             append_env=self.append_env(),
             pass_thru=True,  # Allow user to run Node interactively.
             ensure_exit_code=False,  # Don't throw on non-zero exit code.
             cwd=mozpath.join(self.topsrcdir))
-
-    @property
-    def package_path(self):
-        r'''The path to the `browsertime` directory.
-
-        Override the default with the `BROWSERTIME` environment variable.'''
-        override = os.environ.get('BROWSERTIME', None)
-        if override:
-            return override
-
-        return mozpath.join(BROWSERTIME_ROOT, 'node_modules', 'browsertime')
-
-    @property
-    def browsertime_path(self):
-        '''The path to the `browsertime.js` script.'''
-        # On Windows, invoking `node_modules/.bin/browsertime{.cmd}`
-        # doesn't work when invoked as an argument to our specific
-        # binary.  Since we want our version of node, invoke the
-        # actual script directly.
-        return mozpath.join(
-            self.package_path,
-            'bin',
-            'browsertime.js')
-
-    @property
-    def visualmetrics_path(self):
-        '''The path to the `visualmetrics.py` script.'''
-        return mozpath.join(
-            self.package_path,
-            'vendor',
-            'visualmetrics.py')
 
     def append_env(self, append_path=True):
         fetches = host_fetches[host_platform()]
@@ -270,7 +278,7 @@ class MachBrowsertime(MachCommandBase):
         # scripts, finds the binary we're invoking with.  Without this, it's
         # easy for compiled extensions to get mismatched versions of the Node.js
         # extension API.
-        node_dir = os.path.dirname(self.node_path)
+        node_dir = os.path.dirname(node_path())
         path = [node_dir] + path
 
         append_env = {
@@ -318,7 +326,7 @@ class MachBrowsertime(MachCommandBase):
 
         args = ['--check']
         status = self.run_process(
-            [self.virtualenv_manager.python_path, self.visualmetrics_path] + args,
+            [self.virtualenv_manager.python_path, visualmetrics_path()] + args,
             # For --check, don't allow user's path to interfere with
             # path testing except on Linux, where ImageMagick needs to
             # be installed manually.
@@ -340,7 +348,7 @@ class MachBrowsertime(MachCommandBase):
         sys.stdout.flush()
         sys.stderr.flush()
 
-        return self.node([self.browsertime_path] + ['--version'])
+        return self.node([browsertime_path()] + ['--version'])
 
     def extra_default_args(self, args=[]):
         # Add Mozilla-specific default arguments.  This is tricky because browsertime is quite
@@ -400,7 +408,7 @@ class MachBrowsertime(MachCommandBase):
 
         self._activate_virtualenv()
 
-        return self.node([self.browsertime_path] + self.extra_default_args(args) + args)
+        return self.node([browsertime_path()] + self.extra_default_args(args) + args)
 
     @Command('visualmetrics', category='testing',
              description='Run visualmetrics.py')
@@ -431,7 +439,7 @@ class MachBrowsertime(MachCommandBase):
                 '75',
                 '-vvvv']
         return self.run_process(
-            [self.visualmetrics_path] + args,
+            [visualmetrics_path()] + args,
             append_env=self.append_env(),
             pass_thru=True,
             ensure_exit_code=False,  # Don't throw on non-zero exit code.

@@ -268,10 +268,10 @@ var gAssertions = {
     // work with a copy of the list.
     urls = urls.slice(0);
     var doLookup = function() {
-      if (urls.length > 0) {
+      if (urls.length) {
         var tables = useMoz ? mozTables : allTables;
         var fragment = urls.shift();
-        var principal = Services.scriptSecurityManager.createCodebasePrincipal(
+        var principal = Services.scriptSecurityManager.createContentPrincipal(
           Services.io.newURI("http://" + fragment),
           {}
         );
@@ -292,7 +292,7 @@ var gAssertions = {
   },
 
   checkTables(url, expected, cb) {
-    var principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    var principal = Services.scriptSecurityManager.createContentPrincipal(
       Services.io.newURI("http://" + url),
       {}
     );
@@ -382,7 +382,7 @@ function doUpdateTest(updates, assertions, successCallback, errorCallback) {
   };
 
   var runUpdate = function() {
-    if (updates.length > 0) {
+    if (updates.length) {
       var update = updates.shift();
       doStreamUpdate(update, runUpdate, errorUpdate, null);
     } else {

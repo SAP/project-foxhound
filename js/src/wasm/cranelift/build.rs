@@ -47,6 +47,7 @@ fn main() {
             "c++",
             "-std=gnu++14",
             "-fno-sized-deallocation",
+            "-fno-aligned-new",
             "-DRUST_BINDGEN",
         ])
         .clang_arg("-I../..");
@@ -73,7 +74,7 @@ fn main() {
             }
         }
         None => {
-            println!("cargo:warning={}", "MOZ_TOPOBJDIR should be set by default, otherwise the build is not guaranted to finish.");
+            println!("cargo:warning=MOZ_TOPOBJDIR should be set by default, otherwise the build is not guaranted to finish.");
         }
     }
 

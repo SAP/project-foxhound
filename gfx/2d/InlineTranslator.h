@@ -30,6 +30,8 @@ using gfx::Translator;
 
 class InlineTranslator : public Translator {
  public:
+  InlineTranslator();
+
   explicit InlineTranslator(DrawTarget* aDT, void* aFontContext = nullptr);
 
   bool TranslateRecording(char*, size_t len);
@@ -64,8 +66,15 @@ class InlineTranslator : public Translator {
   }
 
   GradientStops* LookupGradientStops(ReferencePtr aRefPtr) final {
-    GradientStops* result = mGradientStops.GetWeak(aRefPtr);
-    MOZ_ASSERT(result);
+    DebugOnly<bool> found;
+    GradientStops* result = mGradientStops.GetWeak(aRefPtr
+#if defined(DEBUG)
+                                                   ,
+                                                   &found
+#endif
+    );
+    // GradientStops can be null in some circumstances.
+    MOZ_ASSERT(found);
     return result;
   }
 
@@ -156,13 +165,18 @@ class InlineTranslator : public Translator {
       ReferencePtr aRefPtr, const gfx::IntSize& aSize,
       gfx::SurfaceFormat aFormat) override;
 
-  mozilla::gfx::DrawTarget* GetReferenceDrawTarget() final { return mBaseDT; }
+  mozilla::gfx::DrawTarget* GetReferenceDrawTarget() final {
+    MOZ_ASSERT(mBaseDT, "mBaseDT has not been initialized.");
+    return mBaseDT;
+  }
 
   void* GetFontContext() final { return mFontContext; }
   std::string GetError() { return mError; }
 
- private:
+ protected:
   RefPtr<DrawTarget> mBaseDT;
+
+ private:
   void* mFontContext;
   std::string mError;
 

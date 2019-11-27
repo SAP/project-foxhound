@@ -225,8 +225,6 @@ class Image : public imgIContainer {
   virtual void SetHasError() = 0;
 
   virtual nsIURI* GetURI() const = 0;
-
-  virtual void ReportUseCounters() {}
 };
 
 class ImageResource : public Image {
@@ -324,7 +322,7 @@ class ImageResource : public Image {
   uint64_t mInnerWindowId;
   uint32_t mAnimationConsumers;
   uint16_t mAnimationMode;  // Enum values in imgIContainer
-  bool mInitialized : 1;    // Have we been initalized?
+  bool mInitialized : 1;    // Have we been initialized?
   bool mAnimating : 1;      // Are we currently animating?
   bool mError : 1;          // Error handling
 

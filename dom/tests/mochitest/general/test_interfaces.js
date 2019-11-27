@@ -384,6 +384,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FormData", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FormDataEvent", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FontFace", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FontFaceSet", insecureContext: true },
@@ -630,6 +632,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Location", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "MathMLElement", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaCapabilities", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "MediaCapabilitiesInfo", insecureContext: true },
@@ -848,7 +852,7 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PluginArray", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PointerEvent", insecureContext: true, android: false },
+  { name: "PointerEvent", insecureContext: true, fennec: false },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PopStateEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -918,14 +922,13 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PublicKeyCredential" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushManager", insecureContext: true, fennecOrDesktop: true },
+  { name: "PushManager", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "PushSubscription", insecureContext: true, fennecOrDesktop: true },
+  { name: "PushSubscription", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   {
     name: "PushSubscriptionOptions",
     insecureContext: true,
-    fennecOrDesktop: true,
   },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "RadioNodeList", insecureContext: true },
@@ -1232,8 +1235,6 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "SVGViewElement", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "SVGZoomAndPan", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Text", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "TextDecoder", insecureContext: true },
@@ -1427,7 +1428,7 @@ function createInterfaceMap() {
           // false.  That way entries without an insecureContext annotation
           // will get treated as "insecureContext: false", which means exposed
           // only in secure contexts.
-          (isInsecureContext && !Boolean(entry.insecureContext)) ||
+          (isInsecureContext && !entry.insecureContext) ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

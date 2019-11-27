@@ -326,7 +326,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   bool IsTooShort();
   bool IsValueMissing() const;
   bool HasTypeMismatch() const;
-  bool HasPatternMismatch() const;
+  mozilla::Maybe<bool> HasPatternMismatch() const;
   bool IsRangeOverflow() const;
   bool IsRangeUnderflow() const;
   bool HasStepMismatch(bool aUseZeroIfValueNaN = false) const;
@@ -469,6 +469,11 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
 
   void SetAutofocus(bool aValue, ErrorResult& aRv) {
     SetHTMLBoolAttr(nsGkAtoms::autofocus, aValue, aRv);
+  }
+
+  void GetCapture(nsAString& aValue);
+  void SetCapture(const nsAString& aValue, ErrorResult& aRv) {
+    SetHTMLAttr(nsGkAtoms::capture, aValue, aRv);
   }
 
   bool DefaultChecked() const {
@@ -1377,11 +1382,6 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
    * time and month. TODO: week and datetime-local.
    */
   static bool IsDateTimeInputType(uint8_t aType);
-
-  /**
-   * Flushes the layout frame tree to make sure we have up-to-date frames.
-   */
-  void FlushFrames();
 
   /**
    * Returns true if the element should prevent dispatching another DOMActivate.

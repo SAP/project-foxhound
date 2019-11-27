@@ -2,19 +2,23 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-# If we add unicode_literals, Python 2.6.1 (required for OS X 10.6) breaks.
-from __future__ import absolute_import, print_function
+from __future__ import absolute_import, print_function, unicode_literals
 
 import platform
 import sys
 import os
 import subprocess
-try:
+
+# NOTE: This script is intended to be run with a vanilla Python install.  We
+# have to rely on the standard library instead of Python 2+3 helpers like
+# the six module.
+if sys.version_info < (3,):
     from ConfigParser import (
         Error as ConfigParserError,
         RawConfigParser,
     )
-except ImportError:
+    input = raw_input  # noqa
+else:
     from configparser import (
         Error as ConfigParserError,
         RawConfigParser,
@@ -30,6 +34,7 @@ from mozboot.gentoo import GentooBootstrapper
 from mozboot.osx import OSXBootstrapper
 from mozboot.openbsd import OpenBSDBootstrapper
 from mozboot.archlinux import ArchlinuxBootstrapper
+from mozboot.solus import SolusBootstrapper
 from mozboot.windows import WindowsBootstrapper
 from mozboot.mozillabuild import MozillaBuildBootstrapper
 from mozboot.util import (
@@ -58,6 +63,7 @@ APPLICATIONS_LIST = [
     ('GeckoView/Firefox for Android', 'mobile_android'),
 ]
 
+# TODO Legacy Python 2.6 code, can be removed.
 # This is a workaround for the fact that we must support python2.6 (which has
 # no OrderedDict)
 APPLICATIONS = dict(
@@ -78,7 +84,7 @@ If you would like to use a different directory, hit CTRL+c and set the
 MOZBUILD_STATE_PATH environment variable to the directory you'd like to
 use and re-run the bootstrapper.
 
-Would you like to create this directory? (Yn):'''
+Would you like to create this directory?'''
 
 STYLO_NODEJS_DIRECTORY_MESSAGE = '''
 Stylo and NodeJS packages require a directory to store shared, persistent
@@ -218,7 +224,7 @@ def update_or_create_build_telemetry_config(path):
     if not config.has_section('build'):
         config.add_section('build')
     config.set('build', 'telemetry', 'true')
-    with open(path, 'wb') as f:
+    with open(path, 'w') as f:
         config.write(f)
     return True
 
@@ -241,7 +247,18 @@ class Bootstrapper(object):
                 'no_system_changes': no_system_changes}
 
         if sys.platform.startswith('linux'):
+            # TODO: don't call `linux_distribution` at all since it's deprecated
             distro, version, dist_id = platform.linux_distribution()
+
+            # Read the standard `os-release` configuration
+            if distro == '' and os.path.exists('/etc/os-release'):
+                d = {}
+                for line in open('/etc/os-release'):
+                    k, v = line.rstrip().split("=")
+                    d[k] = v.strip('"')
+                distro = d.get("NAME")
+                version = d.get("VERSION_ID")
+                dist_id = d.get("ID")
 
             if distro in ('CentOS', 'CentOS Linux', 'Fedora'):
                 cls = CentOSFedoraBootstrapper
@@ -251,12 +268,14 @@ class Bootstrapper(object):
                 args['distro'] = distro
             elif distro in ('Gentoo Base System', 'Funtoo Linux - baselayout '):
                 cls = GentooBootstrapper
+            elif distro in ('Solus'):
+                cls = SolusBootstrapper
             elif os.path.exists('/etc/arch-release'):
                 # Even on archlinux, platform.linux_distribution() returns ['','','']
                 cls = ArchlinuxBootstrapper
             else:
                 raise NotImplementedError('Bootstrap support for this Linux '
-                                          'distro not yet available.')
+                                          'distro not yet available: ' + distro)
 
             args['version'] = version
             args['dist_id'] = dist_id
@@ -298,7 +317,7 @@ class Bootstrapper(object):
         print(CLONE_VCS.format(repo_name, vcs))
 
         while True:
-            dest = raw_input(CLONE_VCS_PROMPT.format(vcs))
+            dest = input(CLONE_VCS_PROMPT.format(vcs))
             dest = dest.strip()
             if not dest:
                 return ''
@@ -643,7 +662,8 @@ def current_firefox_checkout(check_output, env, hg=None):
             try:
                 node = check_output([hg, 'log', '-r', '0', '--template', '{node}'],
                                     cwd=path,
-                                    env=env)
+                                    env=env,
+                                    universal_newlines=True)
                 if node in HG_ROOT_REVISIONS:
                     return ('hg', path)
                 # Else the root revision is different. There could be nested

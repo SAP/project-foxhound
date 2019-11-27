@@ -121,6 +121,11 @@ VIAddVersionKey "OriginalFilename" "setup.exe"
 !insertmacro WriteRegStr2
 !insertmacro WriteRegDWORD2
 
+; This needs to be inserted after InitHashAppModelId because it uses
+; $AppUserModelID and the compiler can't handle using variables lexically before
+; they've been declared.
+!insertmacro GetInstallerRegistryPref
+
 !include shared.nsh
 
 ; Helper macros for ui callbacks. Insert these after shared.nsh
@@ -944,7 +949,7 @@ Function LaunchApp
   ${GetParameters} $0
   ${GetOptions} "$0" "/UAC:" $1
   ${If} ${Errors}
-    ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\""
+    ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\" -first-startup"
   ${Else}
     GetFunctionAddress $0 LaunchAppFromElevatedProcess
     UAC::ExecCodeSegment $0
@@ -957,7 +962,7 @@ Function LaunchAppFromElevatedProcess
   ; Set our current working directory to the application's install directory
   ; otherwise the 7-Zip temp directory will be in use and won't be deleted.
   SetOutPath "$INSTDIR"
-  ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\""
+  ${ExecAndWaitForInputIdle} "$\"$INSTDIR\${FileMainEXE}$\" -first-startup"
 FunctionEnd
 
 Function SendPing

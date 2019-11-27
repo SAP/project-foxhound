@@ -37,6 +37,7 @@
 #include "common/mem.h"
 #include "common/validate.h"
 
+#include "src/fg_apply.h"
 #include "src/internal.h"
 #include "src/log.h"
 #include "src/obu.h"
@@ -44,12 +45,12 @@
 #include "src/ref.h"
 #include "src/thread_task.h"
 #include "src/wedge.h"
-#include "src/film_grain.h"
 
 static COLD void init_internal(void) {
     dav1d_init_wedge_masks();
     dav1d_init_interintra_masks();
     dav1d_init_qm_tables();
+    dav1d_init_thread();
 }
 
 COLD const char *dav1d_version(void) {
@@ -152,14 +153,7 @@ COLD int dav1d_open(Dav1dContext **const c_out, const Dav1dSettings *const s) {
         for (int m = 0; m < s->n_tile_threads; m++) {
             Dav1dTileContext *const t = &f->tc[m];
             t->f = f;
-            t->cf = dav1d_alloc_aligned(32 * 32 * sizeof(int32_t), 32);
-            if (!t->cf) goto error;
-            t->scratch.mem = dav1d_alloc_aligned(128 * 128 * 4, 32);
-            if (!t->scratch.mem) goto error;
-            memset(t->cf, 0, 32 * 32 * sizeof(int32_t));
-            t->emu_edge =
-                dav1d_alloc_aligned(320 * (256 + 7) * sizeof(uint16_t), 32);
-            if (!t->emu_edge) goto error;
+            memset(t->cf_16bpc, 0, sizeof(t->cf_16bpc));
             if (f->n_tc > 1) {
                 if (pthread_mutex_init(&t->tile_thread.td.lock, NULL)) goto error;
                 if (pthread_cond_init(&t->tile_thread.td.cond, NULL)) {
@@ -296,13 +290,13 @@ static int output_image(Dav1dContext *const c, Dav1dPicture *const out,
     switch (out->p.bpc) {
 #if CONFIG_8BPC
     case 8:
-        dav1d_apply_grain_8bpc(out, in);
+        dav1d_apply_grain_8bpc(&c->dsp[0].fg, out, in);
         break;
 #endif
 #if CONFIG_16BPC
     case 10:
     case 12:
-        dav1d_apply_grain_16bpc(out, in);
+        dav1d_apply_grain_16bpc(&c->dsp[(out->p.bpc >> 1) - 4].fg, out, in);
         break;
 #endif
     default:
@@ -416,8 +410,10 @@ void dav1d_flush(Dav1dContext *const c) {
 
     c->mastering_display = NULL;
     c->content_light = NULL;
+    c->itut_t35 = NULL;
     dav1d_ref_dec(&c->mastering_display_ref);
     dav1d_ref_dec(&c->content_light_ref);
+    dav1d_ref_dec(&c->itut_t35_ref);
 
     if (c->n_fc == 1) return;
 
@@ -501,18 +497,12 @@ static COLD void close_internal(Dav1dContext **const c_out, int flush) {
             pthread_cond_destroy(&f->tile_thread.icond);
             freep(&f->tile_thread.task_idx_to_sby_and_tile_idx);
         }
-        for (int m = 0; f->tc && m < f->n_tc; m++) {
-            Dav1dTileContext *const t = &f->tc[m];
-            dav1d_free_aligned(t->cf);
-            dav1d_free_aligned(t->scratch.mem);
-            dav1d_free_aligned(t->emu_edge);
-        }
         for (int m = 0; f->ts && m < f->n_ts; m++) {
             Dav1dTileState *const ts = &f->ts[m];
             pthread_cond_destroy(&ts->tile_thread.cond);
             pthread_mutex_destroy(&ts->tile_thread.lock);
         }
-        free(f->ts);
+        dav1d_free_aligned(f->ts);
         dav1d_free_aligned(f->tc);
         dav1d_free_aligned(f->ipred_edge[0]);
         free(f->a);
@@ -522,8 +512,8 @@ static COLD void close_internal(Dav1dContext **const c_out, int flush) {
         free(f->lf.level);
         free(f->lf.tx_lpf_right_edge[0]);
         if (f->libaom_cm) dav1d_free_ref_mv_common(f->libaom_cm);
-        dav1d_free_aligned(f->lf.cdef_line);
-        dav1d_free_aligned(f->lf.lr_lpf_line);
+        dav1d_free_aligned(f->lf.cdef_line[0][0][0]);
+        dav1d_free_aligned(f->lf.lr_lpf_line[0]);
     }
     dav1d_free_aligned(c->fc);
     dav1d_data_unref_internal(&c->in);
@@ -548,6 +538,7 @@ static COLD void close_internal(Dav1dContext **const c_out, int flush) {
 
     dav1d_ref_dec(&c->mastering_display_ref);
     dav1d_ref_dec(&c->content_light_ref);
+    dav1d_ref_dec(&c->itut_t35_ref);
 
     dav1d_freep_aligned(c_out);
 }

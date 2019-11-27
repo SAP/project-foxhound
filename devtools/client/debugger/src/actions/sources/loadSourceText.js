@@ -18,8 +18,7 @@ import {
 import { addBreakpoint } from "../breakpoints";
 
 import { prettyPrintSource } from "./prettyPrint";
-import { setBreakableLines } from "./breakableLines";
-import { isFulfilled } from "../../utils/async-value";
+import { isFulfilled, fulfilled } from "../../utils/async-value";
 
 import { isOriginal, isPretty } from "../../utils/source";
 import {
@@ -63,7 +62,7 @@ async function loadSource(
   }
 
   if (isOriginal(source)) {
-    const result = await sourceMaps.getOriginalSourceText(source);
+    const result = await sourceMaps.getOriginalSourceText(source.id);
     if (!result) {
       // The way we currently try to load and select a pending
       // selected location, it is possible that we will try to fetch the
@@ -117,15 +116,12 @@ async function loadSourceTextPromise(
         : { type: "text", value: "", contentType: undefined }
     );
 
-    await dispatch(setBreakableLines(cx, source.id));
     // Update the text in any breakpoints for this source by re-adding them.
     const breakpoints = getBreakpointsForSource(getState(), source.id);
     for (const { location, options, disabled } of breakpoints) {
       await dispatch(addBreakpoint(cx, location, options, disabled));
     }
   }
-
-  return newSource;
 }
 
 export function loadSourceById(cx: Context, sourceId: string) {
@@ -139,14 +135,22 @@ export const loadSourceText: MemoizedAction<
   { cx: Context, source: Source },
   ?Source
 > = memoizeableAction("loadSourceText", {
-  exitEarly: ({ source }) => !source,
-  hasValue: ({ source }, { getState }) => {
-    return !!(
-      getSource(getState(), source.id) &&
-      getSourceWithContent(getState(), source.id).content
-    );
+  getValue: ({ source }, { getState }) => {
+    source = source ? getSource(getState(), source.id) : null;
+    if (!source) {
+      return null;
+    }
+
+    const { content } = getSourceWithContent(getState(), source.id);
+    if (!content || content.state === "pending") {
+      return content;
+    }
+
+    // This currently swallows source-load-failure since we return fulfilled
+    // here when content.state === "rejected". In an ideal world we should
+    // propagate that error upward.
+    return fulfilled(source);
   },
-  getValue: ({ source }, { getState }) => getSource(getState(), source.id),
   createKey: ({ source }, { getState }) => {
     const epoch = getSourcesEpoch(getState());
     return `${epoch}:${source.id}`;

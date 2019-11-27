@@ -10,6 +10,7 @@
 #include "MainThreadUtils.h"          // for NS_IsMainThread
 #include "mozilla/Assertions.h"       // for MOZ_ASSERT
 #include "mozilla/ClearOnShutdown.h"  // for ClearOnShutdown
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/CheckerboardReportServiceBinding.h"  // for dom::CheckerboardReports
 #include "mozilla/gfx/GPUParent.h"
@@ -165,8 +166,7 @@ bool CheckerboardReportService::IsEnabled(JSContext* aCtx, JSObject* aGlobal) {
 
 /*static*/
 already_AddRefed<CheckerboardReportService>
-CheckerboardReportService::Constructor(const dom::GlobalObject& aGlobal,
-                                       ErrorResult& aRv) {
+CheckerboardReportService::Constructor(const dom::GlobalObject& aGlobal) {
   RefPtr<CheckerboardReportService> ces =
       new CheckerboardReportService(aGlobal.GetAsSupports());
   return ces.forget();

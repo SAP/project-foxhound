@@ -33,8 +33,8 @@ interface WorkerGlobalScope : EventTarget {
   // also has additional members in a partial interface
 };
 
-WorkerGlobalScope implements GlobalCrypto;
-WorkerGlobalScope implements WindowOrWorkerGlobalScope;
+WorkerGlobalScope includes GlobalCrypto;
+WorkerGlobalScope includes WindowOrWorkerGlobalScope;
 
 // Not implemented yet: bug 1072107.
 // WorkerGlobalScope implements FontFaceSource;
@@ -45,7 +45,7 @@ partial interface WorkerGlobalScope {
   void dump(optional DOMString str);
 
   // https://w3c.github.io/hr-time/#the-performance-attribute
-  [Constant, Cached, Replaceable]
+  [Constant, Cached, Replaceable, BinaryName="getPerformance"]
   readonly attribute Performance performance;
 
   [Func="WorkerGlobalScope::IsInAutomation", Throws]

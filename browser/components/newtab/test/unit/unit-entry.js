@@ -114,10 +114,20 @@ const TEST_GLOBAL = {
       },
     },
     "@mozilla.org/updates/update-checker;1": { createInstance() {} },
+    "@mozilla.org/streamConverters;1": {
+      getService() {
+        return this;
+      },
+    },
+    "@mozilla.org/network/stream-loader;1": {
+      createInstance() {
+        return {};
+      },
+    },
   },
   Ci: {
     nsICryptoHash: {},
-    nsIHttpChannel: { REFERRER_POLICY_UNSAFE_URL: 5 },
+    nsIReferrerInfo: { UNSAFE_URL: 5 },
     nsITimer: { TYPE_ONE_SHOT: 1 },
     nsIWebProgressListener: { LOCATION_CHANGE_SAME_DOCUMENT: 1 },
     nsIDOMWindow: Object,
@@ -128,6 +138,10 @@ const TEST_GLOBAL = {
     reportError() {},
   },
   dump() {},
+  EveryWindow: {
+    registerCallback: (id, init, uninit) => {},
+    unregisterCallback: id => {},
+  },
   fetch() {},
   // eslint-disable-next-line object-shorthand
   Image: function() {}, // NB: This is a function/constructor
@@ -171,7 +185,10 @@ const TEST_GLOBAL = {
   },
   PluralForm: { get() {} },
   Preferences: FakePrefs,
-  PrivateBrowsingUtils: { isWindowPrivate: () => false },
+  PrivateBrowsingUtils: {
+    isBrowserPrivate: () => false,
+    isWindowPrivate: () => false,
+  },
   DownloadsViewUI: {
     getDisplayName: () => "filename.ext",
     getSizeWithUnits: () => "1.5 MB",
@@ -192,7 +209,7 @@ const TEST_GLOBAL = {
     },
     urlFormatter: { formatURL: str => str, formatURLPref: str => str },
     mm: {
-      addMessageListener: (msg, cb) => cb(),
+      addMessageListener: (msg, cb) => this.receiveMessage(),
       removeMessageListener() {},
     },
     appShell: { hiddenDOMWindow: { performance: new FakePerformance() } },
@@ -272,10 +289,12 @@ const TEST_GLOBAL = {
           __internalAliases: ["@google"],
         },
       },
-      currentEngine: {
-        identifier: "google",
-        searchForm:
-          "https://www.google.com/search?q=&ie=utf-8&oe=utf-8&client=firefox-b",
+      defaultPrivateEngine: {
+        identifier: "bing",
+        searchForm: "https://www.bing.com",
+        wrappedJSObject: {
+          __internalAliases: ["@bing"],
+        },
       },
     },
     scriptSecurityManager: {
@@ -303,6 +322,7 @@ const TEST_GLOBAL = {
     defineLazyModuleGetters() {},
     defineLazyServiceGetter() {},
     defineLazyServiceGetters() {},
+    defineLazyPreferenceGetter() {},
     generateQI() {
       return {};
     },

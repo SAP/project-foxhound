@@ -50,8 +50,9 @@ class GtkCompositorWidget : public CompositorWidget,
   already_AddRefed<gfx::DrawTarget> StartRemoteDrawingInRegion(
       LayoutDeviceIntRegion& aInvalidRegion,
       layers::BufferMode* aBufferMode) override;
-  void EndRemoteDrawingInRegion(gfx::DrawTarget* aDrawTarget,
-                                LayoutDeviceIntRegion& aInvalidRegion) override;
+  void EndRemoteDrawingInRegion(
+      gfx::DrawTarget* aDrawTarget,
+      const LayoutDeviceIntRegion& aInvalidRegion) override;
   uintptr_t GetWidgetKey() override;
 
   LayoutDeviceIntSize GetClientSize() override;
@@ -64,6 +65,9 @@ class GtkCompositorWidget : public CompositorWidget,
   Window XWindow() const { return mXWindow; }
 
   EGLNativeWindowType GetEGLNativeWindow();
+#ifdef MOZ_WAYLAND
+  void SetEGLNativeWindowSize(const LayoutDeviceIntSize& aEGLWindowSize);
+#endif
 
   // PlatformCompositorWidgetDelegate Overrides
 

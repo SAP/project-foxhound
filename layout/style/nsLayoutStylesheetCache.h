@@ -33,16 +33,6 @@ enum FailureAction { eCrash = 0, eLogToConsole };
 }  // namespace css
 }  // namespace mozilla
 
-// Reference counted wrapper around a base::SharedMemory that will store the
-// User Agent style sheets.
-struct nsLayoutStylesheetCacheShm final {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(nsLayoutStylesheetCacheShm)
-  base::SharedMemory mShm;
-
- private:
-  ~nsLayoutStylesheetCacheShm() = default;
-};
-
 class nsLayoutStylesheetCache final : public nsIObserver,
                                       public nsIMemoryReporter {
  public:
@@ -88,7 +78,7 @@ class nsLayoutStylesheetCache final : public nsIObserver,
   // Returns the address of the shared memory segment that holds the shared UA
   // sheets.
   uintptr_t GetSharedMemoryAddress() {
-    return mSharedMemory ? uintptr_t(mSharedMemory->mShm.memory()) : 0;
+    return sSharedMemory ? uintptr_t(sSharedMemory->memory()) : 0;
   }
 
   // Size of the shared memory buffer we'll create to store the shared UA
@@ -96,7 +86,7 @@ class nsLayoutStylesheetCache final : public nsIObserver,
   //
   // If this isn't big enough for the current contents of the shared UA
   // sheets, we'll crash under InitSharedSheetsInParent.
-  static constexpr size_t kSharedMemorySize = 1024 * 400;
+  static constexpr size_t kSharedMemorySize = 1024 * 450;
 
  private:
   // Shared memory header.
@@ -114,20 +104,18 @@ class nsLayoutStylesheetCache final : public nsIObserver,
   void InitSharedSheetsInParent();
   void InitSharedSheetsInChild(already_AddRefed<Shm> aSharedMemory);
   void InitMemoryReporter();
-  void LoadSheetURL(const char* aURL, RefPtr<mozilla::StyleSheet>* aSheet,
-                    mozilla::css::SheetParsingMode aParsingMode,
-                    mozilla::css::FailureAction aFailureAction);
-  void LoadSheetFile(nsIFile* aFile, RefPtr<mozilla::StyleSheet>* aSheet,
-                     mozilla::css::SheetParsingMode aParsingMode,
-                     mozilla::css::FailureAction aFailureAction);
-  void LoadSheet(nsIURI* aURI, RefPtr<mozilla::StyleSheet>* aSheet,
-                 mozilla::css::SheetParsingMode aParsingMode,
-                 mozilla::css::FailureAction aFailureAction);
+  RefPtr<mozilla::StyleSheet> LoadSheetURL(
+      const char* aURL, mozilla::css::SheetParsingMode aParsingMode,
+      mozilla::css::FailureAction aFailureAction);
+  RefPtr<mozilla::StyleSheet> LoadSheetFile(
+      nsIFile* aFile, mozilla::css::SheetParsingMode aParsingMode);
+  RefPtr<mozilla::StyleSheet> LoadSheet(
+      nsIURI* aURI, mozilla::css::SheetParsingMode aParsingMode,
+      mozilla::css::FailureAction aFailureAction);
   void LoadSheetFromSharedMemory(const char* aURL,
                                  RefPtr<mozilla::StyleSheet>* aSheet,
-                                 mozilla::css::SheetParsingMode aParsingMode,
-                                 Shm* aSharedMemory, Header* aHeader,
-                                 mozilla::UserAgentStyleSheetID aSheetID);
+                                 mozilla::css::SheetParsingMode,
+                                 Header*, mozilla::UserAgentStyleSheetID);
   void BuildPreferenceSheet(RefPtr<mozilla::StyleSheet>* aSheet,
                             const mozilla::PreferenceSheet::Prefs&);
 
@@ -146,15 +134,11 @@ class nsLayoutStylesheetCache final : public nsIObserver,
   RefPtr<mozilla::StyleSheet> mUserContentSheet;
 
   // Shared memory segment storing shared style sheets.
-  RefPtr<Shm> mSharedMemory;
+  static mozilla::StaticAutoPtr<base::SharedMemory> sSharedMemory;
 
   // How much of the shared memory buffer we ended up using.  Used for memory
-  // reporting.
-  size_t mUsedSharedMemory;
-
-  // The shared memory to use once the nsLayoutStylesheetCache instance is
-  // created.
-  static mozilla::StaticRefPtr<Shm> sSharedMemory;
+  // reporting in the parent process.
+  static size_t sUsedSharedMemory;
 };
 
 #endif

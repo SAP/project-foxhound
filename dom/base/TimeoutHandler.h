@@ -23,17 +23,18 @@ namespace dom {
  */
 class TimeoutHandler : public nsISupports {
  public:
-  // TimeoutHandler doesn't actually contain cycles, but subclasses
-  // probably will.
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_CLASS(TimeoutHandler)
-
   MOZ_CAN_RUN_SCRIPT virtual bool Call(const char* /* unused */);
   // Get the location of the script.
   // Note: The memory pointed to by aFileName is owned by the
   // nsITimeoutHandler and should not be freed by the caller.
   virtual void GetLocation(const char** aFileName, uint32_t* aLineNo,
                            uint32_t* aColumn);
+  // Append a UTF-8 string to aOutString that describes the callback function,
+  // for use in logging or profiler markers.
+  // The string contains the function name and its source location, if
+  // available, in the following format:
+  // "<functionName> (<sourceURL>:<lineNumber>:<columnNumber>)"
+  virtual void GetDescription(nsACString& aOutString);
   virtual void MarkForCC() {}
 
  protected:
@@ -56,8 +57,8 @@ class TimeoutHandler : public nsISupports {
 
 class ScriptTimeoutHandler : public TimeoutHandler {
  public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(ScriptTimeoutHandler, TimeoutHandler)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_CLASS(ScriptTimeoutHandler)
 
   ScriptTimeoutHandler(JSContext* aCx, nsIGlobalObject* aGlobal,
                        const nsAString& aExpression);
@@ -65,6 +66,7 @@ class ScriptTimeoutHandler : public TimeoutHandler {
   MOZ_CAN_RUN_SCRIPT virtual bool Call(const char* /* unused */) override {
     return false;
   };
+  virtual void GetDescription(nsACString& aOutString) override;
 
  protected:
   virtual ~ScriptTimeoutHandler() {}
@@ -77,9 +79,8 @@ class ScriptTimeoutHandler : public TimeoutHandler {
 
 class CallbackTimeoutHandler final : public TimeoutHandler {
  public:
-  NS_DECL_ISUPPORTS_INHERITED
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(CallbackTimeoutHandler,
-                                                         TimeoutHandler)
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(CallbackTimeoutHandler)
 
   CallbackTimeoutHandler(JSContext* aCx, nsIGlobalObject* aGlobal,
                          Function* aFunction,
@@ -87,6 +88,7 @@ class CallbackTimeoutHandler final : public TimeoutHandler {
 
   MOZ_CAN_RUN_SCRIPT virtual bool Call(const char* aExecutionReason) override;
   virtual void MarkForCC() override;
+  virtual void GetDescription(nsACString& aOutString) override;
 
   void ReleaseJSObjects();
 

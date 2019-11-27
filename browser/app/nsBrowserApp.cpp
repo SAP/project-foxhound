@@ -4,6 +4,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsXULAppAPI.h"
+#include "mozilla/CmdLineAndEnvUtils.h"
 #include "mozilla/XREAppData.h"
 #include "application.ini.h"
 #include "mozilla/Bootstrap.h"
@@ -24,6 +25,7 @@
 
 #ifdef XP_WIN
 #  include "LauncherProcessWin.h"
+#  include "mozilla/WindowsDllBlocklist.h"
 
 #  define XRE_WANT_ENVIRON
 #  define strcasecmp _stricmp
@@ -37,7 +39,6 @@
 
 #include "mozilla/Sprintf.h"
 #include "mozilla/StartupTimeline.h"
-#include "mozilla/WindowsDllBlocklist.h"
 #include "BaseProfiler.h"
 
 #ifdef LIBFUZZER
@@ -206,9 +207,13 @@ static int do_main(int argc, char* argv[], char* envp[]) {
 #endif
 
 #ifdef LIBFUZZER
-  if (getenv("LIBFUZZER"))
+  if (getenv("FUZZER"))
     gBootstrap->XRE_LibFuzzerSetDriver(fuzzer::FuzzerDriver);
 #endif
+
+  // Note: keep in sync with LauncherProcessWin.
+  const char* acceptableParams[] = {"url", nullptr};
+  EnsureCommandlineSafe(argc, argv, acceptableParams);
 
   return gBootstrap->XRE_main(argc, argv, config);
 }

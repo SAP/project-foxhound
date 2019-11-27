@@ -5,6 +5,7 @@
 extern crate serde_bytes;
 
 use crate::channel::{self, MsgSender, Payload, PayloadSender, PayloadSenderHelperMethods};
+use peek_poke::PeekPoke;
 use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -36,6 +37,35 @@ pub enum ResourceUpdate {
     DeleteFont(font::FontKey),
     AddFontInstance(AddFontInstance),
     DeleteFontInstance(font::FontInstanceKey),
+}
+
+impl fmt::Debug for ResourceUpdate {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceUpdate::AddImage(ref i) => f.write_fmt(format_args!(
+                "ResourceUpdate::AddImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::UpdateImage(ref i) => f.write_fmt(format_args!(
+                "ResourceUpdate::UpdateImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::AddBlobImage(ref i) => f.write_fmt(format_args!(
+                "ResourceUpdate::AddBlobImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::UpdateBlobImage(i) => f.write_fmt(format_args!(
+                "ResourceUpdate::UpdateBlobImage size({:?})",
+                &i.descriptor.size
+            )),
+            ResourceUpdate::DeleteImage(..) => f.write_str("ResourceUpdate::DeleteImage"),
+            ResourceUpdate::SetBlobImageVisibleArea(..) => f.write_str("ResourceUpdate::SetBlobImageVisibleArea"),
+            ResourceUpdate::AddFont(..) => f.write_str("ResourceUpdate::AddFont"),
+            ResourceUpdate::DeleteFont(..) => f.write_str("ResourceUpdate::DeleteFont"),
+            ResourceUpdate::AddFontInstance(..) => f.write_str("ResourceUpdate::AddFontInstance"),
+            ResourceUpdate::DeleteFontInstance(..) => f.write_str("ResourceUpdate::DeleteFontInstance"),
+        }
+    }
 }
 
 /// A Transaction is a group of commands to apply atomically to a document.
@@ -347,6 +377,7 @@ impl Transaction {
         key: BlobImageKey,
         descriptor: ImageDescriptor,
         data: Arc<BlobImageData>,
+        visible_rect: DeviceIntRect,
         tiling: Option<TileSize>,
     ) {
         self.resource_updates.push(
@@ -354,6 +385,7 @@ impl Transaction {
                 key,
                 descriptor,
                 data,
+                visible_rect,
                 tiling,
             })
         );
@@ -364,6 +396,7 @@ impl Transaction {
         key: BlobImageKey,
         descriptor: ImageDescriptor,
         data: Arc<BlobImageData>,
+        visible_rect: DeviceIntRect,
         dirty_rect: &BlobDirtyRect,
     ) {
         self.resource_updates.push(
@@ -371,6 +404,7 @@ impl Transaction {
                 key,
                 descriptor,
                 data,
+                visible_rect,
                 dirty_rect: *dirty_rect,
             })
         );
@@ -463,6 +497,29 @@ pub struct TransactionMsg {
     pub notifications: Vec<NotificationRequest>,
 }
 
+impl fmt::Debug for TransactionMsg {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "threaded={}, genframe={}, invalidate={}, low_priority={}",
+                        self.use_scene_builder_thread,
+                        self.generate_frame,
+                        self.invalidate_rendered_frame,
+                        self.low_priority,
+                    ).unwrap();
+        for scene_op in &self.scene_ops {
+            writeln!(f, "\t\t{:?}", scene_op).unwrap();
+        }
+
+        for frame_op in &self.frame_ops {
+            writeln!(f, "\t\t{:?}", frame_op).unwrap();
+        }
+
+        for resource_update in &self.resource_updates {
+            writeln!(f, "\t\t{:?}", resource_update).unwrap();
+        }
+        Ok(())
+    }
+}
+
 impl TransactionMsg {
     pub fn is_empty(&self) -> bool {
         !self.generate_frame &&
@@ -523,6 +580,7 @@ pub struct AddBlobImage {
     pub descriptor: ImageDescriptor,
     //#[serde(with = "serde_image_data_raw")]
     pub data: Arc<BlobImageData>,
+    pub visible_rect: DeviceIntRect,
     pub tiling: Option<TileSize>,
 }
 
@@ -532,6 +590,7 @@ pub struct UpdateBlobImage {
     pub descriptor: ImageDescriptor,
     //#[serde(with = "serde_image_data_raw")]
     pub data: Arc<BlobImageData>,
+    pub visible_rect: DeviceIntRect,
     pub dirty_rect: BlobDirtyRect,
 }
 
@@ -716,6 +775,8 @@ pub enum DebugCommand {
     /// Causes the low priority scene builder to pause for a given amount of milliseconds
     /// each time it processes a transaction.
     SimulateLongLowPrioritySceneBuild(u32),
+    // Logs transactions to a file for debugging purposes
+    SetTransactionLogging(bool),
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -757,7 +818,7 @@ pub enum ApiMsg {
     WakeUp,
     WakeSceneBuilder,
     FlushSceneBuilder(MsgSender<()>),
-    ShutDown,
+    ShutDown(Option<MsgSender<()>>),
 }
 
 impl fmt::Debug for ApiMsg {
@@ -776,7 +837,7 @@ impl fmt::Debug for ApiMsg {
             ApiMsg::MemoryPressure => "ApiMsg::MemoryPressure",
             ApiMsg::ReportMemory(..) => "ApiMsg::ReportMemory",
             ApiMsg::DebugCommand(..) => "ApiMsg::DebugCommand",
-            ApiMsg::ShutDown => "ApiMsg::ShutDown",
+            ApiMsg::ShutDown(..) => "ApiMsg::ShutDown",
             ApiMsg::WakeUp => "ApiMsg::WakeUp",
             ApiMsg::WakeSceneBuilder => "ApiMsg::WakeSceneBuilder",
             ApiMsg::FlushSceneBuilder(..) => "ApiMsg::FlushSceneBuilder",
@@ -795,11 +856,12 @@ impl Epoch {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, Hash, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, MallocSizeOf, PartialEq, Hash, Ord, PartialOrd, PeekPoke)]
+#[derive(Deserialize, Serialize)]
 pub struct IdNamespace(pub u32);
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub struct DocumentId {
     pub namespace_id: IdNamespace,
     pub id: u32,
@@ -825,8 +887,14 @@ pub type PipelineSourceId = u32;
 /// From the point of view of WR, `PipelineId` is completely opaque and generic as long as
 /// it's clonable, serializable, comparable, and hashable.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub struct PipelineId(pub PipelineSourceId, pub u32);
+
+impl Default for PipelineId {
+    fn default() -> Self {
+        PipelineId::dummy()
+    }
+}
 
 impl PipelineId {
     pub fn dummy() -> Self {
@@ -872,6 +940,7 @@ macro_rules! enumerate_interners {
             picture: Picture,
             text_run: TextRun,
             filter_data: FilterDataIntern,
+            backdrop: Backdrop,
         }
     }
 }
@@ -1072,6 +1141,9 @@ bitflags! {
         const DISABLE_CLIP_MASKS = 1 << 21;
         const DISABLE_TEXT_PRIMS = 1 << 22;
         const DISABLE_GRADIENT_PRIMS = 1 << 23;
+        const OBSCURE_IMAGES = 1 << 24;
+        /// The profiler only displays information that is out of the ordinary.
+        const SMART_PROFILER        = 1 << 26;
     }
 }
 
@@ -1189,8 +1261,14 @@ impl RenderApi {
         self.api_sender.send(ApiMsg::DebugCommand(cmd)).unwrap();
     }
 
-    pub fn shut_down(&self) {
-        self.api_sender.send(ApiMsg::ShutDown).unwrap();
+    pub fn shut_down(&self, synchronously: bool) {
+        if synchronously {
+            let (tx, rx) = channel::msg_channel().unwrap();
+            self.api_sender.send(ApiMsg::ShutDown(Some(tx))).unwrap();
+            rx.recv().unwrap();
+        } else {
+            self.api_sender.send(ApiMsg::ShutDown(None)).unwrap();
+        }
     }
 
     /// Create a new unique key that can be used for
@@ -1410,7 +1488,7 @@ impl ZoomFactor {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, MallocSizeOf, PartialEq, Serialize, Eq, Hash, PeekPoke)]
 pub struct PropertyBindingId {
     namespace: IdNamespace,
     uid: u32,
@@ -1428,7 +1506,7 @@ impl PropertyBindingId {
 /// A unique key that is used for connecting animated property
 /// values to bindings in the display list.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct PropertyBindingKey<T> {
     pub id: PropertyBindingId,
     _phantom: PhantomData<T>,
@@ -1457,10 +1535,16 @@ impl<T> PropertyBindingKey<T> {
 /// used for the case where the animation is still in-delay phase
 /// (i.e. the animation doesn't produce any animation values).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub enum PropertyBinding<T> {
     Value(T),
     Binding(PropertyBindingKey<T>, T),
+}
+
+impl<T: Default> Default for PropertyBinding<T> {
+    fn default() -> Self {
+        PropertyBinding::Value(Default::default())
+    }
 }
 
 impl<T> From<T> for PropertyBinding<T> {

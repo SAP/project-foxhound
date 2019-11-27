@@ -9,22 +9,22 @@ registerCleanupFunction(() => {
 });
 
 add_task(
-  threadClientTest(async ({ threadClient, debuggee, client }) => {
+  threadFrontTest(async ({ threadFront, debuggee, client }) => {
     return new Promise(resolve => {
-      threadClient.once("paused", function(packet) {
+      threadFront.once("paused", async function(packet) {
         const args = packet.frame.arguments;
 
         Assert.equal(args[0].class, "Object");
 
-        const objClient = threadClient.pauseGrip(args[0]);
-        objClient.getOwnPropertyNames(function(response) {
-          Assert.equal(response.ownPropertyNames.length, 3);
-          Assert.equal(response.ownPropertyNames[0], "a");
-          Assert.equal(response.ownPropertyNames[1], "b");
-          Assert.equal(response.ownPropertyNames[2], "c");
+        const objClient = threadFront.pauseGrip(args[0]);
+        const response = await objClient.getOwnPropertyNames();
+        Assert.equal(response.ownPropertyNames.length, 3);
+        Assert.equal(response.ownPropertyNames[0], "a");
+        Assert.equal(response.ownPropertyNames[1], "b");
+        Assert.equal(response.ownPropertyNames[2], "c");
 
-          threadClient.resume().then(resolve);
-        });
+        await threadFront.resume();
+        resolve();
       });
 
       debuggee.eval(

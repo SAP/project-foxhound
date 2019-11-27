@@ -3,17 +3,16 @@
 <?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 
 <window title="Autocomplete Widget Test 4"
-        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml">
 
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
-<textbox id="autocomplete"
-         type="autocomplete"
-         completedefaultindex="true"
-
-         onsearchcomplete="searchComplete();"
-         autocompletesearch="simple"/>
+<html:input id="autocomplete"
+            is="autocomplete-input"
+            completedefaultindex="true"
+            autocompletesearch="simple"/>
 
 <script class="testbody" type="application/javascript">
 <![CDATA[
@@ -84,6 +83,15 @@ var componentManager = Components.manager
 componentManager.registerFactory(autoCompleteSimpleID, "Test Simple Autocomplete",
                                  autoCompleteSimpleName, autoCompleteSimple);
 
+let element = document.getElementById("autocomplete");
+
+// Create stub to intercept `onSearchComplete` event.
+element.onSearchComplete = function(original) {
+  return function() {
+    original.apply(this, arguments);
+    searchComplete();
+  };
+}(element.onSearchComplete);
 
 // Test Bug 325842 - completeDefaultIndex
 

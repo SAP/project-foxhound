@@ -39,6 +39,9 @@ struct MinidumpInfo {
 void ReportFatalError(const Maybe<MinidumpInfo>& aMinidumpInfo,
                       const char* aFormat, ...);
 
+// Get the unique ID of this child.
+size_t GetId();
+
 // Monitor used for various synchronization tasks.
 extern Monitor* gMonitor;
 
@@ -56,6 +59,10 @@ void SendResetMiddlemanCalls();
 // Return whether a repaint is in progress and is not allowed to trigger an
 // unhandled recording divergence per preferences.
 bool CurrentRepaintCannotFail();
+
+// Paint according to the current process state, then convert it to an image
+// and serialize it in aData.
+bool Repaint(nsAString& aData);
 
 }  // namespace child
 }  // namespace recordreplay

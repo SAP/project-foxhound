@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint no-unused-vars: [2, {"vars": "local"}] */
@@ -105,6 +104,10 @@ function synthesizeToggleToolboxKey() {
  */
 function isAboutDevtoolsTab(tab) {
   const browser = tab.linkedBrowser;
-  const location = browser.documentURI.spec;
-  return location.startsWith("about:devtools");
+  // browser.documentURI might be unavailable if the tab is loading.
+  if (browser && browser.documentURI) {
+    const location = browser.documentURI.spec;
+    return location.startsWith("about:devtools");
+  }
+  return false;
 }

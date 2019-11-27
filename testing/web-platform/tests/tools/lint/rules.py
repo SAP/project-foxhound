@@ -57,6 +57,11 @@ class PathLength(Rule):
     description = "/%s longer than maximum path length (%d > 150)"
 
 
+class FileType(Rule):
+    name = "FILE TYPE"
+    description = "/%s is an unsupported file type (%s)"
+
+
 class WorkerCollision(Rule):
     name = "WORKER COLLISION"
     description = ("path ends with %s which collides with generated tests "
@@ -71,6 +76,11 @@ class GitIgnoreFile(Rule):
 class AhemCopy(Rule):
     name = "AHEM COPY"
     description = "Don't add extra copies of Ahem, use /fonts/Ahem.ttf"
+
+
+class AhemSystemFont(Rule):
+    name = "AHEM SYSTEM FONT"
+    description = "Don't use Ahem as a system font, use /fonts/ahem.css"
 
 
 # TODO: Add tests for this rule
@@ -344,6 +354,13 @@ class LayoutTestsRegexp(Regexp):
     name = "LAYOUTTESTS APIS"
     file_extensions = [".html", ".htm", ".js", ".xht", ".xhtml", ".svg"]
     description = "eventSender/testRunner/internals used; these are LayoutTests-specific APIs (WebKit/Blink)"
+
+class MissingDepsRegexp(Regexp):
+    pattern = br"[^\w]/gen/"
+    name = "MISSING DEPENDENCY"
+    file_extensions = [".html", ".htm", ".js", ".xht", ".xhtml", ".svg"]
+    description = "Chromium-specific content referenced"
+    to_fix = "Reimplement the test to use well-documented testing interfaces"
 
 class SpecialPowersRegexp(Regexp):
     pattern = b"SpecialPowers"

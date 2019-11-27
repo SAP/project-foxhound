@@ -13,11 +13,11 @@
 #include "gc/HashUtil.h"
 #include "js/SourceText.h"
 #include "js/StableStringChars.h"
-#include "vm/Debugger.h"
 #include "vm/GlobalObject.h"
 #include "vm/JSContext.h"
 #include "vm/JSONParser.h"
 
+#include "debugger/DebugAPI-inl.h"
 #include "vm/Interpreter-inl.h"
 
 using namespace js;
@@ -47,12 +47,8 @@ static bool IsEvalCacheCandidate(JSScript* script) {
     return false;
   }
 
-  // Make sure there are no inner objects which might use the wrong parent
-  // and/or call scope by reusing the previous eval's script.
-  if (script->hasSingletons()) {
-    return false;
-  }
-
+  // Make sure there are no inner objects (which may be used directly by script
+  // and clobbered) or inner functions (which may have wrong scope).
   for (JS::GCCellPtr gcThing : script->gcthings()) {
     if (gcThing.is<JSObject>()) {
       return false;
@@ -180,7 +176,8 @@ static EvalJSONResult ParseEvalStringAsJSON(
                                            chars.begin().get() + 1U, len - 2);
 
   Rooted<JSONParser<CharT>> parser(
-      cx, JSONParser<CharT>(cx, jsonChars, taint, JSONParserBase::NoError));
+      cx, JSONParser<CharT>(cx, jsonChars, taint,
+                            JSONParserBase::ParseType::AttemptForEval));
   if (!parser.parse(rval)) {
     return EvalJSON_Failure;
   }
@@ -302,8 +299,11 @@ static bool EvalKernel(JSContext* cx, HandleValue v, EvalType evalType,
     options.setIsRunOnce(true)
         .setNoScriptRval(false)
         .setMutedErrors(mutedErrors)
-        .maybeMakeStrictMode(evalType == DIRECT_EVAL && IsStrictEvalPC(pc))
         .setScriptOrModule(maybeScript);
+
+    if (evalType == DIRECT_EVAL && IsStrictEvalPC(pc)) {
+      options.setForceStrictMode();
+    }
 
     if (introducerFilename) {
       options.setFileAndLine(filename, 1);
@@ -392,10 +392,13 @@ bool js::DirectEvalStringFromIon(JSContext* cx, HandleObject env,
     RootedScope enclosing(cx, callerScript->innermostScope(pc));
 
     CompileOptions options(cx);
-    options.setIsRunOnce(true)
-        .setNoScriptRval(false)
-        .setMutedErrors(mutedErrors)
-        .maybeMakeStrictMode(IsStrictEvalPC(pc));
+    options.setIsRunOnce(true);
+    options.setNoScriptRval(false);
+    options.setMutedErrors(mutedErrors);
+
+    if (IsStrictEvalPC(pc)) {
+      options.setForceStrictMode();
+    }
 
     if (introducerFilename) {
       options.setFileAndLine(filename, 1);
@@ -479,7 +482,7 @@ static bool ExecuteInExtensibleLexicalEnvironment(JSContext* cx,
       return false;
     }
 
-    Debugger::onNewScript(cx, script);
+    DebugAPI::onNewScript(cx, script);
   }
 
   RootedValue rval(cx);

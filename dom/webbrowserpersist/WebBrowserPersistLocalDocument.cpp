@@ -127,8 +127,10 @@ WebBrowserPersistLocalDocument::GetTitle(nsAString& aTitle) {
 }
 
 NS_IMETHODIMP
-WebBrowserPersistLocalDocument::GetReferrer(nsAString& aReferrer) {
-  mDocument->GetReferrer(aReferrer);
+WebBrowserPersistLocalDocument::GetReferrerInfo(
+    nsIReferrerInfo** aReferrerInfo) {
+  *aReferrerInfo = mDocument->GetReferrerInfo();
+  NS_IF_ADDREF(*aReferrerInfo);
   return NS_OK;
 }
 
@@ -208,7 +210,7 @@ uint32_t WebBrowserPersistLocalDocument::GetPersistFlags() const {
   return mPersistFlags;
 }
 
-already_AddRefed<nsIURI> WebBrowserPersistLocalDocument::GetBaseURI() const {
+nsIURI* WebBrowserPersistLocalDocument::GetBaseURI() const {
   return mDocument->GetBaseURI();
 }
 
@@ -1220,8 +1222,7 @@ WebBrowserPersistLocalDocument::WriteContent(
     nsAutoCString targetURISpec;
     rv = aMap->GetTargetBaseURI(targetURISpec);
     if (NS_SUCCEEDED(rv) && !targetURISpec.IsEmpty()) {
-      rv = NS_NewURI(getter_AddRefs(targetURI), targetURISpec,
-                     /* charset: */ nullptr, /* base: */ nullptr);
+      rv = NS_NewURI(getter_AddRefs(targetURI), targetURISpec);
       NS_ENSURE_SUCCESS(rv, NS_ERROR_UNEXPECTED);
     } else if (mPersistFlags &
                nsIWebBrowserPersist::PERSIST_FLAGS_FIXUP_LINKS_TO_DESTINATION) {

@@ -8,6 +8,7 @@
 (^|/)\.DS_Store$
 \.pdb
 \.egg-info
+\.eslintcache
 \.gcda
 \.gcno
 \.gcov
@@ -40,9 +41,6 @@ compile_commands\.json
 ^gecko\.log
 
 # Ignore newtab component build assets
-^browser/components/newtab/bin/prerender.js
-^browser/components/newtab/bin/prerender.js.map
-^browser/components/newtab/data/locales.json
 ^browser/components/newtab/logs/
 
 # Build directories for js shell
@@ -101,6 +99,10 @@ _OPT\.OBJ/
 # Ignore node_modules directories in devtools
 ^devtools/.*/node_modules/
 
+# Ignore node_module directories and npm artifacts
+^remote/test/puppeteer/package-lock.json
+^remote/test/puppeteer/node_modules/
+
 # git checkout of libstagefright
 ^media/libstagefright/android$
 
@@ -154,6 +156,8 @@ _OPT\.OBJ/
 ^testing/talos/talos/tests/tp5n.tar.gz
 ^testing/talos/talos/tests/tp5n
 ^testing/talos/talos/tests/devtools/damp.manifest.develop
+^testing/talos/talos/startup_test/startup_about_home_paint/startup_about_home_paint.manifest.develop
+^testing/talos/talos/webextensions/
 ^talos-venv
 ^py3venv
 ^testing/talos/talos/mitmproxy/mitmdump
@@ -198,3 +202,7 @@ tps_result\.json
 
 # Ignore the build directories of WebRender standalone builds.
 gfx/wr/target/
+
+# Ignore this files in certviewer
+toolkit/components/certviewer/content/node_modules/
+toolkit/components/certviewer/content/package-lock.json

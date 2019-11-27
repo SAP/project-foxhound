@@ -217,7 +217,22 @@ LoginManagerStorage_mozStorage.prototype = {
     return Promise.resolve();
   },
 
-  addLogin(login, preEncrypted = false) {
+  addLogin(
+    login,
+    preEncrypted = false,
+    plaintextUsername = null,
+    plaintextPassword = null
+  ) {
+    if (
+      preEncrypted &&
+      (typeof plaintextUsername != "string" ||
+        typeof plaintextPassword != "string")
+    ) {
+      throw new Error(
+        "plaintextUsername and plaintextPassword are required when preEncrypted is true"
+      );
+    }
+
     // Throws if there are bogus values.
     LoginHelper.checkLoginValues(login);
 
@@ -227,6 +242,8 @@ LoginManagerStorage_mozStorage.prototype = {
 
     // Clone the login, so we don't modify the caller's object.
     let loginClone = login.clone();
+    loginClone.username = preEncrypted ? plaintextUsername : login.username;
+    loginClone.password = preEncrypted ? plaintextPassword : login.password;
 
     // Initialize the nsILoginMetaInfo fields, unless the caller gave us values
     loginClone.QueryInterface(Ci.nsILoginMetaInfo);
@@ -350,8 +367,9 @@ LoginManagerStorage_mozStorage.prototype = {
         newLogin.httpRealm
       );
 
-      if (logins.some(login => newLogin.matches(login, true))) {
-        throw new Error("This login already exists.");
+      let matchingLogin = logins.find(login => newLogin.matches(login, true));
+      if (matchingLogin) {
+        throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
       }
     }
 
@@ -422,7 +440,9 @@ LoginManagerStorage_mozStorage.prototype = {
   },
 
   /**
-   * Returns an array of nsILoginInfo.
+   * Returns an array of nsILoginInfo. If decryption of a login
+   * fails due to a corrupt entry, the login is not included in
+   * the resulting array.
    *
    * @resolve {nsILoginInfo[]}
    */
@@ -440,6 +460,29 @@ LoginManagerStorage_mozStorage.prototype = {
 
     let result = [];
     for (let i = 0; i < logins.length; i++) {
+      if (!usernames[i] || !passwords[i]) {
+        // If the username or password is blank it means that decryption may have
+        // failed during decryptMany but we can't differentiate an empty string
+        // value from a failure so we attempt to decrypt again and check the
+        // result.
+        let login = logins[i];
+        try {
+          this._crypto.decrypt(login.username);
+          this._crypto.decrypt(login.password);
+        } catch (e) {
+          // If decryption failed (corrupt entry?), just skip it.
+          // Rethrow other errors (like canceling entry of a master pw)
+          if (e.result == Cr.NS_ERROR_FAILURE) {
+            this.log(
+              "Could not decrypt login:",
+              login.QueryInterface(Ci.nsILoginMetaInfo).guid
+            );
+            continue;
+          }
+          throw e;
+        }
+      }
+
       logins[i].username = usernames[i];
       logins[i].password = passwords[i];
       result.push(logins[i]);
@@ -545,8 +588,8 @@ LoginManagerStorage_mozStorage.prototype = {
             }
             break;
           }
-        // Fall through
         // Normal cases.
+        // Fall through
         case "httpRealm":
         case "id":
         case "usernameField":
@@ -636,8 +679,6 @@ LoginManagerStorage_mozStorage.prototype = {
       let params = { guid: aLogin.guid, timeDeleted: Date.now() };
       let stmt = this._dbCreateStatement(query, params);
       stmt.execute();
-    } catch (ex) {
-      throw ex;
     } finally {
       if (stmt) {
         stmt.reset();
@@ -1233,8 +1274,12 @@ LoginManagerStorage_mozStorage.prototype = {
       for (let host of disabledHosts) {
         try {
           let uri = Services.io.newURI(host);
-          Services.perms.add(
+          let principal = Services.scriptSecurityManager.createContentPrincipal(
             uri,
+            {}
+          );
+          Services.perms.addFromPrincipal(
+            principal,
             PERMISSION_SAVE_LOGINS,
             Services.perms.DENY_ACTION
           );

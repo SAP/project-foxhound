@@ -36,7 +36,7 @@ add_task(async function() {
 
     await checkCaretMoves(
       "KEY_ArrowDown",
-      gURLBar.textValue.length,
+      gURLBar.value.length,
       "Caret should have moved to the end"
     );
     await checkPopupOpens("KEY_ArrowDown");
@@ -76,7 +76,7 @@ async function checkPopupOpens(key) {
     checkIfKeyStartsQuery(key, true);
   });
   Assert.equal(
-    UrlbarTestUtils.getSelectedIndex(window),
+    UrlbarTestUtils.getSelectedRowIndex(window),
     0,
     `${key}: Heuristic result should be selected`
   );

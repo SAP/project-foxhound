@@ -318,6 +318,10 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
    */
   bool IsCrossProcess() const { return mIsCrossProcess; }
 
+  // Return whether a message definitely originated from a middleman process,
+  // due to its sequence number.
+  static bool MessageOriginatesFromMiddleman(const Message& aMessage);
+
 #ifdef OS_WIN
   struct MOZ_STACK_CLASS SyncStackFrame {
     SyncStackFrame(MessageChannel* channel, bool interrupt);
@@ -565,7 +569,8 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
  private:
   class MessageTask : public CancelableRunnable,
                       public LinkedListElement<RefPtr<MessageTask>>,
-                      public nsIRunnablePriority {
+                      public nsIRunnablePriority,
+                      public nsIRunnableIPCMessageType {
    public:
     explicit MessageTask(MessageChannel* aChannel, Message&& aMessage);
 
@@ -574,6 +579,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
     NS_IMETHOD Run() override;
     nsresult Cancel() override;
     NS_IMETHOD GetPriority(uint32_t* aPriority) override;
+    NS_DECL_NSIRUNNABLEIPCMESSAGETYPE
     void Post();
     void Clear();
 

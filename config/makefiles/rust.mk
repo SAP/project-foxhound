@@ -46,8 +46,11 @@ endif
 cargo_rustc_flags = $(CARGO_RUSTCFLAGS)
 ifndef DEVELOPER_OPTIONS
 ifndef MOZ_DEBUG_RUST
-# Enable link-time optimization for release builds.
-cargo_rustc_flags += -C lto
+# Enable link-time optimization for release builds, but not when linking
+# gkrust_gtest.
+ifeq (,$(findstring gkrust_gtest,$(RUST_LIBRARY_FILE)))
+cargo_rustc_flags += -Clto
+endif
 endif
 endif
 
@@ -60,6 +63,18 @@ ifeq (neon,$(MOZ_FPU))
 # Enable neon and disable restriction to 16 FPU registers
 # (CPUs with neon have 32 FPU registers available)
 rustflags_neon += -C target_feature=+neon,-d16
+endif
+
+rustflags_sancov =
+ifdef FUZZING_INTERFACES
+# These options should match what is implicitly enabled for `clang -fsanitize=fuzzer`
+#   here: https://github.com/llvm/llvm-project/blob/release/8.x/clang/lib/Driver/SanitizerArgs.cpp#L354
+#
+#  -sanitizer-coverage-inline-8bit-counters      Increments 8-bit counter for every edge.
+#  -sanitizer-coverage-level=4                   Enable coverage for all blocks, critical edges, and indirect calls.
+#  -sanitizer-coverage-trace-compares            Tracing of CMP and similar instructions.
+#  -sanitizer-coverage-pc-table                  Create a static PC table.
+rustflags_sancov += -Cpasses=sancov -Cllvm-args=-sanitizer-coverage-inline-8bit-counters -Cllvm-args=-sanitizer-coverage-level=4 -Cllvm-args=-sanitizer-coverage-trace-compares -Cllvm-args=-sanitizer-coverage-pc-table
 endif
 
 rustflags_override = $(MOZ_RUST_DEFAULT_FLAGS) $(rustflags_neon)
@@ -132,8 +147,12 @@ export MOZ_TOPOBJDIR=$(topobjdir)
 target_rust_ltoable := force-cargo-library-build
 target_rust_nonltoable := force-cargo-test-run force-cargo-library-check $(foreach b,build check,force-cargo-program-$(b))
 
-$(target_rust_ltoable): RUSTFLAGS:=$(rustflags_override) $(RUSTFLAGS) $(if $(MOZ_LTO_RUST),-Clinker-plugin-lto)
-$(target_rust_nonltoable): RUSTFLAGS:=$(rustflags_override) $(RUSTFLAGS)
+ifdef MOZ_PGO_RUST
+rust_pgo_flags := $(if $(MOZ_PROFILE_GENERATE),-C profile-generate=$(topobjdir)) $(if $(MOZ_PROFILE_USE),-C profile-use=$(PGO_PROFILE_PATH))
+endif
+
+$(target_rust_ltoable): RUSTFLAGS:=$(rustflags_override) $(rustflags_sancov) $(RUSTFLAGS) $(if $(MOZ_LTO_RUST),-Clinker-plugin-lto) $(rust_pgo_flags)
+$(target_rust_nonltoable): RUSTFLAGS:=$(rustflags_override) $(rustflags_sancov) $(RUSTFLAGS)
 
 TARGET_RECIPES := $(target_rust_ltoable) $(target_rust_nonltoable)
 
@@ -244,10 +263,14 @@ $(RUST_LIBRARY_FILE): force-cargo-library-build
 # When we are building in --enable-release mode; we add an additional check to confirm
 # that we are not importing any networking-related functions in rust code. This reduces
 # the chance of proxy bypasses originating from rust code.
-ifndef DEVELOPER_OPTIONS
-ifndef MOZ_DEBUG_RUST
+# The check only works when rust code is built with -Clto.
+# Enabling sancov also causes this to fail.
+ifndef MOZ_PROFILE_GENERATE
 ifeq ($(OS_ARCH), Linux)
+ifeq (,$(rustflags_sancov))
+ifneq (,$(filter -Clto,$(cargo_rustc_flags)))
 	$(call py_action,check_binary,--target --networking $@)
+endif
 endif
 endif
 endif
@@ -298,9 +321,9 @@ ifdef RUST_PROGRAMS
 
 GARBAGE_DIRS += $(RUST_TARGET)
 
-force-cargo-program-build:
+force-cargo-program-build: $(RESFILE)
 	$(REPORT_BUILD)
-	$(call CARGO_BUILD) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag)
+	$(call CARGO_BUILD) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag) -- $(if $(RESFILE),-C link-arg=$(CURDIR)/$(RESFILE))
 
 $(RUST_PROGRAMS): force-cargo-program-build
 

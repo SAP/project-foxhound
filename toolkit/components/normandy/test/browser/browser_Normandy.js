@@ -1,6 +1,7 @@
 "use strict";
 
 ChromeUtils.import("resource://normandy/Normandy.jsm", this);
+ChromeUtils.import("resource://normandy/lib/AddonRollouts.jsm", this);
 ChromeUtils.import("resource://normandy/lib/AddonStudies.jsm", this);
 ChromeUtils.import("resource://normandy/lib/PreferenceExperiments.jsm", this);
 ChromeUtils.import("resource://normandy/lib/PreferenceRollouts.jsm", this);
@@ -16,6 +17,7 @@ const experimentPref4 = "test.initExperimentPrefs4";
 function withStubInits(testFunction) {
   return decorate(
     withStub(AboutPages, "init"),
+    withStub(AddonRollouts, "init"),
     withStub(AddonStudies, "init"),
     withStub(PreferenceRollouts, "init"),
     withStub(PreferenceExperiments, "init"),
@@ -122,7 +124,7 @@ decorate_task(
 decorate_task(
   withStub(Normandy, "finishInit"),
   async function testStartupDelayed(finishInitStub) {
-    Normandy.init();
+    await Normandy.init();
     ok(
       !finishInitStub.called,
       "When initialized, do not call finishInit immediately."
@@ -212,6 +214,7 @@ decorate_task(withStubInits, async function testStartupPrefInitFail() {
   await Normandy.finishInit();
   ok(AboutPages.init.called, "startup calls AboutPages.init");
   ok(AddonStudies.init.called, "startup calls AddonStudies.init");
+  ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
   ok(
     PreferenceExperiments.init.called,
     "startup calls PreferenceExperiments.init"
@@ -227,6 +230,7 @@ decorate_task(withStubInits, async function testStartupAboutPagesInitFail() {
   await Normandy.finishInit();
   ok(AboutPages.init.called, "startup calls AboutPages.init");
   ok(AddonStudies.init.called, "startup calls AddonStudies.init");
+  ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
   ok(
     PreferenceExperiments.init.called,
     "startup calls PreferenceExperiments.init"
@@ -242,6 +246,7 @@ decorate_task(withStubInits, async function testStartupAddonStudiesInitFail() {
   await Normandy.finishInit();
   ok(AboutPages.init.called, "startup calls AboutPages.init");
   ok(AddonStudies.init.called, "startup calls AddonStudies.init");
+  ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
   ok(
     PreferenceExperiments.init.called,
     "startup calls PreferenceExperiments.init"
@@ -259,6 +264,7 @@ decorate_task(
     await Normandy.finishInit();
     ok(AboutPages.init.called, "startup calls AboutPages.init");
     ok(AddonStudies.init.called, "startup calls AddonStudies.init");
+    ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
     ok(
       PreferenceExperiments.init.called,
       "startup calls PreferenceExperiments.init"
@@ -277,6 +283,7 @@ decorate_task(
     await Normandy.finishInit();
     ok(AboutPages.init.called, "startup calls AboutPages.init");
     ok(AddonStudies.init.called, "startup calls AddonStudies.init");
+    ok(AddonRollouts.init.called, "startup calls AddonRollouts.init");
     ok(
       PreferenceExperiments.init.called,
       "startup calls PreferenceExperiments.init"
@@ -286,38 +293,3 @@ decorate_task(
     ok(PreferenceRollouts.init.called, "startup calls PreferenceRollouts.init");
   }
 );
-
-decorate_task(withMockPreferences, async function testPrefMigration(
-  mockPreferences
-) {
-  const legacyPref = "extensions.shield-recipe-client.test";
-  const migratedPref = "app.normandy.test";
-  mockPreferences.set(legacyPref, 1);
-
-  ok(
-    Services.prefs.prefHasUserValue(legacyPref),
-    "Legacy pref should have a user value before running migration"
-  );
-  ok(
-    !Services.prefs.prefHasUserValue(migratedPref),
-    "Migrated pref should not have a user value before running migration"
-  );
-
-  Normandy.migrateShieldPrefs();
-
-  ok(
-    !Services.prefs.prefHasUserValue(legacyPref),
-    "Legacy pref should not have a user value after running migration"
-  );
-  ok(
-    Services.prefs.prefHasUserValue(migratedPref),
-    "Migrated pref should have a user value after running migration"
-  );
-  is(
-    Services.prefs.getIntPref(migratedPref),
-    1,
-    "Value should have been migrated"
-  );
-
-  Services.prefs.clearUserPref(migratedPref);
-});

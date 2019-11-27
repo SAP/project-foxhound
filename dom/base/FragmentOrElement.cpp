@@ -38,7 +38,6 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsIDocumentEncoder.h"
 #include "nsFocusManager.h"
-#include "nsILinkHandler.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIURL.h"
 #include "nsNetUtil.h"
@@ -54,7 +53,6 @@
 #include "nsNameSpaceManager.h"
 #include "nsContentList.h"
 #include "nsDOMTokenList.h"
-#include "nsXBLPrototypeBinding.h"
 #include "nsError.h"
 #include "nsDOMString.h"
 #include "nsIScriptSecurityManager.h"
@@ -71,9 +69,12 @@
 #  include "nsRange.h"
 #endif
 
-#include "nsBindingManager.h"
 #include "nsFrameLoader.h"
-#include "nsXBLBinding.h"
+#ifdef MOZ_XBL
+#  include "nsXBLPrototypeBinding.h"
+#  include "nsBindingManager.h"
+#  include "nsXBLBinding.h"
+#endif
 #include "nsPIDOMWindow.h"
 #include "nsSVGUtils.h"
 #include "nsLayoutUtils.h"
@@ -328,19 +329,14 @@ nsAtom* nsIContent::GetLang() const {
   return nullptr;
 }
 
-already_AddRefed<nsIURI> nsIContent::GetBaseURI(
-    bool aTryUseXHRDocBaseURI) const {
+nsIURI* nsIContent::GetBaseURI(bool aTryUseXHRDocBaseURI) const {
   if (SVGUseElement* use = GetContainingSVGUseShadowHost()) {
     if (URLExtraData* data = use->GetContentURLData()) {
-      return do_AddRef(data->BaseURI());
+      return data->BaseURI();
     }
   }
 
-  Document* doc = OwnerDoc();
-  // Start with document base
-  nsCOMPtr<nsIURI> base = doc->GetBaseURI(aTryUseXHRDocBaseURI);
-
-  return base.forget();
+  return OwnerDoc()->GetBaseURI(aTryUseXHRDocBaseURI);
 }
 
 nsIURI* nsIContent::GetBaseURIForStyleAttr() const {
@@ -363,9 +359,10 @@ already_AddRefed<URLExtraData> nsIContent::GetURLDataForStyleAttr(
   }
   if (aSubjectPrincipal && aSubjectPrincipal != NodePrincipal()) {
     // TODO: Cache this?
-    return MakeAndAddRef<URLExtraData>(
-        OwnerDoc()->GetDocBaseURI(), OwnerDoc()->GetDocumentURI(),
-        aSubjectPrincipal, OwnerDoc()->GetReferrerPolicy());
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        ReferrerInfo::CreateForInternalCSSResources(OwnerDoc());
+    return MakeAndAddRef<URLExtraData>(OwnerDoc()->GetDocBaseURI(),
+                                       referrerInfo, aSubjectPrincipal);
   }
   // This also ignores the case that SVG inside XBL binding.
   // But it is probably fine.
@@ -600,6 +597,9 @@ void FragmentOrElement::nsDOMSlots::Traverse(
 
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mSlots->mClassList");
   aCb.NoteXPCOMChild(mClassList.get());
+
+  NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mSlots->mPart");
+  aCb.NoteXPCOMChild(mPart.get());
 }
 
 void FragmentOrElement::nsDOMSlots::Unlink() {
@@ -611,6 +611,7 @@ void FragmentOrElement::nsDOMSlots::Unlink() {
   }
   mChildrenList = nullptr;
   mClassList = nullptr;
+  mPart = nullptr;
 }
 
 size_t FragmentOrElement::nsDOMSlots::SizeOfIncludingThis(
@@ -684,9 +685,11 @@ void FragmentOrElement::nsExtendedDOMSlots::TraverseExtendedSlots(
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mExtendedSlots->mShadowRoot");
   aCb.NoteXPCOMChild(NS_ISUPPORTS_CAST(nsIContent*, mShadowRoot));
 
+#ifdef MOZ_XBL
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(aCb, "mExtendedSlots->mXBLBinding");
   aCb.NoteNativeChild(mXBLBinding,
                       NS_CYCLE_COLLECTION_PARTICIPANT(nsXBLBinding));
+#endif
 
   if (mCustomElementData) {
     mCustomElementData->Traverse(aCb);
@@ -721,11 +724,13 @@ size_t FragmentOrElement::nsExtendedDOMSlots::SizeOfExcludingThis(
   // mShadowRoot should be handled during normal DOM tree memory reporting, just
   // like kids, siblings, etc.
 
+#ifdef MOZ_XBL
   // We don't seem to have memory reporting for nsXBLBinding.  At least
   // report the memory it's using directly.
   if (mXBLBinding) {
     n += aMallocSizeOf(mXBLBinding);
   }
+#endif
 
   if (mCustomElementData) {
     n += mCustomElementData->SizeOfIncludingThis(aMallocSizeOf);
@@ -765,7 +770,7 @@ static nsINode* FindChromeAccessOnlySubtreeOwner(nsINode* aNode) {
     aNode = aNode->GetParentNode();
   }
 
-  return aNode ? aNode->GetParentOrHostNode() : nullptr;
+  return aNode ? aNode->GetParentOrShadowHostNode() : nullptr;
 }
 
 already_AddRefed<nsINode> FindChromeAccessOnlySubtreeOwner(
@@ -996,8 +1001,8 @@ void nsIContent::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
           // dispatching event to Window object in a content page and
           // propagating the event to a chrome Element.
           if (targetInKnownToBeHandledScope &&
-              nsContentUtils::ContentIsShadowIncludingDescendantOf(
-                  this, targetInKnownToBeHandledScope->SubtreeRoot())) {
+              IsShadowIncludingInclusiveDescendantOf(
+                  targetInKnownToBeHandledScope->SubtreeRoot())) {
             // Part of step 11.4.
             // "If target's root is a shadow-including inclusive ancestor of
             //  parent, then"
@@ -1087,11 +1092,13 @@ bool FragmentOrElement::IsLink(nsIURI** aURI) const {
   return false;
 }
 
+#ifdef MOZ_XBL
 nsXBLBinding* FragmentOrElement::DoGetXBLBinding() const {
   MOZ_ASSERT(HasFlag(NODE_MAY_BE_IN_BINDING_MNGR));
   const nsExtendedDOMSlots* slots = GetExistingExtendedDOMSlots();
   return slots ? slots->mXBLBinding.get() : nullptr;
 }
+#endif
 
 nsIContent* nsIContent::GetContainingShadowHost() const {
   if (mozilla::dom::ShadowRoot* shadow = GetContainingShadow()) {
@@ -1119,23 +1126,23 @@ void nsIContent::SetXBLInsertionPoint(nsIContent* aContent) {
 
 #ifdef DEBUG
 void nsIContent::AssertAnonymousSubtreeRelatedInvariants() const {
-  NS_ASSERTION(!IsRootOfNativeAnonymousSubtree() ||
-                   (GetParent() && GetBindingParent() == GetParent()),
-               "root of native anonymous subtree must have parent equal "
-               "to binding parent");
-  NS_ASSERTION(!GetParent() ||
-                   ((GetBindingParent() == GetParent()) ==
-                    HasFlag(NODE_IS_ANONYMOUS_ROOT)) ||
-                   // Unfortunately default content for XBL insertion points
-                   // is anonymous content that is bound with the parent of
-                   // the insertion point as the parent but the bound element
-                   // for the binding as the binding parent.  So we have to
-                   // complicate the assert a bit here.
-                   (GetBindingParent() &&
-                    (GetBindingParent() == GetParent()->GetBindingParent()) ==
-                        HasFlag(NODE_IS_ANONYMOUS_ROOT)),
-               "For nodes with parent, flag and GetBindingParent() check "
-               "should match");
+  MOZ_ASSERT(!IsRootOfNativeAnonymousSubtree() ||
+                 (GetParent() && GetBindingParent() == GetParent()),
+             "root of native anonymous subtree must have parent equal "
+             "to binding parent");
+  MOZ_ASSERT(!GetParent() || !IsInComposedDoc() ||
+                 ((GetBindingParent() == GetParent()) ==
+                  HasFlag(NODE_IS_ANONYMOUS_ROOT)) ||
+                 // Unfortunately default content for XBL insertion points
+                 // is anonymous content that is bound with the parent of
+                 // the insertion point as the parent but the bound element
+                 // for the binding as the binding parent.  So we have to
+                 // complicate the assert a bit here.
+                 (GetBindingParent() &&
+                  (GetBindingParent() == GetParent()->GetBindingParent()) ==
+                      HasFlag(NODE_IS_ANONYMOUS_ROOT)),
+             "For connected nodes, flag and GetBindingParent() check "
+             "should match");
 }
 #endif
 
@@ -1163,10 +1170,11 @@ void FragmentOrElement::DestroyContent() {
     AsElement()->ClearServoData();
   }
 
+#ifdef MOZ_XBL
   Document* document = OwnerDoc();
-
   document->BindingManager()->RemovedFromDocument(this, document,
                                                   nsBindingManager::eRunDtor);
+#endif
 
 #ifdef DEBUG
   uint32_t oldChildCount = GetChildCount();
@@ -1373,9 +1381,12 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
     tmp->ExtendedDOMSlots()->mShadowRoot = nullptr;
   }
 
+#ifdef MOZ_XBL
   Document* doc = tmp->OwnerDoc();
   doc->BindingManager()->RemovedFromDocument(tmp, doc,
                                              nsBindingManager::eDoNotRunDtor);
+#endif
+
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(FragmentOrElement)
@@ -1600,9 +1611,11 @@ bool NodeHasActiveFrame(Document* aCurrentDoc, nsINode* aNode) {
          aNode->AsElement()->GetPrimaryFrame();
 }
 
+#ifdef MOZ_XBL
 bool OwnedByBindingManager(Document* aCurrentDoc, nsINode* aNode) {
   return aNode->IsElement() && aNode->AsElement()->GetXBLBinding();
 }
+#endif
 
 // CanSkip checks if aNode is known-live, and if it is, returns true. If aNode
 // is in a known-live DOM tree, CanSkip may also remove other objects from
@@ -1619,8 +1632,11 @@ bool FragmentOrElement::CanSkip(nsINode* aNode, bool aRemovingAllowed) {
   bool unoptimizable = aNode->UnoptimizableCCNode();
   Document* currentDoc = aNode->GetComposedDoc();
   if (currentDoc && IsCertainlyAliveNode(aNode, currentDoc) &&
-      (!unoptimizable || NodeHasActiveFrame(currentDoc, aNode) ||
-       OwnedByBindingManager(currentDoc, aNode))) {
+      (!unoptimizable || NodeHasActiveFrame(currentDoc, aNode)
+#ifdef MOZ_XBL
+       || OwnedByBindingManager(currentDoc, aNode)
+#endif
+           )) {
     MarkNodeChildren(aNode);
     return true;
   }
@@ -1823,7 +1839,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
     return NS_SUCCESS_INTERRUPTED_TRAVERSE;
   }
 
+#ifdef MOZ_XBL
   tmp->OwnerDoc()->BindingManager()->Traverse(tmp, cb);
+#endif
 
   // Check that whenever we have effect properties, MayHaveAnimations is set.
 #ifdef DEBUG

@@ -6,13 +6,13 @@
 #include "SocketProcessParent.h"
 
 #include "SocketProcessHost.h"
-#include "mozilla/ipc/CrashReporterHost.h"
+#include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/ContentProcessManager.h"
 #  include "mozilla/dom/BrowserParent.h"
-#  include "mozilla/net/WebrtcProxyChannelParent.h"
+#  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
 
 namespace mozilla {
@@ -43,23 +43,9 @@ SocketProcessParent* SocketProcessParent::GetSingleton() {
   return sSocketProcessParent;
 }
 
-mozilla::ipc::IPCResult SocketProcessParent::RecvInitCrashReporter(
-    Shmem&& aShmem, const NativeThreadId& aThreadId) {
-  mCrashReporter = MakeUnique<CrashReporterHost>(GeckoProcessType_Content,
-                                                 aShmem, aThreadId);
-
-  return IPC_OK();
-}
-
 void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (aWhy == AbnormalShutdown) {
-    if (mCrashReporter) {
-      mCrashReporter->GenerateCrashReport(OtherPid());
-      mCrashReporter = nullptr;
-    } else {
-      CrashReporter::FinalizeOrphanedMinidump(OtherPid(),
-                                              GeckoProcessType_Content);
-    }
+    GenerateCrashReport(OtherPid());
   }
 
   if (mHost) {
@@ -95,28 +81,28 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvFinishMemoryReport(
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvAccumulateChildHistograms(
-    InfallibleTArray<HistogramAccumulation>&& aAccumulations) {
+    nsTArray<HistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildHistograms(Telemetry::ProcessID::Socket,
                                           aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvAccumulateChildKeyedHistograms(
-    InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations) {
+    nsTArray<KeyedHistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildKeyedHistograms(Telemetry::ProcessID::Socket,
                                                aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvUpdateChildScalars(
-    InfallibleTArray<ScalarAction>&& aScalarActions) {
+    nsTArray<ScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildScalars(Telemetry::ProcessID::Socket,
                                    aScalarActions);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvUpdateChildKeyedScalars(
-    InfallibleTArray<KeyedScalarAction>&& aScalarActions) {
+    nsTArray<KeyedScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildKeyedScalars(Telemetry::ProcessID::Socket,
                                         aScalarActions);
   return IPC_OK();
@@ -135,10 +121,10 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvRecordDiscardedData(
   return IPC_OK();
 }
 
-PWebrtcProxyChannelParent* SocketProcessParent::AllocPWebrtcProxyChannelParent(
-    const TabId& aTabId) {
+PWebrtcTCPSocketParent* SocketProcessParent::AllocPWebrtcTCPSocketParent(
+    const Maybe<TabId>& aTabId) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent = new WebrtcProxyChannelParent(aTabId);
+  WebrtcTCPSocketParent* parent = new WebrtcTCPSocketParent(aTabId);
   parent->AddRef();
   return parent;
 #else
@@ -146,13 +132,34 @@ PWebrtcProxyChannelParent* SocketProcessParent::AllocPWebrtcProxyChannelParent(
 #endif
 }
 
-bool SocketProcessParent::DeallocPWebrtcProxyChannelParent(
-    PWebrtcProxyChannelParent* aActor) {
+bool SocketProcessParent::DeallocPWebrtcTCPSocketParent(
+    PWebrtcTCPSocketParent* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent =
-      static_cast<WebrtcProxyChannelParent*>(aActor);
+  WebrtcTCPSocketParent* parent = static_cast<WebrtcTCPSocketParent*>(aActor);
   parent->Release();
 #endif
+  return true;
+}
+
+PDNSRequestParent* SocketProcessParent::AllocPDNSRequestParent(
+    const nsCString& aHost, const OriginAttributes& aOriginAttributes,
+    const uint32_t& aFlags) {
+  DNSRequestParent* p = new DNSRequestParent();
+  p->AddRef();
+  return p;
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvPDNSRequestConstructor(
+    PDNSRequestParent* aActor, const nsCString& aHost,
+    const OriginAttributes& aOriginAttributes, const uint32_t& aFlags) {
+  static_cast<DNSRequestParent*>(aActor)->DoAsyncResolve(
+      aHost, aOriginAttributes, aFlags);
+  return IPC_OK();
+}
+
+bool SocketProcessParent::DeallocPDNSRequestParent(PDNSRequestParent* aParent) {
+  DNSRequestParent* p = static_cast<DNSRequestParent*>(aParent);
+  p->Release();
   return true;
 }
 

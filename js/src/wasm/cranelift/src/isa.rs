@@ -94,7 +94,10 @@ impl<'env> EnvVariableFlags<'env> {
 /// Create a `Flags` object for the shared settings.
 ///
 /// This only fails if one of Cranelift's settings has been removed or renamed.
-fn make_shared_flags(env_flags: &Option<EnvVariableFlags>) -> settings::SetResult<settings::Flags> {
+fn make_shared_flags(
+    env: &StaticEnvironment,
+    env_flags: &Option<EnvVariableFlags>,
+) -> settings::SetResult<settings::Flags> {
     let mut sb = settings::builder();
 
     // We don't install SIGFPE handlers, but depend on explicit traps around divisions.
@@ -108,6 +111,14 @@ fn make_shared_flags(env_flags: &Option<EnvVariableFlags>) -> settings::SetResul
     // 3. Previous frame pointer.
     //
     sb.set("baldrdash_prologue_words", "3")?;
+
+    // Make sure that libcalls use the supplementary VMContext argument.
+    let libcall_call_conv = if env.platformIsWindows {
+        "baldrdash_windows"
+    } else {
+        "baldrdash_system_v"
+    };
+    sb.set("libcall_call_conv", libcall_call_conv)?;
 
     // Assembler::PatchDataWithValueCheck expects -1 stored where a function address should be
     // patched in.
@@ -127,7 +138,7 @@ fn make_shared_flags(env_flags: &Option<EnvVariableFlags>) -> settings::SetResul
         Some(env_flags) => env_flags.opt_level,
         None => None,
     }
-    .unwrap_or("best");
+    .unwrap_or("speed");
     sb.set("opt_level", opt_level)?;
 
     // Enable jump tables by default.
@@ -141,14 +152,17 @@ fn make_shared_flags(env_flags: &Option<EnvVariableFlags>) -> settings::SetResul
         if jump_tables_enabled { "true" } else { "false" },
     )?;
 
+    if cfg!(feature = "cranelift_x86") && cfg!(target_pointer_width = "64") {
+        sb.enable("enable_pinned_reg")?;
+        sb.enable("use_pinned_reg_as_heap_base")?;
+    }
+
     Ok(settings::Flags::new(sb))
 }
 
 #[cfg(feature = "cranelift_x86")]
 fn make_isa_specific(env: &StaticEnvironment) -> DashResult<isa::Builder> {
-    use std::str::FromStr; // for the triple! macro below.
-
-    let mut ib = isa::lookup(triple!("x86_64-unknown-unknown")).map_err(BasicError::from)?;
+    let mut ib = isa::lookup_by_name("x86_64-unknown-unknown").map_err(BasicError::from)?;
 
     if !env.hasSse2 {
         return Err("SSE2 is mandatory for Baldrdash!".into());
@@ -182,7 +196,6 @@ fn make_isa_specific(env: &StaticEnvironment) -> DashResult<isa::Builder> {
     Ok(ib)
 }
 
-/// TODO: SM runs on more than x86 chips. Support them.
 #[cfg(not(feature = "cranelift_x86"))]
 fn make_isa_specific(_env: &StaticEnvironment) -> DashResult<isa::Builder> {
     Err("Platform not supported yet!".into())
@@ -195,7 +208,7 @@ pub fn make_isa(env: &StaticEnvironment) -> DashResult<Box<dyn isa::TargetIsa>> 
     let env_flags = EnvVariableFlags::parse(&env_flags_str);
 
     // Start with the ISA-independent settings.
-    let shared_flags = make_shared_flags(&env_flags).map_err(BasicError::from)?;
+    let shared_flags = make_shared_flags(env, &env_flags).map_err(BasicError::from)?;
     let ib = make_isa_specific(env)?;
     Ok(ib.finish(shared_flags))
 }

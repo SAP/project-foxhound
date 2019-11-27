@@ -327,10 +327,6 @@ class DocAccessible : public HyperTextAccessibleWrap,
 
   /**
    * Return true if the given ID is referred by relation attribute.
-   *
-   * @note Different elements may share the same ID if they are hosted inside
-   *       XBL bindings. Be careful the result of this method may be  senseless
-   *       while it's called for XUL elements (where XBL is used widely).
    */
   bool IsDependentID(dom::Element* aElement, const nsAString& aID) const {
     return GetRelProviders(aElement, aID);
@@ -593,6 +589,19 @@ class DocAccessible : public HyperTextAccessibleWrap,
    * descendant. In that case, accessible focus must be changed accordingly.
    */
   void ARIAActiveDescendantIDMaybeMoved(dom::Element* aElm);
+
+  /**
+   * Traverse content subtree and for each node do one of 3 things:
+   * 1. Check if content node has an accessible that should be removed and
+   *    remove it.
+   * 2. Check if content node has an accessible that needs to be recreated.
+   *    Remove it and schedule it for reinsertion.
+   * 3. Check if content node has no accessible but needs one. Schedule one for
+   *    insertion.
+   *
+   * Returns true if the root node should be reinserted.
+   */
+  bool PruneOrInsertSubtree(nsIContent* aRoot);
 
  protected:
   /**

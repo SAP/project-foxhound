@@ -5,6 +5,7 @@
 "use strict";
 
 const PERMISSION_SAVE_LOGINS = "login-saving";
+const MAX_DATE_MS = 8640000000000000;
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -33,7 +34,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("nsLoginManager");
+  let logger = LoginHelper.createLogger("LoginManager");
   return logger;
 });
 
@@ -255,7 +256,7 @@ LoginManager.prototype = {
    */
   _checkLogin(login) {
     // Sanity check the login
-    if (login.origin == null || login.origin.length == 0) {
+    if (login.origin == null || !login.origin.length) {
       throw new Error("Can't add a login with a null or empty origin.");
     }
 
@@ -264,7 +265,7 @@ LoginManager.prototype = {
       throw new Error("Can't add a login with a null username.");
     }
 
-    if (login.password == null || login.password.length == 0) {
+    if (login.password == null || !login.password.length) {
       throw new Error("Can't add a login with a null or empty password.");
     }
 
@@ -287,6 +288,14 @@ LoginManager.prototype = {
       throw new Error(
         "Can't add a login without a httpRealm or formActionOrigin."
       );
+    }
+
+    login.QueryInterface(Ci.nsILoginMetaInfo);
+    for (let pname of ["timeCreated", "timeLastUsed", "timePasswordChanged"]) {
+      // Invalid dates
+      if (login[pname] > MAX_DATE_MS) {
+        throw new Error("Can't add a login with invalid date properties.");
+      }
     }
   },
 
@@ -312,8 +321,9 @@ LoginManager.prototype = {
       login.httpRealm
     );
 
-    if (logins.some(l => login.matches(l, true))) {
-      throw new Error("This login already exists.");
+    let matchingLogin = logins.find(l => login.matches(l, true));
+    if (matchingLogin) {
+      throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
     }
 
     log.debug("Adding login");
@@ -344,7 +354,12 @@ LoginManager.prototype = {
       logins[i].username = usernames[i];
       logins[i].password = passwords[i];
       log.debug("Adding login");
-      let resultLogin = this._storage.addLogin(logins[i], true);
+      let resultLogin = this._storage.addLogin(
+        logins[i],
+        true,
+        plaintextUsername,
+        plaintextPassword
+      );
       // Reset the username and password to keep the same guarantees as addLogin
       logins[i].username = plaintextUsername;
       logins[i].password = plaintextPassword;
@@ -508,9 +523,15 @@ LoginManager.prototype = {
     }
 
     let uri = Services.io.newURI(origin);
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
+      uri,
+      {}
+    );
     return (
-      Services.perms.testPermission(uri, PERMISSION_SAVE_LOGINS) !=
-      Services.perms.DENY_ACTION
+      Services.perms.testPermissionFromPrincipal(
+        principal,
+        PERMISSION_SAVE_LOGINS
+      ) != Services.perms.DENY_ACTION
     );
   },
 
@@ -522,11 +543,15 @@ LoginManager.prototype = {
     LoginHelper.checkOriginValue(origin);
 
     let uri = Services.io.newURI(origin);
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
+      uri,
+      {}
+    );
     if (enabled) {
-      Services.perms.remove(uri, PERMISSION_SAVE_LOGINS);
+      Services.perms.removeFromPrincipal(principal, PERMISSION_SAVE_LOGINS);
     } else {
-      Services.perms.add(
-        uri,
+      Services.perms.addFromPrincipal(
+        principal,
         PERMISSION_SAVE_LOGINS,
         Services.perms.DENY_ACTION
       );

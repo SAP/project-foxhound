@@ -16,6 +16,7 @@
 #include <stdint.h>  // uint32_t
 
 #include "frontend/ParseContext.h"  // js::frontend::UsedNameTracker
+#include "frontend/ParseInfo.h"
 #include "frontend/SharedContext.h"  // js::frontend::Directives, js::frontend::{,Eval,Global}SharedContext
 #include "js/CompileOptions.h"  // JS::ReadOnlyCompileOptions
 #include "js/RootingAPI.h"      // JS::{,Mutable}Handle, JS::Rooted
@@ -54,7 +55,7 @@ class MOZ_STACK_CLASS BytecodeCompiler {
   JS::Rooted<ScriptSourceObject*> sourceObject;
   ScriptSource* scriptSource = nullptr;
 
-  mozilla::Maybe<UsedNameTracker> usedNames;
+  mozilla::Maybe<ParseInfo> parseInfo;
 
   Directives directives;
 
@@ -86,11 +87,14 @@ class MOZ_STACK_CLASS BytecodeCompiler {
   MOZ_MUST_USE bool createScriptSource(
       const mozilla::Maybe<uint32_t>& parameterListEnd);
 
-  void createUsedNames() { usedNames.emplace(cx); }
+  void createParseInfo(LifoAllocScope& allocScope) {
+    parseInfo.emplace(cx, allocScope);
+  }
 
   // Create a script for source of the given length, using the explicitly-
   // provided toString offsets as the created script's offsets in the source.
-  MOZ_MUST_USE bool internalCreateScript(uint32_t toStringStart,
+  MOZ_MUST_USE bool internalCreateScript(HandleObject functionOrGlobal,
+                                         uint32_t toStringStart,
                                          uint32_t toStringEnd,
                                          uint32_t sourceBufferLength);
 
@@ -106,9 +110,6 @@ class MOZ_STACK_CLASS BytecodeCompiler {
   }
 
   bool canLazilyParse() const;
-
-  MOZ_MUST_USE bool deoptimizeArgumentsInEnclosingScripts(
-      JSContext* cx, JS::Handle<JSObject*> environment);
 };
 
 class MOZ_STACK_CLASS GlobalScriptInfo final : public BytecodeCompiler {

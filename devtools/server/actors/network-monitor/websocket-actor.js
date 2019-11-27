@@ -23,29 +23,24 @@ const WebSocketActor = ActorClassWithSpec(webSocketSpec, {
     Actor.prototype.initialize.call(this, conn);
 
     this.targetActor = targetActor;
-    this.listening = false;
+    this.innerWindowID = null;
 
     // Each connection's webSocketSerialID is mapped to a httpChannelId
     this.connections = new Map();
 
     // Register for backend events.
-    this.onNavigate = this.onNavigate.bind(this);
-    this.onWillNavigate = this.onWillNavigate.bind(this);
-    this.targetActor.on("navigate", this.onNavigate);
-    this.targetActor.on("will-navigate", this.onWillNavigate);
+    this.onWindowReady = this.onWindowReady.bind(this);
+    this.targetActor.on("window-ready", this.onWindowReady);
   },
 
-  onWillNavigate: function() {
-    this.stopListening();
-  },
-
-  onNavigate: function() {
-    this.startListening();
+  onWindowReady({ isTopLevel }) {
+    if (isTopLevel) {
+      this.startListening();
+    }
   },
 
   destroy: function() {
-    this.targetActor.off("navigate", this.onNavigate);
-    this.targetActor.off("will-navigate", this.onWillNavigate);
+    this.targetActor.off("window-ready", this.onWindowReady);
 
     this.stopListening();
     Actor.prototype.destroy.call(this);
@@ -54,22 +49,20 @@ const WebSocketActor = ActorClassWithSpec(webSocketSpec, {
   // Actor API
 
   startListening: function() {
-    // Register WS listener
-    if (!this.listening) {
-      const innerWindowID = this.targetActor.window.windowUtils
-        .currentInnerWindowID;
-      webSocketEventService.addListener(innerWindowID, this);
-      this.listening = true;
-    }
+    this.stopListening();
+    this.innerWindowID = this.targetActor.window.windowUtils.currentInnerWindowID;
+    webSocketEventService.addListener(this.innerWindowID, this);
   },
 
   stopListening() {
-    if (this.listening) {
-      const innerWindowID = this.targetActor.window.windowUtils
-        .currentInnerWindowID;
-      webSocketEventService.removeListener(innerWindowID, this);
-      this.listening = false;
+    if (!this.innerWindowID) {
+      return;
     }
+    if (webSocketEventService.hasListenerFor(this.innerWindowID)) {
+      webSocketEventService.removeListener(this.innerWindowID, this);
+    }
+
+    this.innerWindowID = null;
   },
 
   // nsIWebSocketEventService
@@ -110,7 +103,7 @@ const WebSocketActor = ActorClassWithSpec(webSocketSpec, {
     }
 
     let payload = frame.payload;
-    payload = new LongStringActor(this.conn, JSON.stringify(payload));
+    payload = new LongStringActor(this.conn, payload);
     this.manage(payload);
     payload = payload.form();
 
@@ -135,7 +128,7 @@ const WebSocketActor = ActorClassWithSpec(webSocketSpec, {
       return;
     }
 
-    let payload = new LongStringActor(this.conn, JSON.stringify(frame.payload));
+    let payload = new LongStringActor(this.conn, frame.payload);
     this.manage(payload);
     payload = payload.form();
 

@@ -8,7 +8,9 @@ include('../templates.mozbuild')
 
 DIRS += [
     'actors',
+    'connectors',
     'performance',
+    'performance-new',
     'socket',
     'startup',
 ]
@@ -20,7 +22,8 @@ MOCHITEST_CHROME_MANIFESTS += ['tests/mochitest/chrome.ini']
 XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
 
 DevToolsModules(
-    'main.js',
+    'debugger-server-connection.js',
+    'debugger-server.js',
 )
 
 with Files('**'):

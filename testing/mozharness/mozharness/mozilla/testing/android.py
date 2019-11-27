@@ -339,12 +339,12 @@ class AndroidMixin(object):
         import mozdevice
         try:
             self.device.install_app(apk, replace=replace)
-        except (mozdevice.ADBError, mozdevice.ADBTimeoutError), e:
+        except (mozdevice.ADBError, mozdevice.ADBTimeoutError) as e:
             self.info('Failed to install %s on %s: %s %s' %
                       (apk, self.device_name,
                        type(e).__name__, e))
-            self.fatal('INFRA-ERROR: Failed to install %s' %
-                       os.path.basename(apk),
+            self.fatal('INFRA-ERROR: %s Failed to install %s' %
+                       (type(e).__name__, os.path.basename(apk)),
                        EXIT_STATUS_DICT[TBPL_RETRY])
 
     def is_boot_completed(self):
@@ -586,6 +586,7 @@ class AndroidMixin(object):
         self.delete_tombstones()
         # Get a post-boot device process list for diagnostics
         self.info(self.shell_output('ps'))
+        self.info("verify_device complete")
 
     @PreScriptAction('run-tests')
     def timed_screenshots(self, action, success=None):

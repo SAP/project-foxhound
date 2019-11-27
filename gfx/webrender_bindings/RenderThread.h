@@ -47,7 +47,16 @@ class WebRenderThreadPool {
 
   ~WebRenderThreadPool();
 
-  wr::WrThreadPool* Raw() { return mThreadPool; }
+  wr::WrThreadPool* Raw() {
+    // If this pointer is null we are likely at some late shutdown stage,
+    // when threads are no longer safe to interact with.
+    MOZ_RELEASE_ASSERT(mThreadPool);
+    return mThreadPool;
+  }
+
+  /// Prematurely destroys this handle to the thread pool.
+  /// After calling this the object is useless.
+  void Release();
 
  protected:
   wr::WrThreadPool* mThreadPool;
@@ -158,8 +167,10 @@ class RenderThread final {
 
   // RenderNotifier implementation
 
-  /// Automatically forwarded to the render thread.
-  void HandleFrame(wr::WindowId aWindowId, bool aRender);
+  /// Automatically forwarded to the render thread. Will trigger a render for
+  /// the current pending frame once one call per document in that pending
+  // frame has been received.
+  void HandleFrameOneDoc(wr::WindowId aWindowId, bool aRender);
 
   /// Automatically forwarded to the render thread.
   void WakeUp(wr::WindowId aWindowId);
@@ -196,17 +207,13 @@ class RenderThread final {
   void NotifyNotUsed(uint64_t aExternalImageId);
 
   /// Can only be called from the render thread.
-  void UpdateRenderTextureHost(uint64_t aSrcExternalImageId,
-                               uint64_t aWrappedExternalImageId);
-
-  /// Can only be called from the render thread.
   void NofityForUse(uint64_t aExternalImageId);
 
   /// Can only be called from the render thread.
   void UnregisterExternalImageDuringShutdown(uint64_t aExternalImageId);
 
   /// Can only be called from the render thread.
-  RenderTextureHost* GetRenderTexture(WrExternalImageId aExternalImageId);
+  RenderTextureHost* GetRenderTexture(ExternalImageId aExternalImageId);
 
   /// Can be called from any thread.
   bool IsDestroyed(wr::WindowId aWindowId);
@@ -219,11 +226,7 @@ class RenderThread final {
                             const TimeStamp& aStartTime,
                             uint8_t aDocFrameCount);
   /// Can be called from any thread.
-  mozilla::Pair<bool, bool> IncRenderingFrameCount(wr::WindowId aWindowId,
-                                                   bool aRender);
-  /// Can be called from any thread.
-  void FrameRenderingComplete(wr::WindowId aWindowId);
-
+  void DecPendingFrameBuildCount(wr::WindowId aWindowId);
   void NotifySlowFrame(wr::WindowId aWindowId);
 
   /// Can be called from any thread.
@@ -264,7 +267,9 @@ class RenderThread final {
 
   void SetCompositionRecorderForWindow(
       wr::WindowId aWindowId,
-      RefPtr<layers::WebRenderCompositionRecorder>&& aCompositionRecorder);
+      UniquePtr<layers::WebRenderCompositionRecorder> aCompositionRecorder);
+
+  void WriteCollectedFramesForWindow(wr::WindowId aWindowId);
 
  private:
   explicit RenderThread(base::Thread* aThread);
@@ -290,20 +295,24 @@ class RenderThread final {
   RefPtr<gl::GLContext> mSharedGL;
 
   std::map<wr::WindowId, UniquePtr<RendererOGL>> mRenderers;
-  std::map<wr::WindowId, RefPtr<layers::WebRenderCompositionRecorder>>
+  std::map<wr::WindowId, UniquePtr<layers::WebRenderCompositionRecorder>>
       mCompositionRecorders;
 
-  struct WindowInfo {
-    bool mIsDestroyed = false;
-    bool mRender = false;
-    int64_t mPendingCount = 0;
-    int64_t mRenderingCount = 0;
+  struct PendingFrameInfo {
+    TimeStamp mStartTime;
+    VsyncId mStartId;
     uint8_t mDocFramesSeen = 0;
-    // One entry in this queue for each pending frame, so the length
-    // should always equal mPendingCount
-    std::queue<TimeStamp> mStartTimes;
-    std::queue<VsyncId> mStartIds;
-    std::queue<uint8_t> mDocFrameCounts;
+    uint8_t mDocFramesTotal = 0;
+    bool mFrameNeedsRender = false;
+  };
+
+  struct WindowInfo {
+    int64_t PendingCount() { return mPendingFrames.size(); }
+    // If mIsRendering is true, mPendingFrames.front() is currently being
+    // rendered.
+    std::queue<PendingFrameInfo> mPendingFrames;
+    uint8_t mPendingFrameBuild = 0;
+    bool mIsDestroyed = false;
     bool mHadSlowFrame = false;
   };
 

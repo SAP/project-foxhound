@@ -33,7 +33,6 @@
 #include "UnitTransforms.h"             // for TransformTo
 #include "base/message_loop.h"          // for MessageLoop
 #include "base/task.h"                  // for NewRunnableMethod, etc
-#include "mozilla/StaticPrefs.h"        // for StaticPrefs
 #include "gfxTypes.h"                   // for gfxFloat
 #include "LayersLogging.h"              // for print_stderr
 #include "mozilla/Assertions.h"         // for MOZ_ASSERT, etc
@@ -46,10 +45,17 @@
 #include "mozilla/Preferences.h"             // for Preferences
 #include "mozilla/RecursiveMutex.h"          // for RecursiveMutexAutoLock, etc
 #include "mozilla/RefPtr.h"                  // for RefPtr
-#include "mozilla/StaticPrefs.h"             // for StaticPrefs
-#include "mozilla/StaticPtr.h"               // for StaticAutoPtr
-#include "mozilla/Telemetry.h"               // for Telemetry
-#include "mozilla/TimeStamp.h"               // for TimeDuration, TimeStamp
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_general.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_mousewheel.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_slider.h"
+#include "mozilla/StaticPrefs_test.h"
+#include "mozilla/StaticPrefs_toolkit.h"
+#include "mozilla/Telemetry.h"  // for Telemetry
+#include "mozilla/TimeStamp.h"  // for TimeDuration, TimeStamp
 #include "mozilla/dom/CheckerboardReportService.h"  // for CheckerboardEventStorage
 // note: CheckerboardReportService.h actually lives in gfx/layers/apz/util/
 #include "mozilla/dom/Touch.h"              // for Touch
@@ -72,7 +78,6 @@
 #include "nsAlgorithm.h"                              // for clamped
 #include "nsCOMPtr.h"                                 // for already_AddRefed
 #include "nsDebug.h"                                  // for NS_WARNING
-#include "nsIDOMWindowUtils.h"                        // for nsIDOMWindowUtils
 #include "nsMathUtils.h"                              // for NS_hypot
 #include "nsPoint.h"                                  // for nsIntPoint
 #include "nsStyleConsts.h"
@@ -132,7 +137,7 @@ typedef PlatformSpecificStateBase
  * \page APZCPrefs APZ preferences
  *
  * The following prefs are used to control the behaviour of the APZC.
- * The default values are provided in StaticPrefs.h.
+ * The default values are provided in StaticPrefs.yaml.
  *
  * \li\b apz.allow_double_tap_zooming
  * Pref that allows or disallows double tap to zoom
@@ -374,18 +379,6 @@ typedef PlatformSpecificStateBase
  * The maximum stretch along an axis is a factor of (1 + kStretchFactor).
  * (So if kStretchFactor is 0, you can't stretch at all; if kStretchFactor
  * is 1, you can stretch at most by a factor of 2).
- *
- * \li\b apz.overscroll.spring_stiffness
- * The stiffness of the spring used in the physics model for the overscroll
- * animation.
- *
- * \li\b apz.overscroll.spring_friction
- * The friction of the spring used in the physics model for the overscroll
- * animation.
- * Even though a realistic physics model would dictate that this be the same
- * as \b apz.fling_friction, we allow it to be set to be something different,
- * because in practice we want flings to skate smoothly (low friction), while
- * we want the overscroll bounce-back to oscillate few times (high friction).
  *
  * \li\b apz.overscroll.stop_distance_threshold
  * \li\b apz.overscroll.stop_velocity_threshold
@@ -816,10 +809,10 @@ void AsyncPanZoomController::InitializeGlobalState() {
       new ComputedTimingFunction(nsTimingFunction(StyleTimingKeyword::Ease));
   ClearOnShutdown(&gZoomAnimationFunction);
   gVelocityCurveFunction = new ComputedTimingFunction(
-      nsTimingFunction(StaticPrefs::apz_fling_curve_function_x1(),
-                       StaticPrefs::apz_fling_curve_function_y1(),
-                       StaticPrefs::apz_fling_curve_function_x2(),
-                       StaticPrefs::apz_fling_curve_function_y2()));
+      nsTimingFunction(StaticPrefs::apz_fling_curve_function_x1_AtStartup(),
+                       StaticPrefs::apz_fling_curve_function_y1_AtStartup(),
+                       StaticPrefs::apz_fling_curve_function_x2_AtStartup(),
+                       StaticPrefs::apz_fling_curve_function_y2_AtStartup()));
   ClearOnShutdown(&gVelocityCurveFunction);
 
   uint64_t sysmem = PR_GetPhysicalMemorySize();
@@ -847,7 +840,7 @@ AsyncPanZoomController::AsyncPanZoomController(
       mPanDirRestricted(false),
       mPinchLocked(false),
       mPinchEventBuffer(TimeDuration::FromMilliseconds(
-          StaticPrefs::apz_pinch_lock_buffer_max_age())),
+          StaticPrefs::apz_pinch_lock_buffer_max_age_AtStartup())),
       mZoomConstraints(false, false,
                        mScrollMetadata.GetMetrics().GetDevPixelsPerCSSPixel() *
                            kViewportMinScale / ParentLayerToScreenScale(1),
@@ -1054,7 +1047,7 @@ nsEventStatus AsyncPanZoomController::HandleDragEvent(
   ScrollDirection direction = *scrollbarData.mDirection;
 
   bool isMouseAwayFromThumb = false;
-  if (int snapMultiplier = StaticPrefs::slider_snapMultiplier()) {
+  if (int snapMultiplier = StaticPrefs::slider_snapMultiplier_AtStartup()) {
     // It's fine to ignore the async component of the thumb's transform,
     // because any async transform of the thumb will be in the direction of
     // scrolling, but here we're interested in the other direction.
@@ -1866,25 +1859,17 @@ nsEventStatus AsyncPanZoomController::HandleEndOfPan() {
   return nsEventStatus_eConsumeNoDefault;
 }
 
-bool AsyncPanZoomController::ConvertToGecko(const ScreenIntPoint& aPoint,
-                                            LayoutDevicePoint* aOut) {
+Maybe<LayoutDevicePoint> AsyncPanZoomController::ConvertToGecko(
+    const ScreenIntPoint& aPoint) {
   if (APZCTreeManager* treeManagerLocal = GetApzcTreeManager()) {
-    ScreenToScreenMatrix4x4 transformScreenToGecko =
-        treeManagerLocal->GetScreenToApzcTransform(this) *
-        treeManagerLocal->GetApzcToGeckoTransform(this);
-
-    Maybe<ScreenIntPoint> layoutPoint =
-        UntransformBy(transformScreenToGecko, aPoint);
-    if (!layoutPoint) {
-      return false;
+    if (Maybe<ScreenIntPoint> layoutPoint =
+            treeManagerLocal->ConvertToGecko(aPoint, this)) {
+      return Some(LayoutDevicePoint(ViewAs<LayoutDevicePixel>(
+          *layoutPoint,
+          PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent)));
     }
-
-    *aOut = LayoutDevicePoint(ViewAs<LayoutDevicePixel>(
-        *layoutPoint,
-        PixelCastJustification::LayoutDeviceIsScreenForUntransformedEvent));
-    return true;
   }
-  return false;
+  return Nothing();
 }
 
 CSSCoord AsyncPanZoomController::ConvertScrollbarPoint(
@@ -2016,11 +2001,17 @@ nsEventStatus AsyncPanZoomController::OnKeyboard(const KeyboardInput& aEvent) {
   if (!StaticPrefs::general_smoothScroll()) {
     CancelAnimation();
 
-    // CallDispatchScroll interprets the start and end points as the start and
-    // end of a touch scroll so they need to be reversed.
-    ParentLayerPoint startPoint = destination * Metrics().GetZoom();
-    ParentLayerPoint endPoint =
-        Metrics().GetScrollOffset() * Metrics().GetZoom();
+    ParentLayerPoint startPoint, endPoint;
+
+    {
+      RecursiveMutexAutoLock lock(mRecursiveMutex);
+
+      // CallDispatchScroll interprets the start and end points as the start and
+      // end of a touch scroll so they need to be reversed.
+      startPoint = destination * Metrics().GetZoom();
+      endPoint = Metrics().GetScrollOffset() * Metrics().GetZoom();
+    }
+
     ParentLayerPoint delta = endPoint - startPoint;
 
     ScreenPoint distance = ToScreenCoordinates(
@@ -2717,8 +2708,8 @@ nsEventStatus AsyncPanZoomController::OnLongPress(
   APZC_LOG("%p got a long-press in state %d\n", this, mState);
   RefPtr<GeckoContentController> controller = GetGeckoContentController();
   if (controller) {
-    LayoutDevicePoint geckoScreenPoint;
-    if (ConvertToGecko(aEvent.mPoint, &geckoScreenPoint)) {
+    if (Maybe<LayoutDevicePoint> geckoScreenPoint =
+            ConvertToGecko(aEvent.mPoint)) {
       TouchBlockState* touch = GetCurrentTouchBlock();
       if (!touch) {
         APZC_LOG(
@@ -2732,7 +2723,7 @@ nsEventStatus AsyncPanZoomController::OnLongPress(
         return nsEventStatus_eIgnore;
       }
       uint64_t blockId = GetInputQueue()->InjectNewTouchBlock(this);
-      controller->HandleTap(TapType::eLongTap, geckoScreenPoint,
+      controller->HandleTap(TapType::eLongTap, *geckoScreenPoint,
                             aEvent.modifiers, GetGuid(), blockId);
       return nsEventStatus_eConsumeNoDefault;
     }
@@ -2752,8 +2743,7 @@ nsEventStatus AsyncPanZoomController::GenerateSingleTap(
     mozilla::Modifiers aModifiers) {
   RefPtr<GeckoContentController> controller = GetGeckoContentController();
   if (controller) {
-    LayoutDevicePoint geckoScreenPoint;
-    if (ConvertToGecko(aPoint, &geckoScreenPoint)) {
+    if (Maybe<LayoutDevicePoint> geckoScreenPoint = ConvertToGecko(aPoint)) {
       TouchBlockState* touch = GetCurrentTouchBlock();
       // |touch| may be null in the case where this function is
       // invoked by GestureEventListener on a timeout. In that case we already
@@ -2780,7 +2770,7 @@ nsEventStatus AsyncPanZoomController::GenerateSingleTap(
           NewRunnableMethod<TapType, LayoutDevicePoint, mozilla::Modifiers,
                             ScrollableLayerGuid, uint64_t>(
               "layers::GeckoContentController::HandleTap", controller,
-              &GeckoContentController::HandleTap, aType, geckoScreenPoint,
+              &GeckoContentController::HandleTap, aType, *geckoScreenPoint,
               aModifiers, GetGuid(), touch ? touch->GetBlockId() : 0);
 
       controller->PostDelayedTask(runnable.forget(), 0);
@@ -2828,9 +2818,9 @@ nsEventStatus AsyncPanZoomController::OnDoubleTap(
     MOZ_ASSERT(GetCurrentTouchBlock());
     if (mZoomConstraints.mAllowDoubleTapZoom &&
         GetCurrentTouchBlock()->TouchActionAllowsDoubleTapZoom()) {
-      LayoutDevicePoint geckoScreenPoint;
-      if (ConvertToGecko(aEvent.mPoint, &geckoScreenPoint)) {
-        controller->HandleTap(TapType::eDoubleTap, geckoScreenPoint,
+      if (Maybe<LayoutDevicePoint> geckoScreenPoint =
+              ConvertToGecko(aEvent.mPoint)) {
+        controller->HandleTap(TapType::eDoubleTap, *geckoScreenPoint,
                               aEvent.modifiers, GetGuid(),
                               GetCurrentTouchBlock()->GetBlockId());
       }
@@ -4116,37 +4106,6 @@ CSSPoint AsyncPanZoomController::GetCurrentAsyncScrollOffsetInCssPixels(
   return GetEffectiveScrollOffset(aMode);
 }
 
-AsyncTransform AsyncPanZoomController::GetCurrentAsyncViewportTransform(
-    AsyncTransformConsumer aMode) const {
-  RecursiveMutexAutoLock lock(mRecursiveMutex);
-  AutoApplyAsyncTestAttributes testAttributeApplier(this);
-
-  if (aMode == eForCompositing && mScrollMetadata.IsApzForceDisabled()) {
-    return AsyncTransform();
-  }
-
-  CSSPoint lastPaintViewportOffset;
-  if (mLastContentPaintMetrics.IsScrollable()) {
-    lastPaintViewportOffset =
-        mLastContentPaintMetrics.GetLayoutViewport().TopLeft();
-  }
-
-  CSSPoint currentViewportOffset = GetEffectiveLayoutViewport(aMode).TopLeft();
-
-  // Unlike the visual viewport, the layout viewport does not change size
-  // (in the sense of "number of CSS pixels of page content it covers")
-  // when zooming, so the async transform of the layout viewport does not
-  // have an async zoom component. (The translation still needs to be
-  // multiplied by the non-async zoom, to get it into the correct coordinates.)
-  CSSToParentLayerScale2D effectiveZoom =
-      Metrics().LayersPixelsPerCSSPixel() * LayerToParentLayerScale(1.0f);
-  ParentLayerPoint translation =
-      (currentViewportOffset - lastPaintViewportOffset) * effectiveZoom;
-  LayerToParentLayerScale compositedAsyncZoom;
-
-  return AsyncTransform(compositedAsyncZoom, -translation);
-}
-
 AsyncTransform AsyncPanZoomController::GetCurrentAsyncTransform(
     AsyncTransformConsumer aMode, AsyncTransformComponents aComponents) const {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
@@ -4196,29 +4155,6 @@ AsyncTransform AsyncPanZoomController::GetCurrentAsyncTransform(
   }
 
   return AsyncTransform(compositedAsyncZoom, -translation);
-}
-
-AsyncTransform
-AsyncPanZoomController::GetCurrentAsyncTransformForFixedAdjustment(
-    AsyncTransformConsumer aMode) const {
-  RecursiveMutexAutoLock lock(mRecursiveMutex);
-
-  // We need to apply test attributes here so GetVisualViewport() uses the
-  // adjusted zoom. GetCurrentAsync[Viewport]Transform() uses the applier
-  // as well, which is fine as it's reentrant so the attributes won't be
-  // double applied.
-  AutoApplyAsyncTestAttributes testAttributeApplier(this);
-
-  // Use the layout viewport to adjust fixed position elements if and only if
-  // it's larger than the visual viewport (assuming we're scrolling the RCD-RSF
-  // with apz.allow_zooming enabled).
-  // FIXME: bug 1525793 -- this may need to handle zooming or not on a
-  // per-document basis.
-  return (StaticPrefs::apz_allow_zooming() && Metrics().IsRootContent() &&
-          Metrics().GetVisualViewport().Size() <=
-              Metrics().GetLayoutViewport().Size())
-             ? GetCurrentAsyncViewportTransform(aMode)
-             : GetCurrentAsyncTransform(aMode);
 }
 
 AsyncTransformComponentMatrix
@@ -4675,8 +4611,6 @@ void AsyncPanZoomController::NotifyLayersUpdated(
     mScrollMetadata.SetIsLayersIdRoot(aScrollMetadata.IsLayersIdRoot());
     mScrollMetadata.SetIsAutoDirRootContentRTL(
         aScrollMetadata.IsAutoDirRootContentRTL());
-    mScrollMetadata.SetUsesContainerScrolling(
-        aScrollMetadata.UsesContainerScrolling());
     Metrics().SetIsScrollInfoLayer(aLayerMetrics.IsScrollInfoLayer());
     mScrollMetadata.SetForceDisableApz(aScrollMetadata.IsApzForceDisabled());
     mScrollMetadata.SetDisregardedDirection(
@@ -5091,7 +5025,7 @@ void AsyncPanZoomController::DispatchStateChangeNotification(
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
       // Let the compositor know about scroll state changes so it can manage
       // windowed plugins.
-      if (StaticPrefs::gfx_e10s_hide_plugins_for_scroll() &&
+      if (StaticPrefs::gfx_e10s_hide_plugins_for_scroll_AtStartup() &&
           mCompositorController) {
         mCompositorController->ScheduleHideAllPluginWindows();
       }
@@ -5114,7 +5048,7 @@ void AsyncPanZoomController::DispatchStateChangeNotification(
       controller->NotifyAPZStateChange(GetGuid(),
                                        APZStateChange::eTransformEnd);
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
-      if (StaticPrefs::gfx_e10s_hide_plugins_for_scroll() &&
+      if (StaticPrefs::gfx_e10s_hide_plugins_for_scroll_AtStartup() &&
           mCompositorController) {
         mCompositorController->ScheduleShowAllPluginWindows();
       }

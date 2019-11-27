@@ -22,7 +22,7 @@ async function promiseAutoComplete(inputText) {
 
 function assertSelected(index) {
   Assert.equal(
-    UrlbarTestUtils.getSelectedIndex(window),
+    UrlbarTestUtils.getSelectedRowIndex(window),
     index,
     "Should have the correct index selected"
   );
@@ -56,7 +56,7 @@ add_task(async function() {
     "Should have got the correct amount of results"
   );
 
-  let initiallySelected = UrlbarTestUtils.getSelectedIndex(window);
+  let initiallySelected = UrlbarTestUtils.getSelectedRowIndex(window);
 
   info("Key Down to select the next item");
   EventUtils.synthesizeKey("KEY_ArrowDown");
@@ -69,7 +69,7 @@ add_task(async function() {
   let expectedURL = result.url;
 
   Assert.equal(
-    gURLBar.value,
+    gURLBar.untrimmedValue,
     expectedURL,
     "Value in the URL bar should be updated by keyboard selection"
   );

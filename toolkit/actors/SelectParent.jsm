@@ -24,6 +24,19 @@ const PROPERTIES_RESET_WHEN_ACTIVE = [
   "text-shadow",
 ];
 
+// Duplicated in SelectChild.jsm
+// Please keep these lists in sync.
+const SUPPORTED_PROPERTIES = [
+  "direction",
+  "color",
+  "background-color",
+  "text-shadow",
+  "font-family",
+  "font-weight",
+  "font-size",
+  "font-style",
+];
+
 const customStylingEnabled = Services.prefs.getBoolPref(
   "dom.forms.select.customstyling"
 );
@@ -94,17 +107,6 @@ var SelectParentHelper = {
       selectStyle["background-color"] = uaStyle["background-color"];
     }
 
-    // Some webpages set the <select> backgroundColor to transparent,
-    // but they don't intend to change the popup to transparent.
-    if (
-      customStylingEnabled &&
-      selectStyle["background-color"] != uaStyle["background-color"]
-    ) {
-      let color = selectStyle["background-color"];
-      selectStyle["background-image"] = `linear-gradient(${color}, ${color});`;
-      selectBackgroundSet = true;
-    }
-
     if (selectStyle.color == selectStyle["background-color"]) {
       selectStyle.color = uaStyle.color;
     }
@@ -119,22 +121,41 @@ var SelectParentHelper = {
         );
       }
 
-      let ruleBody = "";
-      for (let property in selectStyle) {
-        if (property == "background-color" || property == "direction") {
+      let addedRule = false;
+      for (let property of SUPPORTED_PROPERTIES) {
+        if (property == "direction") {
           continue;
         } // Handled above, or before.
-        if (selectStyle[property] != uaStyle[property]) {
-          ruleBody += `${property}: ${selectStyle[property]};`;
+        if (
+          !selectStyle[property] ||
+          selectStyle[property] == uaStyle[property]
+        ) {
+          continue;
         }
+        if (!addedRule) {
+          sheet.insertRule("#ContentSelectDropdown > menupopup {}", 0);
+          addedRule = true;
+        }
+        sheet.cssRules[0].style[property] = selectStyle[property];
       }
-      if (ruleBody) {
-        sheet.insertRule(
-          `#ContentSelectDropdown > menupopup {
-          ${ruleBody}
-        }`,
-          0
-        );
+      // Some webpages set the <select> backgroundColor to transparent,
+      // but they don't intend to change the popup to transparent.
+      // So we remove the backgroundColor and turn it into an image instead.
+      if (
+        customStylingEnabled &&
+        selectStyle["background-color"] != uaStyle["background-color"]
+      ) {
+        // We intentionally use the parsed color to prevent color
+        // values like `url(..)` being injected into the
+        // `background-image` property.
+        let parsedColor = sheet.cssRules[0].style["background-color"];
+        sheet.cssRules[0].style["background-color"] = "";
+        sheet.cssRules[0].style[
+          "background-image"
+        ] = `linear-gradient(${parsedColor}, ${parsedColor})`;
+        selectBackgroundSet = true;
+      }
+      if (addedRule) {
         sheet.insertRule(
           `#ContentSelectDropdown > menupopup > :not([_moz-menuactive="true"]) {
             color: inherit;
@@ -387,11 +408,15 @@ var SelectParentHelper = {
   ) {
     let element = menulist.menupopup;
 
+    let ariaOwns = "";
     for (let option of options) {
       let isOptGroup = option.tagName == "OPTGROUP";
       let item = element.ownerDocument.createXULElement(
         isOptGroup ? "menucaption" : "menuitem"
       );
+      if (isOptGroup) {
+        item.setAttribute("role", "group");
+      }
       let style = uniqueOptionStyles[option.styleIndex];
 
       item.setAttribute("label", option.textContent);
@@ -416,29 +441,30 @@ var SelectParentHelper = {
       }
 
       if (customStylingEnabled) {
-        let ruleBody = "";
-        for (let property in style) {
+        let addedRule = false;
+        for (const property of SUPPORTED_PROPERTIES) {
           if (property == "direction" || property == "font-size") {
             continue;
           } // handled above
-          if (style[property] == selectStyle[property]) {
+          if (!style[property] || style[property] == selectStyle[property]) {
             continue;
           }
           if (PROPERTIES_RESET_WHEN_ACTIVE.includes(property)) {
-            ruleBody += `${property}: ${style[property]};`;
+            if (!addedRule) {
+              sheet.insertRule(
+                `#ContentSelectDropdown > menupopup > :nth-child(${nthChildIndex}):not([_moz-menuactive="true"]) {
+              }`,
+                0
+              );
+              addedRule = true;
+            }
+            sheet.cssRules[0].style[property] = style[property];
           } else {
             item.style.setProperty(property, style[property]);
           }
         }
 
-        if (ruleBody) {
-          sheet.insertRule(
-            `#ContentSelectDropdown > menupopup > :nth-child(${nthChildIndex}):not([_moz-menuactive="true"]) {
-            ${ruleBody}
-          }`,
-            0
-          );
-
+        if (addedRule) {
           if (
             style["text-shadow"] != "none" &&
             style["text-shadow"] != selectStyle["text-shadow"]
@@ -463,6 +489,16 @@ var SelectParentHelper = {
         item.setAttribute("customoptionstyling", "true");
       } else {
         item.removeAttribute("customoptionstyling");
+      }
+
+      if (parentElement) {
+        // In the menupopup, the optgroup is a sibling of its contained options.
+        // For accessibility, we want to preserve the hierarchy such that the
+        // options are inside the optgroup. We do this using aria-owns on the
+        // parent.
+        item.id = "ContentSelectDropdownOption" + nthChildIndex;
+        item.setAttribute("aria-level", "2");
+        ariaOwns += item.id + " ";
       }
 
       element.appendChild(item);
@@ -514,6 +550,10 @@ var SelectParentHelper = {
       }
     }
 
+    if (parentElement && ariaOwns) {
+      parentElement.setAttribute("aria-owns", ariaOwns);
+    }
+
     // Check if search pref is enabled, if this is the first time iterating through
     // the dropdown, and if the list is long enough for a search element to be added.
     if (
@@ -522,9 +562,7 @@ var SelectParentHelper = {
       element.childElementCount > SEARCH_MINIMUM_ELEMENTS
     ) {
       // Add a search text field as the first element of the dropdown
-      let searchbox = element.ownerDocument.createXULElement("textbox", {
-        is: "search-textbox",
-      });
+      let searchbox = element.ownerDocument.createXULElement("search-textbox");
       searchbox.className = "contentSelectDropdown-searchbox";
       searchbox.addEventListener("input", this.onSearchInput);
       searchbox.inputField.addEventListener(

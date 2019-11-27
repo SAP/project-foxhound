@@ -19,7 +19,11 @@ const SOURCE_MAP_PREF = "devtools.source-map.client-service.enabled";
  */
 function SourceMapURLService(toolbox, sourceMapService) {
   this._toolbox = toolbox;
-  this._target = toolbox.target;
+  Object.defineProperty(this, "_target", {
+    get() {
+      return toolbox.target;
+    },
+  });
   this._sourceMapService = sourceMapService;
   // Map from content URLs to descriptors.  Descriptors are later
   // passed to the source map worker.
@@ -57,21 +61,24 @@ SourceMapURLService.prototype._getLoadingPromise = function() {
       if (this._target.isWorkerTarget) {
         return;
       }
-      this._stylesheetsFront = await this._target.getFront("stylesheets");
-      this._stylesheetsFront.on("stylesheet-added", this._onNewStyleSheet);
-      const styleSheetsLoadingPromise = this._stylesheetsFront
-        .getStyleSheets()
-        .then(
-          sheets => {
-            sheets.forEach(this._registerNewStyleSheet, this);
-          },
-          () => {
-            // Ignore any protocol-based errors.
-          }
-        );
+      let styleSheetsLoadingPromise;
+      if (this._target.hasActor("styleSheets")) {
+        this._stylesheetsFront = await this._target.getFront("stylesheets");
+        this._stylesheetsFront.on("stylesheet-added", this._onNewStyleSheet);
+        styleSheetsLoadingPromise = this._stylesheetsFront
+          .getStyleSheets()
+          .then(
+            sheets => {
+              sheets.forEach(this._registerNewStyleSheet, this);
+            },
+            () => {
+              // Ignore any protocol-based errors.
+            }
+          );
+      }
 
       // Start fetching the sources now.
-      const loadingPromise = this._toolbox.threadClient.getSources().then(
+      const loadingPromise = this._toolbox.threadFront.getSources().then(
         ({ sources }) => {
           // Ignore errors.  Register the sources we got; we can't rely on
           // an event to arrive if the source actor already existed.
@@ -84,7 +91,9 @@ SourceMapURLService.prototype._getLoadingPromise = function() {
         }
       );
 
-      await styleSheetsLoadingPromise;
+      if (styleSheetsLoadingPromise) {
+        await styleSheetsLoadingPromise;
+      }
       await loadingPromise;
     })();
   }
@@ -115,7 +124,7 @@ SourceMapURLService.prototype.destroy = function() {
     this._stylesheetsFront.off("stylesheet-added", this._onNewStyleSheet);
   }
   Services.prefs.removeObserver(SOURCE_MAP_PREF, this._onPrefChanged);
-  this._target = this._urls = this._subscriptions = this._idMap = null;
+  this._urls = this._subscriptions = this._idMap = null;
 };
 
 /**

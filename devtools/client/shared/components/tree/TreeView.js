@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -98,6 +96,7 @@ define(function(require, exports, module) {
           getLabel: PropTypes.func,
           getValue: PropTypes.func,
           getKey: PropTypes.func,
+          getLevel: PropTypes.func,
           getType: PropTypes.func,
         }).isRequired,
         // Tree decorator (see also the interface above)
@@ -389,22 +388,24 @@ define(function(require, exports, module) {
 
     onClickRow(nodePath, event) {
       const onClickRow = this.props.onClickRow;
+      const row = this.visibleRows.find(r => r.props.member.path === nodePath);
 
-      if (onClickRow) {
-        onClickRow.call(this, nodePath, event);
+      // Call custom click handler and bail out if it returns true.
+      if (
+        onClickRow &&
+        onClickRow.call(this, nodePath, event, row.props.member)
+      ) {
         return;
       }
 
       event.stopPropagation();
+
       const cell = event.target.closest("td");
       if (cell && cell.classList.contains("treeLabelCell")) {
         this.toggle(nodePath);
       }
 
-      this.selectRow(
-        this.visibleRows.find(row => row.props.member.path === nodePath),
-        { preventAutoScroll: true }
-      );
+      this.selectRow(row, { preventAutoScroll: true });
     }
 
     onContextMenu(member, event) {

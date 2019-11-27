@@ -229,7 +229,7 @@ async function addTestData(data) {
       SiteDataTestUtils.addToCookies(site.origin, Cu.now());
     }
 
-    let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
       site.origin
     );
     hosts.push(principal.URI.host);
@@ -262,7 +262,7 @@ async function loadServiceWorkerTestPage(url) {
 function promiseServiceWorkersCleared() {
   return BrowserTestUtils.waitForCondition(() => {
     let serviceWorkers = serviceWorkerManager.getAllRegistrations();
-    if (serviceWorkers.length == 0) {
+    if (!serviceWorkers.length) {
       ok(true, "Cleared all service workers");
       return true;
     }
@@ -273,7 +273,7 @@ function promiseServiceWorkersCleared() {
 function promiseServiceWorkerRegisteredFor(url) {
   return BrowserTestUtils.waitForCondition(() => {
     try {
-      let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+      let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
         url
       );
       let sw = serviceWorkerManager.getRegistrationByPrincipal(

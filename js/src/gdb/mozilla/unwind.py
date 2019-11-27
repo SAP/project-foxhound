@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # mozilla/unwind.py --- unwinder and frame filter for SpiderMonkey
 
 import gdb
@@ -494,7 +498,7 @@ class x64UnwinderState(UnwinderState):
             data = sp.dereference()
             sp = sp + 1
             unwind_info.add_saved_register(reg, data)
-            if reg is "rbp":
+            if reg == "rbp":
                 unwind_info.add_saved_register(self.SP_REGISTER, sp)
 
 

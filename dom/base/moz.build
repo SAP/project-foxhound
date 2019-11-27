@@ -193,6 +193,7 @@ EXPORTS.mozilla.dom += [
     'IntlUtils.h',
     'Link.h',
     'Location.h',
+    'LocationBase.h',
     'MaybeCrossOriginObject.h',
     'MessageBroadcaster.h',
     'MessageListenerManager.h',
@@ -244,6 +245,8 @@ EXPORTS.mozilla.dom += [
     'TreeOrderedArrayInlines.h',
     'TreeWalker.h',
     'UIDirectionManager.h',
+    'UserActivation.h',
+    'ViewportMetaData.h',
     'VisualViewport.h',
     'WindowOrientationObserver.h',
     'WindowProxyHolder.h',
@@ -307,6 +310,7 @@ UNIFIED_SOURCES += [
     'IntlUtils.cpp',
     'Link.cpp',
     'Location.cpp',
+    'LocationBase.cpp',
     'MaybeCrossOriginObject.cpp',
     'MessageBroadcaster.cpp',
     'MessageListenerManager.cpp',
@@ -413,6 +417,8 @@ UNIFIED_SOURCES += [
     'TimeoutManager.cpp',
     'TreeWalker.cpp',
     'UIDirectionManager.cpp',
+    'UserActivation.cpp',
+    'ViewportMetaData.cpp',
     'VisualViewport.cpp',
     'WindowDestroyedEvent.cpp',
     'WindowNamedPropertiesHandler.cpp',
@@ -464,6 +470,12 @@ if CONFIG['INTEL_ARCHITECTURE']:
     SOURCES += ['nsTextFragmentSSE2.cpp']
     SOURCES['nsTextFragmentSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']
 
+# Are we targeting PowerPC? If so, we can enable a SIMD version for
+# nsTextFragment.cpp as well.
+if CONFIG['CPU_ARCH'].startswith('ppc'):
+    SOURCES += ['nsTextFragmentVMX.cpp']
+    SOURCES['nsTextFragmentVMX.cpp'].flags += CONFIG['PPC_VMX_FLAGS']
+
 EXTRA_JS_MODULES += [
     'ContentAreaDropListener.jsm',
     'DOMRequestHelper.jsm',
@@ -491,10 +503,10 @@ LOCAL_INCLUDES += [
     '/dom/storage',
     '/dom/svg',
     '/dom/u2f',
-    '/dom/xbl',
     '/dom/xml',
     '/dom/xslt/xpath',
     '/dom/xul',
+    '/extensions/permissions',
     '/gfx/2d',
     '/image',
     '/js/xpconnect/loader',
@@ -513,6 +525,9 @@ LOCAL_INCLUDES += [
     '/xpcom/ds',
 ]
 
+if CONFIG['MOZ_XBL']:
+    LOCAL_INCLUDES += ['/dom/xbl']
+
 if CONFIG['MOZ_WEBRTC']:
     LOCAL_INCLUDES += [
         '/netwerk/sctp/datachannel',
@@ -528,18 +543,8 @@ if CONFIG['MOZ_BUILD_APP'] in ['browser', 'mobile/android', 'xulrunner']:
 if CONFIG['MOZ_X11']:
     CXXFLAGS += CONFIG['TK_CFLAGS']
 
-GENERATED_FILES += [
-    'PropertyUseCounterMap.inc',
-    'UseCounterList.h',
-]
-
-countermap = GENERATED_FILES['PropertyUseCounterMap.inc']
-countermap.script = 'gen-usecounters.py:property_map'
-countermap.inputs = ['UseCounters.conf']
-
-counterlist = GENERATED_FILES['UseCounterList.h']
-counterlist.script = 'gen-usecounters.py:use_counter_list'
-counterlist.inputs = ['UseCounters.conf']
+GeneratedFile('UseCounterList.h', script='gen-usecounters.py',
+              entry_point='use_counter_list', inputs=['UseCounters.conf'])
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']

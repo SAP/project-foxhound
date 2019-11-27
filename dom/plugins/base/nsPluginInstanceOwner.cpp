@@ -28,7 +28,6 @@ using mozilla::DefaultXDisplay;
 #include "nsIStringStream.h"
 #include "nsNetUtil.h"
 #include "mozilla/Preferences.h"
-#include "nsILinkHandler.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsLayoutUtils.h"
@@ -275,6 +274,9 @@ nsPluginInstanceOwner::nsPluginInstanceOwner()
   mGotCompositionData = false;
   mSentStartComposition = false;
   mPluginDidNotHandleIMEComposition = false;
+  // 3 is the Windows default for these values.
+  mWheelScrollLines = 3;
+  mWheelScrollChars = 3;
 #endif
 }
 
@@ -389,10 +391,8 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
   }
 
   // the container of the pres context will give us the link handler
-  nsCOMPtr<nsISupports> container = presContext->GetContainerWeak();
+  nsCOMPtr<nsIDocShell> container = presContext->GetDocShell();
   NS_ENSURE_TRUE(container, NS_ERROR_FAILURE);
-  nsCOMPtr<nsILinkHandler> lh = do_QueryInterface(container);
-  NS_ENSURE_TRUE(lh, NS_ERROR_FAILURE);
 
   nsAutoString unitarget;
   if ((0 == PL_strcmp(aTarget, "newwindow")) ||
@@ -404,11 +404,9 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
     unitarget.AssignASCII(aTarget);  // XXX could this be nonascii?
   }
 
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-
   // Create an absolute URL
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, baseURI);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, GetBaseURI());
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsIInputStream> headersDataStream;
@@ -430,7 +428,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
       (PopupBlocker::PopupControlState)blockPopups);
 
   // if security checks (in particular CheckLoadURIWithPrincipal) needs
-  // to be skipped we are creating a codebasePrincipal to make sure
+  // to be skipped we are creating a contentPrincipal to make sure
   // that security check succeeds. Please note that we do not want to
   // fall back to using the systemPrincipal, because that would also
   // bypass ContentPolicy checks which should still be enforced.
@@ -438,7 +436,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
   if (!aDoCheckLoadURIChecks) {
     mozilla::OriginAttributes attrs =
         BasePrincipal::Cast(content->NodePrincipal())->OriginAttributesRef();
-    triggeringPrincipal = BasePrincipal::CreateCodebasePrincipal(uri, attrs);
+    triggeringPrincipal = BasePrincipal::CreateContentPrincipal(uri, attrs);
   } else {
     triggeringPrincipal =
         NullPrincipal::CreateWithInheritedAttributes(content->NodePrincipal());
@@ -446,10 +444,10 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
 
   nsCOMPtr<nsIContentSecurityPolicy> csp = content->GetCsp();
 
-  rv = lh->OnLinkClick(content, uri, unitarget, VoidString(), aPostStream,
-                       headersDataStream,
-                       /* isUserTriggered */ false,
-                       /* isTrusted */ true, triggeringPrincipal, csp);
+  rv = nsDocShell::Cast(container)->OnLinkClick(
+      content, uri, unitarget, VoidString(), aPostStream, headersDataStream,
+      /* isUserTriggered */ false, /* isTrusted */ true, triggeringPrincipal,
+      csp);
 
   return rv;
 }
@@ -2088,13 +2086,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(
                 delta = -WHEEL_DELTA * wheelEvent->mLineOrPageDeltaY;
                 break;
               case WheelEvent_Binding::DOM_DELTA_LINE: {
-                UINT linesPerWheelDelta = 0;
-                if (NS_WARN_IF(!::SystemParametersInfo(
-                        SPI_GETWHEELSCROLLLINES, 0, &linesPerWheelDelta, 0))) {
-                  // Use system default scroll amount, 3, when
-                  // SPI_GETWHEELSCROLLLINES isn't available.
-                  linesPerWheelDelta = 3;
-                }
+                UINT linesPerWheelDelta = mWheelScrollLines;
                 if (!linesPerWheelDelta) {
                   break;
                 }
@@ -2117,14 +2109,7 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(
                 break;
               case WheelEvent_Binding::DOM_DELTA_LINE: {
                 pluginEvent.event = WM_MOUSEHWHEEL;
-                UINT charsPerWheelDelta = 0;
-                // FYI: SPI_GETWHEELSCROLLCHARS is available on Vista or later.
-                if (::SystemParametersInfo(SPI_GETWHEELSCROLLCHARS, 0,
-                                           &charsPerWheelDelta, 0)) {
-                  // Use system default scroll amount, 3, when
-                  // SPI_GETWHEELSCROLLCHARS isn't available.
-                  charsPerWheelDelta = 3;
-                }
+                UINT charsPerWheelDelta = mWheelScrollChars;
                 if (!charsPerWheelDelta) {
                   break;
                 }
@@ -2164,14 +2149,11 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(
           break;
       }
       if (pluginEvent.event && initWParamWithCurrentState) {
+        // We created one of the messages caught above but didn't fill in
+        // wParam. Mark it with an invalid wParam value so that HandleEvent can
+        // figure it out.
         pPluginEvent = &pluginEvent;
-        pluginEvent.wParam = (::GetKeyState(VK_CONTROL) ? MK_CONTROL : 0) |
-                             (::GetKeyState(VK_SHIFT) ? MK_SHIFT : 0) |
-                             (::GetKeyState(VK_LBUTTON) ? MK_LBUTTON : 0) |
-                             (::GetKeyState(VK_MBUTTON) ? MK_MBUTTON : 0) |
-                             (::GetKeyState(VK_RBUTTON) ? MK_RBUTTON : 0) |
-                             (::GetKeyState(VK_XBUTTON1) ? MK_XBUTTON1 : 0) |
-                             (::GetKeyState(VK_XBUTTON2) ? MK_XBUTTON2 : 0);
+        pluginEvent.wParam = NPAPI_INVALID_WPARAM;
       }
     }
     if (pPluginEvent) {
@@ -2221,6 +2203,23 @@ nsEventStatus nsPluginInstanceOwner::ProcessEvent(
     NS_WARNING(
         "nsPluginFrame ProcessEvent: trying to send null event to plugin.");
     return rv;
+  }
+
+  // We don't need to tell the plugin about changes to the scroll wheel
+  // settings but we do need to remember them for future mouse move
+  // calculations.  We put the scroll wheel setting in the lParam field.
+  if (pPluginEvent && pPluginEvent->event == WM_SETTINGCHANGE) {
+    switch (pPluginEvent->wParam) {
+      case SPI_SETWHEELSCROLLLINES:
+        mWheelScrollLines = static_cast<uint32_t>(pPluginEvent->lParam);
+        break;
+      case SPI_SETWHEELSCROLLCHARS:
+        mWheelScrollChars = static_cast<uint32_t>(pPluginEvent->lParam);
+        break;
+      default:
+        break;
+    }
+    return nsEventStatus_eConsumeNoDefault;
   }
 
   if (pPluginEvent) {
@@ -2818,7 +2817,8 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void) {
       // created in chrome.
       if (XRE_IsContentProcess()) {
         if (nsCOMPtr<nsPIDOMWindowOuter> window = doc->GetWindow()) {
-          if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetTop()) {
+          if (nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+                  window->GetInProcessTop()) {
             dom::BrowserChild* tc = dom::BrowserChild::GetFrom(topWindow);
             if (tc) {
               // This returns a PluginWidgetProxy which remotes a number of
@@ -3167,7 +3167,7 @@ void nsPluginInstanceOwner::SetFrame(nsPluginFrame* aFrame) {
 
   // If we already have a frame that is changing or going away...
   if (mPluginFrame) {
-    if (content && content->OwnerDoc() && content->OwnerDoc()->GetWindow()) {
+    if (content && content->OwnerDoc()->GetWindow()) {
       nsCOMPtr<EventTarget> windowRoot =
           content->OwnerDoc()->GetWindow()->GetTopWindowRoot();
       if (windowRoot) {
@@ -3228,7 +3228,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::PrivateModeChanged(bool aEnabled) {
   return mInstance ? mInstance->PrivateModeStateChanged(aEnabled) : NS_OK;
 }
 
-already_AddRefed<nsIURI> nsPluginInstanceOwner::GetBaseURI() const {
+nsIURI* nsPluginInstanceOwner::GetBaseURI() const {
   nsCOMPtr<nsIContent> content = do_QueryReferent(mContent);
   if (!content) {
     return nullptr;

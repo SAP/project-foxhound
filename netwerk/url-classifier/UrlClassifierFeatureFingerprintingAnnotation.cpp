@@ -8,7 +8,7 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs.h"
+#include "nsIClassifiedChannel.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -90,11 +90,6 @@ UrlClassifierFeatureFingerprintingAnnotation::MaybeCreate(
        "%p",
        aChannel));
 
-  if (!StaticPrefs::
-          privacy_trackingprotection_fingerprinting_annotate_enabled()) {
-    return nullptr;
-  }
-
   if (!UrlClassifierCommon::ShouldEnableClassifier(aChannel)) {
     return nullptr;
   }
@@ -141,18 +136,18 @@ UrlClassifierFeatureFingerprintingAnnotation::ProcessChannel(
   static std::vector<UrlClassifierCommon::ClassificationData>
       sClassificationData = {
           {NS_LITERAL_CSTRING("content-fingerprinting-track-"),
-           nsIHttpChannel::ClassificationFlags::
+           nsIClassifiedChannel::ClassificationFlags::
                CLASSIFIED_FINGERPRINTING_CONTENT},
       };
 
   uint32_t flags = UrlClassifierCommon::TablesToClassificationFlags(
       aList, sClassificationData,
-      nsIHttpChannel::ClassificationFlags::CLASSIFIED_FINGERPRINTING);
+      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_FINGERPRINTING);
 
   UrlClassifierCommon::SetTrackingInfo(aChannel, aList, aHashes);
 
   UrlClassifierCommon::AnnotateChannel(
-      aChannel, AntiTrackingCommon::eFingerprinting, flags,
+      aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_FINGERPRINTING_CONTENT);
 
   return NS_OK;
@@ -161,15 +156,19 @@ UrlClassifierFeatureFingerprintingAnnotation::ProcessChannel(
 NS_IMETHODIMP
 UrlClassifierFeatureFingerprintingAnnotation::GetURIByListType(
     nsIChannel* aChannel, nsIUrlClassifierFeature::listType aListType,
-    nsIURI** aURI) {
+    nsIUrlClassifierFeature::URIType* aURIType, nsIURI** aURI) {
   NS_ENSURE_ARG_POINTER(aChannel);
+  NS_ENSURE_ARG_POINTER(aURIType);
   NS_ENSURE_ARG_POINTER(aURI);
 
   if (aListType == nsIUrlClassifierFeature::blacklist) {
+    *aURIType = nsIUrlClassifierFeature::blacklistURI;
     return aChannel->GetURI(aURI);
   }
 
   MOZ_ASSERT(aListType == nsIUrlClassifierFeature::whitelist);
+
+  *aURIType = nsIUrlClassifierFeature::pairwiseWhitelistURI;
   return UrlClassifierCommon::CreatePairwiseWhiteListURI(aChannel, aURI);
 }
 

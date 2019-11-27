@@ -23,9 +23,6 @@ const { atom } = ChromeUtils.import("chrome://marionette/content/atom.js");
 const { Capabilities, PageLoadStrategy } = ChromeUtils.import(
   "chrome://marionette/content/capabilities.js"
 );
-const { capture } = ChromeUtils.import(
-  "chrome://marionette/content/capture.js"
-);
 const { element, WebElement } = ChromeUtils.import(
   "chrome://marionette/content/element.js"
 );
@@ -545,6 +542,7 @@ let getElementPropertyFn = dispatch(getElementProperty);
 let getElementTextFn = dispatch(getElementText);
 let getElementTagNameFn = dispatch(getElementTagName);
 let getElementRectFn = dispatch(getElementRect);
+let getScreenshotRectFn = dispatch(getScreenshotRect);
 let isElementEnabledFn = dispatch(isElementEnabled);
 let findElementContentFn = dispatch(findElementContent);
 let findElementsContentFn = dispatch(findElementsContent);
@@ -554,7 +552,6 @@ let isElementDisplayedFn = dispatch(isElementDisplayed);
 let getElementValueOfCssPropertyFn = dispatch(getElementValueOfCssProperty);
 let switchToShadowRootFn = dispatch(switchToShadowRoot);
 let singleTapFn = dispatch(singleTap);
-let takeScreenshotFn = dispatch(takeScreenshot);
 let performActionsFn = dispatch(performActions);
 let releaseActionsFn = dispatch(releaseActions);
 let actionChainFn = dispatch(actionChain);
@@ -591,6 +588,7 @@ function startListeners() {
   );
   addMessageListener("Marionette:get", get);
   addMessageListener("Marionette:getPageSource", getPageSourceFn);
+  addMessageListener("Marionette:getScreenshotRect", getScreenshotRectFn);
   addMessageListener("Marionette:goBack", goBack);
   addMessageListener("Marionette:goForward", goForward);
   addMessageListener("Marionette:isElementDisplayed", isElementDisplayedFn);
@@ -607,7 +605,6 @@ function startListeners() {
   addMessageListener("Marionette:switchToFrame", switchToFrame);
   addMessageListener("Marionette:switchToParentFrame", switchToParentFrame);
   addMessageListener("Marionette:switchToShadowRoot", switchToShadowRootFn);
-  addMessageListener("Marionette:takeScreenshot", takeScreenshotFn);
   addMessageListener("Marionette:waitForPageLoaded", waitForPageLoaded);
 }
 
@@ -639,6 +636,7 @@ function deregister() {
   );
   removeMessageListener("Marionette:get", get);
   removeMessageListener("Marionette:getPageSource", getPageSourceFn);
+  removeMessageListener("Marionette:getScreenshotRect", getScreenshotRectFn);
   removeMessageListener("Marionette:goBack", goBack);
   removeMessageListener("Marionette:goForward", goForward);
   removeMessageListener("Marionette:isElementDisplayed", isElementDisplayedFn);
@@ -654,7 +652,6 @@ function deregister() {
   removeMessageListener("Marionette:switchToFrame", switchToFrame);
   removeMessageListener("Marionette:switchToParentFrame", switchToParentFrame);
   removeMessageListener("Marionette:switchToShadowRoot", switchToShadowRootFn);
-  removeMessageListener("Marionette:takeScreenshot", takeScreenshotFn);
   removeMessageListener("Marionette:waitForPageLoaded", waitForPageLoaded);
 }
 
@@ -1295,7 +1292,7 @@ function getActiveElement() {
  * @param {number} commandID
  *     ID of the currently handled message between the driver and
  *     listener.
- * @param {WebElement} el
+ * @param {WebElement} webElRef
  *     Reference to the web element to click.
  * @param {number} pageTimeout
  *     Timeout in milliseconds the method has to wait for the page being
@@ -1627,74 +1624,58 @@ function switchToFrame(msg) {
 }
 
 /**
- * Perform a screen capture in content context.
+ * Returns the rect of the element to screenshot.
+ *
+ * Because the screen capture takes place in the parent process the dimensions
+ * for the screenshot have to be determined in the appropriate child process.
+ *
+ * Also it takes care of scrolling an element into view if requested.
+ *
+ * @param {Object.<string, ?>} opts
+ *     Options.
  *
  * Accepted values for |opts|:
  *
- *     @param {UUID=} id
- *         Optional web element reference of an element to take a screenshot
- *         of.
- *     @param {boolean=} full
- *         True to take a screenshot of the entire document element.  Is not
- *         considered if {@code id} is not defined.  Defaults to true.
- *     @param {Array.<UUID>=} highlights
- *         Draw a border around the elements found by their web element
- *         references.
- *     @param {boolean=} scroll
- *         When |id| is given, scroll it into view before taking the
- *         screenshot.  Defaults to true.
- *
+ * @param {WebElement} webEl
+ *     Optional element to take a screenshot of.
+ * @param {boolean=} full
+ *     True to take a screenshot of the entire document element. Is only
+ *     considered if <var>id</var> is not defined. Defaults to true.
+ * @param {boolean=} scroll
+ *     When <var>id</var> is given, scroll it into view before taking the
+ *     screenshot.  Defaults to true.
  * @param {capture.Format} format
  *     Format to return the screenshot in.
  * @param {Object.<string, ?>} opts
  *     Options.
  *
- * @return {string}
- *     Base64 encoded string or a SHA-256 hash of the screenshot.
+ * @return {DOMRect}
+ *     The area to take a snapshot from
  */
-function takeScreenshot(format, opts = {}) {
-  let id = opts.id;
-  let full = !!opts.full;
-  let highlights = opts.highlights || [];
-  let scroll = !!opts.scroll;
-
+function getScreenshotRect({ el, full = true, scroll = true } = {}) {
   let win = curContainer.frame;
 
-  let canvas;
-  let highlightEls = highlights
-    .map(ref => WebElement.fromUUID(ref, "content"))
-    .map(webEl => seenEls.get(webEl, win));
+  let rect;
 
-  // viewport
-  if (!id && !full) {
-    canvas = capture.viewport(win, highlightEls);
-
-    // element or full document element
-  } else {
-    let el;
-    if (id) {
-      let webEl = WebElement.fromUUID(id, "content");
-      el = seenEls.get(webEl, win);
-      if (scroll) {
-        element.scrollIntoView(el);
-      }
-    } else {
-      el = win.document.documentElement;
+  if (el) {
+    if (scroll) {
+      element.scrollIntoView(el);
     }
-
-    canvas = capture.element(el, highlightEls);
+    rect = getElementRect(el);
+  } else if (full) {
+    let clientRect = win.document.documentElement.getBoundingClientRect();
+    rect = new DOMRect(0, 0, clientRect.width, clientRect.height);
+  } else {
+    // viewport
+    rect = new DOMRect(
+      win.pageXOffset,
+      win.pageYOffset,
+      win.innerWidth,
+      win.innerHeight
+    );
   }
 
-  switch (format) {
-    case capture.Format.Base64:
-      return capture.toBase64(canvas);
-
-    case capture.Format.Hash:
-      return capture.toHash(canvas);
-
-    default:
-      throw new TypeError("Unknown screenshot format: " + format);
-  }
+  return rect;
 }
 
 function flushRendering() {

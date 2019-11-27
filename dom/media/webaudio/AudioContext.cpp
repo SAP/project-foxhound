@@ -13,7 +13,7 @@
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #include "mozilla/dom/AnalyserNode.h"
 #include "mozilla/dom/AnalyserNodeBinding.h"
@@ -36,6 +36,7 @@
 #include "mozilla/dom/OscillatorNodeBinding.h"
 #include "mozilla/dom/PannerNodeBinding.h"
 #include "mozilla/dom/PeriodicWaveBinding.h"
+#include "mozilla/dom/Performance.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/StereoPannerNodeBinding.h"
 #include "mozilla/dom/WaveShaperNodeBinding.h"
@@ -46,7 +47,7 @@
 #include "AudioChannelService.h"
 #include "AudioDestinationNode.h"
 #include "AudioListener.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 #include "AudioStream.h"
 #include "AudioWorkletImpl.h"
 #include "AutoplayPolicy.h"
@@ -63,7 +64,7 @@
 #include "MediaElementAudioSourceNode.h"
 #include "MediaStreamAudioDestinationNode.h"
 #include "MediaStreamAudioSourceNode.h"
-#include "MediaStreamGraph.h"
+#include "MediaTrackGraph.h"
 #include "MediaStreamTrackAudioSourceNode.h"
 #include "nsContentUtils.h"
 #include "nsIScriptError.h"
@@ -87,7 +88,7 @@ extern mozilla::LazyLogModule gAutoplayPermissionLog;
 namespace mozilla {
 namespace dom {
 
-// 0 is a special value that MediaStreams use to denote they are not part of a
+// 0 is a special value that MediaTracks use to denote they are not part of a
 // AudioContext.
 static dom::AudioContext::AudioContextId gAudioContextId = 1;
 
@@ -95,7 +96,7 @@ NS_IMPL_CYCLE_COLLECTION_CLASS(AudioContext)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AudioContext)
   // The destination node and AudioContext form a cycle and so the destination
-  // stream will be destroyed.  mWorklet must be shut down before the stream
+  // track will be destroyed.  mWorklet must be shut down before the track
   // is destroyed.  Do this before clearing mWorklet.
   tmp->ShutdownWorklet();
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDestination)
@@ -264,7 +265,7 @@ already_AddRefed<AudioContext> AudioContext::Constructor(
     return nullptr;
   }
 
-  float sampleRate = MediaStreamGraph::REQUEST_DEFAULT_SAMPLE_RATE;
+  float sampleRate = MediaTrackGraph::REQUEST_DEFAULT_SAMPLE_RATE;
   if (aOptions.mSampleRate > 0 &&
       (aOptions.mSampleRate - WebAudioUtils::MinSampleRate < 0.0 ||
        WebAudioUtils::MaxSampleRate - aOptions.mSampleRate < 0.0)) {
@@ -330,14 +331,12 @@ already_AddRefed<AudioContext> AudioContext::Constructor(
   return object.forget();
 }
 
-already_AddRefed<AudioBufferSourceNode> AudioContext::CreateBufferSource(
-    ErrorResult& aRv) {
+already_AddRefed<AudioBufferSourceNode> AudioContext::CreateBufferSource() {
   return AudioBufferSourceNode::Create(nullptr, *this,
-                                       AudioBufferSourceOptions(), aRv);
+                                       AudioBufferSourceOptions());
 }
 
-already_AddRefed<ConstantSourceNode> AudioContext::CreateConstantSource(
-    ErrorResult& aRv) {
+already_AddRefed<ConstantSourceNode> AudioContext::CreateConstantSource() {
   RefPtr<ConstantSourceNode> constantSourceNode = new ConstantSourceNode(this);
   return constantSourceNode.forget();
 }
@@ -523,6 +522,48 @@ AudioListener* AudioContext::Listener() {
   return mListener;
 }
 
+double AudioContext::OutputLatency() {
+  // When reduceFingerprinting is enabled, return a latency figure that is
+  // fixed, but plausible for the platform.
+  double latency_s = 0.0;
+  if (nsRFPService::IsResistFingerprintingEnabled()) {
+#ifdef XP_MACOSX
+    latency_s = 512. / mSampleRate;
+#elif MOZ_WIDGET_ANDROID
+    latency_s = 0.020;
+#elif XP_WIN
+    latency_s = 0.04;
+#else  // Catchall for other OSes, including Linux.
+    latency_s = 0.025;
+#endif
+  } else {
+    return Graph()->AudioOutputLatency();
+  }
+  return latency_s;
+}
+
+void AudioContext::GetOutputTimestamp(AudioTimestamp& aTimeStamp) {
+  if (!Destination()) {
+    aTimeStamp.mContextTime.Construct(0.0);
+    aTimeStamp.mPerformanceTime.Construct(0.0);
+    return;
+  }
+
+  // The currentTime currently being output is the currentTime minus the audio
+  // output latency. The resolution of CurrentTime() is already reduced.
+  aTimeStamp.mContextTime.Construct(
+      std::max(0.0, CurrentTime() - OutputLatency()));
+  nsPIDOMWindowInner* parent = GetParentObject();
+  Performance* perf = parent ? parent->GetPerformance() : nullptr;
+  if (perf) {
+    // perf->Now() already has reduced resolution here, no need to do it again.
+    aTimeStamp.mPerformanceTime.Construct(
+        std::max(0., perf->Now() - (OutputLatency() * 1000.)));
+  } else {
+    aTimeStamp.mPerformanceTime.Construct(0.0);
+  }
+}
+
 Worklet* AudioContext::GetAudioWorklet(ErrorResult& aRv) {
   if (!mWorklet) {
     mWorklet = AudioWorkletImpl::CreateWorklet(this, aRv);
@@ -530,7 +571,6 @@ Worklet* AudioContext::GetAudioWorklet(ErrorResult& aRv) {
 
   return mWorklet;
 }
-
 bool AudioContext::IsRunning() const {
   return mAudioContextState == AudioContextState::Running;
 }
@@ -632,13 +672,13 @@ uint32_t AudioContext::MaxChannelCount() const {
 
 uint32_t AudioContext::ActiveNodeCount() const { return mActiveNodes.Count(); }
 
-MediaStreamGraph* AudioContext::Graph() const {
-  return Destination()->Stream()->Graph();
+MediaTrackGraph* AudioContext::Graph() const {
+  return Destination()->Track()->Graph();
 }
 
-AudioNodeStream* AudioContext::DestinationStream() const {
+AudioNodeTrack* AudioContext::DestinationTrack() const {
   if (Destination()) {
-    return Destination()->Stream();
+    return Destination()->Track();
   }
   return nullptr;
 }
@@ -650,9 +690,9 @@ void AudioContext::ShutdownWorklet() {
 }
 
 double AudioContext::CurrentTime() {
-  MediaStream* stream = Destination()->Stream();
+  mozilla::MediaTrack* track = Destination()->Track();
 
-  double rawTime = stream->StreamTimeToSeconds(stream->GetCurrentTime());
+  double rawTime = track->TrackTimeToSeconds(track->GetCurrentTime());
 
   // CurrentTime increments in intervals of 128/sampleRate. If the Timer
   // Precision Reduction is smaller than this interval, the jittered time
@@ -663,7 +703,7 @@ double AudioContext::CurrentTime() {
     return rawTime;
   }
 
-  // The value of a MediaStream's CurrentTime will always advance forward; it
+  // The value of a MediaTrack's CurrentTime will always advance forward; it
   // will never reset (even if one rewinds a video.) Therefore we can use a
   // single Random Seed initialized at the same time as the object.
   return nsRFPService::ReduceTimePrecisionAsSecs(rawTime,
@@ -720,13 +760,13 @@ void AudioContext::Shutdown() {
   // Node is already unregistered.
   mActiveNodes.Clear();
 
-  // On process shutdown, the MSG thread shuts down before the destination
-  // stream is destroyed, but AudioWorklet needs to release objects on the MSG
+  // On process shutdown, the MTG thread shuts down before the destination
+  // track is destroyed, but AudioWorklet needs to release objects on the MTG
   // thread.  AudioContext::Shutdown() is invoked on processing the
   // PBrowser::Destroy() message before xpcom shutdown begins.
   ShutdownWorklet();
 
-  // For offline contexts, we can destroy the MediaStreamGraph at this point.
+  // For offline contexts, we can destroy the MediaTrackGraph at this point.
   if (mIsOffline && mDestination) {
     mDestination->OfflineShutdown();
   }
@@ -737,18 +777,18 @@ StateChangeTask::StateChangeTask(AudioContext* aAudioContext, void* aPromise,
     : Runnable("dom::StateChangeTask"),
       mAudioContext(aAudioContext),
       mPromise(aPromise),
-      mAudioNodeStream(nullptr),
+      mAudioNodeTrack(nullptr),
       mNewState(aNewState) {
   MOZ_ASSERT(NS_IsMainThread(),
              "This constructor should be used from the main thread.");
 }
 
-StateChangeTask::StateChangeTask(AudioNodeStream* aStream, void* aPromise,
+StateChangeTask::StateChangeTask(AudioNodeTrack* aTrack, void* aPromise,
                                  AudioContextState aNewState)
     : Runnable("dom::StateChangeTask"),
       mAudioContext(nullptr),
       mPromise(aPromise),
-      mAudioNodeStream(aStream),
+      mAudioNodeTrack(aTrack),
       mNewState(aNewState) {
   MOZ_ASSERT(!NS_IsMainThread(),
              "This constructor should be used from the graph thread.");
@@ -758,11 +798,11 @@ NS_IMETHODIMP
 StateChangeTask::Run() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!mAudioContext && !mAudioNodeStream) {
+  if (!mAudioContext && !mAudioNodeTrack) {
     return NS_OK;
   }
-  if (mAudioNodeStream) {
-    AudioNode* node = mAudioNodeStream->Engine()->NodeMainThread();
+  if (mAudioNodeTrack) {
+    AudioNode* node = mAudioNodeTrack->Engine()->NodeMainThread();
     if (!node) {
       return NS_OK;
     }
@@ -773,7 +813,7 @@ StateChangeTask::Run() {
   }
 
   mAudioContext->OnStateChanged(mPromise, mNewState);
-  // We have can't call Release() on the AudioContext on the MSG thread, so we
+  // We have can't call Release() on the AudioContext on the MTG thread, so we
   // unref it here, on the main thread.
   mAudioContext = nullptr;
 
@@ -832,7 +872,7 @@ void AudioContext::OnStateChanged(void* aPromise, AudioContextState aNewState) {
   }
 
   // This can happen if this is called in reaction to a
-  // MediaStreamGraph shutdown, and a AudioContext was being
+  // MediaTrackGraph shutdown, and a AudioContext was being
   // suspended at the same time, for example if a page was being
   // closed.
   if (mAudioContextState == AudioContextState::Closed &&
@@ -893,26 +933,26 @@ void AudioContext::OnStateChanged(void* aPromise, AudioContextState aNewState) {
   mAudioContextState = aNewState;
 }
 
-nsTArray<MediaStream*> AudioContext::GetAllStreams() const {
-  nsTArray<MediaStream*> streams;
+nsTArray<mozilla::MediaTrack*> AudioContext::GetAllTracks() const {
+  nsTArray<mozilla::MediaTrack*> tracks;
   for (auto iter = mAllNodes.ConstIter(); !iter.Done(); iter.Next()) {
     AudioNode* node = iter.Get()->GetKey();
-    MediaStream* s = node->GetStream();
-    if (s) {
-      streams.AppendElement(s);
+    mozilla::MediaTrack* t = node->GetTrack();
+    if (t) {
+      tracks.AppendElement(t);
     }
-    // Add the streams of AudioParam.
+    // Add the tracks of AudioParam.
     const nsTArray<RefPtr<AudioParam>>& audioParams = node->GetAudioParams();
     if (!audioParams.IsEmpty()) {
       for (auto& param : audioParams) {
-        s = param->GetStream();
-        if (s && !streams.Contains(s)) {
-          streams.AppendElement(s);
+        t = param->GetTrack();
+        if (t && !tracks.Contains(t)) {
+          tracks.AppendElement(t);
         }
       }
     }
   }
-  return streams;
+  return tracks;
 }
 
 already_AddRefed<Promise> AudioContext::Suspend(ErrorResult& aRv) {
@@ -949,15 +989,15 @@ void AudioContext::SuspendInternal(void* aPromise,
                                    AudioContextOperationFlags aFlags) {
   Destination()->Suspend();
 
-  nsTArray<MediaStream*> streams;
-  // If mSuspendCalled is true then we already suspended all our streams,
+  nsTArray<mozilla::MediaTrack*> tracks;
+  // If mSuspendCalled is true then we already suspended all our tracks,
   // so don't suspend them again (since suspend(); suspend(); resume(); should
   // cancel both suspends). But we still need to do ApplyAudioContextOperation
   // to ensure our new promise is resolved.
   if (!mSuspendCalled) {
-    streams = GetAllStreams();
+    tracks = GetAllTracks();
   }
-  Graph()->ApplyAudioContextOperation(DestinationStream(), streams,
+  Graph()->ApplyAudioContextOperation(DestinationTrack(), tracks,
                                       AudioContextOperation::Suspend, aPromise,
                                       aFlags);
 
@@ -1012,15 +1052,15 @@ void AudioContext::ResumeInternal(AudioContextOperationFlags aFlags) {
 
   Destination()->Resume();
 
-  nsTArray<MediaStream*> streams;
-  // If mSuspendCalled is false then we already resumed all our streams,
+  nsTArray<mozilla::MediaTrack*> tracks;
+  // If mSuspendCalled is false then we already resumed all our tracks,
   // so don't resume them again (since suspend(); resume(); resume(); should
   // be OK). But we still need to do ApplyAudioContextOperation
   // to ensure our new promise is resolved.
   if (mSuspendCalled) {
-    streams = GetAllStreams();
+    tracks = GetAllTracks();
   }
-  Graph()->ApplyAudioContextOperation(DestinationStream(), streams,
+  Graph()->ApplyAudioContextOperation(DestinationTrack(), tracks,
                                       AudioContextOperation::Resume, nullptr,
                                       aFlags);
   mSuspendCalled = false;
@@ -1123,21 +1163,21 @@ already_AddRefed<Promise> AudioContext::Close(ErrorResult& aRv) {
 
 void AudioContext::CloseInternal(void* aPromise,
                                  AudioContextOperationFlags aFlags) {
-  // This can be called when freeing a document, and the streams are dead at
+  // This can be called when freeing a document, and the tracks are dead at
   // this point, so we need extra null-checks.
-  AudioNodeStream* ds = DestinationStream();
+  AudioNodeTrack* ds = DestinationTrack();
   if (ds) {
     Destination()->DestroyAudioChannelAgent();
 
-    nsTArray<MediaStream*> streams;
+    nsTArray<mozilla::MediaTrack*> tracks;
     // If mSuspendCalled or mCloseCalled are true then we already suspended
-    // all our streams, so don't suspend them again. But we still need to do
+    // all our tracks, so don't suspend them again. But we still need to do
     // ApplyAudioContextOperation to ensure our new promise is resolved.
     if (!mSuspendCalled && !mCloseCalled) {
-      streams = GetAllStreams();
+      tracks = GetAllTracks();
     }
     Graph()->ApplyAudioContextOperation(
-        ds, streams, AudioContextOperation::Close, aPromise, aFlags);
+        ds, tracks, AudioContextOperation::Close, aPromise, aFlags);
   }
   mCloseCalled = true;
 }

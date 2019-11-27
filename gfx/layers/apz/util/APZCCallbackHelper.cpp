@@ -23,7 +23,6 @@
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
-#include "nsIDOMWindow.h"
 #include "nsIDOMWindowUtils.h"
 #include "mozilla/dom/Document.h"
 #include "nsIInterfaceRequestorUtils.h"
@@ -288,7 +287,8 @@ void APZCCallbackHelper::NotifyLayerTransforms(
       parent->SetChildToParentConversionMatrix(
           ViewAs<LayoutDeviceToLayoutDeviceMatrix4x4>(
               msg.GetMatrix(),
-              PixelCastJustification::ContentProcessIsLayerInUiProcess));
+              PixelCastJustification::ContentProcessIsLayerInUiProcess),
+          msg.GetRemoteDocumentRect());
     }
   }
 }

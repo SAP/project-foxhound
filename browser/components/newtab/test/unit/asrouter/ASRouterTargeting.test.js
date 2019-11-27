@@ -48,18 +48,20 @@ describe("#CachedTargetingGetter", () => {
       global.NewTabUtils.activityStreamProvider.getTopFrecentSites
     );
   });
-  it("should report errors", async () => {
+  it("throws when failing getter", async () => {
     frecentStub.rejects(new Error("fake error"));
     clock.tick(sixHours);
 
     // assert.throws expect a function as the first parameter, try/catch is a
     // workaround
+    let rejected = false;
     try {
       await topsitesCache.get();
-      assert.isTrue(false);
     } catch (e) {
-      assert.calledOnce(global.Cu.reportError);
+      rejected = true;
     }
+
+    assert(rejected);
   });
   it("should check targeted message before message without targeting", async () => {
     const messages = await OnboardingMessageProvider.getUntranslatedMessages();
@@ -78,29 +80,14 @@ describe("#CachedTargetingGetter", () => {
       context,
     });
 
-    assert.equal(stub.callCount, 6);
+    const messageCount = messages.filter(
+      message => message.trigger && message.trigger.id === "firstRun"
+    ).length;
+
+    assert.equal(stub.callCount, messageCount);
     const calls = stub.getCalls().map(call => call.args[0]);
     const lastCall = calls[calls.length - 1];
-    assert.equal(lastCall.id, "FXA_1");
-  });
-  it("should return FxA message (is fallback)", async () => {
-    const messages = (await OnboardingMessageProvider.getUntranslatedMessages()).filter(
-      m => m.id !== "RETURN_TO_AMO_1"
-    );
-    const context = {
-      attributionData: {
-        campaign: "non-fx-button",
-        source: "addons.mozilla.org",
-      },
-    };
-    const result = await ASRouterTargeting.findMatchingMessage({
-      messages,
-      trigger: { id: "firstRun" },
-      context,
-    });
-
-    assert.isDefined(result);
-    assert.equal(result.id, "FXA_1");
+    assert.equal(lastCall.id, "TRAILHEAD_1");
   });
   describe("sortMessagesByPriority", () => {
     it("should sort messages in descending priority order", async () => {

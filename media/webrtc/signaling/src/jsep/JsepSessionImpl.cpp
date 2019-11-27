@@ -1050,11 +1050,6 @@ nsresult JsepSessionImpl::MakeNegotiatedTransceiver(
     MOZ_MTLOG(ML_DEBUG, "[" << mName << "]: RTCP-MUX is off");
   }
 
-  if (local.GetMediaType() != SdpMediaSection::kApplication) {
-    Telemetry::Accumulate(Telemetry::WEBRTC_RTCP_MUX,
-                          transceiver->mTransport.mComponents == 1);
-  }
-
   return NS_OK;
 }
 
@@ -1271,6 +1266,28 @@ nsresult JsepSessionImpl::ParseSdp(const std::string& sdp,
       return NS_ERROR_INVALID_ARG;
     }
 
+    if (mediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute)) {
+      std::set<uint16_t> extIds;
+      for (const auto& ext : mediaAttrs.GetExtmap().mExtmaps) {
+        uint16_t id = ext.entry;
+
+        if (id < 1 || id > 14) {
+          JSEP_SET_ERROR("Description contains invalid extension id "
+                         << id << " on level " << i
+                         << " which is unsupported until 2-byte rtp"
+                            " header extensions are supported in webrtc.org");
+          return NS_ERROR_INVALID_ARG;
+        }
+
+        if (extIds.find(id) != extIds.end()) {
+          JSEP_SET_ERROR("Description contains duplicate extension id "
+                         << id << " on level " << i);
+          return NS_ERROR_INVALID_ARG;
+        }
+        extIds.insert(id);
+      }
+    }
+
     static const std::bitset<128> forbidden = GetForbiddenSdpPayloadTypes();
     if (msection.GetMediaType() == SdpMediaSection::kAudio ||
         msection.GetMediaType() == SdpMediaSection::kVideo) {
@@ -1446,7 +1463,10 @@ nsresult JsepSessionImpl::UpdateTransceiversFromRemoteDescription(
     }
 
     if (!mSdpHelper.MsectionIsDisabled(msection)) {
-      transceiver->Associate(msection.GetAttributeList().GetMid());
+      if (msection.GetAttributeList().HasAttribute(
+              SdpAttribute::kMidAttribute)) {
+        transceiver->Associate(msection.GetAttributeList().GetMid());
+      }
       if (!transceiver->IsAssociated()) {
         transceiver->Associate(GetNewMid());
       } else {
@@ -1993,6 +2013,8 @@ void JsepSessionImpl::SetupDefaultRtpExtensions() {
                        SdpDirectionAttribute::Direction::kSendrecv);
   AddVideoRtpExtension(webrtc::RtpExtension::kTimestampOffsetUri,
                        SdpDirectionAttribute::Direction::kSendrecv);
+  AddVideoRtpExtension(webrtc::RtpExtension::kPlayoutDelayUri,
+                       SdpDirectionAttribute::Direction::kRecvonly);
 }
 
 void JsepSessionImpl::SetState(JsepSignalingState state) {

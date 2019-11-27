@@ -67,10 +67,13 @@ class VibrancyManager {
    * or remove existing ones as needed.
    * @param aType   The vibrancy type to use in the region.
    * @param aRegion The vibrant area, in device pixels.
+   * @return Whether the region changed.
    */
-  void UpdateVibrantRegion(VibrancyType aType, const LayoutDeviceIntRegion& aRegion);
+  bool UpdateVibrantRegion(VibrancyType aType, const LayoutDeviceIntRegion& aRegion);
 
   bool HasVibrantRegions() { return !mVibrantRegions.IsEmpty(); }
+
+  LayoutDeviceIntRegion GetUnionOfVibrantRegions() const;
 
   /**
    * Return the fill color that should be drawn on top of the cleared window

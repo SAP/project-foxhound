@@ -389,7 +389,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                  nsIContent* aContent,
                                  bool aSuppressWhiteSpaceOptimizations,
                                  const InsertionPoint& aInsertion,
-                                 FrameConstructionItemList& aItems);
+                                 FrameConstructionItemList& aItems,
+                                 uint32_t aFlags = 0);
 
   // Helper method for AddFrameConstructionItems etc.
   // Unsets the need-frame/restyle bits on aContent.
@@ -405,7 +406,8 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                    ComputedStyle* aComputedStyle,
                                    bool aSuppressWhiteSpaceOptimizations,
                                    nsContainerFrame* aParentFrame,
-                                   FrameConstructionItemList& aItems);
+                                   FrameConstructionItemList& aItems,
+                                   uint32_t aFlags = 0);
 
   // Construct the frames for the document element.  This can return null if the
   // document element is display:none, or if the document element has a
@@ -757,14 +759,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
     const FrameConstructionData mData;
   };
 
-#ifdef DEBUG
-#  define FCDATA_FOR_DISPLAY(_display, _fcdata) \
-    { _display, _fcdata }
-#else
-#  define FCDATA_FOR_DISPLAY(_display, _fcdata) \
-    { _fcdata }
-#endif
-
   /* Structure that has a FrameConstructionData and style pseudo-type
      for a table pseudo-frame */
   struct PseudoParentData {
@@ -775,6 +769,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
      pseudo-frames as needed */
   static const PseudoParentData sPseudoParentData[eParentTypeCount];
 
+#ifdef MOZ_XBL
   // The information that concerns the frame constructor after loading an XBL
   // binding.
   //
@@ -792,6 +787,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // Returns null mStyle member to signal an error.
   XBLBindingLoadInfo LoadXBLBindingIfNeeded(nsIContent&, const ComputedStyle&,
                                             uint32_t aFlags);
+#endif
 
   const FrameConstructionData* FindDataForContent(nsIContent&, ComputedStyle&,
                                                   nsIFrame* aParentFrame,
@@ -1369,6 +1365,13 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                   const nsStyleDisplay* aStyleDisplay,
                                   nsFrameList& aFrameList);
 
+  // Creates a block frame wrapping an anonymous ruby frame.
+  nsIFrame* ConstructBlockRubyFrame(nsFrameConstructorState& aState,
+                                    FrameConstructionItem& aItem,
+                                    nsContainerFrame* aParentFrame,
+                                    const nsStyleDisplay* aStyleDisplay,
+                                    nsFrameList& aFrameList);
+
   void ConstructTextFrame(const FrameConstructionData* aData,
                           nsFrameConstructorState& aState, nsIContent* aContent,
                           nsContainerFrame* aParentFrame,
@@ -1510,14 +1513,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                                          ComputedStyle&);
 #  endif /* XP_MACOSX */
 #endif   /* MOZ_XUL */
-
-  // Function to find FrameConstructionData for an element using one of the XUL
-  // display types.  Will return null if the style doesn't have a XUL display
-  // type.  This function performs no other checks, so should only be called if
-  // we know for sure that the element is not something that should get a frame
-  // constructed by tag.
-  static const FrameConstructionData* FindXULDisplayData(const nsStyleDisplay&,
-                                                         const Element&);
 
   /**
    * Constructs an outer frame, an anonymous child that wraps its real
@@ -1908,6 +1903,19 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                              FrameConstructionItem& aParentItem,
                              bool aItemIsWithinSVGText,
                              bool aItemAllowsTextPathChild);
+
+  // Determine whether we need to wipe out aFrame (the insertion parent) and
+  // rebuild the entire subtree when we insert or append new content under
+  // aFrame.
+  //
+  // This is similar to WipeContainingBlock(), but is called before constructing
+  // any frame construction items. Any container frames which need reframing
+  // regardless of the content inserted or appended can add a check in this
+  // method.
+  //
+  // @return true if we reconstructed the insertion parent frame; false
+  // otherwise
+  bool WipeInsertionParent(nsContainerFrame* aFrame);
 
   // Determine whether we need to wipe out what we just did and start over
   // because we're doing something like adding block kids to an inline frame

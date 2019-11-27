@@ -9,7 +9,8 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/Logging.h"
 #include "mozilla/RelativeLuminanceUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/gfx/Types.h"  // for Color::FromABGR
 #include "nsColor.h"
@@ -1493,7 +1494,7 @@ static bool AssumeThemePartAndStateAreTransparent(int32_t aPart,
 // the system default resolution.
 static inline double GetThemeDpiScaleFactor(nsIFrame* aFrame) {
   if (WinUtils::IsPerMonitorDPIAware() ||
-      nsIWidget::DefaultScaleOverride() > 0.0) {
+      StaticPrefs::layout_css_devPixelsPerPx() > 0.0) {
     nsIWidget* rootWidget = aFrame->PresContext()->GetRootWidget();
     if (rootWidget) {
       double systemScale = WinUtils::SystemScaleFactor();
@@ -4282,11 +4283,8 @@ nsresult nsNativeThemeWin::DrawCustomScrollbarPart(
 // Creation Routine
 ///////////////////////////////////////////
 
-// from nsWindow.cpp
-extern bool gDisableNativeTheme;
-
 already_AddRefed<nsITheme> do_GetNativeTheme() {
-  if (gDisableNativeTheme) return nullptr;
+  if (StaticPrefs::widget_disable_native_theme()) return nullptr;
 
   static nsCOMPtr<nsITheme> inst;
 

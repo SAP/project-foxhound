@@ -224,25 +224,6 @@ VideoData::VideoData(int64_t aOffset, const TimeUnit& aTime,
 
 VideoData::~VideoData() {}
 
-void VideoData::SetListener(UniquePtr<Listener> aListener) {
-  MOZ_ASSERT(!mSentToCompositor,
-             "Listener should be registered before sending data");
-
-  mListener = std::move(aListener);
-}
-
-void VideoData::MarkSentToCompositor() {
-  if (mSentToCompositor) {
-    return;
-  }
-
-  mSentToCompositor = true;
-  if (mListener != nullptr) {
-    mListener->OnSentToCompositor();
-    mListener = nullptr;
-  }
-}
-
 size_t VideoData::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   size_t size = aMallocSizeOf(this);
 
@@ -308,6 +289,9 @@ bool VideoData::SetVideoDataToImage(PlanarYCbCrImage* aVideoImage,
     return false;
   }
 
+  MOZ_ASSERT(aBuffer.mYUVColorSpace != gfx::YUVColorSpace::UNKNOWN,
+             "We must know the colorframe at this point");
+
   PlanarYCbCrData data = ConstructPlanarYCbCrData(aInfo, aBuffer, aPicture);
 
   aVideoImage->SetDelayedConversion(true);
@@ -335,6 +319,9 @@ already_AddRefed<VideoData> VideoData::CreateAndCopyData(
   if (!ValidateBufferAndPicture(aBuffer, aPicture)) {
     return nullptr;
   }
+
+  MOZ_ASSERT(aBuffer.mYUVColorSpace != gfx::YUVColorSpace::UNKNOWN,
+             "We must know the colorframe at this point");
 
   RefPtr<VideoData> v(new VideoData(aOffset, aTime, aDuration, aKeyframe,
                                     aTimecode, aInfo.mDisplay, 0));

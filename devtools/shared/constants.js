@@ -13,11 +13,26 @@
 // List of audit types.
 const AUDIT_TYPE = {
   CONTRAST: "CONTRAST",
+  KEYBOARD: "KEYBOARD",
   TEXT_LABEL: "TEXT_LABEL",
 };
 
 // Types of issues grouped by audit types.
 const ISSUE_TYPE = {
+  [AUDIT_TYPE.KEYBOARD]: {
+    // Focusable accessible objects have no semantics.
+    FOCUSABLE_NO_SEMANTICS: "FOCUSABLE_NO_SEMANTICS",
+    // Tab index greater than 0 is provided.
+    FOCUSABLE_POSITIVE_TABINDEX: "FOCUSABLE_POSITIVE_TABINDEX",
+    // Interactive accesible objects do not have an associated action.
+    INTERACTIVE_NO_ACTION: "INTERACTIVE_NO_ACTION",
+    // Interative accessible objcets are not focusable.
+    INTERACTIVE_NOT_FOCUSABLE: "INTERACTIVE_NOT_FOCUSABLE",
+    // Accessible objects can only be interacted with a mouse.
+    MOUSE_INTERACTIVE_ONLY: "MOUSE_INTERACTIVE_ONLY",
+    // Focusable accessible objects have no focus styling.
+    NO_FOCUS_VISIBLE: "NO_FOCUS_VISIBLE",
+  },
   [AUDIT_TYPE.TEXT_LABEL]: {
     // <AREA> name is provided via "alt" attribute.
     AREA_NO_NAME_FROM_ALT: "AREA_NO_NAME_FROM_ALT",
@@ -67,13 +82,32 @@ const SCORES = {
   // Elevates accessibility experience.
   BEST_PRACTICES: "BEST_PRACTICES",
   // Does not satisfy the baseline WCAG guidelines.
-  FAIL: "fail",
+  FAIL: "FAIL",
   // Partially satisfies the WCAG AA guidelines.
   WARNING: "WARNING",
+};
+
+// List of simulation types.
+const SIMULATION_TYPE = {
+  // Low red color blindness
+  PROTANOMALY: "PROTANOMALY",
+  // Low green color blindness
+  DEUTERANOMALY: "DEUTERANOMALY",
+  // Low blue color blindness
+  TRITANOMALY: "TRITANOMALY",
+  // No red color blindness
+  PROTANOPIA: "PROTANOPIA",
+  // No green color blindness
+  DEUTERANOPIA: "DEUTERANOPIA",
+  // No blue color blindness
+  TRITANOPIA: "TRITANOPIA",
+  // Low contrast
+  CONTRAST_LOSS: "CONTRAST_LOSS",
 };
 
 exports.accessibility = {
   AUDIT_TYPE,
   ISSUE_TYPE,
   SCORES,
+  SIMULATION_TYPE,
 };

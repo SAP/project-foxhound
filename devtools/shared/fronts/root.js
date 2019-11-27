@@ -13,6 +13,18 @@ const {
 loader.lazyRequireGetter(this, "getFront", "devtools/shared/protocol", true);
 loader.lazyRequireGetter(
   this,
+  "ProcessDescriptorFront",
+  "devtools/shared/fronts/descriptors/process",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "FrameDescriptorFront",
+  "devtools/shared/fronts/descriptors/frame",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "BrowsingContextTargetFront",
   "devtools/shared/fronts/targets/browsing-context",
   true
@@ -21,6 +33,12 @@ loader.lazyRequireGetter(
   this,
   "ContentProcessTargetFront",
   "devtools/shared/fronts/targets/content-process",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "LocalTabTargetFront",
+  "devtools/shared/fronts/targets/local-tab",
   true
 );
 
@@ -81,12 +99,12 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
 
       // And then from the Child processes
       const { processes } = await this.listProcesses();
-      for (const process of processes) {
+      for (const processDescriptorFront of processes) {
         // Ignore parent process
-        if (process.parent) {
+        if (processDescriptorFront.isParent) {
           continue;
         }
-        const front = await this.getProcess(process.id);
+        const front = await processDescriptorFront.getTarget();
         const response = await front.listWorkers();
         workers = workers.concat(response.workers);
       }
@@ -101,6 +119,9 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     };
 
     registrations.forEach(front => {
+      const { activeWorker, waitingWorker, installingWorker } = front;
+      const newestWorker = activeWorker || waitingWorker || installingWorker;
+
       // All the information is simply mirrored from the registration front.
       // However since registering workers will fetch similar information from the worker
       // target front and will not have a service worker registration front, consumers
@@ -114,6 +135,7 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
         registrationFront: front,
         scope: front.scope,
         url: front.url,
+        newestWorkerId: newestWorker && newestWorker.id,
       });
     });
 
@@ -126,9 +148,25 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
       };
       switch (front.type) {
         case Ci.nsIWorkerDebugger.TYPE_SERVICE:
-          const registration = result.service.find(
-            r => r.scope === front.scope
-          );
+          const registration = result.service.find(r => {
+            /**
+             * Older servers will not define `ServiceWorkerFront.id` (the value
+             * of `r.newestWorkerId`), and a `ServiceWorkerFront`'s ID will only
+             * match its corresponding WorkerTargetFront's ID if their
+             * underlying actors are "connected" - this is only guaranteed with
+             * parent-intercept mode. The `if` statement is for backward
+             * compatibility and can be removed when the release channel is
+             * >= FF69 _and_ parent-intercept is stable (which definitely won't
+             * happen when the release channel is < FF69).
+             */
+            const { isParentInterceptEnabled } = r.registrationFront.traits;
+            if (!r.newestWorkerId || !isParentInterceptEnabled) {
+              return r.scope === front.scope;
+            }
+
+            return r.newestWorkerId === front.id;
+          });
+
           if (registration) {
             // XXX: Race, sometimes a ServiceWorkerRegistrationInfo doesn't
             // have a scriptSpec, but its associated WorkerDebugger does.
@@ -159,6 +197,24 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     return result;
   }
 
+  async listProcesses() {
+    const { processes } = await super.listProcesses();
+    const processDescriptors = processes.map(form => {
+      if (form.actor && form.actor.includes("processDescriptor")) {
+        return this._getProcessDescriptorFront(form);
+      }
+      // Support FF69 and older
+      return {
+        id: form.id,
+        isParent: form.parent,
+        getTarget: () => {
+          return this.getProcess(form.id);
+        },
+      };
+    });
+    return { processes: processDescriptors };
+  }
+
   /**
    * Fetch the ParentProcessTargetActor for the main process.
    *
@@ -170,10 +226,18 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
   }
 
   async getProcess(id) {
+    const { form } = await super.getProcess(id);
+    if (form.actor && form.actor.includes("processDescriptor")) {
+      // The server currently returns a form, when we can drop backwards compatibility,
+      // we can use automatic marshalling here instead, making the next line unnecessary
+      const processDescriptorFront = this._getProcessDescriptorFront(form);
+      return processDescriptorFront.getTarget();
+    }
+
+    // Backwards compatibility for servers up to FF69.
     // Do not use specification automatic marshalling as getProcess may return
     // two different type: ParentProcessTargetActor or ContentProcessTargetActor.
     // Also, we do want to memoize the fronts and return already existing ones.
-    const { form } = await super.getProcess(id);
     let front = this.actor(form.actor);
     if (front) {
       return front;
@@ -183,11 +247,11 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     // which is a ParentProcessTargetActor, but not in xpcshell, which uses a
     // ContentProcessTargetActor. So select the right front based on the actor ID.
     if (form.actor.includes("contentProcessTarget")) {
-      front = new ContentProcessTargetFront(this._client);
+      front = new ContentProcessTargetFront(this._client, null, this);
     } else {
       // ParentProcessTargetActor doesn't have a specific front, instead it uses
       // BrowsingContextTargetFront on the client side.
-      front = new BrowsingContextTargetFront(this._client);
+      front = new BrowsingContextTargetFront(this._client, null, this);
     }
     // As these fronts aren't instantiated by protocol.js, we have to set their actor ID
     // manually like that:
@@ -196,6 +260,53 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
     this.manage(front);
 
     return front;
+  }
+
+  /**
+   * This exists as a polyfill for now for tabTargets, which do not have descriptors.
+   * The mainRoot fills the role of the descriptor
+   */
+
+  /**
+   *  Get the previous frame descriptor front if it exists, create a new one if not
+   */
+  _getFrameDescriptorFront(form) {
+    let front = this.actor(form.actor);
+    if (front) {
+      return front;
+    }
+    front = new FrameDescriptorFront(this._client, null, this);
+    front.form(form);
+    front.actorID = form.actor;
+    this.manage(front);
+    return front;
+  }
+
+  /**
+   * Get the previous process descriptor front if it exists, create a new one if not.
+   *
+   * If we are using a modern server, we will get a form for a processDescriptorFront.
+   * Until we can switch to auto marshalling, we need to marshal this into a process
+   * descriptor front ourselves.
+   */
+  _getProcessDescriptorFront(form) {
+    let front = this.actor(form.actor);
+    if (front) {
+      return front;
+    }
+    front = new ProcessDescriptorFront(this._client, null, this);
+    front.form(form);
+    front.actorID = form.actor;
+    this.manage(front);
+    return front;
+  }
+
+  async getBrowsingContextDescriptor(id) {
+    const form = await super.getBrowsingContextDescriptor(id);
+    if (form.actor && form.actor.includes("processDescriptor")) {
+      return this._getProcessDescriptorFront(form);
+    }
+    return this._getFrameDescriptorFront(form);
   }
 
   /**
@@ -249,7 +360,29 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
       }
     }
 
-    return super.getTab(packet);
+    const form = await super.getTab(packet);
+    let front = this.actor(form.actor);
+    if (front) {
+      front.form(form);
+      return front;
+    }
+    // Instanciate a specialized class for a local tab as it needs some more
+    // client side integration with the Firefox frontend.
+    // But ignore the fake `tab` object we receive, where there is only a
+    // `linkedBrowser` attribute, but this isn't a real <tab> element.
+    // devtools/client/framework/test/browser_toolbox_target.js is passing such
+    // a fake tab.
+    if (filter && filter.tab && filter.tab.tagName == "tab") {
+      front = new LocalTabTargetFront(this._client, null, this, filter.tab);
+    } else {
+      front = new BrowsingContextTargetFront(this._client, null, this);
+    }
+    // As these fronts aren't instantiated by protocol.js, we have to set their actor ID
+    // manually like that:
+    front.actorID = form.actor;
+    front.form(form);
+    this.manage(front);
+    return front;
   }
 
   /**
@@ -262,8 +395,8 @@ class RootFront extends FrontClassWithSpec(rootSpec) {
    */
   async getAddon({ id }) {
     const addons = await this.listAddons();
-    const addonTargetFront = addons.find(addon => addon.id === id);
-    return addonTargetFront;
+    const webextensionDescriptorFront = addons.find(addon => addon.id === id);
+    return webextensionDescriptorFront;
   }
 
   /**

@@ -16,13 +16,13 @@ import { getSourcesForTabs } from "../../reducers/tabs";
 import { setSymbols } from "./symbols";
 import { setInScopeLines } from "../ast";
 import { closeActiveSearch, updateActiveFileSearch } from "../ui";
-import { isFulfilled } from "../../utils/async-value";
 import { togglePrettyPrint } from "./prettyPrint";
 import { addTab, closeTab } from "../tabs";
 import { loadSourceText } from "./loadSourceText";
+import { setBreakableLines } from ".";
 
 import { prefs } from "../../utils/prefs";
-import { shouldPrettyPrint, isMinified } from "../../utils/source";
+import { isMinified } from "../../utils/source";
 import { createLocation } from "../../utils/location";
 import { mapLocation } from "../../utils/source-maps";
 
@@ -33,6 +33,7 @@ import {
   getActiveSearch,
   getSelectedLocation,
   getSelectedSource,
+  canPrettyPrintSource,
 } from "../../selectors";
 
 import type {
@@ -57,12 +58,13 @@ export const setSelectedLocation = (
 export const setPendingSelectedLocation = (
   cx: Context,
   url: string,
-  options: Object
+  options?: PartialPosition
 ) => ({
   type: "SET_PENDING_SELECTED_LOCATION",
   cx,
-  url: url,
-  line: options.location ? options.location.line : null,
+  url,
+  line: options ? options.line : null,
+  column: options ? options.column : null,
 });
 
 export const clearSelectedLocation = (cx: Context) => ({
@@ -84,7 +86,7 @@ export const clearSelectedLocation = (cx: Context) => ({
 export function selectSourceURL(
   cx: Context,
   url: string,
-  options: PartialPosition = {}
+  options?: PartialPosition
 ) {
   return async ({ dispatch, getState, sourceMaps }: ThunkArgs) => {
     const source = getSourceByURL(getState(), url);
@@ -162,6 +164,8 @@ export function selectLocation(
     dispatch(setSelectedLocation(cx, source, location));
 
     await dispatch(loadSourceText({ cx, source }));
+    await dispatch(setBreakableLines(cx, source.id));
+
     const loadedSource = getSource(getState(), source.id);
 
     if (!loadedSource) {
@@ -169,19 +173,12 @@ export function selectLocation(
       return;
     }
     const sourceWithContent = getSourceWithContent(getState(), source.id);
-    const sourceContent =
-      sourceWithContent.content && isFulfilled(sourceWithContent.content)
-        ? sourceWithContent.content.value
-        : null;
 
     if (
       keepContext &&
       prefs.autoPrettyPrint &&
       !getPrettySource(getState(), loadedSource.id) &&
-      shouldPrettyPrint(
-        loadedSource,
-        sourceContent || { type: "text", value: "", contentType: undefined }
-      ) &&
+      canPrettyPrintSource(getState(), loadedSource.id) &&
       isMinified(sourceWithContent)
     ) {
       await dispatch(togglePrettyPrint(cx, loadedSource.id));

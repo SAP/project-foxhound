@@ -34,20 +34,18 @@ function generateDefaults(editor, overrides) {
     },
     frame: null,
     source: ({
-      source: createSourceObject("foo"),
+      ...createSourceObject("foo"),
       content: null,
     }: SourceWithContent),
     ...overrides,
   };
 }
 
-function createFrame(line) {
+function createLocation(line) {
   return {
-    location: {
-      sourceId: "foo",
-      line,
-      column: 2,
-    },
+    sourceId: "foo",
+    line,
+    column: 2,
   };
 }
 
@@ -57,7 +55,7 @@ function render(overrides = {}) {
   const props = generateDefaults(editor, overrides);
 
   const doc = createMockDocument(clear);
-  setDocument(props.source.source.id, doc);
+  setDocument(props.source.id, doc);
 
   // $FlowIgnore
   const component = shallow(<DebugLine.WrappedComponent {...props} />, {
@@ -71,7 +69,7 @@ describe("DebugLine Component", () => {
     it("should show a new debug line", async () => {
       const { component, props, doc } = render({
         source: {
-          source: createSourceObject("foo"),
+          ...createSourceObject("foo"),
           content: asyncValue.fulfilled({
             type: "text",
             value: "",
@@ -80,9 +78,9 @@ describe("DebugLine Component", () => {
         },
       });
       const line = 2;
-      const frame = createFrame(line);
+      const location = createLocation(line);
 
-      component.setProps({ ...props, frame });
+      component.setProps({ ...props, location });
 
       expect(doc.removeLineClass.mock.calls).toEqual([]);
       expect(doc.addLineClass.mock.calls).toEqual([
@@ -94,7 +92,7 @@ describe("DebugLine Component", () => {
       it("should replace the first debug line", async () => {
         const { props, component, clear, doc } = render({
           source: {
-            source: createSourceObject("foo"),
+            ...createSourceObject("foo"),
             content: asyncValue.fulfilled({
               type: "text",
               value: "",
@@ -107,10 +105,10 @@ describe("DebugLine Component", () => {
         const firstLine = 2;
         const secondLine = 2;
 
-        component.setProps({ ...props, frame: createFrame(firstLine) });
+        component.setProps({ ...props, location: createLocation(firstLine) });
         component.setProps({
           ...props,
-          frame: createFrame(secondLine),
+          frame: createLocation(secondLine),
         });
 
         expect(doc.removeLineClass.mock.calls).toEqual([
@@ -143,9 +141,9 @@ describe("DebugLine Component", () => {
       it("should not set the debug line", () => {
         const { component, props, doc } = render({ frame: null });
         const line = 2;
-        const frame = createFrame(line);
+        const location = createLocation(line);
 
-        component.setProps({ ...props, frame });
+        component.setProps({ ...props, location });
         expect(doc.removeLineClass).not.toHaveBeenCalled();
       });
     });

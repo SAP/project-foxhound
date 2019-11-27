@@ -9,7 +9,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/PodOperations.h"
 
-#include "builtin/String.h"
 #ifdef DEBUG
 #  include "jsutil.h"
 #endif
@@ -167,7 +166,7 @@ void RegExpObject::trace(JSTracer* trc) {
   TraceNullableEdge(trc, &sharedRef(), "RegExpObject shared");
 }
 
-static const ClassOps RegExpObjectClassOps = {
+static const JSClassOps RegExpObjectClassOps = {
     nullptr, /* addProperty */
     nullptr, /* delProperty */
     nullptr, /* enumerate */
@@ -189,14 +188,14 @@ static const ClassSpec RegExpObjectClassSpec = {
     js::regexp_methods,
     js::regexp_properties};
 
-const Class RegExpObject::class_ = {
+const JSClass RegExpObject::class_ = {
     js_RegExp_str,
     JSCLASS_HAS_PRIVATE |
         JSCLASS_HAS_RESERVED_SLOTS(RegExpObject::RESERVED_SLOTS) |
         JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp),
     &RegExpObjectClassOps, &RegExpObjectClassSpec};
 
-const Class RegExpObject::protoClass_ = {
+const JSClass RegExpObject::protoClass_ = {
     js_Object_str, JSCLASS_HAS_CACHED_PROTO(JSProto_RegExp), JS_NULL_CLASS_OPS,
     &RegExpObjectClassSpec};
 
@@ -488,7 +487,7 @@ JSAtom* js::EscapeRegExpPattern(JSContext* cx, HandleAtom src) {
 }
 
 // ES6 draft rev32 21.2.5.14. Optimized for RegExpObject.
-JSFlatString* RegExpObject::toString(JSContext* cx) const {
+JSLinearString* RegExpObject::toString(JSContext* cx) const {
   // Steps 3-4.
   RootedAtom src(cx, getSource());
   if (!src) {
@@ -928,7 +927,7 @@ void RegExpShared::discardJitCode() {
   tables.clearAndFree();
 }
 
-void RegExpShared::finalize(FreeOp* fop) {
+void RegExpShared::finalize(JSFreeOp* fop) {
   for (auto& comp : compilationArray) {
     if (comp.byteCode) {
       size_t length = comp.byteCodeLength();
@@ -1241,20 +1240,20 @@ ArrayObject* RegExpRealm::createMatchResultTemplateObject(JSContext* cx) {
   return matchResultTemplateObject_;
 }
 
-void RegExpRealm::sweep() {
-  if (matchResultTemplateObject_ &&
-      IsAboutToBeFinalized(&matchResultTemplateObject_)) {
-    matchResultTemplateObject_.set(nullptr);
+void RegExpRealm::traceWeak(JSTracer* trc) {
+  if (matchResultTemplateObject_) {
+    TraceWeakEdge(trc, &matchResultTemplateObject_,
+                  "RegExpRealm::matchResultTemplateObject_");
   }
 
-  if (optimizableRegExpPrototypeShape_ &&
-      IsAboutToBeFinalized(&optimizableRegExpPrototypeShape_)) {
-    optimizableRegExpPrototypeShape_.set(nullptr);
+  if (optimizableRegExpPrototypeShape_) {
+    TraceWeakEdge(trc, &optimizableRegExpPrototypeShape_,
+                  "RegExpRealm::optimizableRegExpPrototypeShape_");
   }
 
-  if (optimizableRegExpInstanceShape_ &&
-      IsAboutToBeFinalized(&optimizableRegExpInstanceShape_)) {
-    optimizableRegExpInstanceShape_.set(nullptr);
+  if (optimizableRegExpInstanceShape_) {
+    TraceWeakEdge(trc, &optimizableRegExpInstanceShape_,
+                  "RegExpRealm::optimizableRegExpInstanceShape_");
   }
 }
 
@@ -1528,8 +1527,9 @@ JS_PUBLIC_API bool JS::ExecuteRegExp(JSContext* cx, HandleObject obj,
 }
 
 JS_PUBLIC_API bool JS::ExecuteRegExpNoStatics(JSContext* cx, HandleObject obj,
-                                              char16_t* chars, size_t length,
-                                              size_t* indexp, bool test,
+                                              const char16_t* chars,
+                                              size_t length, size_t* indexp,
+                                              bool test,
                                               MutableHandleValue rval) {
   AssertHeapIsIdle();
   CHECK_THREAD(cx);

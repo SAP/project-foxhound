@@ -14,6 +14,7 @@
 #ifdef XP_WIN
 #  include <windows.h>
 #  include <shlobj.h>
+#  include "mozilla/PolicyChecks.h"
 #endif
 #ifdef XP_UNIX
 #  include <unistd.h>
@@ -389,13 +390,10 @@ nsToolkitProfileService::nsToolkitProfileService()
       mCreatedAlternateProfile(false),
       mStartupReason(NS_LITERAL_STRING("unknown")),
       mMaybeLockProfile(false),
-      mUpdateChannel(NS_STRINGIFY(MOZ_UPDATE_CHANNEL)),
+      mUpdateChannel(MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL)),
       mProfileDBExists(false),
       mProfileDBFileSize(0),
-      mProfileDBModifiedTime(0),
-      mInstallDBExists(false),
-      mInstallDBFileSize(0),
-      mInstallDBModifiedTime(0) {
+      mProfileDBModifiedTime(0) {
 #ifdef MOZ_DEV_EDITION
   mUseDevEditionProfile = true;
 #endif
@@ -473,23 +471,60 @@ bool nsToolkitProfileService::IsProfileForCurrentInstall(
     return false;
   }
 
-  nsCString greDirPath;
-  rv = compatData.GetString("Compatibility", "LastPlatformDir", greDirPath);
+  nsCString lastGreDirStr;
+  rv = compatData.GetString("Compatibility", "LastPlatformDir", lastGreDirStr);
   // If this string is missing then this profile is from an ancient version.
   // We'll opt to use it in this case.
   if (NS_FAILED(rv)) {
     return true;
   }
 
-  nsCOMPtr<nsIFile> greDir;
-  rv = NS_NewNativeLocalFile(EmptyCString(), false, getter_AddRefs(greDir));
+  nsCOMPtr<nsIFile> lastGreDir;
+  rv = NS_NewNativeLocalFile(EmptyCString(), false, getter_AddRefs(lastGreDir));
   NS_ENSURE_SUCCESS(rv, false);
 
-  rv = greDir->SetPersistentDescriptor(greDirPath);
+  rv = lastGreDir->SetPersistentDescriptor(lastGreDirStr);
   NS_ENSURE_SUCCESS(rv, false);
+
+#ifdef XP_WIN
+#  if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
+  mozilla::PathString lastGreDirPath, currentGreDirPath;
+  lastGreDirPath = lastGreDir->NativePath();
+  currentGreDirPath = currentGreDir->NativePath();
+  if (lastGreDirPath.Equals(currentGreDirPath,
+                            nsCaseInsensitiveStringComparator())) {
+    return true;
+  }
+
+  // Convert a 64-bit install path to what would have been the 32-bit install
+  // path to allow users to migrate their profiles from one to the other.
+  PWSTR pathX86 = nullptr;
+  HRESULT hres =
+      SHGetKnownFolderPath(FOLDERID_ProgramFilesX86, 0, nullptr, &pathX86);
+  if (SUCCEEDED(hres)) {
+    nsDependentString strPathX86(pathX86);
+    if (!StringBeginsWith(currentGreDirPath, strPathX86,
+                          nsCaseInsensitiveStringComparator())) {
+      PWSTR path = nullptr;
+      hres = SHGetKnownFolderPath(FOLDERID_ProgramFiles, 0, nullptr, &path);
+      if (SUCCEEDED(hres)) {
+        if (StringBeginsWith(currentGreDirPath, nsDependentString(path),
+                             nsCaseInsensitiveStringComparator())) {
+          currentGreDirPath.Replace(0, wcslen(path), strPathX86);
+        }
+      }
+      CoTaskMemFree(path);
+    }
+  }
+  CoTaskMemFree(pathX86);
+
+  return lastGreDirPath.Equals(currentGreDirPath,
+                               nsCaseInsensitiveStringComparator());
+#  endif
+#endif
 
   bool equal;
-  rv = greDir->Equals(currentGreDir, &equal);
+  rv = lastGreDir->Equals(currentGreDir, &equal);
   NS_ENSURE_SUCCESS(rv, false);
 
   return equal;
@@ -653,12 +688,6 @@ nsToolkitProfileService::GetIsListOutdated(bool* aResult) {
     return NS_OK;
   }
 
-  if (IsFileOutdated(mInstallDBFile, mInstallDBExists, mInstallDBModifiedTime,
-                     mInstallDBFileSize)) {
-    *aResult = true;
-    return NS_OK;
-  }
-
   *aResult = false;
   return NS_OK;
 }
@@ -712,10 +741,6 @@ nsresult nsToolkitProfileService::Init() {
   rv = mInstallDBFile->AppendNative(NS_LITERAL_CSTRING("installs.ini"));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = UpdateFileStats(mInstallDBFile, &mInstallDBExists,
-                       &mInstallDBModifiedTime, &mInstallDBFileSize);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   nsAutoCString buffer;
 
   rv = UpdateFileStats(mProfileDBFile, &mProfileDBExists,
@@ -742,7 +767,7 @@ nsresult nsToolkitProfileService::Init() {
       // any install data from the backup.
       nsINIParser installDB;
 
-      if (mInstallDBExists && NS_SUCCEEDED(installDB.Init(mInstallDBFile))) {
+      if (NS_SUCCEEDED(installDB.Init(mInstallDBFile))) {
         // There is install data to import.
         ImportInstallsClosure closure = {&installDB, &mProfileDB};
         installDB.GetSections(&ImportInstalls, &closure);
@@ -1810,9 +1835,15 @@ bool nsToolkitProfileService::IsSnapEnvironment() {
  * application versions to different locations, some application sandboxing
  * systems as well as enterprise deployments. This environment variable provides
  * a way to opt out of dedicated profiles for these cases.
+ *
+ * For Windows, we provide a policy to accomplish the same thing.
  */
 bool nsToolkitProfileService::UseLegacyProfiles() {
-  return !!PR_GetEnv("MOZ_LEGACY_PROFILES");
+  bool legacyProfiles = !!PR_GetEnv("MOZ_LEGACY_PROFILES");
+#ifdef XP_WIN
+  legacyProfiles |= PolicyCheckBoolean(L"LegacyProfiles");
+#endif
+  return legacyProfiles;
 }
 
 struct FindInstallsClosure {
@@ -1934,17 +1965,12 @@ nsToolkitProfileService::Flush() {
       }
 
       fclose(writeFile);
-
-      rv = UpdateFileStats(mInstallDBFile, &mInstallDBExists,
-                           &mInstallDBModifiedTime, &mInstallDBFileSize);
-      NS_ENSURE_SUCCESS(rv, rv);
     } else {
       rv = mInstallDBFile->Remove(false);
       if (NS_FAILED(rv) && rv != NS_ERROR_FILE_TARGET_DOES_NOT_EXIST &&
           rv != NS_ERROR_FILE_NOT_FOUND) {
         return rv;
       }
-      mInstallDBExists = false;
     }
   }
 

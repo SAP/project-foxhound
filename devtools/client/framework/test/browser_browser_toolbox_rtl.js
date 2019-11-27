@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -75,7 +74,20 @@ async function testScript() {
   // Switch to the webconsole to send the result to the main test.
   const webconsole = await toolbox.selectTool("webconsole");
   const js = `Services.obs.notifyObservers(null, "browser-toolbox-inspector-dir", "${dir}");`;
-  await webconsole.hud.jsterm.execute(js);
+
+  const onResult = new Promise(resolve => {
+    const onNewMessages = messages => {
+      for (const message of messages) {
+        if (message.node.classList.contains("result")) {
+          webconsole.hud.ui.off("new-messages", onNewMessages);
+          resolve();
+        }
+      }
+    };
+    webconsole.hud.ui.on("new-messages", onNewMessages);
+  });
+  webconsole.hud.ui.wrapper.dispatchEvaluateExpression(js);
+  await onResult;
 
   // Destroy the toolbox.
   await toolbox.destroy();

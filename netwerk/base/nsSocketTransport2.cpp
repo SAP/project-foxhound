@@ -7,7 +7,6 @@
 #include "nsSocketTransport2.h"
 
 #include "mozilla/Attributes.h"
-#include "mozilla/StaticPrefs.h"
 #include "mozilla/Telemetry.h"
 #include "nsIOService.h"
 #include "nsStreamUtils.h"
@@ -46,6 +45,8 @@
 
 #if defined(FUZZING)
 #  include "FuzzyLayer.h"
+#  include "FuzzySecurityInfo.h"
+#  include "mozilla/StaticPrefs_fuzzing.h"
 #endif
 
 #if defined(XP_WIN)
@@ -977,11 +978,12 @@ void nsSocketTransport::SendStatus(nsresult status) {
 }
 
 nsresult nsSocketTransport::ResolveHost() {
-  SOCKET_LOG(("nsSocketTransport::ResolveHost [this=%p %s:%d%s]\n", this,
-              SocketHost().get(), SocketPort(),
-              mConnectionFlags & nsSocketTransport::BYPASS_CACHE
-                  ? " bypass cache"
-                  : ""));
+  SOCKET_LOG((
+      "nsSocketTransport::ResolveHost [this=%p %s:%d%s] "
+      "mProxyTransparentResolvesHost=%d\n",
+      this, SocketHost().get(), SocketPort(),
+      mConnectionFlags & nsSocketTransport::BYPASS_CACHE ? " bypass cache" : "",
+      mProxyTransparentResolvesHost));
 
   nsresult rv;
 
@@ -1061,7 +1063,7 @@ nsresult nsSocketTransport::ResolveHost() {
       esniHost.Append("_esni.");
       // This might end up being the SocketHost
       // see https://github.com/ekr/draft-rescorla-tls-esni/issues/61
-      esniHost.Append(mOriginHost);
+      esniHost.Append(SocketHost());
       rv = dns->AsyncResolveByTypeNative(
           esniHost, nsIDNSService::RESOLVE_TYPE_TXT, dnsFlags, this,
           mSocketTransportService, mOriginAttributes,
@@ -1131,9 +1133,6 @@ nsresult nsSocketTransport::BuildSocket(PRFileDesc*& fd, bool& proxyTransparent,
 
       if (mConnectionFlags & nsISocketTransport::NO_PERMANENT_STORAGE)
         controlFlags |= nsISocketProvider::NO_PERMANENT_STORAGE;
-
-      if (mConnectionFlags & nsISocketTransport::MITM_OK)
-        controlFlags |= nsISocketProvider::MITM_OK;
 
       if (mConnectionFlags & nsISocketTransport::BE_CONSERVATIVE)
         controlFlags |= nsISocketProvider::BE_CONSERVATIVE;
@@ -1239,8 +1238,22 @@ SECStatus nsSocketTransport::StoreResumptionToken(
     return SECFailure;
   }
 
-  SSLTokensCache::Put(static_cast<nsSocketTransport*>(ctx)->mHost,
-                      resumptionToken, len);
+  nsCOMPtr<nsISSLSocketControl> secCtrl =
+      do_QueryInterface(static_cast<nsSocketTransport*>(ctx)->mSecInfo);
+  if (!secCtrl) {
+    return SECFailure;
+  }
+  nsAutoCString peerId;
+  secCtrl->GetPeerId(peerId);
+
+  nsCOMPtr<nsITransportSecurityInfo> secInfo = do_QueryInterface(secCtrl);
+  if (!secInfo) {
+    return SECFailure;
+  }
+
+  if (NS_FAILED(SSLTokensCache::Put(peerId, resumptionToken, len, secInfo))) {
+    return SECFailure;
+  }
 
   return SECSuccess;
 }
@@ -1267,7 +1280,8 @@ nsresult nsSocketTransport::InitiateSocket() {
 #endif
 
     if (NS_SUCCEEDED(mCondition) && xpc::AreNonLocalConnectionsDisabled() &&
-        !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr))) {
+        !(IsIPAddrAny(&mNetAddr) || IsIPAddrLocal(&mNetAddr) ||
+          IsIPAddrShared(&mNetAddr))) {
       nsAutoCString ipaddr;
       RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
       netaddr->GetAddress(ipaddr);
@@ -1362,6 +1376,11 @@ nsresult nsSocketTransport::InitiateSocket() {
       return rv;
     }
     SOCKET_LOG(("Successfully attached fuzzing IOLayer.\n"));
+
+    if (usingSSL) {
+      mSecInfo = static_cast<nsISupports*>(
+          static_cast<nsISSLSocketControl*>(new FuzzySecurityInfo()));
+    }
   }
 #endif
 
@@ -1529,19 +1548,22 @@ nsresult nsSocketTransport::InitiateSocket() {
     }
   }
 
-  if (usingSSL && SSLTokensCache::IsEnabled()) {
+  nsCOMPtr<nsISSLSocketControl> secCtrl = do_QueryInterface(mSecInfo);
+  if (usingSSL && secCtrl && SSLTokensCache::IsEnabled()) {
     PRIntn val;
     // If SSL_NO_CACHE option was set, we must not use the cache
     if (SSL_OptionGet(fd, SSL_NO_CACHE, &val) == SECSuccess && val == 0) {
       nsTArray<uint8_t> token;
-      nsresult rv2 = SSLTokensCache::Get(mHost, token);
+      nsAutoCString peerId;
+      secCtrl->GetPeerId(peerId);
+      nsresult rv2 = SSLTokensCache::Get(peerId, token);
       if (NS_SUCCEEDED(rv2) && token.Length() != 0) {
         SECStatus srv =
             SSL_SetResumptionToken(fd, token.Elements(), token.Length());
         if (srv == SECFailure) {
-          SOCKET_LOG(("Setting token failed with NSS error %d [host=%s]",
-                      PORT_GetError(), PromiseFlatCString(mHost).get()));
-          SSLTokensCache::Remove(mHost);
+          SOCKET_LOG(("Setting token failed with NSS error %d [id=%s]",
+                      PORT_GetError(), PromiseFlatCString(peerId).get()));
+          SSLTokensCache::Remove(peerId);
         }
       }
     }
@@ -1683,7 +1705,7 @@ nsresult nsSocketTransport::InitiateSocket() {
     //
     else {
       if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
-          connectStarted && connectStarted) {
+          connectStarted && connectCalled) {
         SendPRBlockingTelemetry(
             connectStarted, Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_NORMAL,
             Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_SHUTDOWN,

@@ -68,20 +68,6 @@ function loadTestSubscript(filePath) {
   Services.scriptloader.loadSubScript(new URL(filePath, gTestPath).href, this);
 }
 
-// We run tests under two different configurations, from browser.ini and
-// browser-remote.ini. When running from browser-remote.ini, the tests are
-// copied to the sub-directory "test-oop-extensions", which we detect here, and
-// use to select our configuration.
-let remote = gTestPath.includes("test-oop-extensions");
-SpecialPowers.pushPrefEnv({
-  set: [["extensions.webextensions.remote", remote]],
-});
-if (remote) {
-  // We don't want to reset this at the end of the test, so that we don't have
-  // to spawn a new extension child process for each test unit.
-  SpecialPowers.setIntPref("dom.ipc.keepProcessesAlive.extension", 1);
-}
-
 // Don't try to create screenshots of sites we load during tests.
 Services.prefs
   .getDefaultBranch("browser.newtabpage.activity-stream.")
@@ -458,7 +444,7 @@ async function openContextMenuInSidebar(selector = "body") {
   return contentAreaContextMenu;
 }
 
-async function openContextMenuInFrame(frameSelector) {
+async function openContextMenuInFrame(selector = "body", frameIndex = 0) {
   let contentAreaContextMenu = document.getElementById(
     "contentAreaContextMenu"
   );
@@ -467,9 +453,9 @@ async function openContextMenuInFrame(frameSelector) {
     "popupshown"
   );
   await BrowserTestUtils.synthesizeMouseAtCenter(
-    [frameSelector, "body"],
+    selector,
     { type: "contextmenu" },
-    gBrowser.selectedBrowser
+    gBrowser.selectedBrowser.browsingContext.getChildren()[frameIndex]
   );
   await popupShownPromise;
   return contentAreaContextMenu;
@@ -516,7 +502,7 @@ async function openExtensionContextMenu(selector = "#img1") {
   );
 
   // Return null if the extension only has one item and therefore no extension menu.
-  if (topLevelMenu.length == 0) {
+  if (!topLevelMenu.length) {
     return null;
   }
 

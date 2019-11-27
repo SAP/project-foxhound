@@ -20,6 +20,7 @@ class RemoteIframeDocProxyAccessibleWrap;
 namespace dom {
 class BrowsingContext;
 class ContentChild;
+class BrowserBridgeHost;
 
 /**
  * BrowserBridgeChild implements the child actor part of the PBrowserBridge
@@ -29,10 +30,10 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
  public:
   typedef mozilla::layers::LayersId LayersId;
 
-  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild);
+  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild, final);
 
   BrowserChild* Manager() {
-    MOZ_ASSERT(mIPCOpen);
+    MOZ_ASSERT(CanSend());
     return static_cast<BrowserChild*>(PBrowserBridgeChild::Manager());
   }
 
@@ -55,6 +56,8 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
 
   void SetIsUnderHiddenEmbedderElement(bool aIsUnderHiddenEmbedderElement);
 
+  already_AddRefed<BrowserBridgeHost> FinishInit();
+
 #if defined(ACCESSIBILITY) && defined(XP_WIN)
   a11y::RemoteIframeDocProxyAccessibleWrap* GetEmbeddedDocAccessible() {
     return mEmbeddedDocAccessible;
@@ -65,12 +68,12 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
 
   static BrowserBridgeChild* GetFrom(nsIContent* aContent);
 
+  BrowserBridgeChild(nsFrameLoader* aFrameLoader,
+                     BrowsingContext* aBrowsingContext, TabId aId);
+
  protected:
   friend class ContentChild;
   friend class PBrowserBridgeChild;
-
-  BrowserBridgeChild(nsFrameLoader* aFrameLoader,
-                     BrowsingContext* aBrowsingContext, TabId aId);
 
   mozilla::ipc::IPCResult RecvSetLayersId(
       const mozilla::layers::LayersId& aLayersId);
@@ -83,16 +86,27 @@ class BrowserBridgeChild : public PBrowserBridgeChild {
   mozilla::ipc::IPCResult RecvSetEmbeddedDocAccessibleCOMProxy(
       const IDispatchHolder& aCOMProxy);
 
-  mozilla::ipc::IPCResult RecvFireFrameLoadEvent(bool aIsTrusted);
+  mozilla::ipc::IPCResult RecvMaybeFireEmbedderLoadEvents(
+      bool aIsTrusted, bool aFireLoadAtEmbeddingElement);
+
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
+  mozilla::ipc::IPCResult RecvScrollRectIntoView(
+      const nsRect& aRect, const ScrollAxis& aVertical,
+      const ScrollAxis& aHorizontal, const ScrollFlags& aScrollFlags,
+      const int32_t& aAppUnitsPerDevPixel);
+
+  mozilla::ipc::IPCResult RecvSubFrameCrashed(BrowsingContext* aContext);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
   ~BrowserBridgeChild();
 
+  void UnblockOwnerDocsLoadEvent();
+
   TabId mId;
   LayersId mLayersId;
-  bool mIPCOpen;
+  bool mHadInitialLoad = false;
   RefPtr<nsFrameLoader> mFrameLoader;
   RefPtr<BrowsingContext> mBrowsingContext;
 #if defined(ACCESSIBILITY) && defined(XP_WIN)

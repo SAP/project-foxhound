@@ -1,5 +1,9 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 ChromeUtils.defineModuleGetter(
@@ -201,21 +205,15 @@ class TabsUpdateFilterEventManager extends EventManager {
     let register = (fire, filterProps) => {
       let filter = { ...filterProps };
       if (filter.urls) {
-        filter.urls = new MatchPatternSet(filter.urls);
+        filter.urls = new MatchPatternSet(filter.urls, {
+          restrictSchemes: false,
+        });
       }
       let needsModified = true;
       if (filter.properties) {
         // Default is to listen for all events.
         needsModified = filter.properties.some(p => allAttrs.has(p));
         filter.properties = new Set(filter.properties);
-        // TODO Bug 1465520 remove warning when ready.
-        if (filter.properties.has("isarticle")) {
-          extension.logger.warn(
-            "The isarticle filter name is deprecated, use isArticle."
-          );
-          filter.properties.delete("isarticle");
-          filter.properties.add("isArticle");
-        }
       } else {
         filter.properties = allProperties;
       }
@@ -641,7 +639,8 @@ this.tabs = class extends ExtensionAPI {
                 "Not allowed to create tabs on the target window"
               );
             }
-            if (!window.gBrowser) {
+            let { gBrowserInit } = window;
+            if (!gBrowserInit || !gBrowserInit.delayedStartupFinished) {
               let obs = (finishedWindow, topic, data) => {
                 if (finishedWindow != window) {
                   return;
@@ -692,8 +691,8 @@ this.tabs = class extends ExtensionAPI {
               // Make sure things like about:blank and data: URIs never inherit,
               // and instead always get a NullPrincipal.
               options.allowInheritPrincipal = false;
-              // Falling back to codebase here as about: requires it, however is safe.
-              principal = Services.scriptSecurityManager.createCodebasePrincipal(
+              // Falling back to content here as about: requires it, however is safe.
+              principal = Services.scriptSecurityManager.createContentPrincipal(
                 Services.io.newURI(url),
                 {
                   userContextId: options.userContextId,
@@ -828,12 +827,8 @@ this.tabs = class extends ExtensionAPI {
             nativeTab.linkedBrowser.loadURI(url, options);
           }
 
-          if (updateProperties.active !== null) {
-            if (updateProperties.active) {
-              tabbrowser.selectedTab = nativeTab;
-            } else {
-              // Not sure what to do here? Which tab should we select?
-            }
+          if (updateProperties.active) {
+            tabbrowser.selectedTab = nativeTab;
           }
           if (updateProperties.highlighted !== null) {
             if (!gMultiSelectEnabled) {
@@ -843,7 +838,9 @@ this.tabs = class extends ExtensionAPI {
             }
             if (updateProperties.highlighted) {
               if (!nativeTab.selected && !nativeTab.multiselected) {
-                tabbrowser.addToMultiSelectedTabs(nativeTab, false);
+                tabbrowser.addToMultiSelectedTabs(nativeTab, {
+                  isLastMultiSelectChange: true,
+                });
                 // Select the highlighted tab unless active:false is provided.
                 // Note that Chrome selects it even in that case.
                 if (updateProperties.active !== false) {
@@ -852,7 +849,9 @@ this.tabs = class extends ExtensionAPI {
                 }
               }
             } else {
-              tabbrowser.removeFromMultiSelectedTabs(nativeTab, true);
+              tabbrowser.removeFromMultiSelectedTabs(nativeTab, {
+                isLastMultiSelectChange: true,
+              });
             }
           }
           if (updateProperties.muted !== null) {
@@ -935,7 +934,9 @@ this.tabs = class extends ExtensionAPI {
           queryInfo = Object.assign({}, queryInfo);
 
           if (queryInfo.url !== null) {
-            queryInfo.url = new MatchPatternSet([].concat(queryInfo.url));
+            queryInfo.url = new MatchPatternSet([].concat(queryInfo.url), {
+              restrictSchemes: false,
+            });
           }
           if (queryInfo.title !== null) {
             queryInfo.title = new MatchGlob(queryInfo.title);
@@ -1579,7 +1580,7 @@ this.tabs = class extends ExtensionAPI {
               }
             }
           }
-          if (hidden.length > 0) {
+          if (hidden.length) {
             let win = Services.wm.getMostRecentWindow("navigator:browser");
             tabHidePopup.open(win, extension.id);
           }
@@ -1603,7 +1604,7 @@ this.tabs = class extends ExtensionAPI {
 
           if (!Array.isArray(tabs)) {
             tabs = [tabs];
-          } else if (tabs.length == 0) {
+          } else if (!tabs.length) {
             throw new ExtensionError("No highlighted tab.");
           }
           window.gBrowser.selectedTabs = tabs.map(tabIndex => {

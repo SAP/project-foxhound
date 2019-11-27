@@ -5,14 +5,14 @@
   <vbox>
     <text value="powered by example.com" style="padding: 16px;"/>
   </vbox>
-  <hbox id="t" style="position: fixed; right: 16px; bottom: 16px;">
+  <hbox id="t" style="display: block; position: fixed; right: 16px; bottom: 16px;">
     <button label="OK"/>
   </hbox>
 <script><![CDATA[
-var SimpleTest = window.opener.wrappedJSObject.SimpleTest;
-var SpecialPowers = window.opener.wrappedJSObject.SpecialPowers;
-var is = window.opener.wrappedJSObject.is;
-var ok = window.opener.wrappedJSObject.ok;
+var SimpleTest = window.arguments[0].SimpleTest;
+var SpecialPowers = window.arguments[0].SpecialPowers;
+var is = window.arguments[0].is;
+var ok = window.arguments[0].ok;
 
 // We run this off a setTimeout from onload, because the XUL window
 // only does its intrinsic-height layout after the load event has

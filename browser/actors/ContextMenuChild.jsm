@@ -260,6 +260,18 @@ class ContextMenuChild extends JSWindowActorChild {
           imageName: null,
         });
       }
+
+      case "ContextMenu:PluginCommand": {
+        let target = ContentDOMReference.resolve(message.data.targetIdentifier);
+        let actor = this.manager.getActor("Plugin");
+        let { command } = message.data;
+        if (command == "play") {
+          actor.showClickToPlayNotification(target, true);
+        } else if (command == "hide") {
+          actor.hideClickToPlayOverlay(target);
+        }
+        break;
+      }
     }
 
     return undefined;
@@ -511,7 +523,12 @@ class ContextMenuChild extends JSWindowActorChild {
 
     let defaultPrevented = aEvent.defaultPrevented;
 
-    if (!Services.prefs.getBoolPref("dom.event.contextmenu.enabled")) {
+    if (
+      // If the event is not from a chrome-privileged document, and if
+      // `dom.event.contextmenu.enabled` is false, force defaultPrevented=false.
+      !aEvent.composedTarget.nodePrincipal.isSystemPrincipal &&
+      !Services.prefs.getBoolPref("dom.event.contextmenu.enabled")
+    ) {
       let plugin = null;
 
       try {
@@ -611,10 +628,18 @@ class ContextMenuChild extends JSWindowActorChild {
     let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
       Ci.nsIReferrerInfo
     );
-    referrerInfo.initWithNode(
-      context.onLink ? context.link : aEvent.composedTarget
-    );
+    referrerInfo.initWithNode(aEvent.composedTarget);
     referrerInfo = E10SUtils.serializeReferrerInfo(referrerInfo);
+
+    // In the case "onLink" we may have to send link referrerInfo to use in
+    // _openLinkInParameters
+    let linkReferrerInfo = null;
+    if (context.onLink) {
+      linkReferrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
+        Ci.nsIReferrerInfo
+      );
+      linkReferrerInfo.initWithNode(context.link);
+    }
 
     let target = context.target;
     if (target) {
@@ -664,7 +689,13 @@ class ContextMenuChild extends JSWindowActorChild {
     };
 
     if (context.inFrame && !context.inSrcdocFrame) {
-      data.frameReferrerInfo = doc.referrerInfo;
+      data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
+        doc.referrerInfo
+      );
+    }
+
+    if (linkReferrerInfo) {
+      data.linkReferrerInfo = E10SUtils.serializeReferrerInfo(linkReferrerInfo);
     }
 
     if (Services.appinfo.processType == Services.appinfo.PROCESS_TYPE_CONTENT) {
@@ -848,6 +879,7 @@ class ContextMenuChild extends JSWindowActorChild {
     context.onCTPPlugin = false;
     context.onDRMMedia = false;
     context.onPiPVideo = false;
+    context.onMediaStreamVideo = false;
     context.onEditable = false;
     context.onImage = false;
     context.onKeywordField = false;
@@ -989,6 +1021,8 @@ class ContextMenuChild extends JSWindowActorChild {
       if (context.target.isCloningElementVisually) {
         context.onPiPVideo = true;
       }
+
+      context.onMediaStreamVideo = !!context.target.srcObject;
 
       // Firefox always creates a HTMLVideoElement when loading an ogg file
       // directly. If the media is actually audio, be smarter and provide a

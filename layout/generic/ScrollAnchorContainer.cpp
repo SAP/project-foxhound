@@ -9,7 +9,7 @@
 #include "GeckoProfiler.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/ToString.h"
 #include "nsBlockFrame.h"
 #include "nsGfxScrollFrame.h"
@@ -21,7 +21,18 @@
 using namespace mozilla::dom;
 
 #define ANCHOR_LOG(...)
-// #define ANCHOR_LOG(...) printf_stderr("ANCHOR: " __VA_ARGS__)
+
+/*
+#define ANCHOR_LOG(fmt, ...)                  \
+  printf_stderr("ANCHOR(%p, %s): " fmt, this, \
+                Frame()                       \
+                    ->PresContext()           \
+                    ->Document()              \
+                    ->GetDocumentURI()        \
+                    ->GetSpecOrDefault()      \
+                    .get(),                   \
+                ##__VA_ARGS__)
+*/
 
 namespace mozilla {
 namespace layout {
@@ -194,7 +205,7 @@ void ScrollAnchorContainer::SelectAnchor() {
 
   AUTO_PROFILER_LABEL("ScrollAnchorContainer::SelectAnchor", LAYOUT);
   ANCHOR_LOG(
-      "Selecting anchor for %p with scroll-port=%s.\n", this,
+      "Selecting anchor for with scroll-port=%s.\n",
       mozilla::ToString(mScrollFrame->GetVisualOptimalViewingRect()).c_str());
 
   const nsStyleDisplay* disp = Frame()->StyleDisplay();
@@ -309,14 +320,20 @@ void ScrollAnchorContainer::Destroy() {
 void ScrollAnchorContainer::ApplyAdjustments() {
   if (!mAnchorNode || mAnchorNodeIsDirty ||
       mScrollFrame->HasPendingScrollRestoration() ||
+      mScrollFrame->IsProcessingScrollEvent() ||
       mScrollFrame->IsProcessingAsyncScroll()) {
-    mSuppressAnchorAdjustment = false;
     ANCHOR_LOG(
         "Ignoring post-reflow (anchor=%p, dirty=%d, pendingRestoration=%d, "
-        "asyncScroll=%d container=%p).\n",
+        "scrollevent=%d asyncScroll=%d pendingSuppression=%d container=%p).\n",
         mAnchorNode, mAnchorNodeIsDirty,
         mScrollFrame->HasPendingScrollRestoration(),
-        mScrollFrame->IsProcessingAsyncScroll(), this);
+        mScrollFrame->IsProcessingScrollEvent(),
+        mScrollFrame->IsProcessingAsyncScroll(), mSuppressAnchorAdjustment,
+        this);
+    if (mSuppressAnchorAdjustment) {
+      mSuppressAnchorAdjustment = false;
+      InvalidateAnchor();
+    }
     return;
   }
 
@@ -340,8 +357,8 @@ void ScrollAnchorContainer::ApplyAdjustments() {
     return;
   }
 
-  ANCHOR_LOG("Applying anchor adjustment of %d in %s for %p and anchor %p.\n",
-             logicalAdjustment, writingMode.DebugString(), this, mAnchorNode);
+  ANCHOR_LOG("Applying anchor adjustment of %d in %s with anchor %p.\n",
+             logicalAdjustment, writingMode.DebugString(), mAnchorNode);
 
   nsPoint physicalAdjustment;
   switch (writingMode.GetBlockDir()) {
@@ -359,7 +376,7 @@ void ScrollAnchorContainer::ApplyAdjustments() {
     }
   }
 
-  MOZ_ASSERT(!mApplyingAnchorAdjustment);
+  MOZ_RELEASE_ASSERT(!mApplyingAnchorAdjustment);
   // We should use AutoRestore here, but that doesn't work with bitfields
   mApplyingAnchorAdjustment = true;
   mScrollFrame->ScrollTo(mScrollFrame->GetScrollPosition() + physicalAdjustment,
@@ -428,6 +445,13 @@ ScrollAnchorContainer::ExamineAnchorCandidate(nsIFrame* aFrame) const {
     return ExamineResult::Exclude;
   }
 
+  const bool isReplaced = aFrame->IsFrameOfType(nsIFrame::eReplaced);
+
+  const bool isNonReplacedInline =
+      aFrame->StyleDisplay()->IsInlineInsideStyle() && !isReplaced;
+
+  const bool isAnonBox = aFrame->Style()->IsAnonBox();
+
   // See if this frame could have its own anchor node. We could check
   // IsScrollFrame(), but that would miss nsListControlFrame which is not a
   // scroll frame, but still inherits from nsHTMLScrollFrame.
@@ -437,31 +461,25 @@ ScrollAnchorContainer::ExamineAnchorCandidate(nsIFrame* aFrame) const {
   // it's not clear how an anchor adjustment should apply to multiple scrollable
   // frames. Blink allows this to happen, but they're not sure why [1].
   //
-  // We also don't allow scroll anchors to be selected inside of SVG as it uses
-  // a different layout model than CSS, and the specification doesn't say it
-  // should apply.
+  // We also don't allow scroll anchors to be selected inside of replaced
+  // elements (like <img>, <video>, <svg>...) as they behave atomically. SVG
+  // uses a different layout model than CSS, and the specification doesn't say
+  // it should apply anyway.
   //
   // [1] https://github.com/w3c/csswg-drafts/issues/3477
-  bool canDescend = !scrollable && !aFrame->IsSVGOuterSVGFrame();
+  const bool canDescend = !scrollable && !isReplaced;
 
-  // Check what kind of frame this is
-  bool isBlockOutside = aFrame->IsBlockOutside();
-  bool isAnonBox = aFrame->Style()->IsAnonBox() && !isText;
-  bool isInlineOutside = aFrame->IsInlineOutside() && !isText;
-
-  // If the frame is anonymous or inline-outside, search its descendants for a
-  // scroll anchor.
-  if ((isAnonBox || isInlineOutside) && canDescend) {
+  // Non-replaced inline boxes (including ruby frames) and anon boxes are not
+  // acceptable anchors, so we descend if possible, or otherwise exclude them
+  // altogether.
+  if (!isText && (isNonReplacedInline || isAnonBox)) {
     ANCHOR_LOG(
-        "\t\tSearching descendants of anon or inline box (a=%d, i=%d).\n",
-        isAnonBox, isInlineOutside);
-    return ExamineResult::PassThrough;
-  }
-
-  // If the frame is not block-outside or a text node then exclude it.
-  if (!isBlockOutside && !isText) {
-    ANCHOR_LOG("\t\tExcluding non block-outside or text node (b=%d, t=%d).\n",
-               isBlockOutside, isText);
+        "\t\tSearching descendants of anon or non-replaced inline box (a=%d, "
+        "i=%d).\n",
+        isAnonBox, isNonReplacedInline);
+    if (canDescend) {
+      return ExamineResult::PassThrough;
+    }
     return ExamineResult::Exclude;
   }
 
@@ -481,15 +499,14 @@ ScrollAnchorContainer::ExamineAnchorCandidate(nsIFrame* aFrame) const {
     return ExamineResult::Exclude;
   }
 
-  // At this point, if canDescend is true, we should only have visible
-  // non-anonymous frames that are either:
-  //   1. block-outside
-  //   2. text nodes
+  // It's not clear what the scroll anchoring bounding rect is, for elements
+  // fragmented in the block direction (e.g. across column or page breaks).
   //
-  // It's not clear what the scroll anchoring bounding rect of elements that are
-  // block-outside should be when they are fragmented. For text nodes that are
-  // fragmented, it's specified that we need to consider the union of its line
-  // boxes.
+  // Inline-fragmented elements other than text shouldn't get here because of
+  // the isNonReplacedInline check.
+  //
+  // For text nodes that are fragmented, it's specified that we need to consider
+  // the union of its line boxes.
   //
   // So for text nodes we handle them by including the union of line boxes in
   // the bounding rect of the primary frame, and not selecting any

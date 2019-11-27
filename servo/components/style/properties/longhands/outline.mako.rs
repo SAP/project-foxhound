@@ -14,32 +14,34 @@ ${helpers.predefined_type(
     "outline-color",
     "Color",
     "computed_value::T::currentcolor()",
+    engines="gecko servo-2013",
     initial_specified_value="specified::Color::currentcolor()",
     animation_value_type="AnimatedColor",
     ignored_when_colors_disabled=True,
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-color",
-    flags="APPLIES_TO_CUE",
 )}
 
 ${helpers.predefined_type(
     "outline-style",
     "OutlineStyle",
     "computed::OutlineStyle::none()",
+    engines="gecko servo-2013 servo-2020",
+    servo_2020_pref="layout.2020.unimplemented",
     initial_specified_value="specified::OutlineStyle::none()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-style",
-    flags="APPLIES_TO_CUE",
 )}
 
 ${helpers.predefined_type(
     "outline-width",
     "BorderSideWidth",
     "crate::values::computed::NonNegativeLength::new(3.)",
+    engines="gecko servo-2013 servo-2020",
+    servo_2020_pref="layout.2020.unimplemented",
     initial_specified_value="specified::BorderSideWidth::Medium",
     computed_type="crate::values::computed::NonNegativeLength",
     animation_value_type="NonNegativeLength",
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-width",
-    flags="APPLIES_TO_CUE",
 )}
 
 // The -moz-outline-radius-* properties are non-standard and not on a standards track.
@@ -48,7 +50,7 @@ ${helpers.predefined_type(
         "-moz-outline-radius-" + corner,
         "BorderCornerRadius",
         "computed::BorderCornerRadius::zero()",
-        products="gecko",
+        engines="gecko",
         boxed=True,
         animation_value_type="BorderCornerRadius",
         spec="Nonstandard (https://developer.mozilla.org/en-US/docs/Web/CSS/-moz-outline-radius)",
@@ -59,7 +61,7 @@ ${helpers.predefined_type(
     "outline-offset",
     "Length",
     "crate::values::computed::Length::new(0.)",
-    products="servo gecko",
+    engines="gecko servo-2013",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-ui/#propdef-outline-offset",
 )}

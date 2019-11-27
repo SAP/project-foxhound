@@ -20,6 +20,8 @@
 #include "nsGkAtoms.h"
 #include "nsContentUtils.h"
 #include "nsTextFrame.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/ContentIterator.h"
 #include "mozilla/dom/CharacterData.h"
 #include "mozilla/dom/DocumentFragment.h"
@@ -458,7 +460,7 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
       NS_ASSERTION(mStart.Offset() <= aInfo.mChangeEnd + 1,
                    "mStart.Offset() is beyond the end of this node");
       int32_t newStartOffset = mStart.Offset() - aInfo.mChangeStart;
-      newStart.Set(aInfo.mDetails->mNextSibling, newStartOffset);
+      newStart = {aInfo.mDetails->mNextSibling, newStartOffset};
       if (MOZ_UNLIKELY(aContent == mRoot)) {
         newRoot = RangeUtils::ComputeRootNode(newStart.Container());
       }
@@ -482,7 +484,7 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
                                    : mStart.Offset() + aInfo.mChangeStart -
                                          aInfo.mChangeEnd +
                                          aInfo.mReplaceLength;
-      newStart.Set(mStart.Container(), newStartOffset);
+      newStart = {mStart.Container(), newStartOffset};
     }
   }
 
@@ -495,10 +497,12 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
       NS_ASSERTION(
           aInfo.mDetails->mType == CharacterDataChangeInfo::Details::eSplit,
           "only a split can start before the end");
-      NS_ASSERTION(mEnd.Offset() <= aInfo.mChangeEnd + 1,
-                   "mEnd.Offset() is beyond the end of this node");
-      newEnd.Set(aInfo.mDetails->mNextSibling,
-                 mEnd.Offset() - aInfo.mChangeStart);
+      MOZ_ASSERT(mEnd.Offset() <= aInfo.mChangeEnd + 1,
+                 "mEnd.Offset() is beyond the end of this node");
+
+      const CheckedInt<int32_t> newEndOffset{mEnd.Offset() -
+                                             aInfo.mChangeStart};
+      newEnd = {aInfo.mDetails->mNextSibling, newEndOffset.value()};
 
       bool isCommonAncestor =
           IsInSelection() && mStart.Container() == mEnd.Container();
@@ -516,7 +520,7 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
                                  ? aInfo.mChangeStart
                                  : mEnd.Offset() + aInfo.mChangeStart -
                                        aInfo.mChangeEnd + aInfo.mReplaceLength;
-      newEnd.Set(mEnd.Container(), newEndOffset);
+      newEnd = {mEnd.Container(), newEndOffset};
     }
   }
 
@@ -526,13 +530,18 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
     // that will be removed
     nsIContent* removed = aInfo.mDetails->mNextSibling;
     if (removed == mStart.Container()) {
-      newStart.Set(aContent, mStart.Offset() + aInfo.mChangeStart);
+      const CheckedInt<int32_t> newStartOffset{mStart.Offset() +
+                                               aInfo.mChangeStart};
+      newStart = {aContent, newStartOffset.value()};
       if (MOZ_UNLIKELY(removed == mRoot)) {
         newRoot = RangeUtils::ComputeRootNode(newStart.Container());
       }
     }
     if (removed == mEnd.Container()) {
-      newEnd.Set(aContent, mEnd.Offset() + aInfo.mChangeStart);
+      const CheckedInt<int32_t> newEndOffset{mEnd.Offset() +
+                                             aInfo.mChangeStart};
+
+      newEnd = {aContent, newEndOffset.value()};
       if (MOZ_UNLIKELY(removed == mRoot)) {
         newRoot = RangeUtils::ComputeRootNode(newEnd.Container());
       }
@@ -547,12 +556,14 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
     if (parentNode == mStart.Container() && mStart.Offset() > 0 &&
         mStart.Offset() < parentNode->GetChildCount() &&
         removed == mStart.GetChildAtOffset()) {
-      newStart.Set(aContent, aInfo.mChangeStart);
+      const CheckedInt<int32_t> newStartOffset{aInfo.mChangeStart};
+      newStart = {aContent, newStartOffset.value()};
     }
     if (parentNode == mEnd.Container() && mEnd.Offset() > 0 &&
         mEnd.Offset() < parentNode->GetChildCount() &&
         removed == mEnd.GetChildAtOffset()) {
-      newEnd.Set(aContent, aInfo.mChangeEnd);
+      const CheckedInt<int32_t> newEndOffset{aInfo.mChangeEnd};
+      newEnd = {aContent, newEndOffset.value()};
     }
   }
 
@@ -594,12 +605,12 @@ void nsRange::ContentAppended(nsIContent* aFirstNewContent) {
     // A splitText has occurred, if any mNext*Ref was set, we need to adjust
     // the range boundaries.
     if (mNextStartRef) {
-      mStart.SetAfterRef(mStart.Container(), mNextStartRef);
+      mStart = {mStart.Container(), mNextStartRef};
       MOZ_ASSERT(mNextStartRef == aFirstNewContent);
       mNextStartRef = nullptr;
     }
     if (mNextEndRef) {
-      mEnd.SetAfterRef(mEnd.Container(), mNextEndRef);
+      mEnd = {mEnd.Container(), mNextEndRef};
       MOZ_ASSERT(mNextEndRef == aFirstNewContent);
       mNextEndRef = nullptr;
     }
@@ -642,12 +653,12 @@ void nsRange::ContentInserted(nsIContent* aChild) {
 
   if (mNextStartRef || mNextEndRef) {
     if (mNextStartRef) {
-      newStart.SetAfterRef(mStart.Container(), mNextStartRef);
+      newStart = {mStart.Container(), mNextStartRef};
       MOZ_ASSERT(mNextStartRef == aChild);
       mNextStartRef = nullptr;
     }
     if (mNextEndRef) {
-      newEnd.SetAfterRef(mEnd.Container(), mNextEndRef);
+      newEnd = {mEnd.Container(), mNextEndRef};
       MOZ_ASSERT(mNextEndRef == aChild);
       mNextEndRef = nullptr;
     }
@@ -681,23 +692,22 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
     // We're only interested if our boundary reference was removed, otherwise
     // we can just invalidate the offset.
     if (aChild == mStart.Ref()) {
-      newStart.SetAfterRef(container, aPreviousSibling);
+      newStart = {container, aPreviousSibling};
     } else {
       newStart = mStart;
       newStart.InvalidateOffset();
     }
   } else {
-    gravitateStart =
-        Some(nsContentUtils::ContentIsDescendantOf(mStart.Container(), aChild));
+    gravitateStart = Some(mStart.Container()->IsInclusiveDescendantOf(aChild));
     if (gravitateStart.value()) {
-      newStart.SetAfterRef(container, aPreviousSibling);
+      newStart = {container, aPreviousSibling};
     }
   }
 
   // Do same thing for end boundry.
   if (container == mEnd.Container()) {
     if (aChild == mEnd.Ref()) {
-      newEnd.SetAfterRef(container, aPreviousSibling);
+      newEnd = {container, aPreviousSibling};
     } else {
       newEnd = mEnd;
       newEnd.InvalidateOffset();
@@ -706,11 +716,10 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
     if (mStart.Container() == mEnd.Container() && gravitateStart.isSome()) {
       gravitateEnd = gravitateStart.value();
     } else {
-      gravitateEnd =
-          nsContentUtils::ContentIsDescendantOf(mEnd.Container(), aChild);
+      gravitateEnd = mEnd.Container()->IsInclusiveDescendantOf(aChild);
     }
     if (gravitateEnd) {
-      newEnd.SetAfterRef(container, aPreviousSibling);
+      newEnd = {container, aPreviousSibling};
     }
   }
 
@@ -777,7 +786,7 @@ int16_t nsRange::ComparePoint(const RawRangeBoundary& aPoint,
     return 0;
   }
 
-  if (!nsContentUtils::ContentIsDescendantOf(aPoint.Container(), mRoot)) {
+  if (!aPoint.Container()->IsInclusiveDescendantOf(mRoot)) {
     aRv.Throw(NS_ERROR_DOM_WRONG_DOCUMENT_ERR);
     return 0;
   }
@@ -872,10 +881,8 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
   MOZ_ASSERT(
       !aRootNode || (!aStartBoundary.IsSet() && !aEndBoundary.IsSet()) ||
           aNotInsertedYet ||
-          (nsContentUtils::ContentIsDescendantOf(aStartBoundary.Container(),
-                                                 aRootNode) &&
-           nsContentUtils::ContentIsDescendantOf(aEndBoundary.Container(),
-                                                 aRootNode) &&
+          (aStartBoundary.Container()->IsInclusiveDescendantOf(aRootNode) &&
+           aEndBoundary.Container()->IsInclusiveDescendantOf(aRootNode) &&
            aRootNode ==
                RangeUtils::ComputeRootNode(aStartBoundary.Container()) &&
            aRootNode == RangeUtils::ComputeRootNode(aEndBoundary.Container())),
@@ -1663,7 +1670,7 @@ nsresult nsRange::CutContents(DocumentFragment** aFragment) {
 
     iter.Next();
     nsCOMPtr<nsINode> nextNode = iter.GetCurrentNode();
-    while (nextNode && nsContentUtils::ContentIsDescendantOf(nextNode, node)) {
+    while (nextNode && nextNode->IsInclusiveDescendantOf(node)) {
       iter.Next();
       nextNode = iter.GetCurrentNode();
     }
@@ -2565,16 +2572,19 @@ static nsresult GetPartialTextRect(nsLayoutUtils::RectCallback* aCallback,
       f->EnsureTextRun(nsTextFrame::eInflated);
       NS_ENSURE_TRUE(f->GetTextRun(nsTextFrame::eInflated),
                      NS_ERROR_OUT_OF_MEMORY);
-      bool rtl = f->GetTextRun(nsTextFrame::eInflated)->IsRightToLeft();
+      bool topLeftToBottomRight =
+          !f->GetTextRun(nsTextFrame::eInflated)->IsInlineReversed();
       nsRect r = f->GetRectRelativeToSelf();
       if (fstart < aStartOffset) {
         // aStartOffset is within this frame
-        ExtractRectFromOffset(f, aStartOffset, &r, rtl, aClampToEdge);
+        ExtractRectFromOffset(f, aStartOffset, &r, !topLeftToBottomRight,
+                              aClampToEdge);
         textContentStart = aStartOffset;
       }
       if (fend > aEndOffset) {
         // aEndOffset is in the middle of this frame
-        ExtractRectFromOffset(f, aEndOffset, &r, !rtl, aClampToEdge);
+        ExtractRectFromOffset(f, aEndOffset, &r, topLeftToBottomRight,
+                              aClampToEdge);
         textContentEnd = aEndOffset;
       }
       r = nsLayoutUtils::TransformFrameRectToAncestor(f, r, relativeTo);
@@ -3041,8 +3051,7 @@ static int8_t GetRequiredInnerTextLineBreakCount(nsIFrame* aFrame) {
 
 static bool IsLastCellOfRow(nsIFrame* aFrame) {
   LayoutFrameType type = aFrame->Type();
-  if (type != LayoutFrameType::TableCell &&
-      type != LayoutFrameType::BCTableCell) {
+  if (type != LayoutFrameType::TableCell) {
     return true;
   }
   for (nsIFrame* c = aFrame; c; c = c->GetNextContinuation()) {

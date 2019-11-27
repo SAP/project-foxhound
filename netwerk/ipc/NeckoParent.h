@@ -91,21 +91,20 @@ class NeckoParent : public PNeckoParent {
  protected:
   bool mSocketProcessBridgeInited;
 
-  PHttpChannelParent* AllocPHttpChannelParent(
+  already_AddRefed<PHttpChannelParent> AllocPHttpChannelParent(
       const PBrowserOrId&, const SerializedLoadContext&,
       const HttpChannelCreationArgs& aOpenArgs);
   virtual mozilla::ipc::IPCResult RecvPHttpChannelConstructor(
       PHttpChannelParent* aActor, const PBrowserOrId& aBrowser,
       const SerializedLoadContext& aSerialized,
       const HttpChannelCreationArgs& aOpenArgs) override;
-  bool DeallocPHttpChannelParent(PHttpChannelParent*);
 
   PStunAddrsRequestParent* AllocPStunAddrsRequestParent();
   bool DeallocPStunAddrsRequestParent(PStunAddrsRequestParent* aActor);
 
-  PWebrtcProxyChannelParent* AllocPWebrtcProxyChannelParent(
-      const TabId& aTabId);
-  bool DeallocPWebrtcProxyChannelParent(PWebrtcProxyChannelParent* aActor);
+  PWebrtcTCPSocketParent* AllocPWebrtcTCPSocketParent(
+      const Maybe<TabId>& aTabId);
+  bool DeallocPWebrtcTCPSocketParent(PWebrtcTCPSocketParent* aActor);
 
   PAltDataOutputStreamParent* AllocPAltDataOutputStreamParent(
       const nsCString& type, const int64_t& predictedSize,
@@ -127,6 +126,15 @@ class NeckoParent : public PNeckoParent {
   bool DeallocPWebSocketParent(PWebSocketParent*);
   PTCPSocketParent* AllocPTCPSocketParent(const nsString& host,
                                           const uint16_t& port);
+
+  already_AddRefed<PDocumentChannelParent> AllocPDocumentChannelParent(
+      const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+      const DocumentChannelCreationArgs& args);
+  virtual mozilla::ipc::IPCResult RecvPDocumentChannelConstructor(
+      PDocumentChannelParent* aActor, const PBrowserOrId& aBrowser,
+      const SerializedLoadContext& aSerialized,
+      const DocumentChannelCreationArgs& aArgs) override;
+  bool DeallocPDocumentChannelParent(PDocumentChannelParent* channel);
 
   bool DeallocPTCPSocketParent(PTCPSocketParent*);
   PTCPServerSocketParent* AllocPTCPServerSocketParent(
@@ -164,8 +172,8 @@ class NeckoParent : public PNeckoParent {
       const uint64_t& aInnerWindowID);
   bool DeallocPWebSocketEventListenerParent(PWebSocketEventListenerParent*);
 
-  PDataChannelParent* AllocPDataChannelParent(const uint32_t& channelId);
-  bool DeallocPDataChannelParent(PDataChannelParent* parent);
+  already_AddRefed<PDataChannelParent> AllocPDataChannelParent(
+      const uint32_t& channelId);
 
   virtual mozilla::ipc::IPCResult RecvPDataChannelConstructor(
       PDataChannelParent* aActor, const uint32_t& channelId) override;
@@ -176,8 +184,8 @@ class NeckoParent : public PNeckoParent {
   virtual mozilla::ipc::IPCResult RecvPSimpleChannelConstructor(
       PSimpleChannelParent* aActor, const uint32_t& channelId) override;
 
-  PFileChannelParent* AllocPFileChannelParent(const uint32_t& channelId);
-  bool DeallocPFileChannelParent(PFileChannelParent* parent);
+  already_AddRefed<PFileChannelParent> AllocPFileChannelParent(
+      const uint32_t& channelId);
 
   virtual mozilla::ipc::IPCResult RecvPFileChannelConstructor(
       PFileChannelParent* aActor, const uint32_t& channelId) override;
@@ -224,15 +232,18 @@ class NeckoParent : public PNeckoParent {
                                              GetExtensionFDResolver&& aResolve);
 
   PClassifierDummyChannelParent* AllocPClassifierDummyChannelParent(
-      nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
+      nsIURI* aURI, nsIURI* aTopWindowURI,
+      nsIPrincipal* aContentBlockingAllowListPrincipal,
+      const nsresult& aTopWindowURIResult,
       const Maybe<LoadInfoArgs>& aLoadInfo);
 
   bool DeallocPClassifierDummyChannelParent(
-      PClassifierDummyChannelParent* aChild);
+      PClassifierDummyChannelParent* aParent);
 
   virtual mozilla::ipc::IPCResult RecvPClassifierDummyChannelConstructor(
       PClassifierDummyChannelParent* aActor, nsIURI* aURI,
-      nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
+      nsIURI* aTopWindowURI, nsIPrincipal* aContentBlockingAllowListPrincipal,
+      const nsresult& aTopWindowURIResult,
       const Maybe<LoadInfoArgs>& aLoadInfo) override;
 
   mozilla::ipc::IPCResult RecvInitSocketProcessBridge(

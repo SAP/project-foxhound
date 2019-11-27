@@ -22,20 +22,16 @@ const actions = require("devtools/client/webconsole/actions/index");
 const {
   FILTERBAR_DISPLAY_MODES,
 } = require("devtools/client/webconsole/constants");
+
+// We directly require Components that we know are going to be used right away
 const ConsoleOutput = createFactory(
   require("devtools/client/webconsole/components/Output/ConsoleOutput")
 );
 const FilterBar = createFactory(
   require("devtools/client/webconsole/components/FilterBar/FilterBar")
 );
-const SideBar = createFactory(
-  require("devtools/client/webconsole/components/SideBar")
-);
 const ReverseSearchInput = createFactory(
   require("devtools/client/webconsole/components/Input/ReverseSearchInput")
-);
-const EditorToolbar = createFactory(
-  require("devtools/client/webconsole/components/Input/EditorToolbar")
 );
 const JSTerm = createFactory(
   require("devtools/client/webconsole/components/Input/JSTerm")
@@ -43,20 +39,47 @@ const JSTerm = createFactory(
 const ConfirmDialog = createFactory(
   require("devtools/client/webconsole/components/Input/ConfirmDialog")
 );
-const NotificationBox = createFactory(
-  require("devtools/client/shared/components/NotificationBox").NotificationBox
+
+// And lazy load the ones that may not be used.
+loader.lazyGetter(this, "SideBar", () =>
+  createFactory(require("devtools/client/webconsole/components/SideBar"))
 );
 
-const l10n = require("devtools/client/webconsole/webconsole-l10n");
+loader.lazyGetter(this, "EditorToolbar", () =>
+  createFactory(
+    require("devtools/client/webconsole/components/Input/EditorToolbar")
+  )
+);
+
+loader.lazyGetter(this, "NotificationBox", () =>
+  createFactory(
+    require("devtools/client/shared/components/NotificationBox").NotificationBox
+  )
+);
+loader.lazyRequireGetter(
+  this,
+  "getNotificationWithValue",
+  "devtools/client/shared/components/NotificationBox",
+  true
+);
+loader.lazyRequireGetter(
+  this,
+  "PriorityLevels",
+  "devtools/client/shared/components/NotificationBox",
+  true
+);
+
+loader.lazyGetter(this, "GridElementWidthResizer", () =>
+  createFactory(
+    require("devtools/client/shared/components/splitter/GridElementWidthResizer")
+  )
+);
+
+const l10n = require("devtools/client/webconsole/utils/l10n");
 const { Utils: WebConsoleUtils } = require("devtools/client/webconsole/utils");
 
 const SELF_XSS_OK = l10n.getStr("selfxss.okstring");
 const SELF_XSS_MSG = l10n.getFormatStr("selfxss.msg", [SELF_XSS_OK]);
-
-const {
-  getNotificationWithValue,
-  PriorityLevels,
-} = require("devtools/client/shared/components/NotificationBox");
 
 const {
   getAllNotifications,
@@ -76,18 +99,18 @@ class App extends Component {
       onFirstMeaningfulPaint: PropTypes.func.isRequired,
       serviceContainer: PropTypes.object.isRequired,
       closeSplitConsole: PropTypes.func.isRequired,
-      jstermCodeMirror: PropTypes.bool,
       autocomplete: PropTypes.bool,
       currentReverseSearchEntry: PropTypes.string,
       reverseSearchInputVisible: PropTypes.bool,
       reverseSearchInitialValue: PropTypes.string,
       editorMode: PropTypes.bool,
+      editorWidth: PropTypes.number,
+      hidePersistLogsCheckbox: PropTypes.bool,
       hideShowContentMessagesCheckbox: PropTypes.bool,
       sidebarVisible: PropTypes.bool.isRequired,
       filterBarDisplayMode: PropTypes.oneOf([
         ...Object.values(FILTERBAR_DISPLAY_MODES),
       ]).isRequired,
-      editorFeatureEnabled: PropTypes.bool.isRequired,
     };
   }
 
@@ -97,10 +120,19 @@ class App extends Component {
     this.onClick = this.onClick.bind(this);
     this.onPaste = this.onPaste.bind(this);
     this.onKeyDown = this.onKeyDown.bind(this);
+    this.onBlur = this.onBlur.bind(this);
+  }
+
+  componentDidMount() {
+    window.addEventListener("blur", this.onBlur);
+  }
+
+  onBlur() {
+    this.props.dispatch(actions.autocompleteClear());
   }
 
   onKeyDown(event) {
-    const { dispatch, webConsoleUI, editorFeatureEnabled } = this.props;
+    const { dispatch, webConsoleUI } = this.props;
 
     if (
       (!isMacOS && event.key === "F9") ||
@@ -113,7 +145,6 @@ class App extends Component {
     }
 
     if (
-      editorFeatureEnabled &&
       event.key.toLowerCase() === "b" &&
       ((isMacOS && event.metaKey) || (!isMacOS && event.ctrlKey))
     ) {
@@ -231,40 +262,134 @@ class App extends Component {
     input.addEventListener("keyup", pasteKeyUpHandler);
   }
 
-  // Rendering
-
-  render() {
+  renderFilterBar() {
     const {
-      webConsoleUI,
-      notifications,
-      onFirstMeaningfulPaint,
-      serviceContainer,
       closeSplitConsole,
-      jstermCodeMirror,
-      autocomplete,
-      reverseSearchInitialValue,
-      editorMode,
       filterBarDisplayMode,
-      sidebarVisible,
+      hidePersistLogsCheckbox,
       hideShowContentMessagesCheckbox,
+      webConsoleUI,
     } = this.props;
 
+    return FilterBar({
+      key: "filterbar",
+      hidePersistLogsCheckbox,
+      hideShowContentMessagesCheckbox,
+      closeSplitConsole,
+      displayMode: filterBarDisplayMode,
+      webConsoleUI,
+    });
+  }
+
+  renderEditorToolbar() {
+    const {
+      editorMode,
+      dispatch,
+      reverseSearchInputVisible,
+      serviceContainer,
+      webConsoleUI,
+    } = this.props;
+
+    return editorMode
+      ? EditorToolbar({
+          key: "editor-toolbar",
+          editorMode,
+          dispatch,
+          reverseSearchInputVisible,
+          serviceContainer,
+          webConsoleUI,
+        })
+      : null;
+  }
+
+  renderConsoleOutput() {
+    const { onFirstMeaningfulPaint, serviceContainer } = this.props;
+
+    return ConsoleOutput({
+      key: "console-output",
+      serviceContainer,
+      onFirstMeaningfulPaint,
+    });
+  }
+
+  renderJsTerm() {
+    const {
+      webConsoleUI,
+      serviceContainer,
+      autocomplete,
+      editorMode,
+      editorWidth,
+    } = this.props;
+
+    return JSTerm({
+      key: "jsterm",
+      webConsoleUI,
+      serviceContainer,
+      onPaste: this.onPaste,
+      autocomplete,
+      editorMode,
+      editorWidth,
+    });
+  }
+
+  renderReverseSearch() {
+    const { serviceContainer, reverseSearchInitialValue } = this.props;
+
+    return ReverseSearchInput({
+      key: "reverse-search-input",
+      setInputValue: serviceContainer.setInputValue,
+      focusInput: serviceContainer.focusInput,
+      initialValue: reverseSearchInitialValue,
+    });
+  }
+
+  renderSideBar() {
+    const { serviceContainer, sidebarVisible } = this.props;
+    return sidebarVisible
+      ? SideBar({
+          key: "sidebar",
+          serviceContainer,
+          visible: sidebarVisible,
+        })
+      : null;
+  }
+
+  renderNotificationBox() {
+    const { notifications, editorMode } = this.props;
+
+    return notifications && notifications.size > 0
+      ? NotificationBox({
+          id: "webconsole-notificationbox",
+          key: "notification-box",
+          displayBorderTop: !editorMode,
+          displayBorderBottom: editorMode,
+          wrapping: true,
+          notifications,
+        })
+      : null;
+  }
+
+  renderConfirmDialog() {
+    const { webConsoleUI, serviceContainer } = this.props;
+
+    return ConfirmDialog({
+      webConsoleUI,
+      serviceContainer,
+      key: "confirm-dialog",
+    });
+  }
+
+  renderRootElement(children) {
+    const { editorMode, serviceContainer } = this.props;
+
     const classNames = ["webconsole-app"];
-    if (jstermCodeMirror) {
-      classNames.push("jsterm-cm");
-    }
     if (editorMode) {
       classNames.push("jsterm-editor");
     }
+    if (serviceContainer.canRewind()) {
+      classNames.push("can-rewind");
+    }
 
-    // Render the entire Console panel. The panel consists
-    // from the following parts:
-    // * FilterBar - Buttons & free text for content filtering
-    // * Content - List of logs & messages
-    // * NotificationBox - Notifications for JSTerm (self-xss warning at the moment)
-    // * JSTerm - Input command line.
-    // * ReverseSearchInput - Reverse search input.
-    // * SideBar - Object inspector
     return div(
       {
         className: classNames.join(" "),
@@ -274,52 +399,45 @@ class App extends Component {
           this.node = node;
         },
       },
-      div(
-        { className: "webconsole-wrapper" },
-        FilterBar({
-          hidePersistLogsCheckbox: webConsoleUI.isBrowserConsole,
-          hideShowContentMessagesCheckbox,
-          closeSplitConsole,
-          displayMode: filterBarDisplayMode,
-        }),
-        ConsoleOutput({
-          serviceContainer,
-          onFirstMeaningfulPaint,
-        }),
-        NotificationBox({
-          id: "webconsole-notificationbox",
-          wrapping: true,
-          notifications,
-        }),
-        EditorToolbar({
-          editorMode,
-          webConsoleUI,
-        }),
-        JSTerm({
-          webConsoleUI,
-          serviceContainer,
-          onPaste: this.onPaste,
-          codeMirrorEnabled: jstermCodeMirror,
-          autocomplete,
-          editorMode,
-        }),
-        ReverseSearchInput({
-          setInputValue: serviceContainer.setInputValue,
-          focusInput: serviceContainer.focusInput,
-          evaluateInput: serviceContainer.evaluateInput,
-          initialValue: reverseSearchInitialValue,
-        })
-      ),
-      SideBar({
-        serviceContainer,
-        visible: sidebarVisible,
-      }),
-      ConfirmDialog({
-        webConsoleUI,
-        serviceContainer,
-        codeMirrorEnabled: jstermCodeMirror,
-      })
+      children
     );
+  }
+
+  render() {
+    const { webConsoleUI, editorMode, dispatch } = this.props;
+
+    const filterBar = this.renderFilterBar();
+    const editorToolbar = this.renderEditorToolbar();
+    const consoleOutput = this.renderConsoleOutput();
+    const notificationBox = this.renderNotificationBox();
+    const jsterm = this.renderJsTerm();
+    const reverseSearch = this.renderReverseSearch();
+    const sidebar = this.renderSideBar();
+    const confirmDialog = this.renderConfirmDialog();
+
+    return this.renderRootElement([
+      filterBar,
+      editorToolbar,
+      dom.div(
+        { className: "flexible-output-input", key: "in-out-container" },
+        consoleOutput,
+        notificationBox,
+        jsterm
+      ),
+      editorMode
+        ? GridElementWidthResizer({
+            key: "editor-resizer",
+            enabled: editorMode,
+            position: "end",
+            className: "editor-resizer",
+            getControlledElementNode: () => webConsoleUI.jsterm.node,
+            onResizeEnd: width => dispatch(actions.setEditorWidth(width)),
+          })
+        : null,
+      reverseSearch,
+      sidebar,
+      confirmDialog,
+    ]);
   }
 }
 
@@ -328,6 +446,7 @@ const mapStateToProps = state => ({
   reverseSearchInputVisible: state.ui.reverseSearchInputVisible,
   reverseSearchInitialValue: state.ui.reverseSearchInitialValue,
   editorMode: state.ui.editor,
+  editorWidth: state.ui.editorWidth,
   sidebarVisible: state.ui.sidebarVisible,
   filterBarDisplayMode: state.ui.filterBarDisplayMode,
 });

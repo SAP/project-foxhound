@@ -6,10 +6,9 @@ license = "MPL-2.0"
 description = "Testing code for libgkrust"
 
 [features]
-bindgen = ["gkrust-shared/bindgen"]
-servo = ["gkrust-shared/servo"]
 quantum_render = ["gkrust-shared/quantum_render"]
 cubeb-remoting = ["gkrust-shared/cubeb-remoting"]
+cubeb_coreaudio_rust = ["gkrust-shared/cubeb_coreaudio_rust"]
 cubeb_pulse_rust = ["gkrust-shared/cubeb_pulse_rust"]
 gecko_debug = ["gkrust-shared/gecko_debug"]
 gecko_refcount_logging = ["gkrust-shared/gecko_refcount_logging"]
@@ -26,6 +25,9 @@ gecko_profiler_parse_elf = ["gkrust-shared/gecko_profiler_parse_elf"]
 bitsdownload = ["gkrust-shared/bitsdownload"]
 new_xulstore = ["gkrust-shared/new_xulstore"]
 new_cert_storage = ["gkrust-shared/new_cert_storage"]
+fuzzing_interfaces = ["gkrust-shared/fuzzing_interfaces", "gecko-fuzz-targets"]
+webrtc = ["gkrust-shared/webrtc"]
+moz_xbl = ["gkrust-shared/moz_xbl"]
 
 [dependencies]
 bench-collections-gtest = { path = "../../../../xpcom/rust/gtest/bench-collections" }
@@ -33,6 +35,7 @@ mp4parse-gtest = { path = "../../../../dom/media/gtest" }
 nsstring-gtest = { path = "../../../../xpcom/rust/gtest/nsstring" }
 xpcom-gtest = { path = "../../../../xpcom/rust/gtest/xpcom" }
 gkrust-shared = { path = "../../rust/shared" }
+gecko-fuzz-targets = { path = "../../../../tools/fuzzing/rust", optional = true }
 
 [lib]
 path = "lib.rs"

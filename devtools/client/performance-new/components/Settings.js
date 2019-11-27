@@ -152,13 +152,6 @@ const featureCheckboxes = [
     title: "Record main thread I/O markers.",
   },
   {
-    name: "Memory",
-    value: "memory",
-    title:
-      "Add memory measurements to the samples, this includes resident set size " +
-      "(RSS) and unique set size (USS).",
-  },
-  {
     name: "Privacy",
     value: "privacy",
     title: "Remove some potentially user-identifiable information.",
@@ -187,6 +180,21 @@ const featureCheckboxes = [
     name: "JSTracer",
     value: "jstracer",
     title: "Trace JS engine (Experimental, requires custom build.)",
+  },
+  {
+    name: "Preference Read",
+    value: "preferencereads",
+    title: "Track Preference Reads",
+  },
+  {
+    name: "JS Allocations",
+    value: "jsallocations",
+    title: "Track JavaScript allocations (Experimental.)",
+  },
+  {
+    name: "Native Allocations",
+    value: "nativeallocations",
+    title: "Track native allocations (Experimental.)",
   },
 ];
 
@@ -348,7 +356,7 @@ class Settings extends PureComponent {
 
   _renderThreads() {
     return details(
-      { className: "perf-settings-details" },
+      { className: "perf-settings-details", onToggle: _handleToggle },
       summary(
         {
           className: "perf-settings-summary",
@@ -359,7 +367,8 @@ class Settings extends PureComponent {
       // Contain the overflow of the slide down animation with the first div.
       div(
         { className: "perf-settings-details-contents" },
-        // Provide a second <div> element for the contents of the slide down animation.
+        // Provide a second <div> element for the contents of the slide down
+        // animation.
         div(
           { className: "perf-settings-details-contents-slider" },
           div(
@@ -399,7 +408,7 @@ class Settings extends PureComponent {
 
   _renderFeatures() {
     return details(
-      { className: "perf-settings-details" },
+      { className: "perf-settings-details", onToggle: _handleToggle },
       summary(
         {
           className: "perf-settings-summary",
@@ -447,7 +456,10 @@ class Settings extends PureComponent {
   _renderLocalBuildSection() {
     const { objdirs } = this.props;
     return details(
-      { className: "perf-settings-details" },
+      {
+        className: "perf-settings-details",
+        onToggle: _handleToggle,
+      },
       summary(
         {
           className: "perf-settings-summary",
@@ -543,6 +555,12 @@ function _intervalTextDisplay(value) {
  */
 function _entriesTextDisplay(value) {
   return formatFileSize(value * PROFILE_ENTRY_SIZE);
+}
+
+function _handleToggle() {
+  if (window.gResizePopup) {
+    window.gResizePopup(document.body.clientHeight);
+  }
 }
 
 function mapStateToProps(state) {

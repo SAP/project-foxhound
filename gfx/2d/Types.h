@@ -9,6 +9,7 @@
 
 #include "mozilla/EndianUtils.h"
 #include "mozilla/MacroArgs.h"  // for MOZ_CONCAT
+#include "mozilla/TypedEnumBits.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -156,6 +157,8 @@ enum class ColorDepth : uint8_t {
   UNKNOWN
 };
 
+enum class ColorRange : uint8_t { LIMITED, FULL, UNKNOWN };
+
 static inline SurfaceFormat SurfaceFormatForColorDepth(ColorDepth aColorDepth) {
   SurfaceFormat format = SurfaceFormat::A8;
   switch (aColorDepth) {
@@ -298,12 +301,6 @@ enum class NativeSurfaceType : int8_t {
   CGCONTEXT,
   CGCONTEXT_ACCELERATED,
   OPENGL_TEXTURE
-};
-
-enum class NativeFontType : int8_t {
-  GDI_LOGFONT,
-  FREETYPE_FACE,
-  FONTCONFIG_PATTERN,
 };
 
 enum class FontStyle : int8_t { NORMAL, ITALIC, BOLD, BOLD_ITALIC };
@@ -478,6 +475,14 @@ enum SideBits {
   eSideBitsLeftRight = eSideBitsLeft | eSideBitsRight,
   eSideBitsAll = eSideBitsTopBottom | eSideBitsLeftRight
 };
+
+// Even though SideBits isn't an enum class, bitwise operators for it are
+// necessary for things like `a = a | b` to compile. This is because non-class
+// enums will implicitly convert to int (causing the right hand side to match
+// the built-in `operator|(int, int)` and have result type int), but int will
+// not implicitly convert back to the enum type.
+// TODO: Make SideBits an enum class.
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(SideBits)
 
 // Creates a for loop that walks over the four mozilla::Side values.
 // We use an int32_t helper variable (instead of a Side) for our loop counter,

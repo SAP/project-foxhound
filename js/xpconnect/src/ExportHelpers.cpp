@@ -116,6 +116,10 @@ class MOZ_STACK_CLASS StackScopedCloneData : public StructuredCloneHolderBase {
       JS::Rooted<JS::Value> val(aCx);
       {
         RefPtr<Blob> blob = Blob::Create(global, mBlobImpls[idx]);
+        if (NS_WARN_IF(!blob)) {
+          return nullptr;
+        }
+
         if (!ToJSValue(aCx, blob, &val)) {
           return nullptr;
         }
@@ -424,10 +428,14 @@ bool ExportFunction(JSContext* cx, HandleValue vfunction, HandleValue vscope,
 
     RootedId id(cx, options.defineAs);
     if (JSID_IS_VOID(id)) {
-      // If there wasn't any function name specified,
-      // copy the name from the function being imported.
+      // If there wasn't any function name specified, copy the name from the
+      // function being imported.  But be careful in case the callable we have
+      // is not actually a JSFunction.
+      RootedString funName(cx);
       JSFunction* fun = JS_GetObjectFunction(funObj);
-      RootedString funName(cx, JS_GetFunctionId(fun));
+      if (fun) {
+        funName = JS_GetFunctionId(fun);
+      }
       if (!funName) {
         funName = JS_AtomizeAndPinString(cx, "");
       }

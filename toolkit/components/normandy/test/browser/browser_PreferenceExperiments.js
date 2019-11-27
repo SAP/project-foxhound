@@ -5,6 +5,8 @@ ChromeUtils.import("resource://gre/modules/TelemetryEnvironment.jsm", this);
 ChromeUtils.import("resource://normandy/lib/PreferenceExperiments.jsm", this);
 ChromeUtils.import("resource://normandy/lib/CleanupManager.jsm", this);
 ChromeUtils.import("resource://normandy/lib/TelemetryEvents.jsm", this);
+ChromeUtils.import("resource://normandy/lib/NormandyUtils.jsm", this);
+ChromeUtils.import("resource://testing-common/NormandyTestUtils.jsm", this);
 
 // Save ourselves some typing
 const { withMockExperiments } = PreferenceExperiments;
@@ -30,11 +32,12 @@ function experimentFactory(attrs) {
 
   return Object.assign(
     {
-      name: "fakename",
+      slug: "fakeslug",
       branch: "fakebranch",
       expired: false,
-      lastSeen: new Date().toJSON(),
+      lastSeen: NOW.toJSON(),
       experimentType: "exp",
+      enrollmentId: NormandyUtils.generateUuid(),
     },
     attrs,
     {
@@ -43,12 +46,14 @@ function experimentFactory(attrs) {
   );
 }
 
+const NOW = new Date();
+
 const mockV1Data = {
   hypothetical_experiment: {
     name: "hypothetical_experiment",
     branch: "hypo_1",
     expired: false,
-    lastSeen: new Date().toJSON(),
+    lastSeen: NOW.toJSON(),
     preferenceName: "some.pref",
     preferenceValue: 2,
     preferenceType: "integer",
@@ -60,7 +65,7 @@ const mockV1Data = {
     name: "another_experiment",
     branch: "another_4",
     expired: true,
-    lastSeen: new Date().toJSON(),
+    lastSeen: NOW.toJSON(),
     preferenceName: "another.pref",
     preferenceValue: true,
     preferenceType: "boolean",
@@ -71,13 +76,41 @@ const mockV1Data = {
 };
 
 const mockV2Data = {
-  __version: 2,
   experiments: {
     hypothetical_experiment: {
       name: "hypothetical_experiment",
       branch: "hypo_1",
       expired: false,
-      lastSeen: mockV1Data.hypothetical_experiment.lastSeen,
+      lastSeen: NOW.toJSON(),
+      preferenceName: "some.pref",
+      preferenceValue: 2,
+      preferenceType: "integer",
+      previousPreferenceValue: 1,
+      preferenceBranchType: "user",
+      experimentType: "exp",
+    },
+    another_experiment: {
+      name: "another_experiment",
+      branch: "another_4",
+      expired: true,
+      lastSeen: NOW.toJSON(),
+      preferenceName: "another.pref",
+      preferenceValue: true,
+      preferenceType: "boolean",
+      previousPreferenceValue: false,
+      preferenceBranchType: "default",
+      experimentType: "exp",
+    },
+  },
+};
+
+const mockV3Data = {
+  experiments: {
+    hypothetical_experiment: {
+      name: "hypothetical_experiment",
+      branch: "hypo_1",
+      expired: false,
+      lastSeen: NOW.toJSON(),
       preferences: {
         "some.pref": {
           preferenceValue: 2,
@@ -92,7 +125,7 @@ const mockV2Data = {
       name: "another_experiment",
       branch: "another_4",
       expired: true,
-      lastSeen: mockV1Data.another_experiment.lastSeen,
+      lastSeen: NOW.toJSON(),
       preferences: {
         "another.pref": {
           preferenceValue: true,
@@ -106,15 +139,14 @@ const mockV2Data = {
   },
 };
 
-const MIGRATED_DATA = {
-  __version: 3,
+const mockV4Data = {
   experiments: {
     hypothetical_experiment: {
       name: "hypothetical_experiment",
       branch: "hypo_1",
       actionName: "SinglePreferenceExperimentAction",
       expired: false,
-      lastSeen: mockV1Data.hypothetical_experiment.lastSeen,
+      lastSeen: NOW.toJSON(),
       preferences: {
         "some.pref": {
           preferenceValue: 2,
@@ -130,7 +162,7 @@ const MIGRATED_DATA = {
       branch: "another_4",
       actionName: "SinglePreferenceExperimentAction",
       expired: true,
-      lastSeen: mockV1Data.another_experiment.lastSeen,
+      lastSeen: NOW.toJSON(),
       preferences: {
         "another.pref": {
           preferenceValue: true,
@@ -144,57 +176,117 @@ const MIGRATED_DATA = {
   },
 };
 
-add_task(function migrateStorage_migrates_to_new_format() {
-  let mockJsonFile = {
-    // Deep clone the data in case migrateStorage mutates it.
-    data: JSON.parse(JSON.stringify(mockV1Data)),
-  };
-  migrateStorage(mockJsonFile);
-  Assert.deepEqual(mockJsonFile.data, MIGRATED_DATA);
+const mockV5Data = {
+  experiments: {
+    hypothetical_experiment: {
+      slug: "hypothetical_experiment",
+      branch: "hypo_1",
+      actionName: "SinglePreferenceExperimentAction",
+      expired: false,
+      lastSeen: NOW.toJSON(),
+      preferences: {
+        "some.pref": {
+          preferenceValue: 2,
+          preferenceType: "integer",
+          previousPreferenceValue: 1,
+          preferenceBranchType: "user",
+        },
+      },
+      experimentType: "exp",
+    },
+    another_experiment: {
+      slug: "another_experiment",
+      branch: "another_4",
+      actionName: "SinglePreferenceExperimentAction",
+      expired: true,
+      lastSeen: NOW.toJSON(),
+      preferences: {
+        "another.pref": {
+          preferenceValue: true,
+          preferenceType: "boolean",
+          previousPreferenceValue: false,
+          preferenceBranchType: "default",
+        },
+      },
+      experimentType: "exp",
+    },
+  },
+};
 
-  mockJsonFile = {
-    data: JSON.parse(JSON.stringify(mockV2Data)),
+/**
+ * Make a mock `JsonFile` object with a no-op `saveSoon` method and a deep copy
+ * of the data passed.
+ * @param {Object} data the data in the store
+ */
+function makeMockJsonFile(data = {}) {
+  return {
+    // Deep clone the data in case migrations mutate it.
+    data: JSON.parse(JSON.stringify(data)),
+    saveSoon: () => {},
   };
-  migrateStorage(mockJsonFile);
-  Assert.deepEqual(mockJsonFile.data, MIGRATED_DATA);
+}
+
+/** Test that each migration results in the expected data */
+add_task(async function test_migrations() {
+  let mockJsonFile = makeMockJsonFile(mockV1Data);
+  await PreferenceExperiments.migrations.migration01MoveExperiments(
+    mockJsonFile
+  );
+  Assert.deepEqual(mockJsonFile.data, mockV2Data);
+
+  mockJsonFile = makeMockJsonFile(mockV2Data);
+  await PreferenceExperiments.migrations.migration02MultiPreference(
+    mockJsonFile
+  );
+  Assert.deepEqual(mockJsonFile.data, mockV3Data);
+
+  mockJsonFile = makeMockJsonFile(mockV3Data);
+  await PreferenceExperiments.migrations.migration03AddActionName(mockJsonFile);
+  Assert.deepEqual(mockJsonFile.data, mockV4Data);
+
+  mockJsonFile = makeMockJsonFile(mockV4Data);
+  await PreferenceExperiments.migrations.migration04RenameNameToSlug(
+    mockJsonFile
+  );
+  Assert.deepEqual(mockJsonFile.data, mockV5Data);
 });
 
-add_task(function migrateStorage_keeps_actionNames() {
-  let mockData = JSON.parse(JSON.stringify(mockV2Data));
+add_task(async function migration03KeepsActionName() {
+  let mockData = JSON.parse(JSON.stringify(mockV3Data));
   mockData.experiments.another_experiment.actionName = "SomeOldAction";
-  const mockJsonFile = {
-    data: mockData,
-  };
-  // Output should be the same as MIGRATED_DATA, but preserving the action.
-  const migratedData = JSON.parse(JSON.stringify(MIGRATED_DATA));
+  const mockJsonFile = makeMockJsonFile(mockData);
+  // Output should be the same as mockV4Data, but preserving the action.
+  const migratedData = JSON.parse(JSON.stringify(mockV4Data));
   migratedData.experiments.another_experiment.actionName = "SomeOldAction";
 
-  migrateStorage(mockJsonFile);
+  await PreferenceExperiments.migrations.migration03AddActionName(mockJsonFile);
   Assert.deepEqual(mockJsonFile.data, migratedData);
 });
 
-add_task(function migrateStorage_is_idempotent() {
-  for (const [name, mockOldData] of [["v1", mockV1Data], ["v2", mockV2Data]]) {
-    const mockJsonFileOnce = {
-      data: JSON.parse(JSON.stringify(mockOldData)),
-    };
-    const mockJsonFileTwice = {
-      data: JSON.parse(JSON.stringify(mockOldData)),
-    };
-    migrateStorage(mockJsonFileOnce);
-    migrateStorage(mockJsonFileTwice);
-    migrateStorage(mockJsonFileTwice);
+add_task(async function migrations_are_idempotent() {
+  let dataVersions = [
+    [PreferenceExperiments.migrations.migration01MoveExperiments, mockV1Data],
+    [PreferenceExperiments.migrations.migration02MultiPreference, mockV2Data],
+    [PreferenceExperiments.migrations.migration03AddActionName, mockV3Data],
+    [PreferenceExperiments.migrations.migration04RenameNameToSlug, mockV4Data],
+  ];
+  for (const [migration, mockOldData] of dataVersions) {
+    const mockJsonFileOnce = makeMockJsonFile(mockOldData);
+    const mockJsonFileTwice = makeMockJsonFile(mockOldData);
+    await migration(mockJsonFileOnce);
+    await migration(mockJsonFileTwice);
+    await migration(mockJsonFileTwice);
     Assert.deepEqual(
-      mockJsonFileOnce,
-      mockJsonFileTwice,
-      "migrating data twice should be idempotent for " + name
+      mockJsonFileOnce.data,
+      mockJsonFileTwice.data,
+      "migrating data twice should be idempotent for " + migration.name
     );
   }
 });
 
 // clearAllExperimentStorage
 decorate_task(
-  withMockExperiments([experimentFactory({ name: "test" })]),
+  withMockExperiments([experimentFactory({ slug: "test" })]),
   async function(experiments) {
     ok(await PreferenceExperiments.has("test"), "Mock experiment is detected.");
     await PreferenceExperiments.clearAllExperimentStorage();
@@ -207,12 +299,12 @@ decorate_task(
 
 // start should throw if an experiment with the given name already exists
 decorate_task(
-  withMockExperiments([experimentFactory({ name: "test" })]),
+  withMockExperiments([experimentFactory({ slug: "test" })]),
   withSendEventStub,
   async function(experiments, sendEventStub) {
     await Assert.rejects(
       PreferenceExperiments.start({
-        name: "test",
+        slug: "test",
         actionName: "SomeAction",
         branch: "branch",
         preferences: {
@@ -238,7 +330,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       preferences: { "fake.preferenceinteger": {} },
     }),
   ]),
@@ -246,7 +338,7 @@ decorate_task(
   async function(experiments, sendEventStub) {
     await Assert.rejects(
       PreferenceExperiments.start({
-        name: "different",
+        slug: "different",
         actionName: "SomeAction",
         branch: "branch",
         preferences: {
@@ -284,7 +376,7 @@ decorate_task(withMockExperiments(), withSendEventStub, async function(
 ) {
   await Assert.rejects(
     PreferenceExperiments.start({
-      name: "test",
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -323,7 +415,7 @@ decorate_task(
     mockPreferences.set("fake.preferenceinteger", 101, "user");
 
     const experiment = {
-      name: "test",
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -347,7 +439,7 @@ decorate_task(
     );
 
     const expectedExperiment = {
-      name: "test",
+      slug: "test",
       branch: "branch",
       expired: false,
       preferences: {
@@ -419,7 +511,7 @@ decorate_task(
     mockPreferences.set("fake.preference", "oldvalue", "user");
 
     const experiment = {
-      name: "test",
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -437,7 +529,7 @@ decorate_task(
     );
 
     const expectedExperiment = {
-      name: "test",
+      slug: "test",
       branch: "branch",
       expired: false,
       preferences: {
@@ -483,7 +575,7 @@ decorate_task(withMockPreferences, withSendEventStub, async function(
 
   await Assert.rejects(
     PreferenceExperiments.start({
-      name: "test",
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -730,7 +822,7 @@ decorate_task(withMockExperiments(), async function() {
 // markLastSeen should update the lastSeen date
 const oldDate = new Date(1988, 10, 1).toJSON();
 decorate_task(
-  withMockExperiments([experimentFactory({ name: "test", lastSeen: oldDate })]),
+  withMockExperiments([experimentFactory({ slug: "test", lastSeen: oldDate })]),
   async function([experiment]) {
     await PreferenceExperiments.markLastSeen("test");
     Assert.notEqual(
@@ -764,7 +856,7 @@ decorate_task(withMockExperiments(), withSendEventStub, async function(
 
 // stop should throw if the experiment is already expired
 decorate_task(
-  withMockExperiments([experimentFactory({ name: "test", expired: true })]),
+  withMockExperiments([experimentFactory({ slug: "test", expired: true })]),
   withSendEventStub,
   async function(experiments, sendEventStub) {
     await Assert.rejects(
@@ -789,7 +881,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       expired: false,
       branch: "fakebranch",
       preferences: {
@@ -867,7 +959,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       expired: false,
       preferences: {
         "fake.preference": {
@@ -916,7 +1008,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       expired: false,
       preferences: {
         "fake.preference": {
@@ -947,7 +1039,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       expired: false,
       branch: "fakebranch",
       preferences: {
@@ -1006,23 +1098,23 @@ decorate_task(withMockExperiments(), async function() {
 
 // get
 decorate_task(
-  withMockExperiments([experimentFactory({ name: "test" })]),
+  withMockExperiments([experimentFactory({ slug: "test" })]),
   async function(experiments) {
     const experiment = await PreferenceExperiments.get("test");
-    is(experiment.name, "test", "get fetches the correct experiment");
+    is(experiment.slug, "test", "get fetches the correct experiment");
 
     // Modifying the fetched experiment must not edit the data source.
-    experiment.name = "othername";
+    experiment.slug = "othername";
     const refetched = await PreferenceExperiments.get("test");
-    is(refetched.name, "test", "get returns a copy of the experiment");
+    is(refetched.slug, "test", "get returns a copy of the experiment");
   }
 );
 
 // get all
 decorate_task(
   withMockExperiments([
-    experimentFactory({ name: "experiment1", disabled: false }),
-    experimentFactory({ name: "experiment2", disabled: true }),
+    experimentFactory({ slug: "experiment1", disabled: false }),
+    experimentFactory({ slug: "experiment2", disabled: true }),
   ]),
   async function testGetAll([experiment1, experiment2]) {
     const fetchedExperiments = await PreferenceExperiments.getAll();
@@ -1032,12 +1124,12 @@ decorate_task(
       "getAll returns a list of all stored experiments"
     );
     Assert.deepEqual(
-      fetchedExperiments.find(e => e.name === "experiment1"),
+      fetchedExperiments.find(e => e.slug === "experiment1"),
       experiment1,
       "getAll returns a list with the correct experiments"
     );
     const fetchedExperiment2 = fetchedExperiments.find(
-      e => e.name === "experiment2"
+      e => e.slug === "experiment2"
     );
     Assert.deepEqual(
       fetchedExperiment2,
@@ -1045,9 +1137,9 @@ decorate_task(
       "getAll returns a list with the correct experiments, including disabled ones"
     );
 
-    fetchedExperiment2.name = "othername";
+    fetchedExperiment2.slug = "otherslug";
     is(
-      experiment2.name,
+      experiment2.slug,
       "experiment2",
       "getAll returns copies of the experiments"
     );
@@ -1058,11 +1150,11 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "active",
+      slug: "active",
       expired: false,
     }),
     experimentFactory({
-      name: "inactive",
+      slug: "inactive",
       expired: true,
     }),
   ]),
@@ -1075,7 +1167,7 @@ decorate_task(
       "getAllActive only returns active experiments"
     );
 
-    allActiveExperiments[0].name = "newfakename";
+    allActiveExperiments[0].slug = "newfakename";
     allActiveExperiments = await PreferenceExperiments.getAllActive();
     Assert.notEqual(
       allActiveExperiments,
@@ -1087,7 +1179,7 @@ decorate_task(
 
 // has
 decorate_task(
-  withMockExperiments([experimentFactory({ name: "test" })]),
+  withMockExperiments([experimentFactory({ slug: "test" })]),
   async function(experiments) {
     ok(
       await PreferenceExperiments.has("test"),
@@ -1104,7 +1196,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       branch: "branch",
       preferences: {
         "fake.pref": {
@@ -1127,7 +1219,10 @@ decorate_task(
     mockPreferences.set("fake.pref", "experiment value");
     await PreferenceExperiments.init();
     ok(
-      setActiveStub.calledWith("test", "branch", { type: "normandy-exp" }),
+      setActiveStub.calledWith("test", "branch", {
+        type: "normandy-exp",
+        enrollmentId: experiments[0].enrollmentId,
+      }),
       "Experiment is registered by init"
     );
   }
@@ -1137,7 +1232,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       branch: "branch",
       preferences: {
         "fake.pref": {
@@ -1161,6 +1256,7 @@ decorate_task(
     ok(
       setActiveStub.calledWith("test", "branch", {
         type: "normandy-pref-test",
+        enrollmentId: sinon.match(NormandyTestUtils.isUuid),
       }),
       "init should use the provided experiment type"
     );
@@ -1179,8 +1275,8 @@ decorate_task(
     setInactiveStub,
     sendEventStub
   ) {
-    await PreferenceExperiments.start({
-      name: "test",
+    let { enrollmentId } = await PreferenceExperiments.start({
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -1192,9 +1288,14 @@ decorate_task(
       },
     });
 
+    ok(
+      NormandyTestUtils.isUuid(enrollmentId),
+      "Experiment should have a UUID enrollmentId"
+    );
+
     Assert.deepEqual(
       setActiveStub.getCall(0).args,
-      ["test", "branch", { type: "normandy-exp" }],
+      ["test", "branch", { type: "normandy-exp", enrollmentId }],
       "Experiment is registered by start()"
     );
     await PreferenceExperiments.stop("test", { reason: "test-reason" });
@@ -1212,6 +1313,7 @@ decorate_task(
         {
           experimentType: "exp",
           branch: "branch",
+          enrollmentId,
         },
       ],
       [
@@ -1222,6 +1324,7 @@ decorate_task(
           reason: "test-reason",
           didResetValue: "true",
           branch: "branch",
+          enrollmentId,
         },
       ],
     ]);
@@ -1240,8 +1343,8 @@ decorate_task(
     setInactiveStub,
     sendEventStub
   ) {
-    await PreferenceExperiments.start({
-      name: "test",
+    const { enrollmentId } = await PreferenceExperiments.start({
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -1256,7 +1359,7 @@ decorate_task(
 
     Assert.deepEqual(
       setActiveStub.getCall(0).args,
-      ["test", "branch", { type: "normandy-pref-test" }],
+      ["test", "branch", { type: "normandy-pref-test", enrollmentId }],
       "start() should register the experiment with the provided type"
     );
 
@@ -1268,6 +1371,7 @@ decorate_task(
         {
           experimentType: "pref-test",
           branch: "branch",
+          enrollmentId,
         },
       ],
     ]);
@@ -1281,7 +1385,7 @@ decorate_task(
 // Experiments shouldn't be recorded by init() in telemetry if they are expired
 decorate_task(
   withMockExperiments([
-    experimentFactory({ name: "expired", branch: "branch", expired: true }),
+    experimentFactory({ slug: "expired", branch: "branch", expired: true }),
   ]),
   withStub(TelemetryEnvironment, "setExperimentActive"),
   async function testInitTelemetryExpired(experiments, setActiveStub) {
@@ -1294,7 +1398,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       preferences: {
         "fake.preference": {
           preferenceValue: "experiment value",
@@ -1333,7 +1437,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       preferences: {
         "fake.preference": {
           preferenceValue: "experiment value",
@@ -1383,7 +1487,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "char",
+      slug: "char",
       preferences: {
         "fake.char": {
           preferenceValue: "string",
@@ -1391,7 +1495,7 @@ decorate_task(
       },
     }),
     experimentFactory({
-      name: "int",
+      slug: "int",
       preferences: {
         "fake.int": {
           preferenceValue: 2,
@@ -1399,7 +1503,7 @@ decorate_task(
       },
     }),
     experimentFactory({
-      name: "bool",
+      slug: "bool",
       preferences: {
         "fake.bool": {
           preferenceValue: true,
@@ -1437,7 +1541,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       preferences: {
         "fake.invalidValue": {
           preferenceValue: new Date(),
@@ -1458,7 +1562,7 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "defaultBranchRecipe",
+      slug: "defaultBranchRecipe",
       preferences: {
         "fake.default": {
           preferenceValue: "experiment value",
@@ -1467,7 +1571,7 @@ decorate_task(
       },
     }),
     experimentFactory({
-      name: "userBranchRecipe",
+      slug: "userBranchRecipe",
       preferences: {
         "fake.user": {
           preferenceValue: "experiment value",
@@ -1520,7 +1624,7 @@ decorate_task(
 
     // start an experiment
     await PreferenceExperiments.start({
-      name: "test",
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -1574,7 +1678,7 @@ decorate_task(
 
     // start an experiment
     await PreferenceExperiments.start({
-      name: "test",
+      slug: "test",
       actionName: "SomeAction",
       branch: "branch",
       preferences: {
@@ -1616,7 +1720,7 @@ decorate_task(
 // stop should pass "unknown" to telemetry event for `reason` if none is specified
 decorate_task(
   withMockExperiments([
-    experimentFactory({ name: "test", preferences: { "fake.preference": {} } }),
+    experimentFactory({ slug: "test", preferences: { "fake.preference": {} } }),
   ]),
   withMockPreferences,
   withStub(PreferenceExperiments, "stopObserver"),
@@ -1641,11 +1745,11 @@ decorate_task(
 decorate_task(
   withMockExperiments([
     experimentFactory({
-      name: "test1",
+      slug: "test1",
       preferences: { "fake.preference1": {} },
     }),
     experimentFactory({
-      name: "test2",
+      slug: "test2",
       preferences: { "fake.preference2": {} },
     }),
   ]),
@@ -1685,7 +1789,7 @@ decorate_task(
   withSendEventStub,
   withMockExperiments([
     experimentFactory({
-      name: "test",
+      slug: "test",
       expired: false,
       branch: "fakebranch",
       preferences: {
@@ -1731,6 +1835,7 @@ decorate_task(
           didResetValue: "false",
           reason: "user-preference-changed",
           branch: "fakebranch",
+          enrollmentId: mockExperiments[0].enrollmentId,
         },
       ],
     ]);

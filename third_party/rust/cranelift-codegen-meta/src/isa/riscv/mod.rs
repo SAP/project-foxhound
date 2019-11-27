@@ -8,6 +8,9 @@ use crate::shared::types::Float::{F32, F64};
 use crate::shared::types::Int::{I32, I64};
 use crate::shared::Definitions as SharedDefinitions;
 
+mod encodings;
+mod recipes;
+
 fn define_settings(shared: &SettingGroup) -> SettingGroup {
     let mut setting = SettingGroupBuilder::new("riscv");
 
@@ -82,13 +85,14 @@ fn define_registers() -> IsaRegs {
     regs.build()
 }
 
-pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
+pub(crate) fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
     let settings = define_settings(&shared_defs.settings);
     let regs = define_registers();
 
     let inst_group = InstructionGroupBuilder::new(
         "riscv",
         "riscv specific instruction set",
+        &mut shared_defs.all_instructions,
         &shared_defs.format_registry,
     )
     .build();
@@ -98,21 +102,39 @@ pub fn define(shared_defs: &mut SharedDefinitions) -> TargetIsa {
     let mut rv_64 = CpuMode::new("RV64");
 
     let expand = shared_defs.transform_groups.by_name("expand");
-    let narrow = shared_defs.transform_groups.by_name("narrow");
+    let narrow_no_flags = shared_defs.transform_groups.by_name("narrow_no_flags");
+
     rv_32.legalize_monomorphic(expand);
-    rv_32.legalize_default(narrow);
+    rv_32.legalize_default(narrow_no_flags);
     rv_32.legalize_type(I32, expand);
     rv_32.legalize_type(F32, expand);
     rv_32.legalize_type(F64, expand);
 
     rv_64.legalize_monomorphic(expand);
-    rv_64.legalize_default(narrow);
+    rv_64.legalize_default(narrow_no_flags);
     rv_64.legalize_type(I32, expand);
     rv_64.legalize_type(I64, expand);
     rv_64.legalize_type(F32, expand);
     rv_64.legalize_type(F64, expand);
 
+    let recipes = recipes::define(shared_defs, &regs);
+
+    let encodings = encodings::define(shared_defs, &settings, &recipes);
+    rv_32.set_encodings(encodings.enc32);
+    rv_64.set_encodings(encodings.enc64);
+    let encodings_predicates = encodings.inst_pred_reg.extract();
+
+    let recipes = recipes.collect();
+
     let cpu_modes = vec![rv_32, rv_64];
 
-    TargetIsa::new("riscv", inst_group, settings, regs, cpu_modes)
+    TargetIsa::new(
+        "riscv",
+        inst_group,
+        settings,
+        regs,
+        recipes,
+        cpu_modes,
+        encodings_predicates,
+    )
 }

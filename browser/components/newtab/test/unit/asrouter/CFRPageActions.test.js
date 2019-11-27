@@ -15,6 +15,7 @@ describe("CFRPageActions", () => {
 
   const elementIDs = [
     "urlbar",
+    "urlbar-input",
     "contextual-feature-recommendation",
     "cfr-button",
     "cfr-label",
@@ -699,13 +700,13 @@ describe("CFRPageActions", () => {
         );
       });
       it("should show the bullet list details", async () => {
-        delete fakeRecommendation.content.addon;
+        fakeRecommendation.content.layout = "message_and_animation";
         await pageAction._showPopupOnClick();
 
         assert.calledOnce(translateElementsStub);
       });
       it("should set the data-l10n-id on the list element", async () => {
-        delete fakeRecommendation.content.addon;
+        fakeRecommendation.content.layout = "message_and_animation";
         await pageAction._showPopupOnClick();
 
         assert.calledOnce(setAttributesStub);
@@ -716,18 +717,18 @@ describe("CFRPageActions", () => {
         );
       });
       it("should set the correct data-notification-category", async () => {
-        delete fakeRecommendation.content.addon;
+        fakeRecommendation.content.layout = "message_and_animation";
         await pageAction._showPopupOnClick();
 
         assert.equal(
           elements["contextual-feature-recommendation-notification"].dataset
             .notificationCategory,
-          fakeRecommendation.content.category
+          fakeRecommendation.content.layout
         );
       });
       it("should send PIN event on primary action click", async () => {
+        fakeRecommendation.content.layout = "message_and_animation";
         sandbox.stub(pageAction, "_sendTelemetry");
-        delete fakeRecommendation.content.addon;
         await pageAction._showPopupOnClick();
 
         const [
@@ -745,6 +746,46 @@ describe("CFRPageActions", () => {
           "event",
           "PIN"
         );
+      });
+    });
+
+    describe("#_createDOML10n", () => {
+      let domL10nStub;
+      beforeEach(() => {
+        domL10nStub = sandbox.stub();
+
+        globals.set("DOMLocalization", domL10nStub);
+      });
+      it("should load the remote Fluent file if USE_REMOTE_L10N_PREF is true", () => {
+        sandbox.stub(global.Services.prefs, "getBoolPref").returns(true);
+        pageAction._createDOML10n();
+
+        assert.calledOnce(domL10nStub);
+        const { args } = domL10nStub.firstCall;
+        // The first arg is the resource array, and the second one is the bundle generator.
+        assert.equal(args.length, 2);
+        assert.deepEqual(args[0], [
+          "browser/newtab/asrouter.ftl",
+          "browser/branding/brandings.ftl",
+          "browser/branding/sync-brand.ftl",
+          "branding/brand.ftl",
+        ]);
+        assert.isFunction(args[1]);
+      });
+      it("should load the local Fluent file if USE_REMOTE_L10N_PREF is false", () => {
+        sandbox.stub(global.Services.prefs, "getBoolPref").returns(false);
+        pageAction._createDOML10n();
+
+        const { args } = domL10nStub.firstCall;
+        // The first arg is the resource array, and the second one should be null.
+        assert.equal(args.length, 2);
+        assert.deepEqual(args[0], [
+          "browser/newtab/asrouter.ftl",
+          "browser/branding/brandings.ftl",
+          "browser/branding/sync-brand.ftl",
+          "branding/brand.ftl",
+        ]);
+        assert.isUndefined(args[1]);
       });
     });
   });
@@ -798,6 +839,16 @@ describe("CFRPageActions", () => {
         assert.calledWith(
           PageAction.prototype.showAddressBarNotifier,
           savedRec
+        );
+      });
+      it("should show the pageAction if a recommendation exists and it doesn't have a host defined", () => {
+        const recNoHost = { ...savedRec, host: undefined };
+        CFRPageActions.RecommendationMap.set(fakeBrowser, recNoHost);
+        CFRPageActions.updatePageActions(fakeBrowser);
+        assert.calledOnce(PageAction.prototype.showAddressBarNotifier);
+        assert.calledWith(
+          PageAction.prototype.showAddressBarNotifier,
+          recNoHost
         );
       });
       it("should hideAddressBarNotifier the pageAction and delete the recommendation if the recommendation exists but the host doesn't match", () => {
@@ -1055,6 +1106,32 @@ describe("CFRPageActions", () => {
         for (const browser of browsers) {
           assert.isFalse(CFRPageActions.RecommendationMap.has(browser));
         }
+      });
+    });
+
+    describe("reloadL10n", () => {
+      const createFakePageAction = () => ({
+        hideAddressBarNotifier() {},
+        reloadL10n: sandbox.stub(),
+      });
+      const windows = [{}, {}, { closed: true }];
+
+      beforeEach(() => {
+        CFRPageActions.PageActionMap.set(windows[0], createFakePageAction());
+        CFRPageActions.PageActionMap.set(windows[2], createFakePageAction());
+        globals.set({ Services: { wm: { getEnumerator: () => windows } } });
+      });
+
+      it("should call reloadL10n for all the PageActions of any existing, non-closed windows", () => {
+        const pageActions = windows.map(win =>
+          CFRPageActions.PageActionMap.get(win)
+        );
+        CFRPageActions.reloadL10n();
+
+        // Only the first window had a PageAction and wasn't closed
+        assert.calledOnce(pageActions[0].reloadL10n);
+        assert.isUndefined(pageActions[1]);
+        assert.notCalled(pageActions[2].reloadL10n);
       });
     });
   });

@@ -32,6 +32,10 @@
 #  error "Unsupported ABI"
 #endif
 
+#if (defined(__mips_isa_rev) && (__mips_isa_rev >= 6))
+#  define MIPSR6
+#endif
+
 namespace js {
 namespace jit {
 
@@ -325,6 +329,8 @@ inline bool hasUnaliasedDouble() { return false; }
 // registers thus not exposing multi aliasing to the jit.
 // See comments in Arhitecture-mips32.h.
 inline bool hasMultiAlias() { return false; }
+
+void FlushICache(void* code, size_t size);
 
 }  // namespace jit
 }  // namespace js

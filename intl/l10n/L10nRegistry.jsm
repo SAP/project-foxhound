@@ -5,6 +5,11 @@ const appinfo = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime);
 const { FluentBundle, FluentResource } = ChromeUtils.import("resource://gre/modules/Fluent.jsm");
 const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+ChromeUtils.defineModuleGetter(
+  this,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
+);
 
 const isParentProcess = appinfo.processType === appinfo.PROCESS_TYPE_DEFAULT;
 /**
@@ -655,7 +660,12 @@ class FileSource {
       // `true` means that the file is indexed, but hasn't
       // been fetched yet.
       if (this.cache[fullPath] !== true) {
-        return this.cache[fullPath];
+        if (this.cache[fullPath] instanceof Promise && options.sync) {
+          console.warn(`[l10nregistry] Attempting to synchronously load file
+            ${fullPath} while it's being loaded asynchronously.`);
+        } else {
+          return this.cache[fullPath];
+        }
       }
     } else if (this.indexed) {
       return false;
@@ -666,7 +676,7 @@ class FileSource {
       if (data === false) {
         this.cache[fullPath] = false;
       } else {
-        this.cache[fullPath] = FluentResource.fromString(data);
+        this.cache[fullPath] = new FluentResource(data);
       }
 
       return this.cache[fullPath];
@@ -675,7 +685,7 @@ class FileSource {
     // async
     return this.cache[fullPath] = L10nRegistry.load(fullPath).then(
       data => {
-        return this.cache[fullPath] = FluentResource.fromString(data);
+        return this.cache[fullPath] = new FluentResource(data);
       },
       err => {
         this.cache[fullPath] = false;
@@ -749,8 +759,30 @@ this.L10nRegistry.loadSync = function(uri) {
     let data = Cu.readUTF8URI(url);
     return data;
   } catch (e) {
-    return false;
+    if (
+      e.result == Cr.NS_ERROR_INVALID_ARG ||
+      e.result == Cr.NS_ERROR_NOT_INITIALIZED
+    ) {
+      try {
+        // The preloader doesn't support this url or isn't initialized
+        // (xpcshell test). Try a synchronous channel load.
+        let stream = NetUtil.newChannel({
+          uri,
+          loadUsingSystemPrincipal: true,
+        }).open();
+
+        return NetUtil.readInputStreamToString(stream, stream.available(), {
+          charset: "UTF-8",
+        });
+      } catch (e) {
+        Cu.reportError(e);
+      }
+    } else {
+      Cu.reportError(e);
+    }
   }
+
+  return false;
 };
 
 this.FileSource = FileSource;

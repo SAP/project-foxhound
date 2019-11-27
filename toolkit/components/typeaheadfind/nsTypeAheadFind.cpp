@@ -54,7 +54,9 @@
 #include "mozilla/dom/RangeBinding.h"
 #include "mozilla/dom/Selection.h"
 #include "nsRange.h"
-#include "nsXBLBinding.h"
+#ifdef MOZ_XBL
+#  include "nsXBLBinding.h"
+#endif
 
 #include "nsTypeAheadFind.h"
 
@@ -321,9 +323,10 @@ void nsTypeAheadFind::PlayNotFoundSound() {
   }
 }
 
-nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
+nsresult nsTypeAheadFind::FindItNow(uint32_t aMode, bool aIsLinksOnly,
                                     bool aIsFirstVisiblePreferred,
-                                    bool aFindPrev, uint16_t* aResult) {
+                                    bool aDontIterateFrames,
+                                    uint16_t* aResult) {
   *aResult = FIND_NOTFOUND;
   mFoundLink = nullptr;
   mFoundEditable = nullptr;
@@ -369,46 +372,57 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
       "Bug 175321 Crashes with Type Ahead Find [@ nsTypeAheadFind::FindItNow]");
   if (!startingDocShell) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIDocShellTreeItem> rootContentTreeItem;
   nsCOMPtr<nsIDocShell> currentDocShell;
-
-  startingDocShell->GetSameTypeRootTreeItem(
-      getter_AddRefs(rootContentTreeItem));
-  nsCOMPtr<nsIDocShell> rootContentDocShell =
-      do_QueryInterface(rootContentTreeItem);
-
-  if (!rootContentDocShell) return NS_ERROR_FAILURE;
-
+  nsCOMPtr<nsISupports> currentContainer;
   nsCOMPtr<nsISimpleEnumerator> docShellEnumerator;
-  rootContentDocShell->GetDocShellEnumerator(
-      nsIDocShellTreeItem::typeContent, nsIDocShell::ENUMERATE_FORWARDS,
-      getter_AddRefs(docShellEnumerator));
+  nsCOMPtr<nsIDocShellTreeItem> rootContentTreeItem;
+  nsCOMPtr<nsIDocShell> rootContentDocShell;
+  if (!aDontIterateFrames) {
+    // The use of GetInProcessSameTypeRootTreeItem (and later in this method) is
+    // OK here as out-of-process frames are handled externally by
+    // FinderParent.jsm, which will end up only calling this method with
+    // aDontIterateFrames set to true.
+    startingDocShell->GetInProcessSameTypeRootTreeItem(
+        getter_AddRefs(rootContentTreeItem));
+    rootContentDocShell = do_QueryInterface(rootContentTreeItem);
 
-  // Default: can start at the current document
-  nsCOMPtr<nsISupports> currentContainer =
-      do_QueryInterface(rootContentDocShell);
+    if (!rootContentDocShell) return NS_ERROR_FAILURE;
 
-  // Iterate up to current shell, if there's more than 1 that we're
-  // dealing with
-  bool hasMoreDocShells;
+    rootContentDocShell->GetDocShellEnumerator(
+        nsIDocShellTreeItem::typeContent, nsIDocShell::ENUMERATE_FORWARDS,
+        getter_AddRefs(docShellEnumerator));
 
-  while (NS_SUCCEEDED(docShellEnumerator->HasMoreElements(&hasMoreDocShells)) &&
-         hasMoreDocShells) {
-    docShellEnumerator->GetNext(getter_AddRefs(currentContainer));
-    currentDocShell = do_QueryInterface(currentContainer);
-    if (!currentDocShell || currentDocShell == startingDocShell ||
-        aIsFirstVisiblePreferred)
-      break;
+    // Default: can start at the current document
+    currentContainer = do_QueryInterface(rootContentDocShell);
+
+    // Iterate up to current shell, if there's more than 1 that we're
+    // dealing with
+    bool hasMoreDocShells;
+
+    while (
+        NS_SUCCEEDED(docShellEnumerator->HasMoreElements(&hasMoreDocShells)) &&
+        hasMoreDocShells) {
+      docShellEnumerator->GetNext(getter_AddRefs(currentContainer));
+      currentDocShell = do_QueryInterface(currentContainer);
+      if (!currentDocShell || currentDocShell == startingDocShell ||
+          aIsFirstVisiblePreferred)
+        break;
+    }
+  } else {
+    currentContainer = currentDocShell = startingDocShell;
   }
 
+  bool findPrev = (aMode == FIND_PREVIOUS || aMode == FIND_LAST);
+
   // ------------ Get ranges ready ----------------
+
+  bool useSelection = (aMode != FIND_FIRST && aMode != FIND_LAST) &&
+                      (!aIsFirstVisiblePreferred || mStartFindRange);
+
   RefPtr<nsRange> returnRange;
   if (NS_FAILED(GetSearchContainers(
-          currentContainer,
-          (!aIsFirstVisiblePreferred || mStartFindRange)
-              ? selectionController.get()
-              : nullptr,
-          aIsFirstVisiblePreferred, aFindPrev, getter_AddRefs(presShell),
+          currentContainer, useSelection ? selectionController.get() : nullptr,
+          aIsFirstVisiblePreferred, findPrev, getter_AddRefs(presShell),
           getter_AddRefs(presContext)))) {
     return NS_ERROR_FAILURE;
   }
@@ -425,7 +439,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
 
   if (mTypeAheadBuffer.IsEmpty() || !EnsureFind()) return NS_ERROR_FAILURE;
 
-  mFind->SetFindBackwards(aFindPrev);
+  mFind->SetFindBackwards(findPrev);
 
   while (true) {    // ----- Outer while loop: go through all docs -----
     while (true) {  // === Inner while loop: go through a single doc ===
@@ -448,9 +462,9 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
       // side effects (like updating mStartPointRange and
       // setting usesIndependentSelection) that we'll need whether
       // or not the range is visible.
-      bool canSeeRange = IsRangeVisible(
-          presShell, presContext, returnRange, aIsFirstVisiblePreferred, false,
-          getter_AddRefs(mStartPointRange), &usesIndependentSelection);
+      bool canSeeRange = IsRangeVisible(returnRange, aIsFirstVisiblePreferred,
+                                        false, getter_AddRefs(mStartPointRange),
+                                        &usesIndependentSelection);
 
       // If we can't see the range, we still might be able to scroll
       // it into view if usesIndependentSelection is true. If both are
@@ -462,7 +476,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
         // At this point mStartPointRange got updated to the first
         // visible range in the viewport.  We _may_ be able to just
         // start there, if it's not taking us in the wrong direction.
-        if (aFindPrev) {
+        if (findPrev) {
           // We can continue at the end of mStartPointRange if its end is before
           // the start of returnRange or coincides with it.  Otherwise, we need
           // to continue at the start of returnRange.
@@ -533,7 +547,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
             nsCOMPtr<nsIDocShellTreeItem> fwTreeItem(fwPI->GetDocShell());
             if (NS_SUCCEEDED(rv)) {
               nsCOMPtr<nsIDocShellTreeItem> fwRootTreeItem;
-              rv = fwTreeItem->GetSameTypeRootTreeItem(
+              rv = fwTreeItem->GetInProcessSameTypeRootTreeItem(
                   getter_AddRefs(fwRootTreeItem));
               if (NS_SUCCEEDED(rv) && fwRootTreeItem == rootContentTreeItem)
                 shouldFocusEditableElement = true;
@@ -631,11 +645,15 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
     }
 
     // ======= end-inner-while (go through a single document) ==========
+    if (aDontIterateFrames) {
+      return NS_OK;
+    }
 
     // ---------- Nothing found yet, try next document  -------------
     bool hasTriedFirstDoc = false;
     do {
       // ==== Second inner loop - get another while  ====
+      bool hasMoreDocShells;
       if (NS_SUCCEEDED(
               docShellEnumerator->HasMoreElements(&hasMoreDocShells)) &&
           hasMoreDocShells) {
@@ -669,12 +687,12 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
 
     if (continueLoop) {
       if (NS_FAILED(GetSearchContainers(
-              currentContainer, nullptr, aIsFirstVisiblePreferred, aFindPrev,
+              currentContainer, nullptr, aIsFirstVisiblePreferred, findPrev,
               getter_AddRefs(presShell), getter_AddRefs(presContext)))) {
         continue;
       }
 
-      if (aFindPrev) {
+      if (findPrev) {
         // Reverse mode: swap start and end points, so that we start
         // at end of document and go to beginning
         RefPtr<nsRange> tempRange = mStartPointRange->CloneRange();
@@ -767,6 +785,7 @@ nsresult nsTypeAheadFind::GetSearchContainers(
   }
   nsCOMPtr<nsINode> searchRootNode(rootContent);
 
+#ifdef MOZ_XBL
   // Hack for XMLPrettyPrinter. nsFind can't handle complex anonymous content.
   // If the root node has an XBL binding then there's not much we can do in
   // in general, but we can try searching the binding's first child, which
@@ -779,6 +798,7 @@ nsresult nsTypeAheadFind::GetSearchContainers(
       searchRootNode = anonContent->GetFirstChild();
     }
   }
+#endif
   mSearchRange->SelectNodeContents(*searchRootNode, IgnoreErrors());
 
   if (!mStartPointRange) {
@@ -811,8 +831,7 @@ nsresult nsTypeAheadFind::GetSearchContainers(
     // Ensure visible range, move forward if necessary
     // This ignores the return value, but uses the side effect of
     // IsRangeVisible. It returns the first visible range after searchRange
-    IsRangeVisible(presShell, presContext, mSearchRange,
-                   aIsFirstVisiblePreferred, true,
+    IsRangeVisible(mSearchRange, aIsFirstVisiblePreferred, true,
                    getter_AddRefs(mStartPointRange), nullptr);
   } else {
     uint32_t startOffset;
@@ -936,25 +955,31 @@ void nsTypeAheadFind::RangeStartsInsideLink(nsRange* aRange,
   *aIsStartingLink = false;
 }
 
-/* Find another match in the page. */
-NS_IMETHODIMP
-nsTypeAheadFind::FindAgain(bool aFindBackwards, bool aLinksOnly,
-                           uint16_t* aResult)
-
-{
-  *aResult = FIND_NOTFOUND;
-
-  if (!mTypeAheadBuffer.IsEmpty())
-    // Beware! This may flush notifications via synchronous
-    // ScrollSelectionIntoView.
-    FindItNow(aLinksOnly, false, aFindBackwards, aResult);
-
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
+                      uint32_t aMode, bool aDontIterateFrames,
                       uint16_t* aResult) {
+  if (aMode == nsITypeAheadFind::FIND_PREVIOUS ||
+      aMode == nsITypeAheadFind::FIND_NEXT) {
+    if (mTypeAheadBuffer.IsEmpty()) {
+      *aResult = FIND_NOTFOUND;
+    } else {
+      FindItNow(aMode, aLinksOnly, false, aDontIterateFrames, aResult);
+    }
+
+    return NS_OK;
+  }
+
+  // Find again ignores error return values, so do so here as well.
+  nsresult rv = FindInternal(aMode, aSearchString, aLinksOnly,
+                             aDontIterateFrames, aResult);
+  return (aMode == nsITypeAheadFind::FIND_INITIAL) ? rv : NS_OK;
+}
+
+nsresult nsTypeAheadFind::FindInternal(uint32_t aMode,
+                                       const nsAString& aSearchString,
+                                       bool aLinksOnly, bool aDontIterateFrames,
+                                       uint16_t* aResult) {
   *aResult = FIND_NOTFOUND;
 
   RefPtr<PresShell> presShell = GetPresShell();
@@ -996,20 +1021,23 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
   }
 
   bool atEnd = false;
-  if (mTypeAheadBuffer.Length()) {
-    const nsAString& oldStr =
-        Substring(mTypeAheadBuffer, 0, mTypeAheadBuffer.Length());
-    const nsAString& newStr =
-        Substring(aSearchString, 0, mTypeAheadBuffer.Length());
-    if (oldStr.Equals(newStr)) atEnd = true;
+  bool isInitial = aMode == nsITypeAheadFind::FIND_INITIAL;
+  if (isInitial) {
+    if (mTypeAheadBuffer.Length()) {
+      const nsAString& oldStr =
+          Substring(mTypeAheadBuffer, 0, mTypeAheadBuffer.Length());
+      const nsAString& newStr =
+          Substring(aSearchString, 0, mTypeAheadBuffer.Length());
+      if (oldStr.Equals(newStr)) atEnd = true;
 
-    const nsAString& newStr2 =
-        Substring(aSearchString, 0, aSearchString.Length());
-    const nsAString& oldStr2 =
-        Substring(mTypeAheadBuffer, 0, aSearchString.Length());
-    if (oldStr2.Equals(newStr2)) atEnd = true;
+      const nsAString& newStr2 =
+          Substring(aSearchString, 0, aSearchString.Length());
+      const nsAString& oldStr2 =
+          Substring(mTypeAheadBuffer, 0, aSearchString.Length());
+      if (oldStr2.Equals(newStr2)) atEnd = true;
 
-    if (!atEnd) mStartFindRange = nullptr;
+      if (!atEnd) mStartFindRange = nullptr;
+    }
   }
 
   int32_t bufferLength = mTypeAheadBuffer.Length();
@@ -1019,7 +1047,7 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
   bool isFirstVisiblePreferred = false;
 
   // --------- Initialize find if 1st char ----------
-  if (bufferLength == 0) {
+  if (bufferLength == 0 && isInitial) {
     // If you can see the selection (not collapsed or thru caret browsing),
     // or if already focused on a page element, start there.
     // Otherwise we're going to start at the first visible element
@@ -1060,7 +1088,8 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
   // ----------- Find the text! ---------------------
   // Beware! This may flush notifications via synchronous
   // ScrollSelectionIntoView.
-  nsresult rv = FindItNow(aLinksOnly, isFirstVisiblePreferred, false, aResult);
+  nsresult rv = FindItNow(aMode, aLinksOnly, isFirstVisiblePreferred,
+                          aDontIterateFrames, aResult);
 
   // ---------Handle success or failure ---------------
   if (NS_SUCCEEDED(rv)) {
@@ -1076,7 +1105,7 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
         }
       }
     }
-  } else {
+  } else if (isInitial) {
     // Error sound, except when whole word matching is ON.
     if (!mEntireWord && mTypeAheadBuffer.Length() > mLastFindLength)
       PlayNotFoundSound();
@@ -1123,28 +1152,108 @@ nsTypeAheadFind::GetFoundRange(nsRange** aFoundRange) {
 NS_IMETHODIMP
 nsTypeAheadFind::IsRangeVisible(nsRange* aRange, bool aMustBeInViewPort,
                                 bool* aResult) {
-  nsCOMPtr<nsINode> node = aRange->GetStartContainer();
-
-  Document* doc = node->OwnerDoc();
-  RefPtr<PresShell> presShell = doc->GetPresShell();
-  if (!presShell) {
-    return NS_ERROR_UNEXPECTED;
-  }
-  RefPtr<nsPresContext> presContext = presShell->GetPresContext();
   RefPtr<nsRange> ignored;
-  *aResult = IsRangeVisible(presShell, presContext, aRange, aMustBeInViewPort,
-                            false, getter_AddRefs(ignored), nullptr);
+  *aResult = IsRangeVisible(aRange, aMustBeInViewPort, false,
+                            getter_AddRefs(ignored), nullptr);
   return NS_OK;
 }
 
-bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
-                                     nsPresContext* aPresContext,
-                                     nsRange* aRange, bool aMustBeInViewPort,
+enum class RectVisibility {
+  Visible,
+  AboveViewport,
+  BelowViewport,
+  LeftOfViewport,
+  RightOfViewport,
+};
+
+/**
+ * Determine if a rectangle specified in the frame's coordinate system
+ * intersects "enough" with the viewport to be considered visible. This
+ * is not a strict test against the viewport -- it's a test against
+ * the intersection of the viewport and the frame's ancestor scrollable
+ * frames. If it doesn't intersect enough, return a value indicating
+ * which direction the frame's topmost ancestor scrollable frame would
+ * need to be scrolled to bring the frame into view.
+ * @param aFrame frame that aRect coordinates are specified relative to
+ * @param aRect rectangle in twips to test for visibility
+ * @param aMinTwips is the minimum distance in from the edge of the
+ *                  visible area that an object must be to be counted
+ *                  visible
+ * @return RectVisibility::Visible if the rect is visible
+ *         RectVisibility::AboveViewport
+ *         RectVisibility::BelowViewport
+ *         RectVisibility::LeftOfViewport
+ *         RectVisibility::RightOfViewport rectangle is outside the
+ *         topmost ancestor scrollable frame in the specified direction
+ */
+static RectVisibility GetRectVisibility(nsIFrame* aFrame, const nsRect& aRect,
+                                        nscoord aMinTwips) {
+  PresShell* ps = aFrame->PresShell();
+  nsIFrame* rootFrame = ps->GetRootFrame();
+  MOZ_DIAGNOSTIC_ASSERT(
+      rootFrame,
+      "How can someone have a frame for this presshell when there's no root?");
+  nsIScrollableFrame* sf = ps->GetRootScrollFrameAsScrollable();
+  nsRect scrollPortRect;
+  if (sf) {
+    scrollPortRect = sf->GetScrollPortRect();
+    nsIFrame* f = do_QueryFrame(sf);
+    scrollPortRect += f->GetOffsetTo(rootFrame);
+  } else {
+    scrollPortRect = nsRect(nsPoint(0, 0), rootFrame->GetSize());
+  }
+
+  // scrollPortRect has the viewport visible area relative to rootFrame.
+  nsRect visibleAreaRect(scrollPortRect);
+  // Find the intersection of this and the frame's ancestor scrollable
+  // frames. We walk the whole ancestor chain to find all the scrollable
+  // frames.
+  nsIScrollableFrame* scrollAncestorFrame =
+      nsLayoutUtils::GetNearestScrollableFrame(
+          aFrame, nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+  while (scrollAncestorFrame) {
+    nsRect scrollAncestorRect = scrollAncestorFrame->GetScrollPortRect();
+    nsIFrame* f = do_QueryFrame(scrollAncestorFrame);
+    scrollAncestorRect += f->GetOffsetTo(rootFrame);
+
+    visibleAreaRect = visibleAreaRect.Intersect(scrollAncestorRect);
+
+    // Continue up the chain.
+    scrollAncestorFrame = nsLayoutUtils::GetNearestScrollableFrame(
+        f->GetParent(), nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN);
+  }
+
+  // aRect is in the aFrame coordinate space, so bring it into rootFrame
+  // coordinate space.
+  nsRect r = aRect + aFrame->GetOffsetTo(rootFrame);
+  // If aRect is entirely visible then we don't need to ensure that
+  // at least aMinTwips of it is visible
+  if (visibleAreaRect.Contains(r)) {
+    return RectVisibility::Visible;
+  }
+
+  nsRect insetRect = visibleAreaRect;
+  insetRect.Deflate(aMinTwips, aMinTwips);
+  if (r.YMost() <= insetRect.y) {
+    return RectVisibility::AboveViewport;
+  }
+  if (r.y >= insetRect.YMost()) {
+    return RectVisibility::BelowViewport;
+  }
+  if (r.XMost() <= insetRect.x) {
+    return RectVisibility::LeftOfViewport;
+  }
+  if (r.x >= insetRect.XMost()) {
+    return RectVisibility::RightOfViewport;
+  }
+  return RectVisibility::Visible;
+}
+
+bool nsTypeAheadFind::IsRangeVisible(nsRange* aRange, bool aMustBeInViewPort,
                                      bool aGetTopVisibleLeaf,
                                      nsRange** aFirstVisibleRange,
                                      bool* aUsesIndependentSelection) {
-  NS_ASSERTION(aPresShell && aPresContext && aRange && aFirstVisibleRange,
-               "params are invalid");
+  NS_ASSERTION(aRange && aFirstVisibleRange, "params are invalid");
 
   // We need to know if the range start is visible.
   // Otherwise, return the first visible range start
@@ -1202,8 +1311,8 @@ bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
   RectVisibility rectVisibility = RectVisibility::AboveViewport;
 
   if (!aGetTopVisibleLeaf && !frame->GetRect().IsEmpty()) {
-    rectVisibility = aPresShell->GetRectVisibility(
-        frame, frame->GetRectRelativeToSelf(), minDistance);
+    rectVisibility =
+        GetRectVisibility(frame, frame->GetRectRelativeToSelf(), minDistance);
 
     if (rectVisibility == RectVisibility::Visible) {
       // The primary frame of the range is visible, but we don't yet know if
@@ -1228,7 +1337,7 @@ bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
             nsLayoutUtils::TransformRect(containerFrame, frame, r);
         if (res == nsLayoutUtils::TransformResult::TRANSFORM_SUCCEEDED) {
           RectVisibility rangeRectVisibility =
-              aPresShell->GetRectVisibility(frame, r, minDistance);
+              GetRectVisibility(frame, r, minDistance);
 
           if (rangeRectVisibility == RectVisibility::Visible) {
             atLeastOneRangeRectVisible = true;
@@ -1240,7 +1349,7 @@ bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
       if (atLeastOneRangeRectVisible) {
         // This is an early exit case, where we return true if and only if
         // the range is actually rendered.
-        return IsRangeRendered(aPresShell, aPresContext, aRange);
+        return IsRangeRendered(aRange);
       }
     }
   }
@@ -1259,8 +1368,8 @@ bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
   nsCOMPtr<nsIFrameEnumerator> frameTraversal;
   nsCOMPtr<nsIFrameTraversal> trav(do_CreateInstance(kFrameTraversalCID));
   if (trav)
-    trav->NewFrameTraversal(getter_AddRefs(frameTraversal), aPresContext, frame,
-                            eLeaf,
+    trav->NewFrameTraversal(getter_AddRefs(frameTraversal),
+                            frame->PresContext(), frame, eLeaf,
                             false,  // aVisual
                             false,  // aLockInScrollView
                             false,  // aFollowOOFs
@@ -1289,7 +1398,7 @@ bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
       continue;
     }
 
-    rectVisibility = aPresShell->GetRectVisibility(
+    rectVisibility = GetRectVisibility(
         frame, nsRect(nsPoint(0, 0), frame->GetSize()), minDistance);
   }
 
@@ -1310,23 +1419,12 @@ bool nsTypeAheadFind::IsRangeVisible(PresShell* aPresShell,
 
 NS_IMETHODIMP
 nsTypeAheadFind::IsRangeRendered(nsRange* aRange, bool* aResult) {
-  nsINode* node = aRange->GetStartContainer();
-
-  RefPtr<PresShell> presShell = node->OwnerDoc()->GetPresShell();
-  if (!presShell) {
-    return NS_ERROR_UNEXPECTED;
-  }
-  RefPtr<nsPresContext> presContext = presShell->GetPresContext();
-  *aResult = IsRangeRendered(presShell, presContext, aRange);
+  *aResult = IsRangeRendered(aRange);
   return NS_OK;
 }
 
-bool nsTypeAheadFind::IsRangeRendered(PresShell* aPresShell,
-                                      nsPresContext* aPresContext,
-                                      nsRange* aRange) {
+bool nsTypeAheadFind::IsRangeRendered(nsRange* aRange) {
   using FrameForPointOption = nsLayoutUtils::FrameForPointOption;
-  NS_ASSERTION(aPresShell && aPresContext && aRange, "params are invalid");
-
   nsCOMPtr<nsIContent> content = do_QueryInterface(aRange->GetCommonAncestor());
   if (!content) {
     return false;
@@ -1344,9 +1442,13 @@ bool nsTypeAheadFind::IsRangeRendered(PresShell* aPresShell,
   // Having a primary frame doesn't mean that the range is visible inside the
   // viewport. Do a hit-test to determine that quickly and properly.
   AutoTArray<nsIFrame*, 8> frames;
-  nsIFrame* rootFrame = aPresShell->GetRootFrame();
+  nsIFrame* rootFrame = frame->PresShell()->GetRootFrame();
   RefPtr<nsRange> range = static_cast<nsRange*>(aRange);
-  RefPtr<mozilla::dom::DOMRectList> rects = range->GetClientRects(true, true);
+
+  // NOTE(emilio): This used to flush layout, _after_ checking style above.
+  // Instead, don't flush.
+  RefPtr<mozilla::dom::DOMRectList> rects =
+      range->GetClientRects(true, /* aFlushLayout = */ false);
   for (uint32_t i = 0; i < rects->Length(); ++i) {
     RefPtr<mozilla::dom::DOMRect> rect = rects->Item(i);
     nsRect r(nsPresContext::CSSPixelsToAppUnits((float)rect->X()),

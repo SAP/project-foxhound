@@ -46,7 +46,7 @@
 #include "mozilla/Unused.h"
 #include "nsFrameLoader.h"
 #include "BrowserParent.h"
-
+#include "nsIMutableArray.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include <algorithm>
@@ -162,6 +162,18 @@ nsBaseDragService::SetTriggeringPrincipal(nsIPrincipal* aPrincipal) {
   return NS_OK;
 }
 
+NS_IMETHODIMP
+nsBaseDragService::GetCsp(nsIContentSecurityPolicy** aCsp) {
+  NS_IF_ADDREF(*aCsp = mCsp);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsBaseDragService::SetCsp(nsIContentSecurityPolicy* aCsp) {
+  mCsp = aCsp;
+  return NS_OK;
+}
+
 //-------------------------------------------------------------------------
 
 NS_IMETHODIMP
@@ -200,8 +212,8 @@ void nsBaseDragService::SetDataTransfer(DataTransfer* aDataTransfer) {
 //-------------------------------------------------------------------------
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSession(
-    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIArray* aTransferableArray,
-    uint32_t aActionType,
+    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsIArray* aTransferableArray, uint32_t aActionType,
     nsContentPolicyType aContentPolicyType = nsIContentPolicy::TYPE_OTHER) {
   AUTO_PROFILER_LABEL("nsBaseDragService::InvokeDragSession", OTHER);
 
@@ -228,6 +240,7 @@ nsBaseDragService::InvokeDragSession(
   // stash the document of the dom node
   mSourceDocument = aDOMNode->OwnerDoc();
   mTriggeringPrincipal = aPrincipal;
+  mCsp = aCsp;
   mSourceNode = aDOMNode;
   mContentPolicyType = aContentPolicyType;
   mEndDragPoint = LayoutDeviceIntPoint(0, 0);
@@ -240,12 +253,28 @@ nsBaseDragService::InvokeDragSession(
 
   uint32_t length = 0;
   mozilla::Unused << aTransferableArray->GetLength(&length);
-  for (uint32_t i = 0; i < length; ++i) {
-    nsCOMPtr<nsITransferable> trans = do_QueryElementAt(aTransferableArray, i);
-    if (trans) {
-      // Set the requestingPrincipal on the transferable.
+  if (!length) {
+    nsCOMPtr<nsIMutableArray> mutableArray =
+        do_QueryInterface(aTransferableArray);
+    if (mutableArray) {
+      // In order to be able trigger dnd, we need to have some transferable
+      // object.
+      nsCOMPtr<nsITransferable> trans =
+          do_CreateInstance("@mozilla.org/widget/transferable;1");
+      trans->Init(nullptr);
       trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
       trans->SetContentPolicyType(mContentPolicyType);
+      mutableArray->AppendElement(trans);
+    }
+  } else {
+    for (uint32_t i = 0; i < length; ++i) {
+      nsCOMPtr<nsITransferable> trans =
+          do_QueryElementAt(aTransferableArray, i);
+      if (trans) {
+        // Set the requestingPrincipal on the transferable.
+        trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
+        trans->SetContentPolicyType(mContentPolicyType);
+      }
     }
   }
 
@@ -263,9 +292,10 @@ nsBaseDragService::InvokeDragSession(
 
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSessionWithImage(
-    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIArray* aTransferableArray,
-    uint32_t aActionType, nsINode* aImage, int32_t aImageX, int32_t aImageY,
-    DragEvent* aDragEvent, DataTransfer* aDataTransfer) {
+    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsIArray* aTransferableArray, uint32_t aActionType, nsINode* aImage,
+    int32_t aImageX, int32_t aImageY, DragEvent* aDragEvent,
+    DataTransfer* aDataTransfer) {
   NS_ENSURE_TRUE(aDragEvent, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(aDataTransfer, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
@@ -302,17 +332,18 @@ nsBaseDragService::InvokeDragSessionWithImage(
 #endif
 
   nsresult rv =
-      InvokeDragSession(aDOMNode, aPrincipal, aTransferableArray, aActionType,
-                        nsIContentPolicy::TYPE_INTERNAL_IMAGE);
+      InvokeDragSession(aDOMNode, aPrincipal, aCsp, aTransferableArray,
+                        aActionType, nsIContentPolicy::TYPE_INTERNAL_IMAGE);
   mRegion = Nothing();
   return rv;
 }
 
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSessionWithRemoteImage(
-    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIArray* aTransferableArray,
-    uint32_t aActionType, RemoteDragStartData* aDragStartData,
-    DragEvent* aDragEvent, DataTransfer* aDataTransfer) {
+    nsINode* aDOMNode, nsIPrincipal* aPrincipal, nsIContentSecurityPolicy* aCsp,
+    nsIArray* aTransferableArray, uint32_t aActionType,
+    RemoteDragStartData* aDragStartData, DragEvent* aDragEvent,
+    DataTransfer* aDataTransfer) {
   NS_ENSURE_TRUE(aDragEvent, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(aDataTransfer, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
@@ -330,19 +361,17 @@ nsBaseDragService::InvokeDragSessionWithRemoteImage(
   mInputSource = aDragEvent->MozInputSource();
 
   nsresult rv =
-      InvokeDragSession(aDOMNode, aPrincipal, aTransferableArray, aActionType,
-                        nsIContentPolicy::TYPE_INTERNAL_IMAGE);
+      InvokeDragSession(aDOMNode, aPrincipal, aCsp, aTransferableArray,
+                        aActionType, nsIContentPolicy::TYPE_INTERNAL_IMAGE);
   mRegion = Nothing();
   return rv;
 }
 
 NS_IMETHODIMP
-nsBaseDragService::InvokeDragSessionWithSelection(Selection* aSelection,
-                                                  nsIPrincipal* aPrincipal,
-                                                  nsIArray* aTransferableArray,
-                                                  uint32_t aActionType,
-                                                  DragEvent* aDragEvent,
-                                                  DataTransfer* aDataTransfer) {
+nsBaseDragService::InvokeDragSessionWithSelection(
+    Selection* aSelection, nsIPrincipal* aPrincipal,
+    nsIContentSecurityPolicy* aCsp, nsIArray* aTransferableArray,
+    uint32_t aActionType, DragEvent* aDragEvent, DataTransfer* aDataTransfer) {
   NS_ENSURE_TRUE(aSelection, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(aDragEvent, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
@@ -365,8 +394,8 @@ nsBaseDragService::InvokeDragSessionWithSelection(Selection* aSelection,
   // endpoints of the selection
   nsCOMPtr<nsINode> node = aSelection->GetFocusNode();
 
-  return InvokeDragSession(node, aPrincipal, aTransferableArray, aActionType,
-                           nsIContentPolicy::TYPE_OTHER);
+  return InvokeDragSession(node, aPrincipal, aCsp, aTransferableArray,
+                           aActionType, nsIContentPolicy::TYPE_OTHER);
 }
 
 //-------------------------------------------------------------------------
@@ -462,6 +491,7 @@ nsBaseDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
   mSourceDocument = nullptr;
   mSourceNode = nullptr;
   mTriggeringPrincipal = nullptr;
+  mCsp = nullptr;
   mSelection = nullptr;
   mDataTransfer = nullptr;
   mHasImage = false;
@@ -845,4 +875,13 @@ bool nsBaseDragService::MaybeAddChildProcess(
     return true;
   }
   return false;
+}
+
+bool nsBaseDragService::RemoveAllChildProcesses() {
+  for (uint32_t c = 0; c < mChildProcesses.Length(); c++) {
+    mozilla::Unused << mChildProcesses[c]->SendEndDragSession(
+        true, false, LayoutDeviceIntPoint(), 0);
+  }
+  mChildProcesses.Clear();
+  return true;
 }

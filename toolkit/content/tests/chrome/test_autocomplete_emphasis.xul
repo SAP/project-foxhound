@@ -3,15 +3,16 @@
 <?xml-stylesheet href="chrome://mochikit/content/tests/SimpleTest/test.css" type="text/css"?>
 
 <window title="Autocomplete emphasis test"
-        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
+        xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml">
 
   <script src="chrome://mochikit/content/tests/SimpleTest/SimpleTest.js"/>
   <script src="chrome://mochikit/content/tests/SimpleTest/EventUtils.js"/>
 
-<textbox id="richautocomplete" type="autocomplete"
-         autocompletesearch="simple"
-         onsearchcomplete="checkSearchCompleted();"
-         autocompletepopup="richpopup"/>
+<html:input id="richautocomplete"
+            is="autocomplete-input"
+            autocompletesearch="simple"
+            autocompletepopup="richpopup"/>
 <panel is="autocomplete-richlistbox-popup"
        id="richpopup"
        type="autocomplete-richlistbox"
@@ -79,6 +80,16 @@ var componentManager = Components.manager
                                  .QueryInterface(Ci.nsIComponentRegistrar);
 componentManager.registerFactory(autoCompleteSimpleID, "Test Simple Autocomplete",
                                  autoCompleteSimpleName, autoCompleteSimple);
+
+var element = document.getElementById("richautocomplete");
+
+// Create stub to intercept `onSearchComplete` event.
+element.onSearchComplete = function(original) {
+  return function() {
+    original.apply(this, arguments);
+    checkSearchCompleted();
+  };
+}(element.onSearchComplete);
 
 SimpleTest.waitForExplicitFinish();
 setTimeout(nextTest, 0);

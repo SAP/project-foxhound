@@ -28,6 +28,7 @@ const MOZ_COMPATIBILITY_NIGHTLY = ![
   "esr",
 ].includes(AppConstants.MOZ_UPDATE_CHANNEL);
 
+const PREF_AMO_ABUSEREPORT = "extensions.abuseReport.amWebAPI.enabled";
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_EM_UPDATE_ENABLED = "extensions.update.enabled";
 const PREF_EM_LAST_APP_VERSION = "extensions.lastAppVersion";
@@ -73,6 +74,7 @@ XPCOMUtils.defineLazyGlobalGetters(this, ["Element"]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
+  AbuseReporter: "resource://gre/modules/AbuseReporter.jsm",
   Extension: "resource://gre/modules/Extension.jsm",
 });
 
@@ -87,7 +89,7 @@ XPCOMUtils.defineLazyPreferenceGetter(
 // since it needs to be able to track things like new frameLoader globals that
 // are created before other framework code has been initialized.
 Services.ppmm.loadProcessScript(
-  "data:,ChromeUtils.import('resource://gre/modules/ExtensionProcessScript.jsm')",
+  "resource://gre/modules/extensionProcessScriptLoader.js",
   true
 );
 
@@ -987,7 +989,7 @@ var AddonManagerInternal = {
       this.types[type].providers = this.types[type].providers.filter(
         p => p != aProvider
       );
-      if (this.types[type].providers.length == 0) {
+      if (!this.types[type].providers.length) {
         let oldType = this.types[type].type;
         delete this.types[type];
 
@@ -1366,7 +1368,7 @@ var AddonManagerInternal = {
     let difference = Extension.comparePermissions(oldPerms, newPerms);
 
     // If there are no new permissions, just go ahead with the update
-    if (difference.origins.length == 0 && difference.permissions.length == 0) {
+    if (!difference.origins.length && !difference.permissions.length) {
       return Promise.resolve();
     }
 
@@ -2300,14 +2302,19 @@ var AddonManagerInternal = {
     }
 
     try {
-      if (topBrowser.ownerGlobal.fullScreen) {
-        // Addon installation and the resulting notifications should be blocked in fullscreen for security and usability reasons.
-        // Installation prompts in fullscreen can trick the user into installing unwanted addons.
-        // In fullscreen the notification box does not have a clear visual association with its parent anymore.
+      // Use fullscreenElement to check for DOM fullscreen, while still allowing
+      // macOS fullscreen, which still has a browser chrome.
+      if (topBrowser.ownerDocument.fullscreenElement) {
+        // Addon installation and the resulting notifications should be
+        // blocked in DOM fullscreen for security and usability reasons.
+        // Installation prompts in fullscreen can trick the user into
+        // installing unwanted addons.
+        // In fullscreen the notification box does not have a clear
+        // visual association with its parent anymore.
         aInstall.cancel();
 
         this.installNotifyObservers(
-          "addon-install-blocked-silent",
+          "addon-install-fullscreen-blocked",
           topBrowser,
           aInstallingPrincipal.URI,
           aInstall
@@ -2326,7 +2333,18 @@ var AddonManagerInternal = {
       } else if (
         aInstallingPrincipal.isNullPrincipal ||
         !aBrowser.contentPrincipal ||
-        !aInstallingPrincipal.subsumes(aBrowser.contentPrincipal) ||
+        // When we attempt to handle an XPI load immediately after a
+        // process switch, the DocShell it's being loaded into will have
+        // a null principal, since it won't have been initialized yet.
+        // Allowing installs in this case is relatively safe, since
+        // there isn't much to gain by spoofing an install request from
+        // a null principal in any case. This exception can be removed
+        // once content handlers are triggered by DocumentChannel in the
+        // parent process.
+        !(
+          aBrowser.contentPrincipal.isNullPrincipal ||
+          aInstallingPrincipal.subsumes(aBrowser.contentPrincipal)
+        ) ||
         !this.isInstallAllowedByPolicy(
           aInstallingPrincipal,
           aInstall,
@@ -3454,6 +3472,53 @@ var AddonManagerInternal = {
           this.forgetInstall(id);
         }
       }
+    },
+
+    async addonReportAbuse(target, id) {
+      if (!Services.prefs.getBoolPref(PREF_AMO_ABUSEREPORT, false)) {
+        return Promise.reject({
+          message: "amWebAPI reportAbuse not supported",
+        });
+      }
+
+      if (AbuseReporter.getOpenDialog()) {
+        return Promise.reject({
+          message: "An abuse report is already in progress",
+        });
+      }
+
+      const dialog = await AbuseReporter.openDialog(id, "amo", target).catch(
+        err => {
+          Cu.reportError(err);
+          return Promise.reject({
+            message: "Error creating abuse report",
+          });
+        }
+      );
+
+      return dialog.promiseReport.then(
+        async report => {
+          if (!report) {
+            return false;
+          }
+
+          await report.submit().catch(err => {
+            Cu.reportError(err);
+            return Promise.reject({
+              message: "Error submitting abuse report",
+            });
+          });
+
+          return true;
+        },
+        err => {
+          Cu.reportError(err);
+          dialog.close();
+          return Promise.reject({
+            message: "Error creating abuse report",
+          });
+        }
+      );
     },
   },
 };
@@ -4614,7 +4679,7 @@ AMTelemetry = {
 
     extra = { ...extraVars, ...extra };
 
-    let hasExtraVars = Object.keys(extra).length > 0;
+    let hasExtraVars = !!Object.keys(extra).length;
     extra = this.formatExtraVars(extra);
 
     this.recordEvent({

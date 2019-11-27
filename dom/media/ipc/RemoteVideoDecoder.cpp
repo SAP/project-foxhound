@@ -14,16 +14,17 @@
 #ifdef XP_WIN
 #  include "WMFDecoderModule.h"
 #endif
+#include "GPUVideoImage.h"
 #include "ImageContainer.h"  // for PlanarYCbCrData and BufferRecycleBin
-#include "mozilla/layers/VideoBridgeChild.h"
-#include "mozilla/layers/ImageClient.h"
+#include "MediaInfo.h"
 #include "PDMFactory.h"
 #include "RemoteDecoderManagerChild.h"
 #include "RemoteDecoderManagerParent.h"
-#include "GPUVideoImage.h"
-#include "MediaInfo.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Telemetry.h"
+#include "mozilla/layers/ImageClient.h"
 #include "mozilla/layers/TextureClient.h"
+#include "mozilla/layers/VideoBridgeChild.h"
 
 namespace mozilla {
 
@@ -127,7 +128,7 @@ RefPtr<mozilla::layers::Image> RemoteVideoDecoderChild::DeserializeImage(
       delete[] reinterpret_cast<uint8_t*>(memOrShmem.get_uintptr_t());
       break;
     case MemoryOrShmem::TShmem:
-      DeallocShmem(memOrShmem.get_Shmem());
+      // Memory buffer will be recycled by the parent automatically.
       break;
     default:
       MOZ_ASSERT(false, "Unknown MemoryOrShmem type");
@@ -140,38 +141,39 @@ RefPtr<mozilla::layers::Image> RemoteVideoDecoderChild::DeserializeImage(
   return image;
 }
 
-mozilla::ipc::IPCResult RemoteVideoDecoderChild::RecvOutput(
+MediaResult RemoteVideoDecoderChild::ProcessOutput(
     const DecodedOutputIPDL& aDecodedData) {
   AssertOnManagerThread();
-  MOZ_ASSERT(aDecodedData.type() == DecodedOutputIPDL::TRemoteVideoDataIPDL);
+  MOZ_ASSERT(aDecodedData.type() ==
+             DecodedOutputIPDL::TArrayOfRemoteVideoDataIPDL);
 
-  const RemoteVideoDataIPDL& aData = aDecodedData.get_RemoteVideoDataIPDL();
+  const nsTArray<RemoteVideoDataIPDL>& arrayData =
+      aDecodedData.get_ArrayOfRemoteVideoDataIPDL();
 
-  if (aData.sd().type() == SurfaceDescriptor::TSurfaceDescriptorBuffer) {
-    RefPtr<Image> image = DeserializeImage(
-        aData.sd().get_SurfaceDescriptorBuffer(), aData.frameSize());
-
-    RefPtr<VideoData> video = VideoData::CreateFromImage(
-        aData.display(), aData.base().offset(), aData.base().time(),
-        aData.base().duration(), image, aData.base().keyframe(),
-        aData.base().timecode());
-
-    mDecodedData.AppendElement(std::move(video));
-  } else {
-    // The Image here creates a TextureData object that takes ownership
-    // of the SurfaceDescriptor, and is responsible for making sure that
-    // it gets deallocated.
-    RefPtr<Image> image =
-        new GPUVideoImage(GetManager(), aData.sd(), aData.frameSize());
+  for (auto&& data : arrayData) {
+    RefPtr<Image> image;
+    if (data.sd().type() == SurfaceDescriptor::TSurfaceDescriptorBuffer) {
+      image = DeserializeImage(data.sd().get_SurfaceDescriptorBuffer(),
+                               data.frameSize());
+    } else {
+      // The Image here creates a TextureData object that takes ownership
+      // of the SurfaceDescriptor, and is responsible for making sure that
+      // it gets deallocated.
+      image = new GPUVideoImage(GetManager(), data.sd(), data.frameSize());
+    }
 
     RefPtr<VideoData> video = VideoData::CreateFromImage(
-        aData.display(), aData.base().offset(), aData.base().time(),
-        aData.base().duration(), image, aData.base().keyframe(),
-        aData.base().timecode());
+        data.display(), data.base().offset(), data.base().time(),
+        data.base().duration(), image, data.base().keyframe(),
+        data.base().timecode());
 
+    if (!video) {
+      // OOM
+      return MediaResult(NS_ERROR_OUT_OF_MEMORY, __func__);
+    }
     mDecodedData.AppendElement(std::move(video));
   }
-  return IPC_OK();
+  return NS_OK;
 }
 
 MediaResult RemoteVideoDecoderChild::InitIPDL(
@@ -197,45 +199,17 @@ MediaResult RemoteVideoDecoderChild::InitIPDL(
   mIPDLSelfRef = this;
   bool success = false;
   nsCString errorDescription;
-  nsCString blacklistedD3D11Driver;
-  nsCString blacklistedD3D9Driver;
   VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
-  if (manager->SendPRemoteDecoderConstructor(
-          this, decoderInfo, aOptions, ToMaybe(aIdentifier), &success,
-          &blacklistedD3D11Driver, &blacklistedD3D9Driver, &errorDescription)) {
-    mCanSend = true;
-  }
+  Unused << manager->SendPRemoteDecoderConstructor(this, decoderInfo, aOptions,
+                                                   ToMaybe(aIdentifier),
+                                                   &success, &errorDescription);
 
   return success ? MediaResult(NS_OK)
                  : MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, errorDescription);
 }
 
-#ifdef XP_WIN
-static void ReportUnblacklistingTelemetry(
-    bool isGPUProcessCrashed, const nsCString& aD3D11BlacklistedDriver,
-    const nsCString& aD3D9BlacklistedDriver) {
-  const nsCString& blacklistedDLL = !aD3D11BlacklistedDriver.IsEmpty()
-                                        ? aD3D11BlacklistedDriver
-                                        : aD3D9BlacklistedDriver;
-
-  if (!blacklistedDLL.IsEmpty()) {
-    Telemetry::Accumulate(
-        Telemetry::VIDEO_UNBLACKINGLISTING_DXVA_DRIVER_RUNTIME_STATUS,
-        blacklistedDLL, isGPUProcessCrashed ? 1 : 0);
-  }
-}
-#endif  // XP_WIN
-
 GpuRemoteVideoDecoderChild::GpuRemoteVideoDecoderChild()
     : RemoteVideoDecoderChild(true) {}
-
-void GpuRemoteVideoDecoderChild::RecordShutdownTelemetry(
-    bool aAbnormalShutdown) {
-#ifdef XP_WIN
-  ReportUnblacklistingTelemetry(aAbnormalShutdown, mBlacklistedD3D11Driver,
-                                mBlacklistedD3D9Driver);
-#endif  // XP_WIN
-}
 
 MediaResult GpuRemoteVideoDecoderChild::InitIPDL(
     const VideoInfo& aVideoInfo, float aFramerate,
@@ -266,12 +240,9 @@ MediaResult GpuRemoteVideoDecoderChild::InitIPDL(
   bool success = false;
   nsCString errorDescription;
   VideoDecoderInfoIPDL decoderInfo(aVideoInfo, aFramerate);
-  if (manager->SendPRemoteDecoderConstructor(
-          this, decoderInfo, aOptions, Some(aIdentifier), &success,
-          &mBlacklistedD3D11Driver, &mBlacklistedD3D9Driver,
-          &errorDescription)) {
-    mCanSend = true;
-  }
+  Unused << manager->SendPRemoteDecoderConstructor(this, decoderInfo, aOptions,
+                                                   Some(aIdentifier), &success,
+                                                   &errorDescription);
 
   return success ? MediaResult(NS_OK)
                  : MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, errorDescription);
@@ -339,13 +310,16 @@ RemoteVideoDecoderParent::RemoteVideoDecoderParent(
 }
 
 MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
-    const MediaDataDecoder::DecodedData& aData) {
+    const MediaDataDecoder::DecodedData& aData,
+    DecodedOutputIPDL& aDecodedData) {
   MOZ_ASSERT(OnManagerThread());
 
   // If the video decoder bridge has shut down, stop.
   if (mKnowsCompositor && !mKnowsCompositor->GetTextureForwarder()) {
     return NS_OK;
   }
+
+  nsTArray<RemoteVideoDataIPDL> array;
 
   for (const auto& data : aData) {
     MOZ_ASSERT(data->mType == MediaData::Type::VIDEO_DATA,
@@ -381,20 +355,14 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
           static_cast<PlanarYCbCrImage*>(video->mImage.get());
 
       SurfaceDescriptorBuffer sdBuffer;
-      Shmem buffer;
-      if (!AllocShmem(image->GetDataSize(), Shmem::SharedMemory::TYPE_BASIC,
-                      &buffer)) {
+      ShmemBuffer buffer = AllocateBuffer(image->GetDataSize());
+      if (!buffer.Valid()) {
         return MediaResult(NS_ERROR_OUT_OF_MEMORY,
                            "AllocShmem failed in "
                            "RemoteVideoDecoderParent::ProcessDecodedData");
       }
-      if (image->GetDataSize() > buffer.Size<uint8_t>()) {
-        return MediaResult(NS_ERROR_OUT_OF_MEMORY,
-                           "AllocShmem returned less than requested in "
-                           "RemoteVideoDecoderParent::ProcessDecodedData");
-      }
 
-      sdBuffer.data() = std::move(buffer);
+      sdBuffer.data() = std::move(buffer.Get());
       image->BuildSurfaceDescriptorBuffer(sdBuffer);
 
       sd = sdBuffer;
@@ -405,8 +373,11 @@ MediaResult RemoteVideoDecoderParent::ProcessDecodedData(
         MediaDataIPDL(data->mOffset, data->mTime, data->mTimecode,
                       data->mDuration, data->mKeyframe),
         video->mDisplay, size, sd, video->mFrameID);
-    Unused << SendOutput(output);
+
+    array.AppendElement(output);
   }
+
+  aDecodedData = std::move(array);
 
   return NS_OK;
 }

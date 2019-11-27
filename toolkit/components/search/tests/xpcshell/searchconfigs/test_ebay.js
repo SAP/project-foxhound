@@ -24,6 +24,7 @@ const test = new SearchConfigTest({
             "ast",
             "br",
             "ca",
+            "ca-valencia",
             "cy",
             "de",
             "dsb",
@@ -63,6 +64,7 @@ const test = new SearchConfigTest({
       // Note: the order here is important. A region/locale match higher up in the
       // list will override a region/locale match lower down.
       domain: "befr.ebay.be",
+      telemetryId: "ebay-be",
       included: [
         {
           regions: ["be"],
@@ -73,6 +75,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.at",
+      telemetryId: "ebay-at",
       included: [
         {
           regions: ["at"],
@@ -83,6 +86,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.ca",
+      telemetryId: "ebay-ca",
       included: [
         {
           locales: { matches: ["en-CA"] },
@@ -96,6 +100,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.ch",
+      telemetryId: "ebay-ch",
       included: [
         {
           locales: { matches: ["rm"] },
@@ -109,6 +114,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.com",
+      telemetryId: "ebay",
       included: [
         {
           locales: { matches: ["en-US"] },
@@ -119,6 +125,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.com.au",
+      telemetryId: "ebay-au",
       included: [
         {
           regions: ["au"],
@@ -129,6 +136,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.ie",
+      telemetryId: "ebay-ie",
       included: [
         {
           locales: { matches: ["ga-IE", "ie"] },
@@ -142,6 +150,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.co.uk",
+      telemetryId: "ebay-uk",
       included: [
         {
           locales: { matches: ["cy", "en-GB", "gd"] },
@@ -152,6 +161,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.de",
+      telemetryId: "ebay-de",
       included: [
         {
           locales: { matches: ["de", "dsb", "hsb"] },
@@ -162,15 +172,19 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.es",
+      telemetryId: "ebay-es",
       included: [
         {
-          locales: { matches: ["an", "ast", "ca", "es-ES", "eu", "gl"] },
+          locales: {
+            matches: ["an", "ast", "ca", "ca-valencia", "es-ES", "eu", "gl"],
+          },
         },
       ],
       searchUrlEnd: "1185-53479-19255-0/1",
     },
     {
       domain: "ebay.fr",
+      telemetryId: "ebay-fr",
       included: [
         {
           locales: { matches: ["br", "fr", "wo"] },
@@ -181,6 +195,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.it",
+      telemetryId: "ebay-it",
       included: [
         {
           locales: { matches: ["it", "lij"] },
@@ -190,6 +205,7 @@ const test = new SearchConfigTest({
     },
     {
       domain: "ebay.nl",
+      telemetryId: "ebay-nl",
       included: [
         {
           locales: { matches: ["fy-NL", "nl"] },
@@ -207,5 +223,6 @@ add_task(async function setup() {
 });
 
 add_task(async function test_searchConfig_ebay() {
-  await test.run();
+  await test.run(false);
+  await test.run(true);
 });

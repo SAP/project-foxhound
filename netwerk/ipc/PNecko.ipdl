@@ -26,8 +26,9 @@ include protocol PParentToChildStream; //FIXME: bug #792908
 include protocol PStunAddrsRequest;
 include protocol PFileChannel;
 include protocol PClassifierDummyChannel;
-include protocol PWebrtcProxyChannel;
+include protocol PWebrtcTCPSocket;
 include protocol PSocketProcessBridge;
+include protocol PDocumentChannel;
 
 include IPCStream;
 include URIParams;
@@ -66,7 +67,8 @@ nested(upto inside_cpow) sync protocol PNecko
   manages PAltDataOutputStream;
   manages PStunAddrsRequest;
   manages PClassifierDummyChannel;
-  manages PWebrtcProxyChannel;
+  manages PWebrtcTCPSocket;
+  manages PDocumentChannel;
 
 parent:
   async __delete__();
@@ -85,6 +87,10 @@ parent:
 
   async PDNSRequest(nsCString hostName, OriginAttributes originAttributes,
                     uint32_t flags);
+
+  async PDocumentChannel(PBrowserOrId browser,
+                         SerializedLoadContext loadContext,
+                         DocumentChannelCreationArgs args);
 
   async PWebSocketEventListener(uint64_t aInnerWindowID);
 
@@ -114,6 +120,7 @@ parent:
   async PChannelDiverter(ChannelDiverterArgs channel);
 
   async PClassifierDummyChannel(nsIURI uri, nsIURI aTopWindowURI,
+                                nsIPrincipal contentBlockingAllowListPrincipal,
                                 nsresult aTopWindowURIResult,
                                 LoadInfoArgs? loadInfo);
 
@@ -134,7 +141,8 @@ parent:
 
   async PStunAddrsRequest();
 
-  async PWebrtcProxyChannel(TabId tabId);
+  /* tabId is only required for web-proxy support, which isn't always needed */
+  async PWebrtcTCPSocket(TabId? tabId);
 
   /**
    * WebExtension-specific remote resource loading

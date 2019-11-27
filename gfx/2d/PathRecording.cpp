@@ -15,8 +15,6 @@ namespace gfx {
   const _type params = *reinterpret_cast<const _type*>(nextByte); \
   nextByte += sizeof(_type);
 
-using namespace std;
-
 bool PathOps::StreamToSink(PathSink& aPathSink) const {
   if (mPathData.empty()) {
     return true;
@@ -185,9 +183,13 @@ void PathBuilderRecording::Arc(const Point& aOrigin, float aRadius,
 }
 
 already_AddRefed<Path> PathBuilderRecording::Finish() {
+  // We rely on mPathBuilder to track begin and current point, but that stops
+  // when we call Finish, so we need to store them first.
+  Point beginPoint = BeginPoint();
+  Point currentPoint = CurrentPoint();
   RefPtr<Path> path = mPathBuilder->Finish();
   return MakeAndAddRef<PathRecording>(path, std::move(mPathOps), mFillRule,
-                                      mCurrentPoint, mBeginPoint);
+                                      currentPoint, beginPoint);
 }
 
 PathRecording::~PathRecording() {

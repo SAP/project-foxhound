@@ -147,7 +147,7 @@ async function testtag_tree(
 
   tree.startEditing(1, ecolumn);
   var inputField = tree.inputField;
-  is(inputField.localName, "textbox", testid + "inputField");
+  is(inputField.localName, "input", testid + "inputField");
   inputField.value = "Changed Value";
   tree.stopEditing(true);
   is(
@@ -1312,7 +1312,7 @@ function testtag_tree_TreeView_rows(tree, testid, rowInfo, startRow) {
       return false;
     },
     isContainerEmpty(row) {
-      return row.children != null && row.children.rows.length == 0;
+      return row.children != null && !row.children.rows.length;
     },
     isSeparator(row) {
       return row.separator;

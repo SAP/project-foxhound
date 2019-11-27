@@ -22,12 +22,21 @@ XPCOMUtils.defineLazyModuleGetters(this, {
 
 const TELEMETRY_1ST_RESULT = "PLACES_AUTOCOMPLETE_1ST_RESULT_TIME_MS";
 const TELEMETRY_6_FIRST_RESULTS = "PLACES_AUTOCOMPLETE_6_FIRST_RESULTS_TIME_MS";
+const NOTIFICATIONS = {
+  QUERY_STARTED: "onQueryStarted",
+  QUERY_RESULTS: "onQueryResults",
+  QUERY_RESULT_REMOVED: "onQueryResultRemoved",
+  QUERY_CANCELLED: "onQueryCancelled",
+  QUERY_FINISHED: "onQueryFinished",
+  VIEW_OPEN: "onViewOpen",
+  VIEW_CLOSE: "onViewClose",
+};
 
 /**
  * The address bar controller handles queries from the address bar, obtains
  * results and returns them to the UI for display.
  *
- * Listeners may be added to listen for the results. They must support the
+ * Listeners may be added to listen for the results. They may support the
  * following methods which may be called when a query is run:
  *
  * - onQueryStarted(queryContext)
@@ -35,6 +44,8 @@ const TELEMETRY_6_FIRST_RESULTS = "PLACES_AUTOCOMPLETE_6_FIRST_RESULTS_TIME_MS";
  * - onQueryCancelled(queryContext)
  * - onQueryFinished(queryContext)
  * - onQueryResultRemoved(index)
+ * - onViewOpen()
+ * - onViewClose()
  */
 class UrlbarController {
   /**
@@ -67,6 +78,10 @@ class UrlbarController {
     this._userSelectionBehavior = "none";
 
     this.engagementEvent = new TelemetryEvent(options.eventTelemetryCategory);
+  }
+
+  get NOTIFICATIONS() {
+    return NOTIFICATIONS;
   }
 
   /**
@@ -113,7 +128,7 @@ class UrlbarController {
     // For proper functionality we must ensure this notification is fired
     // synchronously, as soon as startQuery is invoked, but after any
     // notifications related to the previous query.
-    this._notify("onQueryStarted", queryContext);
+    this.notify(NOTIFICATIONS.QUERY_STARTED, queryContext);
     await this.manager.startQuery(queryContext, this);
     // If the query has been cancelled, onQueryFinished was notified already.
     // Note this._lastQueryContextWrapper may have changed in the meanwhile.
@@ -124,7 +139,7 @@ class UrlbarController {
       contextWrapper.done = true;
       // TODO (Bug 1549936) this is necessary to avoid leaks in PB tests.
       this.manager.cancelQuery(queryContext);
-      this._notify("onQueryFinished", queryContext);
+      this.notify(NOTIFICATIONS.QUERY_FINISHED, queryContext);
     }
     return queryContext;
   }
@@ -145,8 +160,8 @@ class UrlbarController {
     TelemetryStopwatch.cancel(TELEMETRY_1ST_RESULT, queryContext);
     TelemetryStopwatch.cancel(TELEMETRY_6_FIRST_RESULTS, queryContext);
     this.manager.cancelQuery(queryContext);
-    this._notify("onQueryCancelled", queryContext);
-    this._notify("onQueryFinished", queryContext);
+    this.notify(NOTIFICATIONS.QUERY_CANCELLED, queryContext);
+    this.notify(NOTIFICATIONS.QUERY_FINISHED, queryContext);
   }
 
   /**
@@ -175,7 +190,7 @@ class UrlbarController {
       );
     }
 
-    this._notify("onQueryResults", queryContext);
+    this.notify(NOTIFICATIONS.QUERY_RESULTS, queryContext);
     // Update lastResultCount after notifying, so the view can use it.
     queryContext.lastResultCount = queryContext.results.length;
   }
@@ -200,17 +215,6 @@ class UrlbarController {
    */
   removeQueryListener(listener) {
     this._listeners.delete(listener);
-  }
-
-  /**
-   * When the containing context changes (for example when switching tabs),
-   * clear any caches that connects consecutive searches in the same context.
-   * For example it can be used to clear information used to improve autofill
-   * or save resourced on repeated searches.
-   */
-  viewContextChanged() {
-    this.cancelQuery();
-    this._notify("onViewContextChanged");
   }
 
   /**
@@ -243,7 +247,7 @@ class UrlbarController {
     if (
       end != start ||
       (isArrowUp && start > 0) ||
-      (isArrowDown && end < this.input.textValue.length)
+      (isArrowDown && end < this.input.value.length)
     ) {
       return true;
     }
@@ -282,7 +286,7 @@ class UrlbarController {
       let { queryContext } = this._lastQueryContextWrapper;
       let handled = this.view.oneOffSearchButtons.handleKeyPress(
         event,
-        this.view.visibleItemCount,
+        this.view.visibleElementCount,
         this.view.allowEmptySelection,
         queryContext.searchString
       );
@@ -294,7 +298,12 @@ class UrlbarController {
     switch (event.keyCode) {
       case KeyEvent.DOM_VK_ESCAPE:
         if (executeAction) {
-          this.input.handleRevert();
+          if (this.view.isOpen) {
+            this.view.close();
+          } else {
+            this.input.handleRevert();
+            this.input.endLayoutExtend(true);
+          }
         }
         event.preventDefault();
         break;
@@ -342,7 +351,7 @@ class UrlbarController {
           if (executeAction) {
             this.userSelectionBehavior = "arrow";
             this.input.startQuery({
-              searchString: this.input.textValue,
+              searchString: this.input.value,
               event,
             });
           }
@@ -384,7 +393,7 @@ class UrlbarController {
    */
   speculativeConnect(result, context, reason) {
     // Never speculative connect in private contexts.
-    if (!this.input || context.isPrivate || context.results.length == 0) {
+    if (!this.input || context.isPrivate || !context.results.length) {
       return;
     }
     let { url } = UrlbarUtils.getUrlFromResult(result);
@@ -455,7 +464,7 @@ class UrlbarController {
    *   The selected result.
    */
   recordSelectedResult(event, result) {
-    let resultIndex = result ? result.uiIndex : -1;
+    let resultIndex = result ? result.rowIndex : -1;
     let selectedResult = -1;
     if (resultIndex >= 0) {
       // Except for the history popup, the urlbar always has a selection.  The
@@ -473,6 +482,17 @@ class UrlbarController {
       return;
     }
 
+    // Do not modify existing telemetry types.  To add a new type:
+    //
+    // * Set telemetryType appropriately below.
+    // * Add the type to BrowserUsageTelemetry.URLBAR_SELECTED_RESULT_TYPES.
+    // * See n_values in Histograms.json for FX_URLBAR_SELECTED_RESULT_TYPE and
+    //   FX_URLBAR_SELECTED_RESULT_INDEX_BY_TYPE.  If your new type causes the
+    //   number of types to become larger than n_values, you'll need to replace
+    //   these histograms with new ones.  See "Changing a histogram" in the
+    //   telemetry docs for more.
+    // * Add a test named browser_UsageTelemetry_urlbar_newType.js to
+    //   browser/modules/test/browser.
     let telemetryType;
     switch (result.type) {
       case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
@@ -507,6 +527,9 @@ class UrlbarController {
       case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
         telemetryType = "remotetab";
         break;
+      case UrlbarUtils.RESULT_TYPE.TIP:
+        telemetryType = "tip";
+        break;
       default:
         Cu.reportError(`Unknown Result Type ${result.type}`);
         return;
@@ -515,8 +538,6 @@ class UrlbarController {
     Services.telemetry
       .getHistogramById("FX_URLBAR_SELECTED_RESULT_INDEX")
       .add(resultIndex);
-    // You can add values but don't change any of the existing values.
-    // Otherwise you'll break our data.
     if (telemetryType in URLBAR_SELECTED_RESULT_TYPES) {
       Services.telemetry
         .getHistogramById("FX_URLBAR_SELECTED_RESULT_TYPE")
@@ -559,7 +580,7 @@ class UrlbarController {
     }
 
     queryContext.results.splice(index, 1);
-    this._notify("onQueryResultRemoved", index);
+    this.notify(NOTIFICATIONS.QUERY_RESULT_REMOVED, index);
 
     PlacesUtils.history
       .remove(selectedResult.payload.url)
@@ -568,12 +589,12 @@ class UrlbarController {
   }
 
   /**
-   * Internal function to notify listeners of results.
+   * Notifies listeners of results.
    *
    * @param {string} name Name of the notification.
    * @param {object} params Parameters to pass with the notification.
    */
-  _notify(name, ...params) {
+  notify(name, ...params) {
     for (let listener of this._listeners) {
       // Can't use "in" because some tests proxify these.
       if (typeof listener[name] != "undefined") {
@@ -762,25 +783,29 @@ class TelemetryEvent {
   }
 
   /**
-   * Extracts a type from a result, to be used in the telemetry event.
-   * @param {UrlbarResult} result The result to analyze.
+   * Extracts a type from an element, to be used in the telemetry event.
+   * @param {Element} element The element to analyze.
    * @returns {string} a string type for the telemetry event.
    */
-  typeFromResult(result) {
-    if (result) {
-      switch (result.type) {
+  typeFromElement(element) {
+    if (!element) {
+      return "none";
+    }
+    let row = element.closest(".urlbarView-row");
+    if (row.result) {
+      switch (row.result.type) {
         case UrlbarUtils.RESULT_TYPE.TAB_SWITCH:
           return "switchtab";
         case UrlbarUtils.RESULT_TYPE.SEARCH:
-          return result.payload.suggestion ? "searchsuggestion" : "search";
+          return row.result.payload.suggestion ? "searchsuggestion" : "search";
         case UrlbarUtils.RESULT_TYPE.URL:
-          if (result.autofill) {
+          if (row.result.autofill) {
             return "autofill";
           }
-          if (result.heuristic) {
+          if (row.result.heuristic) {
             return "visit";
           }
-          return result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
+          return row.result.source == UrlbarUtils.RESULT_SOURCE.BOOKMARKS
             ? "bookmark"
             : "history";
         case UrlbarUtils.RESULT_TYPE.KEYWORD:
@@ -789,6 +814,11 @@ class TelemetryEvent {
           return "extension";
         case UrlbarUtils.RESULT_TYPE.REMOTE_TAB:
           return "remotetab";
+        case UrlbarUtils.RESULT_TYPE.TIP:
+          if (element.classList.contains("urlbarView-tip-help")) {
+            return "tiphelp";
+          }
+          return "tip";
       }
     }
     return "none";

@@ -90,9 +90,12 @@ td.integer {
   display: block;
 }
 
+#enumerate-database-result,
 #verify-place-result {
   max-height: 200px;
   overflow: auto;
+  text-align: left;
+  direction: ltr;
 }
 
 .hidden {

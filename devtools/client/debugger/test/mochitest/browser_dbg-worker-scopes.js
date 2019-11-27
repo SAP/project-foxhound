@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -7,9 +5,6 @@
 // This error shows up sometimes when running the test, and while this is a
 // strange problem that shouldn't be happening it doesn't prevent the test from
 // completing successfully.
-const { PromiseTestUtils } = ChromeUtils.import(
-  "resource://testing-common/PromiseTestUtils.jsm"
-);
 PromiseTestUtils.whitelistRejectionsGlobally(/Current state is running/);
 
 function findNode(dbg, text) {
@@ -94,5 +89,10 @@ add_task(async function() {
   await toggleNode(dbg, "0");
   ok(findNodeValue(dbg, "foo"), "foo");
   await toggleNode(dbg, "var_weakset");
+
+  // Close the scopes in order to unmount the reps in order to force spawning
+  // the various `release` RDP requests which, otherwise, would happen in
+  // middle of the toolbox destruction. Then, wait for them to finish.
+  await toggleScopes(dbg);
   await waitForRequestsToSettle(dbg);
 });

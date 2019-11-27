@@ -16,8 +16,8 @@ use crate::values::{CustomIdent, KeyframesName};
 use app_units::Au;
 use app_units::AU_PER_PX;
 use cssparser::RGBA;
-use euclid::Size2D;
-use euclid::TypedScale;
+use euclid::default::Size2D;
+use euclid::Scale;
 use servo_arc::Arc;
 use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicUsize, Ordering};
@@ -213,12 +213,11 @@ impl Device {
             None => return MediaType::screen(),
         };
 
-        // Gecko allows emulating random media with mIsEmulatingMedia and
-        // mMediaEmulated.
-        let medium_to_use = if pc.mIsEmulatingMedia() != 0 {
-            pc.mMediaEmulated.mRawPtr
+        // Gecko allows emulating random media with mMediaEmulationData.mMedium.
+        let medium_to_use = if !pc.mMediaEmulationData.mMedium.mRawPtr.is_null() {
+            pc.mMediaEmulationData.mMedium.mRawPtr
         } else {
-            pc.mMedium
+            pc.mMedium as *const structs::nsAtom as *mut _
         };
 
         MediaType(CustomIdent(unsafe { Atom::from_raw(medium_to_use) }))
@@ -247,20 +246,19 @@ impl Device {
     }
 
     /// Returns the device pixel ratio.
-    pub fn device_pixel_ratio(&self) -> TypedScale<f32, CSSPixel, DevicePixel> {
+    pub fn device_pixel_ratio(&self) -> Scale<f32, CSSPixel, DevicePixel> {
         let pc = match self.pres_context() {
             Some(pc) => pc,
-            None => return TypedScale::new(1.),
+            None => return Scale::new(1.),
         };
 
-        let override_dppx = pc.mOverrideDPPX;
-        if override_dppx > 0.0 {
-            return TypedScale::new(override_dppx);
+        if pc.mMediaEmulationData.mDPPX > 0.0 {
+            return Scale::new(pc.mMediaEmulationData.mDPPX);
         }
 
         let au_per_dpx = pc.mCurAppUnitsPerDevPixel as f32;
         let au_per_px = AU_PER_PX as f32;
-        TypedScale::new(au_per_px / au_per_dpx)
+        Scale::new(au_per_px / au_per_dpx)
     }
 
     /// Returns whether document colors are enabled.
@@ -270,8 +268,7 @@ impl Device {
         if doc.mIsBeingUsedAsImage() {
             return true;
         }
-        let document_color_use =
-            unsafe { structs::StaticPrefs::sVarCache_browser_display_document_color_use };
+        let document_color_use = static_prefs::pref!("browser.display.document_color_use");
         let prefs = self.pref_sheet_prefs();
         match document_color_use {
             1 => true,

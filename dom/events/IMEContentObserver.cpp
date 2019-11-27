@@ -186,7 +186,6 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(IMEContentObserver)
 IMEContentObserver::IMEContentObserver()
     : mESM(nullptr),
       mIMENotificationRequests(nullptr),
-      mPreAttrChangeLength(0),
       mSuppressNotifications(0),
       mPreCharacterDataChangeLength(-1),
       mSendingNotification(NOTIFY_IME_OF_NOTHING),
@@ -1085,51 +1084,6 @@ void IMEContentObserver::ContentRemoved(nsIContent* aChild,
   MaybeNotifyIMEOfTextChange(data);
 }
 
-void IMEContentObserver::AttributeWillChange(dom::Element* aElement,
-                                             int32_t aNameSpaceID,
-                                             nsAtom* aAttribute,
-                                             int32_t aModType) {
-  if (!NeedsTextChangeNotification()) {
-    return;
-  }
-
-  mPreAttrChangeLength =
-      ContentEventHandler::GetNativeTextLengthBefore(aElement, mRootContent);
-}
-
-void IMEContentObserver::AttributeChanged(dom::Element* aElement,
-                                          int32_t aNameSpaceID,
-                                          nsAtom* aAttribute, int32_t aModType,
-                                          const nsAttrValue* aOldValue) {
-  if (!NeedsTextChangeNotification()) {
-    return;
-  }
-
-  mEndOfAddedTextCache.Clear();
-  mStartOfRemovingTextRangeCache.Clear();
-
-  uint32_t postAttrChangeLength =
-      ContentEventHandler::GetNativeTextLengthBefore(aElement, mRootContent);
-  if (postAttrChangeLength == mPreAttrChangeLength) {
-    return;
-  }
-  // First, compute text range which were added during a document change.
-  MaybeNotifyIMEOfAddedTextDuringDocumentChange();
-  // Then, compute the new text changed caused by this attribute change.
-  uint32_t start;
-  nsresult rv = ContentEventHandler::GetFlatTextLengthInRange(
-      NodePosition(mRootContent, 0), NodePositionBefore(aElement, 0),
-      mRootContent, &start, LINE_BREAK_TYPE_NATIVE);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  TextChangeData data(
-      start, start + mPreAttrChangeLength, start + postAttrChangeLength,
-      IsEditorHandlingEventForComposition(), IsEditorComposing());
-  MaybeNotifyIMEOfTextChange(data);
-}
-
 void IMEContentObserver::ClearAddedNodesDuringDocumentChange() {
   mFirstAddedContainer = mLastAddedContainer = nullptr;
   mFirstAddedContent = mLastAddedContent = nullptr;
@@ -1726,6 +1680,14 @@ IMEContentObserver::IMENotificationSender::Run() {
   if (observer->mNeedsToNotifyIMEOfTextChange) {
     observer->mNeedsToNotifyIMEOfTextChange = false;
     SendTextChange();
+    // Even if the observer hasn't received selection change, let's try to send
+    // selection change notification to IME because selection start offset may
+    // be changed if the previous contents of selection start are changed.  For
+    // example, when previous `<p>` element of another `<p>` element which
+    // contains caret is removed by a DOM mutation, selection change event
+    // won't be fired, but selection start offset should be decreased by the
+    // length of removed `<p>` element.
+    observer->mNeedsToNotifyIMEOfSelectionChange = true;
   }
 
   // If a text change notification causes another text change again, we should

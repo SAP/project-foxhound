@@ -121,7 +121,9 @@ nsXULPrototypeDocument* nsXULPrototypeCache::GetPrototype(nsIURI* aURI) {
   NS_GetURIWithoutRef(aURI, getter_AddRefs(uriWithoutRef));
 
   nsXULPrototypeDocument* protoDoc = mPrototypeTable.GetWeak(uriWithoutRef);
-  if (protoDoc) return protoDoc;
+  if (protoDoc) {
+    return protoDoc;
+  }
 
   nsresult rv = BeginCaching(aURI);
   if (NS_FAILED(rv)) return nullptr;
@@ -129,7 +131,9 @@ nsXULPrototypeDocument* nsXULPrototypeCache::GetPrototype(nsIURI* aURI) {
   // No prototype in XUL memory cache. Spin up the cache Service.
   nsCOMPtr<nsIObjectInputStream> ois;
   rv = GetInputStream(aURI, getter_AddRefs(ois));
-  if (NS_FAILED(rv)) return nullptr;
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
 
   RefPtr<nsXULPrototypeDocument> newProto;
   rv = NS_NewXULPrototypeDocument(getter_AddRefs(newProto));
@@ -194,6 +198,7 @@ nsresult nsXULPrototypeCache::PutScript(nsIURI* aURI,
   return NS_OK;
 }
 
+#ifdef MOZ_XBL
 nsXBLDocumentInfo* nsXULPrototypeCache::GetXBLDocumentInfo(nsIURI* aURL) {
   return mXBLDocTable.GetWeak(aURL);
 }
@@ -207,6 +212,7 @@ nsresult nsXULPrototypeCache::PutXBLDocumentInfo(
   }
   return NS_OK;
 }
+#endif
 
 void nsXULPrototypeCache::FlushScripts() { mScriptTable.Clear(); }
 
@@ -214,7 +220,9 @@ void nsXULPrototypeCache::Flush() {
   mPrototypeTable.Clear();
   mScriptTable.Clear();
   mStyleSheetTable.Clear();
+#ifdef MOZ_XBL
   mXBLDocTable.Clear();
+#endif
 }
 
 bool nsXULPrototypeCache::IsEnabled() { return !gDisableXULCache; }
@@ -256,7 +264,7 @@ nsresult nsXULPrototypeCache::GetInputStream(nsIURI* uri,
   nsresult rv = PathifyURI(uri, spec);
   if (NS_FAILED(rv)) return NS_ERROR_NOT_AVAILABLE;
 
-  UniquePtr<char[]> buf;
+  const char* buf;
   uint32_t len;
   nsCOMPtr<nsIObjectInputStream> ois;
   StartupCache* sc = StartupCache::GetSingleton();
@@ -265,7 +273,7 @@ nsresult nsXULPrototypeCache::GetInputStream(nsIURI* uri,
   rv = sc->GetBuffer(spec.get(), &buf, &len);
   if (NS_FAILED(rv)) return NS_ERROR_NOT_AVAILABLE;
 
-  rv = NewObjectInputStreamFromBuffer(std::move(buf), len, getter_AddRefs(ois));
+  rv = NewObjectInputStreamFromBuffer(buf, len, getter_AddRefs(ois));
   NS_ENSURE_SUCCESS(rv, rv);
 
   mInputStreamTable.Put(uri, ois);
@@ -349,10 +357,9 @@ nsresult nsXULPrototypeCache::HasData(nsIURI* uri, bool* exists) {
     return NS_OK;
   }
   UniquePtr<char[]> buf;
-  uint32_t len;
   StartupCache* sc = StartupCache::GetSingleton();
   if (sc) {
-    rv = sc->GetBuffer(spec.get(), &buf, &len);
+    *exists = sc->HasEntry(spec.get());
   } else {
     *exists = false;
     return NS_OK;
@@ -395,14 +402,13 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
 
   nsAutoCString fileChromePath, fileLocale;
 
-  UniquePtr<char[]> buf;
+  const char* buf = nullptr;
   uint32_t len, amtRead;
   nsCOMPtr<nsIObjectInputStream> objectInput;
 
   rv = startupCache->GetBuffer(kXULCacheInfoKey, &buf, &len);
   if (NS_SUCCEEDED(rv))
-    rv = NewObjectInputStreamFromBuffer(std::move(buf), len,
-                                        getter_AddRefs(objectInput));
+    rv = NewObjectInputStreamFromBuffer(buf, len, getter_AddRefs(objectInput));
 
   if (NS_SUCCEEDED(rv)) {
     rv = objectInput->ReadCString(fileLocale);
@@ -458,10 +464,10 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
     }
 
     if (NS_SUCCEEDED(rv)) {
-      buf = MakeUnique<char[]>(len);
-      rv = inputStream->Read(buf.get(), len, &amtRead);
+      auto putBuf = MakeUnique<char[]>(len);
+      rv = inputStream->Read(putBuf.get(), len, &amtRead);
       if (NS_SUCCEEDED(rv) && len == amtRead)
-        rv = startupCache->PutBuffer(kXULCacheInfoKey, std::move(buf), len);
+        rv = startupCache->PutBuffer(kXULCacheInfoKey, std::move(putBuf), len);
       else {
         rv = NS_ERROR_UNEXPECTED;
       }
@@ -479,9 +485,11 @@ nsresult nsXULPrototypeCache::BeginCaching(nsIURI* aURI) {
 }
 
 void nsXULPrototypeCache::MarkInCCGeneration(uint32_t aGeneration) {
+#ifdef MOZ_XBL
   for (auto iter = mXBLDocTable.Iter(); !iter.Done(); iter.Next()) {
     iter.Data()->MarkInCCGeneration(aGeneration);
   }
+#endif
   for (auto iter = mPrototypeTable.Iter(); !iter.Done(); iter.Next()) {
     iter.Data()->MarkInCCGeneration(aGeneration);
   }
@@ -507,6 +515,7 @@ static void ReportSize(const nsCString& aPath, size_t aAmount,
                           aData);
 }
 
+#ifdef MOZ_XBL
 static void AppendURIForMemoryReport(nsIURI* aUri, nsACString& aOutput) {
   nsCString spec = aUri->GetSpecOrDefault();
   // A hack: replace forward slashes with '\\' so they aren't
@@ -515,6 +524,7 @@ static void AppendURIForMemoryReport(nsIURI* aUri, nsACString& aOutput) {
   spec.ReplaceChar('/', '\\');
   aOutput += spec;
 }
+#endif
 
 /* static */
 void nsXULPrototypeCache::CollectMemoryReports(
@@ -538,6 +548,7 @@ void nsXULPrototypeCache::CollectMemoryReports(
   other += sInstance->mScriptTable.ShallowSizeOfExcludingThis(mallocSizeOf);
   // TODO Report content inside mScriptTable?
 
+#ifdef MOZ_XBL
   other += sInstance->mXBLDocTable.ShallowSizeOfExcludingThis(mallocSizeOf);
   for (auto iter = sInstance->mXBLDocTable.ConstIter(); !iter.Done();
        iter.Next()) {
@@ -548,6 +559,7 @@ void nsXULPrototypeCache::CollectMemoryReports(
     size_t size = iter.UserData()->SizeOfIncludingThis(mallocSizeOf);
     REPORT_SIZE(path, size, "Memory used by this XBL document.");
   }
+#endif
 
   other +=
       sInstance->mStartupCacheURITable.ShallowSizeOfExcludingThis(mallocSizeOf);

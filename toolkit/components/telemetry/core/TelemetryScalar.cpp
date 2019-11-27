@@ -6,6 +6,7 @@
 
 #include "TelemetryScalar.h"
 
+#include "geckoview/streaming/GeckoViewStreamingTelemetry.h"
 #include "ipc/TelemetryComms.h"
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "mozilla/dom/ContentParent.h"
@@ -337,7 +338,8 @@ class ScalarBase {
   explicit ScalarBase(const BaseScalarInfo& aInfo)
       : mStoreCount(aInfo.storeCount()),
         mStoreOffset(aInfo.storeOffset()),
-        mStoreHasValue(mStoreCount) {
+        mStoreHasValue(mStoreCount),
+        mName(aInfo.name()) {
     mStoreHasValue.SetLength(mStoreCount);
     for (auto& val : mStoreHasValue) {
       val = false;
@@ -390,6 +392,9 @@ class ScalarBase {
   const uint32_t mStoreCount;
   const uint32_t mStoreOffset;
   nsTArray<bool> mStoreHasValue;
+
+ protected:
+  const nsCString mName;
 };
 
 ScalarResult ScalarBase::HandleUnsupported() const {
@@ -509,6 +514,10 @@ ScalarResult ScalarUnsigned::SetValue(nsIVariant* aValue) {
 }
 
 void ScalarUnsigned::SetValue(uint32_t aValue) {
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    GeckoViewStreamingTelemetry::UintScalarSet(mName, aValue);
+    return;
+  }
   for (auto& val : mStorage) {
     val = aValue;
   }
@@ -532,6 +541,7 @@ ScalarResult ScalarUnsigned::AddValue(nsIVariant* aValue) {
 }
 
 void ScalarUnsigned::AddValue(uint32_t aValue) {
+  MOZ_ASSERT(GetCurrentProduct() != SupportedProduct::GeckoviewStreaming);
   for (auto& val : mStorage) {
     val += aValue;
   }
@@ -539,6 +549,7 @@ void ScalarUnsigned::AddValue(uint32_t aValue) {
 }
 
 ScalarResult ScalarUnsigned::SetMaximum(nsIVariant* aValue) {
+  MOZ_ASSERT(GetCurrentProduct() != SupportedProduct::GeckoviewStreaming);
   ScalarResult sr = CheckInput(aValue);
   if (sr == ScalarResult::UnsignedNegativeValue) {
     return sr;
@@ -664,6 +675,13 @@ ScalarResult ScalarString::SetValue(nsIVariant* aValue) {
 
 ScalarResult ScalarString::SetValue(const nsAString& aValue) {
   auto str = Substring(aValue, 0, kMaximumStringValueLength);
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    GeckoViewStreamingTelemetry::StringScalarSet(mName,
+                                                 NS_ConvertUTF16toUTF8(str));
+    return aValue.Length() > kMaximumStringValueLength
+               ? ScalarResult::StringTooLong
+               : ScalarResult::Ok;
+  }
   for (auto& val : mStorage) {
     val.Assign(str);
   }
@@ -758,6 +776,10 @@ ScalarResult ScalarBoolean::SetValue(nsIVariant* aValue) {
 };
 
 void ScalarBoolean::SetValue(bool aValue) {
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    GeckoViewStreamingTelemetry::BoolScalarSet(mName, aValue);
+    return;
+  }
   for (auto& val : mStorage) {
     val = aValue;
   }
@@ -1387,7 +1409,7 @@ nsresult internal_GetEnumByScalarName(const StaticMutexAutoLock& lock,
   if (!entry) {
     return NS_ERROR_INVALID_ARG;
   }
-  *aId = entry->mData;
+  *aId = entry->GetData();
   return NS_OK;
 }
 
@@ -1484,28 +1506,6 @@ nsresult internal_GetScalarByEnum(const StaticMutexAutoLock& lock,
 void internal_ApplyPendingOperations(const StaticMutexAutoLock& lock);
 
 /**
- * Record that the high-water mark for the pending operations list was reached
- * once.
- *
- * Important:
- * This appends one additional operation.
- * This needs to happen while still in deserialization mode.
- */
-void internal_RecordHighwatermarkReached(const StaticMutexAutoLock& lock) {
-  MOZ_ASSERT(gIsDeserializing);
-  MOZ_ASSERT(gScalarsActions);
-
-  // We can't call `internal_RecordScalarAction` here, because we are already
-  // getting called from there after the high-water mark check.
-  // But we know that `gScalarsActions` is a valid array and can append
-  // directly.
-  ScalarID id = ScalarID::TELEMETRY_PENDING_OPERATIONS_HIGHWATERMARK_REACHED;
-  ScalarAction action{static_cast<uint32_t>(id), false, ScalarActionType::eAdd,
-                      Some(ScalarVariant(1u)), ProcessID::Parent};
-  gScalarsActions->AppendElement(action);
-}
-
-/**
  * Record the given action on a scalar into the pending actions list.
  *
  * If the pending actions list overflows the high water mark length
@@ -1528,7 +1528,6 @@ void internal_RecordScalarAction(const StaticMutexAutoLock& lock,
   // afterwards, some scalar values might be overwritten and inconsistent, but
   // we won't lose operations on otherwise untouched probes.
   if (gScalarsActions->Length() > kScalarActionsArrayHighWaterMark) {
-    internal_RecordHighwatermarkReached(lock);
     internal_ApplyPendingOperations(lock);
     return;
   }
@@ -1577,7 +1576,6 @@ void internal_RecordKeyedScalarAction(const StaticMutexAutoLock& lock,
   // afterwards, some scalar values might be overwritten and inconsistent, but
   // we won't lose operations on otherwise untouched probes.
   if (gKeyedScalarsActions->Length() > kScalarActionsArrayHighWaterMark) {
-    internal_RecordHighwatermarkReached(lock);
     internal_ApplyPendingOperations(lock);
     return;
   }
@@ -1870,7 +1868,7 @@ void internal_DynamicScalarToIPC(
     const StaticMutexAutoLock& lock,
     const nsTArray<DynamicScalarInfo>& aDynamicScalarInfos,
     nsTArray<DynamicScalarDefinition>& aIPCDefs) {
-  for (auto info : aDynamicScalarInfos) {
+  for (auto& info : aDynamicScalarInfos) {
     DynamicScalarDefinition stubDefinition;
     stubDefinition.type = info.kind;
     stubDefinition.dataset = info.dataset;
@@ -1915,7 +1913,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
     gDynamicStoreNames = new nsTArray<RefPtr<nsAtom>>();
   }
 
-  for (auto scalarInfo : scalarInfos) {
+  for (auto& scalarInfo : scalarInfos) {
     // Allow expiring scalars that were already registered.
     CharPtrEntryType* existingKey =
         gScalarNameIDMap.GetEntry(scalarInfo.name());
@@ -1923,7 +1921,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
       // Change the scalar to expired if needed.
       if (scalarInfo.mDynamicExpiration && !scalarInfo.builtin) {
         DynamicScalarInfo& scalarData =
-            (*gDynamicScalarInfo)[existingKey->mData.id];
+            (*gDynamicScalarInfo)[existingKey->GetData().id];
         scalarData.mDynamicExpiration = true;
       }
       continue;
@@ -1932,7 +1930,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
     gDynamicScalarInfo->AppendElement(scalarInfo);
     uint32_t scalarId = gDynamicScalarInfo->Length() - 1;
     CharPtrEntryType* entry = gScalarNameIDMap.PutEntry(scalarInfo.name());
-    entry->mData = ScalarKey{scalarId, true};
+    entry->SetData(ScalarKey{scalarId, true});
   }
 }
 
@@ -2417,7 +2415,7 @@ void TelemetryScalar::InitializeGlobalState(bool aCanRecordBase,
       static_cast<uint32_t>(mozilla::Telemetry::ScalarID::ScalarCount);
   for (uint32_t i = 0; i < scalarCount; i++) {
     CharPtrEntryType* entry = gScalarNameIDMap.PutEntry(gScalars[i].name());
-    entry->mData = ScalarKey{i, false};
+    entry->SetData(ScalarKey{i, false});
   }
 
   // To summarize dynamic events we need a dynamic scalar.
@@ -3605,6 +3603,10 @@ void TelemetryScalar::RecordDiscardedData(
     return;
   }
 
+  if (GetCurrentProduct() == SupportedProduct::GeckoviewStreaming) {
+    return;
+  }
+
   ScalarBase* scalar = nullptr;
   mozilla::DebugOnly<nsresult> rv;
 
@@ -3684,7 +3686,7 @@ void TelemetryScalar::AddDynamicScalarDefinitions(
   nsTArray<DynamicScalarInfo> dynamicStubs;
 
   // Populate the definitions array before acquiring the lock.
-  for (auto def : aDefs) {
+  for (auto& def : aDefs) {
     bool recordOnRelease = def.dataset == nsITelemetry::DATASET_ALL_CHANNELS;
     dynamicStubs.AppendElement(DynamicScalarInfo{def.type,
                                                  recordOnRelease,

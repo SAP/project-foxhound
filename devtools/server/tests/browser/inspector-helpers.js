@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -17,7 +16,7 @@ function serverOwnershipTree(walkerArg) {
       const { require } = ChromeUtils.import(
         "resource://devtools/shared/Loader.jsm"
       );
-      const { DebuggerServer } = require("devtools/server/main");
+      const { DebuggerServer } = require("devtools/server/debugger-server");
       const {
         DocumentWalker,
       } = require("devtools/server/actors/inspector/document-walker");
@@ -109,26 +108,28 @@ async function assertOwnershipTrees(walker) {
 // Verify that an actorID is inaccessible both from the client library and the server.
 function checkMissing({ client }, actorID) {
   return new Promise(resolve => {
-    const front = client.getActor(actorID);
+    const front = client.getFrontByID(actorID);
     ok(
       !front,
       "Front shouldn't be accessible from the client for actorID: " + actorID
     );
 
-    client.request(
-      {
-        to: actorID,
-        type: "request",
-      },
-      response => {
-        is(
-          response.error,
-          "noSuchActor",
-          "node list actor should no longer be contactable."
-        );
-        resolve(undefined);
-      }
-    );
+    client
+      .request(
+        {
+          to: actorID,
+          type: "request",
+        },
+        response => {
+          is(
+            response.error,
+            "noSuchActor",
+            "node list actor should no longer be contactable."
+          );
+          resolve(undefined);
+        }
+      )
+      .catch(() => {});
   });
 }
 

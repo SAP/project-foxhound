@@ -14,6 +14,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Logging.h"
@@ -144,9 +145,6 @@ class ProcessPriorityManagerImpl final : public nsIObserver,
   void TabActivityChanged(BrowserParent* aBrowserParent, bool aIsActive);
 
  private:
-  static bool sPrefsEnabled;
-  static bool sRemoteTabsDisabled;
-  static bool sTestMode;
   static bool sPrefListenersRegistered;
   static bool sInitialized;
   static StaticRefPtr<ProcessPriorityManagerImpl> sSingleton;
@@ -217,7 +215,6 @@ class ParticularProcessPriorityManager final : public WakeLockObserver,
   NS_DECL_NSITIMERCALLBACK
 
   virtual void Notify(const WakeLockInformation& aInfo) override;
-  static void StaticInit();
   void Init();
 
   int32_t Pid() const;
@@ -260,9 +257,6 @@ class ParticularProcessPriorityManager final : public WakeLockObserver,
   }
 
  private:
-  static uint32_t sBackgroundPerceivableGracePeriodMS;
-  static uint32_t sBackgroundGracePeriodMS;
-
   void FireTestOnlyObserverNotification(
       const char* aTopic, const nsACString& aData = EmptyCString());
 
@@ -293,20 +287,9 @@ class ParticularProcessPriorityManager final : public WakeLockObserver,
 /* static */
 bool ProcessPriorityManagerImpl::sInitialized = false;
 /* static */
-bool ProcessPriorityManagerImpl::sPrefsEnabled = false;
-/* static */
-bool ProcessPriorityManagerImpl::sRemoteTabsDisabled = true;
-/* static */
-bool ProcessPriorityManagerImpl::sTestMode = false;
-/* static */
 bool ProcessPriorityManagerImpl::sPrefListenersRegistered = false;
 /* static */
 StaticRefPtr<ProcessPriorityManagerImpl> ProcessPriorityManagerImpl::sSingleton;
-/* static */
-uint32_t ParticularProcessPriorityManager::sBackgroundPerceivableGracePeriodMS =
-    0;
-/* static */
-uint32_t ParticularProcessPriorityManager::sBackgroundGracePeriodMS = 0;
 
 NS_IMPL_ISUPPORTS(ProcessPriorityManagerImpl, nsIObserver,
                   nsISupportsWeakReference);
@@ -323,12 +306,15 @@ void ProcessPriorityManagerImpl::PrefChangedCallback(const char* aPref,
 
 /* static */
 bool ProcessPriorityManagerImpl::PrefsEnabled() {
-  return sPrefsEnabled && hal::SetProcessPrioritySupported() &&
-         !sRemoteTabsDisabled;
+  return StaticPrefs::dom_ipc_processPriorityManager_enabled() &&
+         hal::SetProcessPrioritySupported() &&
+         !StaticPrefs::dom_ipc_tabs_disabled();
 }
 
 /* static */
-bool ProcessPriorityManagerImpl::TestMode() { return sTestMode; }
+bool ProcessPriorityManagerImpl::TestMode() {
+  return StaticPrefs::dom_ipc_processPriorityManager_testMode();
+}
 
 /* static */
 void ProcessPriorityManagerImpl::StaticInit() {
@@ -340,14 +326,6 @@ void ProcessPriorityManagerImpl::StaticInit() {
   if (!XRE_IsParentProcess()) {
     sInitialized = true;
     return;
-  }
-
-  if (!sPrefListenersRegistered) {
-    Preferences::AddBoolVarCache(&sPrefsEnabled,
-                                 "dom.ipc.processPriorityManager.enabled");
-    Preferences::AddBoolVarCache(&sRemoteTabsDisabled, "dom.ipc.tabs.disabled");
-    Preferences::AddBoolVarCache(&sTestMode,
-                                 "dom.ipc.processPriorityManager.testMode");
   }
 
   // If IPC tabs aren't enabled at startup, don't bother with any of this.
@@ -515,15 +493,6 @@ ParticularProcessPriorityManager::ParticularProcessPriorityManager(
       mHoldsPlayingVideoWakeLock(false) {
   MOZ_ASSERT(XRE_IsParentProcess());
   LOGP("Creating ParticularProcessPriorityManager.");
-}
-
-void ParticularProcessPriorityManager::StaticInit() {
-  Preferences::AddUintVarCache(
-      &sBackgroundPerceivableGracePeriodMS,
-      "dom.ipc.processPriorityManager.backgroundPerceivableGracePeriodMS");
-  Preferences::AddUintVarCache(
-      &sBackgroundGracePeriodMS,
-      "dom.ipc.processPriorityManager.backgroundGracePeriodMS");
 }
 
 void ParticularProcessPriorityManager::Init() {
@@ -732,10 +701,12 @@ void ParticularProcessPriorityManager::ScheduleResetPriority(
   uint32_t timeout = 0;
   switch (aTimeoutPref) {
     case BACKGROUND_PERCEIVABLE_GRACE_PERIOD:
-      timeout = sBackgroundPerceivableGracePeriodMS;
+      timeout = StaticPrefs::
+          dom_ipc_processPriorityManager_backgroundPerceivableGracePeriodMS();
       break;
     case BACKGROUND_GRACE_PERIOD:
-      timeout = sBackgroundGracePeriodMS;
+      timeout =
+          StaticPrefs::dom_ipc_processPriorityManager_backgroundGracePeriodMS();
       break;
     default:
       MOZ_ASSERT(false, "Unrecognized timeout pref");
@@ -966,7 +937,6 @@ namespace mozilla {
 void ProcessPriorityManager::Init() {
   ProcessPriorityManagerImpl::StaticInit();
   ProcessPriorityManagerChild::StaticInit();
-  ParticularProcessPriorityManager::StaticInit();
 }
 
 /* static */

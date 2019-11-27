@@ -9,21 +9,21 @@
  * going to the function b's call-site.
  */
 
-async function testFinish({ threadClient, debuggerClient }) {
+async function testFinish({ threadFront, debuggerClient }) {
   await close(debuggerClient);
 
   do_test_finished();
 }
 
-async function invokeAndPause({ global, threadClient }, expression) {
+async function invokeAndPause({ global, threadFront }, expression) {
   return executeOnNextTickAndWaitForPause(
     () => Cu.evalInSandbox(expression, global),
-    threadClient
+    threadFront
   );
 }
 
-async function step(threadClient, cmd) {
-  return cmd(threadClient);
+async function step(threadFront, cmd) {
+  return cmd(threadFront);
 }
 
 function getPauseLocation(packet) {
@@ -32,14 +32,13 @@ function getPauseLocation(packet) {
 }
 
 function getPauseReturn(packet) {
-  dump(`>> getPauseReturn yo ${JSON.stringify(packet.why)}\n`);
   return packet.why.frameFinished.return;
 }
 
-async function steps(threadClient, sequence) {
+async function steps(threadFront, sequence) {
   const locations = [];
   for (const cmd of sequence) {
-    const packet = await step(threadClient, cmd);
+    const packet = await step(threadFront, cmd);
     locations.push(getPauseLocation(packet));
   }
   return locations;
@@ -47,12 +46,10 @@ async function steps(threadClient, sequence) {
 
 async function stepOutOfA(dbg, func, expectedLocation) {
   await invokeAndPause(dbg, `${func}()`);
-  const { threadClient } = dbg;
-  await steps(threadClient, [stepOver, stepIn]);
+  const { threadFront } = dbg;
+  await steps(threadFront, [stepOver, stepIn]);
 
-  dump(`>>> oof\n`);
-  const packet = await stepOut(threadClient);
-  dump(`>>> foo\n`);
+  const packet = await stepOut(threadFront);
 
   deepEqual(
     getPauseLocation(packet),
@@ -60,39 +57,38 @@ async function stepOutOfA(dbg, func, expectedLocation) {
     `step out location in ${func}`
   );
 
-  await threadClient.resume();
+  await threadFront.resume();
 }
 
 async function stepOverInA(dbg, func, expectedLocation) {
   await invokeAndPause(dbg, `${func}()`);
-  const { threadClient } = dbg;
-  await steps(threadClient, [stepOver, stepIn]);
+  const { threadFront } = dbg;
+  await steps(threadFront, [stepOver, stepIn]);
 
-  let packet = await stepOver(threadClient);
-  dump(`>> stepOverInA hi\n`);
+  let packet = await stepOver(threadFront);
   equal(getPauseReturn(packet).ownPropertyLength, 1, "a() is returning obj");
 
-  packet = await stepOver(threadClient);
+  packet = await stepOver(threadFront);
   deepEqual(
     getPauseLocation(packet),
     expectedLocation,
     `step out location in ${func}`
   );
-  await dbg.threadClient.resume();
+  await dbg.threadFront.resume();
 }
 
-async function testStep(dbg, func, expectedLocation) {
-  await stepOverInA(dbg, func, expectedLocation);
-  await stepOutOfA(dbg, func, expectedLocation);
+async function testStep(dbg, func, expectedValue) {
+  await stepOverInA(dbg, func, expectedValue);
+  await stepOutOfA(dbg, func, expectedValue);
 }
 
 function run_test() {
   return (async function() {
     const dbg = await setupTestFromUrl("stepping.js");
 
-    await testStep(dbg, "arithmetic", { line: 17, column: 0 });
-    await testStep(dbg, "composition", { line: 22, column: 0 });
-    await testStep(dbg, "chaining", { line: 27, column: 0 });
+    await testStep(dbg, "arithmetic", { line: 16, column: 8 });
+    await testStep(dbg, "composition", { line: 21, column: 3 });
+    await testStep(dbg, "chaining", { line: 26, column: 6 });
 
     await testFinish(dbg);
   })();

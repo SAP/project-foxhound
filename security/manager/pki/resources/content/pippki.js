@@ -25,41 +25,36 @@ function setText(id, value) {
   element.appendChild(document.createTextNode(value));
 }
 
-function viewCertHelper(parent, cert) {
+function viewCertHelper(parent, cert, openingOption = "tab") {
   if (!cert) {
     return;
   }
 
-  Services.ww.openWindow(
-    parent,
-    "chrome://pippki/content/certViewer.xul",
-    "_blank",
-    "centerscreen,chrome",
-    cert
-  );
-}
-
-function getDERString(cert) {
-  var derArray = cert.getRawDER();
-  var derString = "";
-  for (var i = 0; i < derArray.length; i++) {
-    derString += String.fromCharCode(derArray[i]);
+  if (Services.prefs.getBoolPref("security.aboutcertificate.enabled")) {
+    let win = Services.wm.getMostRecentWindow("navigator:browser");
+    let derb64 = encodeURIComponent(cert.getBase64DERString());
+    let url = `about:certificate?cert=${derb64}`;
+    win.openTrustedLinkIn(url, openingOption);
+  } else {
+    Services.ww.openWindow(
+      parent && parent.docShell.rootTreeItem.domWindow,
+      "chrome://pippki/content/certViewer.xul",
+      "_blank",
+      "centerscreen,chrome",
+      cert
+    );
   }
-  return derString;
 }
 
 function getPKCS7String(certArray) {
-  let certList = Cc["@mozilla.org/security/x509certlist;1"].createInstance(
-    Ci.nsIX509CertList
+  let certdb = Cc["@mozilla.org/security/x509certdb;1"].getService(
+    Ci.nsIX509CertDB
   );
-  for (let cert of certArray) {
-    certList.addCert(cert);
-  }
-  return certList.asPKCS7Blob();
+  return certdb.asPKCS7Blob(certArray);
 }
 
 function getPEMString(cert) {
-  var derb64 = btoa(getDERString(cert));
+  var derb64 = cert.getBase64DERString();
   // Wrap the Base64 string into lines of 64 characters with CRLF line breaks
   // (as specified in RFC 1421).
   var wrapped = derb64.replace(/(\S{64}(?!$))/g, "$1\r\n");
@@ -160,7 +155,7 @@ async function exportToFile(parent, cert) {
       }
       break;
     case 2:
-      content = getDERString(cert);
+      content = cert.getRawDER();
       break;
     case 3:
       content = getPKCS7String([cert]);

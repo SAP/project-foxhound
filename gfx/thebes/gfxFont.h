@@ -36,6 +36,7 @@
 #include "nsColor.h"
 #include "nsFontMetrics.h"
 #include "mozilla/ServoUtils.h"
+#include "TextDrawTarget.h"
 
 typedef struct _cairo cairo_t;
 typedef struct _cairo_scaled_font cairo_scaled_font_t;
@@ -102,7 +103,7 @@ struct gfxFontStyle {
   // font matching occurs.
 
   // -- list of value tags for specific alternate features
-  nsTArray<gfxAlternateValue> alternateValues;
+  mozilla::StyleVariantAlternatesList variantAlternates;
 
   // -- object used to look these up once the font is matched
   RefPtr<gfxFontFeatureValueSet> featureValueLookup;
@@ -226,7 +227,7 @@ struct gfxFontStyle {
            (*reinterpret_cast<const uint32_t*>(&sizeAdjust) ==
             *reinterpret_cast<const uint32_t*>(&other.sizeAdjust)) &&
            (featureSettings == other.featureSettings) &&
-           (alternateValues == other.alternateValues) &&
+           (variantAlternates == other.variantAlternates) &&
            (featureValueLookup == other.featureValueLookup) &&
            (variationSettings == other.variationSettings) &&
            (languageOverride == other.languageOverride) &&
@@ -1389,7 +1390,6 @@ class gfxFont {
 
  protected:
   nsAutoRefCnt mRefCnt;
-  cairo_scaled_font_t* mScaledFont;
 
   void NotifyReleased() {
     gfxFontCache* cache = gfxFontCache::GetCache();
@@ -1405,8 +1405,7 @@ class gfxFont {
 
   gfxFont(const RefPtr<mozilla::gfx::UnscaledFont>& aUnscaledFont,
           gfxFontEntry* aFontEntry, const gfxFontStyle* aFontStyle,
-          AntialiasOption anAAOption = kAntialiasDefault,
-          cairo_scaled_font_t* aScaledFont = nullptr);
+          AntialiasOption anAAOption = kAntialiasDefault);
 
  public:
   virtual ~gfxFont();
@@ -1442,8 +1441,6 @@ class gfxFont {
 
   const nsCString& GetName() const { return mFontEntry->Name(); }
   const gfxFontStyle* GetStyle() const { return &mStyle; }
-
-  cairo_scaled_font_t* GetCairoScaledFont() { return mScaledFont; }
 
   virtual mozilla::UniquePtr<gfxFont> CopyWithAntialiasOption(
       AntialiasOption anAAOption) {
@@ -1518,6 +1515,9 @@ class gfxFont {
   // Work out whether cairo will snap inter-glyph spacing to pixels
   // when rendering to the given drawTarget.
   RoundingFlags GetRoundOffsetsToPixels(DrawTarget* aDrawTarget);
+
+  virtual bool ShouldHintMetrics() const { return true; }
+  virtual bool ShouldRoundXOffset(cairo_t* aCairo) const { return true; }
 
   // Font metrics
   struct Metrics {
@@ -1685,12 +1685,8 @@ class gfxFont {
 
   gfxGlyphExtents* GetOrCreateGlyphExtents(int32_t aAppUnitsPerDevUnit);
 
-  // You need to call SetupCairoFont on aDrawTarget just before calling this.
   void SetupGlyphExtents(DrawTarget* aDrawTarget, uint32_t aGlyphID,
                          bool aNeedTight, gfxGlyphExtents* aExtents);
-
-  // This is called by the default Draw() implementation above.
-  virtual bool SetupCairoFont(DrawTarget* aDrawTarget) = 0;
 
   virtual bool AllowSubpixelAA() { return true; }
 
@@ -1861,11 +1857,6 @@ class gfxFont {
   // glyphs. This does not add a reference to the returned font.
   gfxFont* GetSubSuperscriptFont(int32_t aAppUnitsPerDevPixel);
 
-  /**
-   * Return the reference cairo_t object from aDT.
-   */
-  static cairo_t* RefCairo(mozilla::gfx::DrawTarget* aDT);
-
  protected:
   virtual const Metrics& GetHorizontalMetrics() = 0;
 
@@ -1923,6 +1914,11 @@ class gfxFont {
   // The return value is interpreted as a horizontal advance in 16.16 fixed
   // point format.
   virtual int32_t GetGlyphWidth(uint16_t aGID) { return -1; }
+
+  virtual bool GetGlyphBounds(uint16_t aGID, gfxRect* aBounds,
+                              bool aTight = false) {
+    return false;
+  }
 
   bool IsSpaceGlyphInvisible(DrawTarget* aRefDrawTarget,
                              const gfxTextRun* aTextRun);
@@ -2148,14 +2144,19 @@ class gfxFont {
   // if this font has bad underline offset, aIsBadUnderlineFont should be true.
   void SanitizeMetrics(Metrics* aMetrics, bool aIsBadUnderlineFont);
 
-  bool RenderSVGGlyph(gfxContext* aContext, mozilla::gfx::Point aPoint,
-                      uint32_t aGlyphId, SVGContextPaint* aContextPaint) const;
-  bool RenderSVGGlyph(gfxContext* aContext, mozilla::gfx::Point aPoint,
-                      uint32_t aGlyphId, SVGContextPaint* aContextPaint,
+  bool RenderSVGGlyph(gfxContext* aContext,
+                      mozilla::layout::TextDrawTarget* aTextDrawer,
+                      mozilla::gfx::Point aPoint, uint32_t aGlyphId,
+                      SVGContextPaint* aContextPaint) const;
+  bool RenderSVGGlyph(gfxContext* aContext,
+                      mozilla::layout::TextDrawTarget* aTextDrawer,
+                      mozilla::gfx::Point aPoint, uint32_t aGlyphId,
+                      SVGContextPaint* aContextPaint,
                       gfxTextRunDrawCallbacks* aCallbacks,
                       bool& aEmittedGlyphs) const;
 
   bool RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
+                        mozilla::layout::TextDrawTarget* aTextDrawer,
                         mozilla::gfx::ScaledFont* scaledFont,
                         mozilla::gfx::DrawOptions drawOptions,
                         const mozilla::gfx::Point& aPoint,

@@ -31,7 +31,7 @@ XPCOMUtils.defineLazyServiceGetter(
   "nsITrackingDBService"
 );
 
-// A Cleaner is an object with 3 methods. These methods must return a Promise
+// A Cleaner is an object with 4 methods. These methods must return a Promise
 // object. Here a description of these methods:
 // * deleteAll() - this method _must_ exist. When called, it deletes all the
 //                 data owned by the cleaner.
@@ -41,15 +41,30 @@ XPCOMUtils.defineLazyServiceGetter(
 // * deleteByHost() - this method is implemented only if the cleaner knows
 //                    how to delete data by host + originAttributes pattern. If
 //                    not implemented, deleteAll() will be used as fallback.
-// *deleteByRange() - this method is implemented only if the cleaner knows how
+// * deleteByRange() - this method is implemented only if the cleaner knows how
 //                    to delete data by time range. It receives 2 time range
 //                    parameters: aFrom/aTo. If not implemented, deleteAll() is
 //                    used as fallback.
+// * deleteByLocalFiles() - this method removes data held for local files and
+//                          other hostless origins. If not implemented,
+//                          **no fallback is used**, as for a number of
+//                          cleaners, no such data will ever exist and
+//                          therefore clearing it does not make sense.
 
 const CookieCleaner = {
+  deleteByLocalFiles(aOriginAttributes) {
+    return new Promise(aResolve => {
+      Services.cookies.removeCookiesFromExactHost(
+        "",
+        JSON.stringify(aOriginAttributes)
+      );
+      aResolve();
+    });
+  },
+
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      Services.cookies.removeCookiesFromRootDomain(
+      Services.cookies.removeCookiesFromExactHost(
         aHost,
         JSON.stringify(aOriginAttributes)
       );
@@ -84,7 +99,6 @@ const CookieCleaner = {
             cookie.host,
             cookie.name,
             cookie.path,
-            false,
             cookie.originAttributes
           );
           // We don't want to block the main-thread.
@@ -130,11 +144,11 @@ const NetworkCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpURI,
         aOriginAttributes
       );
-      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpsURI,
         aOriginAttributes
       );
@@ -170,11 +184,11 @@ const ImageCacheCleaner = {
       // Delete data from both HTTP and HTTPS sites.
       let httpURI = Services.io.newURI("http://" + aHost);
       let httpsURI = Services.io.newURI("https://" + aHost);
-      let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpURI,
         aOriginAttributes
       );
-      let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
         httpsURI,
         aOriginAttributes
       );
@@ -467,11 +481,11 @@ const QuotaCleaner = {
         // delete data from both HTTP and HTTPS sites
         let httpURI = Services.io.newURI("http://" + aHost);
         let httpsURI = Services.io.newURI("https://" + aHost);
-        let httpPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
           httpURI,
           aOriginAttributes
         );
-        let httpsPrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+        let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
           httpsURI,
           aOriginAttributes
         );
@@ -515,7 +529,7 @@ const QuotaCleaner = {
           // wiped if we are provided an aHost of "example.com".
           promises.push(
             new Promise((aResolve, aReject) => {
-              Services.qms.listInitializedOrigins(aRequest => {
+              Services.qms.listOrigins(aRequest => {
                 if (aRequest.resultCode != Cr.NS_OK) {
                   aReject({ message: "Delete by host failed" });
                   return;
@@ -523,7 +537,7 @@ const QuotaCleaner = {
 
                 let promises = [];
                 for (let item of aRequest.result) {
-                  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+                  let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
                     item.origin
                   );
                   let host;
@@ -575,9 +589,9 @@ const QuotaCleaner = {
       let principal = principals.queryElementAt(i, Ci.nsIPrincipal);
 
       if (
-        principal.URI.scheme != "http" &&
-        principal.URI.scheme != "https" &&
-        principal.URI.scheme != "file"
+        !principal.schemeIs("http") &&
+        !principal.schemeIs("https") &&
+        !principal.schemeIs("file")
       ) {
         continue;
       }
@@ -613,13 +627,13 @@ const QuotaCleaner = {
 
             let promises = [];
             for (let item of aRequest.result) {
-              let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+              let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
                 item.origin
               );
               if (
-                principal.URI.scheme == "http" ||
-                principal.URI.scheme == "https" ||
-                principal.URI.scheme == "file"
+                principal.schemeIs("http") ||
+                principal.schemeIs("https") ||
+                principal.schemeIs("file")
               ) {
                 promises.push(
                   new Promise((aResolve, aReject) => {
@@ -1099,6 +1113,22 @@ ClearDataService.prototype = Object.freeze({
     if (!Services.qms) {
       Cu.reportError("Failed initializiation of QuotaManagerService.");
     }
+  },
+
+  deleteDataFromLocalFiles(aIsUserRequest, aFlags, aCallback) {
+    if (!aCallback) {
+      return Cr.NS_ERROR_INVALID_ARG;
+    }
+
+    return this._deleteInternal(aFlags, aCallback, aCleaner => {
+      // Some of the 'Cleaners' do not support clearing data for
+      // local files. Ignore those.
+      if (aCleaner.deleteByLocalFiles) {
+        // A generic originAttributes dictionary.
+        return aCleaner.deleteByLocalFiles({});
+      }
+      return Promise.resolve();
+    });
   },
 
   deleteDataFromHost(aHost, aIsUserRequest, aFlags, aCallback) {

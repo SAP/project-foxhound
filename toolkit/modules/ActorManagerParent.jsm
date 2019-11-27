@@ -103,6 +103,63 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 const { DefaultMap } = ExtensionUtils;
 
 let ACTORS = {
+  AudioPlayback: {
+    parent: {
+      moduleURI: "resource://gre/actors/AudioPlaybackParent.jsm",
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AudioPlaybackChild.jsm",
+      observers: ["audio-playback"],
+    },
+
+    allFrames: true,
+  },
+
+  AutoComplete: {
+    parent: {
+      moduleURI: "resource://gre/actors/AutoCompleteParent.jsm",
+      messages: [
+        "FormAutoComplete:SelectBy",
+        "FormAutoComplete:SetSelectedIndex",
+        "FormAutoComplete:MaybeOpenPopup",
+        "FormAutoComplete:Invalidate",
+        "FormAutoComplete:ClosePopup",
+        "FormAutoComplete:Disconnect",
+        // These two messages are also used, but are currently synchronous calls
+        // through the per-process message manager.
+        // "FormAutoComplete:GetSelectedIndex",
+        // "FormAutoComplete:SelectBy"
+      ],
+    },
+
+    child: {
+      moduleURI: "resource://gre/actors/AutoCompleteChild.jsm",
+      events: {
+        DOMContentLoaded: {},
+        pageshow: { capture: true },
+        pagehide: { capture: true },
+        unload: { capture: true },
+        focus: { capture: true },
+        blur: { capture: true },
+        mousedown: { capture: true },
+        input: { capture: true },
+        keydown: { capture: true },
+        keypress: { capture: true, mozSystemGroup: true },
+        compositionstart: { capture: true },
+        compositionend: { capture: true },
+        contextmenu: { capture: true },
+      },
+      messages: [
+        "FormAutoComplete:HandleEnter",
+        "FormAutoComplete:PopupClosed",
+        "FormAutoComplete:PopupOpened",
+      ],
+    },
+
+    allFrames: true,
+  },
+
   Autoplay: {
     parent: {
       moduleURI: "resource://gre/actors/AutoplayParent.jsm",
@@ -150,6 +207,62 @@ let ACTORS = {
     allFrames: true,
   },
 
+  ExtFind: {
+    child: {
+      moduleURI: "resource://gre/actors/ExtFindChild.jsm",
+      messages: [
+        "ext-Finder:CollectResults",
+        "ext-Finder:HighlightResults",
+        "ext-Finder:ClearHighlighting",
+      ],
+    },
+
+    allFrames: true,
+  },
+
+  FindBar: {
+    parent: {
+      moduleURI: "resource://gre/actors/FindBarParent.jsm",
+      messages: ["Findbar:Keypress", "Findbar:Mouseup"],
+    },
+    child: {
+      moduleURI: "resource://gre/actors/FindBarChild.jsm",
+      events: {
+        keypress: { mozSystemGroup: true },
+      },
+    },
+
+    allFrames: true,
+  },
+
+  // This is the actor that responds to requests from the find toolbar and
+  // searches for matches and highlights them.
+  Finder: {
+    child: {
+      moduleURI: "resource://gre/actors/FinderChild.jsm",
+      messages: [
+        "Finder:CaseSensitive",
+        "Finder:EntireWord",
+        "Finder:Find",
+        "Finder:SetSearchStringToSelection",
+        "Finder:GetInitialSelection",
+        "Finder:Highlight",
+        "Finder:UpdateHighlightAndMatchCount",
+        "Finder:HighlightAllChange",
+        "Finder:EnableSelection",
+        "Finder:RemoveSelection",
+        "Finder:FocusContent",
+        "Finder:FindbarClose",
+        "Finder:FindbarOpen",
+        "Finder:KeyPress",
+        "Finder:MatchesCount",
+        "Finder:ModalHighlightChange",
+      ],
+    },
+
+    allFrames: true,
+  },
+
   InlineSpellChecker: {
     parent: {
       moduleURI: "resource://gre/actors/InlineSpellCheckerParent.jsm",
@@ -179,16 +292,25 @@ let ACTORS = {
     allFrames: true,
   },
 
-  // UAWidgetsDateTimeBox is a _duplicate_ of UAWidgetsChild
-  // that handles only the datetime box widget. The original
-  // intention to port all all UAWidgets to JSWindowActor
-  // at once is blocked by some jUnit tests related to
-  // the video element failing in
-  // mobile/android/geckoview/src/androidTest/java/org/mozilla/geckoview/test/MediaElementTest.kt
-  // when running on android API 16 (debug & pgo) platforms.
-  UAWidgetsDateTimeBox: {
+  Zoom: {
+    parent: {
+      moduleURI: "resource://gre/actors/ZoomParent.jsm",
+    },
     child: {
-      moduleURI: "resource://gre/actors/UAWidgetsDateTimeBoxChild.jsm",
+      moduleURI: "resource://gre/actors/ZoomChild.jsm",
+      events: {
+        FullZoomChange: {},
+        TextZoomChange: {},
+        ZoomChangeUsingMouseWheel: {},
+      },
+    },
+
+    allFrames: true,
+  },
+
+  UAWidgets: {
+    child: {
+      moduleURI: "resource://gre/actors/UAWidgetsChild.jsm",
       events: {
         UAWidgetSetupOrChange: {},
         UAWidgetTeardown: {},
@@ -197,48 +319,19 @@ let ACTORS = {
 
     allFrames: true,
   },
+  PurgeSessionHistory: {
+    child: {
+      moduleURI: "resource://gre/actors/PurgeSessionHistoryChild.jsm",
+    },
+    allFrames: true,
+  },
 };
 
 let LEGACY_ACTORS = {
-  AudioPlayback: {
-    child: {
-      module: "resource://gre/actors/AudioPlaybackChild.jsm",
-      messages: ["AudioPlayback"],
-      observers: ["audio-playback"],
-    },
-  },
-
   Controllers: {
     child: {
       module: "resource://gre/actors/ControllersChild.jsm",
       messages: ["ControllerCommands:Do", "ControllerCommands:DoWithParams"],
-    },
-  },
-
-  ExtFind: {
-    child: {
-      module: "resource://gre/actors/ExtFindChild.jsm",
-      messages: [
-        "ext-Finder:CollectResults",
-        "ext-Finder:HighlightResults",
-        "ext-Finder:clearHighlighting",
-      ],
-    },
-  },
-
-  FindBar: {
-    child: {
-      module: "resource://gre/actors/FindBarChild.jsm",
-      events: {
-        keypress: { mozSystemGroup: true },
-      },
-    },
-  },
-
-  Finder: {
-    child: {
-      module: "resource://gre/actors/FinderChild.jsm",
-      messages: ["Finder:Initialize"],
     },
   },
 
@@ -278,12 +371,14 @@ let LEGACY_ACTORS = {
       module: "resource://gre/actors/PictureInPictureChild.jsm",
       events: {
         MozTogglePictureInPicture: { capture: true },
+        MozStopPictureInPicture: { capture: true },
       },
 
       messages: [
         "PictureInPicture:SetupPlayer",
         "PictureInPicture:Play",
         "PictureInPicture:Pause",
+        "PictureInPicture:KeyToggle",
       ],
     },
   },
@@ -293,8 +388,8 @@ let LEGACY_ACTORS = {
       allFrames: true,
       module: "resource://gre/actors/PictureInPictureChild.jsm",
       events: {
-        canplay: { capture: true, mozSystemGroup: true },
-        pagehide: { capture: true },
+        UAWidgetSetupOrChange: {},
+        contextmenu: { capture: true },
       },
     },
   },
@@ -325,13 +420,6 @@ let LEGACY_ACTORS = {
     },
   },
 
-  PurgeSessionHistory: {
-    child: {
-      module: "resource://gre/actors/PurgeSessionHistoryChild.jsm",
-      messages: ["Browser:PurgeSessionHistory"],
-    },
-  },
-
   SelectionSource: {
     child: {
       module: "resource://gre/actors/SelectionSourceChild.jsm",
@@ -347,16 +435,6 @@ let LEGACY_ACTORS = {
         "Browser:Thumbnail:CheckState",
         "Browser:Thumbnail:GetOriginalURL",
       ],
-    },
-  },
-
-  UAWidgets: {
-    child: {
-      module: "resource://gre/actors/UAWidgetsChild.jsm",
-      events: {
-        UAWidgetSetupOrChange: {},
-        UAWidgetTeardown: {},
-      },
     },
   },
 
@@ -388,23 +466,10 @@ let LEGACY_ACTORS = {
         "WebNavigation:GoBack",
         "WebNavigation:GoForward",
         "WebNavigation:GotoIndex",
-        "WebNavigation:LoadURI",
         "WebNavigation:Reload",
         "WebNavigation:SetOriginAttributes",
         "WebNavigation:Stop",
       ],
-    },
-  },
-
-  Zoom: {
-    child: {
-      module: "resource://gre/actors/ZoomChild.jsm",
-      events: {
-        FullZoomChange: {},
-        TextZoomChange: {},
-        ZoomChangeUsingMouseWheel: {},
-      },
-      messages: ["FullZoom", "TextZoom"],
     },
   },
 };

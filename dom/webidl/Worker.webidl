@@ -12,9 +12,11 @@
  * this document.
  */
 
-[Constructor(USVString scriptURL, optional WorkerOptions options = {}),
- Exposed=(Window,DedicatedWorker,SharedWorker)]
+[Exposed=(Window,DedicatedWorker,SharedWorker)]
 interface Worker : EventTarget {
+  [Throws]
+  constructor(USVString scriptURL, optional WorkerOptions options = {});
+
   void terminate();
 
   [Throws]
@@ -26,7 +28,7 @@ interface Worker : EventTarget {
   attribute EventHandler onmessageerror;
 };
 
-Worker implements AbstractWorker;
+Worker includes AbstractWorker;
 
 dictionary WorkerOptions {
   // WorkerType type = "classic"; TODO: Bug 1247687
@@ -34,8 +36,9 @@ dictionary WorkerOptions {
   DOMString name = "";
 };
 
-[Constructor(USVString scriptURL),
- Func="mozilla::dom::ChromeWorker::WorkerAvailable",
+[Func="mozilla::dom::ChromeWorker::WorkerAvailable",
  Exposed=(Window,DedicatedWorker,SharedWorker)]
 interface ChromeWorker : Worker {
+  [Throws]
+  constructor(USVString scriptURL);
 };

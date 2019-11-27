@@ -13,9 +13,11 @@
 #include <stdlib.h>
 
 #include "jspubtd.h"
+
 #include "builtin/Array.h"
 #include "builtin/Reflect.h"
 #include "frontend/ModuleSharedContext.h"
+#include "frontend/ParseInfo.h"
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
 #include "js/CharacterEncoding.h"
@@ -3144,7 +3146,7 @@ bool ASTSerializer::property(ParseNode* pn, MutableHandleValue dst) {
   bool isShorthand = node->isKind(ParseNodeKind::Shorthand);
   bool isMethod =
       valNode->is<FunctionNode>() &&
-      valNode->as<FunctionNode>().funbox()->kind() == JSFunction::Method;
+      valNode->as<FunctionNode>().funbox()->kind() == FunctionFlags::Method;
   RootedValue key(cx), val(cx);
   return propertyName(keyNode, &key) && expression(valNode, &val) &&
          builder.propertyInitializer(key, val, kind, isShorthand, isMethod,
@@ -3177,7 +3179,7 @@ bool ASTSerializer::literal(ParseNode* pn, MutableHandleValue dst) {
       break;
 
     case ParseNodeKind::BigIntExpr: {
-      BigInt* x = pn->as<BigIntLiteral>().box()->value();
+      BigInt* x = pn->as<BigIntLiteral>().getOrCreateBigInt(cx);
       cx->check(x);
       val.setBigInt(x);
       break;
@@ -3630,10 +3632,12 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
 
   CompileOptions options(cx);
   options.setFileAndLine(filename.get(), lineno);
-  options.setCanLazilyParse(false);
+  options.setForceFullParse();
   options.allowHTMLComments = target == ParseGoal::Script;
   mozilla::Range<const char16_t> chars = linearChars.twoByteRange();
-  UsedNameTracker usedNames(cx);
+
+  LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  ParseInfo parseInfo(cx, allocScope);
 
   RootedScriptSourceObject sourceObject(
       cx, frontend::CreateScriptSourceObject(cx, options, mozilla::Nothing()));
@@ -3642,8 +3646,8 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
   }
 
   Parser<FullParseHandler, char16_t> parser(
-      cx, cx->tempLifoAlloc(), options, chars.begin().get(), chars.length(), EmptyTaint,
-      /* foldConstants = */ false, usedNames, nullptr, nullptr, sourceObject,
+      cx, options, chars.begin().get(), chars.length(), EmptyTaint,
+      /* foldConstants = */ false, parseInfo, nullptr, nullptr, sourceObject,
       target);
   if (!parser.checkOptions()) {
     return false;
@@ -3677,6 +3681,10 @@ static bool reflect_parse(JSContext* cx, uint32_t argc, Value* vp) {
     }
 
     pn = pn->as<ModuleNode>().body();
+  }
+
+  if (!parser.publishDeferredItems()) {
+    return false;
   }
 
   RootedValue val(cx);

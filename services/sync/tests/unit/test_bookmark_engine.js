@@ -97,6 +97,83 @@ function add_bookmark_test(task) {
   });
 }
 
+add_task(async function test_buffer_timeout() {
+  await Service.recordManager.clearCache();
+  await PlacesSyncUtils.bookmarks.reset();
+  let engine = new BufferedBookmarksEngine(Service);
+  engine._newWatchdog = function() {
+    // Return an already-aborted watchdog, so that we can abort merges
+    // immediately.
+    let watchdog = Async.watchdog();
+    watchdog.controller.abort();
+    return watchdog;
+  };
+  await engine.initialize();
+  let server = await serverForFoo(engine);
+  await SyncTestingInfrastructure(server);
+  let collection = server.user("foo").collection("bookmarks");
+
+  try {
+    info("Insert local bookmarks");
+    await PlacesUtils.bookmarks.insertTree({
+      guid: PlacesUtils.bookmarks.unfiledGuid,
+      children: [
+        {
+          guid: "bookmarkAAAA",
+          url: "http://example.com/a",
+          title: "A",
+        },
+        {
+          guid: "bookmarkBBBB",
+          url: "http://example.com/b",
+          title: "B",
+        },
+      ],
+    });
+
+    info("Insert remote bookmarks");
+    collection.insert(
+      "menu",
+      encryptPayload({
+        id: "menu",
+        type: "folder",
+        parentid: "places",
+        title: "menu",
+        children: ["bookmarkCCCC", "bookmarkDDDD"],
+      })
+    );
+    collection.insert(
+      "bookmarkCCCC",
+      encryptPayload({
+        id: "bookmarkCCCC",
+        type: "bookmark",
+        parentid: "menu",
+        bmkUri: "http://example.com/c",
+        title: "C",
+      })
+    );
+    collection.insert(
+      "bookmarkDDDD",
+      encryptPayload({
+        id: "bookmarkDDDD",
+        type: "bookmark",
+        parentid: "menu",
+        bmkUri: "http://example.com/d",
+        title: "D",
+      })
+    );
+
+    info("We expect this sync to fail");
+    await Assert.rejects(
+      sync_engine_and_validate_telem(engine, true),
+      ex => ex.name == "InterruptedError"
+    );
+  } finally {
+    await cleanup(engine, server);
+    await engine.finalize();
+  }
+});
+
 add_bookmark_test(async function test_maintenance_after_failure(engine) {
   _("Ensure we try to run maintenance if the engine fails to sync");
 
@@ -268,9 +345,7 @@ add_bookmark_test(async function test_delete_invalid_roots_from_server(engine) {
           engineData.steps.map(step => step.name),
           [
             "fetchLocalTree",
-            "fetchNewLocalContents",
             "fetchRemoteTree",
-            "fetchNewRemoteContents",
             "merge",
             "apply",
             "notifyObservers",
@@ -392,8 +467,8 @@ add_bookmark_test(async function test_processIncoming_error_orderChildren(
     };
 
     // Make the 10 minutes old so it will only be synced in the toFetch phase.
-    bogus_record.modified = Date.now() / 1000 - 60 * 10;
-    await engine.setLastSync(Date.now() / 1000 - 60);
+    bogus_record.modified = new_timestamp() - 60 * 10;
+    await engine.setLastSync(new_timestamp() - 60);
     engine.toFetch = new SerializableSet([BOGUS_GUID]);
 
     let error;
@@ -1253,7 +1328,7 @@ add_task(async function test_resume_buffer() {
   try {
     let children = [];
 
-    let timestamp = Math.floor(Date.now() / 1000);
+    let timestamp = round_timestamp(Date.now());
     // Add two chunks worth of records to the server
     for (let i = 0; i < batchChunkSize * 2; ++i) {
       let cleartext = {
@@ -1538,7 +1613,7 @@ add_bookmark_test(async function test_livemarks(engine) {
         children: ["livemarkAAAA"],
         parentid: "places",
       }),
-      modifiedForA / 1000
+      round_timestamp(modifiedForA)
     );
     collection.insert(
       "livemarkAAAA",
@@ -1550,7 +1625,7 @@ add_bookmark_test(async function test_livemarks(engine) {
         title: "A",
         parentid: "menu",
       }),
-      modifiedForA / 1000
+      round_timestamp(modifiedForA)
     );
 
     _("Insert remotely updated livemark");
@@ -1572,7 +1647,7 @@ add_bookmark_test(async function test_livemarks(engine) {
         children: ["livemarkBBBB"],
         parentid: "places",
       }),
-      now / 1000
+      round_timestamp(now)
     );
     collection.insert(
       "livemarkBBBB",
@@ -1584,7 +1659,7 @@ add_bookmark_test(async function test_livemarks(engine) {
         title: "B",
         parentid: "toolbar",
       }),
-      now / 1000
+      round_timestamp(now)
     );
 
     _("Insert new remote livemark");
@@ -1598,7 +1673,7 @@ add_bookmark_test(async function test_livemarks(engine) {
         children: ["livemarkCCCC"],
         parentid: "places",
       }),
-      now / 1000
+      round_timestamp(now)
     );
     collection.insert(
       "livemarkCCCC",
@@ -1610,11 +1685,11 @@ add_bookmark_test(async function test_livemarks(engine) {
         title: "C",
         parentid: "unfiled",
       }),
-      now / 1000
+      round_timestamp(now)
     );
 
     _("Bump last sync time to ignore A");
-    await engine.setLastSync(now / 1000 - 60);
+    await engine.setLastSync(round_timestamp(now) - 60);
 
     _("Sync");
     await sync_engine_and_validate_telem(engine, false);

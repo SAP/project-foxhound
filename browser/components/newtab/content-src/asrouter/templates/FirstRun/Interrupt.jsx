@@ -5,13 +5,14 @@
 import React from "react";
 import { Trailhead } from "../Trailhead/Trailhead";
 import { ReturnToAMO } from "../ReturnToAMO/ReturnToAMO";
-import { StartupOverlay } from "../StartupOverlay/StartupOverlay";
+import { FullPageInterrupt } from "../FullPageInterrupt/FullPageInterrupt";
 import { LocalizationProvider } from "fluent-react";
 import { generateBundles } from "../../rich-text-strings";
 
 export class Interrupt extends React.PureComponent {
   render() {
     const {
+      cards,
       onDismiss,
       onNextScene,
       message,
@@ -31,6 +32,7 @@ export class Interrupt extends React.PureComponent {
           >
             <ReturnToAMO
               {...message}
+              document={this.props.document}
               UISurface="NEWTAB_OVERLAY"
               onBlock={onDismiss}
               onAction={executeAction}
@@ -38,12 +40,19 @@ export class Interrupt extends React.PureComponent {
             />
           </LocalizationProvider>
         );
-      case "fxa_overlay":
+      case "full_page_interrupt":
         return (
-          <StartupOverlay
+          <FullPageInterrupt
+            document={this.props.document}
+            cards={cards}
+            message={message}
             onBlock={onDismiss}
+            onAction={executeAction}
             dispatch={dispatch}
-            fxa_endpoint={fxaEndpoint}
+            fxaEndpoint={fxaEndpoint}
+            sendUserActionTelemetry={sendUserActionTelemetry}
+            UTMTerm={UTMTerm}
+            flowParams={flowParams}
           />
         );
       case "trailhead":

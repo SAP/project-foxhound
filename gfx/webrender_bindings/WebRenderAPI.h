@@ -125,7 +125,8 @@ class TransactionBuilder final {
                 wr::Vec<uint8_t>& aBytes);
 
   void AddBlobImage(wr::BlobImageKey aKey, const ImageDescriptor& aDescriptor,
-                    wr::Vec<uint8_t>& aBytes);
+                    wr::Vec<uint8_t>& aBytes,
+                    const wr::DeviceIntRect& aVisibleRect);
 
   void AddExternalImageBuffer(ImageKey key, const ImageDescriptor& aDescriptor,
                               ExternalImageId aHandle);
@@ -141,6 +142,7 @@ class TransactionBuilder final {
   void UpdateBlobImage(wr::BlobImageKey aKey,
                        const ImageDescriptor& aDescriptor,
                        wr::Vec<uint8_t>& aBytes,
+                       const wr::DeviceIntRect& aVisibleRect,
                        const wr::LayoutIntRect& aDirtyRect);
 
   void UpdateExternalImage(ImageKey aKey, const ImageDescriptor& aDescriptor,
@@ -155,7 +157,8 @@ class TransactionBuilder final {
                                         const wr::DeviceIntRect& aDirtyRect,
                                         uint8_t aChannelIndex = 0);
 
-  void SetImageVisibleArea(BlobImageKey aKey, const wr::DeviceIntRect& aArea);
+  void SetBlobImageVisibleArea(BlobImageKey aKey,
+                               const wr::DeviceIntRect& aArea);
 
   void DeleteImage(wr::ImageKey aKey);
 
@@ -261,9 +264,17 @@ class WebRenderAPI final {
   layers::SyncHandle GetSyncHandle() const { return mSyncHandle; }
 
   void Capture();
+  void SetTransactionLogging(bool aValue);
 
   void SetCompositionRecorder(
-      RefPtr<layers::WebRenderCompositionRecorder>&& aRecorder);
+      UniquePtr<layers::WebRenderCompositionRecorder> aRecorder);
+
+  /**
+   * Write the frames collected by the |WebRenderCompositionRecorder| to disk.
+   *
+   * If there is not currently a recorder, this is a no-op.
+   */
+  void WriteCollectedFrames();
 
  protected:
   WebRenderAPI(wr::DocumentHandle* aHandle, wr::WindowId aId,
@@ -326,15 +337,17 @@ class MOZ_RAII AutoTransactionSender {
  */
 struct MOZ_STACK_CLASS StackingContextParams : public WrStackingContextParams {
   StackingContextParams()
-      : WrStackingContextParams{WrStackingContextClip::None(),
-                                nullptr,
-                                nullptr,
-                                wr::TransformStyle::Flat,
-                                wr::WrReferenceFrameKind::Transform,
-                                nullptr,
-                                /* is_backface_visible = */ true,
-                                /* cache_tiles = */ false,
-                                wr::MixBlendMode::Normal} {}
+      : WrStackingContextParams{
+            WrStackingContextClip::None(),
+            nullptr,
+            nullptr,
+            wr::TransformStyle::Flat,
+            wr::WrReferenceFrameKind::Transform,
+            nullptr,
+            /* prim_flags = */ wr::PrimitiveFlags_IS_BACKFACE_VISIBLE,
+            /* cache_tiles = */ false,
+            wr::MixBlendMode::Normal,
+            /* is_backdrop_root = */ false} {}
 
   void SetPreserve3D(bool aPreserve) {
     transform_style =
@@ -439,6 +452,12 @@ class DisplayListBuilder final {
   void PushClearRectWithComplexRegion(const wr::LayoutRect& aBounds,
                                       const wr::ComplexClipRegion& aRegion);
 
+  void PushBackdropFilter(const wr::LayoutRect& aBounds,
+                          const wr::ComplexClipRegion& aRegion,
+                          const nsTArray<wr::FilterOp>& aFilters,
+                          const nsTArray<wr::WrFilterData>& aFilterDatas,
+                          bool aIsBackfaceVisible);
+
   void PushLinearGradient(const wr::LayoutRect& aBounds,
                           const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
                           const wr::LayoutPoint& aStartPoint,
@@ -462,32 +481,31 @@ class DisplayListBuilder final {
                  wr::ImageKey aImage, bool aPremultipliedAlpha = true,
                  const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
 
-  void PushImage(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-                 bool aIsBackfaceVisible, const wr::LayoutSize& aStretchSize,
-                 const wr::LayoutSize& aTileSpacing, wr::ImageRendering aFilter,
-                 wr::ImageKey aImage, bool aPremultipliedAlpha = true,
-                 const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
+  void PushRepeatingImage(
+      const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+      bool aIsBackfaceVisible, const wr::LayoutSize& aStretchSize,
+      const wr::LayoutSize& aTileSpacing, wr::ImageRendering aFilter,
+      wr::ImageKey aImage, bool aPremultipliedAlpha = true,
+      const wr::ColorF& aColor = wr::ColorF{1.0f, 1.0f, 1.0f, 1.0f});
 
   void PushYCbCrPlanarImage(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
       bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
       wr::ImageKey aImageChannel1, wr::ImageKey aImageChannel2,
       wr::WrColorDepth aColorDepth, wr::WrYuvColorSpace aColorSpace,
-      wr::ImageRendering aFilter);
+      wr::WrColorRange aColorRange, wr::ImageRendering aFilter);
 
   void PushNV12Image(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                      bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
                      wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
                      wr::WrYuvColorSpace aColorSpace,
-                     wr::ImageRendering aFilter);
+                     wr::WrColorRange aColorRange, wr::ImageRendering aFilter);
 
-  void PushYCbCrInterleavedImage(const wr::LayoutRect& aBounds,
-                                 const wr::LayoutRect& aClip,
-                                 bool aIsBackfaceVisible,
-                                 wr::ImageKey aImageChannel0,
-                                 wr::WrColorDepth aColorDepth,
-                                 wr::WrYuvColorSpace aColorSpace,
-                                 wr::ImageRendering aFilter);
+  void PushYCbCrInterleavedImage(
+      const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+      bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
+      wr::WrColorDepth aColorDepth, wr::WrYuvColorSpace aColorSpace,
+      wr::WrColorRange aColorRange, wr::ImageRendering aFilter);
 
   void PushIFrame(const wr::LayoutRect& aBounds, bool aIsBackfaceVisible,
                   wr::PipelineId aPipeline, bool aIgnoreMissingPipeline);
@@ -508,19 +526,19 @@ class DisplayListBuilder final {
                           const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
                           const wr::LayoutSideOffsets& aWidths,
                           const int32_t aWidth, const int32_t aHeight,
-                          bool aFill, const wr::SideOffsets2D<int32_t>& aSlice,
+                          bool aFill, const wr::DeviceIntSideOffsets& aSlice,
                           const wr::LayoutPoint& aStartPoint,
                           const wr::LayoutPoint& aEndPoint,
                           const nsTArray<wr::GradientStop>& aStops,
                           wr::ExtendMode aExtendMode,
-                          const wr::SideOffsets2D<float>& aOutset);
+                          const wr::LayoutSideOffsets& aOutset);
 
   void PushBorderRadialGradient(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
       bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
       const wr::LayoutPoint& aCenter, const wr::LayoutSize& aRadius,
       const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-      const wr::SideOffsets2D<float>& aOutset);
+      const wr::LayoutSideOffsets& aOutset);
 
   void PushText(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                 bool aIsBackfaceVisible, const wr::ColorF& aColor,
@@ -635,6 +653,7 @@ class DisplayListBuilder final {
   wr::PipelineId mPipelineId;
   wr::LayoutSize mContentSize;
 
+  nsTArray<wr::PipelineId> mRemotePipelineIds;
   RenderRoot mRenderRoot;
   bool mSendSubBuilderDisplayList;
 

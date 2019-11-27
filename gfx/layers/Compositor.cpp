@@ -13,6 +13,7 @@
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/mozalloc.h"  // for operator delete, etc
+#include "GeckoProfiler.h"
 #include "gfx2DGlue.h"
 #include "nsAppRunner.h"
 #include "LayersHelpers.h"
@@ -77,6 +78,8 @@ Compositor::Compositor(widget::CompositorWidget* aWidget,
 Compositor::~Compositor() { ReadUnlockTextures(); }
 
 void Compositor::Destroy() {
+  mWidget = nullptr;
+
   TextureSourceProvider::Destroy();
   mIsDestroyed = true;
 }
@@ -593,6 +596,15 @@ already_AddRefed<RecordedFrame> Compositor::RecordFrame(
   }
 
   return MakeAndAddRef<CompositorRecordedFrame>(aTimeStamp, std::move(buffer));
+}
+
+bool Compositor::ShouldRecordFrames() const {
+#ifdef MOZ_GECKO_PROFILER
+  if (profiler_feature_active(ProfilerFeature::Screenshots)) {
+    return true;
+  }
+#endif
+  return mRecordFrames;
 }
 
 }  // namespace layers

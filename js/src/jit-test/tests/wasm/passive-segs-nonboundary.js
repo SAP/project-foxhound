@@ -39,9 +39,9 @@ function gen_tab_impmod_t(insn)
      (table 30 30 funcref)
      ;; -------- Table initialisers --------
      (elem (i32.const 2) 3 1 4 1)
-     (elem passive 2 7 1 8)
+     (elem func 2 7 1 8)
      (elem (i32.const 12) 7 5 2 3 6)
-     (elem passive 5 9 2 7 6)
+     (elem func 5 9 2 7 6)
      ;; -------- Imports --------
      (import "a" "if0" (result i32))    ;; index 0
      (import "a" "if1" (result i32))
@@ -174,9 +174,9 @@ function gen_mem_mod_t(insn)
      (memory (export "memory0") 1 1)
      ;; -------- Memory initialisers --------
      (data (i32.const 2) "\\03\\01\\04\\01")
-     (data passive "\\02\\07\\01\\08")
+     (data "\\02\\07\\01\\08")
      (data (i32.const 12) "\\07\\05\\02\\03\\06")
-     (data passive "\\05\\09\\02\\07\\06")
+     (data "\\05\\09\\02\\07\\06")
 
      (func (export "testfn")
        ${insn}
@@ -264,8 +264,8 @@ mem_test("(memory.init 1 (i32.const 7) (i32.const 0) (i32.const 4)) \n" +
 assertErrorMessage(() => wasmEvalText(
     `(module
        (datacount 1)
-       (data passive "")
-       (data passive ""))`),
+       (data "")
+       (data ""))`),
                    WebAssembly.CompileError,
                    /number of data segments does not match declared count/);
 
@@ -273,8 +273,8 @@ assertErrorMessage(() => wasmEvalText(
 assertErrorMessage(() => wasmEvalText(
     `(module
        (datacount 3)
-       (data passive "")
-       (data passive ""))`),
+       (data "")
+       (data ""))`),
                    WebAssembly.CompileError,
                    /number of data segments does not match declared count/);
 
@@ -311,7 +311,7 @@ function checkPassiveElemSegment(mangle, err) {
            body: (function () {
                let body = [];
                body.push(1);           // 1 element segment
-               body.push(1);           // Flag: Passive
+               body.push(0x1 | 0x4);   // Flags: Passive and uses element expression
                body.push(AnyFuncCode + (mangle == "type" ? 1 : 0)); // always anyfunc
                body.push(1);           // Element count
                body.push(RefFuncCode + (mangle == "ref.func" ? 1 : 0)); // always ref.func
@@ -334,7 +334,7 @@ function checkPassiveElemSegment(mangle, err) {
 }
 
 checkPassiveElemSegment("");
-checkPassiveElemSegment("type", /passive segments can only contain function references/);
+checkPassiveElemSegment("type", /segments with element expressions can only contain references/);
 checkPassiveElemSegment("ref.func", /failed to read initializer operation/);
 checkPassiveElemSegment("end", /failed to read end of initializer expression/);
 
@@ -348,7 +348,7 @@ checkPassiveElemSegment("end", /failed to read end of initializer expression/);
            (elem (i32.const 3) $m)
            (elem (i32.const 6) $m)
            (elem (i32.const 8) $m)
-           (elem passive $f ref.null $g ref.null $h)
+           (elem funcref (ref.func $f) (ref.null) (ref.func $g) (ref.null) (ref.func $h))
            (func $m)
            (func $f)
            (func $g)
@@ -550,8 +550,7 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
     checkRange(b, 0x00000, 0x10000, 0x00);
 }
 
-// Zero len with offset out-of-bounds is OK if it's at the edge of the
-// memory, but not if it is one past that.
+// Zero len with offset out-of-bounds is OK
 {
     let inst = wasmEvalText(
     `(module
@@ -573,8 +572,7 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
        )
      )`
     );
-    assertErrorMessage(() => inst.exports.testfn(),
-                       WebAssembly.RuntimeError, /index out of bounds/);
+    inst.exports.testfn();
 }
 
 // Very large range
@@ -731,7 +729,7 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
     checkRange(b, 0x08000, 0x10000, 0xAA);
 }
 
-// Zero len with dest offset out-of-bounds but at the edge of memory is OK
+// Zero len with dest offset out-of-bounds at the edge of memory
 {
     let inst = wasmEvalText(
     `(module
@@ -744,7 +742,7 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
     inst.exports.testfn();
 }
 
-// Ditto, but one further out is not OK.
+// Ditto, but one element further out
 {
     let inst = wasmEvalText(
     `(module
@@ -754,11 +752,10 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
        )
      )`
     );
-    assertErrorMessage(() => inst.exports.testfn(),
-                       WebAssembly.RuntimeError, /index out of bounds/);
+    inst.exports.testfn();
 }
 
-// Zero len with src offset out-of-bounds but at the edge of memory is OK
+// Zero len with src offset out-of-bounds at the edge of memory
 {
     let inst = wasmEvalText(
     `(module
@@ -771,7 +768,7 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
     inst.exports.testfn();
 }
 
-// Ditto, but one element further out is not OK.
+// Ditto, but one element further out
 {
     let inst = wasmEvalText(
     `(module
@@ -781,8 +778,7 @@ function checkRange(arr, minIx, maxIxPlusOne, expectedValue)
        )
      )`
     );
-    assertErrorMessage(() => inst.exports.testfn(),
-                       WebAssembly.RuntimeError, /index out of bounds/);
+    inst.exports.testfn();
 }
 
 // 100 random fills followed by 100 random copies, in a single-page buffer,

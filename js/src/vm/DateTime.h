@@ -10,6 +10,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/Unused.h"
 
 #include <stdint.h>
 
@@ -55,7 +56,7 @@ extern void FinishDateTimeState();
 
 enum class ResetTimeZoneMode : bool {
   DontResetIfOffsetUnchanged,
-  ResetEvenIfOffsetUnchaged,
+  ResetEvenIfOffsetUnchanged,
 };
 
 /**
@@ -66,7 +67,16 @@ enum class ResetTimeZoneMode : bool {
  */
 extern void ResetTimeZoneInternal(ResetTimeZoneMode mode);
 
-/*
+/**
+ * ICU's default time zone, used for various date/time formatting operations
+ * that include the local time in the representation, is allowed to go stale
+ * for unfortunate performance reasons.  Call this function when an up-to-date
+ * default time zone is required, to resync ICU's default time zone with
+ * reality.
+ */
+extern void ResyncICUDefaultTimeZone();
+
+/**
  * Stores date/time information, particularly concerning the current local
  * time zone, and implements a small cache for daylight saving time offset
  * computation.
@@ -122,6 +132,14 @@ class DateTimeInfo {
   DateTimeInfo();
   ~DateTimeInfo();
 
+  static auto acquireLockWithValidTimeZone() {
+    auto guard = instance->lock();
+    if (guard->timeZoneStatus_ != TimeZoneStatus::Valid) {
+      guard->updateTimeZone();
+    }
+    return guard;
+  }
+
  public:
   // The spec implicitly assumes DST and time zone adjustment information
   // never change in the course of a function -- sometimes even across
@@ -134,17 +152,18 @@ class DateTimeInfo {
    * keep things interesting.
    */
   static int32_t getDSTOffsetMilliseconds(int64_t utcMilliseconds) {
-    auto guard = instance->lock();
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalGetDSTOffsetMilliseconds(utcMilliseconds);
   }
 
   /**
-   * Return the local time zone adjustment (ES2019 20.3.1.7) as computed by
-   * the operating system.
+   * The offset in seconds from the current UTC time to the current local
+   * standard time (i.e. not including any offset due to DST) as computed by the
+   * operating system.
    */
-  static int32_t localTZA() {
-    auto guard = instance->lock();
-    return guard->localTZA_;
+  static int32_t utcToLocalStandardOffsetSeconds() {
+    auto guard = acquireLockWithValidTimeZone();
+    return guard->utcToLocalStandardOffsetSeconds_;
   }
 
 #if ENABLE_INTL_API && !MOZ_SYSTEM_ICU
@@ -156,7 +175,7 @@ class DateTimeInfo {
    */
   static int32_t getOffsetMilliseconds(int64_t milliseconds,
                                        TimeZoneOffset offset) {
-    auto guard = instance->lock();
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalGetOffsetMilliseconds(milliseconds, offset);
   }
 
@@ -168,23 +187,34 @@ class DateTimeInfo {
    */
   static bool timeZoneDisplayName(char16_t* buf, size_t buflen,
                                   int64_t utcMilliseconds, const char* locale) {
-    auto guard = instance->lock();
+    auto guard = acquireLockWithValidTimeZone();
     return guard->internalTimeZoneDisplayName(buf, buflen, utcMilliseconds,
                                               locale);
+  }
+#else
+  /**
+   * Return the local time zone adjustment (ES2019 20.3.1.7) as computed by
+   * the operating system.
+   */
+  static int32_t localTZA() {
+    return utcToLocalStandardOffsetSeconds() * msPerSecond;
   }
 #endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
 
  private:
-  // We don't want anyone accidentally calling *only*
-  // DateTimeInfo::updateTimeZoneAdjustment() to respond to a system time
-  // zone change (missing the necessary poking of ICU as well), so ensure
-  // only js::ResetTimeZoneInternal() can call this via access restrictions.
+  // The two methods below should only be called via js::ResetTimeZoneInternal()
+  // and js::ResyncICUDefaultTimeZone().
   friend void js::ResetTimeZoneInternal(ResetTimeZoneMode);
+  friend void js::ResyncICUDefaultTimeZone();
 
-  // Returns true iff the internal DST offset cache was purged.
-  static bool updateTimeZoneAdjustment(ResetTimeZoneMode mode) {
+  static void resetTimeZone(ResetTimeZoneMode mode) {
     auto guard = instance->lock();
-    return guard->internalUpdateTimeZoneAdjustment(mode);
+    guard->internalResetTimeZone(mode);
+  }
+
+  static void resyncICUDefaultTimeZone() {
+    auto guard = acquireLockWithValidTimeZone();
+    mozilla::Unused << guard;
   }
 
   struct RangeCache {
@@ -202,21 +232,43 @@ class DateTimeInfo {
     void sanityCheck();
   };
 
-  /*
-   * The current local time zone adjustment, cached because retrieving this
-   * dynamically is Slow, and a certain venerable benchmark which shall not
-   * be named depends on it being fast.
+  enum class TimeZoneStatus : uint8_t { Valid, NeedsUpdate, UpdateIfChanged };
+
+  TimeZoneStatus timeZoneStatus_;
+
+  /**
+   * The offset in seconds from the current UTC time to the current local
+   * standard time (i.e. not including any offset due to DST) as computed by the
+   * operating system.
+   *
+   * Cached because retrieving this dynamically is Slow, and a certain venerable
+   * benchmark which shall not be named depends on it being fast.
    *
    * SpiderMonkey occasionally and arbitrarily updates this value from the
    * system time zone to attempt to keep this reasonably up-to-date.  If
    * temporary inaccuracy can't be tolerated, JSAPI clients may call
    * JS::ResetTimeZone to forcibly sync this with the system time zone.
-   */
-  int32_t localTZA_;
-
-  /*
-   * Cached offset in seconds from the current UTC time to the current
-   * local standard time (i.e. not including any offset due to DST).
+   *
+   * In most cases this value is consistent with the raw time zone offset as
+   * returned by the ICU default time zone (`icu::TimeZone::getRawOffset()`),
+   * but it is possible to create cases where the operating system default time
+   * zone differs from the ICU default time zone. For example ICU doesn't
+   * support the full range of TZ environment variable settings, which can
+   * result in <ctime> returning a different time zone than what's returned by
+   * ICU. One example is "TZ=WGT3WGST,M3.5.0/-2,M10.5.0/-1", where <ctime>
+   * returns -3 hours as the local offset, but ICU flat out rejects the TZ value
+   * and instead infers the default time zone via "/etc/localtime" (on Unix).
+   * This offset can also differ from ICU when the operating system and ICU use
+   * different tzdata versions and the time zone rules of the current system
+   * time zone have changed. Or, on Windows, when the Windows default time zone
+   * can't be mapped to a IANA time zone, see for example
+   * <https://unicode-org.atlassian.net/browse/ICU-13845>.
+   *
+   * When ICU is exclusively used for time zone computations, that means when
+   * |ENABLE_INTL_API && !MOZ_SYSTEM_ICU| is true, this field is only used to
+   * detect system default time zone changes. It must not be used to convert
+   * between local and UTC time, because, as outlined above, this could lead to
+   * different results when compared to ICU.
    */
   int32_t utcToLocalStandardOffsetSeconds_;
 
@@ -263,7 +315,11 @@ class DateTimeInfo {
 
   static constexpr int64_t RangeExpansionAmount = 30 * SecondsPerDay;
 
-  bool internalUpdateTimeZoneAdjustment(ResetTimeZoneMode mode);
+  void internalResetTimeZone(ResetTimeZoneMode mode);
+
+  void updateTimeZone();
+
+  void internalResyncICUDefaultTimeZone();
 
   int64_t toClampedSeconds(int64_t milliseconds);
 
@@ -306,19 +362,6 @@ class DateTimeInfo {
   icu::TimeZone* timeZone();
 #endif /* ENABLE_INTL_API && !MOZ_SYSTEM_ICU */
 };
-
-enum class IcuTimeZoneStatus { Valid, NeedsUpdate };
-
-extern ExclusiveData<IcuTimeZoneStatus>* IcuTimeZoneState;
-
-/**
- * ICU's default time zone, used for various date/time formatting operations
- * that include the local time in the representation, is allowed to go stale
- * for unfortunate performance reasons.  Call this function when an up-to-date
- * default time zone is required, to resync ICU's default time zone with
- * reality.
- */
-extern void ResyncICUDefaultTimeZone();
 
 } /* namespace js */
 

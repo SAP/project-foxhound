@@ -115,8 +115,8 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
     mParent = aNewParent;
   }
 
-  static already_AddRefed<DataTransfer> Constructor(const GlobalObject& aGlobal,
-                                                    ErrorResult& aRv);
+  static already_AddRefed<DataTransfer> Constructor(
+      const GlobalObject& aGlobal);
 
   /**
    * The actual effect that will be used, and should always be one of the
@@ -273,6 +273,8 @@ class DataTransfer final : public nsISupports, public nsWrapperCache {
   uint32_t EffectAllowedInt() const { return mEffectAllowed; }
 
   void GetMozTriggeringPrincipalURISpec(nsAString& aPrincipalURISpec);
+
+  nsIContentSecurityPolicy* GetMozCSP();
 
   mozilla::dom::Element* GetDragTarget() const { return mDragTarget; }
 

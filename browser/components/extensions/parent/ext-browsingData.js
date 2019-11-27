@@ -1,5 +1,9 @@
 /* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* vim: set sts=2 sw=2 et tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 var { PlacesUtils } = ChromeUtils.import(
@@ -75,7 +79,6 @@ const clearCookies = async function(options) {
           cookie.host,
           cookie.name,
           cookie.path,
-          false,
           cookie.originAttributes
         );
 
@@ -113,11 +116,14 @@ const clearIndexedDB = async function(options) {
       }
 
       for (let item of request.result) {
-        let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+        let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
           item.origin
         );
-        let scheme = principal.URI.scheme;
-        if (scheme == "http" || scheme == "https" || scheme == "file") {
+        if (
+          principal.schemeIs("http") ||
+          principal.schemeIs("https") ||
+          principal.schemeIs("file")
+        ) {
           promises.push(
             new Promise((resolve, reject) => {
               let clearRequest = quotaManagerService.clearStoragesForPrincipal(
@@ -182,7 +188,7 @@ const clearLocalStorage = async function(options) {
         }
 
         for (let item of request.result) {
-          let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          let principal = Services.scriptSecurityManager.createContentPrincipalFromOrigin(
             item.origin
           );
           let host = principal.URI.hostPort;

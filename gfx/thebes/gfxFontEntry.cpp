@@ -31,7 +31,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Telemetry.h"
 #include "gfxSVGGlyphs.h"
 #include "gfx2DGlue.h"
@@ -166,9 +166,10 @@ bool gfxFontEntry::TestCharacterMap(uint32_t aCh) {
 nsresult gfxFontEntry::InitializeUVSMap() {
   // mUVSOffset will not be initialized
   // until cmap is initialized.
-  if (!mCharacterMap) {
+  if (!mCharacterMap && !mShmemCharacterMap) {
     ReadCMAP();
-    NS_ASSERTION(mCharacterMap, "failed to initialize character map");
+    NS_ASSERTION(mCharacterMap || mShmemCharacterMap,
+                 "failed to initialize character map");
   }
 
   if (!mUVSOffset) {
@@ -1604,13 +1605,12 @@ void gfxFontFamily::FindFontForChar(GlobalFontMatch* aMatchData) {
   }
 
 #ifdef MOZ_GECKO_PROFILER
-  nsCString charAndName;
-  if (profiler_is_active()) {
-    charAndName = nsPrintfCString("\\u%x %s", aMatchData->mCh, mName.get());
+  if (profiler_can_accept_markers()) {
+    nsCString charAndName =
+        nsPrintfCString("\\u%x %s", aMatchData->mCh, mName.get());
+    AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("gfxFontFamily::FindFontForChar",
+                                          LAYOUT, charAndName);
   }
-
-  AUTO_PROFILER_LABEL_DYNAMIC_NSCSTRING("gfxFontFamily::FindFontForChar",
-                                        LAYOUT, charAndName);
 #endif
 
   AutoTArray<gfxFontEntry*, 4> entries;

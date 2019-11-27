@@ -12,6 +12,7 @@
 #include "mozilla/dom/PushManager.h"
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/ServiceWorkerRegistrationBinding.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsPrimitives.h"
@@ -112,7 +113,7 @@ void ServiceWorkerRegistration::DisconnectFromOwner() {
   DOMEventTargetHelper::DisconnectFromOwner();
 }
 
-void ServiceWorkerRegistration::RegistrationRemoved() {
+void ServiceWorkerRegistration::RegistrationCleared() {
   // Its possible that the registration will fail to install and be
   // immediately removed.  In that case we may never receive the
   // UpdateState() call if the actor was too slow to connect, etc.
@@ -199,12 +200,65 @@ already_AddRefed<Promise> ServiceWorkerRegistration::Update(ErrorResult& aRv) {
     return nullptr;
   }
 
+  /**
+   * `ServiceWorker` objects are not exposed on worker threads yet, so calling
+   * `ServiceWorkerRegistration::Get{Installing,Waiting,Active}` won't work.
+   */
+  const bool hasNewestWorker = mDescriptor.GetInstalling() ||
+                               mDescriptor.GetWaiting() ||
+                               mDescriptor.GetActive();
+
+  /**
+   * If newestWorker is null, return a promise rejected with an
+   * "InvalidStateError" DOMException and abort these steps.
+   */
+  if (!hasNewestWorker) {
+    outer->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return outer.forget();
+  }
+
+  /**
+   * If the context object’s relevant settings object’s global object
+   * globalObject is a ServiceWorkerGlobalScope object, and globalObject’s
+   * associated service worker's state is "installing", return a promise
+   * rejected with an "InvalidStateError" DOMException and abort these steps.
+   */
+  if (!NS_IsMainThread()) {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+
+    if (workerPrivate->IsServiceWorker() &&
+        (workerPrivate->GetServiceWorkerDescriptor().State() ==
+         ServiceWorkerState::Installing)) {
+      outer->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+      return outer.forget();
+    }
+  }
+
   RefPtr<ServiceWorkerRegistration> self = this;
 
   mInner->Update(
       [outer, self](const ServiceWorkerRegistrationDescriptor& aDesc) {
         nsIGlobalObject* global = self->GetParentObject();
-        MOZ_DIAGNOSTIC_ASSERT(global);
+        // It's possible this binding was detached from the global.  In cases
+        // where we use IPC with Promise callbacks, we use
+        // DOMMozPromiseRequestHolder in order to auto-disconnect the promise
+        // that would hold these callbacks.  However in bug 1466681 we changed
+        // this call to use (synchronous) callbacks because the use of
+        // MozPromise introduced an additional runnable scheduling which made
+        // it very difficult to maintain ordering required by the standard.
+        //
+        // If we were to delete this actor at the time of DETH detaching, we
+        // would not need to do this check because the IPC callback of the
+        // RemoteServiceWorkerRegistrationImpl lambdas would never occur.
+        // However, its actors currently depend on asking the parent to delete
+        // the actor for us.  Given relaxations in the IPC lifecyle, we could
+        // potentially issue a direct termination, but that requires additional
+        // evaluation.
+        if (!global) {
+          outer->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+          return;
+        }
         RefPtr<ServiceWorkerRegistration> ref =
             global->GetOrCreateServiceWorkerRegistration(aDesc);
         if (!ref) {
@@ -288,7 +342,7 @@ already_AddRefed<Promise> ServiceWorkerRegistration::ShowNotification(
   }
 
   RefPtr<Promise> p = Notification::ShowPersistentNotification(
-      aCx, global, scope, aTitle, aOptions, aRv);
+      aCx, global, scope, aTitle, aOptions, mDescriptor, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }

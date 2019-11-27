@@ -10,6 +10,7 @@ with Files('**'):
 
 EXTRA_JS_MODULES += [
     'Extension.jsm',
+    'ExtensionActivityLog.jsm',
     'ExtensionChild.jsm',
     'ExtensionChildDevToolsUtils.jsm',
     'ExtensionCommon.jsm',
@@ -19,6 +20,7 @@ EXTRA_JS_MODULES += [
     'ExtensionPermissions.jsm',
     'ExtensionPreferencesManager.jsm',
     'ExtensionProcessScript.jsm',
+    'extensionProcessScriptLoader.js',
     'ExtensionSettingsStore.jsm',
     'ExtensionShortcuts.jsm',
     'ExtensionStorage.jsm',
@@ -32,8 +34,9 @@ EXTRA_JS_MODULES += [
     'MessageManagerProxy.jsm',
     'NativeManifests.jsm',
     'NativeMessaging.jsm',
+    'onExtensionBrowser.js',
     'PerformanceCounters.jsm',
-    'ProxyScriptContext.jsm',
+    'ProxyChannelFilter.jsm',
     'Schemas.jsm',
     'WebNavigation.jsm',
     'WebNavigationContent.js',

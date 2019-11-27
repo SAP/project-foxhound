@@ -26,7 +26,8 @@ interface nsIDOMWindowUtils;
 typedef OfflineResourceList ApplicationCache;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
-[PrimaryGlobal, LegacyUnenumerableNamedProperties, NeedResolve]
+[Global, LegacyUnenumerableNamedProperties, NeedResolve,
+ Exposed=Window]
 /*sealed*/ interface Window : EventTarget {
   // the current browsing context
   [Unforgeable, Constant, StoreInSlot,
@@ -63,7 +64,7 @@ typedef OfflineResourceList ApplicationCache;
   [Replaceable, Throws, CrossOriginReadable] readonly attribute WindowProxy? parent;
   [Throws, NeedsSubjectPrincipal] readonly attribute Element? frameElement;
   //[Throws] WindowProxy? open(optional USVString url = "about:blank", optional DOMString target = "_blank", [TreatNullAs=EmptyString] optional DOMString features = "");
-  [Throws] WindowProxy? open(optional DOMString url = "", optional DOMString target = "", optional [TreatNullAs=EmptyString] DOMString features = "");
+  [Throws] WindowProxy? open(optional USVString url = "", optional DOMString target = "", optional [TreatNullAs=EmptyString] DOMString features = "");
   getter object (DOMString name);
 
   // the user agent
@@ -78,18 +79,20 @@ typedef OfflineResourceList ApplicationCache;
   [Throws, NeedsSubjectPrincipal] void alert(DOMString message);
   [Throws, NeedsSubjectPrincipal] boolean confirm(optional DOMString message = "");
   [Throws, NeedsSubjectPrincipal] DOMString? prompt(optional DOMString message = "", optional DOMString default = "");
-  [Throws, Func="nsGlobalWindowInner::IsWindowPrintEnabled"]
+  [Throws, Pref="dom.enable_window_print"]
   void print();
 
-  [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
+  [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
+   BinaryName="postMessageMoz"]
   void postMessage(any message, DOMString targetOrigin, optional sequence<object> transfer = []);
-  [Throws, CrossOriginCallable, NeedsSubjectPrincipal]
+  [Throws, CrossOriginCallable, NeedsSubjectPrincipal,
+   BinaryName="postMessageMoz"]
   void postMessage(any message, optional WindowPostMessageOptions options = {});
 
   // also has obsolete members
 };
-Window implements GlobalEventHandlers;
-Window implements WindowEventHandlers;
+Window includes GlobalEventHandlers;
+Window includes WindowEventHandlers;
 
 // https://www.w3.org/TR/appmanifest/#onappinstalled-attribute
 partial interface Window {
@@ -98,19 +101,17 @@ partial interface Window {
 };
 
 // http://www.whatwg.org/specs/web-apps/current-work/
-[NoInterfaceObject]
-interface WindowSessionStorage {
+interface mixin WindowSessionStorage {
   //[Throws] readonly attribute Storage sessionStorage;
   [Throws] readonly attribute Storage? sessionStorage;
 };
-Window implements WindowSessionStorage;
+Window includes WindowSessionStorage;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
-[NoInterfaceObject]
-interface WindowLocalStorage {
+interface mixin WindowLocalStorage {
   [Throws] readonly attribute Storage? localStorage;
 };
-Window implements WindowLocalStorage;
+Window includes WindowLocalStorage;
 
 // http://www.whatwg.org/specs/web-apps/current-work/
 partial interface Window {
@@ -219,19 +220,18 @@ partial interface Window {
 };
 
 // https://dvcs.w3.org/hg/webcrypto-api/raw-file/tip/spec/Overview.html
-Window implements GlobalCrypto;
+Window includes GlobalCrypto;
 
 // https://fidoalliance.org/specifications/download/
-Window implements GlobalU2F;
+Window includes GlobalU2F;
 
 #ifdef MOZ_WEBSPEECH
 // http://dvcs.w3.org/hg/speech-api/raw-file/tip/speechapi.html
-[NoInterfaceObject]
-interface SpeechSynthesisGetter {
+interface mixin SpeechSynthesisGetter {
   [Throws, Pref="media.webspeech.synth.enabled"] readonly attribute SpeechSynthesis speechSynthesis;
 };
 
-Window implements SpeechSynthesisGetter;
+Window includes SpeechSynthesisGetter;
 #endif
 
 // Mozilla-specific stuff
@@ -375,9 +375,9 @@ partial interface Window {
   WindowGlobalChild getWindowGlobalChild();
 };
 
-Window implements TouchEventHandlers;
+Window includes TouchEventHandlers;
 
-Window implements OnErrorEventHandlerForWindow;
+Window includes OnErrorEventHandlerForWindow;
 
 #if defined(MOZ_WIDGET_ANDROID)
 // https://compat.spec.whatwg.org/#windoworientation-interface
@@ -542,7 +542,7 @@ partial interface Window {
     readonly attribute Worklet paintWorklet;
 };
 
-Window implements WindowOrWorkerGlobalScope;
+Window includes WindowOrWorkerGlobalScope;
 
 partial interface Window {
   [Throws, Func="nsGlobalWindowInner::IsRequestIdleCallbackEnabled"]
@@ -601,8 +601,6 @@ partial interface Window {
   [Throws, Func="IsChromeOrXBLOrUAWidget"]
   readonly attribute IntlUtils intlUtils;
 };
-
-Window implements WebGPUProvider;
 
 partial interface Window {
   [SameObject, Pref="dom.visualviewport.enabled", Replaceable]

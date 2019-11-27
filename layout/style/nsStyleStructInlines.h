@@ -54,15 +54,6 @@ bool nsStyleText::WordCanWrap(const nsIFrame* aContextFrame) const {
   return WordCanWrapStyle() && !nsSVGUtils::IsInSVGTextSubtree(aContextFrame);
 }
 
-bool nsStyleDisplay::IsBlockInside(const nsIFrame* aContextFrame) const {
-  NS_ASSERTION(aContextFrame->StyleDisplay() == this,
-               "unexpected aContextFrame");
-  if (nsSVGUtils::IsInSVGTextSubtree(aContextFrame)) {
-    return aContextFrame->IsBlockFrame();
-  }
-  return IsBlockInsideStyle();
-}
-
 bool nsStyleDisplay::IsBlockOutside(const nsIFrame* aContextFrame) const {
   NS_ASSERTION(aContextFrame->StyleDisplay() == this,
                "unexpected aContextFrame");
@@ -79,16 +70,6 @@ bool nsStyleDisplay::IsInlineOutside(const nsIFrame* aContextFrame) const {
     return !aContextFrame->IsBlockFrame();
   }
   return IsInlineOutsideStyle();
-}
-
-bool nsStyleDisplay::IsOriginalDisplayInlineOutside(
-    const nsIFrame* aContextFrame) const {
-  NS_ASSERTION(aContextFrame->StyleDisplay() == this,
-               "unexpected aContextFrame");
-  if (nsSVGUtils::IsInSVGTextSubtree(aContextFrame)) {
-    return !aContextFrame->IsBlockFrame();
-  }
-  return IsOriginalDisplayInlineOutsideStyle();
 }
 
 mozilla::StyleDisplay nsStyleDisplay::GetDisplay(
@@ -135,7 +116,8 @@ bool nsStyleDisplay::IsFixedPosContainingBlockForNonSVGTextFrames(
     return true;
   }
 
-  return aStyle.StyleEffects()->HasFilters();
+  return aStyle.StyleEffects()->HasFilters() ||
+         aStyle.StyleEffects()->HasBackdropFilters();
 }
 
 bool nsStyleDisplay::

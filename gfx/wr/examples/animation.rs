@@ -68,9 +68,10 @@ impl App {
         builder.push_simple_stacking_context_with_filters(
             LayoutPoint::zero(),
             spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
             &filters,
             &[],
+            &[]
         );
 
         let space_and_clip = SpaceAndClipInfo {

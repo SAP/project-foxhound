@@ -136,11 +136,9 @@ class nsXULPrototypeElement : public nsXULPrototypeNode {
   explicit nsXULPrototypeElement(mozilla::dom::NodeInfo* aNodeInfo = nullptr)
       : nsXULPrototypeNode(eType_Element),
         mNodeInfo(aNodeInfo),
-        mNumAttributes(0),
         mHasIdAttribute(false),
         mHasClassAttribute(false),
         mHasStyleAttribute(false),
-        mAttributes(nullptr),
         mIsAtom(nullptr) {}
 
  private:
@@ -175,19 +173,12 @@ class nsXULPrototypeElement : public nsXULPrototypeNode {
 
   RefPtr<mozilla::dom::NodeInfo> mNodeInfo;
 
-  uint32_t mNumAttributes : 29;
   uint32_t mHasIdAttribute : 1;
   uint32_t mHasClassAttribute : 1;
   uint32_t mHasStyleAttribute : 1;
-  nsXULPrototypeAttribute* mAttributes;  // [OWNER]
+  nsTArray<nsXULPrototypeAttribute> mAttributes;  // [OWNER]
   RefPtr<nsAtom> mIsAtom;
 };
-
-namespace mozilla {
-namespace dom {
-class XULDocument;
-}  // namespace dom
-}  // namespace mozilla
 
 class nsXULPrototypeScript : public nsXULPrototypeNode {
  public:
@@ -370,7 +361,6 @@ class nsXULElement : public nsStyledElement {
 
   virtual nsresult Clone(mozilla::dom::NodeInfo*,
                          nsINode** aResult) const override;
-  virtual mozilla::EventStates IntrinsicState() const override;
 
   virtual void RecompileScriptEventListeners() override;
 
@@ -575,8 +565,8 @@ class nsXULElement : public nsStyledElement {
   /**
    * Add a listener for the specified attribute, if appropriate.
    */
-  void AddListenerFor(const nsAttrName& aName);
-  void MaybeAddPopupListener(nsAtom* aLocalName);
+  void AddListenerForAttributeIfNeeded(const nsAttrName& aName);
+  void AddListenerForAttributeIfNeeded(nsAtom* aLocalName);
 
   nsIWidget* GetWindowWidget();
 
@@ -616,11 +606,6 @@ class nsXULElement : public nsStyledElement {
   static already_AddRefed<nsXULElement> CreateFromPrototype(
       nsXULPrototypeElement* aPrototype, mozilla::dom::NodeInfo* aNodeInfo,
       bool aIsScriptable, bool aIsRoot);
-
-  bool IsReadWriteTextElement() const {
-    return IsAnyOfXULElements(nsGkAtoms::textbox, nsGkAtoms::textarea) &&
-           !HasAttr(kNameSpaceID_None, nsGkAtoms::readonly);
-  }
 
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;

@@ -22,6 +22,8 @@ include('../build/moz.configure/rust.configure',
         when='--enable-compile-environment')
 include('../build/moz.configure/bindgen.configure',
         when='--enable-compile-environment')
+include('../build/moz.configure/lto-pgo.configure',
+        when='--enable-compile-environment')
 
 @depends('JS_STANDALONE')
 def js_standalone(value):
@@ -433,15 +435,28 @@ set_config('JS_BUILD_BINAST', depends_if('--enable-binast')(lambda x: True))
 set_define('JS_BUILD_BINAST', depends_if('--enable-binast')(lambda x: True))
 
 
+# SIMD acceleration for encoding_rs
+# ==============================================================
+
+js_option('--enable-rust-simd', env='MOZ_RUST_SIMD',
+          help='Enable explicit SIMD in Rust code.')
+
+@depends('--enable-rust-simd', target)
+def rust_simd(value, target):
+    # As of 2019-09-17, the simd-accel feature of encoding_rs has not
+    # been properly set up outside aarch64, armv7, x86 and x86_64.
+    if target.cpu in ('aarch64', 'arm', 'x86', 'x86_64') and value:
+        return True
+
+set_config('MOZ_RUST_SIMD', rust_simd)
+set_define('MOZ_RUST_SIMD', rust_simd)
+
+
 # Experimental support for wasm code generation with Cranelift
 # ==============================================================
 
-@depends(milestone.is_nightly)
-def default_cranelift(is_nightly):
-    return is_nightly
-
 js_option('--enable-cranelift',
-          default=default_cranelift,
+          default=milestone.is_nightly,
           help='{Enable|Disable} Cranelift code generator for wasm')
 
 set_config('ENABLE_WASM_CRANELIFT', depends_if('--enable-cranelift')(lambda x: True))
@@ -504,6 +519,21 @@ set_config('ENABLE_WASM_REFTYPES', depends_if('--enable-wasm-reftypes')(lambda x
 set_define('ENABLE_WASM_REFTYPES', depends_if('--enable-wasm-reftypes')(lambda x: True))
 
 
+# Support for WebAssembly I64/BigInt conversion
+# ===========================================================================
+
+@depends(milestone.is_nightly)
+def default_wasm_bigint(is_nightly):
+    return is_nightly
+
+js_option('--enable-wasm-bigint',
+          default=default_wasm_bigint,
+          help='{Enable|Disable} WebAssembly I64/BigInt conversion')
+
+set_config('ENABLE_WASM_BIGINT', depends_if('--enable-wasm-bigint')(lambda x: True))
+set_define('ENABLE_WASM_BIGINT', depends_if('--enable-wasm-bigint')(lambda x: True))
+
+
 # Support for WebAssembly GC.
 # ===========================
 
@@ -536,3 +566,19 @@ js_option('--enable-wasm-private-reftypes',
 
 set_config('WASM_PRIVATE_REFTYPES', depends_if('--enable-wasm-private-reftypes')(lambda x: True))
 set_define('WASM_PRIVATE_REFTYPES', depends_if('--enable-wasm-private-reftypes')(lambda x: True))
+
+
+# Support for the WebAssembly multi-value proposal.
+# =====================================================
+
+@depends(milestone.is_nightly, building_js)
+def default_wasm_multi_value(is_nightly, building_js):
+    return is_nightly and building_js
+
+js_option('--enable-wasm-multi-value',
+          default=default_wasm_multi_value,
+          help='{Enable|Disable} support for the experimental WebAssembly '
+               'multi-value proposal')
+
+set_config('ENABLE_WASM_MULTI_VALUE', depends_if('--enable-wasm-multi-value')(lambda x: True))
+set_define('ENABLE_WASM_MULTI_VALUE', depends_if('--enable-wasm-multi-value')(lambda x: True))

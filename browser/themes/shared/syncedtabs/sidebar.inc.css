@@ -123,6 +123,14 @@ body {
   background-image: url("chrome://browser/skin/device-desktop.svg");
 }
 
+.item.client[clientType=tv] > .item-title-container > .item-icon-container {
+  background-image: url("chrome://browser/skin/device-tv.svg");
+}
+
+.item.client[clientType=vr] > .item-title-container > .item-icon-container {
+  background-image: url("chrome://browser/skin/device-vr.svg");
+}
+
 .item.tab > .item-title-container > .item-icon-container {
   background-image: url("chrome://mozapps/skin/places/defaultFavicon.svg");
   -moz-context-properties: fill;
@@ -325,4 +333,11 @@ body[lwt-sidebar-brighttext] .item.selected > .item-title-container {
 body[lwt-sidebar-highlight] .item.selected:focus > .item-title-container {
   background-color: var(--lwt-sidebar-highlight-background-color);
   color: var(--lwt-sidebar-highlight-text-color);
+}
+
+/* Apply crisp rendering for favicons at exactly 2dppx resolution */
+@media (resolution: 2dppx) {
+  .tabs-container .item-tabs-list .item-icon-container {
+    image-rendering: -moz-crisp-edges;
+  }
 }

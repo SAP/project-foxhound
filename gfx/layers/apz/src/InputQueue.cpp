@@ -13,7 +13,8 @@
 #include "mozilla/layers/APZThreadUtils.h"
 #include "OverscrollHandoffState.h"
 #include "QueuedInput.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #define INPQ_LOG(...)
 // #define INPQ_LOG(...) printf_stderr("INPQ: " __VA_ARGS__)
@@ -256,8 +257,10 @@ nsEventStatus InputQueue::ReceiveScrollWheelInput(
 
   if (!block) {
     block = new WheelBlockState(aTarget, aFlags, aEvent);
-    INPQ_LOG("started new scroll wheel block %p id %" PRIu64 " for target %p\n",
-             block, block->GetBlockId(), aTarget.get());
+    INPQ_LOG("started new scroll wheel block %p id %" PRIu64
+             " for %starget %p\n",
+             block, block->GetBlockId(),
+             aFlags.mTargetConfirmed ? "confirmed " : "", aTarget.get());
 
     mActiveWheelBlock = block;
 
@@ -746,6 +749,13 @@ void InputQueue::ProcessQueue() {
     // target may be null here if the initial target was unconfirmed and then
     // we later got a confirmed null target. in that case drop the events.
     if (target) {
+      // If the event is targeting a different APZC than the previous one,
+      // we want to clear the previous APZC's gesture state regardless of
+      // whether we're actually dispatching the event or not.
+      if (mLastActiveApzc && mLastActiveApzc != target &&
+          mTouchCounter.GetActiveTouchCount() > 0) {
+        mLastActiveApzc->ResetTouchInputState();
+      }
       if (curBlock->ShouldDropEvents()) {
         if (curBlock->AsTouchBlock()) {
           target->ResetTouchInputState();
@@ -794,10 +804,6 @@ bool InputQueue::CanDiscardBlock(InputBlockState* aBlock) {
 
 void InputQueue::UpdateActiveApzc(
     const RefPtr<AsyncPanZoomController>& aNewActive) {
-  if (mLastActiveApzc && mLastActiveApzc != aNewActive &&
-      mTouchCounter.GetActiveTouchCount() > 0) {
-    mLastActiveApzc->ResetTouchInputState();
-  }
   mLastActiveApzc = aNewActive;
 }
 

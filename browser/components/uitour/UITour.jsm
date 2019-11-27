@@ -36,11 +36,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "ProfileAge",
   "resource://gre/modules/ProfileAge.jsm"
 );
@@ -58,11 +53,6 @@ ChromeUtils.defineModuleGetter(
   this,
   "UpdateUtils",
   "resource://gre/modules/UpdateUtils.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
-  "UrlbarPrefs",
-  "resource:///modules/UrlbarPrefs.jsm"
 );
 
 // See LOG_LEVELS in Console.jsm. Common examples: "All", "Info", "Warn", & "Error".
@@ -115,13 +105,7 @@ var UITour = {
       "accountStatus",
       {
         query: aDocument => {
-          // If the user is logged in, use the avatar element.
-          let fxAFooter = aDocument.getElementById("appMenu-fxa-status");
-          if (fxAFooter.getAttribute("fxastatus")) {
-            return aDocument.getElementById("appMenu-fxa-avatar");
-          }
-
-          // Otherwise use the sync setup icon.
+          // Use the sync setup icon.
           let statusButton = aDocument.getElementById("appMenu-fxa-label");
           return statusButton.icon;
         },
@@ -147,8 +131,6 @@ var UITour = {
     ],
     ["backForward", { query: "#back-button" }],
     ["bookmarks", { query: "#bookmarks-menu-button" }],
-    ["controlCenter-trackingUnblock", controlCenterTrackingToggleTarget(true)],
-    ["controlCenter-trackingBlock", controlCenterTrackingToggleTarget(false)],
     [
       "customize",
       {
@@ -174,6 +156,7 @@ var UITour = {
     ["help", { query: "#appMenu-help-button" }],
     ["home", { query: "#home-button" }],
     ["library", { query: "#appMenu-library-button" }],
+    ["logins", { query: "#appMenu-logins-button" }],
     [
       "pocket",
       {
@@ -243,24 +226,6 @@ var UITour = {
             return null;
           }
           return element;
-        },
-      },
-    ],
-    [
-      "trackingProtection",
-      {
-        query: aDocument => {
-          if (
-            Services.prefs.getBoolPref(
-              "toolkit.cosmeticAnimations.enabled",
-              false
-            )
-          ) {
-            return aDocument.getElementById(
-              "tracking-protection-icon-animatable-box"
-            );
-          }
-          return aDocument.getElementById("tracking-protection-icon");
         },
       },
     ],
@@ -452,7 +417,7 @@ var UITour = {
             }
 
             let buttons = [];
-            if (Array.isArray(data.buttons) && data.buttons.length > 0) {
+            if (Array.isArray(data.buttons) && data.buttons.length) {
               for (let buttonData of data.buttons) {
                 if (
                   typeof buttonData == "object" &&
@@ -745,6 +710,11 @@ var UITour = {
         }
         break;
       }
+
+      case "showProtectionReport": {
+        this.showProtectionReport(window, browser);
+        break;
+      }
     }
 
     // For performance reasons, only call initForBrowser if we did something
@@ -879,7 +849,7 @@ var UITour = {
           typeof name != "string" ||
           typeof value != "string" ||
           !name.startsWith("utm_") ||
-          value.length == 0 ||
+          !value.length ||
           !reSimpleString.test(name)
         ) {
           log.warn("_populateCampaignParams: invalid campaign param specified");
@@ -926,14 +896,6 @@ var UITour = {
           ["popuphidden", this.onPanelHidden],
           ["popuphiding", this.onPageActionPanelHiding],
           ["ViewShowing", this.onPageActionPanelSubviewShowing],
-        ],
-      },
-      {
-        name: "controlCenter",
-        node: aWindow.gIdentityHandler._identityPopup,
-        events: [
-          ["popuphidden", this.onPanelHidden],
-          ["popuphiding", this.onControlCenterHiding],
         ],
       },
     ];
@@ -1085,8 +1047,9 @@ var UITour = {
    * @param {ChromeWindow} aWindow the chrome window
    * @param {bool} aShouldOpen true means we should open the menu, otherwise false
    * @param {String} aMenuName "appMenu" or "pageActionPanel"
+   * @param {Object} aOptions Extra config arguments, example `autohide: true`.
    */
-  _setMenuStateForAnnotation(aWindow, aShouldOpen, aMenuName) {
+  _setMenuStateForAnnotation(aWindow, aShouldOpen, aMenuName, aOptions = {}) {
     log.debug("_setMenuStateForAnnotation: Menu is ", aMenuName);
     log.debug(
       "_setMenuStateForAnnotation: Menu is expected to be:",
@@ -1109,7 +1072,7 @@ var UITour = {
     if (aShouldOpen) {
       log.debug("_setMenuStateForAnnotation: Opening the menu");
       promise = new Promise(resolve => {
-        this.showMenu(aWindow, aMenuName, resolve);
+        this.showMenu(aWindow, aMenuName, resolve, aOptions);
       });
     } else if (!this.noautohideMenus.has(aMenuName)) {
       // If the menu was opened explictly by api user through `Mozilla.UITour.showMenu`,
@@ -1129,8 +1092,9 @@ var UITour = {
    *
    * @param {ChromeWindow} aChromeWindow The chrome window
    * @param {Object} aTarget The target on which we show highlight or show info.
+   * @param {Object} options Extra config arguments, example `autohide: true`.
    */
-  async _ensureTarget(aChromeWindow, aTarget) {
+  async _ensureTarget(aChromeWindow, aTarget, aOptions = {}) {
     let shouldOpenAppMenu = false;
     let shouldOpenPageActionPanel = false;
     if (this.targetIsInAppMenu(aTarget)) {
@@ -1182,7 +1146,8 @@ var UITour = {
       promise = this._setMenuStateForAnnotation(
         aChromeWindow,
         true,
-        menuToOpen
+        menuToOpen,
+        aOptions
       );
     }
     return promise;
@@ -1220,9 +1185,10 @@ var UITour = {
    *                      window.
    * @param aTarget    The element to highlight.
    * @param aEffect    (optional) The effect to use from UITour.highlightEffects or "none".
+   * @param aOptions   (optional) Extra config arguments, example `autohide: true`.
    * @see UITour.highlightEffects
    */
-  async showHighlight(aChromeWindow, aTarget, aEffect = "none") {
+  async showHighlight(aChromeWindow, aTarget, aEffect = "none", aOptions = {}) {
     let showHighlightElement = aAnchorEl => {
       let highlighter = aChromeWindow.document.getElementById(
         "UITourHighlight"
@@ -1304,7 +1270,7 @@ var UITour = {
     };
 
     try {
-      await this._ensureTarget(aChromeWindow, aTarget);
+      await this._ensureTarget(aChromeWindow, aTarget, aOptions);
       let anchorEl = await this._correctAnchor(aChromeWindow, aTarget);
       showHighlightElement(anchorEl);
     } catch (e) {
@@ -1490,7 +1456,7 @@ var UITour = {
     this._setMenuStateForAnnotation(aWindow, false, "pageActionPanel");
   },
 
-  showMenu(aWindow, aMenuName, aOpenCallback = null) {
+  showMenu(aWindow, aMenuName, aOpenCallback = null, aOptions = {}) {
     log.debug("showMenu:", aMenuName);
     function openMenuButton(aMenuBtn) {
       if (!aMenuBtn || !aMenuBtn.hasMenu() || aMenuBtn.open) {
@@ -1521,7 +1487,9 @@ var UITour = {
         menu.show = () => aWindow.BrowserPageActions.showPanel();
       }
 
-      menu.node.setAttribute("noautohide", "true");
+      if (!aOptions.autohide) {
+        menu.node.setAttribute("noautohide", "true");
+      }
       // If the popup is already opened, don't recreate the widget as it may cause a flicker.
       if (menu.node.state != "open") {
         this.recreatePopup(menu.node);
@@ -1536,31 +1504,6 @@ var UITour = {
     } else if (aMenuName == "bookmarks") {
       let menuBtn = aWindow.document.getElementById("bookmarks-menu-button");
       openMenuButton(menuBtn);
-    } else if (aMenuName == "controlCenter") {
-      let popup = aWindow.gIdentityHandler._identityPopup;
-
-      // Add the listener even if the panel is already open since it will still
-      // only get registered once even if it was UITour that opened it.
-      popup.addEventListener("popuphiding", this.onControlCenterHiding);
-      popup.addEventListener("popuphidden", this.onPanelHidden);
-
-      popup.setAttribute("noautohide", "true");
-      this.clearAvailableTargetsCache();
-
-      if (popup.state == "open") {
-        if (aOpenCallback) {
-          aOpenCallback();
-        }
-        return;
-      }
-
-      this.recreatePopup(popup);
-
-      // Open the control center
-      if (aOpenCallback) {
-        popup.addEventListener("popupshown", aOpenCallback, { once: true });
-      }
-      aWindow.document.getElementById("identity-box").click();
     } else if (aMenuName == "pocket") {
       let pageAction = PageActions.actionForID("pocket");
       if (!pageAction) {
@@ -1570,17 +1513,10 @@ var UITour = {
       pageAction.doCommand(aWindow);
     } else if (aMenuName == "urlbar") {
       let urlbar = aWindow.gURLBar;
-      let quantumbar = UrlbarPrefs.get("quantumbar");
       if (aOpenCallback) {
-        if (quantumbar) {
-          urlbar.panel.addEventListener("popupshown", aOpenCallback, {
-            once: true,
-          });
-        } else {
-          urlbar.popup.addEventListener("popupshown", aOpenCallback, {
-            once: true,
-          });
-        }
+        urlbar.panel.addEventListener("popupshown", aOpenCallback, {
+          once: true,
+        });
       }
       urlbar.focus();
       // To demonstrate the ability of searching, we type "Firefox" in advance
@@ -1591,14 +1527,10 @@ var UITour = {
       const SEARCH_STRING = "Firefox";
       urlbar.value = SEARCH_STRING;
       urlbar.select();
-      if (quantumbar) {
-        urlbar.startQuery({
-          searchString: SEARCH_STRING,
-          allowAutofill: false,
-        });
-      } else {
-        urlbar.controller.startSearch(SEARCH_STRING);
-      }
+      urlbar.startQuery({
+        searchString: SEARCH_STRING,
+        allowAutofill: false,
+      });
     }
   },
 
@@ -1615,11 +1547,8 @@ var UITour = {
     } else if (aMenuName == "bookmarks") {
       let menuBtn = aWindow.document.getElementById("bookmarks-menu-button");
       closeMenuButton(menuBtn);
-    } else if (aMenuName == "controlCenter") {
-      let panel = aWindow.gIdentityHandler._identityPopup;
-      panel.hidePopup();
     } else if (aMenuName == "urlbar") {
-      aWindow.gURLBar.closePopup();
+      aWindow.gURLBar.view.close();
     } else if (aMenuName == "pageActionPanel") {
       aWindow.BrowserPageActions.panelNode.hidePopup();
     }
@@ -1630,7 +1559,18 @@ var UITour = {
     let url = "about:newtab";
     aWindow.openLinkIn(url, "current", {
       targetBrowser: aBrowser,
-      triggeringPrincipal: Services.scriptSecurityManager.createCodebasePrincipal(
+      triggeringPrincipal: Services.scriptSecurityManager.createContentPrincipal(
+        Services.io.newURI(url),
+        {}
+      ),
+    });
+  },
+
+  showProtectionReport(aWindow, aBrowser) {
+    let url = "about:protections";
+    aWindow.openLinkIn(url, "current", {
+      targetBrowser: aBrowser,
+      triggeringPrincipal: Services.scriptSecurityManager.createContentPrincipal(
         Services.io.newURI(url),
         {}
       ),
@@ -1701,12 +1641,6 @@ var UITour = {
       false,
       UITour.targetIsInPageActionPanel
     );
-  },
-
-  onControlCenterHiding(aEvent) {
-    UITour._hideAnnotationsForPanel(aEvent, true, aTarget => {
-      return aTarget.targetName.startsWith("controlCenter-");
-    });
   },
 
   onPanelHidden(aEvent) {
@@ -2021,30 +1955,6 @@ var UITour = {
     }
   },
 };
-
-function controlCenterTrackingToggleTarget(aUnblock) {
-  return {
-    infoPanelPosition: "rightcenter topleft",
-    query(aDocument) {
-      let popup = aDocument.defaultView.gIdentityHandler._identityPopup;
-      if (popup.state != "open") {
-        return null;
-      }
-      let buttonId = null;
-      if (aUnblock) {
-        if (PrivateBrowsingUtils.isWindowPrivate(aDocument.defaultView)) {
-          buttonId = "tracking-action-unblock-private";
-        } else {
-          buttonId = "tracking-action-unblock";
-        }
-      } else {
-        buttonId = "tracking-action-block";
-      }
-      let element = aDocument.getElementById(buttonId);
-      return UITour.isElementVisible(element) ? element : null;
-    },
-  };
-}
 
 this.UITour.init();
 

@@ -16,7 +16,6 @@
 #include "nsIWindowMediator.h"
 #include "nsIWindowWatcher.h"
 #include "nsPIWindowWatcher.h"
-#include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsWebShellWindow.h"
 
@@ -40,6 +39,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StartupTimeline.h"
+#include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/intl/LocaleService.h"
 
 #include "nsEmbedCID.h"
@@ -494,9 +494,9 @@ nsAppShellService::CreateWindowlessBrowser(bool aIsChrome,
   /* Next, we create an instance of nsWebBrowser. Instances of this class have
    * an associated doc shell, which is what we're interested in.
    */
-  nsCOMPtr<nsIWebBrowser> browser =
-      nsWebBrowser::Create(stub, widget, OriginAttributes(), browsingContext,
-                           true /* disable history */);
+  nsCOMPtr<nsIWebBrowser> browser = nsWebBrowser::Create(
+      stub, widget, OriginAttributes(), browsingContext,
+      nullptr /* initialWindowChild */, true /* disable history */);
 
   if (NS_WARN_IF(!browser)) {
     NS_ERROR("Couldn't create instance of nsWebBrowser!");
@@ -623,6 +623,21 @@ nsresult nsAppShellService::JustCreateTopWindow(
   if (aChromeMask & nsIWebBrowserChrome::CHROME_ALWAYS_ON_TOP)
     widgetInitData.mAlwaysOnTop = true;
 
+#ifdef MOZ_WIDGET_GTK
+  // Linux/Gtk PIP window support. It's Chrome Toplevel window, always on top
+  // and without any bar.
+  uint32_t pipMask = nsIWebBrowserChrome::CHROME_ALWAYS_ON_TOP |
+                     nsIWebBrowserChrome::CHROME_OPENAS_CHROME;
+  uint32_t barMask = nsIWebBrowserChrome::CHROME_MENUBAR |
+                     nsIWebBrowserChrome::CHROME_TOOLBAR |
+                     nsIWebBrowserChrome::CHROME_LOCATIONBAR |
+                     nsIWebBrowserChrome::CHROME_STATUSBAR;
+  if (widgetInitData.mWindowType == eWindowType_toplevel &&
+      ((aChromeMask & pipMask) == pipMask) && !(aChromeMask & barMask)) {
+    widgetInitData.mPIPWindow = true;
+  }
+#endif
+
 #ifdef XP_MACOSX
   // Mac OS X sheet support
   // Adding CHROME_OPENAS_CHROME to sheetMask makes modal windows opened from
@@ -704,7 +719,7 @@ nsresult nsAppShellService::JustCreateTopWindow(
   bool isPrivateBrowsingWindow =
       Preferences::GetBool("browser.privatebrowsing.autostart");
   bool isUsingRemoteTabs = mozilla::BrowserTabsRemoteAutostart();
-  bool isUsingRemoteSubframes = Preferences::GetBool("fission.autostart");
+  bool isUsingRemoteSubframes = StaticPrefs::fission_autostart();
 
   if (aChromeMask & nsIWebBrowserChrome::CHROME_PRIVATE_WINDOW) {
     // Caller requested a private window

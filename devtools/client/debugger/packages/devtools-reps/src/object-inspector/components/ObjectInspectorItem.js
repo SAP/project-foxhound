@@ -80,6 +80,12 @@ type Props = {
 };
 
 class ObjectInspectorItem extends Component<Props> {
+  static get defaultProps() {
+    return {
+      onContextMenu: () => {},
+    };
+  }
+
   // eslint-disable-next-line complexity
   getLabelAndValue(): {
     value?: string | Element,
@@ -177,7 +183,7 @@ class ObjectInspectorItem extends Component<Props> {
                 item,
                 targetGrip,
                 receiverGrip.actor,
-                item.name
+                item.propertyName || item.name
               ),
           });
         }
@@ -203,6 +209,7 @@ class ObjectInspectorItem extends Component<Props> {
       onCmdCtrlClick,
       onDoubleClick,
       dimTopLevelWindow,
+      onContextMenu,
     } = this.props;
 
     const parentElementProps: Object = {
@@ -239,12 +246,14 @@ class ObjectInspectorItem extends Component<Props> {
         // image, clicking on it does not remove any existing text selection.
         // So we need to also check if the arrow was clicked.
         if (
-          Utils.selection.documentHasSelection() &&
-          !(e.target && e.target.matches && e.target.matches(".arrow"))
+          e.target &&
+          Utils.selection.documentHasSelection(e.target.ownerDocument) &&
+          !(e.target.matches && e.target.matches(".arrow"))
         ) {
           e.stopPropagation();
         }
       },
+      onContextMenu: e => onContextMenu(e, item),
     };
 
     if (onDoubleClick) {
@@ -275,7 +284,9 @@ class ObjectInspectorItem extends Component<Props> {
               event.stopPropagation();
 
               // If the user selected text, bail out.
-              if (Utils.selection.documentHasSelection()) {
+              if (
+                Utils.selection.documentHasSelection(event.target.ownerDocument)
+              ) {
                 return;
               }
 
@@ -290,6 +301,21 @@ class ObjectInspectorItem extends Component<Props> {
       },
       label
     );
+  }
+
+  renderWatchpointButton() {
+    const { item, removeWatchpoint } = this.props;
+
+    if (!item || !item.contents || !item.contents.watchpoint) {
+      return;
+    }
+
+    const watchpoint = item.contents.watchpoint;
+    return dom.button({
+      className: `remove-${watchpoint}-watchpoint`,
+      title: L10N.getStr("watchpoints.removeWatchpointTooltip"),
+      onClick: () => removeWatchpoint(item),
+    });
   }
 
   render() {
@@ -307,7 +333,8 @@ class ObjectInspectorItem extends Component<Props> {
       arrow,
       labelElement,
       delimiter,
-      value
+      value,
+      this.renderWatchpointButton()
     );
   }
 }

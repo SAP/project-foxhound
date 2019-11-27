@@ -82,14 +82,6 @@
   list-style-image: url(chrome://browser/skin/notification-icons/autoplay-media-blocked.svg);
 }
 
-.image-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/images.svg);
-}
-
-.image-icon.blocked-permission-icon {
-  list-style-image: url(chrome://browser/skin/notification-icons/images-blocked.svg);
-}
-
 .storage-access-notification-content {
   color: var(--panel-disabled-color);
   font-style: italic;
@@ -116,6 +108,11 @@
 .popup-notification-icon[popupid="password"],
 .login-icon {
   list-style-image: url(chrome://browser/skin/login.svg);
+}
+
+.login-icon[extraAttr="attention"] {
+  fill: var(--toolbarbutton-icon-fill-attention);
+  fill-opacity: 1;
 }
 
 .camera-icon {
@@ -193,6 +190,7 @@ html|*#webRTC-previewVideo {
   width: 300px;
   /* If we don't set the min-width, width is ignored. */
   min-width: 300px;
+  min-height: 10em;
   max-height: 200px;
 }
 
@@ -225,6 +223,12 @@ html|*#webRTC-previewVideo {
   margin-inline-start: 42px;
   width: 16px;
   height: 16px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.popup-subitem:-moz-locale-dir(rtl) {
+  transform: scaleX(-1);
 }
 
 .identity-popup-popup-menulist {
@@ -285,7 +289,6 @@ html|*#webRTC-previewVideo {
 
 /* OFFLINE APPS */
 
-.popup-notification-icon[popupid*="offline-app-requested"],
 .popup-notification-icon[popupid="offline-app-usage"] {
   list-style-image: url(chrome://global/skin/icons/question-64.png);
 }

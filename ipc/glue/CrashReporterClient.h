@@ -7,6 +7,7 @@
 #ifndef mozilla_ipc_CrashReporterClient_h
 #define mozilla_ipc_CrashReporterClient_h
 
+#include "mozilla/Assertions.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Unused.h"
@@ -24,27 +25,27 @@ class CrashReporterClient {
   // |aTopLevelProtocol| must be a top-level protocol instance, as sub-actors
   // do not have AllocUnsafeShmem. It must also have a child-to-parent message:
   //
-  //   async SetCrashReporterClient(Shmem shmem);
+  //   async InitCrashReporter(Shmem shmem, NativeThreadId threadId);
   //
   // The parent-side receive function of this message should save the shmem
   // somewhere, and when the top-level actor's ActorDestroy runs (or when the
   // crash reporter needs metadata), the shmem should be parsed.
   template <typename T>
-  static bool InitSingleton(T* aToplevelProtocol) {
+  static void InitSingleton(T* aToplevelProtocol) {
     // The crash reporter is not enabled in recording/replaying processes.
     if (recordreplay::IsRecordingOrReplaying()) {
-      return true;
+      return;
     }
 
     Shmem shmem;
     if (!AllocShmem(aToplevelProtocol, &shmem)) {
-      return false;
+      MOZ_DIAGNOSTIC_ASSERT(false, "failed to allocate crash reporter shmem");
+      return;
     }
 
     InitSingletonWithShmem(shmem);
     Unused << aToplevelProtocol->SendInitCrashReporter(
         std::move(shmem), CrashReporter::CurrentThreadId());
-    return true;
   }
 
   template <typename T>

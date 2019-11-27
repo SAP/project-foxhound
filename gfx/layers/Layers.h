@@ -49,7 +49,7 @@
 #include "nsRegion.h"                // for nsIntRegion
 #include "nsString.h"                // for nsCString
 #include "nsTArray.h"                // for nsTArray
-#include "nsTArrayForwardDeclare.h"  // for InfallibleTArray
+#include "nsTArrayForwardDeclare.h"  // for nsTArray
 #include "nscore.h"                  // for nsACString, nsAString
 #include "mozilla/Logging.h"         // for PRLogModuleInfo
 #include "nsIWidget.h"  // For plugin window configuration information structs
@@ -387,6 +387,12 @@ class LayerManager : public FrameRecorder {
   virtual void StorePluginWidgetConfigurations(
       const nsTArray<nsIWidget::Configuration>& aConfigurations) {}
   bool IsSnappingEffectiveTransforms() { return mSnapEffectiveTransforms; }
+
+  /**
+   * Returns true if the underlying platform can properly support layers with
+   * SurfaceMode::SURFACE_COMPONENT_ALPHA.
+   */
+  static bool LayersComponentAlphaEnabled();
 
   /**
    * Returns true if this LayerManager can properly support layers with
@@ -1272,7 +1278,7 @@ class Layer {
    *     combining appropriate values from mozilla::SideBits.
    */
   void SetFixedPositionData(ScrollableLayerGuid::ViewID aScrollId,
-                            const LayerPoint& aAnchor, int32_t aSides) {
+                            const LayerPoint& aAnchor, SideBits aSides) {
     if (mSimpleAttrs.SetFixedPositionData(aScrollId, aAnchor, aSides)) {
       MOZ_LAYERS_LOG_IF_SHADOWABLE(
           this, ("Layer::Mutated(%p) FixedPositionData", this));
@@ -1340,7 +1346,6 @@ class Layer {
     return mScrollMetadata;
   }
   bool HasScrollableFrameMetrics() const;
-  bool HasRootScrollableFrameMetrics() const;
   bool IsScrollableWithoutContent() const;
   const EventRegions& GetEventRegions() const { return mEventRegions; }
   ContainerLayer* GetParent() { return mParent; }
@@ -1384,7 +1389,7 @@ class Layer {
   LayerPoint GetFixedPositionAnchor() {
     return mSimpleAttrs.GetFixedPositionAnchor();
   }
-  int32_t GetFixedPositionSides() {
+  SideBits GetFixedPositionSides() {
     return mSimpleAttrs.GetFixedPositionSides();
   }
   ScrollableLayerGuid::ViewID GetStickyScrollContainerId() {
@@ -2670,6 +2675,22 @@ class RefLayer : public ContainerLayer {
   }
 
   /**
+   * CONSTRUCTION PHASE ONLY
+   * Set remote subdocument iframe size.
+   */
+  void SetRemoteDocumentRect(const LayerIntRect& aRemoteDocumentRect) {
+    if (mRemoteDocumentRect.IsEqualEdges(aRemoteDocumentRect)) {
+      return;
+    }
+    mRemoteDocumentRect = aRemoteDocumentRect;
+    Mutated();
+  }
+
+  const LayerIntRect& GetRemoteDocumentRect() const {
+    return mRemoteDocumentRect;
+  }
+
+  /**
    * DRAWING PHASE ONLY
    * |aLayer| is the same as the argument to ConnectReferentLayer().
    */
@@ -2704,6 +2725,7 @@ class RefLayer : public ContainerLayer {
   // 0 is a special value that means "no ID".
   LayersId mId;
   EventRegionsOverride mEventRegionsOverride;
+  LayerIntRect mRemoteDocumentRect;
 };
 
 void SetAntialiasingFlags(Layer* aLayer, gfx::DrawTarget* aTarget);

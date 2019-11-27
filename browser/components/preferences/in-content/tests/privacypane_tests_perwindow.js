@@ -352,10 +352,6 @@ function test_custom_retention(controlToChange, expect, valueIncrement) {
       case "checkbox":
         controlToChange.checked = !controlToChange.checked;
         break;
-      case "textbox":
-        controlToChange.value =
-          parseInt(controlToChange.value) + valueIncrement;
-        break;
       case "menulist":
         controlToChange.value = valueIncrement;
         break;
@@ -369,7 +365,7 @@ const gPrefCache = new Map();
 function cache_preferences(win) {
   let prefs = win.Preferences.getAll();
   for (let pref of prefs) {
-    gPrefCache.set(pref.name, pref.value);
+    gPrefCache.set(pref.id, pref.value);
   }
 }
 
@@ -377,8 +373,8 @@ function reset_preferences(win) {
   let prefs = win.Preferences.getAll();
   // Avoid assigning undefined, which means clearing a "user"/test pref value
   for (let pref of prefs) {
-    if (gPrefCache.has(pref.name)) {
-      pref.value = gPrefCache.get(pref.name);
+    if (gPrefCache.has(pref.id)) {
+      pref.value = gPrefCache.get(pref.id);
     }
   }
 }

@@ -1,4 +1,3 @@
-/* vim: set ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  http://creativecommons.org/publicdomain/zero/1.0/ */
 /* import-globals-from helper_events_test_runner.js */
@@ -29,7 +28,7 @@ const TEST_DATA = [ // eslint-disable-line
     expected: [
       {
         type: "mouseover",
-        filename: TEST_URL + ":45",
+        filename: TEST_URL + ":45:31",
         attributes: ["Capturing", "DOM2"],
         handler:
           "function mouseoverHandler(event) {\n" +
@@ -46,7 +45,7 @@ const TEST_DATA = [ // eslint-disable-line
     expected: [
       {
         type: "click",
-        filename: TEST_URL + ":52",
+        filename: TEST_URL + ":52:27",
         attributes: ["Bubbling", "DOM2"],
         handler:
           "function clickHandler(event) {\n" +
@@ -56,7 +55,7 @@ const TEST_DATA = [ // eslint-disable-line
       },
       {
         type: "mouseup",
-        filename: TEST_URL + ":57",
+        filename: TEST_URL + ":57:29",
         attributes: ["Bubbling", "DOM2"],
         handler:
           "function mouseupHandler(event) {\n" +
@@ -82,7 +81,7 @@ const TEST_DATA = [ // eslint-disable-line
     expected: [
       {
         type: "click",
-        filename: TEST_URL + ":72",
+        filename: TEST_URL + ":72:35",
         attributes: ["Bubbling", "DOM2"],
         handler:
           "function noeventsClickHandler(event) {\n" +
@@ -118,7 +117,7 @@ const TEST_DATA = [ // eslint-disable-line
     expected: [
       {
         type: "click",
-        filename: TEST_URL + ":67",
+        filename: TEST_URL + ":67:29",
         attributes: ["Bubbling", "DOM2"],
         handler: "function(blah) {\n" + '  alert("handleEvent");\n' + "}",
       },

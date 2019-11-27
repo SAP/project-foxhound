@@ -62,12 +62,6 @@ browser/chrome/devtools/skin/images/tool-storage.svg
 browser/chrome/devtools/skin/images/tool-styleeditor.svg
 browser/chrome/devtools/skin/promisedebugger.css
 browser/chrome/devtools/skin/variables.css
-modules/devtools/Console.jsm
-modules/devtools/Loader.jsm
-modules/devtools/shared/Console.jsm
-modules/devtools/shared/Loader.jsm
-browser/modules/devtools/client/framework/gDevTools.jsm
-browser/modules/devtools/gDevTools.jsm
 browser/chrome/icons/default/default16.png
 browser/chrome/icons/default/default32.png
 browser/chrome/icons/default/default48.png
@@ -157,3 +151,8 @@ browser/chrome/browser/search-extensions/amazondotcn/favicon.ico
 browser/chrome/browser/search-extensions/amazondotcom/favicon.ico
 browser/chrome/browser/search-extensions/mercadolibre/favicon.ico
 browser/chrome/browser/search-extensions/mercadolivre/favicon.ico
+# Bug 1550165 - We want to support both Norwegian languages codes (nb and nn) for App Store and Play Store icons
+browser/chrome/browser/content/browser/aboutlogins/third-party/app-store/app_nb.png
+browser/chrome/browser/content/browser/aboutlogins/third-party/app-store/app_nn.png
+browser/chrome/browser/content/browser/aboutlogins/third-party/play-store/play_nb.png
+browser/chrome/browser/content/browser/aboutlogins/third-party/play-store/play_nn.png

@@ -114,7 +114,7 @@ random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == text-align-last-justify-
 == wordbreak-1.html wordbreak-1-ref.html
 == wordbreak-2.html wordbreak-2-ref.html
 == wordbreak-3.html wordbreak-3-ref.html
-skip-if(Android) == wordbreak-4a.html wordbreak-4a-ref.html
+== wordbreak-4a.html wordbreak-4a-ref.html
 == wordbreak-4b.html wordbreak-4b-ref.html
 == wordbreak-5.html wordbreak-5-ref.html
 fails-if(/^Windows\x20NT\x2010\.0/.test(http.oscpu)) == wordbreak-6.html wordbreak-6-ref.html # Bug 1258239
@@ -186,10 +186,10 @@ random-if(!winWidget) == arial-bold-lam-alef-1.html arial-bold-lam-alef-1-ref.ht
 fails-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 1320665-cmap-format-13.html 1320665-cmap-format-13-ref.html # see bug 1320665 comments 8-9
 == 1331339-script-extensions-shaping-1.html 1331339-script-extensions-shaping-1-ref.html
 skip-if(!cocoaWidget) != 1349308-1.html 1349308-notref.html # macOS-specific test for -apple-system glyph metrics
-fails-if(/^Windows\x20NT\x2010\.0/.test(http.oscpu)) fails-if(Android&&!geckoview) == 1463020-letter-spacing-text-transform-1.html 1463020-letter-spacing-text-transform-1-ref.html # Android, Win10: regional indicators not supported by system emoji font
+fuzzy-if(Android,0-128,0-230) fails-if(/^Windows\x20NT\x2010\.0/.test(http.oscpu)) == 1463020-letter-spacing-text-transform-1.html 1463020-letter-spacing-text-transform-1-ref.html # Win10: regional indicators not supported by system emoji font
 fails-if(Android) == 1463020-letter-spacing-text-transform-2.html 1463020-letter-spacing-text-transform-2-ref.html # missing font coverage on Android
 == 1507661-spurious-hyphenation-after-explicit.html 1507661-spurious-hyphenation-after-explicit-ref.html
-fuzzy-if(!webrender,12-66,288-1660) == 1522857-1.html 1522857-1-ref.html # antialiasing fuzz in non-webrender cases
+fuzzy-if(!webrender,12-66,288-1660) fails-if(gtkWidget&&!webrender) == 1522857-1.html 1522857-1-ref.html # antialiasing fuzz in non-webrender cases
 
 # ensure emoji chars don't render blank (bug 715798, bug 779042);
 # should at least render hexboxes if there's no font support
@@ -201,8 +201,8 @@ random-if(geckoview&&webrender) != emoji-01.html emoji-01-notref.html
 # the next two will fail on OS X 10.6 because no color emoji font is present,
 # and also on Android platforms until we have color emoji fonts there.
 # Tests rely on bundled Twemoji Mozilla to pass on Windows <8.1 and Linux.
-fails-if(Android&&!geckoview) != emoji-03.html emoji-03-notref.html
-fails-if(Android&&!geckoview) == emoji-04.html emoji-04-ref.html
+!= emoji-03.html emoji-03-notref.html
+== emoji-04.html emoji-04-ref.html
 != emoji-05.html emoji-05-notref.html
 
 # check that Graphite shaping (bug 631479) is working
@@ -325,7 +325,7 @@ pref(gfx.font_rendering.graphite.enabled,true) == glyph-decomposition-graphite.h
 == hyphenation-control-2.html hyphenation-control-2-ref.html
 == hyphenation-control-3.html hyphenation-control-3-ref.html
 == hyphenation-control-4.html hyphenation-control-4-ref.html
-fuzzy-if(winWidget,0-56,0-6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == hyphenation-control-5.html hyphenation-control-5-ref.html # Bug 1392106
+fuzzy-if(Android,0-64,0-18) fuzzy-if(winWidget,0-56,0-6) random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == hyphenation-control-5.html hyphenation-control-5-ref.html # Bug 1392106
 random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == hyphenation-control-6.html hyphenation-control-6-ref.html # Bug 1392106
 == hyphenation-control-7.html hyphenation-control-7-ref.html
 

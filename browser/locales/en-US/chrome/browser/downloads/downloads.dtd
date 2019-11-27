@@ -85,19 +85,6 @@
      -->
 <!ENTITY cancelDownload.label             "Cancel Download">
 
-<!-- LOCALIZATION NOTE (blocked.label):
-     Shown as a tag before the file name for some types of blocked downloads.
-     Note: This string doesn't exist in the UI yet.  See bug 1053890.
-     -->
-<!ENTITY blocked.label                    "BLOCKED">
-
-<!-- LOCALIZATION NOTE (learnMore.label):
-     Shown as a text link for some types of blocked downloads, for example
-     malware, when there is an associated explanation page on the Mozilla site.
-     Note: This string doesn't exist in the UI yet.  See bug 1053890.
-     -->
-<!ENTITY learnMore.label                  "Learn More">
-
 <!-- LOCALIZATION NOTE (downloadsHistory.label, downloadsHistory.accesskey):
      This string is shown at the bottom of the Downloads Panel when all the
      downloads fit in the available space, or when there are no downloads in
@@ -112,12 +99,6 @@
      -->
 <!ENTITY downloadDetails.label            "Download Details">
 
-<!-- LOCALIZATION NOTE (openDownloadsFolder.label):
-     This command is not currently available in the user interface, but the
-     string was preserved by bug 1362207 to be used in a future version.
-     -->
-<!ENTITY openDownloadsFolder.label        "Open Downloads Folder">
-
 <!ENTITY clearDownloadsButton.label       "Clear Downloads">
 <!ENTITY clearDownloadsButton.tooltip     "Clears completed, canceled and failed downloads">
 
@@ -131,9 +112,3 @@
      This string is shown when there are no items in the Downloads Panel.
      -->
 <!ENTITY downloadsPanelEmpty.label        "No downloads for this session.">
-
-<!-- LOCALIZATION NOTE (downloadsListNoMatch.label):
-     This string is shown when some search terms are specified, but there are no
-     results in the Downloads view.
-     -->
-<!ENTITY downloadsListNoMatch.label       "Could not find any matching downloads.">

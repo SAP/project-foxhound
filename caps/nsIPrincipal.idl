@@ -7,11 +7,13 @@
 
 #include "nsIContentSecurityPolicy.idl"
 #include "nsISerializable.idl"
+#include "nsIAboutModule.idl"
 
 %{C++
 struct JSPrincipals;
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
+#include "nsString.h"
 #include "mozilla/DebugOnly.h"
 namespace mozilla {
 class OriginAttributes;
@@ -70,7 +72,7 @@ interface nsIPrincipal : nsISerializable
     [notxpcom, nostdcall] readonly attribute unsigned long hashValue;
 
     /**
-     * The codebase URI to which this principal pertains.  This is
+     * The principal URI to which this principal pertains.  This is
      * generally the document URI.
      */
     [infallible] readonly attribute nsIURI URI;
@@ -122,7 +124,7 @@ interface nsIPrincipal : nsISerializable
     /**
      * Checks whether this principal is allowed to load the network resource
      * located at the given URI under the same-origin policy. This means that
-     * codebase principals are only allowed to load resources from the same
+     * content principals are only allowed to load resources from the same
      * domain, the system principal is allowed to load anything, and null
      * principals can only load URIs where they are the principal. This is
      * changed by the optional flag allowIfInheritsPrincipal (which defaults to
@@ -149,6 +151,24 @@ interface nsIPrincipal : nsISerializable
                       in boolean allowIfInheritsPrincipal);
 
     /**
+    * Checks if the provided URI is concidered third-party to the
+    * URI of the principal.
+    * Returns true if the URI is third-party.
+    *
+    * @param uri - The URI to check
+    */
+    boolean isThirdPartyURI(in nsIURI uri);
+
+    /**
+    * Checks if the provided principal is concidered third-party to the
+    * URI of the Principal.
+    * Returns true if the principal is third-party.
+    *
+    * @param principal - The principal to check
+    */
+    boolean isThirdPartyPrincipal(in nsIPrincipal principal);
+
+    /**
      * A dictionary of the non-default origin attributes associated with this
      * nsIPrincipal.
      *
@@ -170,7 +190,7 @@ interface nsIPrincipal : nsISerializable
 
     /**
      * A canonical representation of the origin for this principal. This
-     * consists of a base string (which, for codebase principals, is of the
+     * consists of a base string (which, for content principals, is of the
      * format scheme://host:port), concatenated with |originAttributes| (see
      * below).
      *
@@ -178,6 +198,28 @@ interface nsIPrincipal : nsISerializable
      * if principalA.origin == principalB.origin.
      */
     readonly attribute ACString origin;
+
+    /**
+    * Checks if the Principal's URI Scheme matches with the parameter
+    *
+    * @param scheme    The scheme to be checked
+    */
+    boolean schemeIs(in string scheme);
+
+    // Nicer, C++ Callable Version of SchemeIs
+    %{C++
+      inline bool SchemeIs(const char* aScheme) {
+        bool ret;
+        SchemeIs(aScheme, &ret);
+        return ret;
+      }
+    %}
+
+    /**
+     * Returns the Flags of the Principals 
+     * associated AboutModule, in case there is one.
+     */
+    uint32_t GetAboutModuleFlags();
 
     /**
      * The base part of |origin| without the concatenation with |originSuffix|.
@@ -212,7 +254,7 @@ interface nsIPrincipal : nsISerializable
     readonly attribute ACString siteOrigin;
 
     /**
-     * The base domain of the codebase URI to which this principal pertains
+     * The base domain of the principal URI to which this principal pertains
      * (generally the document URI), handling null principals and
      * non-hierarchical schemes correctly.
      */
@@ -255,9 +297,9 @@ interface nsIPrincipal : nsISerializable
     [infallible] readonly attribute boolean isNullPrincipal;
 
     /**
-     * Returns true iff this principal corresponds to a codebase origin.
+     * Returns true iff this principal corresponds to a principal origin.
      */
-    [infallible] readonly attribute boolean isCodebasePrincipal;
+    [infallible] readonly attribute boolean isContentPrincipal;
 
     /**
      * Returns true iff this is an expanded principal.
@@ -283,6 +325,17 @@ interface nsIPrincipal : nsISerializable
      * an expanded principal, which contains at least one addon principal.
      */
     [infallible] readonly attribute boolean isAddonOrExpandedAddonPrincipal;
+
+    %{C++
+    // MOZ_DBG support
+    friend std::ostream& operator<<(std::ostream& aOut, const nsIPrincipal& aPrincipal) {
+      nsIPrincipal* principal = const_cast<nsIPrincipal*>(&aPrincipal);
+      nsAutoCString origin;
+      mozilla::DebugOnly<nsresult> rv = principal->GetOrigin(origin);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+      return aOut << "nsIPrincipal { " << origin << " }";
+    }
+    %}
 };
 
 /**

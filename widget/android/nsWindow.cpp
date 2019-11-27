@@ -15,6 +15,8 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RWLock.h"
+#include "mozilla/StaticPrefs_android.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/Unused.h"
@@ -83,7 +85,6 @@ using mozilla::dom::ContentParent;
 #include "AndroidBridge.h"
 #include "AndroidBridgeUtilities.h"
 #include "AndroidUiThread.h"
-#include "FennecJNINatives.h"
 #include "GeckoEditableSupport.h"
 #include "GeneratedJNINatives.h"
 #include "KeyEvent.h"
@@ -122,6 +123,13 @@ static bool sFailedToCreateGLContext = false;
 // Multitouch swipe thresholds in inches
 static const double SWIPE_MAX_PINCH_DELTA_INCHES = 0.4;
 static const double SWIPE_MIN_DISTANCE_INCHES = 0.6;
+
+static const int32_t INPUT_RESULT_UNHANDLED =
+    java::PanZoomController::INPUT_RESULT_UNHANDLED;
+static const int32_t INPUT_RESULT_HANDLED =
+    java::PanZoomController::INPUT_RESULT_HANDLED;
+static const int32_t INPUT_RESULT_HANDLED_CONTENT =
+    java::PanZoomController::INPUT_RESULT_HANDLED_CONTENT;
 
 template <typename Lambda, bool IsStatic, typename InstanceType, class Impl>
 class nsWindow::WindowEvent : public Runnable {
@@ -334,7 +342,7 @@ class nsWindow::GeckoViewSupport final
                    jni::Object::Param aSessionAccessibility,
                    jni::Object::Param aInitData, jni::String::Param aId,
                    jni::String::Param aChromeURI, int32_t aScreenId,
-                   bool aPrivateMode);
+                   bool aPrivateMode, bool aRemote);
 
   // Close and destroy the nsWindow.
   void Close();
@@ -362,8 +370,6 @@ class nsWindow::GeckoViewSupport final
 class nsWindow::NPZCSupport final
     : public PanZoomController::NativeProvider::Natives<NPZCSupport> {
   using LockedWindowPtr = WindowPtr<NPZCSupport>::Locked;
-
-  static bool sNegateWheelScroll;
 
   WindowPtr<NPZCSupport> mWindow;
   PanZoomController::NativeProvider::WeakRef mNPZC;
@@ -413,13 +419,6 @@ class nsWindow::NPZCSupport final
               const PanZoomController::NativeProvider::LocalRef& aNPZC)
       : mWindow(aPtr, aWindow), mNPZC(aNPZC), mPreviousButtons(0) {
     MOZ_ASSERT(mWindow);
-
-    static bool sInited;
-    if (!sInited) {
-      Preferences::AddBoolVarCache(&sNegateWheelScroll,
-                                   "ui.scrolling.negate_wheel_scroll");
-      sInited = true;
-    }
   }
 
   ~NPZCSupport() {}
@@ -428,6 +427,7 @@ class nsWindow::NPZCSupport final
   using Base::DisposeNative;
 
   void OnDetach(already_AddRefed<Runnable> aDisposer) {
+    RefPtr<Runnable> disposer = aDisposer;
     // There are several considerations when shutting down NPZC. 1) The
     // Gecko thread may destroy NPZC at any time when nsWindow closes. 2)
     // There may be pending events on the Gecko thread when NPZC is
@@ -467,8 +467,7 @@ class nsWindow::NPZCSupport final
       }
 
       uiThread->Dispatch(NS_NewRunnableFunction(
-          "NPZCSupport::OnDetach",
-          [npzc, disposer = RefPtr<Runnable>(aDisposer)] {
+          "NPZCSupport::OnDetach", [npzc, disposer = std::move(disposer)] {
             npzc->SetAttached(false);
             disposer->Run();
           }));
@@ -492,8 +491,8 @@ class nsWindow::NPZCSupport final
     }
   }
 
-  bool HandleScrollEvent(int64_t aTime, int32_t aMetaState, float aX, float aY,
-                         float aHScroll, float aVScroll) {
+  int32_t HandleScrollEvent(int64_t aTime, int32_t aMetaState, float aX,
+                            float aY, float aHScroll, float aVScroll) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
     RefPtr<IAPZCTreeManager> controller;
@@ -503,12 +502,12 @@ class nsWindow::NPZCSupport final
     }
 
     if (!controller) {
-      return false;
+      return INPUT_RESULT_UNHANDLED;
     }
 
     ScreenPoint origin = ScreenPoint(aX, aY);
 
-    if (sNegateWheelScroll) {
+    if (StaticPrefs::ui_scrolling_negate_wheel_scroll()) {
       aHScroll = -aHScroll;
       aVScroll = -aVScroll;
     }
@@ -524,21 +523,19 @@ class nsWindow::NPZCSupport final
         // to do?
         WheelDeltaAdjustmentStrategy::eNone);
 
-    ScrollableLayerGuid guid;
-    uint64_t blockId;
-    nsEventStatus status =
-        controller->InputBridge()->ReceiveInputEvent(input, &guid, &blockId);
+    APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
 
-    if (status == nsEventStatus_eConsumeNoDefault) {
-      return true;
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
+      return INPUT_RESULT_HANDLED;
     }
 
-    PostInputEvent([input, guid, blockId, status](nsWindow* window) {
+    PostInputEvent([input, result](nsWindow* window) {
       WidgetWheelEvent wheelEvent = input.ToWidgetWheelEvent(window);
-      window->ProcessUntransformedAPZEvent(&wheelEvent, guid, blockId, status);
+      window->ProcessUntransformedAPZEvent(&wheelEvent, result);
     });
 
-    return true;
+    return result.mHitRegionWithApzAwareListeners ? INPUT_RESULT_HANDLED_CONTENT
+                                                  : INPUT_RESULT_HANDLED;
   }
 
  private:
@@ -585,8 +582,8 @@ class nsWindow::NPZCSupport final
   }
 
  public:
-  bool HandleMouseEvent(int32_t aAction, int64_t aTime, int32_t aMetaState,
-                        float aX, float aY, int buttons) {
+  int32_t HandleMouseEvent(int32_t aAction, int64_t aTime, int32_t aMetaState,
+                           float aX, float aY, int buttons) {
     MOZ_ASSERT(AndroidBridge::IsJavaUiThread());
 
     RefPtr<IAPZCTreeManager> controller;
@@ -596,7 +593,7 @@ class nsWindow::NPZCSupport final
     }
 
     if (!controller) {
-      return false;
+      return INPUT_RESULT_UNHANDLED;
     }
 
     MouseInput::MouseType mouseType = MouseInput::MOUSE_NONE;
@@ -629,7 +626,7 @@ class nsWindow::NPZCSupport final
     }
 
     if (mouseType == MouseInput::MOUSE_NONE) {
-      return false;
+      return INPUT_RESULT_UNHANDLED;
     }
 
     ScreenPoint origin = ScreenPoint(aX, aY);
@@ -639,24 +636,22 @@ class nsWindow::NPZCSupport final
                      ConvertButtons(buttons), origin, aTime,
                      GetEventTimeStamp(aTime), GetModifiers(aMetaState));
 
-    ScrollableLayerGuid guid;
-    uint64_t blockId;
-    nsEventStatus status =
-        controller->InputBridge()->ReceiveInputEvent(input, &guid, &blockId);
+    APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
 
-    if (status == nsEventStatus_eConsumeNoDefault) {
-      return true;
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
+      return INPUT_RESULT_HANDLED;
     }
 
-    PostInputEvent([input, guid, blockId, status](nsWindow* window) {
+    PostInputEvent([input, result](nsWindow* window) {
       WidgetMouseEvent mouseEvent = input.ToWidgetMouseEvent(window);
-      window->ProcessUntransformedAPZEvent(&mouseEvent, guid, blockId, status);
+      window->ProcessUntransformedAPZEvent(&mouseEvent, result);
     });
 
-    return true;
+    return result.mHitRegionWithApzAwareListeners ? INPUT_RESULT_HANDLED_CONTENT
+                                                  : INPUT_RESULT_HANDLED;
   }
 
-  bool HandleMotionEvent(
+  int32_t HandleMotionEvent(
       const PanZoomController::NativeProvider::LocalRef& aInstance,
       int32_t aAction, int32_t aActionIndex, int64_t aTime, int32_t aMetaState,
       float aScreenX, float aScreenY, jni::IntArray::Param aPointerId,
@@ -672,7 +667,7 @@ class nsWindow::NPZCSupport final
     }
 
     if (!controller) {
-      return false;
+      return INPUT_RESULT_UNHANDLED;
     }
 
     nsTArray<int32_t> pointerId(aPointerId->GetElements());
@@ -701,7 +696,7 @@ class nsWindow::NPZCSupport final
         type = MultiTouchInput::MULTITOUCH_CANCEL;
         break;
       default:
-        return false;
+        return INPUT_RESULT_UNHANDLED;
     }
 
     MultiTouchInput input(type, aTime, GetEventTimeStamp(aTime), 0);
@@ -757,29 +752,26 @@ class nsWindow::NPZCSupport final
           ScreenSize::FromUnknownSize(radius), orien, pressure[i]));
     }
 
-    ScrollableLayerGuid guid;
-    uint64_t blockId;
-    nsEventStatus status =
-        controller->InputBridge()->ReceiveInputEvent(input, &guid, &blockId);
+    APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
 
-    if (status == nsEventStatus_eConsumeNoDefault) {
-      return true;
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
+      return INPUT_RESULT_HANDLED;
     }
 
     // Dispatch APZ input event on Gecko thread.
-    PostInputEvent([input, guid, blockId, status](nsWindow* window) {
+    PostInputEvent([input, result](nsWindow* window) {
       WidgetTouchEvent touchEvent = input.ToWidgetTouchEvent(window);
-      window->ProcessUntransformedAPZEvent(&touchEvent, guid, blockId, status);
+      window->ProcessUntransformedAPZEvent(&touchEvent, result);
       window->DispatchHitTest(touchEvent);
     });
-    return true;
+
+    return result.mHitRegionWithApzAwareListeners ? INPUT_RESULT_HANDLED_CONTENT
+                                                  : INPUT_RESULT_HANDLED;
   }
 };
 
 template <>
 const char nsWindow::NativePtr<nsWindow::NPZCSupport>::sName[] = "NPZCSupport";
-
-bool nsWindow::NPZCSupport::sNegateWheelScroll;
 
 NS_IMPL_ISUPPORTS(nsWindow::AndroidView, nsIAndroidEventDispatcher,
                   nsIAndroidView)
@@ -859,33 +851,32 @@ class nsWindow::LayerViewSupport final
   using Base::DisposeNative;
 
   void OnDetach(already_AddRefed<Runnable> aDisposer) {
+    RefPtr<Runnable> disposer = aDisposer;
     if (RefPtr<nsThread> uiThread = GetAndroidUiThread()) {
       GeckoSession::Compositor::GlobalRef compositor(mCompositor);
       if (!compositor) {
         return;
       }
 
-      if (LockedWindowPtr window{mWindow}) {
-        uiThread->Dispatch(NS_NewRunnableFunction(
-            "LayerViewSupport::OnDetach",
-            [compositor, disposer = RefPtr<Runnable>(aDisposer),
-             results = &mCapturePixelsResults, lock = &window] {
-              if (lock) {
-                while (!results->empty()) {
-                  auto aResult = java::GeckoResult::LocalRef(results->front());
-                  if (aResult) {
-                    aResult->CompleteExceptionally(
-                        java::sdk::IllegalStateException::New(
-                            "The compositor has detached from the session")
-                            .Cast<jni::Throwable>());
-                    results->pop();
-                  }
+      uiThread->Dispatch(NS_NewRunnableFunction(
+          "LayerViewSupport::OnDetach",
+          [compositor, disposer = std::move(disposer),
+           results = &mCapturePixelsResults, window = &mWindow] {
+            if (LockedWindowPtr lock{*window}) {
+              while (!results->empty()) {
+                auto aResult = java::GeckoResult::LocalRef(results->front());
+                if (aResult) {
+                  aResult->CompleteExceptionally(
+                      java::sdk::IllegalStateException::New(
+                          "The compositor has detached from the session")
+                          .Cast<jni::Throwable>());
+                  results->pop();
                 }
-                compositor->OnCompositorDetached();
-                disposer->Run();
               }
-            }));
-      }
+              compositor->OnCompositorDetached();
+              disposer->Run();
+            }
+          }));
     }
   }
 
@@ -1156,6 +1147,9 @@ class nsWindow::LayerViewSupport final
     java::GeckoResult::LocalRef aResult = nullptr;
     if (LockedWindowPtr window{mWindow}) {
       aResult = java::GeckoResult::LocalRef(mCapturePixelsResults.front());
+      if (aResult) {
+        mCapturePixelsResults.pop();
+      }
     }
     if (aResult) {
       auto pixels = mozilla::jni::ByteBuffer::New(FlipScreenPixels(aMem, aSize),
@@ -1164,10 +1158,6 @@ class nsWindow::LayerViewSupport final
           aSize.width, aSize.height, java::sdk::Config::ARGB_8888());
       bitmap->CopyPixelsFromBuffer(pixels);
       aResult->Complete(bitmap);
-
-      if (LockedWindowPtr window{mWindow}) {
-        mCapturePixelsResults.pop();
-      }
     }
 
     // Pixels have been copied, so Dealloc Shmem
@@ -1240,7 +1230,8 @@ void nsWindow::GeckoViewSupport::Open(
     jni::Object::Param aQueue, jni::Object::Param aCompositor,
     jni::Object::Param aDispatcher, jni::Object::Param aSessionAccessibility,
     jni::Object::Param aInitData, jni::String::Param aId,
-    jni::String::Param aChromeURI, int32_t aScreenId, bool aPrivateMode) {
+    jni::String::Param aChromeURI, int32_t aScreenId, bool aPrivateMode,
+    bool aRemote) {
   MOZ_ASSERT(NS_IsMainThread());
 
   AUTO_PROFILER_LABEL("nsWindow::GeckoViewSupport::Open", OTHER);
@@ -1267,6 +1258,9 @@ void nsWindow::GeckoViewSupport::Open(
   nsAutoCString chromeFlags("chrome,dialog=0,resizable,scrollbars");
   if (aPrivateMode) {
     chromeFlags += ",private";
+  }
+  if (aRemote) {
+    chromeFlags += ",remote";
   }
   nsCOMPtr<mozIDOMWindowProxy> domWindow;
   ww->OpenWindow(nullptr, url.get(), aId->ToCString().get(), chromeFlags.get(),
@@ -1392,6 +1386,7 @@ void nsWindow::GeckoViewSupport::AttachAccessibility(
 }
 
 void nsWindow::InitNatives() {
+  jni::InitConversionStatics();
   nsWindow::GeckoViewSupport::Base::Init();
   nsWindow::LayerViewSupport::Init();
   nsWindow::NPZCSupport::Init();
@@ -2007,9 +2002,9 @@ void nsWindow::SetNativeData(uint32_t aDataType, uintptr_t aVal) {
 void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
   if (aEvent.mMessage == eTouchStart && aEvent.mTouches.Length() == 1) {
     // Since touch events don't get retargeted by PositionedEventTargeting.cpp
-    // code on Fennec, we dispatch a dummy mouse event that *does* get
-    // retargeted. The Fennec browser.js code can use this to activate the
-    // highlight element in case the this touchstart is the start of a tap.
+    // code, we dispatch a dummy mouse event that *does* get retargeted.
+    // Front-end code can use this to activate the highlight element in case
+    // this touchstart is the start of a tap.
     WidgetMouseEvent hittest(true, eMouseHitTest, this,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
@@ -2198,16 +2193,7 @@ nsresult nsWindow::SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
 }
 
 bool nsWindow::WidgetPaintsBackground() {
-  static bool sWidgetPaintsBackground = true;
-  static bool sWidgetPaintsBackgroundPrefCached = false;
-
-  if (!sWidgetPaintsBackgroundPrefCached) {
-    sWidgetPaintsBackgroundPrefCached = true;
-    mozilla::Preferences::AddBoolVarCache(
-        &sWidgetPaintsBackground, "android.widget_paints_background", true);
-  }
-
-  return sWidgetPaintsBackground;
+  return StaticPrefs::android_widget_paints_background();
 }
 
 bool nsWindow::NeedsPaint() {

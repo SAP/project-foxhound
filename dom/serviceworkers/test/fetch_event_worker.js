@@ -84,7 +84,7 @@ onfetch = function(ev) {
     ev.respondWith(
       new Response(
         new ReadableStream({
-          start: function(controller) {
+          start(controller) {
             controller.enqueue(
               new Uint8Array([0x48, 0x65, 0x6c, 0x6c, 0x6f, 0x21])
             );
@@ -312,11 +312,6 @@ onfetch = function(ev) {
   } else if (
     ev.request.url.includes("load_cross_origin_xml_document_synthetic.xml")
   ) {
-    if (ev.request.mode != "same-origin") {
-      ev.respondWith(Promise.reject());
-      return;
-    }
-
     ev.respondWith(
       Promise.resolve(
         new Response("<response>body</response>", {

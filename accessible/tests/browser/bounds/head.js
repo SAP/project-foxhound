@@ -19,16 +19,16 @@ Services.scriptloader.loadSubScript(
 loadScripts(
   { name: "common.js", dir: MOCHITESTS_DIR },
   { name: "layout.js", dir: MOCHITESTS_DIR },
-  "events.js"
+  { name: "promisified-events.js", dir: MOCHITESTS_DIR }
 );
 
 /**
  * Get content window DPR that can be different from parent window DPR.
  */
 async function getContentDPR(browser) {
-  return ContentTask.spawn(
+  return SpecialPowers.spawn(
     browser,
-    null,
+    [],
     () => content.window.devicePixelRatio
   );
 }

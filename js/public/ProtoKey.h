@@ -36,7 +36,7 @@
 #define TYPED_ARRAY_CLASP(TYPE) (&TypedArrayObject::classes[Scalar::TYPE])
 #define ERROR_CLASP(TYPE) (&ErrorObject::classes[TYPE])
 
-#ifdef EXPOSE_INTL_API
+#ifdef ENABLE_INTL_API
 #  define IF_INTL(REAL, IMAGINARY) REAL
 #else
 #  define IF_INTL(REAL, IMAGINARY) IMAGINARY
@@ -101,6 +101,14 @@
   REAL(Symbol, InitSymbolClass, OCLASP(Symbol))                              \
   REAL(SharedArrayBuffer, InitViaClassSpec, OCLASP(SharedArrayBuffer))       \
   REAL_IF_INTL(Intl, InitIntlClass, CLASP(Intl))                             \
+  REAL_IF_INTL(Collator, InitViaClassSpec, OCLASP(Collator))                 \
+  REAL_IF_INTL(DateTimeFormat, InitViaClassSpec, OCLASP(DateTimeFormat))     \
+  REAL_IF_INTL(Locale, InitViaClassSpec, OCLASP(Locale))                     \
+  REAL_IF_INTL(ListFormat, InitViaClassSpec, OCLASP(ListFormat))             \
+  REAL_IF_INTL(NumberFormat, InitViaClassSpec, OCLASP(NumberFormat))         \
+  REAL_IF_INTL(PluralRules, InitViaClassSpec, OCLASP(PluralRules))           \
+  REAL_IF_INTL(RelativeTimeFormat, InitViaClassSpec,                         \
+               OCLASP(RelativeTimeFormat))                                   \
   REAL_IF_BDATA(TypedObject, InitTypedObjectModuleObject,                    \
                 OCLASP(TypedObjectModule))                                   \
   REAL(Reflect, InitReflect, nullptr)                                        \
@@ -110,6 +118,9 @@
   REAL(Atomics, InitAtomicsClass, OCLASP(Atomics))                           \
   REAL(SavedFrame, InitViaClassSpec, &js::SavedFrame::class_)                \
   REAL(Promise, InitViaClassSpec, OCLASP(Promise))                           \
+  REAL(AsyncFunction, InitAsyncFunction, nullptr)                            \
+  REAL(GeneratorFunction, InitGeneratorFunction, nullptr)                    \
+  REAL(AsyncGeneratorFunction, InitAsyncGeneratorFunction, nullptr)          \
   REAL(ReadableStream, InitViaClassSpec, &js::ReadableStream::class_)        \
   REAL(ReadableStreamDefaultReader, InitViaClassSpec,                        \
        &js::ReadableStreamDefaultReader::class_)                             \
@@ -117,7 +128,7 @@
        &js::ReadableStreamDefaultController::class_)                         \
   REAL(ReadableByteStreamController, InitViaClassSpec,                       \
        &js::ReadableByteStreamController::class_)                            \
-  IMAGINARY(WritableStream, dummy, dummy)                                    \
+  REAL(WritableStream, InitViaClassSpec, &js::WritableStream::class_)        \
   IMAGINARY(WritableStreamDefaultWriter, dummy, dummy)                       \
   IMAGINARY(WritableStreamDefaultController, dummy, dummy)                   \
   REAL(ByteLengthQueuingStrategy, InitViaClassSpec,                          \

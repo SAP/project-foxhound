@@ -228,7 +228,7 @@ add_task(async function test_properties() {
 add_task(async function test_full_sync() {
   _("Ensure that Clients engine fetches all records for each sync.");
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
   let user = server.user("foo");
 
@@ -379,7 +379,10 @@ add_task(async function test_client_name_change() {
   let changedIDs = await tracker.getChangedIDs();
   equal(Object.keys(changedIDs).length, 0);
 
-  Svc.Prefs.set("client.name", "new name");
+  Services.prefs.setStringPref(
+    "identity.fxaccounts.account.device.name",
+    "new name"
+  );
   await tracker.asyncObserver.promiseObserversComplete();
 
   _("new name: " + engine.localName);
@@ -429,7 +432,7 @@ add_task(async function test_fxa_device_id_change() {
 add_task(async function test_last_modified() {
   _("Ensure that remote records have a sane serverLastModified attribute.");
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
   let user = server.user("foo");
 
@@ -671,7 +674,7 @@ add_task(async function test_filter_duplicate_names() {
     "Ensure that we exclude clients with identical names that haven't synced in a week."
   );
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
   let user = server.user("foo");
 
@@ -980,11 +983,20 @@ add_task(async function test_clients_not_in_fxa_list() {
     notifyDevices() {
       return Promise.resolve(true);
     },
-    getDeviceId() {
-      return fxAccounts.getDeviceId();
-    },
-    getDeviceList() {
-      return Promise.resolve([{ id: remoteId }]);
+    device: {
+      getLocalId() {
+        return fxAccounts.device.getLocalId();
+      },
+      getLocalName() {
+        return fxAccounts.device.getLocalName();
+      },
+      getLocalType() {
+        return fxAccounts.device.getLocalType();
+      },
+      recentDeviceList: [{ id: remoteId }],
+      refreshDeviceList() {
+        return Promise.resolve(true);
+      },
     },
   };
 
@@ -1034,7 +1046,7 @@ add_task(async function test_dupe_device_ids() {
       fxaDeviceId: remoteDeviceId,
       protocols: ["1.5"],
     },
-    Date.now() / 1000 - 30000
+    new_timestamp() - 3
   );
   collection.insertRecord({
     id: remoteId2,
@@ -1051,11 +1063,20 @@ add_task(async function test_dupe_device_ids() {
     notifyDevices() {
       return Promise.resolve(true);
     },
-    getDeviceId() {
-      return fxAccounts.getDeviceId();
-    },
-    getDeviceList() {
-      return Promise.resolve([{ id: remoteDeviceId }]);
+    device: {
+      getLocalId() {
+        return fxAccounts.device.getLocalId();
+      },
+      getLocalName() {
+        return fxAccounts.device.getLocalName();
+      },
+      getLocalType() {
+        return fxAccounts.device.getLocalType();
+      },
+      recentDeviceList: [{ id: remoteDeviceId }],
+      refreshDeviceList() {
+        return Promise.resolve(true);
+      },
     },
   };
 
@@ -1199,7 +1220,7 @@ add_task(async function test_optional_client_fields() {
 add_task(async function test_merge_commands() {
   _("Verifies local commands for remote clients are merged with the server's");
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
   await SyncTestingInfrastructure(server);
   await generateNewKeys(Service.collectionKeys);
@@ -1300,7 +1321,7 @@ add_task(async function test_duplicate_remote_commands() {
     "Verifies local commands for remote clients are sent only once (bug 1289287)"
   );
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
@@ -1383,7 +1404,7 @@ add_task(async function test_duplicate_remote_commands() {
 add_task(async function test_upload_after_reboot() {
   _("Multiple downloads, reboot, then upload (bug 1289287)");
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
@@ -1503,7 +1524,7 @@ add_task(async function test_keep_cleared_commands_after_reboot() {
     "Download commands, fail upload, reboot, then apply new commands (bug 1289287)"
   );
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
@@ -1658,7 +1679,7 @@ add_task(async function test_keep_cleared_commands_after_reboot() {
 add_task(async function test_deleted_commands() {
   _("Verifies commands for a deleted client are discarded");
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
@@ -1729,7 +1750,7 @@ add_task(async function test_deleted_commands() {
 add_task(async function test_send_uri_ack() {
   _("Ensure a sent URI is deleted when the client syncs");
 
-  let now = Date.now() / 1000;
+  let now = new_timestamp();
   let server = await serverForFoo(engine);
 
   await SyncTestingInfrastructure(server);
@@ -2057,8 +2078,16 @@ add_task(async function test_other_clients_notified_on_first_sync() {
   const fxAccounts = engine.fxAccounts;
   let calls = 0;
   engine.fxAccounts = {
-    getDeviceId() {
-      return fxAccounts.getDeviceId();
+    device: {
+      getLocalId() {
+        return fxAccounts.device.getLocalId();
+      },
+      getLocalName() {
+        return fxAccounts.device.getLocalName();
+      },
+      getLocalType() {
+        return fxAccounts.device.getLocalType();
+      },
     },
     notifyDevices() {
       calls++;

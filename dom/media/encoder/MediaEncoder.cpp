@@ -7,24 +7,24 @@
 
 #include <algorithm>
 #include "AudioNodeEngine.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 #include "DriftCompensation.h"
 #include "GeckoProfiler.h"
 #include "MediaDecoder.h"
-#include "MediaStreamGraphImpl.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraphImpl.h"
+#include "MediaTrackListener.h"
 #include "mozilla/dom/AudioNode.h"
 #include "mozilla/dom/AudioStreamTrack.h"
 #include "mozilla/dom/MediaStreamTrack.h"
 #include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/gfx/Point.h"  // IntSize
 #include "mozilla/Logging.h"
-#include "mozilla/media/MediaUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/Unused.h"
+#include "Muxer.h"
 #include "nsIPrincipal.h"
 #include "nsMimeTypes.h"
 #include "nsThreadUtils.h"
@@ -38,10 +38,6 @@
 #  include "WebMWriter.h"
 #endif
 
-#ifdef LOG
-#  undef LOG
-#endif
-
 mozilla::LazyLogModule gMediaEncoderLog("MediaEncoder");
 #define LOG(type, msg) MOZ_LOG(gMediaEncoderLog, type, msg)
 
@@ -50,7 +46,7 @@ namespace mozilla {
 using namespace dom;
 using namespace media;
 
-class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
+class MediaEncoder::AudioTrackListener : public DirectMediaTrackListener {
  public:
   AudioTrackListener(DriftCompensator* aDriftCompensator,
                      AudioTrackEncoder* aEncoder, TaskQueue* aEncoderThread)
@@ -59,12 +55,11 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
         mRemoved(false),
         mDriftCompensator(aDriftCompensator),
         mEncoder(aEncoder),
-        mEncoderThread(aEncoderThread) {
+        mEncoderThread(aEncoderThread),
+        mShutdownPromise(mShutdownHolder.Ensure(__func__)) {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
   }
-
-  void NotifyShutdown() { mShutdown = true; }
 
   void NotifyDirectListenerInstalled(InstallationResult aResult) override {
     if (aResult == InstallationResult::SUCCESS) {
@@ -85,15 +80,11 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
     }
   }
 
-  void NotifyQueuedChanges(MediaStreamGraph* aGraph, StreamTime aTrackOffset,
+  void NotifyQueuedChanges(MediaTrackGraph* aGraph, TrackTime aTrackOffset,
                            const MediaSegment& aQueuedMedia) override {
     TRACE_COMMENT("Encoder %p", mEncoder.get());
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
-
-    if (mShutdown) {
-      return;
-    }
 
     if (!mInitialized) {
       mDriftCompensator->NotifyAudioStart(TimeStamp::Now());
@@ -115,13 +106,9 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyEnded() override {
+  void NotifyEnded(MediaTrackGraph* aGraph) override {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
-
-    if (mShutdown) {
-      return;
-    }
 
     nsresult rv = mEncoderThread->Dispatch(
         NewRunnableMethod("mozilla::AudioTrackEncoder::NotifyEndOfStream",
@@ -130,14 +117,12 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyRemoved() override {
-    if (!mShutdown) {
-      nsresult rv = mEncoderThread->Dispatch(
-          NewRunnableMethod("mozilla::AudioTrackEncoder::NotifyEndOfStream",
-                            mEncoder, &AudioTrackEncoder::NotifyEndOfStream));
-      MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
-    }
+  void NotifyRemoved(MediaTrackGraph* aGraph) override {
+    nsresult rv = mEncoderThread->Dispatch(
+        NewRunnableMethod("mozilla::AudioTrackEncoder::NotifyEndOfStream",
+                          mEncoder, &AudioTrackEncoder::NotifyEndOfStream));
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+    Unused << rv;
 
     mRemoved = true;
 
@@ -145,32 +130,37 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
       mEncoder = nullptr;
       mEncoderThread = nullptr;
     }
+
+    mShutdownHolder.Resolve(true, __func__);
+  }
+
+  const RefPtr<GenericNonExclusivePromise>& OnShutdown() const {
+    return mShutdownPromise;
   }
 
  private:
-  // True when MediaEncoder has shutdown and destroyed the TaskQueue.
-  Atomic<bool> mShutdown;
   bool mDirectConnected;
   bool mInitialized;
   bool mRemoved;
   const RefPtr<DriftCompensator> mDriftCompensator;
   RefPtr<AudioTrackEncoder> mEncoder;
   RefPtr<TaskQueue> mEncoderThread;
+  MozPromiseHolder<GenericNonExclusivePromise> mShutdownHolder;
+  const RefPtr<GenericNonExclusivePromise> mShutdownPromise;
 };
 
-class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
+class MediaEncoder::VideoTrackListener : public DirectMediaTrackListener {
  public:
   VideoTrackListener(VideoTrackEncoder* aEncoder, TaskQueue* aEncoderThread)
       : mDirectConnected(false),
         mInitialized(false),
         mRemoved(false),
         mEncoder(aEncoder),
-        mEncoderThread(aEncoderThread) {
+        mEncoderThread(aEncoderThread),
+        mShutdownPromise(mShutdownHolder.Ensure(__func__)) {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
   }
-
-  void NotifyShutdown() { mShutdown = true; }
 
   void NotifyDirectListenerInstalled(InstallationResult aResult) override {
     if (aResult == InstallationResult::SUCCESS) {
@@ -192,15 +182,11 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     }
   }
 
-  void NotifyQueuedChanges(MediaStreamGraph* aGraph, StreamTime aTrackOffset,
+  void NotifyQueuedChanges(MediaTrackGraph* aGraph, TrackTime aTrackOffset,
                            const MediaSegment& aQueuedMedia) override {
     TRACE_COMMENT("Encoder %p", mEncoder.get());
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
-
-    if (mShutdown) {
-      return;
-    }
 
     const TimeStamp now = TimeStamp::Now();
     if (!mInitialized) {
@@ -219,17 +205,12 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyRealtimeTrackData(MediaStreamGraph* aGraph,
-                               StreamTime aTrackOffset,
+  void NotifyRealtimeTrackData(MediaTrackGraph* aGraph, TrackTime aTrackOffset,
                                const MediaSegment& aMedia) override {
     TRACE_COMMENT("Encoder %p", mEncoder.get());
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
     MOZ_ASSERT(aMedia.GetType() == MediaSegment::VIDEO);
-
-    if (mShutdown) {
-      return;
-    }
 
     const VideoSegment& video = static_cast<const VideoSegment&>(aMedia);
     VideoSegment copy;
@@ -249,13 +230,10 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyEnabledStateChanged(bool aEnabled) override {
+  void NotifyEnabledStateChanged(MediaTrackGraph* aGraph,
+                                 bool aEnabled) override {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
-
-    if (mShutdown) {
-      return;
-    }
 
     nsresult rv;
     if (aEnabled) {
@@ -271,13 +249,9 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyEnded() override {
+  void NotifyEnded(MediaTrackGraph* aGraph) override {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
-
-    if (mShutdown) {
-      return;
-    }
 
     nsresult rv = mEncoderThread->Dispatch(
         NewRunnableMethod("mozilla::VideoTrackEncoder::NotifyEndOfStream",
@@ -286,14 +260,12 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyRemoved() override {
-    if (!mShutdown) {
-      nsresult rv = mEncoderThread->Dispatch(
-          NewRunnableMethod("mozilla::VideoTrackEncoder::NotifyEndOfStream",
-                            mEncoder, &VideoTrackEncoder::NotifyEndOfStream));
-      MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-      Unused << rv;
-    }
+  void NotifyRemoved(MediaTrackGraph* aGraph) override {
+    nsresult rv = mEncoderThread->Dispatch(
+        NewRunnableMethod("mozilla::VideoTrackEncoder::NotifyEndOfStream",
+                          mEncoder, &VideoTrackEncoder::NotifyEndOfStream));
+    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
+    Unused << rv;
 
     mRemoved = true;
 
@@ -301,16 +273,22 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
       mEncoder = nullptr;
       mEncoderThread = nullptr;
     }
+
+    mShutdownHolder.Resolve(true, __func__);
+  }
+
+  const RefPtr<GenericNonExclusivePromise>& OnShutdown() const {
+    return mShutdownPromise;
   }
 
  private:
-  // True when MediaEncoder has shutdown and destroyed the TaskQueue.
-  Atomic<bool> mShutdown;
   bool mDirectConnected;
   bool mInitialized;
   bool mRemoved;
   RefPtr<VideoTrackEncoder> mEncoder;
   RefPtr<TaskQueue> mEncoderThread;
+  MozPromiseHolder<GenericNonExclusivePromise> mShutdownHolder;
+  const RefPtr<GenericNonExclusivePromise> mShutdownPromise;
 };
 
 class MediaEncoder::EncoderListener : public TrackEncoderListener {
@@ -398,17 +376,15 @@ MediaEncoder::MediaEncoder(TaskQueue* aEncoderThread,
                            VideoTrackEncoder* aVideoEncoder,
                            TrackRate aTrackRate, const nsAString& aMIMEType)
     : mEncoderThread(aEncoderThread),
-      mWriter(std::move(aWriter)),
+      mMuxer(MakeUnique<Muxer>(std::move(aWriter))),
       mAudioEncoder(aAudioEncoder),
       mVideoEncoder(aVideoEncoder),
       mEncoderListener(MakeAndAddRef<EncoderListener>(mEncoderThread, this)),
       mStartTime(TimeStamp::Now()),
       mMIMEType(aMIMEType),
       mInitialized(false),
-      mMetadataEncoded(false),
       mCompleted(false),
       mError(false),
-      mCanceled(false),
       mShutdown(false) {
   if (mAudioEncoder) {
     mAudioListener = MakeAndAddRef<AudioTrackListener>(
@@ -432,19 +408,26 @@ MediaEncoder::MediaEncoder(TaskQueue* aEncoderThread,
   }
 }
 
-MediaEncoder::~MediaEncoder() { MOZ_ASSERT(mListeners.IsEmpty()); }
+MediaEncoder::~MediaEncoder() {
+  MOZ_ASSERT(mListeners.IsEmpty());
+  MOZ_ASSERT(!mAudioTrack);
+  MOZ_ASSERT(!mVideoTrack);
+  MOZ_ASSERT(!mAudioNode);
+  MOZ_ASSERT(!mInputPort);
+  MOZ_ASSERT(!mPipeTrack);
+}
+
+void MediaEncoder::EnsureGraphTrackFrom(MediaTrack* aTrack) {
+  if (mGraphTrack) {
+    return;
+  }
+  MOZ_DIAGNOSTIC_ASSERT(!aTrack->IsDestroyed());
+  mGraphTrack = MakeAndAddRef<SharedDummyTrack>(
+      aTrack->GraphImpl()->CreateSourceTrack(MediaSegment::VIDEO));
+}
 
 void MediaEncoder::RunOnGraph(already_AddRefed<Runnable> aRunnable) {
-  MediaStreamGraphImpl* graph;
-  if (mAudioTrack) {
-    graph = mAudioTrack->GraphImpl();
-  } else if (mVideoTrack) {
-    graph = mVideoTrack->GraphImpl();
-  } else if (mPipeStream) {
-    graph = mPipeStream->GraphImpl();
-  } else {
-    MOZ_CRASH("No graph");
-  }
+  MOZ_ASSERT(mGraphTrack);
   class Message : public ControlMessage {
    public:
     explicit Message(already_AddRefed<Runnable> aRunnable)
@@ -452,7 +435,8 @@ void MediaEncoder::RunOnGraph(already_AddRefed<Runnable> aRunnable) {
     void Run() override { mRunnable->Run(); }
     const RefPtr<Runnable> mRunnable;
   };
-  graph->AppendMessage(MakeUnique<Message>(std::move(aRunnable)));
+  mGraphTrack->mTrack->GraphImpl()->AppendMessage(
+      MakeUnique<Message>(std::move(aRunnable)));
 }
 
 void MediaEncoder::Suspend() {
@@ -505,30 +489,30 @@ void MediaEncoder::ConnectAudioNode(AudioNode* aNode, uint32_t aOutput) {
     return;
   }
 
-  // Only AudioNodeStream of kind EXTERNAL_OUTPUT stores output audio data in
-  // the track (see AudioNodeStream::AdvanceOutputSegment()). That means track
-  // union stream in recorder session won't be able to copy data from the
-  // stream of non-destination node. Create a pipe stream in this case.
+  // Only AudioNodeTrack of kind EXTERNAL_OUTPUT stores output audio data in
+  // the track (see AudioNodeTrack::AdvanceOutputSegment()). That means
+  // forwarding input track in recorder session won't be able to copy data from
+  // the track of non-destination node. Create a pipe track in this case.
   if (aNode->NumberOfOutputs() > 0) {
     AudioContext* ctx = aNode->Context();
     AudioNodeEngine* engine = new AudioNodeEngine(nullptr);
-    AudioNodeStream::Flags flags = AudioNodeStream::EXTERNAL_OUTPUT |
-                                   AudioNodeStream::NEED_MAIN_THREAD_FINISHED;
-    mPipeStream = AudioNodeStream::Create(ctx, engine, flags, ctx->Graph());
-    AudioNodeStream* ns = aNode->GetStream();
+    AudioNodeTrack::Flags flags = AudioNodeTrack::EXTERNAL_OUTPUT |
+                                  AudioNodeTrack::NEED_MAIN_THREAD_ENDED;
+    mPipeTrack = AudioNodeTrack::Create(ctx, engine, flags, ctx->Graph());
+    AudioNodeTrack* ns = aNode->GetTrack();
     if (ns) {
-      mInputPort = mPipeStream->AllocateInputPort(aNode->GetStream(), TRACK_ANY,
-                                                  TRACK_ANY, 0, aOutput);
+      mInputPort = mPipeTrack->AllocateInputPort(aNode->GetTrack(), 0, aOutput);
     }
   }
 
   mAudioNode = aNode;
 
-  if (mPipeStream) {
-    mPipeStream->AddTrackListener(mAudioListener, AudioNodeStream::AUDIO_TRACK);
+  if (mPipeTrack) {
+    mPipeTrack->AddListener(mAudioListener);
+    EnsureGraphTrackFrom(mPipeTrack);
   } else {
-    mAudioNode->GetStream()->AddTrackListener(mAudioListener,
-                                              AudioNodeStream::AUDIO_TRACK);
+    mAudioNode->GetTrack()->AddListener(mAudioListener);
+    EnsureGraphTrackFrom(mAudioNode->GetTrack());
   }
 }
 
@@ -536,26 +520,26 @@ void MediaEncoder::ConnectMediaStreamTrack(MediaStreamTrack* aTrack) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aTrack->Ended()) {
-    NS_ASSERTION(false, "Cannot connect ended track");
+    MOZ_ASSERT_UNREACHABLE("Cannot connect ended track");
     return;
   }
 
+  EnsureGraphTrackFrom(aTrack->GetTrack());
+
   if (AudioStreamTrack* audio = aTrack->AsAudioStreamTrack()) {
     if (!mAudioEncoder) {
-      MOZ_ASSERT(false, "No audio encoder for this audio track");
-      return;
-    }
-    if (mAudioTrack) {
-      MOZ_ASSERT(false, "Only one audio track supported.");
-      return;
-    }
-    if (!mAudioListener) {
-      MOZ_ASSERT(false, "No audio listener for this audio track");
+      // No audio encoder for this audio track. It could be disabled.
+      LOG(LogLevel::Warning, ("Cannot connect to audio track - no encoder"));
       return;
     }
 
+    MOZ_ASSERT(!mAudioTrack, "Only one audio track supported.");
+    MOZ_ASSERT(mAudioListener, "No audio listener for this audio track");
+
+    LOG(LogLevel::Info, ("Connected to audio track %p", aTrack));
+
     mAudioTrack = audio;
-    // With full duplex we don't risk having audio come in late to the MSG
+    // With full duplex we don't risk having audio come in late to the MTG
     // so we won't need a direct listener.
     const bool enableDirectListener =
         !Preferences::GetBool("media.navigator.audio.full_duplex", false);
@@ -565,17 +549,15 @@ void MediaEncoder::ConnectMediaStreamTrack(MediaStreamTrack* aTrack) {
     audio->AddListener(mAudioListener);
   } else if (VideoStreamTrack* video = aTrack->AsVideoStreamTrack()) {
     if (!mVideoEncoder) {
-      MOZ_ASSERT(false, "No video encoder for this video track");
+      // No video encoder for this video track. It could be disabled.
+      LOG(LogLevel::Warning, ("Cannot connect to video track - no encoder"));
       return;
     }
-    if (mVideoTrack) {
-      MOZ_ASSERT(false, "Only one video track supported.");
-      return;
-    }
-    if (!mVideoListener) {
-      MOZ_ASSERT(false, "No video listener for this audio track");
-      return;
-    }
+
+    MOZ_ASSERT(!mVideoTrack, "Only one video track supported.");
+    MOZ_ASSERT(mVideoListener, "No video listener for this video track");
+
+    LOG(LogLevel::Info, ("Connected to video track %p", aTrack));
 
     mVideoTrack = video;
     video->AddDirectListener(mVideoListener);
@@ -628,21 +610,18 @@ already_AddRefed<MediaEncoder> MediaEncoder::CreateEncoder(
   RefPtr<VideoTrackEncoder> videoEncoder;
   auto driftCompensator =
       MakeRefPtr<DriftCompensator>(aEncoderThread, aTrackRate);
-  nsString mimeType;
 
-  if (!aTrackTypes) {
-    MOZ_ASSERT(false);
-    LOG(LogLevel::Error, ("No TrackTypes"));
+  Maybe<MediaContainerType> mimeType = MakeMediaContainerType(aMIMEType);
+  if (!mimeType) {
     return nullptr;
   }
-#ifdef MOZ_WEBM_ENCODER
-  else if (MediaEncoder::IsWebMEncoderEnabled() &&
-           aMIMEType.EqualsLiteral(VIDEO_WEBM)) {
-    if (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK &&
-        MediaDecoder::IsOpusEnabled()) {
+
+  for (const auto& codec : mimeType->ExtendedType().Codecs().Range()) {
+    if (codec.EqualsLiteral("opus")) {
+      MOZ_ASSERT(!audioEncoder);
       audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-    }
-    if (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK) {
+    } else if (codec.EqualsLiteral("vp8") || codec.EqualsLiteral("vp8.0")) {
+      MOZ_ASSERT(!videoEncoder);
       if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
         videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
             driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
@@ -650,75 +629,31 @@ already_AddRefed<MediaEncoder> MediaEncoder::CreateEncoder(
         videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
             driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
       }
-    }
-    writer = MakeUnique<WebMWriter>(aTrackTypes);
-    mimeType = NS_LITERAL_STRING(VIDEO_WEBM);
-  } else if (MediaEncoder::IsWebMEncoderEnabled() &&
-             aMIMEType.EqualsLiteral(AUDIO_WEBM) &&
-             aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK) {
-    if (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK &&
-        MediaDecoder::IsOpusEnabled()) {
-      audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-    }
-    if (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK) {
-      if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
-        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
-            driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
-      } else {
-        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
-            driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
-      }
-      mimeType = NS_LITERAL_STRING(VIDEO_WEBM);
     } else {
-      mimeType = NS_LITERAL_STRING(AUDIO_WEBM);
+      MOZ_CRASH("Unknown codec");
     }
-    writer = MakeUnique<WebMWriter>(aTrackTypes);
   }
-#endif  // MOZ_WEBM_ENCODER
-  else if (MediaDecoder::IsOggEnabled() && MediaDecoder::IsOpusEnabled() &&
-           aMIMEType.EqualsLiteral(AUDIO_OGG) &&
-           aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK) {
-    writer = MakeUnique<OggWriter>();
-    audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-    mimeType = NS_LITERAL_STRING(AUDIO_OGG);
-  }
+
+  if (mimeType->Type() == MEDIAMIMETYPE(VIDEO_WEBM) ||
+      mimeType->Type() == MEDIAMIMETYPE(AUDIO_WEBM)) {
 #ifdef MOZ_WEBM_ENCODER
-  else if (MediaEncoder::IsWebMEncoderEnabled() &&
-           (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK ||
-            !MediaDecoder::IsOggEnabled())) {
-    if (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK &&
-        MediaDecoder::IsOpusEnabled()) {
-      audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-    }
-    if (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK) {
-      if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
-        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
-            driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
-      } else {
-        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
-            driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
-      }
-    }
-    writer = MakeUnique<WebMWriter>(aTrackTypes);
-    mimeType = NS_LITERAL_STRING(VIDEO_WEBM);
-  }
+    MOZ_ASSERT_IF(mimeType->Type() == MEDIAMIMETYPE(AUDIO_WEBM), !videoEncoder);
+    writer = MakeUnique<WebMWriter>();
+#else
+    MOZ_CRASH("Webm cannot be selected if not supported");
 #endif  // MOZ_WEBM_ENCODER
-  else if (MediaDecoder::IsOggEnabled() && MediaDecoder::IsOpusEnabled() &&
-           aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK) {
+  } else if (mimeType->Type() == MEDIAMIMETYPE(AUDIO_OGG)) {
+    MOZ_ASSERT(audioEncoder);
+    MOZ_ASSERT(!videoEncoder);
     writer = MakeUnique<OggWriter>();
-    audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-    mimeType = NS_LITERAL_STRING(AUDIO_OGG);
-  } else {
-    LOG(LogLevel::Error,
-        ("Can not find any encoder to record this media stream"));
-    return nullptr;
   }
+  NS_ENSURE_TRUE(writer, nullptr);
 
   LOG(LogLevel::Info,
       ("Create encoder result:a[%p](%u bps) v[%p](%u bps) w[%p] mimeType = "
        "%s.",
        audioEncoder.get(), aAudioBitrate, videoEncoder.get(), aVideoBitrate,
-       writer.get(), NS_ConvertUTF16toUTF8(mimeType).get()));
+       writer.get(), NS_ConvertUTF16toUTF8(aMIMEType).get()));
 
   if (audioEncoder) {
     audioEncoder->SetWorkerThread(aEncoderThread);
@@ -734,77 +669,7 @@ already_AddRefed<MediaEncoder> MediaEncoder::CreateEncoder(
   }
   return MakeAndAddRef<MediaEncoder>(
       aEncoderThread, std::move(driftCompensator), std::move(writer),
-      audioEncoder, videoEncoder, aTrackRate, mimeType);
-}
-
-nsresult MediaEncoder::GetEncodedMetadata(
-    nsTArray<nsTArray<uint8_t>>* aOutputBufs, nsAString& aMIMEType) {
-  AUTO_PROFILER_LABEL("MediaEncoder::GetEncodedMetadata", OTHER);
-
-  MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
-
-  if (mShutdown) {
-    MOZ_ASSERT(false);
-    return NS_ERROR_FAILURE;
-  }
-
-  if (!mInitialized) {
-    MOZ_ASSERT(false);
-    return NS_ERROR_FAILURE;
-  }
-
-  if (mMetadataEncoded) {
-    MOZ_ASSERT(false);
-    return NS_ERROR_FAILURE;
-  }
-
-  aMIMEType = mMIMEType;
-
-  LOG(LogLevel::Verbose,
-      ("GetEncodedMetadata TimeStamp = %f", GetEncodeTimeStamp()));
-
-  nsresult rv;
-
-  if (mAudioEncoder) {
-    if (!mAudioEncoder->IsInitialized()) {
-      LOG(LogLevel::Error,
-          ("GetEncodedMetadata Audio encoder not initialized"));
-      MOZ_ASSERT(false);
-      return NS_ERROR_FAILURE;
-    }
-    rv = CopyMetadataToMuxer(mAudioEncoder);
-    if (NS_FAILED(rv)) {
-      LOG(LogLevel::Error, ("Failed to Set Audio Metadata"));
-      SetError();
-      return rv;
-    }
-  }
-  if (mVideoEncoder) {
-    if (!mVideoEncoder->IsInitialized()) {
-      LOG(LogLevel::Error,
-          ("GetEncodedMetadata Video encoder not initialized"));
-      MOZ_ASSERT(false);
-      return NS_ERROR_FAILURE;
-    }
-    rv = CopyMetadataToMuxer(mVideoEncoder.get());
-    if (NS_FAILED(rv)) {
-      LOG(LogLevel::Error, ("Failed to Set Video Metadata"));
-      SetError();
-      return rv;
-    }
-  }
-
-  rv = mWriter->GetContainerData(aOutputBufs, ContainerWriter::GET_HEADER);
-  if (NS_FAILED(rv)) {
-    LOG(LogLevel::Error, ("Writer fail to generate header!"));
-    SetError();
-    return rv;
-  }
-  LOG(LogLevel::Verbose,
-      ("Finish GetEncodedMetadata TimeStamp = %f", GetEncodeTimeStamp()));
-  mMetadataEncoded = true;
-
-  return NS_OK;
+      audioEncoder, videoEncoder, aTrackRate, aMIMEType);
 }
 
 nsresult MediaEncoder::GetEncodedData(
@@ -812,47 +677,73 @@ nsresult MediaEncoder::GetEncodedData(
   AUTO_PROFILER_LABEL("MediaEncoder::GetEncodedData", OTHER);
 
   MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
-
-  if (!mMetadataEncoded) {
-    MOZ_ASSERT(false);
-    return NS_ERROR_FAILURE;
-  }
+  MOZ_ASSERT(mInitialized);
+  MOZ_ASSERT_IF(mAudioEncoder, mAudioEncoder->IsInitialized());
+  MOZ_ASSERT_IF(mVideoEncoder, mVideoEncoder->IsInitialized());
 
   nsresult rv;
   LOG(LogLevel::Verbose,
       ("GetEncodedData TimeStamp = %f", GetEncodeTimeStamp()));
-  EncodedFrameContainer encodedData;
 
-  if (mVideoEncoder) {
-    // We're most likely to actually wait for a video frame, so do that first
-    // to minimize capture offset/lipsync issues.
-    rv = WriteEncodedDataToMuxer(mVideoEncoder);
-    LOG(LogLevel::Verbose,
-        ("Video encoded TimeStamp = %f", GetEncodeTimeStamp()));
+  if (mMuxer->NeedsMetadata()) {
+    nsTArray<RefPtr<TrackMetadataBase>> meta;
+    if (mAudioEncoder && !*meta.AppendElement(mAudioEncoder->GetMetadata())) {
+      LOG(LogLevel::Error, ("Audio metadata is null"));
+      SetError();
+      return NS_ERROR_ABORT;
+    }
+    if (mVideoEncoder && !*meta.AppendElement(mVideoEncoder->GetMetadata())) {
+      LOG(LogLevel::Error, ("Video metadata is null"));
+      SetError();
+      return NS_ERROR_ABORT;
+    }
+
+    rv = mMuxer->SetMetadata(meta);
     if (NS_FAILED(rv)) {
-      LOG(LogLevel::Warning, ("Failed to write encoded video data to muxer"));
+      LOG(LogLevel::Error, ("SetMetadata failed"));
+      SetError();
       return rv;
     }
   }
 
-  if (mAudioEncoder) {
-    rv = WriteEncodedDataToMuxer(mAudioEncoder);
-    LOG(LogLevel::Verbose,
-        ("Audio encoded TimeStamp = %f", GetEncodeTimeStamp()));
+  // First, feed encoded data from encoders to muxer.
+
+  if (mVideoEncoder && !mVideoEncoder->IsEncodingComplete()) {
+    nsTArray<RefPtr<EncodedFrame>> videoFrames;
+    rv = mVideoEncoder->GetEncodedTrack(videoFrames);
     if (NS_FAILED(rv)) {
-      LOG(LogLevel::Warning, ("Failed to write encoded audio data to muxer"));
+      // Encoding might be canceled.
+      LOG(LogLevel::Error, ("Failed to get encoded data from video encoder."));
       return rv;
+    }
+    for (const RefPtr<EncodedFrame>& frame : videoFrames) {
+      mMuxer->AddEncodedVideoFrame(frame);
+    }
+    if (mVideoEncoder->IsEncodingComplete()) {
+      mMuxer->VideoEndOfStream();
     }
   }
 
-  // In audio only or video only case, let unavailable track's flag to be
-  // true.
-  bool isAudioCompleted = !mAudioEncoder || mAudioEncoder->IsEncodingComplete();
-  bool isVideoCompleted = !mVideoEncoder || mVideoEncoder->IsEncodingComplete();
-  rv = mWriter->GetContainerData(
-      aOutputBufs,
-      isAudioCompleted && isVideoCompleted ? ContainerWriter::FLUSH_NEEDED : 0);
-  if (mWriter->IsWritingComplete()) {
+  if (mAudioEncoder && !mAudioEncoder->IsEncodingComplete()) {
+    nsTArray<RefPtr<EncodedFrame>> audioFrames;
+    rv = mAudioEncoder->GetEncodedTrack(audioFrames);
+    if (NS_FAILED(rv)) {
+      // Encoding might be canceled.
+      LOG(LogLevel::Error, ("Failed to get encoded data from audio encoder."));
+      return rv;
+    }
+    for (const RefPtr<EncodedFrame>& frame : audioFrames) {
+      mMuxer->AddEncodedAudioFrame(frame);
+    }
+    if (mAudioEncoder->IsEncodingComplete()) {
+      mMuxer->AudioEndOfStream();
+    }
+  }
+
+  // Second, get data from muxer. This will do the actual muxing.
+
+  rv = mMuxer->GetData(aOutputBufs);
+  if (mMuxer->IsFinished()) {
     mCompleted = true;
     Shutdown();
   }
@@ -860,106 +751,52 @@ nsresult MediaEncoder::GetEncodedData(
   LOG(LogLevel::Verbose,
       ("END GetEncodedData TimeStamp=%f "
        "mCompleted=%d, aComplete=%d, vComplete=%d",
-       GetEncodeTimeStamp(), mCompleted, isAudioCompleted, isVideoCompleted));
+       GetEncodeTimeStamp(), mCompleted,
+       !mAudioEncoder || mAudioEncoder->IsEncodingComplete(),
+       !mVideoEncoder || mVideoEncoder->IsEncodingComplete()));
 
   return rv;
 }
 
-void MediaEncoder::Shutdown() {
+RefPtr<GenericNonExclusivePromise> MediaEncoder::Shutdown() {
   MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
-  if (mShutdown) {
-    return;
+  if (mShutdownPromise) {
+    return mShutdownPromise;
   }
-  mShutdown = true;
 
-  LOG(LogLevel::Info, ("MediaEncoder has been shut down."));
+  LOG(LogLevel::Info, ("MediaEncoder is shutting down."));
   if (mAudioEncoder) {
     mAudioEncoder->UnregisterListener(mEncoderListener);
-  }
-  if (mAudioListener) {
-    mAudioListener->NotifyShutdown();
   }
   if (mVideoEncoder) {
     mVideoEncoder->UnregisterListener(mEncoderListener);
   }
-  if (mVideoListener) {
-    mVideoListener->NotifyShutdown();
-  }
   mEncoderListener->Forget();
 
-  if (mCanceled) {
-    // Shutting down after being canceled. We cannot use the encoder thread.
-    return;
+  AutoTArray<RefPtr<GenericNonExclusivePromise>, 2> shutdownPromises;
+  if (mAudioListener) {
+    shutdownPromises.AppendElement(mAudioListener->OnShutdown());
+  }
+  if (mVideoListener) {
+    shutdownPromises.AppendElement(mVideoListener->OnShutdown());
   }
 
-  auto listeners(mListeners);
-  for (auto& l : listeners) {
-    // We dispatch here since this method is typically called from
-    // a DataAvailable() handler.
-    nsresult rv = mEncoderThread->Dispatch(
-        NewRunnableMethod("mozilla::MediaEncoderListener::Shutdown", l,
-                          &MediaEncoderListener::Shutdown));
-    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    Unused << rv;
-  }
-}
-
-nsresult MediaEncoder::WriteEncodedDataToMuxer(TrackEncoder* aTrackEncoder) {
-  AUTO_PROFILER_LABEL("MediaEncoder::WriteEncodedDataToMuxer", OTHER);
-
-  MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
-
-  if (!aTrackEncoder) {
-    NS_ERROR("No track encoder to get data from");
-    return NS_ERROR_FAILURE;
-  }
-
-  if (aTrackEncoder->IsEncodingComplete()) {
-    return NS_OK;
-  }
-
-  EncodedFrameContainer encodedData;
-  nsresult rv = aTrackEncoder->GetEncodedTrack(encodedData);
-  if (NS_FAILED(rv)) {
-    // Encoding might be canceled.
-    LOG(LogLevel::Error, ("Failed to get encoded data from encoder."));
-    SetError();
-    return rv;
-  }
-  rv = mWriter->WriteEncodedTrack(
-      encodedData,
-      aTrackEncoder->IsEncodingComplete() ? ContainerWriter::END_OF_STREAM : 0);
-  if (NS_FAILED(rv)) {
-    LOG(LogLevel::Error,
-        ("Failed to write encoded track to the media container."));
-    SetError();
-  }
-  return rv;
-}
-
-nsresult MediaEncoder::CopyMetadataToMuxer(TrackEncoder* aTrackEncoder) {
-  AUTO_PROFILER_LABEL("MediaEncoder::CopyMetadataToMuxer", OTHER);
-
-  MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
-
-  if (!aTrackEncoder) {
-    NS_ERROR("No track encoder to get metadata from");
-    return NS_ERROR_FAILURE;
-  }
-
-  RefPtr<TrackMetadataBase> meta = aTrackEncoder->GetMetadata();
-  if (meta == nullptr) {
-    LOG(LogLevel::Error, ("metadata == null"));
-    SetError();
-    return NS_ERROR_ABORT;
-  }
-
-  nsresult rv = mWriter->SetMetadata(meta);
-  if (NS_FAILED(rv)) {
-    LOG(LogLevel::Error, ("SetMetadata failed"));
-    SetError();
-  }
-  return rv;
+  return mShutdownPromise =
+             GenericNonExclusivePromise::All(mEncoderThread, shutdownPromises)
+                 ->Then(mEncoderThread, __func__,
+                        [self = RefPtr<MediaEncoder>(this), this](
+                            const GenericNonExclusivePromise::AllPromiseType::
+                                ResolveOrRejectValue& aValue) {
+                          MOZ_DIAGNOSTIC_ASSERT(aValue.IsResolve());
+                          LOG(LogLevel::Info, ("MediaEncoder has shut down."));
+                          mShutdown = true;
+                          auto listeners(mListeners);
+                          for (auto& l : listeners) {
+                            l->Shutdown();
+                          }
+                          return GenericNonExclusivePromise::CreateAndResolve(
+                              true, __func__);
+                        });
 }
 
 bool MediaEncoder::IsShutdown() {
@@ -967,24 +804,21 @@ bool MediaEncoder::IsShutdown() {
   return mShutdown;
 }
 
-void MediaEncoder::Cancel() {
+RefPtr<GenericNonExclusivePromise> MediaEncoder::Cancel() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  RefPtr<MediaEncoder> self = this;
-  nsresult rv = mEncoderThread->Dispatch(NewRunnableFrom([self]() mutable {
-    self->mCanceled = true;
+  Stop();
 
-    if (self->mAudioEncoder) {
-      self->mAudioEncoder->Cancel();
-    }
-    if (self->mVideoEncoder) {
-      self->mVideoEncoder->Cancel();
-    }
-    self->Shutdown();
-    return NS_OK;
-  }));
-  MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
+  return InvokeAsync(mEncoderThread, __func__,
+                     [self = RefPtr<MediaEncoder>(this), this]() {
+                       if (mAudioEncoder) {
+                         mAudioEncoder->Cancel();
+                       }
+                       if (mVideoEncoder) {
+                         mVideoEncoder->Cancel();
+                       }
+                       return Shutdown();
+                     });
 }
 
 bool MediaEncoder::HasError() {
@@ -1010,17 +844,15 @@ void MediaEncoder::Stop() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mAudioNode) {
-    mAudioNode->GetStream()->RemoveTrackListener(mAudioListener,
-                                                 AudioNodeStream::AUDIO_TRACK);
+    mAudioNode->GetTrack()->RemoveListener(mAudioListener);
     if (mInputPort) {
       mInputPort->Destroy();
       mInputPort = nullptr;
     }
-    if (mPipeStream) {
-      mPipeStream->RemoveTrackListener(mAudioListener,
-                                       AudioNodeStream::AUDIO_TRACK);
-      mPipeStream->Destroy();
-      mPipeStream = nullptr;
+    if (mPipeTrack) {
+      mPipeTrack->RemoveListener(mAudioListener);
+      mPipeTrack->Destroy();
+      mPipeTrack = nullptr;
     }
     mAudioNode = nullptr;
   }
@@ -1034,11 +866,18 @@ void MediaEncoder::Stop() {
   }
 }
 
-#ifdef MOZ_WEBM_ENCODER
 bool MediaEncoder::IsWebMEncoderEnabled() {
+#ifdef MOZ_WEBM_ENCODER
   return StaticPrefs::media_encoder_webm_enabled();
-}
+#else
+  return false;
 #endif
+}
+
+const nsString& MediaEncoder::MimeType() const {
+  MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
+  return mMIMEType;
+}
 
 void MediaEncoder::NotifyInitialized() {
   MOZ_ASSERT(mEncoderThread->IsCurrentThreadIn());
@@ -1106,13 +945,13 @@ size_t MediaEncoder::SizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
   return size;
 }
 
-void MediaEncoder::SetVideoKeyFrameInterval(int32_t aVideoKeyFrameInterval) {
+void MediaEncoder::SetVideoKeyFrameInterval(uint32_t aVideoKeyFrameInterval) {
   if (!mVideoEncoder) {
     return;
   }
 
   MOZ_ASSERT(mEncoderThread);
-  nsresult rv = mEncoderThread->Dispatch(NewRunnableMethod<int32_t>(
+  nsresult rv = mEncoderThread->Dispatch(NewRunnableMethod<uint32_t>(
       "mozilla::VideoTrackEncoder::SetKeyFrameInterval", mVideoEncoder,
       &VideoTrackEncoder::SetKeyFrameInterval, aVideoKeyFrameInterval));
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
@@ -1120,3 +959,5 @@ void MediaEncoder::SetVideoKeyFrameInterval(int32_t aVideoKeyFrameInterval) {
 }
 
 }  // namespace mozilla
+
+#undef LOG

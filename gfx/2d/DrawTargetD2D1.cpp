@@ -22,8 +22,6 @@
 
 #include "mozilla/Mutex.h"
 
-using namespace std;
-
 // decltype is not usable for overloaded functions.
 typedef HRESULT(WINAPI* D2D1CreateFactoryFunc)(
     D2D1_FACTORY_TYPE factoryType, REFIID iid,
@@ -36,11 +34,15 @@ uint64_t DrawTargetD2D1::mVRAMUsageDT;
 uint64_t DrawTargetD2D1::mVRAMUsageSS;
 StaticRefPtr<ID2D1Factory1> DrawTargetD2D1::mFactory;
 
+const D2D1_MATRIX_5X4_F kLuminanceMatrix =
+    D2D1::Matrix5x4F(0, 0, 0, 0.2125f, 0, 0, 0, 0.7154f, 0, 0, 0, 0.0721f, 0, 0,
+                     0, 0, 0, 0, 0, 0);
+
 RefPtr<ID2D1Factory1> D2DFactory() { return DrawTargetD2D1::factory(); }
 
 DrawTargetD2D1::DrawTargetD2D1()
     : mPushedLayers(1),
-      mSnapshotLock(make_shared<Mutex>("DrawTargetD2D1::mSnapshotLock")),
+      mSnapshotLock(std::make_shared<Mutex>("DrawTargetD2D1::mSnapshotLock")),
       mUsedCommandListsSincePurge(0),
       mTransformedGlyphsSinceLastPurge(0),
       mComplexBlendsWithListInList(0),
@@ -129,10 +131,8 @@ bool DrawTargetD2D1::EnsureLuminanceEffect() {
     return false;
   }
 
-  D2D1_MATRIX_5X4_F matrix =
-      D2D1::Matrix5x4F(0, 0, 0, 0.2125f, 0, 0, 0, 0.7154f, 0, 0, 0, 0.0721f, 0,
-                       0, 0, 0, 0, 0, 0, 0);
-  mLuminanceEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, matrix);
+  mLuminanceEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX,
+                             kLuminanceMatrix);
   mLuminanceEffect->SetValue(D2D1_COLORMATRIX_PROP_ALPHA_MODE,
                              D2D1_COLORMATRIX_ALPHA_MODE_STRAIGHT);
   return true;
@@ -156,6 +156,15 @@ already_AddRefed<SourceSurface> DrawTargetD2D1::IntoLuminanceSource(
   }
 
   Flush();
+
+  {
+    D2D1_MATRIX_5X4_F matrix = kLuminanceMatrix;
+    matrix._14 *= aOpacity;
+    matrix._24 *= aOpacity;
+    matrix._34 *= aOpacity;
+
+    mLuminanceEffect->SetValue(D2D1_COLORMATRIX_PROP_COLOR_MATRIX, matrix);
+  }
 
   mLuminanceEffect->SetInput(0, mBitmap);
 
@@ -1200,24 +1209,6 @@ already_AddRefed<FilterNode> DrawTargetD2D1::CreateFilter(FilterType aType) {
   return FilterNodeD2D1::Create(mDC, aType);
 }
 
-void DrawTargetD2D1::GetGlyphRasterizationMetrics(ScaledFont* aScaledFont,
-                                                  const uint16_t* aGlyphIndices,
-                                                  uint32_t aNumGlyphs,
-                                                  GlyphMetrics* aGlyphMetrics) {
-  MOZ_ASSERT(aScaledFont->GetType() == FontType::DWRITE);
-
-  aScaledFont->GetGlyphDesignMetrics(aGlyphIndices, aNumGlyphs, aGlyphMetrics);
-
-  // GetDesignGlyphMetrics returns 'ideal' glyph metrics, we need to pad to
-  // account for antialiasing.
-  for (uint32_t i = 0; i < aNumGlyphs; i++) {
-    if (aGlyphMetrics[i].mWidth > 0 && aGlyphMetrics[i].mHeight > 0) {
-      aGlyphMetrics[i].mWidth += 2.0f;
-      aGlyphMetrics[i].mXBearing -= 1.0f;
-    }
-  }
-}
-
 bool DrawTargetD2D1::Init(ID3D11Texture2D* aTexture, SurfaceFormat aFormat) {
   RefPtr<ID2D1Device> device = Factory::GetD2D1Device(&mDeviceSeq);
   if (!device) {
@@ -1688,13 +1679,13 @@ void DrawTargetD2D1::AddDependencyOnSource(SourceSurfaceD2D1* aSource) {
 static D2D1_RECT_F IntersectRect(const D2D1_RECT_F& aRect1,
                                  const D2D1_RECT_F& aRect2) {
   D2D1_RECT_F result;
-  result.left = max(aRect1.left, aRect2.left);
-  result.top = max(aRect1.top, aRect2.top);
-  result.right = min(aRect1.right, aRect2.right);
-  result.bottom = min(aRect1.bottom, aRect2.bottom);
+  result.left = std::max(aRect1.left, aRect2.left);
+  result.top = std::max(aRect1.top, aRect2.top);
+  result.right = std::min(aRect1.right, aRect2.right);
+  result.bottom = std::min(aRect1.bottom, aRect2.bottom);
 
-  result.right = max(result.right, result.left);
-  result.bottom = max(result.bottom, result.top);
+  result.right = std::max(result.right, result.left);
+  result.bottom = std::max(result.bottom, result.top);
 
   return result;
 }

@@ -1,4 +1,3 @@
-// |reftest| skip -- Promise.allSettled is not supported
 // Copyright (C) 2019 Leo Balter. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -46,6 +45,6 @@ Object.defineProperty(Promise, 'resolve', {
 Promise.allSettled(iter);
 
 assert.sameValue(nextCount, 0);
-assert.sameValue(returnCount, 0);
+assert.sameValue(returnCount, 1);
 
 reportCompare(0, 0);

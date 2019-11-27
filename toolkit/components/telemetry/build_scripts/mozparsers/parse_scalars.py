@@ -104,13 +104,13 @@ class ScalarType:
             'kind': basestring,
             'notification_emails': list,  # This contains strings. See LIST_FIELDS_CONTENT.
             'record_in_processes': list,
+            'products': list,
         }
 
         OPTIONAL_FIELDS = {
             'release_channel_collection': basestring,
             'keyed': bool,
             'operating_systems': list,
-            'products': list,
             'record_into_store': list,
         }
 
@@ -302,7 +302,7 @@ class ScalarType:
     @property
     def products(self):
         """Get the non-empty list of products to record data on"""
-        return self._definition.get('products', ["all"])
+        return self._definition.get('products')
 
     @property
     def products_enum(self):
@@ -365,9 +365,9 @@ def load_scalars(filename, strict_type_checks=True):
     try:
         with open(filename, 'r') as f:
             scalars = yaml.safe_load(f)
-    except IOError, e:
+    except IOError as e:
         ParserError('Error opening ' + filename + ': ' + e.message).handle_now()
-    except ValueError, e:
+    except ValueError as e:
         ParserError('Error parsing scalars in {}: {}'
                     '.\nSee: {}'.format(filename, e.message, BASE_DOC_URL)).handle_now()
 

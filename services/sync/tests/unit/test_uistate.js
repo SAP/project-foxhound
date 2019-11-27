@@ -13,9 +13,14 @@ add_task(async function test_isReady_unconfigured() {
   let refreshState = sinon.spy(UIStateInternal, "refreshState");
 
   // On the first call, returns false
-  // Does not trigger a refresh of the state since services.sync.username is undefined
+  // Does trigger a refresh of the state - even though services.sync.username
+  // is undefined we still need to check the account state.
   ok(!UIState.isReady());
-  ok(!refreshState.called);
+  // resfreshState is called when idle - so only check after idle.
+  await new Promise(resolve => {
+    Services.tm.idleDispatchToMainThread(resolve);
+  });
+  ok(refreshState.called);
   refreshState.resetHistory();
 
   // On subsequent calls, only return true
@@ -33,6 +38,9 @@ add_task(async function test_isReady_signedin() {
 
   // On the first call, returns false and triggers a refresh of the state
   ok(!UIState.isReady());
+  await new Promise(resolve => {
+    Services.tm.idleDispatchToMainThread(resolve);
+  });
   ok(refreshState.calledOnce);
   refreshState.resetHistory();
 
@@ -106,6 +114,7 @@ add_task(async function test_refreshState_signedin_profile_unavailable() {
 
   const now = new Date().toString();
   Services.prefs.setCharPref("services.sync.lastSync", now);
+  Services.prefs.setStringPref("services.sync.username", "test@test.com");
   UIStateInternal.syncing = false;
 
   UIStateInternal.fxAccounts = {
@@ -127,6 +136,8 @@ add_task(async function test_refreshState_signedin_profile_unavailable() {
   equal(state.syncing, false);
 
   UIStateInternal.fxAccounts = fxAccountsOrig;
+  Services.prefs.clearUserPref("services.sync.lastSync");
+  Services.prefs.clearUserPref("services.sync.username");
 });
 
 add_task(async function test_refreshState_unconfigured() {
@@ -265,6 +276,7 @@ async function configureUIState(syncing, lastSync = new Date()) {
 
   UIStateInternal._syncing = syncing;
   Services.prefs.setCharPref("services.sync.lastSync", lastSync.toString());
+  Services.prefs.setStringPref("services.sync.username", "test@test.com");
 
   UIStateInternal.fxAccounts = {
     getSignedInUser: () =>

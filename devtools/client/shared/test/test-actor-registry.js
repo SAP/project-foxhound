@@ -59,7 +59,7 @@
   // Sometimes, we need the test actor before opening or without a toolbox then just
   // create a front for the given `tab`
   exports.getTestActorWithoutToolbox = async function(tab) {
-    const { DebuggerServer } = require("devtools/server/main");
+    const { DebuggerServer } = require("devtools/server/debugger-server");
     const {
       DebuggerClient,
     } = require("devtools/shared/client/debugger-client");
@@ -88,14 +88,18 @@
     return fetch(uri).then(({ content }) => content);
   };
 
-  const getTestActor = async function(client, tab, toolbox) {
+  const getTestActor = async function(client, tab, toolbox = null) {
     // We may have to update the form in order to get the dynamically registered
     // test actor.
     const form = await getUpdatedForm(client, tab);
-
     const { TestActorFront } = await loadFront();
 
-    const front = new TestActorFront(client, toolbox);
+    let highlighter;
+    if (toolbox) {
+      highlighter = (await toolbox.target.getFront("inspector")).highlighter;
+    }
+
+    const front = new TestActorFront(client, highlighter);
     // Since we manually instantiate this front instead of going through protocol.js,
     // we have to manually set its actor ID and manage it.
     front.actorID = form.testActor;

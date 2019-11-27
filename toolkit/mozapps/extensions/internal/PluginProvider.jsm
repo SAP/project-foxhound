@@ -11,7 +11,6 @@ var EXPORTED_SYMBOLS = [];
 const { AddonManager, AddonManagerPrivate } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-/* globals AddonManagerPrivate*/
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
@@ -435,14 +434,8 @@ PluginWrapper.prototype = {
       tags: [tag],
     } = pluginFor(this);
     let path = tag.fullpath;
-    // Plugins inside the application directory are in the application scope
-    let dir = Services.dirsvc.get("APlugns", Ci.nsIFile);
-    if (path.startsWith(dir.path)) {
-      return AddonManager.SCOPE_APPLICATION;
-    }
-
     // Plugins inside the profile directory are in the profile scope
-    dir = Services.dirsvc.get("ProfD", Ci.nsIFile);
+    let dir = Services.dirsvc.get("ProfD", Ci.nsIFile);
     if (path.startsWith(dir.path)) {
       return AddonManager.SCOPE_PROFILE;
     }

@@ -27,6 +27,14 @@ var gLanguagesDialog = {
   _selectedItemID: null,
 
   onLoad() {
+    let spoofEnglishElement = document.getElementById("spoofEnglish");
+    Preferences.addSyncFromPrefListener(spoofEnglishElement, () =>
+      gLanguagesDialog.readSpoofEnglish()
+    );
+    Preferences.addSyncToPrefListener(spoofEnglishElement, () =>
+      gLanguagesDialog.writeSpoofEnglish()
+    );
+
     Preferences.get("intl.accept_languages").on("change", () =>
       this._readAcceptLanguages().catch(Cu.reportError)
     );
@@ -178,7 +186,7 @@ var gLanguagesDialog = {
     // result in overflow.
     await document.l10n.translateFragment(this._activeLanguages);
 
-    if (this._activeLanguages.childNodes.length > 0) {
+    if (this._activeLanguages.childNodes.length) {
       this._activeLanguages.ensureIndexIsVisible(selectedIndex);
       this._activeLanguages.selectedIndex = selectedIndex;
     }

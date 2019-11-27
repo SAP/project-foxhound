@@ -12,7 +12,7 @@ extern crate winit;
 mod boilerplate;
 
 use crate::boilerplate::{Example, HandyDandyRectBuilder};
-use euclid::TypedScale;
+use euclid::Scale;
 use gleam::gl;
 use webrender::api::*;
 use webrender::api::units::*;
@@ -92,7 +92,7 @@ impl App {
             pipeline_id,
             content_rect: LayoutRect::new(
                 LayoutPoint::zero(),
-                device_size.to_f32() / TypedScale::new(device_pixel_ratio),
+                device_size.to_f32() / Scale::new(device_pixel_ratio),
             ),
             color,
         };
@@ -119,7 +119,7 @@ impl App {
         builder.push_simple_stacking_context(
             document.content_rect.origin,
             space_and_clip.spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
         builder.push_rect(
@@ -164,14 +164,12 @@ impl Example for App {
         builder.push_simple_stacking_context(
             bounds.origin,
             space_and_clip.spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
         builder.push_image(
             &CommonItemProperties::new(bounds, space_and_clip),
             bounds,
-            bounds.size,
-            LayoutSize::zero(),
             ImageRendering::Auto,
             AlphaType::PremultipliedAlpha,
             self.external_image_key.unwrap(),

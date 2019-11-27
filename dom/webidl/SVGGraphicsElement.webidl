@@ -17,6 +17,7 @@ dictionary SVGBoundingBoxOptions {
   boolean clipped = false;
 };
 
+[Exposed=Window]
 interface SVGGraphicsElement : SVGElement {
   readonly attribute SVGAnimatedTransformList transform;
 
@@ -33,4 +34,4 @@ interface SVGGraphicsElement : SVGElement {
   SVGMatrix getTransformToElement(SVGGraphicsElement element);
 };
 
-SVGGraphicsElement implements SVGTests;
+SVGGraphicsElement includes SVGTests;

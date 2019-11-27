@@ -129,6 +129,7 @@ def resolve_keyed_by(item, field, item_name, **extra_values):
 WHITELISTED_SCHEMA_IDENTIFIERS = [
     # upstream-artifacts are handed directly to scriptWorker, which expects interCaps
     lambda path: "[u'upstream-artifacts']" in path,
+    lambda path: "[u'browsertime_json_url']" in path or "[u'video_url']" in path,
 ]
 
 
@@ -203,8 +204,10 @@ OptimizationSchema = voluptuous.Any(
     {'skip-unless-changed': [basestring]},
     # skip this task if unless the change files' SCHEDULES contains any of these components
     {'skip-unless-schedules': list(schedules.ALL_COMPONENTS)},
-    # skip if SETA or skip-unless-schedules says to
-    {'skip-unless-schedules-or-seta': list(schedules.ALL_COMPONENTS)},
+    # optimize strategy aliases for the test kind
+    {'test': list(schedules.ALL_COMPONENTS)},
+    {'test-inclusive': list(schedules.ALL_COMPONENTS)},
+    {'test-try': list(schedules.ALL_COMPONENTS)},
 )
 
 # shortcut for a string where task references are allowed

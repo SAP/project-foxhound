@@ -16,7 +16,8 @@
   list-style-image: url(chrome://browser/skin/library.svg);
 }
 
-#appMenu-logins-button {
+#appMenu-logins-button,
+#PanelUI-fxa-menu-logins-button {
   list-style-image: url(chrome://browser/skin/login.svg);
 }
 
@@ -24,6 +25,8 @@
   list-style-image: url(chrome://mozapps/skin/extensions/extensionGeneric-16.svg);
 }
 
+#PanelUI-fxa-menu-sync-prefs-button,
+#PanelUI-fxa-menu-account-devices-button,
 #appMenu-preferences-button {
   list-style-image: url(chrome://browser/skin/settings.svg);
 }
@@ -96,6 +99,7 @@
 }
 
 #PanelUI-fxa-menu-syncnow-button,
+#PanelUI-fxa-menu-setup-sync-button,
 #PanelUI-remotetabs-syncnow {
   list-style-image: url("chrome://browser/skin/sync.svg");
 }

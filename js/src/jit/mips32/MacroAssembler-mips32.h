@@ -315,12 +315,13 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void jump(JitCode* code) { branch(code); }
 
-  void jump(TrampolinePtr code) {
-    auto target = ImmPtr(code.value);
+  void jump(ImmPtr ptr) {
     BufferOffset bo = m_buffer.nextOffset();
-    addPendingJump(bo, target, RelocationKind::HARDCODED);
-    ma_jump(target);
+    addPendingJump(bo, ptr, RelocationKind::HARDCODED);
+    ma_jump(ptr);
   }
+
+  void jump(TrampolinePtr code) { jump(ImmPtr(code.value)); }
 
   void negl(Register reg) { ma_negu(reg, reg); }
 
@@ -346,7 +347,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
   }
   void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType);
-  void unboxPrivate(const ValueOperand& src, Register dest);
 
   void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
     unboxObject(src, dest);
@@ -429,8 +429,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
  public:
   void moveValue(const Value& val, Register type, Register data);
-
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label);
 
   void loadUnboxedValue(Address address, MIRType type, AnyRegister dest) {
     if (dest.isFloat()) {
@@ -710,8 +708,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   Condition ma_cmp64(Condition cond, Register64 lhs, Imm64 val, Register dest);
 
  public:
-  CodeOffset labelForPatch() { return CodeOffset(nextOffset().getOffset()); }
-
   void lea(Operand addr, Register dest) {
     ma_addu(dest, addr.baseReg(), Imm32(addr.disp()));
   }

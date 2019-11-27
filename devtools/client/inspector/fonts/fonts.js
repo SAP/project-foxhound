@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -66,7 +64,8 @@ class FontInspector {
     // element. Font faces and font properties for this node will be shown in the editor.
     this.node = null;
     this.nodeComputedStyle = {};
-    this.pageStyle = this.inspector.pageStyle;
+    // The page style actor that will be providing the style information.
+    this.pageStyle = null;
     this.ruleViewTool = this.inspector.getPanel("ruleview");
     this.ruleView = this.ruleViewTool.view;
     this.selectedRule = null;
@@ -180,7 +179,6 @@ class FontInspector {
    * @return {Number}
    *         Converted numeric value.
    */
-  /* eslint-disable complexity */
   async convertUnits(property, value, fromUnit, toUnit) {
     if (value !== parseFloat(value)) {
       throw TypeError(
@@ -188,16 +186,19 @@ class FontInspector {
       );
     }
 
-    // Early return with the same value if conversion is not required.
-    if (fromUnit === toUnit || value === 0) {
-      return value;
-    }
+    const shouldReturn = () => {
+      // Early return if:
+      // - conversion is not required
+      // - property is `line-height`
+      // - `fromUnit` is `em` and `toUnit` is unitless
+      const conversionNotRequired = fromUnit === toUnit || value === 0;
+      const forLineHeight =
+        property === "line-height" && fromUnit === "" && toUnit === "em";
+      const isEmToUnitlessConversion = fromUnit === "em" && toUnit === "";
+      return conversionNotRequired || forLineHeight || isEmToUnitlessConversion;
+    };
 
-    // Special case for line-height. Consider em and untiless to be equivalent.
-    if (
-      (property === "line-height" && (fromUnit === "" && toUnit === "em")) ||
-      (fromUnit === "em" && toUnit === "")
-    ) {
+    if (shouldReturn()) {
       return value;
     }
 
@@ -216,31 +217,49 @@ class FontInspector {
     // unrecognized CSS units. It will not be correct, but it will also not break.
     let out = value;
 
-    if (unit === "in") {
-      out = fromPx ? value / 96 : value * 96;
-    }
+    const converters = {
+      in: () => (fromPx ? value / 96 : value * 96),
+      cm: () => (fromPx ? value * 0.02645833333 : value / 0.02645833333),
+      mm: () => (fromPx ? value * 0.26458333333 : value / 0.26458333333),
+      pt: () => (fromPx ? value * 0.75 : value / 0.75),
+      pc: () => (fromPx ? value * 0.0625 : value / 0.0625),
+      "%": async () => {
+        const fontSize = await this.getReferenceFontSize(property, unit);
+        return fromPx
+          ? (value * 100) / parseFloat(fontSize)
+          : (value / 100) * parseFloat(fontSize);
+      },
+      rem: async () => {
+        const fontSize = await this.getReferenceFontSize(property, unit);
+        return fromPx
+          ? value / parseFloat(fontSize)
+          : value * parseFloat(fontSize);
+      },
+      vh: async () => {
+        const { height } = await this.getReferenceBox(property, unit);
+        return fromPx ? (value * 100) / height : (value / 100) * height;
+      },
+      vw: async () => {
+        const { width } = await this.getReferenceBox(property, unit);
+        return fromPx ? (value * 100) / width : (value / 100) * width;
+      },
+      vmin: async () => {
+        const { width, height } = await this.getReferenceBox(property, unit);
+        return fromPx
+          ? (value * 100) / Math.min(width, height)
+          : (value / 100) * Math.min(width, height);
+      },
+      vmax: async () => {
+        const { width, height } = await this.getReferenceBox(property, unit);
+        return fromPx
+          ? (value * 100) / Math.max(width, height)
+          : (value / 100) * Math.max(width, height);
+      },
+    };
 
-    if (unit === "cm") {
-      out = fromPx ? value * 0.02645833333 : value / 0.02645833333;
-    }
-
-    if (unit === "mm") {
-      out = fromPx ? value * 0.26458333333 : value / 0.26458333333;
-    }
-
-    if (unit === "pt") {
-      out = fromPx ? value * 0.75 : value / 0.75;
-    }
-
-    if (unit === "pc") {
-      out = fromPx ? value * 0.0625 : value / 0.0625;
-    }
-
-    if (unit === "%") {
-      const fontSize = await this.getReferenceFontSize(property, unit);
-      out = fromPx
-        ? (value * 100) / parseFloat(fontSize)
-        : (value / 100) * parseFloat(fontSize);
+    if (converters.hasOwnProperty(unit)) {
+      const converter = converters[unit];
+      out = await converter();
     }
 
     // Special handling for unitless line-height.
@@ -249,37 +268,6 @@ class FontInspector {
       out = fromPx
         ? value / parseFloat(fontSize)
         : value * parseFloat(fontSize);
-    }
-
-    if (unit === "rem") {
-      const fontSize = await this.getReferenceFontSize(property, unit);
-      out = fromPx
-        ? value / parseFloat(fontSize)
-        : value * parseFloat(fontSize);
-    }
-
-    if (unit === "vh") {
-      const { height } = await this.getReferenceBox(property, unit);
-      out = fromPx ? (value * 100) / height : (value / 100) * height;
-    }
-
-    if (unit === "vw") {
-      const { width } = await this.getReferenceBox(property, unit);
-      out = fromPx ? (value * 100) / width : (value / 100) * width;
-    }
-
-    if (unit === "vmin") {
-      const { width, height } = await this.getReferenceBox(property, unit);
-      out = fromPx
-        ? (value * 100) / Math.min(width, height)
-        : (value / 100) * Math.min(width, height);
-    }
-
-    if (unit === "vmax") {
-      const { width, height } = await this.getReferenceBox(property, unit);
-      out = fromPx
-        ? (value * 100) / Math.max(width, height)
-        : (value / 100) * Math.max(width, height);
     }
 
     // Catch any NaN or Infinity as result of dividing by zero in any
@@ -385,11 +373,11 @@ class FontInspector {
       return [];
     }
 
-    let allFonts = await this.pageStyle
-      .getAllUsedFontFaces(options)
-      .catch(console.error);
-    if (!allFonts) {
-      allFonts = [];
+    const inspectorFronts = await this.inspector.inspectorFront.getAllInspectorFronts();
+
+    let allFonts = [];
+    for (const { pageStyle } of inspectorFronts) {
+      allFonts = allFonts.concat(await pageStyle.getAllUsedFontFaces(options));
     }
 
     return allFonts;
@@ -497,7 +485,7 @@ class FontInspector {
     switch (unit) {
       case "rem":
         // Regardless of CSS property, always use the root document element for "rem".
-        node = await this.inspector.walker.documentElement();
+        node = await this.node.walkerFront.documentElement();
         break;
     }
 
@@ -756,18 +744,21 @@ class FontInspector {
    */
   onNewNode() {
     this.ruleView.off("property-value-updated", this.onRulePropertyUpdated);
-    // First, reset the selected node.
+
+    // First, reset the selected node and page style front.
     this.node = null;
+    this.pageStyle = null;
+
     // Then attempt to assign a selected node according to its type.
     const selection = this.inspector && this.inspector.selection;
     if (selection && selection.isConnected()) {
       if (selection.isElementNode()) {
         this.node = selection.nodeFront;
-      }
-
-      if (selection.isTextNode()) {
+      } else if (selection.isTextNode()) {
         this.node = selection.nodeFront.parentNode();
       }
+
+      this.pageStyle = this.node.inspectorFront.pageStyle;
     }
 
     if (this.isPanelVisible()) {
@@ -852,7 +843,7 @@ class FontInspector {
   async onToggleFontHighlight(font, show, isForCurrentElement = true) {
     if (!this.fontsHighlighter) {
       try {
-        this.fontsHighlighter = await this.inspector.inspector.getHighlighterByType(
+        this.fontsHighlighter = await this.inspector.inspectorFront.getHighlighterByType(
           "FontsHighlighter"
         );
       } catch (e) {
@@ -868,7 +859,7 @@ class FontInspector {
       if (show) {
         const node = isForCurrentElement
           ? this.node
-          : this.inspector.walker.rootNode;
+          : this.node.walkerFront.rootNode;
 
         await this.fontsHighlighter.show(node, {
           CSSFamilyName: font.CSSFamilyName,
@@ -945,7 +936,7 @@ class FontInspector {
     // If the Rule panel is not visible, the selected element's rule models may not have
     // been created yet. For example, in 2-pane mode when Fonts is opened as the default
     // panel. Select the current node to force the Rule view to create the rule models.
-    if (!this.ruleViewTool.isSidebarActive()) {
+    if (!this.ruleViewTool.isPanelVisible()) {
       await this.ruleView.selectElement(this.node, false);
     }
 

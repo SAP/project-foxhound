@@ -25,21 +25,20 @@ class NeckoChild : public PNeckoChild {
   static void InitNeckoChild();
 
  protected:
-  PHttpChannelChild* AllocPHttpChannelChild(
-      const PBrowserOrId&, const SerializedLoadContext&,
-      const HttpChannelCreationArgs& aOpenArgs);
-  bool DeallocPHttpChannelChild(PHttpChannelChild*);
-
   PStunAddrsRequestChild* AllocPStunAddrsRequestChild();
   bool DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor);
 
-  PWebrtcProxyChannelChild* AllocPWebrtcProxyChannelChild(const TabId& tabId);
-  bool DeallocPWebrtcProxyChannelChild(PWebrtcProxyChannelChild* aActor);
+  PWebrtcTCPSocketChild* AllocPWebrtcTCPSocketChild(const Maybe<TabId>& tabId);
+  bool DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor);
 
   PAltDataOutputStreamChild* AllocPAltDataOutputStreamChild(
       const nsCString& type, const int64_t& predictedSize,
       PHttpChannelChild* channel);
   bool DeallocPAltDataOutputStreamChild(PAltDataOutputStreamChild* aActor);
+
+  already_AddRefed<PDocumentChannelChild> AllocPDocumentChannelChild(
+      const PBrowserOrId& aBrowser, const SerializedLoadContext& aSerialized,
+      const DocumentChannelCreationArgs& args);
 
   PCookieServiceChild* AllocPCookieServiceChild();
   bool DeallocPCookieServiceChild(PCookieServiceChild*);
@@ -65,10 +64,6 @@ class NeckoChild : public PNeckoChild {
       const nsCString& aHost, const OriginAttributes& aOriginAttributes,
       const uint32_t& aFlags);
   bool DeallocPDNSRequestChild(PDNSRequestChild*);
-  PDataChannelChild* AllocPDataChannelChild(const uint32_t& channelId);
-  bool DeallocPDataChannelChild(PDataChannelChild* child);
-  PFileChannelChild* AllocPFileChannelChild(const uint32_t& channelId);
-  bool DeallocPFileChannelChild(PFileChannelChild* child);
   PSimpleChannelChild* AllocPSimpleChannelChild(const uint32_t& channelId);
   bool DeallocPSimpleChannelChild(PSimpleChannelChild* child);
   PChannelDiverterChild* AllocPChannelDiverterChild(
@@ -93,7 +88,9 @@ class NeckoChild : public PNeckoChild {
   mozilla::ipc::IPCResult RecvNetworkChangeNotification(nsCString const& type);
 
   PClassifierDummyChannelChild* AllocPClassifierDummyChannelChild(
-      nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
+      nsIURI* aURI, nsIURI* aTopWindowURI,
+      nsIPrincipal* aContentBlockingAllowListPrincipal,
+      const nsresult& aTopWindowURIResult,
       const Maybe<LoadInfoArgs>& aLoadInfo);
 
   bool DeallocPClassifierDummyChannelChild(

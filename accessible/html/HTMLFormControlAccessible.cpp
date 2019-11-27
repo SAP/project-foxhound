@@ -410,9 +410,9 @@ HTMLFileInputAccessible::HTMLFileInputAccessible(nsIContent* aContent,
 }
 
 role HTMLFileInputAccessible::NativeRole() const {
-  // JAWS wants a text container, others don't mind. No specific role in
-  // AT APIs.
-  return roles::TEXT_CONTAINER;
+  // No specific role in AT APIs. We use GROUPING so that the label will be
+  // reported by screen readers when focus enters this control .
+  return roles::GROUPING;
 }
 
 nsresult HTMLFileInputAccessible::HandleAccEvent(AccEvent* aEvent) {
@@ -437,6 +437,23 @@ nsresult HTMLFileInputAccessible::HandleAccEvent(AccEvent* aEvent) {
   }
 
   return NS_OK;
+}
+
+Accessible* HTMLFileInputAccessible::CurrentItem() const {
+  // Allow aria-activedescendant to override.
+  if (Accessible* item = HyperTextAccessibleWrap::CurrentItem()) {
+    return item;
+  }
+
+  // The HTML file input itself gets DOM focus, not the button inside it.
+  // For a11y, we want the button to get focus.
+  Accessible* button = FirstChild();
+  if (!button) {
+    MOZ_ASSERT_UNREACHABLE("File input doesn't contain a button");
+    return nullptr;
+  }
+  MOZ_ASSERT(button->IsButton());
+  return button;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

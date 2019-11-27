@@ -266,6 +266,7 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
   // Emit focus event if event target is the active item. Otherwise then check
   // if it's still focused and then update active item and emit focus event.
   Accessible* target = aEvent->GetAccessible();
+  MOZ_ASSERT(!target->IsDefunct());
   if (target != mActiveItem) {
     // Check if still focused. Otherwise we can end up with storing the active
     // item for control that isn't focused anymore.
@@ -281,6 +282,7 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
     if (activeItem) {
       mActiveItem = activeItem;
       target = activeItem;
+      MOZ_ASSERT(!target->IsDefunct());
     }
   }
 
@@ -346,10 +348,16 @@ void FocusManager::ProcessFocusEvent(AccEvent* aEvent) {
   nsEventShell::FireEvent(focusEvent);
   mLastFocus = target;
 
+  if (NS_WARN_IF(target->IsDefunct())) {
+    // target died during nsEventShell::FireEvent.
+    return;
+  }
+
   // Fire scrolling_start event when the document receives the focus if it has
   // an anchor jump. If an accessible within the document receive the focus
   // then null out the anchor jump because it no longer applies.
   DocAccessible* targetDocument = target->Document();
+  MOZ_ASSERT(targetDocument);
   Accessible* anchorJump = targetDocument->AnchorJump();
   if (anchorJump) {
     if (target == targetDocument) {

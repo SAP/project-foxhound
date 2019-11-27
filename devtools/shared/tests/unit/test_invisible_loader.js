@@ -18,12 +18,13 @@ function run_test() {
 }
 
 function visible_loader() {
-  const loader = new DevToolsLoader();
-  loader.invisibleToDebugger = false;
+  const loader = new DevToolsLoader({
+    invisibleToDebugger: false,
+  });
   loader.require("devtools/shared/indentation");
 
   const dbg = new Debugger();
-  const sandbox = loader._provider.loader.sharedGlobalSandbox;
+  const sandbox = loader.loader.sharedGlobalSandbox;
 
   try {
     dbg.addDebuggee(sandbox);
@@ -34,18 +35,19 @@ function visible_loader() {
 
   // Check that for common loader used for tabs, promise modules is Promise.jsm
   // Which is required to support unhandled promises rejection in mochitests
-  const promise = ChromeUtils.import("resource://gre/modules/Promise.jsm", {})
+  const promise = ChromeUtils.import("resource://gre/modules/Promise.jsm")
     .Promise;
   Assert.equal(loader.require("promise"), promise);
 }
 
 function invisible_loader() {
-  const loader = new DevToolsLoader();
-  loader.invisibleToDebugger = true;
+  const loader = new DevToolsLoader({
+    invisibleToDebugger: true,
+  });
   loader.require("devtools/shared/indentation");
 
   const dbg = new Debugger();
-  const sandbox = loader._provider.loader.sharedGlobalSandbox;
+  const sandbox = loader.loader.sharedGlobalSandbox;
 
   try {
     dbg.addDebuggee(sandbox);
@@ -59,8 +61,6 @@ function invisible_loader() {
   // into it.
   const promise = loader.require("promise");
   const promiseModule =
-    loader._provider.loader.modules[
-      "resource://gre/modules/Promise-backend.js"
-    ];
+    loader.loader.modules["resource://gre/modules/Promise-backend.js"];
   Assert.equal(promise, promiseModule.exports);
 }

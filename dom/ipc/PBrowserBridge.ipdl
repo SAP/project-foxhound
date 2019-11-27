@@ -16,6 +16,9 @@ using mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
 using mozilla::WidgetMouseEvent from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IDispatchHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::dom::EffectsInfo from "mozilla/dom/TabMessageUtils.h";
+using mozilla::ScrollAxis from "mozilla/PresShellForwards.h";
+using mozilla::ScrollFlags from "mozilla/PresShellForwards.h";
+using struct nsRect from "nsRect.h";
 
 namespace mozilla {
 namespace dom {
@@ -27,7 +30,7 @@ namespace dom {
  * See `dom/docs/Fission-IPC-Diagram.svg` for an overview of the DOM IPC
  * actors.
  */
-async protocol PBrowserBridge {
+async refcounted protocol PBrowserBridge {
   manager PBrowser;
 
 child:
@@ -52,9 +55,17 @@ child:
   async SetEmbeddedDocAccessibleCOMProxy(IDispatchHolder aCOMProxy);
 
   /**
-   * Fire a `load` event on this PBrowserBridge's embedding frame element.
+   * Called once this PBrowserBridge's OOP subdoc no longer blocks its
+   * embedding element's and embedding doc's 'load' events.
    */
-  async FireFrameLoadEvent(bool aIsTrusted);
+  async MaybeFireEmbedderLoadEvents(bool aIsTrusted,
+                                    bool aFireLoadAtEmbeddingElement);
+
+  async ScrollRectIntoView(nsRect aRect, ScrollAxis aVertical,
+                           ScrollAxis aHorizontal, ScrollFlags aScrollFlags,
+                           int32_t aAppUnitsPerDevPixel);
+
+  async SubFrameCrashed(BrowsingContext aContext);
 
 parent:
   // Destroy the remote web browser due to the nsFrameLoader going away.
@@ -67,7 +78,7 @@ parent:
   // Out of process rendering.
   async Show(ScreenIntSize size, bool parentIsActive, nsSizeMode sizeMode);
   async UpdateDimensions(DimensionInfo dimensions) compressall;
-  async RenderLayers(bool aEnabled, bool aForceRepaint, LayersObserverEpoch aEpoch);
+  async RenderLayers(bool aEnabled, LayersObserverEpoch aEpoch);
 
   async UpdateEffects(EffectsInfo aEffects);
 

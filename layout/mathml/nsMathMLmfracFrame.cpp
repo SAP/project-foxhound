@@ -10,11 +10,12 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_mathml.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsDisplayList.h"
 #include "gfxContext.h"
-#include "nsMathMLElement.h"
+#include "mozilla/dom/MathMLElement.h"
 #include <algorithm>
 #include "gfxMathTable.h"
 
@@ -103,28 +104,44 @@ nscoord nsMathMLmfracFrame::CalcLineThickness(nsPresContext* aPresContext,
   // default: medium
   //
   if (!aThicknessAttribute.IsEmpty()) {
-    if (aThicknessAttribute.EqualsLiteral("thin")) {
-      lineThickness = NSToCoordFloor(defaultThickness * THIN_FRACTION_LINE);
-      minimumThickness = onePixel * THIN_FRACTION_LINE_MINIMUM_PIXELS;
-      // should visually decrease by at least one pixel, if default is not a
-      // pixel
-      if (defaultThickness > onePixel &&
-          lineThickness > defaultThickness - onePixel)
-        lineThickness = defaultThickness - onePixel;
-    } else if (aThicknessAttribute.EqualsLiteral("medium")) {
-      // medium is default
-    } else if (aThicknessAttribute.EqualsLiteral("thick")) {
-      lineThickness = NSToCoordCeil(defaultThickness * THICK_FRACTION_LINE);
-      minimumThickness = onePixel * THICK_FRACTION_LINE_MINIMUM_PIXELS;
-      // should visually increase by at least one pixel
-      if (lineThickness < defaultThickness + onePixel)
-        lineThickness = defaultThickness + onePixel;
-    } else {
+    if (StaticPrefs::mathml_mfrac_linethickness_names_disabled()) {
       // length value
       lineThickness = defaultThickness;
       ParseNumericValue(aThicknessAttribute, &lineThickness,
-                        nsMathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
+                        dom::MathMLElement::PARSE_ALLOW_UNITLESS, aPresContext,
                         aComputedStyle, aFontSizeInflation);
+    } else {
+      bool isDeprecatedLineThicknessValue = true;
+      if (aThicknessAttribute.EqualsLiteral("thin")) {
+        lineThickness = NSToCoordFloor(defaultThickness * THIN_FRACTION_LINE);
+        minimumThickness = onePixel * THIN_FRACTION_LINE_MINIMUM_PIXELS;
+        // should visually decrease by at least one pixel, if default is not a
+        // pixel
+        if (defaultThickness > onePixel &&
+            lineThickness > defaultThickness - onePixel) {
+          lineThickness = defaultThickness - onePixel;
+        }
+      } else if (aThicknessAttribute.EqualsLiteral("medium")) {
+        // medium is default
+      } else if (aThicknessAttribute.EqualsLiteral("thick")) {
+        lineThickness = NSToCoordCeil(defaultThickness * THICK_FRACTION_LINE);
+        minimumThickness = onePixel * THICK_FRACTION_LINE_MINIMUM_PIXELS;
+        // should visually increase by at least one pixel
+        if (lineThickness < defaultThickness + onePixel) {
+          lineThickness = defaultThickness + onePixel;
+        }
+      } else {
+        // length value
+        isDeprecatedLineThicknessValue = false;
+        lineThickness = defaultThickness;
+        ParseNumericValue(aThicknessAttribute, &lineThickness,
+                          dom::MathMLElement::PARSE_ALLOW_UNITLESS,
+                          aPresContext, aComputedStyle, aFontSizeInflation);
+      }
+      if (isDeprecatedLineThicknessValue) {
+        mContent->OwnerDoc()->WarnOnceAbout(
+            dom::Document::eMathML_DeprecatedLineThicknessValue);
+      }
     }
   }
 
@@ -236,9 +253,15 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                         defaultRuleThickness, fontSizeInflation);
 
   // bevelled attribute
-  mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::bevelled_,
-                                 value);
-  mIsBevelled = value.EqualsLiteral("true");
+  mIsBevelled = false;
+  if (!StaticPrefs::mathml_mfrac_bevelled_attribute_disabled()) {
+    if (mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::bevelled_,
+                                       value)) {
+      mContent->OwnerDoc()->WarnOnceAbout(
+          dom::Document::eMathML_DeprecatedBevelledAttribute);
+      mIsBevelled = value.EqualsLiteral("true");
+    }
+  }
 
   bool displayStyle = StyleFont()->mMathDisplay == NS_MATHML_DISPLAYSTYLE_BLOCK;
 
@@ -316,10 +339,6 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                          : gfxMathTable::StackGapMin,
             oneDevPixel);
       }
-      // Factor in axis height
-      // http://www.mathml-association.org/MathMLinHTML5/S3.html#SS3.SSS2
-      numShift += axisHeight;
-      denShift += axisHeight;
 
       nscoord actualClearance =
           (numShift - bmNum.descent) - (bmDen.ascent - denShift);
@@ -381,21 +400,31 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
     nscoord dxDen = leftSpace + (width - sizeDen.Width()) / 2;
     width += leftSpace + rightSpace;
 
-    // see if the numalign attribute is there
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::numalign_,
-                                   value);
-    if (value.EqualsLiteral("left"))
-      dxNum = leftSpace;
-    else if (value.EqualsLiteral("right"))
-      dxNum = width - rightSpace - sizeNum.Width();
+    if (!StaticPrefs::mathml_deprecated_alignment_attributes_disabled()) {
+      // see if the numalign attribute is there
+      if (mContent->AsElement()->GetAttr(kNameSpaceID_None,
+                                         nsGkAtoms::numalign_, value)) {
+        mContent->OwnerDoc()->WarnOnceAbout(
+            dom::Document::eMathML_DeprecatedAlignmentAttributes);
+        if (value.EqualsLiteral("left")) {
+          dxNum = leftSpace;
+        } else if (value.EqualsLiteral("right")) {
+          dxNum = width - rightSpace - sizeNum.Width();
+        }
+      }
 
-    // see if the denomalign attribute is there
-    mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::denomalign_,
-                                   value);
-    if (value.EqualsLiteral("left"))
-      dxDen = leftSpace;
-    else if (value.EqualsLiteral("right"))
-      dxDen = width - rightSpace - sizeDen.Width();
+      // see if the denomalign attribute is there
+      if (mContent->AsElement()->GetAttr(kNameSpaceID_None,
+                                         nsGkAtoms::denomalign_, value)) {
+        mContent->OwnerDoc()->WarnOnceAbout(
+            dom::Document::eMathML_DeprecatedAlignmentAttributes);
+        if (value.EqualsLiteral("left")) {
+          dxDen = leftSpace;
+        } else if (value.EqualsLiteral("right")) {
+          dxDen = width - rightSpace - sizeDen.Width();
+        }
+      }
+    }
 
     mBoundingMetrics.rightBearing =
         std::max(dxNum + bmNum.rightBearing, dxDen + bmDen.rightBearing);
@@ -422,10 +451,12 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
       nscoord dy;
       // place numerator
       dy = 0;
-      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dxNum, dy, 0);
+      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dxNum, dy,
+                        ReflowChildFlags::Default);
       // place denominator
       dy = aDesiredSize.Height() - sizeDen.Height();
-      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dxDen, dy, 0);
+      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dxDen, dy,
+                        ReflowChildFlags::Default);
       // place the fraction bar - dy is top of bar
       dy = aDesiredSize.BlockStartAscent() -
            (axisHeight + actualRuleThickness / 2);
@@ -548,7 +579,8 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
       dx = MirrorIfRTL(aDesiredSize.Width(), sizeNum.Width(), leadingSpace);
       dy = aDesiredSize.BlockStartAscent() - numShift -
            sizeNum.BlockStartAscent();
-      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dx, dy, 0);
+      FinishReflowChild(frameNum, presContext, sizeNum, nullptr, dx, dy,
+                        ReflowChildFlags::Default);
 
       // place the fraction bar
       dx = MirrorIfRTL(aDesiredSize.Width(), mLineRect.width,
@@ -562,7 +594,8 @@ nsresult nsMathMLmfracFrame::PlaceInternal(DrawTarget* aDrawTarget,
                        leadingSpace + bmNum.width + mLineRect.width);
       dy = aDesiredSize.BlockStartAscent() + denShift -
            sizeDen.BlockStartAscent();
-      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dx, dy, 0);
+      FinishReflowChild(frameDen, presContext, sizeDen, nullptr, dx, dy,
+                        ReflowChildFlags::Default);
     }
   }
 

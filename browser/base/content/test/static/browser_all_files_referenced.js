@@ -47,6 +47,11 @@ var gExceptionPaths = [
 
   // Exclude all search-extensions because they aren't referenced by filename
   "resource://search-extensions/",
+
+  // Bug 1550165 - Exclude localized App/Play store badges. These badges
+  // are displayed in a promo area on the first load of about:logins.
+  "chrome://browser/content/aboutlogins/third-party/app-store/",
+  "chrome://browser/content/aboutlogins/third-party/play-store/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -183,14 +188,10 @@ var whitelist = [
   { file: "chrome://pippki/content/resetpassword.xul" },
   // Bug 1337345
   { file: "resource://gre/modules/Manifest.jsm" },
-  // Bug 1351097
-  { file: "resource://gre/modules/accessibility/AccessFu.jsm" },
   // Bug 1356045
   { file: "chrome://global/content/test-ipc.xul" },
   // Bug 1378173 (warning: still used by devtools)
   { file: "resource://gre/modules/Promise.jsm" },
-  // Still used by WebIDE, which is going away but not entirely gone.
-  { file: "resource://gre/modules/ZipUtils.jsm" },
   // Bug 1494170
   // (The references to these files are dynamically generated, so the test can't
   // find the references)
@@ -219,12 +220,6 @@ var whitelist = [
   { file: "chrome://browser/content/aboutlogins/aboutLoginsUtils.js" },
 ];
 
-if (!AppConstants.MOZ_NEW_NOTIFICATION_STORE) {
-  // kvstore.jsm wraps the API in nsIKeyValue.idl in a more ergonomic API
-  // It landed in bug 1490496, and we expect to start using it shortly.
-  whitelist.push({ file: "resource://gre/modules/kvstore.jsm" });
-}
-
 whitelist = new Set(
   whitelist
     .filter(
@@ -248,9 +243,6 @@ const ignorableWhitelist = new Set([
 
   // Bug 1351669 - obsolete test file
   "resource://gre/res/test.properties",
-
-  // Bug 1532703
-  "resource://app/localization/en-US/browser/aboutConfig.ftl",
 ]);
 for (let entry of ignorableWhitelist) {
   whitelist.add(entry);
@@ -813,7 +805,6 @@ add_task(async function checkAllTheFiles() {
   // Keep only chrome:// files, and filter out either the devtools paths or
   // the non-devtools paths:
   let devtoolsPrefixes = [
-    "chrome://webide/",
     "chrome://devtools",
     "resource://devtools/",
     "resource://devtools-client-jsonview/",

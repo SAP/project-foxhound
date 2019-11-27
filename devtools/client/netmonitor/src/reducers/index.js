@@ -6,7 +6,9 @@
 
 const { combineReducers } = require("devtools/client/shared/vendor/redux");
 const batchingReducer = require("./batching");
+const requestBlockingReducer = require("./request-blocking");
 const { requestsReducer } = require("./requests");
+const { search } = require("./search");
 const { sortReducer } = require("./sort");
 const { filters } = require("./filters");
 const { timingMarkers } = require("./timing-markers");
@@ -16,7 +18,9 @@ const networkThrottling = require("devtools/client/shared/components/throttling/
 
 module.exports = batchingReducer(
   combineReducers({
+    requestBlocking: requestBlockingReducer,
     requests: requestsReducer,
+    search,
     sort: sortReducer,
     webSockets,
     filters,

@@ -62,10 +62,10 @@ const PREF_TOPSTORIES = "feeds.section.topstories";
 const PREF_SPOCS_CLEAR_ENDPOINT = "discoverystream.endpointSpocsClear";
 const PREF_SHOW_SPONSORED = "showSponsored";
 const PREF_SPOC_IMPRESSIONS = "discoverystream.spoc.impressions";
+const PREF_CAMPAIGN_BLOCKS = "discoverystream.campaign.blocks";
 const PREF_REC_IMPRESSIONS = "discoverystream.rec.impressions";
 
-let defaultLayoutResp;
-let basicLayoutResp;
+let getHardcodedLayout;
 
 this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   constructor() {
@@ -92,6 +92,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
    * Send SPOCS Fill telemetry.
    * @param {object} filteredItems An object keyed on filter reasons, and the value
    *                 is a list of SPOCS.
+   *                 reasons: blocked_by_user, frequency_cap, below_min_score, campaign_duplicate
    * @param {boolean} fullRecalc A boolean indicating if it's a full recalculation.
    *                  Calling `loadSpocs` will be treated as a full recalculation.
    *                  Whereas responding the action "DISCOVERY_STREAM_SPOC_IMPRESSION"
@@ -156,6 +157,15 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       this.store.getState().Prefs.values[PREF_ENABLED];
 
     return this._prefCache.config;
+  }
+
+  resetConfigDefauts() {
+    this.store.dispatch({
+      type: at.CLEAR_PREF,
+      data: {
+        name: PREF_CONFIG,
+      },
+    });
   }
 
   get showSpocs() {
@@ -322,47 +332,68 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     return layout;
   }
 
-  async loadLayout(sendUpdate, isStartup) {
-    let layout = {};
-    if (!this.config.hardcoded_layout) {
-      layout = await this.fetchLayout(isStartup);
-    }
-
-    if (!layout || !layout.layout) {
-      if (
-        this.config.hardcoded_basic_layout ||
-        this.store.getState().Prefs.values[PREF_HARDCODED_BASIC_LAYOUT]
-      ) {
-        layout = { lastUpdate: Date.now(), ...basicLayoutResp };
-      } else {
-        layout = { lastUpdate: Date.now(), ...defaultLayoutResp };
+  updatePlacements(sendUpdate, layout) {
+    const placements = [];
+    const placementsMap = {};
+    for (const row of layout.filter(r => r.components && r.components.length)) {
+      for (const component of row.components) {
+        if (component.placement) {
+          // Throw away any dupes for the request.
+          if (!placementsMap[component.placement.name]) {
+            placementsMap[component.placement.name] = component.placement;
+            placements.push(component.placement);
+          }
+        }
       }
     }
+    if (placements.length) {
+      sendUpdate({
+        type: at.DISCOVERY_STREAM_SPOCS_PLACEMENTS,
+        data: { placements },
+      });
+    }
+  }
 
-    if (
-      layout.spocs &&
-      (this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT] ||
-        this.config.spocs_endpoint)
-    ) {
-      layout.spocs.url =
-        this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT] ||
-        this.config.spocs_endpoint;
+  async loadLayout(sendUpdate, isStartup) {
+    let layoutResp = {};
+    let url = "";
+    if (!this.config.hardcoded_layout) {
+      layoutResp = await this.fetchLayout(isStartup);
+    }
+
+    if (!layoutResp || !layoutResp.layout) {
+      // Set a hardcoded layout if one is needed.
+      // Changing values in this layout in memory object is unnecessary.
+      layoutResp = getHardcodedLayout(
+        this.config.hardcoded_basic_layout ||
+          this.store.getState().Prefs.values[PREF_HARDCODED_BASIC_LAYOUT]
+      );
     }
 
     sendUpdate({
       type: at.DISCOVERY_STREAM_LAYOUT_UPDATE,
-      data: layout,
+      data: layoutResp,
     });
-    if (
-      layout.spocs &&
-      layout.spocs.url &&
-      layout.spocs.url !==
-        this.store.getState().DiscoveryStream.spocs.spocs_endpoint
-    ) {
-      sendUpdate({
-        type: at.DISCOVERY_STREAM_SPOCS_ENDPOINT,
-        data: layout.spocs.url,
-      });
+
+    if (layoutResp.spocs) {
+      url =
+        this.store.getState().Prefs.values[PREF_SPOCS_ENDPOINT] ||
+        this.config.spocs_endpoint ||
+        layoutResp.spocs.url;
+
+      if (
+        url &&
+        url !== this.store.getState().DiscoveryStream.spocs.spocs_endpoint
+      ) {
+        sendUpdate({
+          type: at.DISCOVERY_STREAM_SPOCS_ENDPOINT,
+          data: {
+            url,
+            spocs_per_domain: layoutResp.spocs.spocs_per_domain,
+          },
+        });
+        this.updatePlacements(sendUpdate, layoutResp.layout);
+      }
     }
   }
 
@@ -430,10 +461,15 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       feed.data.recommendations &&
       feed.data.recommendations.length
     ) {
-      const { data } = this.filterBlocked(feed.data, "recommendations");
+      const { data: recommendations } = this.filterBlocked(
+        feed.data.recommendations
+      );
       return {
         ...feed,
-        data,
+        data: {
+          ...feed.data,
+          recommendations,
+        },
       };
     }
     return feed;
@@ -503,12 +539,24 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     });
   }
 
+  placementsForEach(callback) {
+    const { placements } = this.store.getState().DiscoveryStream.spocs;
+    // Backwards comp for before we had placements, assume just a single spocs placement.
+    if (!placements || !placements.length) {
+      [{ name: "spocs" }].forEach(callback);
+    } else {
+      placements.forEach(callback);
+    }
+  }
+
   async loadSpocs(sendUpdate, isStartup) {
     const cachedData = (await this.cache.get()) || {};
-    let spocs;
+    let spocsState;
+
+    const { placements } = this.store.getState().DiscoveryStream.spocs;
 
     if (this.showSpocs) {
-      spocs = cachedData.spocs;
+      spocsState = cachedData.spocs;
       if (this.isExpired({ cachedData, key: "spocs", isStartup })) {
         const endpoint = this.store.getState().DiscoveryStream.spocs
           .spocs_endpoint;
@@ -527,18 +575,21 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
             pocket_id: this._impressionId,
             version: 1,
             consumer_key: apiKey,
+            ...(placements.length ? { placements } : {}),
           }),
         });
 
         if (spocsResponse) {
           this.spocsRequestTime = Math.round(perfService.absNow() - start);
-          spocs = {
+          spocsState = {
             lastUpdated: Date.now(),
-            data: spocsResponse,
+            spocs: {
+              ...spocsResponse,
+            },
           };
 
-          this.cleanUpCampaignImpressionPref(spocs.data);
-          await this.cache.set("spocs", spocs);
+          this.cleanUpCampaignImpressionPref(spocsState.spocs);
+          await this.cache.set("spocs", spocsState);
         } else {
           Cu.reportError("No response for spocs_endpoint prop");
         }
@@ -549,27 +600,69 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     // We can have no data if spocs set to off.
     // We can have no data if request fails and there is no good cache.
     // We want to send an update spocs or not, so client can render something.
-    spocs =
-      spocs && spocs.data
-        ? spocs
+    spocsState =
+      spocsState && spocsState.spocs
+        ? spocsState
         : {
             lastUpdated: Date.now(),
-            data: {},
+            spocs: {},
           };
 
-    let { data, filtered: frequencyCapped } = this.frequencyCapSpocs(
-      spocs.data
-    );
-    let { data: newSpocs, filtered } = this.transform(data);
+    let frequencyCapped = [];
+    let blockedItems = [];
+    let belowMinScore = [];
+    let campaignDupes = [];
+    this.placementsForEach(placement => {
+      const freshSpocs = spocsState.spocs[placement.name];
+
+      if (!freshSpocs || !freshSpocs.length) {
+        return;
+      }
+
+      const { data: capResult, filtered: caps } = this.frequencyCapSpocs(
+        freshSpocs
+      );
+      frequencyCapped = [...frequencyCapped, ...caps];
+
+      const { data: blockedResults, filtered: blocks } = this.filterBlocked(
+        capResult
+      );
+      blockedItems = [...blockedItems, ...blocks];
+
+      let { data: transformResult, filtered: transformFilter } = this.transform(
+        blockedResults
+      );
+      let {
+        below_min_score: minScoreFilter,
+        campaign_duplicate: dupes,
+      } = transformFilter;
+      belowMinScore = [...belowMinScore, ...minScoreFilter];
+      campaignDupes = [...campaignDupes, ...dupes];
+
+      spocsState.spocs = {
+        ...spocsState.spocs,
+        [placement.name]: transformResult,
+      };
+    });
 
     sendUpdate({
       type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
       data: {
-        lastUpdated: spocs.lastUpdated,
-        spocs: newSpocs,
+        lastUpdated: spocsState.lastUpdated,
+        spocs: spocsState.spocs,
       },
     });
-    this._sendSpocsFill({ ...filtered, frequency_cap: frequencyCapped }, true);
+    // TODO make sure this works in other places we use it.
+    // TODO make sure to also validate all of these that they still contain the right ites in the array.
+    this._sendSpocsFill(
+      {
+        frequency_cap: frequencyCapped,
+        blocked_by_user: blockedItems,
+        below_min_score: belowMinScore,
+        campaign_duplicate: campaignDupes,
+      },
+      true
+    );
   }
 
   async clearSpocs() {
@@ -674,21 +767,21 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     return item;
   }
 
-  filterBlocked(data, type) {
+  filterBlocked(data) {
     const filtered = [];
-    if (data && data[type] && data[type].length) {
-      const filteredItems = data[type].filter(item => {
-        const blocked = NewTabUtils.blockedLinks.isBlocked({ url: item.url });
+    if (data && data.length) {
+      let campaigns = this.readDataPref(PREF_CAMPAIGN_BLOCKS);
+      const filteredItems = data.filter(item => {
+        const blocked =
+          NewTabUtils.blockedLinks.isBlocked({ url: item.url }) ||
+          campaigns[item.campaign_id];
         if (blocked) {
           filtered.push(item);
         }
         return !blocked;
       });
       return {
-        data: {
-          ...data,
-          [type]: filteredItems,
-        },
+        data: filteredItems,
         filtered,
       };
     }
@@ -696,8 +789,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   transform(spocs) {
-    const { data, filtered: blockedItems } = this.filterBlocked(spocs, "spocs");
-    if (data && data.spocs && data.spocs.length) {
+    if (spocs && spocs.length) {
       const spocsPerDomain =
         this.store.getState().DiscoveryStream.spocs.spocs_per_domain || 1;
       const campaignMap = {};
@@ -706,7 +798,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       // This order of operations is intended.
       // scoreItems must be first because it creates this.score.
       const { data: items, filtered: belowMinScoreItems } = this.scoreItems(
-        data.spocs
+        spocs
       );
       // This removes campaign dupes.
       // We do this only after scoring and sorting because that way
@@ -723,15 +815,20 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         return false;
       });
       return {
-        data: { ...data, spocs: newSpocs },
+        data: newSpocs,
         filtered: {
-          blocked_by_user: blockedItems,
           below_min_score: belowMinScoreItems,
           campaign_duplicate: campaignDuplicates,
         },
       };
     }
-    return { data, filtered: { blocked: blockedItems } };
+    return {
+      data: spocs,
+      filtered: {
+        below_min_score: [],
+        campaign_duplicate: [],
+      },
+    };
   }
 
   // Filter spocs based on frequency caps
@@ -739,21 +836,17 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   // @param {Object} data  An object that might have a SPOCS array.
   // @returns {Object} An object with a property `data` as the result, and a property
   //                   `filterItems` as the frequency capped items.
-  frequencyCapSpocs(data) {
-    if (data && data.spocs && data.spocs.length) {
-      const { spocs } = data;
-      const impressions = this.readImpressionsPref(PREF_SPOC_IMPRESSIONS);
+  frequencyCapSpocs(spocs) {
+    if (spocs && spocs.length) {
+      const impressions = this.readDataPref(PREF_SPOC_IMPRESSIONS);
       const caps = [];
-      const result = {
-        ...data,
-        spocs: spocs.filter(s => {
-          const isBelow = this.isBelowFrequencyCap(impressions, s);
-          if (!isBelow) {
-            caps.push(s);
-          }
-          return isBelow;
-        }),
-      };
+      const result = spocs.filter(s => {
+        const isBelow = this.isBelowFrequencyCap(impressions, s);
+        if (!isBelow) {
+          caps.push(s);
+        }
+        return isBelow;
+      });
       // send caps to redux if any.
       if (caps.length) {
         this.store.dispatch({
@@ -763,7 +856,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       }
       return { data: result, filtered: caps };
     }
-    return { data, filtered: [] };
+    return { data: spocs, filtered: [] };
   }
 
   // Frequency caps are based on campaigns, which may include multiple spocs.
@@ -897,7 +990,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     await this.loadLayout(dispatch, isStartup);
     await Promise.all([
       this.loadSpocs(dispatch, isStartup).catch(error =>
-        Cu.reportError(`Error trying to load spocs feed: ${error}`)
+        Cu.reportError(`Error trying to load spocs feeds: ${error}`)
       ),
       this.loadComponentFeeds(dispatch, isStartup).catch(error =>
         Cu.reportError(`Error trying to load component feeds: ${error}`)
@@ -916,7 +1009,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
       recsExpireTime * 1000 || DEFAULT_RECS_EXPIRE_TIME,
       DEFAULT_RECS_EXPIRE_TIME
     );
-    const impressions = this.readImpressionsPref(PREF_REC_IMPRESSIONS);
+    const impressions = this.readDataPref(PREF_REC_IMPRESSIONS);
     const expired = [];
     const active = [];
     for (const item of recommendations) {
@@ -1029,7 +1122,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   async reset() {
-    this.resetImpressionPrefs();
+    this.resetDataPrefs();
     await this.resetCache();
     if (this.loaded) {
       Services.obs.removeObserver(this, "idle-daily");
@@ -1044,9 +1137,10 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     await this.cache.set("affinities", {});
   }
 
-  resetImpressionPrefs() {
-    this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, {});
-    this.writeImpressionsPref(PREF_REC_IMPRESSIONS, {});
+  resetDataPrefs() {
+    this.writeDataPref(PREF_SPOC_IMPRESSIONS, {});
+    this.writeDataPref(PREF_REC_IMPRESSIONS, {});
+    this.writeDataPref(PREF_CAMPAIGN_BLOCKS, {});
   }
 
   resetState() {
@@ -1071,26 +1165,41 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 
   recordCampaignImpression(campaignId) {
-    let impressions = this.readImpressionsPref(PREF_SPOC_IMPRESSIONS);
+    let impressions = this.readDataPref(PREF_SPOC_IMPRESSIONS);
 
     const timeStamps = impressions[campaignId] || [];
     timeStamps.push(Date.now());
     impressions = { ...impressions, [campaignId]: timeStamps };
 
-    this.writeImpressionsPref(PREF_SPOC_IMPRESSIONS, impressions);
+    this.writeDataPref(PREF_SPOC_IMPRESSIONS, impressions);
   }
 
   recordTopRecImpressions(recId) {
-    let impressions = this.readImpressionsPref(PREF_REC_IMPRESSIONS);
+    let impressions = this.readDataPref(PREF_REC_IMPRESSIONS);
     if (!impressions[recId]) {
       impressions = { ...impressions, [recId]: Date.now() };
-      this.writeImpressionsPref(PREF_REC_IMPRESSIONS, impressions);
+      this.writeDataPref(PREF_REC_IMPRESSIONS, impressions);
+    }
+  }
+
+  recordBlockCampaignId(campaignId) {
+    const campaigns = this.readDataPref(PREF_CAMPAIGN_BLOCKS);
+    if (!campaigns[campaignId]) {
+      campaigns[campaignId] = 1;
+      this.writeDataPref(PREF_CAMPAIGN_BLOCKS, campaigns);
     }
   }
 
   cleanUpCampaignImpressionPref(data) {
-    if (data.spocs && data.spocs.length) {
-      const campaignIds = data.spocs.map(s => `${s.campaign_id}`);
+    let campaignIds = [];
+    this.placementsForEach(placement => {
+      const newSpocs = data[placement.name];
+      if (!newSpocs) {
+        return;
+      }
+      campaignIds = [...campaignIds, ...newSpocs.map(s => `${s.campaign_id}`)];
+    });
+    if (campaignIds && campaignIds.length) {
       this.cleanUpImpressionPref(
         id => !campaignIds.includes(id),
         PREF_SPOC_IMPRESSIONS
@@ -1114,17 +1223,17 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     );
   }
 
-  writeImpressionsPref(pref, impressions) {
+  writeDataPref(pref, impressions) {
     this.store.dispatch(ac.SetPref(pref, JSON.stringify(impressions)));
   }
 
-  readImpressionsPref(pref) {
+  readDataPref(pref) {
     const prefVal = this.store.getState().Prefs.values[pref];
     return prefVal ? JSON.parse(prefVal) : {};
   }
 
   cleanUpImpressionPref(isExpired, pref) {
-    const impressions = this.readImpressionsPref(pref);
+    const impressions = this.readDataPref(pref);
     let changed = false;
 
     Object.keys(impressions).forEach(id => {
@@ -1135,7 +1244,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
     });
 
     if (changed) {
-      this.writeImpressionsPref(pref, impressions);
+      this.writeDataPref(pref, impressions);
     }
   }
 
@@ -1173,6 +1282,9 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
           )
         );
         break;
+      case at.DISCOVERY_STREAM_CONFIG_RESET_DEFAULTS:
+        this.resetConfigDefauts();
+        break;
       case at.DISCOVERY_STREAM_RETRY_FEED:
         this.retryFeed(action.data.feed);
         break;
@@ -1195,33 +1307,59 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
 
           // Apply frequency capping to SPOCs in the redux store, only update the
           // store if the SPOCs are changed.
-          const { spocs } = this.store.getState().DiscoveryStream;
-          const { data: newSpocs, filtered } = this.frequencyCapSpocs(
-            spocs.data
-          );
-          if (filtered.length) {
+          const spocsState = this.store.getState().DiscoveryStream.spocs;
+
+          let frequencyCapped = [];
+          this.placementsForEach(placement => {
+            const freshSpocs = spocsState.data[placement.name];
+            if (!freshSpocs) {
+              return;
+            }
+
+            const { data: newSpocs, filtered } = this.frequencyCapSpocs(
+              freshSpocs
+            );
+            frequencyCapped = [...frequencyCapped, ...filtered];
+
+            spocsState.data = {
+              ...spocsState.data,
+              [placement.name]: newSpocs,
+            };
+          });
+          if (frequencyCapped.length) {
             this.store.dispatch(
               ac.AlsoToPreloaded({
                 type: at.DISCOVERY_STREAM_SPOCS_UPDATE,
                 data: {
-                  lastUpdated: spocs.lastUpdated,
-                  spocs: newSpocs,
+                  lastUpdated: spocsState.lastUpdated,
+                  spocs: spocsState.data,
                 },
               })
             );
-            this._sendSpocsFill({ frequency_cap: filtered }, false);
+            this._sendSpocsFill({ frequency_cap: frequencyCapped }, false);
           }
         }
         break;
+      // This is fired from the browser, it has no concept of spocs, campaign or pocket.
+      // We match the blocked url with our available spoc urls to see if there is a match.
+      // I suspect we *could* instead do this in BLOCK_URL but I'm not sure.
       case at.PLACES_LINK_BLOCKED:
         if (this.showSpocs) {
-          const { spocs } = this.store.getState().DiscoveryStream;
-          const spocsList = spocs.data.spocs || [];
+          const spocsState = this.store.getState().DiscoveryStream.spocs;
+          let spocsList = [];
+          this.placementsForEach(placement => {
+            const spocs = spocsState.data[placement.name];
+            if (spocs && spocs.length) {
+              spocsList = [...spocsList, ...spocs];
+            }
+          });
           const filtered = spocsList.filter(s => s.url === action.data.url);
           if (filtered.length) {
             this._sendSpocsFill({ blocked_by_user: filtered }, false);
 
             // If we're blocking a spoc, we want a slightly different treatment for open tabs.
+            // AlsoToPreloaded updates the source data and preloaded tabs with a new spoc.
+            // BroadcastToContent updates open tabs with a non spoc instead of a new spoc.
             this.store.dispatch(
               ac.AlsoToPreloaded({
                 type: at.DISCOVERY_STREAM_LINK_BLOCKED,
@@ -1234,7 +1372,7 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
                 data: action.data,
               })
             );
-            return;
+            break;
           }
         }
         this.store.dispatch(
@@ -1248,6 +1386,16 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
         // When this feed is shutting down:
         this.uninitPrefs();
         break;
+      case at.BLOCK_URL: {
+        // If we block a story that also has a campaign_id
+        // we want to record that as blocked too.
+        // This is because a single campaign might have slightly different urls.
+        const { campaign_id } = action.data;
+        if (campaign_id) {
+          this.recordBlockCampaignId(campaign_id);
+        }
+        break;
+      }
       case at.PREF_CHANGED:
         switch (action.data.name) {
           case PREF_CONFIG:
@@ -1285,213 +1433,225 @@ this.DiscoveryStreamFeed = class DiscoveryStreamFeed {
   }
 };
 
-// Hardcoded version of layout_variant `3-col-7-row-octr`
-defaultLayoutResp = {
-  spocs: {
-    url: "https://spocs.getpocket.com/spocs",
-    spocs_per_domain: 1,
-  },
-  layout: [
-    {
-      width: 12,
-      components: [
+// This function generates a hardcoded layout each call.
+// This is because modifying the original object would
+// persist across pref changes and system_tick updates.
+getHardcodedLayout = basic => {
+  if (basic) {
+    // Hardcoded version of layout_variant `basic`
+    return {
+      lastUpdate: Date.now(),
+      spocs: {
+        url: "https://spocs.getpocket.com/spocs",
+        spocs_per_domain: 1,
+      },
+      layout: [
         {
-          type: "TopSites",
-          header: {
-            title: "Top Sites",
-          },
-          properties: {},
-        },
-      ],
-    },
-    {
-      width: 12,
-      components: [
-        {
-          type: "Message",
-          header: {
-            title: "Recommended by Pocket",
-            subtitle: "",
-            link_text: "How it works",
-            link_url: "https://getpocket.com/firefox/new_tab_learn_more",
-            icon:
-              "resource://activity-stream/data/content/assets/glyph-pocket-16.svg",
-          },
-          properties: {},
-          styles: {
-            ".ds-message": "margin-bottom: -20px",
-          },
-        },
-      ],
-    },
-    {
-      width: 12,
-      components: [
-        {
-          type: "CardGrid",
-          properties: {
-            items: 21,
-          },
-          header: {
-            title: "",
-          },
-          feed: {
-            embed_reference: null,
-            url:
-              "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=en-US&count=30",
-          },
-          spocs: {
-            probability: 1,
-            positions: [
-              {
-                index: 2,
+          width: 12,
+          components: [
+            {
+              type: "TopSites",
+              header: {
+                title: "Top Sites",
               },
-              {
-                index: 4,
+              properties: {},
+            },
+            {
+              type: "Message",
+              header: {
+                title: "Recommended by Pocket",
+                subtitle: "",
+                link_text: "How it works",
+                link_url: "https://getpocket.com/firefox/new_tab_learn_more",
+                icon:
+                  "resource://activity-stream/data/content/assets/glyph-pocket-16.svg",
               },
-              {
-                index: 11,
+              properties: {},
+              styles: {
+                ".ds-message": "margin-bottom: -20px",
               },
-              {
-                index: 20,
+            },
+            {
+              type: "CardGrid",
+              properties: {
+                items: 3,
               },
-            ],
-          },
-        },
-        {
-          type: "Navigation",
-          properties: {
-            alignment: "left-align",
-            links: [
-              {
-                name: "Must Reads",
-                url: "https://getpocket.com/explore/must-reads?src=fx_new_tab",
+              header: {
+                title: "",
               },
-              {
-                name: "Productivity",
+              feed: {
+                embed_reference: null,
                 url:
-                  "https://getpocket.com/explore/productivity?src=fx_new_tab",
+                  "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=en-US&feed_variant=default_spocs_on",
               },
-              {
-                name: "Health",
-                url: "https://getpocket.com/explore/health?src=fx_new_tab",
+              spocs: {
+                probability: 1,
+                positions: [
+                  {
+                    index: 2,
+                  },
+                ],
               },
-              {
-                name: "Finance",
-                url: "https://getpocket.com/explore/finance?src=fx_new_tab",
+            },
+            {
+              type: "Navigation",
+              properties: {
+                alignment: "left-align",
+                links: [
+                  {
+                    name: "Must Reads",
+                    url:
+                      "https://getpocket.com/explore/must-reads?src=fx_new_tab",
+                  },
+                  {
+                    name: "Productivity",
+                    url:
+                      "https://getpocket.com/explore/productivity?src=fx_new_tab",
+                  },
+                  {
+                    name: "Health",
+                    url: "https://getpocket.com/explore/health?src=fx_new_tab",
+                  },
+                  {
+                    name: "Finance",
+                    url: "https://getpocket.com/explore/finance?src=fx_new_tab",
+                  },
+                  {
+                    name: "Technology",
+                    url:
+                      "https://getpocket.com/explore/technology?src=fx_new_tab",
+                  },
+                  {
+                    name: "More Recommendations ›",
+                    url:
+                      "https://getpocket.com/explore/trending?src=fx_new_tab",
+                  },
+                ],
               },
-              {
-                name: "Technology",
-                url: "https://getpocket.com/explore/technology?src=fx_new_tab",
-              },
-              {
-                name: "More Recommendations ›",
-                url: "https://getpocket.com/explore/trending?src=fx_new_tab",
-              },
-            ],
-          },
-          header: {
-            title: "Popular Topics",
-          },
-          styles: {
-            ".ds-navigation": "margin-top: -10px;",
-          },
+            },
+          ],
         },
       ],
+    };
+  }
+  // Hardcoded version of layout_variant `3-col-7-row-octr`
+  return {
+    lastUpdate: Date.now(),
+    spocs: {
+      url: "https://spocs.getpocket.com/spocs",
+      spocs_per_domain: 1,
     },
-  ],
-};
-
-// Hardcoded version of layout_variant `basic`
-basicLayoutResp = {
-  spocs: {
-    url: "https://spocs.getpocket.com/spocs",
-    spocs_per_domain: 1,
-  },
-  layout: [
-    {
-      width: 12,
-      components: [
-        {
-          type: "TopSites",
-          header: {
-            title: "Top Sites",
+    layout: [
+      {
+        width: 12,
+        components: [
+          {
+            type: "TopSites",
+            header: {
+              title: "Top Sites",
+            },
           },
-          properties: {},
-        },
-        {
-          type: "Message",
-          header: {
-            title: "Recommended by Pocket",
-            subtitle: "",
-            link_text: "How it works",
-            link_url: "https://getpocket.com/firefox/new_tab_learn_more",
-            icon:
-              "resource://activity-stream/data/content/assets/glyph-pocket-16.svg",
+        ],
+      },
+      {
+        width: 12,
+        components: [
+          {
+            type: "Message",
+            header: {
+              title: "Recommended by Pocket",
+              subtitle: "",
+              link_text: "How it works",
+              link_url: "https://getpocket.com/firefox/new_tab_learn_more",
+              icon:
+                "resource://activity-stream/data/content/assets/glyph-pocket-16.svg",
+            },
+            properties: {},
+            styles: {
+              ".ds-message": "margin-bottom: -20px",
+            },
           },
-          properties: {},
-          styles: {
-            ".ds-message": "margin-bottom: -20px",
+        ],
+      },
+      {
+        width: 12,
+        components: [
+          {
+            type: "CardGrid",
+            properties: {
+              items: 21,
+            },
+            header: {
+              title: "",
+            },
+            feed: {
+              embed_reference: null,
+              url:
+                "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=en-US&count=30",
+            },
+            spocs: {
+              probability: 1,
+              positions: [
+                {
+                  index: 2,
+                },
+                {
+                  index: 4,
+                },
+                {
+                  index: 11,
+                },
+                {
+                  index: 20,
+                },
+              ],
+            },
           },
-        },
-        {
-          type: "CardGrid",
-          properties: {
-            items: 3,
+          {
+            type: "Navigation",
+            properties: {
+              alignment: "left-align",
+              links: [
+                {
+                  name: "Must Reads",
+                  url:
+                    "https://getpocket.com/explore/must-reads?src=fx_new_tab",
+                },
+                {
+                  name: "Productivity",
+                  url:
+                    "https://getpocket.com/explore/productivity?src=fx_new_tab",
+                },
+                {
+                  name: "Health",
+                  url: "https://getpocket.com/explore/health?src=fx_new_tab",
+                },
+                {
+                  name: "Finance",
+                  url: "https://getpocket.com/explore/finance?src=fx_new_tab",
+                },
+                {
+                  name: "Technology",
+                  url:
+                    "https://getpocket.com/explore/technology?src=fx_new_tab",
+                },
+                {
+                  name: "More Recommendations ›",
+                  url: "https://getpocket.com/explore/trending?src=fx_new_tab",
+                },
+              ],
+            },
+            header: {
+              title: "Popular Topics",
+            },
+            styles: {
+              ".ds-navigation": "margin-top: -10px;",
+            },
           },
-          header: {
-            title: "",
-          },
-          feed: {
-            embed_reference: null,
-            url:
-              "https://getpocket.cdn.mozilla.net/v3/firefox/global-recs?version=3&consumer_key=$apiKey&locale_lang=en-US&feed_variant=default_spocs_on",
-          },
-          spocs: {
-            probability: 1,
-            positions: [
-              {
-                index: 2,
-              },
-            ],
-          },
-        },
-        {
-          type: "Navigation",
-          properties: {
-            alignment: "left-align",
-            links: [
-              {
-                name: "Must Reads",
-                url: "https://getpocket.com/explore/must-reads?src=fx_new_tab",
-              },
-              {
-                name: "Productivity",
-                url:
-                  "https://getpocket.com/explore/productivity?src=fx_new_tab",
-              },
-              {
-                name: "Health",
-                url: "https://getpocket.com/explore/health?src=fx_new_tab",
-              },
-              {
-                name: "Finance",
-                url: "https://getpocket.com/explore/finance?src=fx_new_tab",
-              },
-              {
-                name: "Technology",
-                url: "https://getpocket.com/explore/technology?src=fx_new_tab",
-              },
-              {
-                name: "More Recommendations ›",
-                url: "https://getpocket.com/explore/trending?src=fx_new_tab",
-              },
-            ],
-          },
-        },
-      ],
-    },
-  ],
+        ],
+      },
+    ],
+  };
 };
 
 const EXPORTED_SYMBOLS = ["DiscoveryStreamFeed"];

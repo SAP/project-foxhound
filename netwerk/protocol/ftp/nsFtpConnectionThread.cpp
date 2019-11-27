@@ -45,6 +45,7 @@
 #include "nsILoadInfo.h"
 #include "nsIAuthPrompt2.h"
 #include "nsIFTPChannelParentInternal.h"
+#include "mozilla/Telemetry.h"
 
 using namespace mozilla;
 using namespace mozilla::net;
@@ -80,6 +81,7 @@ nsFtpState::nsFtpState()
       mAnonymous(true),
       mRetryPass(false),
       mStorReplyReceived(false),
+      mRlist1xxReceived(false),
       mInternalError(NS_OK),
       mReconnectAndLoginAgain(false),
       mCacheConnection(true),
@@ -1060,15 +1062,21 @@ nsresult nsFtpState::S_list() {
 FTP_STATE
 nsFtpState::R_list() {
   if (mResponseCode / 100 == 1) {
+    Telemetry::ScalarAdd(
+        Telemetry::ScalarID::NETWORKING_FTP_OPENED_CHANNELS_LISTINGS, 1);
+
+    mRlist1xxReceived = true;
+
     // OK, time to start reading from the data connection.
     if (mDataStream && HasPendingCallback())
       mDataStream->AsyncWait(this, 0, 0, CallbackTarget());
     return FTP_READ_BUF;
   }
 
-  if (mResponseCode / 100 == 2) {
+  if (mResponseCode / 100 == 2 && mRlist1xxReceived) {
     //(DONE)
     mNextState = FTP_COMPLETE;
+    mRlist1xxReceived = false;
     return FTP_COMPLETE;
   }
   return FTP_ERROR;
@@ -1093,6 +1101,9 @@ nsFtpState::R_retr() {
   }
 
   if (mResponseCode / 100 == 1) {
+    Telemetry::ScalarAdd(
+        Telemetry::ScalarID::NETWORKING_FTP_OPENED_CHANNELS_FILES, 1);
+
     if (mDataStream && HasPendingCallback())
       mDataStream->AsyncWait(this, 0, 0, CallbackTarget());
     return FTP_READ_BUF;
@@ -1173,6 +1184,9 @@ nsFtpState::R_stor() {
   }
 
   if (mResponseCode / 100 == 1) {
+    Telemetry::ScalarAdd(
+        Telemetry::ScalarID::NETWORKING_FTP_OPENED_CHANNELS_FILES, 1);
+
     LOG(("FTP:(%p) writing on DT\n", this));
     return FTP_READ_BUF;
   }

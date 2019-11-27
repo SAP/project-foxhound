@@ -91,6 +91,14 @@ class DisplayListBuilder;
 namespace dom {
 class Selection;
 }  // namespace dom
+
+enum class DisplayListArenaObjectId {
+#define DISPLAY_LIST_ARENA_OBJECT(name_) name_,
+#include "nsDisplayListArenaTypes.h"
+#undef DISPLAY_LIST_ARENA_OBJECT
+  COUNT
+};
+
 }  // namespace mozilla
 
 /*
@@ -928,17 +936,7 @@ class nsDisplayListBuilder {
     return mNeedsDisplayListBuild[aRenderRoot];
   }
 
-  void ComputeDefaultRenderRootRect(LayoutDeviceIntSize aClientSize) {
-    nsRegion cutout;
-    nsRect clientRect(nsPoint(),
-                      mozilla::LayoutDevicePixel::ToAppUnits(aClientSize, 1));
-    cutout.OrWith(clientRect);
-    cutout.SubWith(mozilla::LayoutDevicePixel::ToAppUnits(
-        mRenderRootRects[mozilla::wr::RenderRoot::Content], 1));
-
-    mRenderRootRects[mozilla::wr::RenderRoot::Default] =
-        mozilla::LayoutDevicePixel::FromAppUnits(cutout.GetBounds(), 1);
-  }
+  void ComputeDefaultRenderRootRect(LayoutDeviceIntSize aClientSize);
 
   LayoutDeviceRect GetRenderRootRect(mozilla::wr::RenderRoot aRenderRoot) {
     return mRenderRootRects[aRenderRoot];
@@ -1048,12 +1046,33 @@ class nsDisplayListBuilder {
 
   /**
    * Allocate memory in our arena. It will only be freed when this display list
-   * builder is destroyed. This memory holds nsDisplayItems. nsDisplayItem
-   * destructors are called as soon as the item is no longer used.
+   * builder is destroyed. This memory holds nsDisplayItems and
+   * DisplayItemClipChain objects.
+   *
+   * Destructors are called as soon as the item is no longer used.
    */
-  void* Allocate(size_t aSize, DisplayItemType aType);
+  void* Allocate(size_t aSize, mozilla::DisplayListArenaObjectId aId) {
+    return mPool.Allocate(aId, aSize);
+  }
+  void* Allocate(size_t aSize, DisplayItemType aType) {
+    static_assert(size_t(DisplayItemType::TYPE_ZERO) ==
+                      size_t(mozilla::DisplayListArenaObjectId::CLIPCHAIN),
+                  "");
+#define DECLARE_DISPLAY_ITEM_TYPE(name_, ...)                         \
+  static_assert(size_t(DisplayItemType::TYPE_##name_) ==              \
+                    size_t(mozilla::DisplayListArenaObjectId::name_), \
+                "");
+#include "nsDisplayItemTypesList.h"
+#undef DECLARE_DISPLAY_ITEM_TYPE
+    return Allocate(aSize, mozilla::DisplayListArenaObjectId(size_t(aType)));
+  }
 
-  void Destroy(DisplayItemType aType, void* aPtr);
+  void Destroy(mozilla::DisplayListArenaObjectId aId, void* aPtr) {
+    return mPool.Free(aId, aPtr);
+  }
+  void Destroy(DisplayItemType aType, void* aPtr) {
+    return Destroy(mozilla::DisplayListArenaObjectId(size_t(aType)), aPtr);
+  }
 
   /**
    * Allocate a new ActiveScrolledRoot in the arena. Will be cleaned up
@@ -1097,17 +1116,6 @@ class nsDisplayListBuilder {
    */
   const DisplayItemClipChain* FuseClipChainUpTo(
       const DisplayItemClipChain* aClipChain, const ActiveScrolledRoot* aASR);
-
-  /**
-   * Only used for containerful root scrolling. This is a workaround.
-   */
-  void SetActiveScrolledRootForRootScrollframe(const ActiveScrolledRoot* aASR) {
-    mActiveScrolledRootForRootScrollframe = aASR;
-  }
-
-  const ActiveScrolledRoot* ActiveScrolledRootForRootScrollframe() const {
-    return mActiveScrolledRootForRootScrollframe;
-  }
 
   const ActiveScrolledRoot* GetFilterASR() const { return mFilterASR; }
 
@@ -1631,6 +1639,17 @@ class nsDisplayListBuilder {
   }
   bool ContainsBlendMode() const { return mContainsBlendMode; }
 
+  /**
+   * mContainsBackdropFilter is true if we proccessed a display item that
+   * has a backdrop filter set. We track this so we can insert a
+   * nsDisplayBackdropRootContainer in the stacking context of the nearest
+   * ancestor that forms a backdrop root.
+   */
+  void SetContainsBackdropFilter(bool aContainsBackdropFilter) {
+    mContainsBackdropFilter = aContainsBackdropFilter;
+  }
+  bool ContainsBackdropFilter() const { return mContainsBackdropFilter; }
+
   DisplayListClipState& ClipState() { return mClipState; }
   const ActiveScrolledRoot* CurrentActiveScrolledRoot() {
     return mCurrentActiveScrolledRoot;
@@ -1658,7 +1677,8 @@ class nsDisplayListBuilder {
 
   void ClearWillChangeBudget();
 
-  void EnterSVGEffectsContents(nsDisplayList* aHoistedItemsStorage);
+  void EnterSVGEffectsContents(nsIFrame* aEffectsFrame,
+                               nsDisplayList* aHoistedItemsStorage);
   void ExitSVGEffectsContents();
 
   bool ShouldBuildScrollInfoItemsForHoisting() const;
@@ -1723,6 +1743,10 @@ class nsDisplayListBuilder {
     return mBuildAsyncZoomContainer;
   }
   void UpdateShouldBuildAsyncZoomContainer();
+
+  void UpdateShouldBuildBackdropRootContainer();
+
+  bool ShouldRebuildDisplayListDueToPrefChange();
 
   /**
    * Represents a region composed of frame/rect pairs.
@@ -1862,7 +1886,10 @@ class nsDisplayListBuilder {
 
   nsIFrame* const mReferenceFrame;
   nsIFrame* mIgnoreScrollFrame;
-  nsPresArena<32768> mPool;
+
+  using Arena = nsPresArena<32768, mozilla::DisplayListArenaObjectId,
+                            size_t(mozilla::DisplayListArenaObjectId::COUNT)>;
+  Arena mPool;
 
   AutoTArray<PresShellState, 8> mPresShellStates;
   AutoTArray<nsIFrame*, 400> mFramesMarkedForDisplay;
@@ -1945,14 +1972,13 @@ class nsDisplayListBuilder {
       mClipDeduplicator;
   DisplayItemClipChain* mFirstClipChainToDestroy;
   nsTArray<nsDisplayItem*> mTemporaryItems;
-  const ActiveScrolledRoot* mActiveScrolledRootForRootScrollframe;
   nsDisplayListBuilderMode mMode;
   nsDisplayTableBackgroundSet* mTableBackgroundSet;
   ViewID mCurrentScrollParentId;
   ViewID mCurrentScrollbarTarget;
   MaybeScrollDirection mCurrentScrollbarDirection;
   Preserves3DContext mPreserves3DCtx;
-  int32_t mSVGEffectsBuildingDepth;
+  nsTArray<nsIFrame*> mSVGEffectsFrames;
   // When we are inside a filter, the current ASR at the time we entered the
   // filter. Otherwise nullptr.
   const ActiveScrolledRoot* mFilterASR;
@@ -1998,6 +2024,8 @@ class nsDisplayListBuilder {
   bool mPartialBuildFailed;
   bool mIsInActiveDocShell;
   bool mBuildAsyncZoomContainer;
+  bool mBuildBackdropRootContainer;
+  bool mContainsBackdropFilter;
 
   nsRect mHitTestArea;
   CompositorHitTestInfo mHitTestInfo;
@@ -2234,7 +2262,8 @@ class nsDisplayItemBase : public nsDisplayItemLink {
     // The middle 16 bits of the per frame key uniquely identify the display
     // item when there are more than one item of the same type for a frame.
     // The low 8 bits are the display item type.
-    return (static_cast<uint32_t>(mExtraPageForPageNum) << (TYPE_BITS + (sizeof(mKey) * 8))) |
+    return (static_cast<uint32_t>(mExtraPageForPageNum)
+            << (TYPE_BITS + (sizeof(mKey) * 8))) |
            (static_cast<uint32_t>(mKey) << TYPE_BITS) |
            static_cast<uint32_t>(mType);
   }
@@ -3432,6 +3461,11 @@ class nsDisplayList {
    */
   template <typename Item, typename Comparator>
   void Sort(const Comparator& aComparator) {
+    if (Count() < 2) {
+      // Only sort lists with more than one item.
+      return;
+    }
+
     // Some casual local browsing testing suggests that a local preallocated
     // array of 20 items should be able to avoid a lot of dynamic allocations
     // here.
@@ -3703,7 +3737,7 @@ class nsDisplayListSet {
  private:
   // This class is only used on stack, so we don't have to worry about leaking
   // it.  Don't let us be heap-allocated!
-  void* operator new(size_t sz) CPP_THROW_NEW;
+  void* operator new(size_t sz) noexcept(true);
 
  protected:
   nsDisplayList* mBorderBackground;
@@ -3749,7 +3783,7 @@ struct nsDisplayListCollection : public nsDisplayListSet {
  private:
   // This class is only used on stack, so we don't have to worry about leaking
   // it.  Don't let us be heap-allocated!
-  void* operator new(size_t sz) CPP_THROW_NEW;
+  void* operator new(size_t sz) noexcept(true);
 
   nsDisplayList mLists[6];
 };
@@ -3829,8 +3863,8 @@ struct HitTestInfo {
   nsRect mArea;
   mozilla::gfx::CompositorHitTestInfo mFlags;
 
-  AnimatedGeometryRoot* mAGR;
-  const mozilla::ActiveScrolledRoot* mASR;
+  RefPtr<AnimatedGeometryRoot> mAGR;
+  RefPtr<const mozilla::ActiveScrolledRoot> mASR;
   RefPtr<const mozilla::DisplayItemClipChain> mClipChain;
   const mozilla::DisplayItemClip* mClip;
 };
@@ -3848,7 +3882,10 @@ class nsDisplayHitTestInfoItem : public nsPaintedDisplayItem {
                            const nsDisplayHitTestInfoItem& aOther)
       : nsPaintedDisplayItem(aBuilder, aOther) {}
 
-  const HitTestInfo& GetHitTestInfo() const { return *mHitTestInfo; }
+  const HitTestInfo& GetHitTestInfo() const {
+    MOZ_ASSERT(HasHitTestInfo());
+    return *mHitTestInfo;
+  }
 
   void SetActiveScrolledRoot(
       const ActiveScrolledRoot* aActiveScrolledRoot) override {
@@ -4223,7 +4260,7 @@ class nsDisplayBorder : public nsPaintedDisplayItem {
   template <typename T>
   T CalculateBounds(const nsStyleBorder& aStyleBorder) const {
     nsRect borderBounds(ToReferenceFrame(), mFrame->GetSize());
-    if (aStyleBorder.IsBorderImageLoaded()) {
+    if (aStyleBorder.IsBorderImageSizeAvailable()) {
       borderBounds.Inflate(aStyleBorder.GetImageOutset());
       return borderBounds;
     }
@@ -4342,8 +4379,10 @@ class nsDisplaySolidColor : public nsDisplaySolidColorBase {
  public:
   nsDisplaySolidColor(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                       const nsRect& aBounds, nscolor aColor,
-                      bool aCanBeReused = true)
-      : nsDisplaySolidColorBase(aBuilder, aFrame, aColor), mBounds(aBounds) {
+                      uint16_t aIndex = 0, bool aCanBeReused = true)
+      : nsDisplaySolidColorBase(aBuilder, aFrame, aColor),
+        mBounds(aBounds),
+        mIndex(aIndex) {
     NS_ASSERTION(NS_GET_A(aColor) > 0,
                  "Don't create invisible nsDisplaySolidColors!");
     MOZ_COUNT_CTOR(nsDisplaySolidColor);
@@ -4384,10 +4423,18 @@ class nsDisplaySolidColor : public nsDisplaySolidColorBase {
   void SetOverrideZIndex(int32_t aZIndex) {
     mOverrideZIndex = mozilla::Some(aZIndex);
   }
+  /**
+   * If we have multiple SolidColor items in a single frame's
+   * display list, mIndex should be used as their unique
+   * identifier. Note this mapping remains stable even if the
+   * dirty rect changes.
+   */
+  uint16_t CalculatePerFrameKey() const override { return mIndex; }
 
  private:
   nsRect mBounds;
   mozilla::Maybe<int32_t> mOverrideZIndex;
+  const uint16_t mIndex;
 };
 
 /**
@@ -5988,6 +6035,16 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
  public:
   typedef mozilla::layers::ScrollbarData ScrollbarData;
 
+  enum OwnLayerType {
+    OwnLayerForTransformWithRoundedClip,
+    OwnLayerForStackingContext,
+    OwnLayerForImageBoxFrame,
+    OwnLayerForScrollbar,
+    OwnLayerForScrollThumb,
+    OwnLayerForSubdoc,
+    OwnLayerForBoxFrame
+  };
+
   /**
    * @param aFlags eGenerateSubdocInvalidations :
    * Add UserData to the created ContainerLayer, so that invalidations
@@ -6004,7 +6061,8 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
       const ActiveScrolledRoot* aActiveScrolledRoot,
       nsDisplayOwnLayerFlags aFlags = nsDisplayOwnLayerFlags::None,
       const ScrollbarData& aScrollbarData = ScrollbarData{},
-      bool aForceActive = true, bool aClearClipChain = false);
+      bool aForceActive = true, bool aClearClipChain = false,
+      uint16_t aIndex = 0);
 
   nsDisplayOwnLayer(nsDisplayListBuilder* aBuilder,
                     const nsDisplayOwnLayer& aOther)
@@ -6012,7 +6070,8 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
         mFlags(aOther.mFlags),
         mScrollbarData(aOther.mScrollbarData),
         mForceActive(aOther.mForceActive),
-        mWrAnimationId(aOther.mWrAnimationId) {
+        mWrAnimationId(aOther.mWrAnimationId),
+        mIndex(aOther.mIndex) {
     MOZ_COUNT_CTOR(nsDisplayOwnLayer);
   }
 
@@ -6043,6 +6102,8 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
     return false;
   }
 
+  uint16_t CalculatePerFrameKey() const override { return mIndex; }
+
   bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override {
     return false;
   }
@@ -6066,6 +6127,7 @@ class nsDisplayOwnLayer : public nsDisplayWrapList {
   ScrollbarData mScrollbarData;
   bool mForceActive;
   uint64_t mWrAnimationId;
+  uint16_t mIndex;
 };
 
 class nsDisplayRenderRoot : public nsDisplayWrapList {
@@ -6660,6 +6722,77 @@ class nsDisplayMasksAndClipPaths : public nsDisplayEffectsBase {
   nsTArray<nsRect> mDestRects;
 };
 
+class nsDisplayBackdropRootContainer : public nsDisplayWrapList {
+ public:
+  nsDisplayBackdropRootContainer(nsDisplayListBuilder* aBuilder,
+                                 nsIFrame* aFrame, nsDisplayList* aList,
+                                 const ActiveScrolledRoot* aActiveScrolledRoot)
+      : nsDisplayWrapList(aBuilder, aFrame, aList, aActiveScrolledRoot, true) {
+    MOZ_COUNT_CTOR(nsDisplayBackdropRootContainer);
+  }
+
+#ifdef NS_BUILD_REFCNT_LOGGING
+  ~nsDisplayBackdropRootContainer() override {
+    MOZ_COUNT_DTOR(nsDisplayBackdropRootContainer);
+  }
+#endif
+
+  NS_DISPLAY_DECL_NAME("BackdropRootContainer", TYPE_BACKDROP_ROOT_CONTAINER)
+
+  already_AddRefed<Layer> BuildLayer(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aContainerParameters) override;
+  LayerState GetLayerState(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aParameters) override;
+
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+
+  bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override {
+    return !aBuilder->IsPaintingForWebRender();
+  }
+};
+
+class nsDisplayBackdropFilters : public nsDisplayWrapList {
+ public:
+  nsDisplayBackdropFilters(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
+                           nsDisplayList* aList, const nsRect& aBackdropRect)
+      : nsDisplayWrapList(aBuilder, aFrame, aList),
+        mBackdropRect(aBackdropRect) {
+    MOZ_COUNT_CTOR(nsDisplayBackdropFilters);
+  }
+
+#ifdef NS_BUILD_REFCNT_LOGGING
+  ~nsDisplayBackdropFilters() override {
+    MOZ_COUNT_DTOR(nsDisplayBackdropFilters);
+  }
+#endif
+
+  NS_DISPLAY_DECL_NAME("BackdropFilter", TYPE_BACKDROP_FILTER)
+
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+
+  static bool CanCreateWebRenderCommands(nsDisplayListBuilder* aBuilder,
+                                         nsIFrame* aFrame);
+
+  bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override {
+    return !aBuilder->IsPaintingForWebRender();
+  }
+
+ private:
+  nsRect mBackdropRect;
+};
+
 /**
  * A display item to paint a stacking context with filter effects set by the
  * stacking context root frame's style.
@@ -6737,9 +6870,7 @@ class nsDisplayFilters : public nsDisplayEffectsBase {
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
-  bool CanCreateWebRenderCommands(nsDisplayListBuilder* aBuilder);
-
-  bool CreateWebRenderCSSFilters(WrFiltersHolder& wrFilters);
+  bool CanCreateWebRenderCommands();
 
  private:
   NS_DISPLAY_ALLOW_CLONING()

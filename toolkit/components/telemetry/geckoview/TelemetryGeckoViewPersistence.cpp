@@ -243,8 +243,8 @@ void MainThreadParsePersistedProbes(const nsACString& aProbeData) {
   ANDROID_LOG("MainThreadParsePersistedProbes");
 
   // We need a JS context to run the parsing stuff in.
-  JSObject* cleanGlobal =
-      SimpleGlobalObject::Create(SimpleGlobalObject::GlobalType::BindingDetail);
+  JS::Rooted<JSObject*> cleanGlobal(mozilla::dom::RootingCx(),
+                                    SimpleGlobalObject::Create(SimpleGlobalObject::GlobalType::BindingDetail));
   if (!cleanGlobal) {
     ANDROID_LOG(
         "MainThreadParsePersistedProbes - Failed to create a JS global object");
@@ -371,9 +371,6 @@ void PersistenceThreadPersist() {
         "MainThreadArmPersistenceTimer",
         []() -> void { MainThreadArmPersistenceTimer(); }));
   });
-
-  TelemetryScalar::Add(
-      mozilla::Telemetry::ScalarID::TELEMETRY_PERSISTENCE_TIMER_HIT_COUNT, 1);
 
   nsCOMPtr<nsIFile> persistenceFile;
   if (NS_FAILED(GetPersistenceFile(persistenceFile))) {

@@ -103,10 +103,6 @@
 #  include "nsWindowsHelpers.h"
 #endif
 
-#ifdef MOZ_WIDGET_ANDROID
-#  include "FennecJNIWrappers.h"
-#endif
-
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ipc/URIUtils.h"
@@ -314,34 +310,7 @@ static nsresult GetDownloadDirectory(nsIFile** _directory,
     NS_ENSURE_SUCCESS(rv, rv);
   }
 #elif defined(ANDROID)
-  // We ask Java for the temporary download directory. The directory will be
-  // different depending on whether we have the permission to write to the
-  // public download directory or not.
-  // In the case where we do not have the permission we will start the
-  // download to the app cache directory and later move it to the final
-  // destination after prompting for the permission.
-  jni::String::LocalRef downloadDir;
-  if (jni::IsFennec()) {
-    downloadDir = java::DownloadsIntegration::GetTemporaryDownloadDirectory();
-  }
-
-  nsresult rv;
-  if (downloadDir) {
-    nsCOMPtr<nsIFile> ldir;
-    rv = NS_NewNativeLocalFile(downloadDir->ToCString(), true,
-                               getter_AddRefs(ldir));
-
-    NS_ENSURE_SUCCESS(rv, rv);
-    dir = ldir;
-
-    // If we're not checking for availability we're done.
-    if (aSkipChecks) {
-      dir.forget(_directory);
-      return NS_OK;
-    }
-  } else {
-    return NS_ERROR_FAILURE;
-  }
+  return NS_ERROR_FAILURE;
 #else
   // On all other platforms, we default to the systems temporary directory.
   nsresult rv = NS_GetSpecialDirectory(NS_OS_TEMP_DIR, getter_AddRefs(dir));
@@ -674,14 +643,11 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   // protocol will act as a listener on the child-side and create a "real"
   // helperAppService listener on the parent-side, via another call to
   // DoContent.
-  mozilla::dom::PExternalHelperAppChild* pc =
-      child->SendPExternalHelperAppConstructor(
-          uriParams, loadInfoArgs, nsCString(aMimeContentType), disp,
-          contentDisposition, fileName, aForceSave, contentLength,
-          wasFileChannel, referrerParams,
-          mozilla::dom::BrowserChild::GetFrom(window));
-  ExternalHelperAppChild* childListener =
-      static_cast<ExternalHelperAppChild*>(pc);
+  RefPtr<ExternalHelperAppChild> childListener = new ExternalHelperAppChild();
+  MOZ_ALWAYS_TRUE(child->SendPExternalHelperAppConstructor(
+      childListener, uriParams, loadInfoArgs, nsCString(aMimeContentType), disp,
+      contentDisposition, fileName, aForceSave, contentLength, wasFileChannel,
+      referrerParams, mozilla::dom::BrowserChild::GetFrom(window)));
 
   NS_ADDREF(*aStreamListener = childListener);
 
@@ -745,17 +711,7 @@ NS_IMETHODIMP nsExternalHelperAppService::DoContent(
         nsAutoCString query;
 
         // We only care about the query for HTTP and HTTPS URLs
-        nsresult rv;
-        bool isHTTP, isHTTPS;
-        rv = uri->SchemeIs("http", &isHTTP);
-        if (NS_FAILED(rv)) {
-          isHTTP = false;
-        }
-        rv = uri->SchemeIs("https", &isHTTPS);
-        if (NS_FAILED(rv)) {
-          isHTTPS = false;
-        }
-        if (isHTTP || isHTTPS) {
+        if (uri->SchemeIs("http") || uri->SchemeIs("https")) {
           url->GetQuery(query);
         }
 

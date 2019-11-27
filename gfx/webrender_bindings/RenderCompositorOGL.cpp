@@ -8,6 +8,7 @@
 
 #include "GLContext.h"
 #include "GLContextProvider.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/widget/CompositorWidget.h"
 
 namespace mozilla {
@@ -29,23 +30,90 @@ UniquePtr<RenderCompositor> RenderCompositorOGL::Create(
 
 RenderCompositorOGL::RenderCompositorOGL(
     RefPtr<gl::GLContext>&& aGL, RefPtr<widget::CompositorWidget>&& aWidget)
-    : RenderCompositor(std::move(aWidget)), mGL(aGL) {
+    : RenderCompositor(std::move(aWidget)),
+      mGL(aGL),
+      mPreviousFrameDoneSync(nullptr),
+      mThisFrameDoneSync(nullptr) {
   MOZ_ASSERT(mGL);
 }
 
-RenderCompositorOGL::~RenderCompositorOGL() {}
+RenderCompositorOGL::~RenderCompositorOGL() {
+  if (!mGL->MakeCurrent()) {
+    gfxCriticalNote
+        << "Failed to make render context current during destroying.";
+    // Leak resources!
+    mPreviousFrameDoneSync = nullptr;
+    mThisFrameDoneSync = nullptr;
+    return;
+  }
 
-bool RenderCompositorOGL::BeginFrame() {
+  if (mPreviousFrameDoneSync) {
+    mGL->fDeleteSync(mPreviousFrameDoneSync);
+  }
+  if (mThisFrameDoneSync) {
+    mGL->fDeleteSync(mThisFrameDoneSync);
+  }
+}
+
+bool RenderCompositorOGL::BeginFrame(layers::NativeLayer* aNativeLayer) {
   if (!mGL->MakeCurrent()) {
     gfxCriticalNote << "Failed to make render context current, can't draw.";
     return false;
   }
+
+  if (aNativeLayer) {
+    aNativeLayer->SetSurfaceIsFlipped(true);
+    aNativeLayer->SetGLContext(mGL);
+    Maybe<GLuint> fbo = aNativeLayer->NextSurfaceAsFramebuffer(true);
+    if (!fbo) {
+      return false;
+    }
+    mGL->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, *fbo);
+    mCurrentNativeLayer = aNativeLayer;
+  } else {
+    mGL->fBindFramebuffer(LOCAL_GL_FRAMEBUFFER, mGL->GetDefaultFramebuffer());
+  }
+
   return true;
 }
 
-void RenderCompositorOGL::EndFrame() { mGL->SwapBuffers(); }
+void RenderCompositorOGL::EndFrame() {
+  InsertFrameDoneSync();
+  mGL->SwapBuffers();
 
-void RenderCompositorOGL::WaitForGPU() {}
+  if (mCurrentNativeLayer) {
+    mCurrentNativeLayer->NotifySurfaceReady();
+    mCurrentNativeLayer = nullptr;
+  }
+}
+
+void RenderCompositorOGL::InsertFrameDoneSync() {
+#ifdef XP_MACOSX
+  // Only do this on macOS.
+  // On other platforms, SwapBuffers automatically applies back-pressure.
+  if (StaticPrefs::gfx_core_animation_enabled_AtStartup()) {
+    if (mThisFrameDoneSync) {
+      mGL->fDeleteSync(mThisFrameDoneSync);
+    }
+    mThisFrameDoneSync =
+        mGL->fFenceSync(LOCAL_GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+  }
+#endif
+}
+
+bool RenderCompositorOGL::WaitForGPU() {
+  if (mPreviousFrameDoneSync) {
+    AUTO_PROFILER_LABEL("Waiting for GPU to finish previous frame", GRAPHICS);
+    mGL->fClientWaitSync(mPreviousFrameDoneSync,
+                         LOCAL_GL_SYNC_FLUSH_COMMANDS_BIT,
+                         LOCAL_GL_TIMEOUT_IGNORED);
+    mGL->fDeleteSync(mPreviousFrameDoneSync);
+  }
+  mPreviousFrameDoneSync = mThisFrameDoneSync;
+  mThisFrameDoneSync = nullptr;
+
+  return true;
+}
 
 void RenderCompositorOGL::Pause() {}
 

@@ -39,7 +39,7 @@ export function initialBreakpointsState(
 ): BreakpointsState {
   return {
     breakpoints: {},
-    xhrBreakpoints: xhrBreakpoints,
+    xhrBreakpoints,
     breakpointsDisabled: false,
   };
 }
@@ -61,6 +61,10 @@ function update(
         return removeBreakpoint(state, action);
       }
       return state;
+    }
+
+    case "REMOVE_BREAKPOINTS": {
+      return { ...state, breakpoints: {} };
     }
 
     case "NAVIGATE": {
@@ -178,8 +182,12 @@ export function getBreakpointCount(state: OuterState): number {
 
 export function getBreakpoint(
   state: OuterState,
-  location: SourceLocation
+  location: ?SourceLocation
 ): ?Breakpoint {
+  if (!location) {
+    return undefined;
+  }
+
   const breakpoints = getBreakpointsMap(state);
   return breakpoints[makeBreakpointId(location)];
 }
@@ -208,9 +216,9 @@ export function getBreakpointsForSource(
 
 export function getBreakpointForLocation(
   state: OuterState,
-  location: SourceLocation | null
+  location: ?SourceLocation
 ): ?Breakpoint {
-  if (!location || !location.sourceId) {
+  if (!location) {
     return undefined;
   }
 
@@ -224,6 +232,14 @@ export function getBreakpointForLocation(
 export function getHiddenBreakpoint(state: OuterState): ?Breakpoint {
   const breakpoints = getBreakpointsList(state);
   return breakpoints.find(bp => bp.options.hidden);
+}
+
+export function hasLogpoint(
+  state: OuterState,
+  location: ?SourceLocation
+): ?string {
+  const breakpoint = getBreakpoint(state, location);
+  return breakpoint && breakpoint.options.logValue;
 }
 
 export default update;

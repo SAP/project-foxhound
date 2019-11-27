@@ -33,7 +33,6 @@
 #include "jsmath.h"
 #include "jsutil.h"
 
-#include "builtin/String.h"
 #include "frontend/ParseNode.h"
 #include "frontend/Parser.h"
 #include "gc/Policy.h"
@@ -789,7 +788,7 @@ class NumLit {
 // A canonical subset of types representing the coercion targets: Int, Float,
 // Double.
 //
-// Void is also part of the canonical subset which then maps to wasm::ExprType.
+// Void is also part of the canonical subset.
 
 class Type {
  public:
@@ -832,7 +831,7 @@ class Type {
   }
 
   // Map |t| to one of the canonical vartype representations of a
-  // wasm::ExprType.
+  // wasm::ValType.
   static Type canonicalize(Type t) {
     switch (t.which()) {
       case Fixnum:
@@ -856,7 +855,7 @@ class Type {
       case Floatish:
       case Intish:
         // These types need some kind of coercion, they can't be mapped
-        // to an ExprType.
+        // to an VarType.
         break;
     }
     MOZ_CRASH("Invalid vartype");
@@ -935,7 +934,7 @@ class Type {
   bool isGlobalVarType() const { return isArgType(); }
 
   // Check if this is one of the canonical vartype representations of a
-  // wasm::ExprType. See Type::canonicalize().
+  // wasm::ValType, or is void. See Type::canonicalize().
   bool isCanonical() const {
     switch (which()) {
       case Int:
@@ -951,25 +950,22 @@ class Type {
   // Check if this is a canonical representation of a wasm::ValType.
   bool isCanonicalValType() const { return !isVoid() && isCanonical(); }
 
-  // Convert this canonical type to a wasm::ExprType.
-  ExprType canonicalToExprType() const {
+  // Convert this canonical type to a wasm::ValType.
+  ValType canonicalToValType() const {
     switch (which()) {
       case Int:
-        return ExprType::I32;
+        return ValType::I32;
       case Float:
-        return ExprType::F32;
+        return ValType::F32;
       case Double:
-        return ExprType::F64;
-      case Void:
-        return ExprType::Void;
+        return ValType::F64;
       default:
         MOZ_CRASH("Need canonical type");
     }
   }
 
-  // Convert this canonical type to a wasm::ValType.
-  ValType canonicalToValType() const {
-    return NonVoidToValType(canonicalToExprType());
+  Maybe<ValType> canonicalToReturnType() const {
+    return isVoid() ? Nothing() : Some(canonicalToValType());
   }
 
   // Convert this type to a wasm::ExprType for use in a wasm
@@ -1357,9 +1353,9 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
         funcImportMap_(cx),
         arrayViews_(cx),
         compilerEnv_(CompileMode::Once, Tier::Optimized, OptimizedBackend::Ion,
-                     DebugEnabled::False, /* gc types */ false),
-        env_(/* gc types */ false, &compilerEnv_, Shareable::False,
-             ModuleKind::AsmJS) {
+                     DebugEnabled::False, /* ref types */ false,
+                     /* gc types */ false, /* huge memory */ false),
+        env_(&compilerEnv_, Shareable::False, ModuleKind::AsmJS) {
     compilerEnv_.computeParameters(/* gc types */ false);
     env_.minMemoryLength = RoundUpToNextValidAsmJSHeapLength(0);
   }
@@ -1435,7 +1431,7 @@ class MOZ_STACK_CLASS JS_HAZ_ROOTED ModuleValidatorShared {
   MOZ_MUST_USE bool initDummyFunction() {
     // This flows into FunctionBox, so must be tenured.
     dummyFunction_ = NewScriptedFunction(
-        cx_, 0, JSFunction::INTERPRETED, nullptr,
+        cx_, 0, FunctionFlags::INTERPRETED, nullptr,
         /* proto = */ nullptr, gc::AllocKind::FUNCTION, TenuredObject);
     if (!dummyFunction_) {
       return false;
@@ -2356,7 +2352,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
   uint32_t blockDepth_;
 
   bool hasAlreadyReturned_;
-  ExprType ret_;
+  Maybe<ValType> ret_;
 
  private:
   FunctionValidatorShared(ModuleValidatorShared& m, ParseNode* fn,
@@ -2368,8 +2364,7 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
         breakLabels_(cx),
         continueLabels_(cx),
         blockDepth_(0),
-        hasAlreadyReturned_(false),
-        ret_(ExprType::Limit) {}
+        hasAlreadyReturned_(false) {}
 
  protected:
   template <typename Unit>
@@ -2421,9 +2416,10 @@ class MOZ_STACK_CLASS FunctionValidatorShared {
 
   bool hasAlreadyReturned() const { return hasAlreadyReturned_; }
 
-  ExprType returnedType() const { return ret_; }
+  Maybe<ValType> returnedType() const { return ret_; }
 
-  void setReturnedType(ExprType ret) {
+  void setReturnedType(const Maybe<ValType>& ret) {
+    MOZ_ASSERT(!hasAlreadyReturned_);
     ret_ = ret;
     hasAlreadyReturned_ = true;
   }
@@ -2638,9 +2634,12 @@ class MOZ_STACK_CLASS FunctionValidator : public FunctionValidatorShared {
  private:
   MOZ_MUST_USE bool appendCallSiteLineNumber(ParseNode* node) {
     const TokenStreamAnyChars& anyChars = m().tokenStream().anyCharsAccess();
-
     auto lineToken = anyChars.lineToken(node->pn_pos.begin);
-    return callSiteLineNums_.append(anyChars.lineNumber(lineToken));
+    uint32_t lineNumber = anyChars.lineNumber(lineToken);
+    if (lineNumber > CallSiteDesc::MAX_LINE_OR_BYTECODE_VALUE) {
+      return fail(node, "line number exceeding implementation limits");
+    }
+    return callSiteLineNums_.append(lineNumber);
   }
 };
 
@@ -3241,12 +3240,12 @@ static bool CheckFinalReturn(FunctionValidatorShared& f,
   }
 
   if (!f.hasAlreadyReturned()) {
-    f.setReturnedType(ExprType::Void);
+    f.setReturnedType(Nothing());
     return true;
   }
 
   if (!lastNonEmptyStmt->isKind(ParseNodeKind::ReturnStmt) &&
-      !IsVoid(f.returnedType())) {
+      f.returnedType()) {
     return f.fail(lastNonEmptyStmt,
                   "void incompatible with previous return type");
   }
@@ -3942,27 +3941,9 @@ static bool CheckCallArgs(FunctionValidator<Unit>& f, ParseNode* callNode,
 static bool CheckSignatureAgainstExisting(ModuleValidatorShared& m,
                                           ParseNode* usepn, const FuncType& sig,
                                           const FuncType& existing) {
-  if (sig.args().length() != existing.args().length()) {
-    return m.failf(usepn,
-                   "incompatible number of arguments (%zu"
-                   " here vs. %zu before)",
-                   sig.args().length(), existing.args().length());
+  if (sig != existing) {
+    return m.failf(usepn, "incompatible argument types to function");
   }
-
-  for (unsigned i = 0; i < sig.args().length(); i++) {
-    if (sig.arg(i) != existing.arg(i)) {
-      return m.failf(
-          usepn, "incompatible type for argument %u: (%s here vs. %s before)",
-          i, ToCString(sig.arg(i)), ToCString(existing.arg(i)));
-    }
-  }
-
-  if (sig.ret() != existing.ret()) {
-    return m.failf(usepn, "%s incompatible with previous return of type %s",
-                   ToCString(sig.ret()), ToCString(existing.ret()));
-  }
-
-  MOZ_ASSERT(sig == existing);
   return true;
 }
 
@@ -4012,7 +3993,13 @@ static bool CheckInternalCall(FunctionValidator<Unit>& f, ParseNode* callNode,
     return false;
   }
 
-  FuncType sig(std::move(args), ret.canonicalToExprType());
+  ValTypeVector results;
+  Maybe<ValType> retType = ret.canonicalToReturnType();
+  if (retType && !results.append(retType.ref())) {
+    return false;
+  }
+
+  FuncType sig(std::move(args), std::move(results));
 
   ModuleValidatorShared::Func* callee;
   if (!CheckFunctionSignature(f.m(), callNode, std::move(sig), calleeName,
@@ -4122,7 +4109,13 @@ static bool CheckFuncPtrCall(FunctionValidator<Unit>& f, ParseNode* callNode,
     return false;
   }
 
-  FuncType sig(std::move(args), ret.canonicalToExprType());
+  ValTypeVector results;
+  Maybe<ValType> retType = ret.canonicalToReturnType();
+  if (retType && !results.append(retType.ref())) {
+    return false;
+  }
+
+  FuncType sig(std::move(args), std::move(results));
 
   uint32_t tableIndex;
   if (!CheckFuncPtrTableAgainstExisting(f.m(), tableNode, name, std::move(sig),
@@ -4167,7 +4160,13 @@ static bool CheckFFICall(FunctionValidator<Unit>& f, ParseNode* callNode,
     return false;
   }
 
-  FuncType sig(std::move(args), ret.canonicalToExprType());
+  ValTypeVector results;
+  Maybe<ValType> retType = ret.canonicalToReturnType();
+  if (retType && !results.append(retType.ref())) {
+    return false;
+  }
+
+  FuncType sig(std::move(args), std::move(results));
 
   uint32_t importIndex;
   if (!f.m().declareImport(calleeName, std::move(sig), ffiIndex,
@@ -5868,14 +5867,16 @@ static bool CheckSwitch(FunctionValidator<Unit>& f, ParseNode* switchStmt) {
 
 static bool CheckReturnType(FunctionValidatorShared& f, ParseNode* usepn,
                             Type ret) {
+  Maybe<ValType> type = ret.canonicalToReturnType();
+
   if (!f.hasAlreadyReturned()) {
-    f.setReturnedType(ret.canonicalToExprType());
+    f.setReturnedType(type);
     return true;
   }
 
-  if (f.returnedType() != ret.canonicalToExprType()) {
+  if (f.returnedType() != type) {
     return f.failf(usepn, "%s incompatible with previous return of type %s",
-                   Type::ret(ret).toChars(), ToCString(f.returnedType()));
+                   ToCString(type), ToCString(f.returnedType()));
   }
 
   return true;
@@ -6109,9 +6110,16 @@ static bool CheckFunction(ModuleValidator<Unit>& m) {
     return false;
   }
 
+  ValTypeVector results;
+  if (f.returnedType()) {
+    if (!results.append(f.returnedType().ref())) {
+      return false;
+    }
+  }
+
   ModuleValidatorShared::Func* func = nullptr;
   if (!CheckFunctionSignature(m, funNode,
-                              FuncType(std::move(args), f.returnedType()),
+                              FuncType(std::move(args), std::move(results)),
                               FunctionName(funNode), &func)) {
     return false;
   }
@@ -6476,7 +6484,7 @@ static bool GetDataProperty(JSContext* cx, HandleValue objVal,
 }
 
 static bool GetDataProperty(JSContext* cx, HandleValue objVal,
-                            ImmutablePropertyNamePtr field,
+                            const ImmutablePropertyNamePtr& field,
                             MutableHandleValue v) {
   // Help the conversion along for all the cx->names().* users.
   HandlePropertyName fieldHandle = field;
@@ -6899,13 +6907,13 @@ static bool HandleInstantiationFailure(JSContext* cx, CallArgs args,
 
   uint32_t begin = metadata.toStringStart;
   uint32_t end = metadata.srcEndAfterCurly();
-  Rooted<JSFlatString*> src(cx, source->substringDontDeflate(cx, begin, end));
+  Rooted<JSLinearString*> src(cx, source->substringDontDeflate(cx, begin, end));
   if (!src) {
     return false;
   }
 
   RootedFunction fun(
-      cx, NewScriptedFunction(cx, 0, JSFunction::INTERPRETED_NORMAL, name,
+      cx, NewScriptedFunction(cx, 0, FunctionFlags::INTERPRETED_NORMAL, name,
                               /* proto = */ nullptr, gc::AllocKind::FUNCTION,
                               TenuredObject));
   if (!fun) {
@@ -6921,7 +6929,7 @@ static bool HandleInstantiationFailure(JSContext* cx, CallArgs args,
   // The exported function inherits an implicit strict context if the module
   // also inherited it somehow.
   if (metadata.strict) {
-    options.strictOption = true;
+    options.setForceStrictMode();
   }
 
   AutoStableStringChars stableChars(cx);
@@ -6978,14 +6986,16 @@ bool js::InstantiateAsmJS(JSContext* cx, unsigned argc, JS::Value* vp) {
   return true;
 }
 
-static JSFunction* NewAsmJSModuleFunction(JSContext* cx, JSFunction* origFun,
+static JSFunction* NewAsmJSModuleFunction(JSContext* cx,
+                                          FunctionBox* origFunbox,
                                           HandleObject moduleObj) {
-  RootedAtom name(cx, origFun->explicitName());
+  RootedAtom name(cx, origFunbox->explicitName());
 
-  JSFunction::Flags flags = origFun->isLambda() ? JSFunction::ASMJS_LAMBDA_CTOR
-                                                : JSFunction::ASMJS_CTOR;
+  FunctionFlags flags = origFunbox->isLambda()
+                            ? FunctionFlags::ASMJS_LAMBDA_CTOR
+                            : FunctionFlags::ASMJS_CTOR;
   JSFunction* moduleFun = NewNativeConstructor(
-      cx, InstantiateAsmJS, origFun->nargs(), name,
+      cx, InstantiateAsmJS, origFunbox->nargs(), name,
       gc::AllocKind::FUNCTION_EXTENDED, TenuredObject, flags);
   if (!moduleFun) {
     return nullptr;
@@ -7034,10 +7044,15 @@ static bool TypeFailureWarning(frontend::ParserBase& parser, const char* str) {
   return false;
 }
 
+// asm.js requires Ion to be available on the current hardware/OS and to be
+// enabled for wasm, since asm.js compilation goes via wasm.
+static bool IsAsmJSCompilerAvailable(JSContext* cx) {
+  return HasCompilerSupport(cx) && IonCanCompile() && cx->options().wasmIon();
+}
+
 static bool EstablishPreconditions(JSContext* cx,
                                    frontend::ParserBase& parser) {
-  // asm.js requires Ion.
-  if (!HasCompilerSupport(cx) || !IonCanCompile()) {
+  if (!IsAsmJSCompilerAvailable(cx)) {
     return TypeFailureWarning(parser, "Disabled by lack of compiler support");
   }
 
@@ -7100,8 +7115,7 @@ static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
   // The module function dynamically links the AsmJSModule when called and
   // generates a set of functions wrapping all the exports.
   FunctionBox* funbox = parser.pc_->functionBox();
-  RootedFunction moduleFun(
-      cx, NewAsmJSModuleFunction(cx, funbox->function(), moduleObj));
+  RootedFunction moduleFun(cx, NewAsmJSModuleFunction(cx, funbox, moduleObj));
   if (!moduleFun) {
     return false;
   }
@@ -7110,8 +7124,13 @@ static bool DoCompileAsmJS(JSContext* cx, AsmJSParser<Unit>& parser,
   // asm.js module function. Special cases in the bytecode emitter avoid
   // generating bytecode for asm.js functions, allowing this asm.js module
   // function to be the finished result.
-  MOZ_ASSERT(funbox->function()->isInterpreted());
+  MOZ_ASSERT(funbox->isInterpreted());
   funbox->clobberFunction(moduleFun);
+
+  // Clear any deferred allocation data. This is important in particular
+  // to avoid publishing a deferred function allocation on top of the
+  // module function set on the funbox above.
+  funbox->clearDeferredAllocationInfo();
 
   // Success! Write to the console with a "warning" message indicating
   // total compilation time.
@@ -7142,7 +7161,7 @@ bool js::IsAsmJSModule(JSFunction* fun) {
 }
 
 bool js::IsAsmJSFunction(JSFunction* fun) {
-  return fun->kind() == JSFunction::AsmJS;
+  return fun->kind() == FunctionFlags::AsmJS;
 }
 
 bool js::IsAsmJSStrictModeModuleOrFunction(JSFunction* fun) {
@@ -7160,9 +7179,7 @@ bool js::IsAsmJSStrictModeModuleOrFunction(JSFunction* fun) {
 bool js::IsAsmJSCompilationAvailable(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  // See EstablishPreconditions.
-  bool available =
-      HasCompilerSupport(cx) && IonCanCompile() && cx->options().asmJS();
+  bool available = cx->options().asmJS() && IsAsmJSCompilerAvailable(cx);
 
   args.rval().set(BooleanValue(available));
   return true;
@@ -7235,7 +7252,7 @@ JSString* js::AsmJSModuleToString(JSContext* cx, HandleFunction fun,
       return nullptr;
     }
   } else {
-    Rooted<JSFlatString*> src(cx, source->substring(cx, begin, end));
+    Rooted<JSLinearString*> src(cx, source->substring(cx, begin, end));
     if (!src) {
       return nullptr;
     }
@@ -7285,7 +7302,7 @@ JSString* js::AsmJSFunctionToString(JSContext* cx, HandleFunction fun) {
       return nullptr;
     }
   } else {
-    Rooted<JSFlatString*> src(cx, source->substring(cx, begin, end));
+    Rooted<JSLinearString*> src(cx, source->substring(cx, begin, end));
     if (!src) {
       return nullptr;
     }

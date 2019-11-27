@@ -8,6 +8,7 @@
   --debug-line-error-border: rgb(255, 0, 0);
   --debug-expression-error-background: rgba(231, 116, 113, 0.3);
   --highlight-line-duration: 1500ms;
+  --highlight-line-delay: 200ms;
 }
 
 .theme-dark .editor-wrapper {
@@ -17,7 +18,6 @@
 
 .editor-wrapper .CodeMirror-linewidget {
   margin-right: -7px;
-  overflow: hidden;
 }
 
 .editor-wrapper {
@@ -28,6 +28,12 @@
 .CodeMirror-scroll,
 .CodeMirror-sizer {
   overflow-anchor: none;
+}
+
+/* Prevents inline preview from shifting source height (#1576163) */
+.CodeMirror-linewidget {
+  padding: 0;
+  display: flow-root;
 }
 
 /**
@@ -81,11 +87,6 @@ html[dir="rtl"] .editor-mount {
   background-color: var(--theme-body-background);
   font-size: var(--theme-code-font-size);
   line-height: var(--theme-code-line-height);
-}
-
-.folding-enabled .CodeMirror-linenumber {
-  text-align: left;
-  padding: 0 0 0 2px;
 }
 
 /* set the linenumber white when there is a breakpoint */
@@ -142,7 +143,7 @@ html[dir="rtl"] .editor-mount {
   background-color: var(--debug-expression-error-background);
 }
 
-:not(.conditional-breakpoint-panel) .new-debug-line .CodeMirror-line {
+.new-debug-line > .CodeMirror-line {
   background-color: transparent !important;
   outline: var(--debug-line-border) solid 1px;
 }
@@ -153,7 +154,7 @@ html[dir="rtl"] .editor-mount {
   display: none;
 }
 
-:not(.conditional-breakpoint-panel) .new-debug-line-error .CodeMirror-line {
+.new-debug-line-error > .CodeMirror-line {
   background-color: var(--debug-expression-error-background) !important;
   outline: var(--debug-line-error-border) solid 1px;
 }
@@ -164,39 +165,50 @@ html[dir="rtl"] .editor-mount {
   display: none;
 }
 .highlight-line .CodeMirror-line {
-  animation: fade-highlight-out var(--highlight-line-duration) normal forwards;
+  animation-name: fade-highlight-out;
+  animation-duration: var(--highlight-line-duration);
+  animation-delay: var(--highlight-line-delay);
+  animation-direction: forwards;
 }
 
 @keyframes fade-highlight-out {
   0% {
-    background-color: var(--theme-highlight-gray);
+    background-color: var(--theme-contrast-background);
   }
   100% {
     background-color: transparent;
   }
-}
-
-.theme-dark .highlight-line .CodeMirror-line {
-  animation: fade-highlight-out-dark 1s normal forwards;
-}
-
-@keyframes fade-highlight-out-dark {
-  0% {
-    background-color: var(--theme-comment);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-.CodeMirror-guttermarker-subtle {
-  visibility: hidden;
 }
 
 .visible {
   visibility: visible;
 }
 
-.download-anchor {
-  display: none;
+/* Code folding */
+.editor-wrapper .CodeMirror-foldgutter-open {
+  color: var(--grey-40);
+}
+
+.editor-wrapper .CodeMirror-foldgutter-open,
+.editor-wrapper .CodeMirror-foldgutter-folded {
+  fill: var(--grey-40);
+}
+
+.editor-wrapper .CodeMirror-foldgutter-open::before,
+.editor-wrapper .CodeMirror-foldgutter-open::after {
+  border-top: none;
+}
+
+.editor-wrapper .CodeMirror-foldgutter-folded::before,
+.editor-wrapper .CodeMirror-foldgutter-folded::after {
+  border-left: none;
+}
+
+.editor-wrapper .CodeMirror-foldgutter .CodeMirror-guttermarker-subtle {
+  visibility: visible;
+}
+
+.editor-wrapper .CodeMirror-foldgutter .CodeMirror-linenumber {
+  text-align: left;
+  padding: 0 0 0 2px;
 }

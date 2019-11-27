@@ -144,8 +144,7 @@ void ScrollbarActivity::HandleEventForScrollbar(const nsAString& aType,
                                                 nsIContent* aTarget,
                                                 Element* aScrollbar,
                                                 bool* aStoredHoverState) {
-  if (!aTarget || !aScrollbar ||
-      !nsContentUtils::ContentIsDescendantOf(aTarget, aScrollbar))
+  if (!aTarget || !aScrollbar || !aTarget->IsInclusiveDescendantOf(aScrollbar))
     return;
 
   if (aType.EqualsLiteral("mousedown")) {
@@ -383,9 +382,29 @@ void ScrollbarActivity::CancelFadeBeginTimer() {
   }
 }
 
+static void MaybeInvalidateScrollbarForHover(
+    Element* aScrollbarToInvalidate, Element* aScrollbarAboutToGetHover) {
+  if (aScrollbarToInvalidate) {
+    bool hasHover =
+        aScrollbarToInvalidate->HasAttr(kNameSpaceID_None, nsGkAtoms::hover);
+    bool willHaveHover = (aScrollbarAboutToGetHover == aScrollbarToInvalidate);
+
+    if (hasHover != willHaveHover) {
+      if (nsIFrame* f = aScrollbarToInvalidate->GetPrimaryFrame()) {
+        f->SchedulePaint();
+      }
+    }
+  }
+}
+
 void ScrollbarActivity::HoveredScrollbar(Element* aScrollbar) {
-  SetBooleanAttribute(GetHorizontalScrollbar(), nsGkAtoms::hover, false);
-  SetBooleanAttribute(GetVerticalScrollbar(), nsGkAtoms::hover, false);
+  Element* vertScrollbar = GetVerticalScrollbar();
+  Element* horzScrollbar = GetHorizontalScrollbar();
+  MaybeInvalidateScrollbarForHover(vertScrollbar, aScrollbar);
+  MaybeInvalidateScrollbarForHover(horzScrollbar, aScrollbar);
+
+  SetBooleanAttribute(horzScrollbar, nsGkAtoms::hover, false);
+  SetBooleanAttribute(vertScrollbar, nsGkAtoms::hover, false);
   SetBooleanAttribute(aScrollbar, nsGkAtoms::hover, true);
 }
 

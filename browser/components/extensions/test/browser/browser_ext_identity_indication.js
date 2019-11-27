@@ -12,18 +12,11 @@ function confirmDefaults() {
     "Identity icon should be the search icon"
   );
 
-  let connectionIconURL = getComputedStyle(
-    document.getElementById("connection-icon")
-  ).listStyleImage;
-  is(connectionIconURL, "none", "Connection icon should not be displayed");
-
-  let extensionIconURL = getComputedStyle(
-    document.getElementById("extension-icon")
-  ).listStyleImage;
-  is(extensionIconURL, "none", "Extension icon should not be displayed");
-
-  let label = document.getElementById("identity-icon-label").value;
-  is(label, "", "No label should be used before the extension is started");
+  let label = document.getElementById("identity-icon-label");
+  ok(
+    BrowserTestUtils.is_hidden(label),
+    "No label should be used before the extension is started"
+  );
 }
 
 function confirmExtensionPage() {
@@ -31,31 +24,25 @@ function confirmExtensionPage() {
     .listStyleImage;
   is(
     identityIcon,
-    'url("chrome://browser/skin/identity-icon.svg")',
-    "Identity icon  should be the default identity icon"
-  );
-
-  let connectionIconURL = getComputedStyle(
-    document.getElementById("connection-icon")
-  ).listStyleImage;
-  is(connectionIconURL, "none", "Connection icon should not be displayed");
-
-  let extensionIconEl = document.getElementById("extension-icon");
-  let extensionIconURL = getComputedStyle(extensionIconEl).listStyleImage;
-  is(
-    extensionIconURL,
     'url("chrome://mozapps/skin/extensions/extensionGeneric-16.svg")',
-    "Extension icon should be the default extension icon"
+    "Identity icon should be the default extension icon"
   );
-  let tooltip = extensionIconEl.tooltipText;
+
+  let identityIconEl = document.getElementById("identity-icon");
+  let tooltip = identityIconEl.tooltipText;
   is(
     tooltip,
     "Loaded by extension: Test Extension",
     "The correct tooltip should be used"
   );
 
-  let label = document.getElementById("identity-icon-label").value;
-  is(label, "Extension (Test Extension)", "The correct label should be used");
+  let label = document.getElementById("identity-icon-label");
+  is(
+    label.value,
+    "Extension (Test Extension)",
+    "The correct label should be used"
+  );
+  ok(BrowserTestUtils.is_visible(label), "No label should be visible");
 }
 
 add_task(async function testIdentityIndication() {

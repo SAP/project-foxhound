@@ -33,6 +33,7 @@
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/dom/VideoPlaybackQuality.h"
 #include "mozilla/dom/VideoStreamTrack.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Unused.h"
 
 #include <algorithm>
@@ -49,9 +50,6 @@ nsGenericHTMLElement* NS_NewHTMLVideoElement(
 
 namespace mozilla {
 namespace dom {
-
-static bool sVideoStatsEnabled;
-static bool sCloneElementVisuallyTesting;
 
 nsresult HTMLVideoElement::Clone(mozilla::dom::NodeInfo* aNodeInfo,
                                  nsINode** aResult) const {
@@ -184,6 +182,11 @@ void HTMLVideoElement::UnbindFromTree(bool aNullParent) {
   if (mVisualCloneSource) {
     mVisualCloneSource->EndCloningVisually();
   } else if (mVisualCloneTarget) {
+    RefPtr<AsyncEventDispatcher> asyncDispatcher = new AsyncEventDispatcher(
+        this, NS_LITERAL_STRING("MozStopPictureInPicture"), CanBubble::eNo,
+        ChromeOnlyDispatch::eYes);
+    asyncDispatcher->RunDOMEventWhenSafe();
+
     EndCloningVisually();
   }
 
@@ -417,15 +420,9 @@ bool HTMLVideoElement::SetVisualCloneSource(
 }
 
 /* static */
-void HTMLVideoElement::InitStatics() {
-  Preferences::AddBoolVarCache(&sVideoStatsEnabled,
-                               "media.video_stats.enabled");
-  Preferences::AddBoolVarCache(&sCloneElementVisuallyTesting,
-                               "media.cloneElementVisually.testing");
+bool HTMLVideoElement::IsVideoStatsEnabled() {
+  return StaticPrefs::media_video_stats_enabled();
 }
-
-/* static */
-bool HTMLVideoElement::IsVideoStatsEnabled() { return sVideoStatsEnabled; }
 
 double HTMLVideoElement::TotalPlayTime() const {
   double total = 0.0;
@@ -486,7 +483,7 @@ void HTMLVideoElement::CloneElementVisually(HTMLVideoElement& aTargetVideo,
 
   aTargetVideo.SetMediaInfo(mMediaInfo);
 
-  if (IsInComposedDoc() && !sCloneElementVisuallyTesting) {
+  if (IsInComposedDoc() && !StaticPrefs::media_cloneElementVisually_testing()) {
     NotifyUAWidgetSetupOrChange();
   }
 
@@ -542,18 +539,8 @@ void HTMLVideoElement::EndCloningVisually() {
   Unused << mVisualCloneTarget->SetVisualCloneSource(nullptr);
   Unused << SetVisualCloneTarget(nullptr);
 
-  if (IsInComposedDoc() && !sCloneElementVisuallyTesting) {
+  if (IsInComposedDoc() && !StaticPrefs::media_cloneElementVisually_testing()) {
     NotifyUAWidgetSetupOrChange();
-  }
-}
-
-void HTMLVideoElement::TogglePictureInPicture(ErrorResult& error) {
-  // The MozTogglePictureInPicture event is listen for via the
-  // PictureInPictureChild actor, which is responsible for opening the new
-  // window and starting the visual clone.
-  nsresult rv = DispatchEvent(NS_LITERAL_STRING("MozTogglePictureInPicture"));
-  if (NS_FAILED(rv)) {
-    error.Throw(rv);
   }
 }
 

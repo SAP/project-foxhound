@@ -55,9 +55,7 @@ bool AddonManagerWebAPI::IsValidSite(nsIURI* uri) {
     return false;
   }
 
-  bool isSecure;
-  nsresult rv = uri->SchemeIs("https", &isSecure);
-  if (NS_FAILED(rv) || !isSecure) {
+  if (!uri->SchemeIs("https")) {
     if (!(xpc::IsInAutomation() &&
           Preferences::GetBool("extensions.webapi.testing.http", false))) {
       return false;
@@ -65,7 +63,7 @@ bool AddonManagerWebAPI::IsValidSite(nsIURI* uri) {
   }
 
   nsAutoCString host;
-  rv = uri->GetHost(host);
+  nsresult rv = uri->GetHost(host);
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -112,7 +110,7 @@ bool AddonManagerWebAPI::IsAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
     // Checks whether there is a parent frame of the same type. This won't cross
     // mozbrowser or chrome boundaries.
     nsCOMPtr<nsIDocShellTreeItem> parent;
-    nsresult rv = docShell->GetSameTypeParent(getter_AddRefs(parent));
+    nsresult rv = docShell->GetInProcessSameTypeParent(getter_AddRefs(parent));
     if (NS_FAILED(rv)) {
       return false;
     }
@@ -128,7 +126,7 @@ bool AddonManagerWebAPI::IsAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
       return false;
     }
 
-    doc = doc->GetParentDocument();
+    doc = doc->GetInProcessParentDocument();
     if (!doc) {
       // Getting here means something has been torn down so fail safe.
       return false;

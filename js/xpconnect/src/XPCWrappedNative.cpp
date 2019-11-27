@@ -486,8 +486,6 @@ XPCWrappedNative::XPCWrappedNative(already_AddRefed<nsISupports>&& aIdentity,
   MOZ_ASSERT(NS_IsMainThread());
 
   mIdentity = aIdentity;
-  RecordReplayRegisterDeferredFinalizeThing(nullptr, nullptr, mIdentity);
-
   mFlatJSObject.setFlags(FLAT_JS_OBJECT_VALID);
 
   MOZ_ASSERT(mMaybeProto, "bad ctor param");
@@ -503,8 +501,6 @@ XPCWrappedNative::XPCWrappedNative(already_AddRefed<nsISupports>&& aIdentity,
   MOZ_ASSERT(NS_IsMainThread());
 
   mIdentity = aIdentity;
-  RecordReplayRegisterDeferredFinalizeThing(nullptr, nullptr, mIdentity);
-
   mFlatJSObject.setFlags(FLAT_JS_OBJECT_VALID);
 
   MOZ_ASSERT(aScope, "bad ctor param");
@@ -526,13 +522,8 @@ void XPCWrappedNative::Destroy() {
 #endif
 
   if (mIdentity) {
-    // Either release mIdentity immediately or defer the release. When
-    // recording or replaying the release must always be deferred, so that
-    // DeferredFinalize matches the earlier call to
-    // RecordReplayRegisterDeferredFinalizeThing.
     XPCJSRuntime* rt = GetRuntime();
-    if ((rt && rt->GetDoingFinalization()) ||
-        recordreplay::IsRecordingOrReplaying()) {
+    if (rt && rt->GetDoingFinalization()) {
       DeferredFinalize(mIdentity.forget().take());
     } else {
       mIdentity = nullptr;
@@ -555,6 +546,10 @@ inline void XPCWrappedNative::SetFlatJSObject(JSObject* object) {
 
   mFlatJSObject = object;
   mFlatJSObject.setFlags(FLAT_JS_OBJECT_VALID);
+
+  // Never collect the wrapper object while recording or replaying, to avoid
+  // non-deterministically releasing references during finalization.
+  recordreplay::HoldJSObject(object);
 }
 
 inline void XPCWrappedNative::UnsetFlatJSObject() {
@@ -634,8 +629,8 @@ bool XPCWrappedNative::Init(JSContext* cx, nsIXPCScriptable* aScriptable) {
 
   // create our flatJSObject
 
-  const JSClass* jsclazz = mScriptable ? mScriptable->GetJSClass()
-                                       : Jsvalify(&XPC_WN_NoHelper_JSClass);
+  const JSClass* jsclazz =
+      mScriptable ? mScriptable->GetJSClass() : &XPC_WN_NoHelper_JSClass;
 
   // We should have the global jsclass flag if and only if we're a global.
   MOZ_ASSERT_IF(mScriptable, !!mScriptable->IsGlobalObject() ==
@@ -762,10 +757,8 @@ void XPCWrappedNative::FlatJSObjectFinalized() {
     }
 
     // We also need to release any native pointers held...
-    // As for XPCWrappedNative::Destroy, when recording or replaying the
-    // release must always be deferred.
     RefPtr<nsISupports> native = to->TakeNative();
-    if (native && (GetRuntime() || recordreplay::IsRecordingOrReplaying())) {
+    if (native && GetRuntime()) {
       DeferredFinalize(native.forget().take());
     }
 
@@ -1033,7 +1026,6 @@ nsresult XPCWrappedNative::InitTearOff(JSContext* cx,
 
   aTearOff->SetInterface(aInterface);
   aTearOff->SetNative(qiResult);
-  RecordReplayRegisterDeferredFinalizeThing(nullptr, nullptr, qiResult);
 
   if (needJSObject && !InitTearOffJSObject(cx, aTearOff)) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -1044,7 +1036,7 @@ nsresult XPCWrappedNative::InitTearOff(JSContext* cx,
 
 bool XPCWrappedNative::InitTearOffJSObject(JSContext* cx,
                                            XPCWrappedNativeTearOff* to) {
-  JSObject* obj = JS_NewObject(cx, Jsvalify(&XPC_WN_Tearoff_JSClass));
+  JSObject* obj = JS_NewObject(cx, &XPC_WN_Tearoff_JSClass);
   if (!obj) {
     return false;
   }
@@ -1157,10 +1149,6 @@ bool XPCWrappedNative::CallMethod(XPCCallContext& ccx,
   return helper.get().Call();
 }
 
-#if (__GNUC__ && __linux__ && __PPC64__ && _LITTLE_ENDIAN)
-// Work around a compiler bug on ppc64le (bug 1512162).
-__attribute__ ((noinline,noclone))
-#endif
 bool CallMethodHelper::Call() {
   mCallContext.SetRetVal(JS::UndefinedValue());
 
@@ -1319,10 +1307,6 @@ bool CallMethodHelper::GetOutParamSource(uint8_t paramIndex,
   return true;
 }
 
-#if (__GNUC__ && __linux__ && __PPC64__ && _LITTLE_ENDIAN)
-// Work around a compiler bug on ppc64le (bug 1512162).
-__attribute__ ((noinline,noclone))
-#endif
 bool CallMethodHelper::GatherAndConvertResults() {
   // now we iterate through the native params to gather and convert results
   uint8_t paramCount = mMethodInfo->GetParamCount();

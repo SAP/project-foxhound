@@ -26,9 +26,10 @@ namespace dom {
 class GlobalObject;
 class DOMMatrix;
 class DOMPoint;
-class StringOrUnrestrictedDoubleSequence;
+class StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly;
 struct DOMPointInit;
 struct DOMMatrixInit;
+struct DOMMatrix2DInit;
 
 class DOMMatrixReadOnly : public nsWrapperCache {
  public:
@@ -49,12 +50,21 @@ class DOMMatrixReadOnly : public nsWrapperCache {
     mMatrix3D = new gfx::Matrix4x4Double(aMatrix);
   }
 
+  DOMMatrixReadOnly(nsISupports* aParent, const gfx::Matrix& aMatrix)
+      : mParent(aParent) {
+    mMatrix2D = new gfx::MatrixDouble(aMatrix);
+  }
+
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DOMMatrixReadOnly)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(DOMMatrixReadOnly)
 
   nsISupports* GetParentObject() const { return mParent; }
   virtual JSObject* WrapObject(JSContext* cx,
                                JS::Handle<JSObject*> aGivenProto) override;
+
+  static already_AddRefed<DOMMatrixReadOnly> FromMatrix(
+      nsISupports* aParent, const DOMMatrix2DInit& aMatrixInit,
+      ErrorResult& aRv);
 
   static already_AddRefed<DOMMatrixReadOnly> FromMatrix(
       nsISupports* aParent, const DOMMatrixInit& aMatrixInit, ErrorResult& aRv);
@@ -73,7 +83,8 @@ class DOMMatrixReadOnly : public nsWrapperCache {
 
   static already_AddRefed<DOMMatrixReadOnly> Constructor(
       const GlobalObject& aGlobal,
-      const Optional<StringOrUnrestrictedDoubleSequence>& aArg,
+      const Optional<StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly>&
+          aArg,
       ErrorResult& aRv);
 
   static already_AddRefed<DOMMatrixReadOnly> ReadStructuredClone(
@@ -203,10 +214,16 @@ class DOMMatrixReadOnly : public nsWrapperCache {
                       ErrorResult& aRv) const;
   void ToFloat64Array(JSContext* aCx, JS::MutableHandle<JSObject*> aResult,
                       ErrorResult& aRv) const;
-  void Stringify(nsAString& aResult);
+  void Stringify(nsAString& aResult, ErrorResult& aRv);
 
   bool WriteStructuredClone(JSContext* aCx,
                             JSStructuredCloneWriter* aWriter) const;
+  const gfx::MatrixDouble* GetInternal2D() const {
+    if (Is2D()) {
+      return mMatrix2D;
+    }
+    return nullptr;
+  }
 
  protected:
   nsCOMPtr<nsISupports> mParent;
@@ -220,7 +237,8 @@ class DOMMatrixReadOnly : public nsWrapperCache {
    * where all of its members are properly defined.
    * The init dictionary's dimension must match the matrix one.
    */
-  void SetDataFromMatrixInit(DOMMatrixInit& aMatrixInit);
+  void SetDataFromMatrix2DInit(const DOMMatrix2DInit& aMatrixInit);
+  void SetDataFromMatrixInit(const DOMMatrixInit& aMatrixInit);
 
   DOMMatrixReadOnly* SetMatrixValue(const nsAString& aTransformList,
                                     ErrorResult& aRv);
@@ -253,6 +271,9 @@ class DOMMatrix : public DOMMatrixReadOnly {
   DOMMatrix(nsISupports* aParent, const gfx::Matrix4x4& aMatrix)
       : DOMMatrixReadOnly(aParent, aMatrix) {}
 
+  DOMMatrix(nsISupports* aParent, const gfx::Matrix& aMatrix)
+      : DOMMatrixReadOnly(aParent, aMatrix) {}
+
   static already_AddRefed<DOMMatrix> FromMatrix(
       nsISupports* aParent, const DOMMatrixInit& aMatrixInit, ErrorResult& aRv);
 
@@ -268,22 +289,10 @@ class DOMMatrix : public DOMMatrixReadOnly {
       const GlobalObject& aGlobal, const Float64Array& aArray64,
       ErrorResult& aRv);
 
-  static already_AddRefed<DOMMatrix> Constructor(const GlobalObject& aGlobal,
-                                                 ErrorResult& aRv);
   static already_AddRefed<DOMMatrix> Constructor(
-      const GlobalObject& aGlobal, const nsAString& aTransformList,
-      ErrorResult& aRv);
-  static already_AddRefed<DOMMatrix> Constructor(
-      const GlobalObject& aGlobal, const DOMMatrixReadOnly& aOther,
-      ErrorResult& aRv);
-  static already_AddRefed<DOMMatrix> Constructor(const GlobalObject& aGlobal,
-                                                 const Float32Array& aArray32,
-                                                 ErrorResult& aRv);
-  static already_AddRefed<DOMMatrix> Constructor(const GlobalObject& aGlobal,
-                                                 const Float64Array& aArray64,
-                                                 ErrorResult& aRv);
-  static already_AddRefed<DOMMatrix> Constructor(
-      const GlobalObject& aGlobal, const Sequence<double>& aNumberSequence,
+      const GlobalObject& aGlobal,
+      const Optional<StringOrUnrestrictedDoubleSequenceOrDOMMatrixReadOnly>&
+          aArg,
       ErrorResult& aRv);
 
   static already_AddRefed<DOMMatrix> ReadStructuredClone(

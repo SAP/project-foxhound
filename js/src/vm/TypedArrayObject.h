@@ -70,16 +70,16 @@ class TypedArrayObject : public ArrayBufferViewObject {
     return a->bufferEither() == b->bufferEither();
   }
 
-  static const Class classes[Scalar::MaxTypedArrayViewType];
-  static const Class protoClasses[Scalar::MaxTypedArrayViewType];
-  static const Class sharedTypedArrayPrototypeClass;
+  static const JSClass classes[Scalar::MaxTypedArrayViewType];
+  static const JSClass protoClasses[Scalar::MaxTypedArrayViewType];
+  static const JSClass sharedTypedArrayPrototypeClass;
 
-  static const Class* classForType(Scalar::Type type) {
+  static const JSClass* classForType(Scalar::Type type) {
     MOZ_ASSERT(type < Scalar::MaxTypedArrayViewType);
     return &classes[type];
   }
 
-  static const Class* protoClassForType(Scalar::Type type) {
+  static const JSClass* protoClassForType(Scalar::Type type) {
     MOZ_ASSERT(type < Scalar::MaxTypedArrayViewType);
     return &protoClasses[type];
   }
@@ -158,7 +158,7 @@ class TypedArrayObject : public ArrayBufferViewObject {
 
   static bool isOriginalByteOffsetGetter(Native native);
 
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
   static size_t objectMoved(JSObject* obj, JSObject* old);
 
   /* Initialization bits */
@@ -210,12 +210,12 @@ extern TypedArrayObject* NewTypedArrayWithTemplateAndBuffer(
     JSContext* cx, HandleObject templateObj, HandleObject arrayBuffer,
     HandleValue byteOffset, HandleValue length);
 
-inline bool IsTypedArrayClass(const Class* clasp) {
+inline bool IsTypedArrayClass(const JSClass* clasp) {
   return &TypedArrayObject::classes[0] <= clasp &&
          clasp < &TypedArrayObject::classes[Scalar::MaxTypedArrayViewType];
 }
 
-inline Scalar::Type GetTypedArrayClassType(const Class* clasp) {
+inline Scalar::Type GetTypedArrayClassType(const JSClass* clasp) {
   MOZ_ASSERT(IsTypedArrayClass(clasp));
   return static_cast<Scalar::Type>(clasp - &TypedArrayObject::classes[0]);
 }
@@ -241,7 +241,7 @@ inline size_t TypedArrayObject::bytesPerElement() const {
 // integer which is not representable as a uint64_t, the return value is true
 // and the resulting index is UINT64_MAX.
 template <typename CharT>
-bool StringIsTypedArrayIndex(const CharT* s, size_t length, uint64_t* indexp);
+bool StringIsTypedArrayIndex(mozilla::Range<const CharT> s, uint64_t* indexp);
 
 inline bool IsTypedArrayIndex(jsid id, uint64_t* indexp) {
   if (JSID_IS_INT(id)) {
@@ -257,21 +257,23 @@ inline bool IsTypedArrayIndex(jsid id, uint64_t* indexp) {
 
   JS::AutoCheckCannotGC nogc;
   JSAtom* atom = JSID_TO_ATOM(id);
-  size_t length = atom->length();
-
-  if (atom->hasLatin1Chars()) {
-    const Latin1Char* s = atom->latin1Chars(nogc);
-    if (!mozilla::IsAsciiDigit(*s) && *s != '-') {
-      return false;
-    }
-    return StringIsTypedArrayIndex(s, length, indexp);
-  }
-
-  const char16_t* s = atom->twoByteChars(nogc);
-  if (!mozilla::IsAsciiDigit(*s) && *s != '-') {
+  if (atom->length() == 0) {
     return false;
   }
-  return StringIsTypedArrayIndex(s, length, indexp);
+
+  if (atom->hasLatin1Chars()) {
+    mozilla::Range<const Latin1Char> chars = atom->latin1Range(nogc);
+    if (!mozilla::IsAsciiDigit(chars[0]) && chars[0] != '-') {
+      return false;
+    }
+    return StringIsTypedArrayIndex(chars, indexp);
+  }
+
+  mozilla::Range<const char16_t> chars = atom->twoByteRange(nogc);
+  if (!mozilla::IsAsciiDigit(chars[0]) && chars[0] != '-') {
+    return false;
+  }
+  return StringIsTypedArrayIndex(chars, indexp);
 }
 
 bool SetTypedArrayElement(JSContext* cx, Handle<TypedArrayObject*> obj,
@@ -312,19 +314,6 @@ static inline constexpr unsigned TypedArrayShift(Scalar::Type viewType) {
 static inline unsigned TypedArrayElemSize(Scalar::Type viewType) {
   return 1u << TypedArrayShift(viewType);
 }
-
-// Assign
-//
-//   target[targetOffset] = unsafeSrcCrossCompartment[0]
-//   ...
-//   target[targetOffset + unsafeSrcCrossCompartment.length - 1] =
-//       unsafeSrcCrossCompartment[unsafeSrcCrossCompartment.length - 1]
-//
-// where the source element range doesn't overlap the target element range in
-// memory.
-extern void SetDisjointTypedElements(
-    TypedArrayObject* target, uint32_t targetOffset,
-    TypedArrayObject* unsafeSrcCrossCompartment);
 
 }  // namespace js
 

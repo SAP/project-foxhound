@@ -74,7 +74,8 @@
 #include "d3dkmtQueryStatistics.h"
 
 #include "base/thread.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "gfxConfig.h"
 #include "VsyncSource.h"
 #include "DriverCrashGuard.h"
@@ -1339,6 +1340,12 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
 
   d3d11.EnableByDefault();
 
+  // Check if the user really, really wants WARP.
+  if (StaticPrefs::layers_d3d11_force_warp_AtStartup()) {
+    // Force D3D11 on even if we disabled it.
+    d3d11.UserForceEnable("User force-enabled WARP");
+  }
+
   if (!IsWin8OrLater() &&
       !DeviceManagerDx::Get()->CheckRemotePresentSupport()) {
     nsCOMPtr<nsIGfxInfo> gfxInfo;
@@ -1361,15 +1368,10 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
 
   nsCString message;
   nsCString failureId;
-  if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
+  if (StaticPrefs::layers_d3d11_enable_blacklist_AtStartup() &&
+      !gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
                                         &message, failureId)) {
     d3d11.Disable(FeatureStatus::Blacklisted, message.get(), failureId);
-  }
-
-  // Check if the user really, really wants WARP.
-  if (StaticPrefs::layers_d3d11_force_warp()) {
-    // Force D3D11 on even if we disabled it.
-    d3d11.UserForceEnable("User force-enabled WARP");
   }
 
   InitializeAdvancedLayersConfig();
@@ -1383,15 +1385,14 @@ void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
   }
 
   FeatureState& al = gfxConfig::GetFeature(Feature::ADVANCED_LAYERS);
-  al.SetDefaultFromPref(
-      StaticPrefs::GetPrefName_layers_mlgpu_enabled_do_not_use_directly(),
-      true /* aIsEnablePref */,
-      StaticPrefs::GetPrefDefault_layers_mlgpu_enabled_do_not_use_directly());
+  al.SetDefaultFromPref(StaticPrefs::GetPrefName_layers_mlgpu_enabled(),
+                        true /* aIsEnablePref */,
+                        StaticPrefs::GetPrefDefault_layers_mlgpu_enabled());
 
   // Windows 7 has an extra pref since it uses totally different buffer paths
   // that haven't been performance tested yet.
   if (al.IsEnabled() && !IsWin8OrLater()) {
-    if (StaticPrefs::layers_mlgpu_enable_on_windows7()) {
+    if (StaticPrefs::layers_mlgpu_enable_on_windows7_AtStartup()) {
       al.UserEnable("Enabled for Windows 7 via user-preference");
     } else {
       al.Disable(FeatureStatus::Disabled,
@@ -1554,7 +1555,8 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
     d2d1.Disable(FeatureStatus::Blacklisted, message.get(), failureId);
   }
 
-  if (!d2d1.IsEnabled() && StaticPrefs::gfx_direct2d_force_enabled()) {
+  if (!d2d1.IsEnabled() &&
+      StaticPrefs::gfx_direct2d_force_enabled_AtStartup()) {
     d2d1.UserForceEnable("Force-enabled via user-preference");
   }
 }
@@ -1638,7 +1640,7 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     // Don't use the GPU process if not using D3D11, unless software
     // compositor is allowed
-    if (StaticPrefs::layers_gpu_process_allow_software()) {
+    if (StaticPrefs::layers_gpu_process_allow_software_AtStartup()) {
       return gpuProc.IsEnabled();
     }
     gpuProc.Disable(FeatureStatus::Unavailable,
@@ -1945,7 +1947,7 @@ gfxWindowsPlatform::CreateHardwareVsyncSource() {
 void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
     nsTArray<LayersBackend>& aBackends) {
   if (gfxConfig::IsEnabled(Feature::OPENGL_COMPOSITING) &&
-      StaticPrefs::layers_prefer_opengl()) {
+      StaticPrefs::layers_prefer_opengl_AtStartup()) {
     aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
   }
 

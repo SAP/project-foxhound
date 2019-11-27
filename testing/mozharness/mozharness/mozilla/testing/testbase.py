@@ -20,7 +20,6 @@ from mozharness.base.python import (
     virtualenv_config_options,
 )
 from mozharness.mozilla.automation import AutomationMixin, TBPL_WARNING
-from mozharness.mozilla.fetches import FetchesMixin
 from mozharness.mozilla.structuredlog import StructuredOutputParser
 from mozharness.mozilla.testing.unittest import DesktopUnittestOutputParser
 from mozharness.mozilla.testing.try_tools import TryToolsMixin, try_config_options
@@ -103,7 +102,7 @@ testing_config_options = [
 
 # TestingMixin {{{1
 class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
-                   TooltoolMixin, TryToolsMixin, VerifyToolsMixin, FetchesMixin):
+                   TooltoolMixin, TryToolsMixin, VerifyToolsMixin):
     """
     The steps to identify + download the proper bits for [browser] unit
     tests and Talos.
@@ -118,7 +117,6 @@ class TestingMixin(VirtualenvMixin, AutomationMixin, ResourceMonitoringMixin,
     symbols_path = None
     jsshell_url = None
     minidump_stackwalk_path = None
-    nodejs_path = None
     default_tools_repo = 'https://hg.mozilla.org/build/tools'
 
     def query_build_dir_url(self, file_name):
@@ -311,7 +309,6 @@ You can set this by specifying --test-url URL
         # This is a difference in the convention of the configs more than
         # to how these tests are run, so we pave over these differences here.
         aliases = {
-            'robocop': 'mochitest',
             'mochitest-chrome': 'mochitest',
             'mochitest-media': 'mochitest',
             'mochitest-plain': 'mochitest',
@@ -572,69 +569,6 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
         else:
             self.fatal('We could not determine the minidump\'s filename.')
 
-    def query_nodejs_tooltool_manifest(self):
-        if self.config.get('nodejs_tooltool_manifest_path'):
-            return self.config['nodejs_tooltool_manifest_path']
-
-        self.info('NodeJS tooltool manifest unknown. Determining based upon '
-                  'platform and architecture.')
-        platform_name = self.platform_name()
-
-        if platform_name:
-            tooltool_path = "config/tooltool-manifests/%s/nodejs.manifest" % \
-                TOOLTOOL_PLATFORM_DIR[platform_name]
-            return tooltool_path
-        else:
-            self.fatal('Could not determine nodejs manifest filename')
-
-    def query_nodejs_filename(self):
-        if self.config.get('nodejs_path'):
-            return self.config['nodejs_path']
-
-        self.fatal('Could not determine nodejs filename')
-
-    def query_nodejs(self, manifest=None):
-        if self.nodejs_path:
-            return self.nodejs_path
-
-        c = self.config
-        dirs = self.query_abs_dirs()
-
-        nodejs_path = self.query_nodejs_filename()
-        if not self.config.get('download_nodejs'):
-            self.nodejs_path = nodejs_path
-            return self.nodejs_path
-
-        if not manifest:
-            tooltool_manifest_path = self.query_nodejs_tooltool_manifest()
-            manifest = os.path.join(dirs.get('abs_test_install_dir',
-                                             os.path.join(dirs['abs_work_dir'], 'tests')),
-                                    tooltool_manifest_path)
-
-        self.info('grabbing nodejs binary from tooltool')
-        try:
-            self.tooltool_fetch(
-                manifest=manifest,
-                output_dir=dirs['abs_work_dir'],
-                cache=c.get('tooltool_cache')
-            )
-        except KeyError:
-            self.error('missing a required key')
-
-        abs_nodejs_path = os.path.join(dirs['abs_work_dir'], nodejs_path)
-
-        if os.path.exists(abs_nodejs_path):
-            if self.platform_name() not in ('win32', 'win64'):
-                self.chmod(abs_nodejs_path, 0755)
-            self.nodejs_path = abs_nodejs_path
-        else:
-            msg = """nodejs path was given but couldn't be found. Tried looking in '%s'""" % \
-                abs_nodejs_path
-            self.warning(msg)
-            self.record_status(TBPL_WARNING, WARNING)
-
-        return self.nodejs_path
-
     def query_minidump_stackwalk(self, manifest=None):
         if self.minidump_stackwalk_path:
             return self.minidump_stackwalk_path
@@ -664,7 +598,7 @@ Did you run with --create-virtualenv? Is mozinstall in virtualenv_modules?""")
         abs_minidump_path = os.path.join(dirs['abs_work_dir'],
                                          minidump_stackwalk_path)
         if os.path.exists(abs_minidump_path):
-            self.chmod(abs_minidump_path, 0755)
+            self.chmod(abs_minidump_path, 0o755)
             self.minidump_stackwalk_path = abs_minidump_path
         else:
             self.warning("minidump stackwalk path was given but couldn't be found. "

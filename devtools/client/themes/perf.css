@@ -2,24 +2,38 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+:root {
+  --highlight-color: var(--blue-55);
+  --slider-thumb-color: var(--grey-50);
+  --slider-track-color: var(--grey-30);
+}
+
+:root.theme-dark {
+  --slider-thumb-color: var(--grey-40);
+  --slider-track-color: var(--grey-60);
+}
+
 .perf {
-  width: 100%;
-  height: 100%;
-  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
 }
 
-.devtools-button.perf-button {
-  padding: 5px;
-  margin: auto;
-  font-size: 120%;
+.perf-popup {
+  padding: 7px 16px;
+}
+
+.perf-devtools {
+  width: 100%;
+  height: 100%;
+  position: absolute;
 }
 
 .perf-button-image {
   vertical-align: text-top;
   padding-inline-end: 4px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-color);
 }
 
 .perf-button-container {
@@ -28,9 +42,12 @@
   align-items: center;
 }
 
+.perf-devtools .perf-button-container {
+  margin-top: 65px;
+}
+
 .perf-additional-message {
   margin: 10px;
-  margin-top: 65px;
 }
 
 .perf > * {
@@ -56,14 +73,17 @@
 
 .perf-settings {
   width: 100%;
+}
+
+.perf-devtools .perf-settings {
   margin: 50px 0 25px;
 }
 
 .perf-settings-title {
   padding: 5px 10px;
   margin-bottom: 15px;
-  background-color: var(--grey-10);
-  border: var(--grey-30) 1px solid;
+  background-color: var(--toolbarbutton-background);
+  border: rgba(138,161,180,0.2) 1px solid;
   font-size: 11px;
   font-weight: normal;
 }
@@ -99,6 +119,25 @@
 
 .perf-settings-range-input-el {
   width: 100%;
+  background: transparent;
+}
+
+.perf-settings-range-input-el::-moz-focus-outer {
+  border: 0;
+}
+
+.perf-settings-range-input-el::-moz-range-thumb {
+  background-color: var(--slider-thumb-color);
+  border: 0;
+}
+
+.perf-settings-range-input-el:focus::-moz-range-thumb {
+  background-color: var(--highlight-color);
+}
+
+.perf-settings-range-input-el::-moz-range-track {
+  background-color: var(--slider-track-color);
+  height: 3px;
 }
 
 .perf-settings-range-value {
@@ -116,7 +155,7 @@
 .perf-settings-notch {
   margin-right: 1px;
   flex: 1;
-  border: 1px solid rgba(0,0,0,0.2);
+  border: 1px solid var(--theme-toolbarbutton-active-background);
   border-radius: 2px;
 }
 
@@ -139,6 +178,14 @@
   width: 100%;
   padding: 4px;
   box-sizing: border-box;
+  border: 1px solid var(--theme-splitter-color);
+  background-color: var(--theme-body-background);
+  color: var(--theme-body-color);
+}
+
+.perf-settings-text-input:focus {
+  border-color: var(--blue-50);
+  outline: none;
 }
 
 .perf-settings-text-label {
@@ -157,7 +204,7 @@
   opacity: 0;
   transform: translateY(-100px);
   transition-duration: 250ms;
-  transition-timing-function: cubic-bezier(.07,.95,0,1);
+  transition-timing-function: cubic-bezier(0.07, 0.95, 0, 1);
   transition-property: transform, opacity;
 }
 
@@ -166,10 +213,21 @@
   transform: translateY(0);
 }
 
+.theme-dark .perf-settings-details[open] .perf-settings-details-contents-slider {
+  background-color: var(--theme-toolbar-background);
+  border-color: var(--grey-70);
+}
+
 .perf-settings-summary {
-  height: 30px;
+  /* This is a little bit odd, but in order to match the heights of the elements and
+   * have a fairly large hit area for the summary element, make the element position
+   * relative, and adjust the position up by a few pixels. This maintains positioning,
+   * but also provides a larger hit area for the dropdown with the padding property. */
+  position: relative;
+  top: -4px;
+  padding: 8px 0;
   cursor: default;
-  -moz-user-select: none;
+  user-select: none;
 }
 
 .perf-settings-thread-columns {
@@ -200,18 +258,12 @@
   align-self: flex-start;
 }
 
-.perf-settings-feature-name {
-  width: 150px;
-  color: var(--blue-60);
-}
-
 .perf-settings-feature-title {
   flex: 1;
 }
 
 .perf-settings-feature-name {
   width: 130px;
-  color: var(--blue-60);
   line-height: 1.6;
 }
 
@@ -223,10 +275,11 @@
   box-sizing: border-box;
   width: 100%;
   height: 100px;
-  border: 1px solid var(--grey-30);
+  border: 1px solid var(--theme-splitter-color);
   padding: 0;
   overflow-y: auto;
-  background-color: white;
+  background-color: var(--theme-body-background);
+  color: var(--theme-body-color);
 }
 
 .pref-settings-dir-list-item {
@@ -240,8 +293,81 @@
   height: 12px;
   margin-inline-end: 4px;
   vertical-align: -2px;
+  -moz-context-properties: fill;
+  fill: var(--theme-icon-color);
 }
 
 .perf-settings-dir-list-button-group {
   padding: 4px 2px;
+}
+
+.perf-settings-dir-list-button-group input[type=button] {
+  margin-left: 0;
+}
+
+/* See https://design.firefox.com/photon/components/buttons.html for the spec */
+.perf-photon-button {
+  --blue-50-a30: rgba(10, 132, 255, 0.3);
+  padding: 0 8px;
+  border: none;
+  margin: 0;
+
+  /* reset default styles */
+  background: none;
+
+  /* photon styles */
+  background-color: var(--toolbarbutton-background);
+  border-radius: 2px;
+  color: var(--theme-body-color);
+  font: inherit;
+}
+
+/* This is a Firefox-specific style because Firefox adds a focusring at a bad
+ * position. We're adding our own below. */
+.perf-photon-button::-moz-focus-inner {
+  border: none;
+}
+
+.perf-photon-button:hover:active:not([disabled]) {
+  background-color: var(--grey-90-a30);
+}
+
+.perf-photon-button-primary,
+.perf-photon-button-default {
+  min-width: 132px;
+  height: 32px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+.perf-photon-button-primary {
+  background-color: var(--blue-60);
+  color: #fff;
+}
+
+.perf-photon-button-primary:hover:not([disabled]) {
+  background-color: var(--blue-70);
+}
+
+.perf-photon-button-primary:hover:active:not([disabled]) {
+  background-color: var(--blue-80);
+}
+
+.perf-photon-button[disabled] {
+  opacity: 0.4;
+}
+
+.perf-photon-button.perf-button {
+  margin: 10px;
+}
+
+button.perf-photon-button:focus {
+  box-shadow: 0 0 0 1px var(--blue-50) inset, 0 0 0 1px var(--blue-50),
+    0 0 0 4px var(--blue-50-a30);
+  outline: 0;
+}
+
+a.perf-photon-button:focus {
+  box-shadow: 0 0 0 2px var(--blue-50), 0 0 0 6px var(--blue-50-a30);
+  outline: 0;
 }

@@ -1211,6 +1211,9 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   void NS_FASTCALL Finalize();
 
  public:
+  StringTaint& Taint() { return base_string_type::mTaint; }
+  const StringTaint& Taint() const { return base_string_type::mTaint; }
+
   /**
    * Starts a low-level write transaction to the string.
    *

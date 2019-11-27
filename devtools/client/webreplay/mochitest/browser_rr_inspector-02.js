@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
    http://creativecommons.org/publicdomain/zero/1.0/ */
 /* eslint-disable no-undef */
@@ -14,21 +13,18 @@ Services.scriptloader.loadSubScript(
 add_task(async function() {
   const dbg = await attachRecordingDebugger("doc_inspector_basic.html", {
     waitForRecording: true,
+    disableLogging: true,
   });
-  const { threadClient, tab, toolbox } = dbg;
+  const { toolbox } = dbg;
 
-  await threadClient.interrupt();
-  await threadClient.resume();
+  await addBreakpoint(dbg, "doc_inspector_basic.html", 9);
+  await rewindToLine(dbg, 9);
 
-  await threadClient.interrupt();
-  const bp = await setBreakpoint(threadClient, "doc_inspector_basic.html", 9);
-  await rewindToLine(threadClient, 9);
-
-  const { inspector, testActor } = await openInspector();
+  const { testActor } = await openInspector();
 
   info("Waiting for element picker to become active.");
   toolbox.win.focus();
-  await toolbox.inspector.nodePicker.start();
+  await toolbox.nodePicker.start();
 
   info("Moving mouse over div.");
   await moveMouseOver("#maindiv", 1, 1);
@@ -38,9 +34,7 @@ add_task(async function() {
   info("Performing checks");
   await testActor.isNodeCorrectlyHighlighted("#maindiv", is);
 
-  await threadClient.removeBreakpoint(bp);
-  await toolbox.closeToolbox();
-  await gBrowser.removeTab(tab);
+  await shutdownDebugger(dbg);
 
   function moveMouseOver(selector, x, y) {
     info("Waiting for element " + selector + " to be highlighted");
@@ -50,6 +44,6 @@ add_task(async function() {
       y,
       options: { type: "mousemove" },
     });
-    return inspector.inspector.nodePicker.once("picker-node-hovered");
+    return toolbox.nodePicker.once("picker-node-hovered");
   }
 });

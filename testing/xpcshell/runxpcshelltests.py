@@ -366,6 +366,11 @@ class XPCShellTestThread(Thread):
             return None
 
         pluginsDir = mkdtemp(prefix='xpc-plugins-', dir=self._rootTempDir)
+        retries = 0
+        while not os.path.isdir(pluginsDir) and retries < 5:
+            self.log.info("plugins temp directory %s missing; waiting..." % pluginsDir)
+            time.sleep(1)
+            retries += 1
         # shutil.copytree requires dst to not exist. Deleting the tempdir
         # would make a race condition possible in a concurrent environment,
         # so we are using dir_utils.copy_tree which accepts an existing dst
@@ -1147,7 +1152,7 @@ class XPCShellTests(object):
                                           msg, 0)
                     if searchObj:
                         self.env["MOZHTTP2_PORT"] = searchObj.group(1)
-                        self.env["MOZHTTP2_PROXY_PORT"] = searchObj.group(2)
+                        self.env["MOZNODE_EXEC_PORT"] = searchObj.group(2)
             except OSError as e:
                 # This occurs if the subprocess couldn't be started
                 self.log.error('Could not run %s server: %s' % (name, str(e)))
@@ -1194,7 +1199,7 @@ class XPCShellTests(object):
         self.failCount += test.failCount
         self.todoCount += test.todoCount
 
-    def updateMozinfo(self, prefs):
+    def updateMozinfo(self, prefs, options):
         # Handle filenames in mozInfo
         if not isinstance(self.mozInfo, dict):
             mozInfoFile = self.mozInfo
@@ -1215,8 +1220,18 @@ class XPCShellTests(object):
         self.mozInfo = fixedInfo
 
         self.mozInfo['fission'] = prefs.get('fission.autostart', False)
+
+        # Until the test harness can understand default pref values,
+        # (https://bugzilla.mozilla.org/show_bug.cgi?id=1577912) this value
+        # should by synchronized with the default pref value indicated in
+        # StaticPrefList.yaml.
+        #
+        # Currently for automation, the pref defaults to true in nightly
+        # builds and false otherwise (but can be overridden with --setpref).
         self.mozInfo['serviceworker_e10s'] = prefs.get(
-            'dom.serviceWorkers.parent_intercept', False)
+            'dom.serviceWorkers.parent_intercept', self.mozInfo['nightly_build'])
+
+        self.mozInfo['verify'] = options.get('verify', False)
         self.mozInfo['webrender'] = self.enable_webrender
 
         mozinfo.update(self.mozInfo)
@@ -1318,7 +1333,7 @@ class XPCShellTests(object):
 
         self.event = Event()
 
-        if not self.updateMozinfo(prefs):
+        if not self.updateMozinfo(prefs, options):
             return False
 
         self.stack_fixer_function = None

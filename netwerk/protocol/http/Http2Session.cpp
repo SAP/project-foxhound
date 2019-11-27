@@ -1992,8 +1992,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
     if (NS_SUCCEEDED(rv) && pushedPort == -1) {
       // Need to get the right default port, so TestJoinConnection below can
       // check things correctly. See bug 1397621.
-      bool isHttp = false;
-      if (NS_SUCCEEDED(pushedOrigin->SchemeIs("http", &isHttp)) && isHttp) {
+      if (pushedOrigin->SchemeIs("http")) {
         pushedPort = NS_HTTP_DEFAULT_PORT;
       } else {
         pushedPort = NS_HTTPS_DEFAULT_PORT;
@@ -2532,8 +2531,8 @@ class UpdateAltSvcEvent : public Runnable {
 
     AltSvcMapping::ProcessHeader(
         mHeader, originScheme, originHost, originPort, mCI->GetUsername(),
-        mCI->GetTopWindowOrigin(), mCI->GetPrivate(), mCallbacks,
-        mCI->ProxyInfo(), 0, mCI->GetOriginAttributes());
+        mCI->GetTopWindowOrigin(), mCI->GetPrivate(), mCI->GetIsolated(),
+        mCallbacks, mCI->ProxyInfo(), 0, mCI->GetOriginAttributes());
     return NS_OK;
   }
 
@@ -2622,6 +2621,7 @@ nsresult Http2Session::RecvAltSvc(Http2Session* self) {
     }
 
     if (NS_FAILED(self->SetInputFrameDataStream(self->mInputFrameID)) ||
+        !self->mInputFrameDataStream ||
         !self->mInputFrameDataStream->Transaction() ||
         !self->mInputFrameDataStream->Transaction()->RequestHead()) {
       LOG3(
@@ -2787,8 +2787,7 @@ nsresult Http2Session::RecvOrigin(Http2Session* self) {
 
     LOG3(("Http2Session::RecvOrigin %p origin frame string %s parsed OK\n",
           self, originString.get()));
-    bool isHttps = false;
-    if (NS_FAILED(originURL->SchemeIs("https", &isHttps)) || !isHttps) {
+    if (!originURL->SchemeIs("https")) {
       LOG3(("Http2Session::RecvOrigin %p origin frame not https\n", self));
       continue;
     }
@@ -3383,6 +3382,8 @@ nsresult Http2Session::WriteSegmentsAgain(nsAHttpSegmentWriter* writer,
       streamCleanupCode = NS_ERROR_NET_RESET;
       mInputFrameDataStream->Transaction()->ReuseConnectionOnRestartOK(true);
       mInputFrameDataStream->Transaction()->DisableSpdy();
+      mInputFrameDataStream->Transaction()
+          ->MakeNonSticky();  // actully allow restart by unsticking
     } else {
       streamCleanupCode = mInputFrameDataStream->RecvdData()
                               ? NS_ERROR_NET_PARTIAL_TRANSFER

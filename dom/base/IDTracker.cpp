@@ -9,9 +9,12 @@
 #include "mozilla/Encoding.h"
 #include "nsContentUtils.h"
 #include "nsIURI.h"
-#include "nsBindingManager.h"
+#include "nsIReferrerInfo.h"
+#ifdef MOZ_XBL
+#  include "nsBindingManager.h"
+#  include "nsXBLPrototypeBinding.h"
+#endif
 #include "nsEscape.h"
-#include "nsXBLPrototypeBinding.h"
 #include "nsCycleCollectionParticipant.h"
 
 namespace mozilla {
@@ -33,9 +36,8 @@ static DocumentOrShadowRoot* DocOrShadowFromContent(nsIContent& aContent) {
 }
 
 void IDTracker::ResetToURIFragmentID(nsIContent* aFromContent, nsIURI* aURI,
-                                     nsIURI* aReferrer,
-                                     uint32_t aReferrerPolicy, bool aWatch,
-                                     bool aReferenceImage) {
+                                     nsIReferrerInfo* aReferrerInfo,
+                                     bool aWatch, bool aReferenceImage) {
   MOZ_ASSERT(aFromContent,
              "ResetToURIFragmentID() expects non-null content pointer");
 
@@ -63,8 +65,10 @@ void IDTracker::ResetToURIFragmentID(nsIContent* aFromContent, nsIURI* aURI,
 
   nsIContent* bindingParent = aFromContent->GetBindingParent();
   if (bindingParent && !aFromContent->IsInShadowTree()) {
+#ifdef MOZ_XBL
     nsXBLBinding* binding = bindingParent->GetXBLBinding();
     if (!binding) {
+#endif
       // This happens, for example, if aFromContent is part of the content
       // inserted by a call to Document::InsertAnonymousContent, which we
       // also want to handle.  (It also happens for <use>'s anonymous
@@ -77,6 +81,7 @@ void IDTracker::ResetToURIFragmentID(nsIContent* aFromContent, nsIURI* aURI,
         // here.
         return;
       }
+#ifdef MOZ_XBL
     } else {
       bool isEqualExceptRef;
       rv = aURI->EqualsExceptRef(binding->PrototypeBinding()->DocURI(),
@@ -106,14 +111,15 @@ void IDTracker::ResetToURIFragmentID(nsIContent* aFromContent, nsIURI* aURI,
         return;
       }
     }
+#endif
   }
 
   bool isEqualExceptRef;
   rv = aURI->EqualsExceptRef(doc->GetDocumentURI(), &isEqualExceptRef);
   if (NS_FAILED(rv) || !isEqualExceptRef) {
     RefPtr<Document::ExternalResourceLoad> load;
-    doc = doc->RequestExternalResource(aURI, aReferrer, aReferrerPolicy,
-                                       aFromContent, getter_AddRefs(load));
+    doc = doc->RequestExternalResource(aURI, aReferrerInfo, aFromContent,
+                                       getter_AddRefs(load));
     docOrShadow = doc;
     if (!doc) {
       if (!load || !aWatch) {

@@ -5,7 +5,6 @@
 #ifndef _PEER_CONNECTION_IMPL_H_
 #define _PEER_CONNECTION_IMPL_H_
 
-#include <deque>
 #include <string>
 #include <vector>
 #include <map>
@@ -35,7 +34,6 @@
 #include "mozilla/dom/RTCRtpTransceiverBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "PrincipalChangeObserver.h"
-#include "StreamTracks.h"
 
 #include "mozilla/TimeStamp.h"
 #include "mozilla/net/DataChannel.h"
@@ -140,6 +138,20 @@ class RTCStatsQuery {
   DOMHighResTimeStamp now;
 };
 
+// This is a variation of Telemetry::AutoTimer that keeps a reference
+// count and records the elapsed time when the count falls to zero. The
+// elapsed time is recorded in seconds.
+struct PeerConnectionAutoTimer {
+  PeerConnectionAutoTimer() : mRefCnt(1), mStart(TimeStamp::Now()){};
+  void AddRef();
+  void Release();
+  bool IsStopped();
+
+ private:
+  int64_t mRefCnt;
+  TimeStamp mStart;
+};
+
 typedef MozPromise<UniquePtr<RTCStatsQuery>, nsresult, true>
     RTCStatsQueryPromise;
 
@@ -175,7 +187,7 @@ class PeerConnectionImpl final
                   JS::MutableHandle<JSObject*> aReflector);
 
   static already_AddRefed<PeerConnectionImpl> Constructor(
-      const mozilla::dom::GlobalObject& aGlobal, ErrorResult& rv);
+      const mozilla::dom::GlobalObject& aGlobal);
   static PeerConnectionImpl* CreatePeerConnection();
 
   nsresult CreateRemoteSourceStreamInfo(RefPtr<RemoteSourceStreamInfo>* aInfo,
@@ -398,7 +410,8 @@ class PeerConnectionImpl final
   NS_IMETHODIMP GetFingerprint(char** fingerprint);
   void GetFingerprint(nsAString& fingerprint) {
     char* tmp;
-    GetFingerprint(&tmp);
+    nsresult rv = GetFingerprint(&tmp);
+    NS_ENSURE_SUCCESS_VOID(rv);
     fingerprint.AssignASCII(tmp);
     delete[] tmp;
   }
@@ -622,14 +635,15 @@ class PeerConnectionImpl final
   unsigned long mIceRestartCount;
   unsigned long mIceRollbackCount;
 
-  // Start time of ICE, used for telemetry
+  // The following are used for Telemetry:
+  // Start time of ICE.
   mozilla::TimeStamp mIceStartTime;
-  // Start time of call used for Telemetry
-  mozilla::TimeStamp mStartTime;
+  // Flag if we have transitioned from checking to connected or failed.
+  bool mIceFinished = false;
+  // Hold PeerConnectionAutoTimer instances for each window.
+  static std::map<std::string, PeerConnectionAutoTimer> mAutoTimers;
 
   bool mHaveConfiguredCodecs;
-
-  unsigned int mAddCandidateErrorCount;
 
   bool mTrickle;
 

@@ -77,6 +77,7 @@ struct LoadInfoArgs
   uint32_t                    securityFlags;
   uint32_t                    contentPolicyType;
   uint32_t                    tainting;
+  bool                        blockAllMixedContent;
   bool                        upgradeInsecureRequests;
   bool                        browserUpgradeInsecureRequests;
   bool                        browserWouldUpgradeInsecureRequests;
@@ -95,6 +96,7 @@ struct LoadInfoArgs
   bool                        initialSecurityCheckDone;
   bool                        isInThirdPartyContext;
   bool                        isDocshellReload;
+  bool                        isFormSubmission;
   bool                        sendCSPViolationEvents;
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
@@ -138,6 +140,7 @@ struct LoadInfoArgs
   bool                        documentHasUserInteracted;
   bool                        documentHasLoaded;
   nsString                    cspNonce;
+  bool                        skipContentSniffing;
   bool                        isFromProcessingFrameAttributes;
   CookieSettingsArgs cookieSettings;
   uint32_t                    requestBlockingReason;
@@ -170,6 +173,12 @@ struct ParentLoadInfoForwarderArgs
   // The service worker may synthesize a Response with a particular
   // tainting value.
   uint32_t tainting;
+
+
+  // This flag is used for any browsing context where we should not sniff
+  // the content type. E.g if an iframe has the XCTO nosniff header, then
+  // that flag is set to true so we skip content sniffing for that browsing
+  bool skipContentSniffing;
 
   // We must also note that the tainting value was explicitly set
   // by the service worker.
@@ -204,6 +213,8 @@ struct ChildLoadInfoForwarderArgs
   // The ServiceWorker controller may be cleared in the child during
   // a redirect.
   IPCServiceWorkerDescriptor? controller;
+
+  uint32_t requestBlockingReason;
 };
 
 //-----------------------------------------------------------------------------
@@ -224,11 +235,9 @@ struct HttpChannelOpenArgs
   URIParams?                  original;
   URIParams?                  doc;
   nsIReferrerInfo             referrerInfo;
-  URIParams?                  originalReferrer;
-  uint32_t                    originalReferrerPolicy;
-  uint32_t                    referrerPolicy;
   URIParams?                  apiRedirectTo;
   URIParams?                  topWindowURI;
+  nsIPrincipal?               contentBlockingAllowListPrincipal;
   uint32_t                    loadFlags;
   RequestHeaderTuples         requestHeaders;
   nsCString                   requestMethod;
@@ -258,6 +267,7 @@ struct HttpChannelOpenArgs
   bool                        blockAuthPrompt;
   bool                        suspendAfterSynthesizeResponse;
   bool                        allowStaleCacheContent;
+  bool                        preferCacheLoadOverBypass;
   nsCString                   contentTypeHint;
   uint32_t                    corsMode;
   uint32_t                    redirectMode;
@@ -274,7 +284,7 @@ struct HttpChannelOpenArgs
   TimeStamp                   handleFetchEventEnd;
   bool                        forceMainDocumentChannel;
   TimeStamp                   navigationStartTimeStamp;
-  bool                        hasSandboxedAuxiliaryNavigations;
+  bool                        hasNonEmptySandboxingFlag;
 };
 
 struct HttpChannelConnectArgs
@@ -341,6 +351,22 @@ struct CookieStruct
   int32_t   sameSite;
   int32_t   rawSameSite;
 };
+
+struct DocumentChannelCreationArgs {
+  URIParams? topWindowURI;
+  DocShellLoadStateInit loadState;
+  LoadInfoArgs loadInfo;
+  PrincipalInfo? contentBlockingAllowListPrincipal;
+  nsString? initiatorType;
+  nsString customUserAgent;
+  uint64_t channelId;
+  uint32_t loadFlags;
+  uint32_t loadType;
+  uint32_t cacheKey;
+  bool isActive;
+  bool isTopLevelDoc;
+};
+
 
 } // namespace ipc
 } // namespace mozilla

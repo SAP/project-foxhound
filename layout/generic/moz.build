@@ -28,6 +28,9 @@ with Files('nsInlineFrame.*'):
 with Files('BRFrame.*'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 
+with Files('WBRFrame.*'):
+    BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
+
 with Files('nsBulletFrame.*'):
     BUG_COMPONENT = ('Core', 'Layout: Block and Inline')
 
@@ -92,6 +95,7 @@ with Files('nsVideoFrame.*'):
     BUG_COMPONENT = ('Core', 'Audio/Video')
 
 EXPORTS += [
+    'nsAtomicContainerFrame.h',
     'nsCanvasFrame.h',
     'nsContainerFrame.h',
     'nsDirection.h',
@@ -109,6 +113,7 @@ EXPORTS += [
     'nsIScrollableFrame.h',
     'nsIScrollPositionListener.h',
     'nsIStatefulFrame.h',
+    'nsLineBox.h',
     'nsPageSequenceFrame.h',
     'nsPluginFrame.h',
     'nsQueryFrame.h',
@@ -216,6 +221,7 @@ UNIFIED_SOURCES += [
     'StickyScrollContainer.cpp',
     'TextOverflow.cpp',
     'ViewportFrame.cpp',
+    'WBRFrame.cpp'
 ]
 
 # nsPluginFrame.cpp needs to be built separately because of name clashes in the OS X headers.
@@ -223,13 +229,12 @@ SOURCES += [
     'nsPluginFrame.cpp',
 ]
 
-GENERATED_FILES += [
-    'FrameIdList.h',
-    'FrameTypeList.h',
-]
-
-GENERATED_FILES['FrameIdList.h'].script = 'GenerateFrameLists.py:generate_frame_id_list_h'
-GENERATED_FILES['FrameTypeList.h'].script = 'GenerateFrameLists.py:generate_frame_type_list_h'
+GeneratedFile('FrameIdList.h',
+              script='GenerateFrameLists.py',
+              entry_point='generate_frame_id_list_h')
+GeneratedFile('FrameTypeList.h',
+              script='GenerateFrameLists.py',
+              entry_point='generate_frame_type_list_h')
 
 include('/ipc/chromium/chromium-config.mozbuild')
 
@@ -261,7 +266,7 @@ MOCHITEST_CHROME_MANIFESTS += ['test/chrome.ini']
 
 CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     CXXFLAGS += CONFIG['TK_CFLAGS']
 
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):

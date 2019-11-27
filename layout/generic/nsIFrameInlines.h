@@ -19,6 +19,11 @@ bool nsIFrame::IsFlexItem() const {
          !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
 }
 
+bool nsIFrame::IsGridItem() const {
+  return GetParent() && GetParent()->IsGridContainerFrame() &&
+         !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
+}
+
 bool nsIFrame::IsFlexOrGridContainer() const {
   return IsFlexContainerFrame() || IsGridContainerFrame();
 }
@@ -56,10 +61,6 @@ bool nsIFrame::IsAbsolutelyPositioned(
     const nsStyleDisplay* aStyleDisplay) const {
   const nsStyleDisplay* disp = StyleDisplayWithOptionalParam(aStyleDisplay);
   return disp->IsAbsolutelyPositioned(this);
-}
-
-bool nsIFrame::IsBlockInside() const {
-  return StyleDisplay()->IsBlockInside(this);
 }
 
 bool nsIFrame::IsBlockOutside() const {
@@ -143,11 +144,11 @@ nscoord nsIFrame::BaselineBOffset(mozilla::WritingMode aWM,
   return SynthesizeBaselineBOffsetFromBorderBox(aWM, aBaselineGroup);
 }
 
-void nsIFrame::PropagateRootElementWritingMode(
-    mozilla::WritingMode aRootElemWM) {
+void nsIFrame::PropagateWritingModeToSelfAndAncestors(
+    mozilla::WritingMode aWM) {
   MOZ_ASSERT(IsCanvasFrame());
   for (auto f = this; f; f = f->GetParent()) {
-    f->mWritingMode = aRootElemWM;
+    f->mWritingMode = aWM;
   }
 }
 

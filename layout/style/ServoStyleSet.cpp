@@ -36,7 +36,10 @@
 #include "nsMediaFeatures.h"
 #include "nsPrintfCString.h"
 #include "gfxUserFontSet.h"
-#include "nsBindingManager.h"
+#ifdef MOZ_XBL
+#  include "nsXBLPrototypeBinding.h"
+#  include "nsBindingManager.h"
+#endif
 #include "nsWindowSizes.h"
 #include "GeckoProfiler.h"
 
@@ -670,7 +673,7 @@ bool ServoStyleSet::GeneratedContentPseudoExists(
 
   if (type == PseudoStyleType::marker) {
     // ::marker only exist for list items (for now).
-    if (aParentStyle.StyleDisplay()->mDisplay != StyleDisplay::ListItem) {
+    if (!aParentStyle.StyleDisplay()->IsListItem()) {
       return false;
     }
     // display:none is equivalent to not having the pseudo-element at all.

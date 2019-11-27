@@ -203,10 +203,8 @@ function persisted(principal, callback) {
   return request;
 }
 
-function listInitializedOrigins(callback) {
-  let request = SpecialPowers._getQuotaManager().listInitializedOrigins(
-    callback
-  );
+function listOrigins(callback) {
+  let request = SpecialPowers._getQuotaManager().listOrigins(callback);
   request.callback = callback;
 
   return request;
@@ -308,6 +306,16 @@ function getUsage(usageHandler, getAll) {
   return request;
 }
 
+function getOriginUsage(principal, fromMemory = false) {
+  let request = Services.qms.getUsageForPrincipal(
+    principal,
+    function() {},
+    fromMemory
+  );
+
+  return request;
+}
+
 function getCurrentUsage(usageHandler) {
   let principal = Cc["@mozilla.org/systemprincipal;1"].createInstance(
     Ci.nsIPrincipal
@@ -327,7 +335,7 @@ function getPrincipal(url) {
   let ssm = Cc["@mozilla.org/scriptsecuritymanager;1"].getService(
     Ci.nsIScriptSecurityManager
   );
-  return ssm.createCodebasePrincipal(uri, {});
+  return ssm.createContentPrincipal(uri, {});
 }
 
 function getCurrentPrincipal() {
@@ -361,30 +369,30 @@ function requestFinished(request) {
 }
 
 var SpecialPowers = {
-  getBoolPref: function(prefName) {
+  getBoolPref(prefName) {
     return this._getPrefs().getBoolPref(prefName);
   },
 
-  setBoolPref: function(prefName, value) {
+  setBoolPref(prefName, value) {
     this._getPrefs().setBoolPref(prefName, value);
   },
 
-  setIntPref: function(prefName, value) {
+  setIntPref(prefName, value) {
     this._getPrefs().setIntPref(prefName, value);
   },
 
-  clearUserPref: function(prefName) {
+  clearUserPref(prefName) {
     this._getPrefs().clearUserPref(prefName);
   },
 
-  _getPrefs: function() {
+  _getPrefs() {
     let prefService = Cc["@mozilla.org/preferences-service;1"].getService(
       Ci.nsIPrefService
     );
     return prefService.getBranch(null);
   },
 
-  _getQuotaManager: function() {
+  _getQuotaManager() {
     return Cc["@mozilla.org/dom/quota-manager-service;1"].getService(
       Ci.nsIQuotaManagerService
     );

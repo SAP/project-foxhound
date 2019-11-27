@@ -13,7 +13,8 @@
 #include "nsString.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Services.h"
 #include "mozilla/gfx/Logging.h"
@@ -406,8 +407,8 @@ bool D3D11LayersCrashGuard::UpdateEnvironment() {
   bool changed = false;
   // Feature status.
 #if defined(XP_WIN)
-  bool d2dEnabled = StaticPrefs::gfx_direct2d_force_enabled() ||
-                    (!StaticPrefs::gfx_direct2d_disabled() &&
+  bool d2dEnabled = StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
+                    (!StaticPrefs::gfx_direct2d_disabled_AtStartup() &&
                      FeatureEnabled(nsIGfxInfo::FEATURE_DIRECT2D));
   changed |= CheckAndUpdateBoolPref("feature-d2d", d2dEnabled);
 

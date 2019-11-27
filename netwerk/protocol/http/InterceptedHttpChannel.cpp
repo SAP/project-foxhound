@@ -272,6 +272,10 @@ nsresult InterceptedHttpChannel::RedirectForResponseURL(
 
   mRedirectChannel = newChannel;
 
+  MOZ_ASSERT(mBodyReader);
+  MOZ_ASSERT(!mApplyConversion);
+  newChannel->SetApplyConversion(false);
+
   rv = gHttpHandler->AsyncOnChannelRedirect(this, mRedirectChannel, flags);
 
   if (NS_FAILED(rv)) {
@@ -1245,6 +1249,26 @@ InterceptedHttpChannel::GetAllowStaleCacheContent(
   if (mSynthesizedCacheInfo) {
     return mSynthesizedCacheInfo->GetAllowStaleCacheContent(
         aAllowStaleCacheContent);
+  }
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+InterceptedHttpChannel::GetPreferCacheLoadOverBypass(
+    bool* aPreferCacheLoadOverBypass) {
+  if (mSynthesizedCacheInfo) {
+    return mSynthesizedCacheInfo->GetPreferCacheLoadOverBypass(
+        aPreferCacheLoadOverBypass);
+  }
+  return NS_ERROR_NOT_AVAILABLE;
+}
+
+NS_IMETHODIMP
+InterceptedHttpChannel::SetPreferCacheLoadOverBypass(
+    bool aPreferCacheLoadOverBypass) {
+  if (mSynthesizedCacheInfo) {
+    return mSynthesizedCacheInfo->SetPreferCacheLoadOverBypass(
+        aPreferCacheLoadOverBypass);
   }
   return NS_ERROR_NOT_AVAILABLE;
 }

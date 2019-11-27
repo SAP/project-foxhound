@@ -60,11 +60,11 @@ void SetFrameArgumentsObject(JSContext* cx, AbstractFramePtr frame,
 
 /* static */ inline JSFunction* LazyScript::functionDelazifying(
     JSContext* cx, Handle<LazyScript*> script) {
-  RootedFunction fun(cx, script->function_);
-  if (script->function_ && !JSFunction::getOrCreateScript(cx, fun)) {
+  RootedFunction fun(cx, script->functionNonDelazifying());
+  if (fun && !JSFunction::getOrCreateScript(cx, fun)) {
     return nullptr;
   }
-  return script->function_;
+  return fun;
 }
 
 }  // namespace js
@@ -160,34 +160,6 @@ inline js::Shape* JSScript::initialEnvironmentShape() const {
 
 inline JSPrincipals* JSScript::principals() { return realm()->principals(); }
 
-inline void JSScript::setBaselineScript(
-    JSRuntime* rt, js::jit::BaselineScript* baselineScript) {
-  if (hasBaselineScript()) {
-    js::jit::BaselineScript::writeBarrierPre(zone(), baseline);
-    clearBaselineScript();
-  }
-  MOZ_ASSERT(!ion || ion == ION_DISABLED_SCRIPT);
-
-  baseline = baselineScript;
-  if (hasBaselineScript()) {
-    AddCellMemory(this, baseline->allocBytes(), js::MemoryUse::BaselineScript);
-  }
-  resetWarmUpResetCounter();
-  updateJitCodeRaw(rt);
-}
-
-inline void JSScript::clearBaselineScript() {
-  MOZ_ASSERT(hasBaselineScript());
-  RemoveCellMemory(this, baseline->allocBytes(), js::MemoryUse::BaselineScript);
-  baseline = nullptr;
-}
-
-inline void JSScript::clearIonScript() {
-  MOZ_ASSERT(hasIonScript());
-  RemoveCellMemory(this, ion->allocBytes(), js::MemoryUse::IonScript);
-  ion = nullptr;
-}
-
 inline bool JSScript::ensureHasAnalyzedArgsUsage(JSContext* cx) {
   if (analyzedArgsUsage()) {
     return true;
@@ -196,7 +168,91 @@ inline bool JSScript::ensureHasAnalyzedArgsUsage(JSContext* cx) {
 }
 
 inline bool JSScript::isDebuggee() const {
-  return realm_->debuggerObservesAllExecution() || hasDebugScript();
+  return realm()->debuggerObservesAllExecution() || hasDebugScript();
+}
+
+inline bool JSScript::hasBaselineScript() const {
+  return hasJitScript() && jitScript()->hasBaselineScript();
+}
+
+inline bool JSScript::hasIonScript() const {
+  return hasJitScript() && jitScript()->hasIonScript();
+}
+
+inline bool JSScript::isIonCompilingOffThread() const {
+  return hasJitScript() && jitScript()->isIonCompilingOffThread();
+}
+
+inline bool JSScript::canBaselineCompile() const {
+  bool disabled = hasFlag(MutableFlags::BaselineDisabled);
+#ifdef DEBUG
+  if (hasJitScript()) {
+    bool jitScriptDisabled =
+        jitScript()->baselineScript_ == js::jit::BaselineDisabledScriptPtr;
+    MOZ_ASSERT(disabled == jitScriptDisabled);
+  }
+#endif
+  return !disabled;
+}
+
+inline bool JSScript::canIonCompile() const {
+  bool disabled = hasFlag(MutableFlags::IonDisabled);
+#ifdef DEBUG
+  if (hasJitScript()) {
+    bool jitScriptDisabled =
+        jitScript()->ionScript_ == js::jit::IonDisabledScriptPtr;
+    MOZ_ASSERT(disabled == jitScriptDisabled);
+  }
+#endif
+  return !disabled;
+}
+
+inline void JSScript::disableBaselineCompile() {
+  MOZ_ASSERT(!hasBaselineScript());
+  setFlag(MutableFlags::BaselineDisabled);
+  if (hasJitScript()) {
+    jitScript()->setBaselineScriptImpl(this,
+                                       js::jit::BaselineDisabledScriptPtr);
+  }
+}
+
+inline void JSScript::disableIon() {
+  setFlag(MutableFlags::IonDisabled);
+  if (hasJitScript()) {
+    jitScript()->setIonScriptImpl(this, js::jit::IonDisabledScriptPtr);
+  }
+}
+
+inline js::jit::BaselineScript* JSScript::baselineScript() const {
+  return jitScript()->baselineScript();
+}
+
+inline js::jit::IonScript* JSScript::ionScript() const {
+  return jitScript()->ionScript();
+}
+
+inline uint32_t JSScript::getWarmUpCount() const {
+  if (warmUpData_.isWarmUpCount()) {
+    return warmUpData_.toWarmUpCount();
+  }
+  return warmUpData_.toJitScript()->warmUpCount_;
+}
+
+inline void JSScript::incWarmUpCounter(uint32_t amount) {
+  if (warmUpData_.isWarmUpCount()) {
+    warmUpData_.incWarmUpCount(amount);
+  } else {
+    warmUpData_.toJitScript()->warmUpCount_ += amount;
+  }
+}
+
+inline void JSScript::resetWarmUpCounterForGC() {
+  incWarmUpResetCounter();
+  if (warmUpData_.isWarmUpCount()) {
+    warmUpData_.resetWarmUpCount(0);
+  } else {
+    warmUpData_.toJitScript()->warmUpCount_ = 0;
+  }
 }
 
 #endif /* vm_JSScript_inl_h */

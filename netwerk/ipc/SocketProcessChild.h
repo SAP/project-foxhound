@@ -36,7 +36,7 @@ class SocketProcessChild final : public PSocketProcessChild {
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,
-      const Maybe<ipc::FileDescriptor>& DMDFile);
+      const Maybe<mozilla::ipc::FileDescriptor>& DMDFile);
   mozilla::ipc::IPCResult RecvSetOffline(const bool& aOffline);
   mozilla::ipc::IPCResult RecvInitSocketProcessBridgeParent(
       const ProcessId& aContentProcessId,
@@ -45,9 +45,12 @@ class SocketProcessChild final : public PSocketProcessChild {
       Endpoint<mozilla::PProfilerChild>&& aEndpoint);
   mozilla::ipc::IPCResult RecvSocketProcessTelemetryPing();
 
-  PWebrtcProxyChannelChild* AllocPWebrtcProxyChannelChild(
-      const PBrowserOrId& browser);
-  bool DeallocPWebrtcProxyChannelChild(PWebrtcProxyChannelChild* aActor);
+  PWebrtcTCPSocketChild* AllocPWebrtcTCPSocketChild(const Maybe<TabId>& tabId);
+  bool DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor);
+  PDNSRequestChild* AllocPDNSRequestChild(
+      const nsCString& aHost, const OriginAttributes& aOriginAttributes,
+      const uint32_t& aFlags);
+  bool DeallocPDNSRequestChild(PDNSRequestChild*);
 
   void CleanUp();
   void DestroySocketProcessBridgeParent(ProcessId aId);

@@ -38,6 +38,8 @@ interface nsIHttpUpgradeListener : nsISupports
     [must_use] void onTransportAvailable(in nsISocketTransport   aTransport,
                                          in nsIAsyncInputStream  aSocketIn,
                                          in nsIAsyncOutputStream aSocketOut);
+
+    [must_use] void onUpgradeFailed(in nsresult aErrorCode);
 };
 
 /**
@@ -169,11 +171,15 @@ interface nsIHttpChannelInternal : nsISupports
      * response. The nsIHttpUpgradeListener will have its
      * onTransportAvailable() method invoked if a matching 101 is processed.
      * The arguments to onTransportAvailable provide the new protocol the low
-     * level tranport streams that are no longer used by HTTP.
+     * level tranport streams that are no longer used by HTTP. If any errors
+     * occur during the upgrade but the original request has (potentially)
+     * already received onStopRequest, the nsIHttpUpgradeListener will have its
+     * onUpgradeFailed() method invoked instead of onTransportAvailable().
      *
      * The onStartRequest and onStopRequest events are still delivered and the
      * listener gets full control over the socket if and when onTransportAvailable
-     * is delievered.
+     * is delivered. Note that if onStopRequest is called with an error, no
+     * methods on the nsIHttpUpgradeListener might be invoked at all.
      *
      * @param aProtocolName
      *        The value of the HTTP Upgrade request header
@@ -306,6 +312,12 @@ interface nsIHttpChannelInternal : nsISupports
     [must_use] readonly attribute nsIURI topWindowURI;
 
     /**
+     * The content blocking allow list principal belonging to the document
+     * loaded in the top-level window that's associated with this channel.
+     */
+    [must_use, noscript] readonly attribute nsIPrincipal contentBlockingAllowListPrincipal;
+
+    /**
      * Set top-level window URI to this channel only when the topWindowURI
      * is null and there is no window associated to this channel.
      * Note that the current usage of this method is only for xpcshell test.
@@ -378,8 +390,12 @@ interface nsIHttpChannelInternal : nsISupports
     [noscript, notxpcom, nostdcall]
     void setIPv6Disabled();
 
+    /**
+     * Get the Cross-Origin-Opener-Policy of the top-level document channel.
+     */
     [noscript]
-    nsILoadInfo_CrossOriginOpenerPolicy getCrossOriginOpenerPolicy();
+    nsILoadInfo_CrossOriginOpenerPolicy getCrossOriginOpenerPolicy(
+        in nsILoadInfo_CrossOriginOpenerPolicy aInitiatorPolicy);
 
-    [notxpcom, nostdcall] attribute boolean hasSandboxedAuxiliaryNavigations;
+    [notxpcom, nostdcall] attribute boolean hasNonEmptySandboxingFlag;
 };

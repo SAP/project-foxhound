@@ -18,8 +18,9 @@ class GLContext;
 }
 
 namespace layers {
+class NativeLayer;
 class SyncObjectHost;
-}
+}  // namespace layers
 
 namespace widget {
 class CompositorWidget;
@@ -35,11 +36,15 @@ class RenderCompositor {
   RenderCompositor(RefPtr<widget::CompositorWidget>&& aWidget);
   virtual ~RenderCompositor();
 
-  virtual bool BeginFrame() = 0;
+  virtual bool BeginFrame(layers::NativeLayer* aNativeLayer) = 0;
   virtual void EndFrame() = 0;
-  virtual void WaitForGPU() = 0;
+  // Returns false when waiting gpu tasks is failed.
+  // It might happen when rendering context is lost.
+  virtual bool WaitForGPU() { return true; }
   virtual void Pause() = 0;
   virtual bool Resume() = 0;
+  // Called when WR rendering is skipped
+  virtual void Update() {}
 
   virtual gl::GLContext* gl() const { return nullptr; }
 
@@ -56,6 +61,8 @@ class RenderCompositor {
   widget::CompositorWidget* GetWidget() const { return mWidget; }
 
   layers::SyncObjectHost* GetSyncObject() const { return mSyncObject.get(); }
+
+  virtual bool IsContextLost();
 
  protected:
   RefPtr<widget::CompositorWidget> mWidget;

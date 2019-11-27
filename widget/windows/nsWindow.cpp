@@ -132,6 +132,7 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Touch.h"
 #include "mozilla/gfx/2D.h"
+#include "mozilla/gfx/GPUProcessManager.h"
 #include "nsIAppStartup.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/TextEvents.h"  // For WidgetKeyboardEvent
@@ -146,6 +147,7 @@
 #include "InProcessWinCompositorWidget.h"
 #include "InputDeviceUtils.h"
 #include "ScreenHelperWin.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #include "nsIGfxInfo.h"
 #include "nsUXThemeConstants.h"
@@ -655,6 +657,9 @@ nsWindow::nsWindow(bool aIsChildWindow)
   mIdleService = nullptr;
 
   mSizeConstraintsScale = GetDefaultScale().scale;
+  mMaxTextureSize = -1;  // Will be calculated when layer manager is created.
+
+  mRequestFxrOutputPending = false;
 
   sInstanceCount++;
 }
@@ -1694,14 +1699,13 @@ void nsWindow::SetSizeConstraints(const SizeConstraints& aConstraints) {
     c.mMinSize.height =
         std::max(int32_t(::GetSystemMetrics(SM_CYMINTRACK)), c.mMinSize.height);
   }
-  KnowsCompositor* knowsCompositor = GetLayerManager()->AsKnowsCompositor();
-  if (knowsCompositor) {
-    int32_t maxSize = knowsCompositor->GetMaxTextureSize();
+
+  if (mMaxTextureSize > 0) {
     // We can't make ThebesLayers bigger than this anyway.. no point it letting
     // a window grow bigger as we won't be able to draw content there in
     // general.
-    c.mMaxSize.width = std::min(c.mMaxSize.width, maxSize);
-    c.mMaxSize.height = std::min(c.mMaxSize.height, maxSize);
+    c.mMaxSize.width = std::min(c.mMaxSize.width, mMaxTextureSize);
+    c.mMaxSize.height = std::min(c.mMaxSize.height, mMaxTextureSize);
   }
 
   mSizeConstraintsScale = GetDefaultScale().scale;
@@ -3712,6 +3716,10 @@ bool nsWindow::HasPendingInputEvent() {
 LayerManager* nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
                                         LayersBackend aBackendHint,
                                         LayerManagerPersistence aPersistence) {
+  if (mLayerManager) {
+    return mLayerManager;
+  }
+
   RECT windowRect;
   ::GetClientRect(mWnd, &windowRect);
 
@@ -3746,6 +3754,19 @@ LayerManager* nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
   }
 
   NS_ASSERTION(mLayerManager, "Couldn't provide a valid layer manager.");
+
+  if (mLayerManager) {
+    // Update the size constraints now that the layer manager has been
+    // created.
+    KnowsCompositor* knowsCompositor = mLayerManager->AsKnowsCompositor();
+    if (knowsCompositor) {
+      SizeConstraints c = mSizeConstraints;
+      mMaxTextureSize = knowsCompositor->GetMaxTextureSize();
+      c.mMaxSize.width = std::min(c.mMaxSize.width, mMaxTextureSize);
+      c.mMaxSize.height = std::min(c.mMaxSize.height, mMaxTextureSize);
+      nsBaseWidget::SetSizeConstraints(c);
+    }
+  }
 
   return mLayerManager;
 }
@@ -4076,6 +4097,25 @@ bool nsWindow::DispatchPluginEvent(UINT aMessage, WPARAM aWParam,
     DispatchPendingEvents();
   }
   return ret;
+}
+
+void nsWindow::DispatchPluginSettingEvents() {
+  // Update scroll wheel properties.
+  {
+    LRESULT lresult;
+    MSGResult msgResult(&lresult);
+    MSG msg =
+        WinUtils::InitMSG(WM_SETTINGCHANGE, SPI_SETWHEELSCROLLLINES, 0, mWnd);
+    ProcessMessageForPlugin(msg, msgResult);
+  }
+
+  {
+    LRESULT lresult;
+    MSGResult msgResult(&lresult);
+    MSG msg =
+        WinUtils::InitMSG(WM_SETTINGCHANGE, SPI_SETWHEELSCROLLCHARS, 0, mWnd);
+    ProcessMessageForPlugin(msg, msgResult);
+  }
 }
 
 bool nsWindow::TouchEventShouldStartDrag(EventMessage aEventMessage,
@@ -4786,7 +4826,7 @@ const char16_t* GetQuitType() {
 // The result means whether this method processed the native
 // event for plugin. If false, the native event should be
 // processed by the caller self.
-bool nsWindow::ProcessMessageForPlugin(const MSG& aMsg, MSGResult& aResult) {
+bool nsWindow::ProcessMessageForPlugin(MSG aMsg, MSGResult& aResult) {
   aResult.mResult = 0;
   aResult.mConsumed = true;
 
@@ -4806,6 +4846,27 @@ bool nsWindow::ProcessMessageForPlugin(const MSG& aMsg, MSGResult& aResult) {
     case WM_SYSKEYDOWN:
       aResult.mResult = ProcessKeyDownMessage(aMsg, &eventDispatched);
       break;
+
+    case WM_SETTINGCHANGE: {
+      // If there was a change in scroll wheel settings then shove the new
+      // value into the unused lParam so that the client doesn't need to ask
+      // for it.
+      if ((aMsg.wParam != SPI_SETWHEELSCROLLLINES) &&
+          (aMsg.wParam != SPI_SETWHEELSCROLLCHARS)) {
+        return false;
+      }
+      UINT wheelDelta = 0;
+      UINT getMsg = (aMsg.wParam == SPI_SETWHEELSCROLLLINES)
+                        ? SPI_GETWHEELSCROLLLINES
+                        : SPI_GETWHEELSCROLLCHARS;
+      if (NS_WARN_IF(!::SystemParametersInfo(getMsg, 0, &wheelDelta, 0))) {
+        // Use system default scroll amount, 3, when
+        // SPI_GETWHEELSCROLLLINES/CHARS isn't available.
+        wheelDelta = 3;
+      }
+      aMsg.lParam = wheelDelta;
+      break;
+    }
 
     case WM_DEADCHAR:
     case WM_SYSDEADCHAR:
@@ -6516,6 +6577,25 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp) {
              newHeight));
 #endif
 
+    if (mAspectRatio > 0) {
+      // It's possible (via Windows Aero Snap) that the size of the window
+      // has changed such that it violates the aspect ratio constraint. If so,
+      // queue up an event to enforce the aspect ratio constraint and repaint.
+      // When resized with Windows Aero Snap, we are in the NOT_RESIZING state.
+      float newAspectRatio = (float)newHeight / newWidth;
+      if (mResizeState == NOT_RESIZING && mAspectRatio != newAspectRatio) {
+        // Hold a reference to self alive and pass it into the lambda to make
+        // sure this nsIWidget stays alive long enough to run this function.
+        nsCOMPtr<nsIWidget> self(this);
+        NS_DispatchToMainThread(NS_NewRunnableFunction(
+            "EnforceAspectRatio", [self, this, newWidth]() -> void {
+              if (mWnd) {
+                Resize(newWidth, newWidth * mAspectRatio, true);
+              }
+            }));
+      }
+    }
+
     // If a maximized window is resized, recalculate the non-client margins.
     if (mSizeMode == nsSizeMode_Maximized) {
       if (UpdateNonClientMargins(nsSizeMode_Maximized, true)) {
@@ -6678,6 +6758,120 @@ nsIntPoint nsWindow::GetTouchCoordinates(WPARAM wParam, LPARAM lParam) {
   return ret;
 }
 
+// Determine if the touch device that originated |aOSEvent| needs to have
+// touch events representing a two-finger gesture converted to pan
+// gesture events.
+// We only do this for touch devices with a specific name and identifiers.
+bool TouchDeviceNeedsPanGestureConversion(PTOUCHINPUT aOSEvent,
+                                          uint32_t aTouchCount) {
+  if (aTouchCount == 0) {
+    return false;
+  }
+  HANDLE source = aOSEvent[0].hSource;
+  std::string deviceName;
+  UINT dataSize;
+  // The first call just queries how long the name string will be.
+  GetRawInputDeviceInfoA(source, RIDI_DEVICENAME, nullptr, &dataSize);
+  if (!dataSize) {
+    return false;
+  }
+  deviceName.resize(dataSize);
+  // The second call actually populates the string.
+  UINT result = GetRawInputDeviceInfoA(source, RIDI_DEVICENAME, &deviceName[0],
+                                       &dataSize);
+  if (result == UINT_MAX) {
+    return false;
+  }
+  // The affected device name is "\\?\VIRTUAL_DIGITIZER", but each backslash
+  // needs to be escaped with another one.
+  std::string expectedDeviceName = "\\\\?\\VIRTUAL_DIGITIZER";
+  // For some reason, the dataSize returned by the first call is double the
+  // actual length of the device name (as if it were returning the size of a
+  // wide-character string in bytes) even though we are using the narrow
+  // version of the API. For the comparison against the expected device name
+  // to pass, we truncate the buffer to be no longer tha the expected device
+  // name.
+  if (deviceName.substr(0, expectedDeviceName.length()) != expectedDeviceName) {
+    return false;
+  }
+
+  RID_DEVICE_INFO deviceInfo;
+  deviceInfo.cbSize = sizeof(deviceInfo);
+  dataSize = sizeof(deviceInfo);
+  result =
+      GetRawInputDeviceInfoA(source, RIDI_DEVICEINFO, &deviceInfo, &dataSize);
+  if (result == UINT_MAX) {
+    return false;
+  }
+  // The device identifiers that we check for here come from bug 1355162
+  // comment 1 (see also bug 1511901 comment 35).
+  return deviceInfo.dwType == RIM_TYPEHID && deviceInfo.hid.dwVendorId == 0 &&
+         deviceInfo.hid.dwProductId == 0 &&
+         deviceInfo.hid.dwVersionNumber == 1 &&
+         deviceInfo.hid.usUsagePage == 13 && deviceInfo.hid.usUsage == 4;
+}
+
+Maybe<PanGestureInput> nsWindow::ConvertTouchToPanGesture(
+    const MultiTouchInput& aTouchInput, PTOUCHINPUT aOSEvent) {
+  // The first time this function is called, perform some checks on the
+  // touch device that originated the touch event, to see if it's a device
+  // for which we want to convert the touch events to pang gesture events.
+  static bool shouldConvert = TouchDeviceNeedsPanGestureConversion(
+      aOSEvent, aTouchInput.mTouches.Length());
+  if (!shouldConvert) {
+    return Nothing();
+  }
+
+  // Only two-finger gestures need conversion.
+  if (aTouchInput.mTouches.Length() != 2) {
+    return Nothing();
+  }
+
+  PanGestureInput::PanGestureType eventType = PanGestureInput::PANGESTURE_PAN;
+  if (aTouchInput.mType == MultiTouchInput::MULTITOUCH_START) {
+    eventType = PanGestureInput::PANGESTURE_START;
+  } else if (aTouchInput.mType == MultiTouchInput::MULTITOUCH_END) {
+    eventType = PanGestureInput::PANGESTURE_END;
+  } else if (aTouchInput.mType == MultiTouchInput::MULTITOUCH_CANCEL) {
+    eventType = PanGestureInput::PANGESTURE_CANCELLED;
+  }
+
+  // Use the midpoint of the two touches as the start point of the pan gesture.
+  ScreenPoint focusPoint = (aTouchInput.mTouches[0].mScreenPoint +
+                            aTouchInput.mTouches[1].mScreenPoint) /
+                           2;
+  // To compute the displacement of the pan gesture, we keep track of the
+  // location of the previous event.
+  ScreenPoint displacement = (eventType == PanGestureInput::PANGESTURE_START)
+                                 ? ScreenPoint(0, 0)
+                                 : (focusPoint - mLastPanGestureFocus);
+  mLastPanGestureFocus = focusPoint;
+
+  // We need to negate the displacement because for a touch event, moving the
+  // fingers down results in scrolling up, but for a touchpad gesture, we want
+  // moving the fingers down to result in scrolling down.
+  PanGestureInput result(eventType, aTouchInput.mTime, aTouchInput.mTimeStamp,
+                         focusPoint, -displacement, aTouchInput.modifiers);
+  result.mSimulateMomentum = true;
+
+  return Some(result);
+}
+
+// Dispatch an event that originated as an OS touch event.
+// Usually, we want to dispatch it as a touch event, but some touchpads
+// produce touch events for two-finger scrolling, which need to be converted
+// to pan gesture events for correct behaviour.
+void nsWindow::DispatchTouchOrPanGestureInput(MultiTouchInput& aTouchInput,
+                                              PTOUCHINPUT aOSEvent) {
+  if (Maybe<PanGestureInput> panInput =
+          ConvertTouchToPanGesture(aTouchInput, aOSEvent)) {
+    DispatchPanGestureInput(*panInput);
+    return;
+  }
+
+  DispatchTouchInput(aTouchInput);
+}
+
 bool nsWindow::OnTouch(WPARAM wParam, LPARAM lParam) {
   uint32_t cInputs = LOWORD(wParam);
   PTOUCHINPUT pInputs = new TOUCHINPUT[cInputs];
@@ -6743,7 +6937,7 @@ bool nsWindow::OnTouch(WPARAM wParam, LPARAM lParam) {
           pInputs[i].dwID,                               // aIdentifier
           ScreenIntPoint::FromUnknownPoint(touchPoint),  // aScreenPoint
           /* radius, if known */
-          pInputs[i].dwFlags & TOUCHINPUTMASKF_CONTACTAREA
+          pInputs[i].dwMask & TOUCHINPUTMASKF_CONTACTAREA
               ? ScreenSize(TOUCH_COORD_TO_PIXEL(pInputs[i].cxContact) / 2,
                            TOUCH_COORD_TO_PIXEL(pInputs[i].cyContact) / 2)
               : ScreenSize(1, 1),  // aRadius
@@ -6761,11 +6955,11 @@ bool nsWindow::OnTouch(WPARAM wParam, LPARAM lParam) {
 
     // Dispatch touch start and touch move event if we have one.
     if (!touchInput.mTimeStamp.IsNull()) {
-      DispatchTouchInput(touchInput);
+      DispatchTouchOrPanGestureInput(touchInput, pInputs);
     }
     // Dispatch touch end event if we have one.
     if (!touchEndInput.mTimeStamp.IsNull()) {
-      DispatchTouchInput(touchEndInput);
+      DispatchTouchOrPanGestureInput(touchEndInput, pInputs);
     }
   }
 
@@ -7120,7 +7314,7 @@ void nsWindow::OnDPIChanged(int32_t x, int32_t y, int32_t width,
   if (mWindowType == eWindowType_popup) {
     return;
   }
-  if (DefaultScaleOverride() > 0.0) {
+  if (StaticPrefs::layout_css_devPixelsPerPx() > 0.0) {
     return;
   }
   mDefaultScale = -1.0;  // force recomputation of scale factor
@@ -7302,6 +7496,29 @@ void nsWindow::SetWindowTranslucencyInner(nsTransparencyMode aMode) {
     mCompositorWidgetDelegate->UpdateTransparency(aMode);
   }
   UpdateGlass();
+
+  // Clear window by transparent black when compositor window is used in GPU
+  // process and non-client area rendering by DWM is enabled.
+  // It is for showing non-client area rendering. See nsWindow::UpdateGlass().
+  if (HasGlass() && GetLayerManager()->AsKnowsCompositor() &&
+      GetLayerManager()->AsKnowsCompositor()->GetUseCompositorWnd()) {
+    HDC hdc;
+    RECT rect;
+    hdc = ::GetWindowDC(mWnd);
+    ::GetWindowRect(mWnd, &rect);
+    ::MapWindowPoints(nullptr, mWnd, (LPPOINT)&rect, 2);
+    ::FillRect(hdc, &rect,
+               reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
+    ReleaseDC(mWnd, hdc);
+  }
+
+  // Disable double buffering with D3D compositor for disabling compositor
+  // window usage.
+  if (HasGlass() && !gfxVars::UseWebRender() &&
+      gfxVars::UseDoubleBufferingWithCompositor()) {
+    gfxVars::SetUseDoubleBufferingWithCompositor(false);
+    GPUProcessManager::Get()->ResetCompositors();
+  }
 }
 
 #endif  // MOZ_XUL

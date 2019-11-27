@@ -11,7 +11,9 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_channelclassifier.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -179,6 +181,49 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
                                                 const nsACString& aProvider,
                                                 const nsACString& aFullHash) {
   NS_ENSURE_ARG(!aList.IsEmpty());
+
+  switch (aErrorCode) {
+    case NS_ERROR_MALWARE_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_MALWARE_URI);
+      break;
+    case NS_ERROR_PHISHING_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_PHISHING_URI);
+      break;
+    case NS_ERROR_UNWANTED_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_UNWANTED_URI);
+      break;
+    case NS_ERROR_TRACKING_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_TRACKING_URI);
+      break;
+    case NS_ERROR_BLOCKED_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_BLOCKED_URI);
+      break;
+    case NS_ERROR_HARMFUL_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_HARMFUL_URI);
+      break;
+    case NS_ERROR_CRYPTOMINING_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_CRYPTOMINING_URI);
+      break;
+    case NS_ERROR_FINGERPRINTING_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_FINGERPRINTING_URI);
+      break;
+    case NS_ERROR_SOCIALTRACKING_URI:
+      NS_SetRequestBlockingReason(
+          channel, nsILoadInfo::BLOCKING_REASON_CLASSIFY_SOCIALTRACKING_URI);
+      break;
+    default:
+      MOZ_CRASH(
+          "Missing nsILoadInfo::BLOCKING_REASON* for the classification error");
+      break;
+  }
 
   // Can be called in EITHER the parent or child process.
   nsCOMPtr<nsIParentChannel> parentChannel;
@@ -388,16 +433,10 @@ void LowerPriorityHelper(nsIChannel* aChannel) {
 }  // namespace
 
 // static
-void UrlClassifierCommon::AnnotateChannel(
-    nsIChannel* aChannel,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose,
-    uint32_t aClassificationFlags, uint32_t aLoadingState) {
+void UrlClassifierCommon::AnnotateChannel(nsIChannel* aChannel,
+                                          uint32_t aClassificationFlags,
+                                          uint32_t aLoadingState) {
   MOZ_ASSERT(aChannel);
-  MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
-             aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
-             aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining ||
-             aPurpose == AntiTrackingCommon::eSocialTracking);
 
   nsCOMPtr<nsIURI> chanURI;
   nsresult rv = aChannel->GetURI(getter_AddRefs(chanURI));
@@ -423,8 +462,7 @@ void UrlClassifierCommon::AnnotateChannel(
       IsTrackingClassificationFlag(aClassificationFlags) ||
       IsCryptominingClassificationFlag(aClassificationFlags);
 
-  if (validClassificationFlags &&
-      (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel, aPurpose))) {
+  if (validClassificationFlags && isThirdPartyWithTopLevelWinURI) {
     UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
         aChannel, aLoadingState);
   }
@@ -436,44 +474,44 @@ void UrlClassifierCommon::AnnotateChannel(
 }
 
 // static
-bool UrlClassifierCommon::IsAllowListed(
-    nsIChannel* aChannel,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose) {
-  MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
-             aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
-             aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining ||
-             aPurpose == AntiTrackingCommon::eSocialTracking);
-
+bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
   nsCOMPtr<nsIHttpChannelInternal> channel = do_QueryInterface(aChannel);
   if (!channel) {
     UC_LOG(("nsChannelClassifier: Not an HTTP channel"));
     return false;
   }
 
-  nsCOMPtr<nsIURI> topWinURI;
-  nsresult rv = channel->GetTopWindowURI(getter_AddRefs(topWinURI));
+  nsCOMPtr<nsIPrincipal> cbAllowListPrincipal;
+  nsresult rv = channel->GetContentBlockingAllowListPrincipal(
+      getter_AddRefs(cbAllowListPrincipal));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
 
-  if (!topWinURI && StaticPrefs::channelclassifier_allowlist_example()) {
+  if (!cbAllowListPrincipal &&
+      StaticPrefs::channelclassifier_allowlist_example()) {
     UC_LOG(("nsChannelClassifier: Allowlisting test domain"));
     nsCOMPtr<nsIIOService> ios = services::GetIOService();
     if (NS_WARN_IF(!ios)) {
       return false;
     }
 
+    nsCOMPtr<nsIURI> uri;
     rv = ios->NewURI(NS_LITERAL_CSTRING("http://allowlisted.example.com"),
-                     nullptr, nullptr, getter_AddRefs(topWinURI));
+                     nullptr, nullptr, getter_AddRefs(uri));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return false;
     }
+
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    RefPtr<BasePrincipal> bp = BasePrincipal::CreateContentPrincipal(
+        uri, loadInfo->GetOriginAttributes());
+    cbAllowListPrincipal = bp.forget();
   }
 
   bool isAllowListed = false;
   rv = AntiTrackingCommon::IsOnContentBlockingAllowList(
-      topWinURI, NS_UsePrivateBrowsing(aChannel), aPurpose, isAllowListed);
+      cbAllowListPrincipal, NS_UsePrivateBrowsing(aChannel), isAllowListed);
   if (NS_FAILED(rv)) {  // normal for some loads, no need to print a warning
     return false;
   }
@@ -499,24 +537,33 @@ bool UrlClassifierCommon::IsAllowListed(
 
 // static
 bool UrlClassifierCommon::IsTrackingClassificationFlag(uint32_t aFlag) {
-  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled()) {
-    return (
-        aFlag &
-        nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_STRICT_TRACKING);
+  if (StaticPrefs::privacy_annotate_channels_strict_list_enabled() &&
+      (aFlag & nsIClassifiedChannel::ClassificationFlags::
+                   CLASSIFIED_ANY_STRICT_TRACKING)) {
+    return true;
   }
-  return (aFlag &
-          nsIHttpChannel::ClassificationFlags::CLASSIFIED_ANY_BASIC_TRACKING);
+
+  if (StaticPrefs::privacy_socialtracking_block_cookies_enabled() &&
+      (aFlag & nsIClassifiedChannel::ClassificationFlags::
+                   CLASSIFIED_ANY_SOCIAL_TRACKING)) {
+    return true;
+  }
+
+  return (
+      aFlag &
+      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_ANY_BASIC_TRACKING);
 }
 
 // static
 bool UrlClassifierCommon::IsCryptominingClassificationFlag(uint32_t aFlag) {
-  if (aFlag & nsIHttpChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING) {
+  if (aFlag &
+      nsIClassifiedChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING) {
     return true;
   }
 
   if (StaticPrefs::privacy_annotate_channels_strict_list_enabled() &&
-      (aFlag &
-       nsIHttpChannel::ClassificationFlags::CLASSIFIED_CRYPTOMINING_CONTENT)) {
+      (aFlag & nsIClassifiedChannel::ClassificationFlags::
+                   CLASSIFIED_CRYPTOMINING_CONTENT)) {
     return true;
   }
 

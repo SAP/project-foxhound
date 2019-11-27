@@ -92,6 +92,16 @@ this.VideoControlsWidget = class {
     delete this.impl;
   }
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+
+    if (!this.impl) {
+      return;
+    }
+
+    this.impl.onPrefChange(prefName, prefValue);
+  }
+
   static isPictureInPictureVideo(someVideo) {
     return someVideo.isCloningElementVisually;
   }
@@ -103,6 +113,7 @@ this.VideoControlsWidget = class {
    * 1. The video must be 45 seconds in length or longer.
    * 2. Neither the width or the height of the video can be less than 160px.
    * 3. The video must have audio.
+   * 4. The video must not a MediaStream video (Bug 1592539)
    *
    * This can be overridden via the
    * media.videocontrols.picture-in-picture.video-toggle.always-show pref, which
@@ -133,6 +144,15 @@ this.VideoControlsWidget = class {
     }
 
     if (!someVideo.mozHasAudio) {
+      return false;
+    }
+
+    // Bug 1592539 - It's possible to confuse the underlying visual
+    // cloning mechanism by switching which video stream a <video> is
+    // rendering. We try to head that case off for now by hiding the
+    // Picture-in-Picture capability on <video> elements that have
+    // srcObject != null.
+    if (someVideo.srcObject) {
       return false;
     }
 
@@ -211,12 +231,7 @@ this.VideoControlsImplWidget = class {
       set isAudioOnly(val) {
         this._isAudioOnly = val;
         this.setFullscreenButtonState();
-
-        if (val) {
-          this.pictureInPictureToggleButton.setAttribute("hidden", true);
-        } else {
-          this.pictureInPictureToggleButton.removeAttribute("hidden");
-        }
+        this.updatePictureInPictureToggleDisplay();
 
         if (!this.isTopLevelSyntheticDocument) {
           return;
@@ -499,6 +514,7 @@ this.VideoControlsImplWidget = class {
 
       updatePictureInPictureToggleDisplay() {
         if (this.isAudioOnly) {
+          this.pictureInPictureToggleButton.setAttribute("hidden", true);
           return;
         }
 
@@ -824,9 +840,6 @@ this.VideoControlsImplWidget = class {
               case this.videocontrols:
                 // Prevent any click event within media controls from dispatching through to video.
                 aEvent.stopPropagation();
-                break;
-              case this.pictureInPictureToggleButton:
-                this.video.togglePictureInPicture();
                 break;
             }
             break;
@@ -1524,18 +1537,18 @@ this.VideoControlsImplWidget = class {
 
       get isVideoInFullScreen() {
         return this.video.isSameNode(
-          this.video.getRootNode().mozFullScreenElement
+          this.video.getRootNode().fullscreenElement
         );
       },
 
       toggleFullscreen() {
         this.isVideoInFullScreen
-          ? this.document.mozCancelFullScreen()
-          : this.video.mozRequestFullScreen();
+          ? this.document.exitFullscreen()
+          : this.video.requestFullscreen();
       },
 
       setFullscreenButtonState() {
-        if (this.isAudioOnly || !this.document.mozFullScreenEnabled) {
+        if (this.isAudioOnly || !this.document.fullscreenEnabled) {
           this.controlBar.setAttribute("fullscreen-unavailable", true);
           this.adjustControlSize();
           return;
@@ -2362,8 +2375,6 @@ this.VideoControlsImplWidget = class {
           { el: this.video.textTracks, type: "change" },
 
           { el: this.video, type: "media-videoCasting", touchOnly: true },
-
-          { el: this.pictureInPictureToggleButton, type: "click" },
         ];
 
         for (let {
@@ -2546,6 +2557,7 @@ this.VideoControlsImplWidget = class {
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2640,6 +2652,11 @@ this.VideoControlsImplWidget = class {
     this.Utils.terminate();
     this.TouchUtils.terminate();
     this.Utils.updateOrientationState(false);
+  }
+
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+    this.Utils.updatePictureInPictureToggleDisplay();
   }
 
   _setupEventListeners() {
@@ -2787,12 +2804,17 @@ this.NoControlsMobileImplWidget = class {
     this.Utils.terminate();
   }
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+  }
+
   generateContent() {
     /*
      * Pass the markup through XML parser purely for the reason of loading the localization DTD.
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2837,12 +2859,17 @@ this.NoControlsPictureInPictureImplWidget = class {
 
   destructor() {}
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+  }
+
   generateContent() {
     /*
      * Pass the markup through XML parser purely for the reason of loading the localization DTD.
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2974,12 +3001,18 @@ this.NoControlsDesktopImplWidget = class {
     this.Utils.terminate();
   }
 
+  onPrefChange(prefName, prefValue) {
+    this.prefs[prefName] = prefValue;
+    this.Utils.updatePictureInPictureToggleDisplay();
+  }
+
   generateContent() {
     /*
      * Pass the markup through XML parser purely for the reason of loading the localization DTD.
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">

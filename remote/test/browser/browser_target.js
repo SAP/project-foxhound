@@ -79,16 +79,19 @@ add_task(async function() {
     "attachedToTarget creates a tab by default"
   );
 
+  info("Calling Target.sendMessageToTarget");
   const onResponse = Target.receivedMessageFromTarget();
   const id = 1;
   const message = JSON.stringify({
     id,
     method: "Page.navigate",
     params: {
-      url: "data:text/html;charset=utf-8,new-page",
+      url: toDataURL("new-page"),
     },
   });
   await Target.sendMessageToTarget({ sessionId, message });
+
+  info("Waiting for Target.receivedMessageToTarget");
   const response = await onResponse;
   is(response.sessionId, sessionId, "The response is from the same session");
   const responseMessage = JSON.parse(response.message);

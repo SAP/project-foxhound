@@ -1,12 +1,10 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 "use strict";
 
-const l10n = require("devtools/client/webconsole/webconsole-l10n");
+const l10n = require("devtools/client/webconsole/utils/l10n");
 const {
   getUrlDetails,
 } = require("devtools/client/netmonitor/src/utils/request-utils");
@@ -247,7 +245,7 @@ function transformConsoleAPICallPacket(packet) {
     : null;
 
   if (type === "logPointError" || type === "logPoint") {
-    frame.origin = "logPoint";
+    frame.options = { logPoint: true };
   }
 
   return new ConsoleMessage({
@@ -312,7 +310,7 @@ function transformPageErrorPacket(packet) {
       }
     : null;
 
-  const matchesCSS = /^(?:CSS|Layout)\b/.test(pageError.category);
+  const matchesCSS = pageError.category == "CSS Parser";
   const messageSource = matchesCSS
     ? MESSAGE_SOURCE.CSS
     : MESSAGE_SOURCE.JAVASCRIPT;
@@ -407,6 +405,7 @@ function transformEvaluationResultPacket(packet) {
     timeStamp,
     notes,
     private: packet.private,
+    allowRepeating: false,
   });
 }
 

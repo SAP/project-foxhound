@@ -14,8 +14,11 @@ import os
 import sys
 from abc import ABCMeta, abstractmethod, abstractproperty
 from argparse import Action, SUPPRESS
+from textwrap import dedent
 
 import mozpack.path as mozpath
+import voluptuous
+from taskgraph.decision import visual_metrics_jobs_schema
 from mozbuild.base import BuildEnvironmentNotFoundException, MozbuildObject
 from .tasks import resolve_tests_by_suite
 
@@ -190,7 +193,7 @@ class ChemspillPrio(Template):
             }
 
 
-class GeckoProfile(Template):
+class GeckoProfile(TryConfig):
     arguments = [
         [['--gecko-profile'],
          {'dest': 'profile',
@@ -214,10 +217,26 @@ class GeckoProfile(Template):
           }],
     ]
 
-    def context(self, profile, **kwargs):
-        if not profile:
-            return
-        return {'gecko-profile': profile}
+    def try_config(self, profile, **kwargs):
+        if profile:
+            return {
+                'gecko-profile': True,
+            }
+
+
+class Browsertime(TryConfig):
+    arguments = [
+        [['--browsertime'],
+         {'action': 'store_true',
+          'help': 'Use browsertime during Raptor tasks.',
+          }],
+    ]
+
+    def try_config(self, browsertime, **kwargs):
+        if browsertime:
+            return {
+                'browsertime': True,
+            }
 
 
 class DisablePgo(TryConfig):
@@ -236,12 +255,87 @@ class DisablePgo(TryConfig):
             }
 
 
+visual_metrics_jobs_description = dedent("""\
+    The file should be a JSON file of the format:
+    {
+      "jobs": [
+        {
+          "browsertime_json_url": "http://example.com/browsertime.json",
+          "video_url": "http://example.com/video.mp4"
+        }
+      ]
+    }
+""")
+
+
+class VisualMetricsJobs(TryConfig):
+
+    arguments = [
+        [['--visual-metrics-jobs'],
+         {'dest': 'visual_metrics_jobs',
+          'metavar': 'PATH',
+          'help': (
+              'The path to a visual metrics jobs file. Only required when '
+              'running a "visual-metrics" job.\n'
+              '%s' % visual_metrics_jobs_description
+          )}],
+    ]
+
+    def try_config(self, **kwargs):
+        file_path = kwargs.get('visual_metrics_jobs')
+
+        if not file_path:
+            return None
+
+        try:
+            with open(file_path) as f:
+                visual_metrics_jobs = json.load(f)
+
+            visual_metrics_jobs_schema(visual_metrics_jobs)
+        except (IOError, OSError):
+            print('Failed to read file %s: %s' % (file_path, f))
+            sys.exit(1)
+        except TypeError:
+            print('Failed to parse file %s as JSON: %s' % (file_path, f))
+            sys.exit(1)
+        except voluptuous.Error as e:
+            print(
+                'The file %s does not match the expected format: %s\n'
+                '%s'
+                % (file_path, e, visual_metrics_jobs_description)
+            )
+            sys.exit(1)
+
+        return {
+            'visual-metrics-jobs': visual_metrics_jobs,
+        }
+
+
+class DebianTests(TryConfig):
+
+    arguments = [
+        [['--debian-buster'],
+         {'action': 'store_true',
+          'help': 'Run linux desktop tests on debian image',
+          }],
+    ]
+
+    def try_config(self, debian_buster, **kwargs):
+        if debian_buster:
+            return {
+                'debian-tests': True,
+            }
+
+
 all_templates = {
     'artifact': Artifact,
-    'path': Path,
-    'env': Environment,
-    'rebuild': Rebuild,
+    'browsertime': Browsertime,
     'chemspill-prio': ChemspillPrio,
-    'gecko-profile': GeckoProfile,
     'disable-pgo': DisablePgo,
+    'env': Environment,
+    'gecko-profile': GeckoProfile,
+    'path': Path,
+    'rebuild': Rebuild,
+    'debian-buster': DebianTests,
+    'visual-metrics-jobs': VisualMetricsJobs,
 }

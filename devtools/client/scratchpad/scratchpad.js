@@ -1,5 +1,4 @@
-/* vim:set ts=2 sw=2 sts=2 et:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -107,7 +106,12 @@ ChromeUtils.defineModuleGetter(
   "resource://devtools/client/shared/widgets/VariablesViewController.jsm"
 );
 
-loader.lazyRequireGetter(this, "DebuggerServer", "devtools/server/main", true);
+loader.lazyRequireGetter(
+  this,
+  "DebuggerServer",
+  "devtools/server/debugger-server",
+  true
+);
 
 loader.lazyRequireGetter(
   this,
@@ -117,8 +121,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "EnvironmentClient",
-  "devtools/shared/client/environment-client"
+  "EnvironmentFront",
+  "devtools/shared/fronts/environment"
 );
 loader.lazyRequireGetter(
   this,
@@ -127,8 +131,8 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
-  "HUDService",
-  "devtools/client/webconsole/hudservice",
+  "BrowserConsoleManager",
+  "devtools/client/webconsole/browser-console-manager",
   true
 );
 loader.lazyRequireGetter(
@@ -550,17 +554,14 @@ var Scratchpad = {
     }
 
     const evalOptions = { url: this.uniqueName };
-    const { debuggerClient, webConsoleClient } = await connection;
+    const { debuggerClient, webConsoleFront } = await connection;
     this.debuggerClient = debuggerClient;
-    this.webConsoleClient = webConsoleClient;
-    const response = await webConsoleClient.evaluateJSAsync(
-      string,
-      evalOptions
-    );
+    this.webConsoleFront = webConsoleFront;
+    const response = await webConsoleFront.evaluateJSAsync(string, evalOptions);
 
     if (response.error) {
       throw new Error(response.error);
-    } else if (response.exception !== null) {
+    } else if (response.exception != null) {
       return [string, response];
     } else {
       return [string, undefined, response.result];
@@ -847,8 +848,7 @@ var Scratchpad = {
    */
   async _writePrimitiveAsComment(value) {
     if (value.type == "longString") {
-      const client = this.webConsoleClient;
-      const response = await client
+      const response = await this.webConsoleFront
         .longString(value)
         .substring(0, value.length);
       if (response.error) {
@@ -901,6 +901,7 @@ var Scratchpad = {
    *         The promise that indicates when writing the comment completes.
    */
   writeAsErrorComment(error) {
+    // eslint-disable-next-line no-async-promise-executor
     return new Promise(async (resolve, reject) => {
       const exception = error.exception;
       if (VariablesView.isPrimitive({ value: exception })) {
@@ -929,7 +930,12 @@ var Scratchpad = {
       } else {
         // If there is no preview information, we need to ask the server for more.
         const objectClient = new ObjectClient(this.debuggerClient, exception);
-        const response = await objectClient.getPrototypeAndProperties();
+        let response;
+        try {
+          response = await objectClient.getPrototypeAndProperties();
+        } catch (ex) {
+          reject(ex);
+        }
         if (response.error) {
           reject(response);
           return;
@@ -952,7 +958,12 @@ var Scratchpad = {
         if (typeof error.message == "string") {
           resolve(error.message + stack);
         } else {
-          const response = await objectClient.getDisplayString();
+          let response;
+          try {
+            response = await objectClient.getDisplayString();
+          } catch (ex) {
+            reject(ex);
+          }
           if (response.error) {
             reject(response);
           } else if (typeof response.displayString == "string") {
@@ -1586,7 +1597,7 @@ var Scratchpad = {
    * Open the Error Console.
    */
   openErrorConsole: function SP_openErrorConsole() {
-    HUDService.toggleBrowserConsole();
+    BrowserConsoleManager.toggleBrowserConsole();
   },
 
   /**
@@ -1741,6 +1752,34 @@ var Scratchpad = {
 
         this.editor.setFontSize(Services.prefs.getIntPref(EDITOR_FONT_SIZE));
 
+        // Display the deprecation warning for Scratchpad.
+        const deprecationWarning = document.createElement("a");
+        deprecationWarning.append(
+          this.strings.GetStringFromName("scratchpad.deprecated.label")
+        );
+        deprecationWarning.setAttribute(
+          "href",
+          "https://developer.mozilla.org/docs/Tools/Deprecated_tools#Scratchpad"
+        );
+        // We can't link to a content page from Chrome (See Bug 1553804), so we're
+        // handling the link opening with openDocLink.
+        deprecationWarning.addEventListener("click", e => {
+          e.preventDefault();
+          openDocLink(e.target.getAttribute("href"), {
+            relatedToCurrent: true,
+          });
+        });
+
+        const deprecationFragment = document.createDocumentFragment();
+        deprecationFragment.append(deprecationWarning);
+
+        this.notificationBox.appendNotification(
+          deprecationFragment,
+          "scratchpad.deprecated",
+          null,
+          this.notificationBox.PRIORITY_WARNING_LOW
+        );
+
         this.editor.on("change", this._onChanged);
         // Keep a reference to the bound version for use in onUnload.
         this.updateStatusBar = Scratchpad.updateStatusBar.bind(this);
@@ -1863,7 +1902,7 @@ var Scratchpad = {
     }
 
     scratchpadTargets = null;
-    this.webConsoleClient = null;
+    this.webConsoleFront = null;
     this.debuggerClient = null;
     this.initialized = false;
   },
@@ -2115,7 +2154,7 @@ function ScratchpadTab(aTab) {
 var scratchpadTargets = new WeakMap();
 
 /**
- * Returns the object containing the DebuggerClient and WebConsoleClient for a
+ * Returns the object containing the DebuggerClient and WebConsoleFront for a
  * given tab or window.
  *
  * @param object aSubject
@@ -2149,6 +2188,7 @@ ScratchpadTab.prototype = {
       return this._connector;
     }
 
+    // eslint-disable-next-line no-async-promise-executor
     this._connector = new Promise(async (resolve, reject) => {
       const connectTimer = setTimeout(() => {
         reject({
@@ -2160,7 +2200,7 @@ ScratchpadTab.prototype = {
         const target = await this._attach(subject);
         clearTimeout(connectTimer);
         resolve({
-          webConsoleClient: target.activeConsole,
+          webConsoleFront: target.activeConsole,
           debuggerClient: target.client,
         });
       } catch (error) {
@@ -2293,8 +2333,8 @@ ScratchpadSidebar.prototype = {
           });
 
           VariablesViewController.attach(this.variablesView, {
-            getEnvironmentClient: grip => {
-              return new EnvironmentClient(
+            getEnvironmentFront: grip => {
+              return new EnvironmentFront(
                 this._scratchpad.debuggerClient,
                 grip
               );
@@ -2303,10 +2343,16 @@ ScratchpadSidebar.prototype = {
               return new ObjectClient(this._scratchpad.debuggerClient, grip);
             },
             getLongStringClient: actor => {
-              return this._scratchpad.webConsoleClient.longString(actor);
+              return this._scratchpad.webConsoleFront.longString(actor);
             },
             releaseActor: actor => {
-              this._scratchpad.debuggerClient.release(actor);
+              const objFront = this._scratchpad.debuggerClient.getFrontByID(
+                actor
+              );
+              // Ignore release failure, since the object actor may have been already GC.
+              if (objFront) {
+                objFront.release().catch(() => {});
+              }
             },
           });
         }

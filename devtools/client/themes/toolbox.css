@@ -1,4 +1,3 @@
-/* vim:set ts=2 sw=2 sts=2 et: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -213,11 +212,11 @@
 }
 
 #toolbox-buttons-start > .devtools-separator {
-  --separator-inline-margin: 0;
+  margin-inline: 0;
 }
 
 #toolbox-buttons-end > .devtools-separator {
-  --separator-inline-margin: 5px;
+  margin-inline: 5px;
 }
 
 #toolbox-close::before {
@@ -311,6 +310,22 @@
 #command-button-stop-replay::before,
 #command-button-replay::before {
   background-image: url("chrome://devtools/skin/images/command-replay.svg");
+}
+
+#command-button-fission-prefs::before {
+  content: "FIS";
+  font-weight: bold;
+}
+
+.fission-pref-icon::before {
+  content: "";
+  background-image: url("chrome://devtools/skin/images/help.svg");
+  -moz-context-properties: fill;
+  fill: var(--theme-body-color);
+  display: block;
+  background-size: 12px;
+  width: 12px;
+  height: 12px;
 }
 
 #command-button-replay,
@@ -427,16 +442,47 @@
   border-bottom: 1px solid var(--theme-splitter-color);
   box-sizing: border-box;
   min-height: 29px;
+  --progressbar-transition: 200ms;
+}
 
+.theme-light .webreplay-player {
+  --commandbar-button-hover-background: #efefef;
   --progress-recording-background: hsl(0, 100%, 97%);
   --progress-playing-background: hsl(207, 100%, 97%);
-
-  --progress-bar-transition: 200ms;
-
   --recording-marker-background: hsl(14.9, 100%, 67%);
+  --replaying-marker-background: var(--blue-40);
+  --replaying-marker-highlighted-background: var(--blue-60);
+  --replaying-marker-location-background: var(--blue-50);
   --recording-marker-background-hover: hsl(14.9, 100%, 47%);
-  --command-button-size: 14px;
-  --command-button-primary-size: 20px;
+  --replaying-marker-background-hover: var(--blue-60);
+  --progress-recording-line: #d0021b;
+  --progressbar-background: #fff;
+  --progressbar-line-color: var(--blue-40);
+  --proggressbar-border-color: var(--theme-splitter-color);
+  --tick-future-background: #bfc9d2;
+  --tick-background: var(--blue-50);
+  --tick-recording-background: #d0021b;
+  --replay-head-background: var(--purple-50);
+}
+
+.theme-dark .webreplay-player {
+  --commandbar-button-hover-background: #1a1a1a;
+  --progress-recording-background: #310707;
+  --progress-playing-background: #071a2b;
+  --progress-recording-line: #ff2038;
+  --recording-marker-background: #9b3131;
+  --recording-marker-background-hover: #a82323;
+  --replaying-marker-background: #266fb1;
+  --replaying-marker-highlighted-background: #3084d0;
+  --replaying-marker-location-background: #3084d0;
+  --replaying-marker-background-hover: #3a8edb;
+  --progressbar-background: #0c0c0d;
+  --proggressbar-border-color: var(--theme-splitter-color);
+  --progressbar-line-color: #0a4786;
+  --tick-future-background: #bfc9d2;
+  --tick-background: var(--blue-50);
+  --tick-recording-background: #e77884;
+  --replay-head-background: var(--theme-highlight-purple);
 }
 
 .webreplay-player .overlay-container {
@@ -447,9 +493,9 @@
   position: relative;
   width: 100%;
   height: 20px;
-  background: #fff;
+  background: var(--progressbar-background);
   margin: 4px 10px 4px 0;
-  border: 1px solid #bfc9d2;
+  border: 1px solid var(--proggressbar-border-color);
   overflow: hidden;
 }
 
@@ -458,11 +504,11 @@
   width: 100%;
   height: 100%;
   background: var(--progress-playing-background);
-  transition-duration: var(--progress-bar-transition);
+  transition-duration: var(--progressbar-transition);
 }
 
 .webreplay-player #overlay:not(.recording) .progress::after {
-  background: var(--purple-50);
+  background: var(--replay-head-background);
   width: 1px;
   height: 100%;
   right: -0.5px;
@@ -474,7 +520,7 @@
 
 .webreplay-player .recording .progress {
   background: var(--progress-recording-background);
-  transition-duration: var(--progress-bar-transition);
+  transition-duration: var(--progressbar-transition);
 }
 
 .webreplay-player .message {
@@ -484,7 +530,7 @@
   height: 7px;
   border-radius: 4.5px;
   top: calc(50% - 3.5px);
-  background: var(--blue-40);
+  background: var(--replaying-marker-background);
   transition-duration: 100ms;
 }
 
@@ -494,13 +540,21 @@
 }
 
 .webreplay-player .message.overlayed.future {
-  border-color: #fff;
+  border-color: var(--progressbar-background);
 }
 
 .webreplay-player .message.highlighted {
-  background-color: var(--blue-60);
+  background-color: var(--replaying-marker-highlighted-background);
   transform: scale(1.25);
   transition-duration: 100ms;
+}
+
+.webreplay-player .message.uncached {
+  opacity: 0.5;
+}
+
+.webreplay-player .message.location {
+  background: var(--replaying-marker-location-background);
 }
 
 .webreplay-player .recording .message.highlighted {
@@ -520,7 +574,7 @@
 }
 
 .webreplay-player .message:hover {
-  background: var(--blue-60);
+  background: var(--replaying-marker-background-hover);
   cursor: pointer;
 }
 
@@ -530,35 +584,35 @@
 
 .webreplay-player .commands {
   display: flex;
+  margin: 0 4px;
 }
 
 .webreplay-player .command-button {
   display: flex;
-  min-width: 17px;
-  opacity: 0.7;
+  min-width: 20px;
 }
 
 .webreplay-player .command-button.primary {
-  min-width: 24px;
+  min-width: 22px;
 }
 
 .webreplay-player .btn {
-  width: var(--command-button-size);
-  height: var(--command-button-size);
-  mask-size: var(--command-button-size);
-  background: #6a6a6a;
+  width: 14px;
+  height: 14px;
+  mask-size: 14px;
+  background: var(--theme-icon-color);
   align-self: center;
   margin: 0 auto;
 }
 
 .webreplay-player .primary .btn {
-  width: var(--command-button-primary-size);
-  height: var(--command-button-primary-size);
-  mask-size: var(--command-button-primary-size);
+  width: 18px;
+  height: 18px;
+  mask-size: 18px;
 }
 
 .webreplay-player .command-button.active:hover {
-  background: #efefef;
+  background: var(--commandbar-button-hover-background);
   cursor: pointer;
 }
 
@@ -582,11 +636,11 @@
 .webreplay-player .progress-line {
   width: 0%;
   height: 1px;
-  background: var(--blue-40);
+  background: var(--progressbar-line-color);
   position: absolute;
   left: 0;
   top: 50%;
-  transition-duration: var(--progress-bar-transition);
+  transition-duration: var(--progressbar-transition);
 }
 
 .webreplay-player .progress-line.end {
@@ -594,7 +648,7 @@
 }
 
 .webreplay-player .recording .progress-line {
-  background: #d0021b;
+  background: var(--progress-recording-line);
   opacity: 0.3;
 }
 
@@ -615,17 +669,17 @@
 
 .webreplay-player .recording .tick::before,
 .webreplay-player .recording .tick::after {
-  background: #d0021b;
+  background: var(--tick-recording-background);
 }
 
 .webreplay-player .tick.future::before,
 .webreplay-player .tick.future::after {
-  background: #bfc9d2;
+  background: var(--tick-future-background);
 }
 
 .webreplay-player .tick::before,
 .webreplay-player .tick::after {
-  background: var(--blue-50);
+  background: var(--tick-background);
 }
 
 .webreplay-player .tick::after {
@@ -636,7 +690,6 @@
   top: 0;
 }
 
-
 .webreplay-player #overlay:hover .tick {
   opacity: 1;
 }
@@ -645,6 +698,14 @@
   opacity: 0.5;
 }
 
-.webreplay-player #overlay .tick:hover ~ .tick {
+.webreplay-player #overlay .tick:hover ~ .tick,
+.webreplay-player #overlay .tick.highlight ~ .tick:not(.highlight) {
   opacity: 0.5;
+}
+
+.webreplay-player .unscanned {
+  position: absolute;
+  height: 100%;
+  background: #000000;
+  opacity: 0.1;
 }

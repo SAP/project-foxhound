@@ -138,8 +138,6 @@ nsSVGFilterFrame* nsSVGFilterInstance::GetFilterFrame(nsIFrame* aTargetFrame) {
   }
 
   if (!url) {
-    MOZ_ASSERT_UNREACHABLE(
-        "an StyleFilter of type URL should have a non-null URL");
     return nullptr;
   }
 
@@ -147,8 +145,7 @@ nsSVGFilterFrame* nsSVGFilterInstance::GetFilterFrame(nsIFrame* aTargetFrame) {
   IDTracker idTracker;
   bool watch = false;
   idTracker.ResetToURIFragmentID(
-      mTargetContent, url, mFilter.AsUrl().ExtraData().GetReferrer(),
-      mFilter.AsUrl().ExtraData().GetReferrerPolicy(), watch);
+      mTargetContent, url, mFilter.AsUrl().ExtraData().ReferrerInfo(), watch);
   Element* element = idTracker.get();
   if (!element) {
     // The URL points to no element.

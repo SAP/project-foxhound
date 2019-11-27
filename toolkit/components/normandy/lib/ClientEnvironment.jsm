@@ -21,9 +21,10 @@ ChromeUtils.defineModuleGetter(
   "PreferenceExperiments",
   "resource://normandy/lib/PreferenceExperiments.jsm"
 );
-
-const { generateUUID } = Cc["@mozilla.org/uuid-generator;1"].getService(
-  Ci.nsIUUIDGenerator
+ChromeUtils.defineModuleGetter(
+  this,
+  "NormandyUtils",
+  "resource://normandy/lib/NormandyUtils.jsm"
 );
 
 var EXPORTED_SYMBOLS = ["ClientEnvironment"];
@@ -68,10 +69,7 @@ class ClientEnvironment extends ClientEnvironmentBase {
   static get userId() {
     let id = Services.prefs.getCharPref("app.normandy.user_id", "");
     if (!id) {
-      // generateUUID adds leading and trailing "{" and "}". strip them off.
-      id = generateUUID()
-        .toString()
-        .slice(1, -1);
+      id = NormandyUtils.generateUuid();
       Services.prefs.setCharPref("app.normandy.user_id", id);
     }
     return id;
@@ -97,12 +95,12 @@ class ClientEnvironment extends ClientEnvironmentBase {
     return (async () => {
       const names = { all: [], active: [], expired: [] };
 
-      for (const experiment of await PreferenceExperiments.getAll()) {
-        names.all.push(experiment.name);
-        if (experiment.expired) {
-          names.expired.push(experiment.name);
+      for (const { slug, expired } of await PreferenceExperiments.getAll()) {
+        names.all.push(slug);
+        if (expired) {
+          names.expired.push(slug);
         } else {
-          names.active.push(experiment.name);
+          names.active.push(slug);
         }
       }
 

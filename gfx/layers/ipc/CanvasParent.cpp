@@ -10,6 +10,7 @@
 #include "mozilla/layers/SourceSurfaceSharedData.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/SharedThreadPool.h"
+#include "nsTHashtable.h"
 #include "prsystem.h"
 
 #if defined(XP_WIN)
@@ -23,6 +24,22 @@ bool NS_IsInCanvasThread() {
 
 namespace mozilla {
 namespace layers {
+
+class RingBufferReaderServices final
+    : public CanvasEventRingBuffer::ReaderServices {
+ public:
+  explicit RingBufferReaderServices(RefPtr<CanvasParent> aCanvasParent)
+      : mCanvasParent(std::move(aCanvasParent)) {}
+
+  ~RingBufferReaderServices() final = default;
+
+  bool WriterClosed() final {
+    return mCanvasParent->GetIPCChannel()->Unsound_IsClosed();
+  }
+
+ private:
+  RefPtr<CanvasParent> mCanvasParent;
+};
 
 static base::Thread* sCanvasThread = nullptr;
 static StaticRefPtr<nsIThreadPool> sCanvasWorkers;
@@ -38,6 +55,13 @@ static MessageLoop* CanvasPlaybackLoop() {
   }
 
   return sCanvasThread ? sCanvasThread->message_loop() : nullptr;
+}
+
+typedef nsTHashtable<nsRefPtrHashKey<CanvasParent>> CanvasParentSet;
+
+static CanvasParentSet& CanvasParents() {
+  static CanvasParentSet* sCanvasParents = new CanvasParentSet();
+  return *sCanvasParents;
 }
 
 /* static */
@@ -80,10 +104,29 @@ static already_AddRefed<nsIThreadPool> GetCanvasWorkers() {
   return do_AddRef(sCanvasWorkers);
 }
 
+static void EnsureAllClosed() {
+  // Close removes the CanvasParent from the set so take a copy first.
+  CanvasParentSet canvasParents;
+  for (auto iter = CanvasParents().Iter(); !iter.Done(); iter.Next()) {
+    canvasParents.PutEntry(iter.Get()->GetKey());
+  }
+
+  for (auto iter = canvasParents.Iter(); !iter.Done(); iter.Next()) {
+    iter.Get()->GetKey()->Close();
+    iter.Remove();
+  }
+
+  MOZ_DIAGNOSTIC_ASSERT(CanvasParents().IsEmpty(),
+                        "Closing should have cleared all entries.");
+}
+
 /* static */ void CanvasParent::Shutdown() {
   sShuttingDown = true;
 
   if (sCanvasThread) {
+    RefPtr<Runnable> runnable =
+        NewRunnableFunction("CanvasParent::EnsureAllClosed", &EnsureAllClosed);
+    sCanvasThread->message_loop()->PostTask(runnable.forget());
     sCanvasThread->Stop();
     delete sCanvasThread;
     sCanvasThread = nullptr;
@@ -95,7 +138,7 @@ static already_AddRefed<nsIThreadPool> GetCanvasWorkers() {
   }
 }
 
-CanvasParent::CanvasParent() {}
+CanvasParent::CanvasParent() : mTranslator(CanvasTranslator::Create()) {}
 
 CanvasParent::~CanvasParent() {}
 
@@ -104,16 +147,19 @@ void CanvasParent::Bind(Endpoint<PCanvasParent>&& aEndpoint) {
     return;
   }
 
-  mSelfRef = this;
+  CanvasParents().PutEntry(this);
 }
 
-mozilla::ipc::IPCResult CanvasParent::RecvCreateTranslator(
+mozilla::ipc::IPCResult CanvasParent::RecvInitTranslator(
     const TextureType& aTextureType,
     const ipc::SharedMemoryBasic::Handle& aReadHandle,
     const CrossProcessSemaphoreHandle& aReaderSem,
     const CrossProcessSemaphoreHandle& aWriterSem) {
-  mTranslator = CanvasTranslator::Create(aTextureType, aReadHandle, aReaderSem,
-                                         aWriterSem);
+  if (!mTranslator->Init(aTextureType, aReadHandle, aReaderSem, aWriterSem,
+                         MakeUnique<RingBufferReaderServices>(this))) {
+    return IPC_FAIL(this, "Failed to initialize CanvasTranslator.");
+  }
+
   return RecvResumeTranslation();
 }
 
@@ -137,23 +183,47 @@ void CanvasParent::PostStartTranslationTask(uint32_t aDispatchFlags) {
   RefPtr<nsIThreadPool> canvasWorkers = GetCanvasWorkers();
   RefPtr<Runnable> runnable = NewRunnableMethod(
       "CanvasParent::StartTranslation", this, &CanvasParent::StartTranslation);
+  mTranslating = true;
   canvasWorkers->Dispatch(runnable.forget(), aDispatchFlags);
 }
 
 void CanvasParent::StartTranslation() {
-  if (!mTranslator->TranslateRecording()) {
+  if (!mTranslator->TranslateRecording() &&
+      !GetIPCChannel()->Unsound_IsClosed()) {
     PostStartTranslationTask(nsIThread::DISPATCH_AT_END);
+    return;
   }
+
+  mTranslating = false;
 }
 
 UniquePtr<SurfaceDescriptor>
 CanvasParent::LookupSurfaceDescriptorForClientDrawTarget(
     const uintptr_t aDrawTarget) {
+  if (!mTranslator) {
+    // We are shutting down.
+    return nullptr;
+  }
+
   return mTranslator->WaitForSurfaceDescriptor(
       reinterpret_cast<void*>(aDrawTarget));
 }
 
-void CanvasParent::DeallocPCanvasParent() { mSelfRef = nullptr; }
+void CanvasParent::ActorDestroy(ActorDestroyReason why) {
+  while (mTranslating) {
+  }
+
+  if (mTranslator) {
+    mTranslator = nullptr;
+  }
+}
+
+void CanvasParent::ActorDealloc() {
+  MOZ_DIAGNOSTIC_ASSERT(!mTranslating);
+  MOZ_DIAGNOSTIC_ASSERT(!mTranslator);
+
+  CanvasParents().RemoveEntry(this);
+}
 
 }  // namespace layers
 }  // namespace mozilla

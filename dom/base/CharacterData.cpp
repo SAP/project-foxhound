@@ -29,7 +29,9 @@
 #include "nsCOMArray.h"
 #include "nsNodeUtils.h"
 #include "mozilla/dom/DirectionalityUtils.h"
-#include "nsBindingManager.h"
+#ifdef MOZ_XBL
+#  include "nsBindingManager.h"
+#endif
 #include "nsCCUncollectableMarker.h"
 #include "mozAutoDocUpdate.h"
 #include "nsTextNode.h"
@@ -38,6 +40,10 @@
 #include "mozilla/Sprintf.h"
 #include "nsWindowSizes.h"
 #include "nsWrapperCacheInlines.h"
+
+#if defined(ACCESSIBILITY) && defined(DEBUG)
+#  include "nsAccessibilityService.h"
+#endif
 
 namespace mozilla {
 namespace dom {
@@ -496,6 +502,11 @@ nsresult CharacterData::BindToTree(BindContext& aContext, nsINode& aParent) {
 
   UpdateEditableState(false);
 
+  // Ensure we only do these once, in the case we move the shadow host around.
+  if (aContext.SubtreeRootChanges()) {
+    HandleShadowDOMRelatedInsertionSteps(hadParent);
+  }
+
   MOZ_ASSERT(OwnerDoc() == aParent.OwnerDoc(), "Bound to wrong document");
   MOZ_ASSERT(IsInComposedDoc() == aContext.InComposedDoc());
   MOZ_ASSERT(IsInUncomposedDoc() == aContext.InUncomposedDoc());
@@ -513,7 +524,11 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
   // Unset frame flags; if we need them again later, they'll get set again.
   UnsetFlags(NS_CREATE_FRAME_IF_NON_WHITESPACE | NS_REFRAME_IF_WHITESPACE);
 
+  HandleShadowDOMRelatedRemovalSteps(aNullParent);
+
+#ifdef MOZ_XBL
   Document* document = GetComposedDoc();
+#endif
 
   if (aNullParent) {
     if (IsRootOfNativeAnonymousSubtree()) {
@@ -536,6 +551,7 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
     SetSubtreeRootPointer(aNullParent ? this : mParent->SubtreeRoot());
   }
 
+#ifdef MOZ_XBL
   if (document && !GetContainingShadow()) {
     // Notify XBL- & nsIAnonymousContentCreator-generated
     // anonymous content that the document is changing.
@@ -546,6 +562,7 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
           document->BindingManager(), this, document));
     }
   }
+#endif
 
   nsExtendedContentSlots* slots = GetExistingExtendedContentSlots();
   if (slots) {
@@ -556,6 +573,11 @@ void CharacterData::UnbindFromTree(bool aNullParent) {
   }
 
   nsNodeUtils::ParentChainChanged(this);
+
+#if defined(ACCESSIBILITY) && defined(DEBUG)
+  MOZ_ASSERT(!GetAccService() || !GetAccService()->HasAccessible(this),
+             "An accessible for this element still exists!");
+#endif
 }
 
 //----------------------------------------------------------------------

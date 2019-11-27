@@ -69,12 +69,15 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
         (subpath "/Library/Filesystems/NetFSPlugins")
         (subpath "/usr/share"))))
 
-  ; Top-level directory metadata access (bug 1404298)
-  (allow file-read-metadata (regex #"^/[^/]+$"))
+  ; For stat and symlink resolution
+  (allow file-read-metadata (subpath "/"))
 
-  (allow file-read-metadata
-    (literal "/private/etc/localtime")
-    (regex #"^/private/tmp/KSInstallAction\."))
+  ; Timezone
+  (allow file-read*
+    (subpath "/private/var/db/timezone")
+    (subpath "/usr/share/zoneinfo")
+    (subpath "/usr/share/zoneinfo.default")
+    (literal "/private/etc/localtime"))
 
   ; Allow read access to standard special files.
   (allow file-read*
@@ -169,6 +172,7 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
   (if (string=? hasWindowServer "TRUE")
     (allow mach-lookup (global-name "com.apple.windowserver.active")))
   (allow mach-lookup
+    (global-name "com.apple.system.opendirectoryd.libinfo")
     (global-name "com.apple.CoreServices.coreservicesd")
     (global-name "com.apple.coreservices.launchservicesd")
     (global-name "com.apple.lsd.mapdb"))
@@ -202,12 +206,23 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
       (iokit-property "MetalPluginName")
       (iokit-property "MetalPluginClassName")))
 
-; depending on systems, the 1st, 2nd or both rules are necessary
+  ; depending on systems, the 1st, 2nd or both rules are necessary
   (allow user-preference-read (preference-domain "com.apple.HIToolbox"))
   (allow file-read-data (literal "/Library/Preferences/com.apple.HIToolbox.plist"))
 
   (allow user-preference-read (preference-domain "com.apple.ATS"))
-  (allow file-read-data (literal "/Library/Preferences/.GlobalPreferences.plist"))
+
+  ; Needed for some global preferences (such as scrolling behavior)
+  (allow file-read-data
+      (literal "/Library/Preferences/.GlobalPreferences.plist")
+      (home-literal "/Library/Preferences/.GlobalPreferences.plist")
+      (home-regex #"/Library/Preferences/ByHost/\.GlobalPreferences.*"))
+      (home-literal "/Library/Preferences/com.apple.universalaccess.plist")
+  (allow mach-lookup
+      (global-name "com.apple.cfprefsd.agent")
+      (global-name "com.apple.cfprefsd.daemon"))
+  (allow ipc-posix-shm-read-data
+      (ipc-posix-name-regex #"^apple\.cfprefs\..*"))
 
   (allow file-read*
       (subpath "/Library/ColorSync/Profiles")
@@ -242,10 +257,6 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
         (allow file-read* (subpath testingReadPath3)))
       (when testingReadPath4
         (allow file-read* (subpath testingReadPath4)))))
-
-  (allow file-read-metadata (home-subpath "/Library"))
-
-  (allow file-read-metadata (subpath "/private/var"))
 
   ; bug 1303987
   (if (string? debugWriteDir)
@@ -360,6 +371,11 @@ static const char SandboxPolicyContent[] = R"SANDBOX_LITERAL(
       (subpath "/Library/Extensis/UTC")      ; bug 1469657
       (regex #"\.fontvault/")
       (home-subpath "/FontExplorer X/Font Library")))
+
+  (if (>= macosMinorVersion 13)
+   (allow mach-lookup
+    ; bug 1565575
+    (global-name "com.apple.audio.AudioComponentRegistrar")))
 )SANDBOX_LITERAL";
 
 // These are additional rules that are added to the content process rules for
@@ -383,11 +399,6 @@ static const char SandboxPolicyContentAudioAddend[] = R"SANDBOX_LITERAL(
   (allow mach-lookup
     (global-name "com.apple.audio.coreaudiod")
     (global-name "com.apple.audio.audiohald"))
-
-  (if (>= macosMinorVersion 13)
-    (allow mach-lookup
-    ; bug 1376163
-    (global-name "com.apple.audio.AudioComponentRegistrar")))
 
   (allow iokit-open (iokit-user-client-class "IOAudioEngineUserClient"))
 

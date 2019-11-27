@@ -8,11 +8,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SiteDataTestUtils: "resource://testing-common/SiteDataTestUtils.jsm",
+  PermissionTestUtils: "resource://testing-common/PermissionTestUtils.jsm",
 });
 
 function createIndexedDB(host, originAttributes) {
   let uri = Services.io.newURI("https://" + host);
-  let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+  let principal = Services.scriptSecurityManager.createContentPrincipal(
     uri,
     originAttributes
   );
@@ -23,7 +24,7 @@ function checkIndexedDB(host, originAttributes) {
   return new Promise(resolve => {
     let data = true;
     let uri = Services.io.newURI("https://" + host);
-    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+    let principal = Services.scriptSecurityManager.createContentPrincipal(
       uri,
       originAttributes
     );
@@ -98,7 +99,7 @@ async function deleteOnShutdown(opt) {
   // Custom permission without considering OriginAttributes
   if (opt.cookiePermission !== undefined) {
     let uri = Services.io.newURI("https://www.example.com");
-    Services.perms.add(uri, "cookie", opt.cookiePermission);
+    PermissionTestUtils.add(uri, "cookie", opt.cookiePermission);
   }
 
   // Let's create a tab with some data.
@@ -151,7 +152,7 @@ async function deleteOnShutdown(opt) {
 
   if (opt.cookiePermission !== undefined) {
     let uri = Services.io.newURI("https://www.example.com");
-    Services.perms.remove(uri, "cookie");
+    PermissionTestUtils.remove(uri, "cookie");
   }
 }
 

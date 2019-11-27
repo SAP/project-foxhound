@@ -10,7 +10,8 @@
 //! single ISA instance.
 
 use crate::binemit::{
-    relax_branches, shrink_instructions, CodeInfo, MemoryCodeSink, RelocSink, TrapSink,
+    relax_branches, shrink_instructions, CodeInfo, MemoryCodeSink, RelocSink, StackmapSink,
+    TrapSink,
 };
 use crate::dce::do_dce;
 use crate::dominator_tree::DominatorTree;
@@ -22,6 +23,7 @@ use crate::licm::do_licm;
 use crate::loop_analysis::LoopAnalysis;
 use crate::nan_canonicalization::do_nan_canonicalization;
 use crate::postopt::do_postopt;
+use crate::redundant_reload_remover::RedundantReloadRemover;
 use crate::regalloc;
 use crate::result::CodegenResult;
 use crate::settings::{FlagsOrIsa, OptLevel};
@@ -31,6 +33,7 @@ use crate::timing;
 use crate::unreachable_code::eliminate_unreachable_code;
 use crate::value_label::{build_value_labels_ranges, ComparableSourceLoc, ValueLabelsRanges};
 use crate::verifier::{verify_context, verify_locations, VerifierErrors, VerifierResult};
+use log::debug;
 use std::vec::Vec;
 
 /// Persistent data structures and compilation pipeline.
@@ -49,6 +52,9 @@ pub struct Context {
 
     /// Loop analysis of `func`.
     pub loop_analysis: LoopAnalysis,
+
+    /// Redundant-reload remover context.
+    pub redundant_reload_remover: RedundantReloadRemover,
 }
 
 impl Context {
@@ -71,6 +77,7 @@ impl Context {
             domtree: DominatorTree::new(),
             regalloc: regalloc::Context::new(),
             loop_analysis: LoopAnalysis::new(),
+            redundant_reload_remover: RedundantReloadRemover::new(),
         }
     }
 
@@ -81,6 +88,7 @@ impl Context {
         self.domtree.clear();
         self.regalloc.clear();
         self.loop_analysis.clear();
+        self.redundant_reload_remover.clear();
     }
 
     /// Compile the function, and emit machine code into a `Vec<u8>`.
@@ -100,12 +108,14 @@ impl Context {
         mem: &mut Vec<u8>,
         relocs: &mut dyn RelocSink,
         traps: &mut dyn TrapSink,
+        stackmaps: &mut dyn StackmapSink,
     ) -> CodegenResult<CodeInfo> {
         let info = self.compile(isa)?;
         let old_len = mem.len();
         mem.resize(old_len + info.total_size as usize, 0);
-        let new_info =
-            unsafe { self.emit_to_memory(isa, mem.as_mut_ptr().add(old_len), relocs, traps) };
+        let new_info = unsafe {
+            self.emit_to_memory(isa, mem.as_mut_ptr().add(old_len), relocs, traps, stackmaps)
+        };
         debug_assert!(new_info == info);
         Ok(info)
     }
@@ -120,19 +130,20 @@ impl Context {
     pub fn compile(&mut self, isa: &dyn TargetIsa) -> CodegenResult<CodeInfo> {
         let _tt = timing::compile();
         self.verify_if(isa)?;
+        debug!("Compiling:\n{}", self.func.display(isa));
+
+        let opt_level = isa.flags().opt_level();
 
         self.compute_cfg();
-        if isa.flags().opt_level() != OptLevel::Fastest {
+        if opt_level != OptLevel::None {
             self.preopt(isa)?;
         }
         if isa.flags().enable_nan_canonicalization() {
             self.canonicalize_nans(isa)?;
         }
         self.legalize(isa)?;
-        if isa.flags().opt_level() != OptLevel::Fastest {
+        if opt_level != OptLevel::None {
             self.postopt(isa)?;
-        }
-        if isa.flags().opt_level() == OptLevel::Best {
             self.compute_domtree();
             self.compute_loop_analysis();
             self.licm(isa)?;
@@ -140,15 +151,21 @@ impl Context {
         }
         self.compute_domtree();
         self.eliminate_unreachable_code(isa)?;
-        if isa.flags().opt_level() != OptLevel::Fastest {
+        if opt_level != OptLevel::None {
             self.dce(isa)?;
         }
         self.regalloc(isa)?;
         self.prologue_epilogue(isa)?;
-        if isa.flags().opt_level() == OptLevel::Best {
+        if opt_level == OptLevel::Speed || opt_level == OptLevel::SpeedAndSize {
+            self.redundant_reload_remover(isa)?;
+        }
+        if opt_level == OptLevel::SpeedAndSize {
             self.shrink_instructions(isa)?;
         }
-        self.relax_branches(isa)
+        let result = self.relax_branches(isa);
+
+        debug!("Compiled:\n{}", self.func.display(isa));
+        result
     }
 
     /// Emit machine code directly into raw memory.
@@ -168,9 +185,10 @@ impl Context {
         mem: *mut u8,
         relocs: &mut dyn RelocSink,
         traps: &mut dyn TrapSink,
+        stackmaps: &mut dyn StackmapSink,
     ) -> CodeInfo {
         let _tt = timing::binemit();
-        let mut sink = MemoryCodeSink::new(mem, relocs, traps);
+        let mut sink = MemoryCodeSink::new(mem, relocs, traps, stackmaps);
         isa.emit_function_to_memory(&self.func, &mut sink);
         sink.info
     }
@@ -201,7 +219,7 @@ impl Context {
     /// Run the locations verifier on the function.
     pub fn verify_locations(&self, isa: &dyn TargetIsa) -> VerifierResult<()> {
         let mut errors = VerifierErrors::default();
-        let _ = verify_locations(isa, &self.func, None, &mut errors);
+        let _ = verify_locations(isa, &self.func, &self.cfg, None, &mut errors);
 
         if errors.is_empty() {
             Ok(())
@@ -227,7 +245,7 @@ impl Context {
 
     /// Perform pre-legalization rewrites on the function.
     pub fn preopt(&mut self, isa: &dyn TargetIsa) -> CodegenResult<()> {
-        do_preopt(&mut self.func, &mut self.cfg);
+        do_preopt(&mut self.func, &mut self.cfg, isa);
         self.verify_if(isa)?;
         Ok(())
     }
@@ -245,6 +263,7 @@ impl Context {
         self.domtree.clear();
         self.loop_analysis.clear();
         legalize_function(&mut self.func, &mut self.cfg, isa);
+        debug!("Legalized:\n{}", self.func.display(isa));
         self.verify_if(isa)
     }
 
@@ -307,7 +326,7 @@ impl Context {
     /// Run the register allocator.
     pub fn regalloc(&mut self, isa: &dyn TargetIsa) -> CodegenResult<()> {
         self.regalloc
-            .run(isa, &mut self.func, &self.cfg, &mut self.domtree)
+            .run(isa, &mut self.func, &mut self.cfg, &mut self.domtree)
     }
 
     /// Insert prologue and epilogues after computing the stack frame layout.
@@ -315,6 +334,14 @@ impl Context {
         isa.prologue_epilogue(&mut self.func)?;
         self.verify_if(isa)?;
         self.verify_locations_if(isa)?;
+        Ok(())
+    }
+
+    /// Do redundant-reload removal after allocation of both registers and stack slots.
+    pub fn redundant_reload_remover(&mut self, isa: &dyn TargetIsa) -> CodegenResult<()> {
+        self.redundant_reload_remover
+            .run(isa, &mut self.func, &self.cfg);
+        self.verify_if(isa)?;
         Ok(())
     }
 
@@ -329,7 +356,7 @@ impl Context {
     /// Run the branch relaxation pass and return information about the function's code and
     /// read-only data.
     pub fn relax_branches(&mut self, isa: &dyn TargetIsa) -> CodegenResult<CodeInfo> {
-        let info = relax_branches(&mut self.func, isa)?;
+        let info = relax_branches(&mut self.func, &mut self.cfg, &mut self.domtree, isa)?;
         self.verify_if(isa)?;
         self.verify_locations_if(isa)?;
         Ok(info)

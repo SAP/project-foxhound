@@ -68,7 +68,7 @@
 #endif
 #include "MainThreadUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 
 #if defined(MOZ_LOGGING)
 GFX2D_API mozilla::LogModule* GetGFX2DLog() {
@@ -157,19 +157,30 @@ static inline bool HasCPUIDBit(unsigned int level, CPUIDRegister reg,
 #ifdef MOZ_ENABLE_FREETYPE
 extern "C" {
 
-FT_Face mozilla_NewFTFace(FT_Library aFTLibrary, const char* aFileName,
-                          int aFaceIndex) {
-  return mozilla::gfx::Factory::NewFTFace(aFTLibrary, aFileName, aFaceIndex);
+void mozilla_AddRefSharedFTFace(void* aContext) {
+  if (aContext) {
+    static_cast<mozilla::gfx::SharedFTFace*>(aContext)->AddRef();
+  }
 }
 
-FT_Face mozilla_NewFTFaceFromData(FT_Library aFTLibrary, const uint8_t* aData,
-                                  size_t aDataSize, int aFaceIndex) {
-  return mozilla::gfx::Factory::NewFTFaceFromData(aFTLibrary, aData, aDataSize,
-                                                  aFaceIndex);
+void mozilla_ReleaseSharedFTFace(void* aContext, void* aOwner) {
+  if (aContext) {
+    auto* sharedFace = static_cast<mozilla::gfx::SharedFTFace*>(aContext);
+    sharedFace->ForgetLockOwner(aOwner);
+    sharedFace->Release();
+  }
 }
 
-void mozilla_ReleaseFTFace(FT_Face aFace) {
-  mozilla::gfx::Factory::ReleaseFTFace(aFace);
+void mozilla_ForgetSharedFTFaceLockOwner(void* aContext, void* aOwner) {
+  static_cast<mozilla::gfx::SharedFTFace*>(aContext)->ForgetLockOwner(aOwner);
+}
+
+int mozilla_LockSharedFTFace(void* aContext, void* aOwner) {
+  return int(static_cast<mozilla::gfx::SharedFTFace*>(aContext)->Lock(aOwner));
+}
+
+void mozilla_UnlockSharedFTFace(void* aContext) {
+  static_cast<mozilla::gfx::SharedFTFace*>(aContext)->Unlock();
 }
 
 FT_Error mozilla_LoadFTGlyph(FT_Face aFace, uint32_t aGlyphIndex,
@@ -189,10 +200,6 @@ void mozilla_UnlockFTLibrary(FT_Library aFTLibrary) {
 
 namespace mozilla {
 namespace gfx {
-
-// In Gecko, this value is managed by gfx.logging.level and gets updated when
-// the pref change.
-Atomic<int32_t> LoggingPrefs::sGfxLogLevel(LOG_DEFAULT);
 
 #ifdef MOZ_ENABLE_FREETYPE
 FT_Library Factory::mFTLibrary = nullptr;
@@ -219,18 +226,9 @@ DrawEventRecorder* Factory::mRecorder;
 
 mozilla::gfx::Config* Factory::sConfig = nullptr;
 
-static void PrefChanged(const char* aPref, void*) {
-  mozilla::gfx::LoggingPrefs::sGfxLogLevel =
-      Preferences::GetInt(StaticPrefs::GetPrefName_gfx_logging_level(),
-                          StaticPrefs::GetPrefDefault_gfx_logging_level());
-}
-
 void Factory::Init(const Config& aConfig) {
   MOZ_ASSERT(!sConfig);
   sConfig = new Config(aConfig);
-  Preferences::RegisterCallback(
-      PrefChanged,
-      nsDependentCString(StaticPrefs::GetPrefName_gfx_logging_level()));
 }
 
 void Factory::ShutDown() {
@@ -295,7 +293,7 @@ inline int LoggerOptionsBasedOnSize(const IntSize& aSize) {
 }
 
 bool Factory::ReasonableSurfaceSize(const IntSize& aSize) {
-  return Factory::CheckSurfaceSize(aSize, 8192);
+  return Factory::CheckSurfaceSize(aSize, kReasonableSurfaceSize);
 }
 
 bool Factory::AllowedSurfaceSize(const IntSize& aSize) {
@@ -411,8 +409,8 @@ already_AddRefed<DrawTarget> Factory::CreateWrapAndRecordDrawTarget(
 }
 
 already_AddRefed<DrawTarget> Factory::CreateRecordingDrawTarget(
-    DrawEventRecorder* aRecorder, DrawTarget* aDT, IntSize aSize) {
-  return MakeAndAddRef<DrawTargetRecording>(aRecorder, aDT, aSize);
+    DrawEventRecorder* aRecorder, DrawTarget* aDT, IntRect aRect) {
+  return MakeAndAddRef<DrawTargetRecording>(aRecorder, aDT, aRect);
 }
 
 already_AddRefed<DrawTargetCapture> Factory::CreateCaptureDrawTargetForTarget(
@@ -550,56 +548,17 @@ uint32_t Factory::GetMaxSurfaceSize(BackendType aType) {
   }
 }
 
-already_AddRefed<ScaledFont> Factory::CreateScaledFontForNativeFont(
-    const NativeFont& aNativeFont, const RefPtr<UnscaledFont>& aUnscaledFont,
-    Float aSize, cairo_scaled_font_t* aScaledFont) {
-  switch (aNativeFont.mType) {
-#ifdef WIN32
-    case NativeFontType::GDI_LOGFONT: {
-      RefPtr<ScaledFontWin> font = MakeAndAddRef<ScaledFontWin>(
-          static_cast<LOGFONT*>(aNativeFont.mFont), aUnscaledFont, aSize);
-#  ifdef USE_CAIRO
-      if (aScaledFont) {
-        font->SetCairoScaledFont(aScaledFont);
-      } else {
-        font->PopulateCairoScaledFont();
-      }
-#  endif
-      return font.forget();
-    }
-#elif defined(MOZ_WIDGET_GTK)
-    case NativeFontType::FONTCONFIG_PATTERN:
-      return MakeAndAddRef<ScaledFontFontconfig>(
-          aScaledFont, static_cast<FcPattern*>(aNativeFont.mFont),
-          aUnscaledFont, aSize);
-#elif defined(MOZ_WIDGET_ANDROID)
-    case NativeFontType::FREETYPE_FACE:
-      return MakeAndAddRef<ScaledFontFreeType>(
-          aScaledFont, static_cast<FT_Face>(aNativeFont.mFont), aUnscaledFont,
-          aSize);
-#endif
-    default:
-      gfxWarning() << "Invalid native font type specified.";
-      return nullptr;
-  }
-}
-
 already_AddRefed<NativeFontResource> Factory::CreateNativeFontResource(
-    uint8_t* aData, uint32_t aSize, BackendType aBackendType,
-    FontType aFontType, void* aFontContext) {
+    uint8_t* aData, uint32_t aSize, FontType aFontType, void* aFontContext) {
   switch (aFontType) {
 #ifdef WIN32
-    case FontType::DWRITE: {
-      bool needsCairo = aBackendType == BackendType::CAIRO;
-      return NativeFontResourceDWrite::Create(aData, aSize, needsCairo);
-    }
+    case FontType::DWRITE:
+      return NativeFontResourceDWrite::Create(aData, aSize);
     case FontType::GDI:
       return NativeFontResourceGDI::Create(aData, aSize);
 #elif defined(XP_DARWIN)
-    case FontType::MAC: {
-      bool needsCairo = aBackendType == BackendType::CAIRO;
-      return NativeFontResourceMac::Create(aData, aSize, needsCairo);
-    }
+    case FontType::MAC:
+      return NativeFontResourceMac::Create(aData, aSize);
 #elif defined(MOZ_WIDGET_GTK)
     case FontType::FONTCONFIG:
       return NativeFontResourceFontconfig::Create(
@@ -647,6 +606,24 @@ already_AddRefed<ScaledFont> Factory::CreateScaledFontForMacFont(
 }
 #endif
 
+#ifdef MOZ_WIDGET_GTK
+already_AddRefed<ScaledFont> Factory::CreateScaledFontForFontconfigFont(
+    const RefPtr<UnscaledFont>& aUnscaledFont, Float aSize,
+    RefPtr<SharedFTFace> aFace, FcPattern* aPattern) {
+  return MakeAndAddRef<ScaledFontFontconfig>(std::move(aFace), aPattern,
+                                             aUnscaledFont, aSize);
+}
+#endif
+
+#ifdef MOZ_WIDGET_ANDROID
+already_AddRefed<ScaledFont> Factory::CreateScaledFontForFreeTypeFont(
+    const RefPtr<UnscaledFont>& aUnscaledFont, Float aSize,
+    RefPtr<SharedFTFace> aFace, bool aApplySyntheticBold) {
+  return MakeAndAddRef<ScaledFontFreeType>(std::move(aFace), aUnscaledFont,
+                                           aSize, aApplySyntheticBold);
+}
+#endif
+
 already_AddRefed<DrawTarget> Factory::CreateDualDrawTarget(
     DrawTarget* targetA, DrawTarget* targetB) {
   MOZ_ASSERT(targetA && targetB);
@@ -676,6 +653,23 @@ void Factory::SetBGRSubpixelOrder(bool aBGR) { mBGRSubpixelOrder = aBGR; }
 bool Factory::GetBGRSubpixelOrder() { return mBGRSubpixelOrder; }
 
 #ifdef MOZ_ENABLE_FREETYPE
+SharedFTFace::SharedFTFace(FT_Face aFace, SharedFTFaceData* aData)
+    : mFace(aFace),
+      mData(aData),
+      mLock("SharedFTFace::mLock"),
+      mLastLockOwner(nullptr) {
+  if (mData) {
+    mData->BindData();
+  }
+}
+
+SharedFTFace::~SharedFTFace() {
+  Factory::ReleaseFTFace(mFace);
+  if (mData) {
+    mData->ReleaseData();
+  }
+}
+
 void Factory::SetFTLibrary(FT_Library aFTLibrary) { mFTLibrary = aFTLibrary; }
 
 FT_Library Factory::GetFTLibrary() {
@@ -712,6 +706,16 @@ FT_Face Factory::NewFTFace(FT_Library aFTLibrary, const char* aFileName,
   return face;
 }
 
+already_AddRefed<SharedFTFace> Factory::NewSharedFTFace(FT_Library aFTLibrary,
+                                                        const char* aFilename,
+                                                        int aFaceIndex) {
+  if (FT_Face face = NewFTFace(aFTLibrary, aFilename, aFaceIndex)) {
+    return MakeAndAddRef<SharedFTFace>(face);
+  } else {
+    return nullptr;
+  }
+}
+
 FT_Face Factory::NewFTFaceFromData(FT_Library aFTLibrary, const uint8_t* aData,
                                    size_t aDataSize, int aFaceIndex) {
   StaticMutexAutoLock lock(mFTLock);
@@ -724,6 +728,17 @@ FT_Face Factory::NewFTFaceFromData(FT_Library aFTLibrary, const uint8_t* aData,
     return nullptr;
   }
   return face;
+}
+
+already_AddRefed<SharedFTFace> Factory::NewSharedFTFaceFromData(
+    FT_Library aFTLibrary, const uint8_t* aData, size_t aDataSize,
+    int aFaceIndex, SharedFTFaceData* aSharedData) {
+  if (FT_Face face =
+          NewFTFaceFromData(aFTLibrary, aData, aDataSize, aFaceIndex)) {
+    return MakeAndAddRef<SharedFTFace>(face, aSharedData);
+  } else {
+    return nullptr;
+  }
 }
 
 void Factory::ReleaseFTFace(FT_Face aFace) {
@@ -967,6 +982,12 @@ already_AddRefed<ScaledFont> Factory::CreateScaledFontForDWriteFont(
                                          aParams, aGamma, aContrast, aStyle);
 }
 
+already_AddRefed<ScaledFont> Factory::CreateScaledFontForGDIFont(
+    const void* aLogFont, const RefPtr<UnscaledFont>& aUnscaledFont,
+    Float aSize) {
+  return MakeAndAddRef<ScaledFontWin>(static_cast<const LOGFONT*>(aLogFont),
+                                      aUnscaledFont, aSize);
+}
 #endif  // WIN32
 
 #ifdef USE_SKIA

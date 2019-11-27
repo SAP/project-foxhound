@@ -151,6 +151,28 @@ uint64_t HTMLSummaryAccessible::NativeState() const {
   return state;
 }
 
+HTMLSummaryAccessible* HTMLSummaryAccessible::FromDetails(Accessible* details) {
+  if (!dom::HTMLDetailsElement::FromNodeOrNull(details->GetContent())) {
+    return nullptr;
+  }
+
+  HTMLSummaryAccessible* summaryAccessible = nullptr;
+  for (uint32_t i = 0; i < details->ChildCount(); i++) {
+    // Iterate through the children of our details accessible to locate main
+    // summary. This iteration includes the anonymous summary if the details
+    // element was not explicitly created with one.
+    Accessible* child = details->GetChildAt(i);
+    auto* summary =
+        mozilla::dom::HTMLSummaryElement::FromNodeOrNull(child->GetContent());
+    if (summary && summary->IsMainSummary()) {
+      summaryAccessible = static_cast<HTMLSummaryAccessible*>(child);
+      break;
+    }
+  }
+
+  return summaryAccessible;
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // HTMLSummaryAccessible: Widgets
 
@@ -165,11 +187,11 @@ role HTMLHeaderOrFooterAccessible::NativeRole() const {
   // If other sectioning or sectioning root elements, they become sections.
   nsIContent* parent = mContent->GetParent();
   while (parent) {
-    if (parent->IsAnyOfHTMLElements(nsGkAtoms::article, nsGkAtoms::aside,
-                                    nsGkAtoms::nav, nsGkAtoms::section,
-                                    nsGkAtoms::blockquote, nsGkAtoms::details,
-                                    nsGkAtoms::dialog, nsGkAtoms::fieldset,
-                                    nsGkAtoms::figure, nsGkAtoms::td)) {
+    if (parent->IsAnyOfHTMLElements(
+            nsGkAtoms::article, nsGkAtoms::aside, nsGkAtoms::nav,
+            nsGkAtoms::section, nsGkAtoms::main, nsGkAtoms::blockquote,
+            nsGkAtoms::details, nsGkAtoms::dialog, nsGkAtoms::fieldset,
+            nsGkAtoms::figure, nsGkAtoms::td)) {
       break;
     }
     parent = parent->GetParent();

@@ -83,7 +83,6 @@ BrowserCLH.prototype = {
             "PasswordManager:onFormSubmit",
             "PasswordManager:autoCompleteLogins",
             "PasswordManager:removeLogin",
-            "PasswordManager:insecureLoginFormPresent",
             // PLEASE KEEP THIS LIST IN SYNC WITH THE DESKTOP LIST IN
             // BrowserGlue.jsm
           ],
@@ -212,9 +211,10 @@ BrowserCLH.prototype = {
     }
 
     function shouldIgnoreLoginManagerEvent(event) {
+      let nodePrincipal = event.target.nodePrincipal;
       // If we have a null principal then prevent any more password manager code from running and
-      // incorrectly using the document `location`.
-      return event.target.nodePrincipal.isNullPrincipal;
+      // incorrectly using the document `location`. Also skip password manager for about: pages.
+      return nodePrincipal.isNullPrincipal || nodePrincipal.schemeIs("about");
     }
 
     let options = {

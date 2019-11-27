@@ -6,6 +6,7 @@ ChromeUtils.import("resource://gre/modules/AddonManager.jsm", this);
 ChromeUtils.import("resource://testing-common/AddonTestUtils.jsm", this);
 ChromeUtils.import("resource://normandy/lib/ClientEnvironment.jsm", this);
 ChromeUtils.import("resource://normandy/lib/PreferenceExperiments.jsm", this);
+ChromeUtils.import("resource://testing-common/NormandyTestUtils.jsm", this);
 
 add_task(async function testTelemetry() {
   // setup
@@ -36,7 +37,7 @@ add_task(async function testTelemetry() {
 
 add_task(async function testUserId() {
   // Test that userId is available
-  ok(UUID_REGEX.test(ClientEnvironment.userId), "userId available");
+  ok(NormandyTestUtils.isUuid(ClientEnvironment.userId), "userId available");
 
   // test that it pulls from the right preference
   await SpecialPowers.pushPrefEnv({
@@ -133,8 +134,8 @@ add_task(async function testDoNotTrack() {
 });
 
 add_task(async function testExperiments() {
-  const active = { name: "active", expired: false };
-  const expired = { name: "expired", expired: true };
+  const active = { slug: "active", expired: false };
+  const expired = { slug: "expired", expired: true };
   const getAll = sinon
     .stub(PreferenceExperiments, "getAll")
     .callsFake(async () => [active, expired]);

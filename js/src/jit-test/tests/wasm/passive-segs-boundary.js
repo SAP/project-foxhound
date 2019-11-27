@@ -29,8 +29,8 @@ function do_test(insn1, insn2, errKind, errText,
         let mem_def  = haveStorage ? "(memory 1 1)" : "";
         let mem_ia1  = `(data (i32.const 2) "\\03\\01\\04\\01")`;
         let mem_ia2  = `(data (i32.const 12) "\\07\\05\\02\\03\\06")`;
-        let mem_ip1  = `(data passive "\\02\\07\\01\\08")`;
-        let mem_ip2  = `(data passive "\\05\\09\\02\\07\\06")`;
+        let mem_ip1  = `(data "\\02\\07\\01\\08")`;
+        let mem_ip2  = `(data "\\05\\09\\02\\07\\06")`;
         let mem_init = ``;
         if (haveInitA && haveInitP)
             mem_init = `${mem_ia1} ${mem_ip1} ${mem_ia2} ${mem_ip2}`;
@@ -46,8 +46,8 @@ function do_test(insn1, insn2, errKind, errText,
         let tab_def  = haveStorage ? "(table 30 30 funcref)" : "";
         let tab_ia1  = `(elem (i32.const 2) 3 1 4 1)`;
         let tab_ia2  = `(elem (i32.const 12) 7 5 2 3 6)`;
-        let tab_ip1  = `(elem passive 2 7 1 8)`;
-        let tab_ip2  = `(elem passive 5 9 2 7 6)`;
+        let tab_ip1  = `(elem func 2 7 1 8)`;
+        let tab_ip2  = `(elem func 5 9 2 7 6)`;
         let tab_init = ``;
         if (haveInitA && haveInitP)
             tab_init = `${tab_ia1} ${tab_ip1} ${tab_ia2} ${tab_ip2}`;
@@ -215,25 +215,25 @@ mem_test("",
          "(memory.init 1 (i32.const 0xFFFE) (i32.const 1) (i32.const 3))",
          WebAssembly.RuntimeError, /index out of bounds/);
 
-// init: seg ix is valid passive, zero len, but src offset out of bounds.
-// At edge of segment is OK
+// init: seg ix is valid passive, zero len, but src offset out of bounds at the
+// edge
 mem_test("",
          "(memory.init 1 (i32.const 1234) (i32.const 4) (i32.const 0))");
 
-// One past end of segment is not OK
+// init: seg ix is valid passive, zero len, but src offset out of bounds one
+// past the edge
 mem_test("",
-         "(memory.init 1 (i32.const 1234) (i32.const 5) (i32.const 0))",
-         WebAssembly.RuntimeError, /index out of bounds/);
+         "(memory.init 1 (i32.const 1234) (i32.const 5) (i32.const 0))");
 
-// init: seg ix is valid passive, zero len, but dst offset out of bounds.
-// At edge of memory is OK.
+// init: seg ix is valid passive, zero len, but dst offset out of bounds at the
+// edge
 mem_test("",
          "(memory.init 1 (i32.const 0x10000) (i32.const 2) (i32.const 0))");
 
-// One past end of memory is not OK.
+// init: seg ix is valid passive, zero len, but dst offset out of bounds one
+// past the edge
 mem_test("",
-         "(memory.init 1 (i32.const 0x10001) (i32.const 2) (i32.const 0))",
-         WebAssembly.RuntimeError, /index out of bounds/);
+         "(memory.init 1 (i32.const 0x10001) (i32.const 2) (i32.const 0))");
 
 // drop: too many args
 mem_test("data.drop 1 (i32.const 42)", "",
@@ -277,7 +277,7 @@ tab_test("elem.drop 0", "",
 // and refers to a passive segment
 tab_test("elem.drop 3", "",
          WebAssembly.CompileError,
-         /active elem segment requires a table section/,
+         /active elem segment requires a table/,
          /*haveStorage=*/false, /*haveInitA=*/true, /*haveInitP=*/true);
 
 // drop with no tables but with passive segments only, ix out of range
@@ -342,25 +342,24 @@ tab_test("",
          "(table.init 1 (i32.const 28) (i32.const 1) (i32.const 3))",
          WebAssembly.RuntimeError, /index out of bounds/);
 
-// init: seg ix is valid passive, zero len, but src offset out of bounds.
-// At edge of segment is OK.
+// init: seg ix is valid passive, zero len, but src offset out of bounds at the
+// edge
 tab_test("",
          "(table.init 1 (i32.const 12) (i32.const 4) (i32.const 0))");
 
-// One past edge of segment is not OK.
+// init: seg ix is valid passive, zero len, but src offset out of bounds one
+// past the edge
 tab_test("",
-         "(table.init 1 (i32.const 12) (i32.const 5) (i32.const 0))",
-         WebAssembly.RuntimeError, /index out of bounds/);
+         "(table.init 1 (i32.const 12) (i32.const 5) (i32.const 0))");
 
-// init: seg ix is valid passive, zero len, but dst offset out of bounds.
-// At edge of table is OK.
+// init: seg ix is valid passive, zero len, but dst offset out of bounds
 tab_test("",
          "(table.init 1 (i32.const 30) (i32.const 2) (i32.const 0))");
 
-// One past edge of table is not OK.
+// init: seg ix is valid passive, zero len, but dst offset out of bounds one
+// past the edge
 tab_test("",
-         "(table.init 1 (i32.const 31) (i32.const 2) (i32.const 0))",
-         WebAssembly.RuntimeError, /index out of bounds/);
+         "(table.init 1 (i32.const 31) (i32.const 2) (i32.const 0))");
 
 // drop: too many args
 tab_test("elem.drop 1 (i32.const 42)", "",
@@ -428,22 +427,18 @@ tab_test_nofail(
     "(table.copy (i32.const 15) (i32.const 25) (i32.const 0))",
     "");
 
-// copy: zero length with dst offset out of bounds.
-// At edge of table is OK.
+// copy: zero length with dst offset out of bounds at the edge
 tab_test("(table.copy (i32.const 30) (i32.const 15) (i32.const 0))",
          "");
 
-// One past edge of table is not OK.
+// copy: zero length with dst offset out of bounds one past the edge
 tab_test("(table.copy (i32.const 31) (i32.const 15) (i32.const 0))",
-         "",
-         WebAssembly.RuntimeError, /index out of bounds/);
+         "");
 
-// copy: zero length with src offset out of bounds
-// At edge of table is OK.
+// copy: zero length with src offset out of bounds at the edge
 tab_test("(table.copy (i32.const 15) (i32.const 30) (i32.const 0))",
          "");
 
-// One past edge of table is not OK.
+// copy: zero length with src offset out of bounds one past the edge
 tab_test("(table.copy (i32.const 15) (i32.const 31) (i32.const 0))",
-         "",
-         WebAssembly.RuntimeError, /index out of bounds/);
+         "");

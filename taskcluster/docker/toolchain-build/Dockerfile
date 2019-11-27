@@ -25,10 +25,12 @@ RUN apt-get update && \
       gawk \
       gcc-multilib \
       gnupg \
+      jq \
       libbz2-dev \
       libcurl4-openssl-dev \
       libssl-dev \
       libtool \
+      libucl-dev \
       ninja-build \
       p7zip-full \
       procps \

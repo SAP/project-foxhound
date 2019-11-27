@@ -167,12 +167,22 @@ class MissingSignatureError extends Error {
   }
 }
 
+class UnknownCollectionError extends Error {
+  constructor(cid) {
+    super(`Unknown Collection "${cid}"`);
+    this.name = "UnknownCollectionError";
+  }
+}
+
 class RemoteSettingsClient extends EventEmitter {
   static get InvalidSignatureError() {
     return InvalidSignatureError;
   }
   static get MissingSignatureError() {
     return MissingSignatureError;
+  }
+  static get UnknownCollectionError() {
+    return UnknownCollectionError;
   }
 
   constructor(
@@ -193,6 +203,7 @@ class RemoteSettingsClient extends EventEmitter {
     this.localFields = localFields;
     this._lastCheckTimePref = lastCheckTimePref;
     this._verifier = null;
+    this._syncRunning = false;
 
     // This attribute allows signature verification to be disabled, when running tests
     // or when pulling data from a dev server.
@@ -239,6 +250,31 @@ class RemoteSettingsClient extends EventEmitter {
   httpClient() {
     const api = new KintoHttpClient(gServerURL);
     return api.bucket(this.bucketName).collection(this.collectionName);
+  }
+
+  /**
+   * Retrieve the collection timestamp for the last synchronization.
+   *
+   * @returns {number}
+   *          The timestamp in milliseconds, returns -1 if retrieving
+   *          the timestamp from the kinto collection fails.
+   */
+  async getLastModified() {
+    let timestamp = -1;
+
+    try {
+      const collection = await this.openCollection();
+      timestamp = await collection.db.getLastModified();
+    } catch (err) {
+      console.warn(
+        `Error retrieving the getLastModified timestamp from ${
+          this.identifier
+        } RemoteSettingClient`,
+        err
+      );
+    }
+
+    return timestamp;
   }
 
   /**
@@ -340,7 +376,7 @@ class RemoteSettingsClient extends EventEmitter {
       },
     });
     if (changes.length === 0) {
-      throw new Error(`Unknown collection "${this.identifier}"`);
+      throw new RemoteSettingsClient.UnknownCollectionError(this.identifier);
     }
     // According to API, there will be one only (fail if not).
     const [{ last_modified: expectedTimestamp }] = changes;
@@ -361,6 +397,14 @@ class RemoteSettingsClient extends EventEmitter {
    */
   async maybeSync(expectedTimestamp, options = {}) {
     const { loadDump = true, trigger = "manual" } = options;
+
+    // Make sure we don't run several synchronizations in parallel, mainly
+    // in order to avoid race conditions in "sync" events listeners.
+    if (this._syncRunning) {
+      console.warn(`${this.identifier} sync already running`);
+      return;
+    }
+    this._syncRunning = true;
 
     let importedFromDump = [];
     const startedAt = new Date();
@@ -588,6 +632,7 @@ class RemoteSettingsClient extends EventEmitter {
         duration: durationMilliseconds,
       });
       console.debug(`${this.identifier} sync status is ${reportStatus}`);
+      this._syncRunning = false;
     }
   }
 

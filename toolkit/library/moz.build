@@ -24,6 +24,7 @@ def Libxul(name, output_category=None):
 
     DELAYLOAD_DLLS += [
         'comdlg32.dll',
+        'credui.dll',
         'hid.dll',
         'msimg32.dll',
         'netapi32.dll',
@@ -53,11 +54,7 @@ def Libxul(name, output_category=None):
             '/widget/windows',
             '/xpcom/base',
         ]
-        # config/version.mk says $(srcdir)/$(RCINCLUDE), and this needs to
-        # be valid in both toolkit/library and toolkit/library/gtest.
-        # Eventually, the make backend would do its own path canonicalization
-        # and config/version.mk would lift the $(srcdir)
-        RCINCLUDE = '$(DEPTH)/toolkit/library/xulrunner.rc'
+        RCINCLUDE = '/toolkit/library/xulrunner.rc'
 
     # Show a breakdown of linker time. (Too verbose for local builds.)
     if CONFIG['CC_TYPE'] == 'clang-cl' and not CONFIG['DEVELOPER_OPTIONS']:
@@ -77,6 +74,7 @@ def Libxul(name, output_category=None):
         LDFLAGS += ['-Wl,-U,_OBJC_CLASS_$_NSSharingServicePickerTouchBarItem']
         LDFLAGS += ['-Wl,-U,_OBJC_METACLASS_$_NSTouchBar']
         LDFLAGS += ['-Wl,-U,_OBJC_CLASS_$_NSCustomTouchBarItem']
+        LDFLAGS += ['-Wl,-U,_OBJC_CLASS_$_NSPopoverTouchBarItem']
         LDFLAGS += ['-lresolv']
 
     if CONFIG['MOZ_DEBUG_SYMBOLS'] and CONFIG['CC_TYPE'] == 'clang-cl':
@@ -84,11 +82,32 @@ def Libxul(name, output_category=None):
     if CONFIG['RUSTC_NATVIS_LDFLAGS']:
         LDFLAGS += CONFIG['RUSTC_NATVIS_LDFLAGS']
 
-Libxul('xul')
+    if CONFIG['OS_ARCH'] == 'Linux' and CONFIG['OS_TARGET'] != 'Android':
+        GeneratedFile('symverscript', script='/build/gen_symverscript.py',
+                      inputs=['../symverscript.in'],
+                      flags=['xul%s' % CONFIG['MOZILLA_SYMBOLVERSION']])
+        SYMBOLS_FILE = '!symverscript'
 
-FORCE_STATIC_LIB = True
+    # Generate GDB pretty printer-autoload files only on Linux. OSX's GDB is
+    # too old to support Python pretty-printers; if this changes, we could
+    # make this 'ifdef GNU_CC'.
+    if CONFIG['OS_ARCH'] == 'Linux':
+        # Create a GDB Python auto-load file alongside the libxul shared library
+        # in the build directory.
+        DEFINES['topsrcdir'] = TOPSRCDIR
+        OBJDIR_PP_FILES.toolkit.library.gtest += ['../libxul.so-gdb.py.in']
+
+
+# The real libxul definition is in ./build/moz.build, but we define a
+# xul library here such that # FINAL_LIBRARY = 'xul' refers to here, which
+# is then linked to both build/libxul and gtest/libxul.
+Library('xul')
 
 STATIC_LIBRARY_NAME = 'xul_s'
+
+# Use a FINAL_LIBRARY for Libxul_defines to propagate from there. They wouldn't
+# propagate from here.
+FINAL_LIBRARY = 'xul-real'
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     SOURCES += [
@@ -106,7 +125,10 @@ if CONFIG['OS_ARCH'] == 'WINNT' and CONFIG['CC_TYPE'] not in ('clang', 'gcc'):
         '/xpcom/base',
     ]
 
-DIRS += ['gtest']
+DIRS += [
+    'build',
+    'gtest',
+]
 
 if CONFIG['OS_ARCH'] == 'WINNT':
   DIRS += ['dummydll']
@@ -131,7 +153,7 @@ if CONFIG['USE_ICU']:
         'icu',
     ]
 
-if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     USE_LIBS += [
         'mozgtk_stub',
     ]
@@ -146,7 +168,7 @@ if CONFIG['MOZ_JPROF']:
         'jprof',
     ]
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT'] or \
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk' or \
         CONFIG['MOZ_TREE_FREETYPE']:
     USE_LIBS += [
         'freetype',
@@ -235,9 +257,6 @@ if CONFIG['MOZ_SYSTEM_LIBVPX']:
 if not CONFIG['MOZ_TREE_PIXMAN']:
     OS_LIBS += CONFIG['MOZ_PIXMAN_LIBS']
 
-if CONFIG['MOZ_ALSA']:
-    OS_LIBS += CONFIG['MOZ_ALSA_LIBS']
-
 if CONFIG['HAVE_CLOCK_MONOTONIC']:
     OS_LIBS += CONFIG['REALTIME_LIBS']
 
@@ -246,20 +265,12 @@ OS_LIBS += CONFIG['ICONV_LIBS']
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
     OS_LIBS += CONFIG['TK_LIBS']
 
-if CONFIG['OS_ARCH'] == 'OpenBSD':
-    OS_LIBS += [
-        'sndio',
-    ]
-
 if CONFIG['MOZ_ENABLE_DBUS']:
     OS_LIBS += CONFIG['MOZ_DBUS_GLIB_LIBS']
 
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
-    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
-        OS_LIBS += [l for l in CONFIG['TK_LIBS']
-            if l not in ('-lgtk-3', '-lgdk-3')]
-    else:
-        OS_LIBS += CONFIG['TK_LIBS']
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
+    OS_LIBS += [l for l in CONFIG['TK_LIBS']
+        if l not in ('-lgtk-3', '-lgdk-3')]
     OS_LIBS += CONFIG['XLDFLAGS']
     OS_LIBS += CONFIG['XLIBS']
     OS_LIBS += CONFIG['XEXT_LIBS']
@@ -334,45 +345,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         'oleaut32',
     ]
 
-if CONFIG['COMPILE_ENVIRONMENT']:
-    if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
-        full_libname = SHARED_LIBRARY_NAME
-    else:
-        full_libname = '%s%s%s' % (
-            CONFIG['DLL_PREFIX'],
-            LIBRARY_NAME,
-            CONFIG['DLL_SUFFIX']
-        )
-    GENERATED_FILES += [('dependentlibs.list', 'dependentlibs.list.gtest')]
-    dep_libs_list = GENERATED_FILES[('dependentlibs.list', 'dependentlibs.list.gtest')]
-    dep_libs_list.script = 'dependentlibs.py:gen_list'
-    dep_libs_list.inputs = [
-        '!%s' % full_libname,
-    ]
-    FINAL_TARGET_FILES += ['!dependentlibs.list', '!dependentlibs.list.gtest']
-
-    if CONFIG['OS_ARCH'] == 'Linux' and CONFIG['OS_TARGET'] != 'Android':
-        GENERATED_FILES += ['symverscript']
-        GENERATED_FILES['symverscript'].script = '/build/gen_symverscript.py'
-        GENERATED_FILES['symverscript'].inputs = ['symverscript.in']
-        GENERATED_FILES['symverscript'].flags = [
-            'xul%s' % CONFIG['MOZILLA_SYMBOLVERSION']
-        ]
-        SYMBOLS_FILE = '!symverscript'
-
-    # Generate GDB pretty printer-autoload files only on Linux. OSX's GDB is
-    # too old to support Python pretty-printers; if this changes, we could
-    # make this 'ifdef GNU_CC'.
-    if CONFIG['OS_ARCH'] == 'Linux':
-        # Create a GDB Python auto-load file alongside the libxul shared library
-        # in the build directory.
-        DEFINES['topsrcdir'] = TOPSRCDIR
-        OBJDIR_PP_FILES.toolkit.library += ['libxul.so-gdb.py.in']
-
-# This library is entirely composed of Rust code, and needs to come after
-# all the C++ code so any possible C++ -> Rust calls can be resolved.
-USE_LIBS += ['gkrust']
-
 # The buildid is refreshed on every (incremental) build. But we want to avoid
 # rebuilding libxul every time, so instead of having a source file that
 # #include's buildid.h, which would have a dependency on it, and that would
@@ -381,12 +353,11 @@ USE_LIBS += ['gkrust']
 # objects files that constitute libxul, so that if any of the files linked into
 # libxul is rebuilt, we refresh the buildid and link it into libxul.
 SOURCES += ['!buildid.cpp']
-GENERATED_FILES += ['buildid.cpp']
-GENERATED_FILES['buildid.cpp'].script = 'gen_buildid.py'
 if CONFIG['MOZ_WIDGET_TOOLKIT'] in ('cocoa', 'uikit'):
     libxul_list = 'XUL'
 else:
     libxul_list = '%sxul_%s' % (
         CONFIG['DLL_PREFIX'], CONFIG['DLL_SUFFIX'].lstrip('.').replace('.','_'))
-GENERATED_FILES['buildid.cpp'].inputs = ['!%s.list' % libxul_list]
+GeneratedFile('buildid.cpp', script = 'gen_buildid.py',
+              inputs=['!build/%s.list' % libxul_list])
 

@@ -50,12 +50,13 @@ add_task(async function() {
   const onToolboxDestroy = gDevTools.once("toolbox-destroyed");
   await removeTab(tab);
   await onToolboxDestroy;
+  await debuggerClient.close();
   await removeTab(targetTab);
 });
 
 async function createLocalClient() {
   const { DebuggerClient } = require("devtools/shared/client/debugger-client");
-  const { DebuggerServer } = require("devtools/server/main");
+  const { DebuggerServer } = require("devtools/server/debugger-server");
   DebuggerServer.init();
   DebuggerServer.registerAllActors();
   DebuggerServer.allowChromeProcess = true;

@@ -13,10 +13,6 @@
  * limitations under the License.
  */
 
-#[cfg(feature = "cranelift_x86")]
-#[macro_use]
-extern crate target_lexicon;
-
 #[macro_use]
 extern crate log;
 
@@ -90,12 +86,14 @@ pub unsafe extern "C" fn cranelift_compile_function(
     let data = data.as_ref().unwrap();
 
     if let Err(e) = compiler.translate_wasm(data) {
-        error!("Wasm translation error: {}\n{}", e, compiler);
+        error!("Wasm translation error: {}\n", e);
+        info!("Translated function: {}", compiler);
         return false;
     };
 
     if let Err(e) = compiler.compile() {
-        error!("Cranelift compilation error: {}\n{}", e, compiler);
+        error!("Cranelift compilation error: {}\n", e);
+        info!("Compiled function: {}", compiler);
         return false;
     };
 

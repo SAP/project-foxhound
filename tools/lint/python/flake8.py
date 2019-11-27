@@ -2,8 +2,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import, print_function
-
 import json
 import os
 import platform
@@ -79,6 +77,7 @@ def setup(root, **lintargs):
 def lint(paths, config, **lintargs):
     from flake8.main.application import Application
 
+    log = lintargs['log']
     root = lintargs['root']
     config_path = os.path.join(root, '.flake8')
 
@@ -97,7 +96,7 @@ def lint(paths, config, **lintargs):
     # Run flake8.
     app = Application()
 
-    output_file = mozfile.NamedTemporaryFile()
+    output_file = mozfile.NamedTemporaryFile(mode='r')
     flake8_cmd = [
         '--config', config_path,
         '--output-file', output_file.name,
@@ -105,6 +104,7 @@ def lint(paths, config, **lintargs):
                     '"column":%(col)s,"rule":"%(code)s","message":"%(text)s"}',
         '--filename', ','.join(['*.{}'.format(e) for e in config['extensions']]),
     ]
+    log.debug("Command: {}".format(' '.join(flake8_cmd)))
 
     orig_make_file_checker_manager = app.make_file_checker_manager
 
@@ -154,5 +154,5 @@ def lint(paths, config, **lintargs):
 
         results.append(result.from_config(config, **res))
 
-    map(process_line, output_file.readlines())
+    list(map(process_line, output_file.readlines()))
     return results

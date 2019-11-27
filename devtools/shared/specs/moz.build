@@ -6,6 +6,7 @@
 
 DIRS += [
     'addon',
+    'descriptors',
     'targets',
     'worker',
 ]
@@ -27,6 +28,7 @@ DevToolsModules(
     'index.js',
     'inspector.js',
     'layout.js',
+    'manifest.js',
     'memory.js',
     'network-event.js',
     'network-monitor.js',
@@ -36,7 +38,6 @@ DevToolsModules(
     'performance-recording.js',
     'performance.js',
     'preference.js',
-    'promises.js',
     'property-iterator.js',
     'reflow.js',
     'root.js',

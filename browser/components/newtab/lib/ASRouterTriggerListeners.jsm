@@ -4,40 +4,17 @@
 "use strict";
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-ChromeUtils.defineModuleGetter(
-  this,
-  "PrivateBrowsingUtils",
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
 );
+
+XPCOMUtils.defineLazyModuleGetters(this, {
+  PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
+  EveryWindow: "resource:///modules/EveryWindow.jsm",
+});
 
 const FEW_MINUTES = 15 * 60 * 1000; // 15 mins
 const MATCH_PATTERN_OPTIONS = { ignorePath: true };
-
-/**
- * Wait for browser startup to finish to avoid accessing uninitialized
- * properties
- */
-async function checkStartupFinished(win) {
-  if (!win.gBrowserInit.delayedStartupFinished) {
-    await new Promise(resolve => {
-      let delayedStartupObserver = (subject, topic) => {
-        if (topic === "browser-delayed-startup-finished" && subject === win) {
-          Services.obs.removeObserver(
-            delayedStartupObserver,
-            "browser-delayed-startup-finished"
-          );
-          resolve();
-        }
-      };
-
-      Services.obs.addObserver(
-        delayedStartupObserver,
-        "browser-delayed-startup-finished"
-      );
-    });
-  }
-}
 
 function isPrivateWindow(win) {
   return (
@@ -101,30 +78,131 @@ function checkURLMatch(aLocationURI, { hosts, matchPatternSet }, aRequest) {
  */
 this.ASRouterTriggerListeners = new Map([
   [
+    "openArticleURL",
+    {
+      id: "openArticleURL",
+      _initialized: false,
+      _triggerHandler: null,
+      _hosts: new Set(),
+      _matchPatternSet: null,
+      readerModeEvent: "Reader:UpdateReaderButton",
+
+      init(triggerHandler, hosts, patterns) {
+        if (!this._initialized) {
+          this.receiveMessage = this.receiveMessage.bind(this);
+          Services.mm.addMessageListener(this.readerModeEvent, this);
+          this._triggerHandler = triggerHandler;
+          this._initialized = true;
+        }
+        if (patterns) {
+          if (this._matchPatternSet) {
+            this._matchPatternSet = new MatchPatternSet(
+              new Set([...this._matchPatternSet.patterns, ...patterns]),
+              MATCH_PATTERN_OPTIONS
+            );
+          } else {
+            this._matchPatternSet = new MatchPatternSet(
+              patterns,
+              MATCH_PATTERN_OPTIONS
+            );
+          }
+        }
+        if (hosts) {
+          hosts.forEach(h => this._hosts.add(h));
+        }
+      },
+
+      receiveMessage({ data, target }) {
+        if (data && data.isArticle) {
+          const match = checkURLMatch(target.currentURI, {
+            hosts: this._hosts,
+            matchPatternSet: this._matchPatternSet,
+          });
+          if (match) {
+            this._triggerHandler(target, { id: this.id, param: match });
+          }
+        }
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.mm.removeMessageListener(this.readerModeEvent, this);
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._hosts = new Set();
+          this._matchPatternSet = null;
+        }
+      },
+    },
+  ],
+  [
+    "openBookmarkedURL",
+    {
+      id: "openBookmarkedURL",
+      _initialized: false,
+      _triggerHandler: null,
+      _hosts: new Set(),
+      bookmarkEvent: "bookmark-icon-updated",
+
+      init(triggerHandler) {
+        if (!this._initialized) {
+          Services.obs.addObserver(this, this.bookmarkEvent);
+          this._triggerHandler = triggerHandler;
+          this._initialized = true;
+        }
+      },
+
+      observe(subject, topic, data) {
+        if (topic === this.bookmarkEvent && data === "starred") {
+          const browser = Services.wm.getMostRecentBrowserWindow();
+          if (browser) {
+            this._triggerHandler(browser.gBrowser.selectedBrowser, {
+              id: this.id,
+            });
+          }
+        }
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.obs.removeObserver(this, this.bookmarkEvent);
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._hosts = new Set();
+        }
+      },
+    },
+  ],
+  [
     "frequentVisits",
     {
+      id: "frequentVisits",
       _initialized: false,
       _triggerHandler: null,
       _hosts: null,
       _matchPatternSet: null,
       _visits: null,
 
-      async init(triggerHandler, hosts = [], patterns) {
+      init(triggerHandler, hosts = [], patterns) {
         if (!this._initialized) {
           this.onTabSwitch = this.onTabSwitch.bind(this);
-
-          // Add listeners to all existing browser windows
-          for (let win of Services.wm.getEnumerator("navigator:browser")) {
-            if (isPrivateWindow(win)) {
-              continue;
+          EveryWindow.registerCallback(
+            this.id,
+            win => {
+              if (!isPrivateWindow(win)) {
+                win.addEventListener("TabSelect", this.onTabSwitch);
+                win.gBrowser.addTabsProgressListener(this);
+              }
+            },
+            win => {
+              if (!isPrivateWindow(win)) {
+                win.removeEventListener("TabSelect", this.onTabSwitch);
+                win.gBrowser.removeTabsProgressListener(this);
+              }
             }
-            await checkStartupFinished(win);
-            win.addEventListener("TabSelect", this.onTabSwitch);
-            win.gBrowser.addTabsProgressListener(this);
-          }
-
-          this._initialized = true;
+          );
           this._visits = new Map();
+          this._initialized = true;
         }
         this._triggerHandler = triggerHandler;
         if (patterns) {
@@ -192,7 +270,7 @@ this.ASRouterTriggerListeners = new Map([
         }
 
         this._triggerHandler(aBrowser, {
-          id: "frequentVisits",
+          id: this.id,
           param: match,
           context: {
             // Remapped to {host, timestamp} because JEXL operators can only
@@ -223,52 +301,9 @@ this.ASRouterTriggerListeners = new Map([
         }
       },
 
-      observe(win, topic, data) {
-        let onLoad;
-
-        switch (topic) {
-          case "domwindowopened":
-            if (isPrivateWindow(win)) {
-              break;
-            }
-            onLoad = () => {
-              // Ignore non-browser windows.
-              if (
-                win.document.documentElement.getAttribute("windowtype") ===
-                "navigator:browser"
-              ) {
-                win.addEventListener("TabSelect", this.onTabSwitch);
-                win.gBrowser.addTabsProgressListener(this);
-              }
-            };
-            win.addEventListener("load", onLoad, { once: true });
-            break;
-
-          case "domwindowclosed":
-            if (
-              win instanceof Ci.nsIDOMWindow &&
-              win.document.documentElement.getAttribute("windowtype") ===
-                "navigator:browser"
-            ) {
-              win.removeEventListener("TabSelect", this.onTabSwitch);
-              win.gBrowser.removeTabsProgressListener(this);
-            }
-            break;
-        }
-      },
-
       uninit() {
         if (this._initialized) {
-          Services.ww.unregisterNotification(this);
-
-          for (let win of Services.wm.getEnumerator("navigator:browser")) {
-            if (isPrivateWindow(win)) {
-              continue;
-            }
-
-            win.removeEventListener("TabSelect", this.onTabSwitch);
-            win.gBrowser.removeTabsProgressListener(this);
-          }
+          EveryWindow.unregisterCallback(this.id);
 
           this._initialized = false;
           this._triggerHandler = null;
@@ -288,33 +323,51 @@ this.ASRouterTriggerListeners = new Map([
   [
     "openURL",
     {
+      id: "openURL",
       _initialized: false,
       _triggerHandler: null,
       _hosts: null,
+      _matchPatternSet: null,
 
       /*
        * If the listener is already initialised, `init` will replace the trigger
        * handler and add any new hosts to `this._hosts`.
        */
-      async init(triggerHandler, hosts = [], patterns) {
+      init(triggerHandler, hosts = [], patterns) {
         if (!this._initialized) {
           this.onLocationChange = this.onLocationChange.bind(this);
-
-          // Listen for new windows being opened
-          Services.ww.registerNotification(this);
-
-          // Add listeners to all existing browser windows
-          for (let win of Services.wm.getEnumerator("navigator:browser")) {
-            if (isPrivateWindow(win)) {
-              continue;
+          EveryWindow.registerCallback(
+            this.id,
+            win => {
+              if (!isPrivateWindow(win)) {
+                win.addEventListener("TabSelect", this.onTabSwitch);
+                win.gBrowser.addTabsProgressListener(this);
+              }
+            },
+            win => {
+              if (!isPrivateWindow(win)) {
+                win.removeEventListener("TabSelect", this.onTabSwitch);
+                win.gBrowser.removeTabsProgressListener(this);
+              }
             }
-            await checkStartupFinished(win);
-            win.gBrowser.addTabsProgressListener(this);
-          }
+          );
 
           this._initialized = true;
         }
         this._triggerHandler = triggerHandler;
+        if (patterns) {
+          if (this._matchPatternSet) {
+            this._matchPatternSet = new MatchPatternSet(
+              new Set([...this._matchPatternSet.patterns, ...patterns]),
+              MATCH_PATTERN_OPTIONS
+            );
+          } else {
+            this._matchPatternSet = new MatchPatternSet(
+              patterns,
+              MATCH_PATTERN_OPTIONS
+            );
+          }
+        }
         if (this._hosts) {
           hosts.forEach(h => this._hosts.add(h));
         } else {
@@ -324,15 +377,7 @@ this.ASRouterTriggerListeners = new Map([
 
       uninit() {
         if (this._initialized) {
-          Services.ww.unregisterNotification(this);
-
-          for (let win of Services.wm.getEnumerator("navigator:browser")) {
-            if (isPrivateWindow(win)) {
-              continue;
-            }
-
-            win.gBrowser.removeTabsProgressListener(this);
-          }
+          EveryWindow.unregisterCallback(this.id);
 
           this._initialized = false;
           this._triggerHandler = null;
@@ -350,44 +395,180 @@ this.ASRouterTriggerListeners = new Map([
         if (aWebProgress.isTopLevel && !isSameDocument) {
           const match = checkURLMatch(
             aLocationURI,
-            { hosts: this._hosts },
+            { hosts: this._hosts, matchPatternSet: this._matchPatternSet },
             aRequest
           );
           if (match) {
-            this._triggerHandler(aBrowser, { id: "openURL", param: match });
+            this._triggerHandler(aBrowser, { id: this.id, param: match });
           }
         }
       },
+    },
+  ],
 
-      observe(win, topic, data) {
-        let onLoad;
+  /**
+   * Add an observer notification to notify the trigger handler whenever the user saves a new login
+   * via the login capture doorhanger.
+   */
+  [
+    "newSavedLogin",
+    {
+      _initialized: false,
+      _triggerHandler: null,
 
-        switch (topic) {
-          case "domwindowopened":
-            if (isPrivateWindow(win)) {
-              break;
-            }
-            onLoad = () => {
-              // Ignore non-browser windows.
-              if (
-                win.document.documentElement.getAttribute("windowtype") ===
-                "navigator:browser"
-              ) {
+      /**
+       * If the listener is already initialised, `init` will replace the trigger
+       * handler.
+       */
+      init(triggerHandler) {
+        if (!this._initialized) {
+          Services.obs.addObserver(this, "LoginStats:NewSavedPassword");
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.obs.removeObserver(this, "LoginStats:NewSavedPassword");
+
+          this._initialized = false;
+          this._triggerHandler = null;
+        }
+      },
+
+      observe(aSubject, aTopic, aData) {
+        if (aSubject.currentURI.asciiHost === "accounts.firefox.com") {
+          // Don't notify about saved logins on the FxA login origin since this
+          // trigger is used to promote login Sync and getting a recommendation
+          // to enable Sync during the sign up process is a bad UX.
+          return;
+        }
+        this._triggerHandler(aSubject, { id: "newSavedLogin" });
+      },
+    },
+  ],
+
+  /**
+   * Attach listener to count location changes and notify the trigger handler
+   * on content blocked event
+   */
+  [
+    "trackingProtection",
+    {
+      _initialized: false,
+      _triggerHandler: null,
+      _events: [],
+      _sessionPageLoad: 0,
+      onLocationChange: null,
+
+      init(triggerHandler, params, patterns) {
+        params.forEach(p => this._events.push(p));
+
+        if (!this._initialized) {
+          Services.obs.addObserver(this, "SiteProtection:ContentBlockingEvent");
+          Services.obs.addObserver(
+            this,
+            "SiteProtection:ContentBlockingMilestone"
+          );
+          this.onLocationChange = this._onLocationChange.bind(this);
+          EveryWindow.registerCallback(
+            this.id,
+            win => {
+              if (!isPrivateWindow(win)) {
                 win.gBrowser.addTabsProgressListener(this);
               }
-            };
-            win.addEventListener("load", onLoad, { once: true });
-            break;
+            },
+            win => {
+              if (!isPrivateWindow(win)) {
+                win.gBrowser.removeTabsProgressListener(this);
+              }
+            }
+          );
 
-          case "domwindowclosed":
-            if (
-              win instanceof Ci.nsIDOMWindow &&
-              win.document.documentElement.getAttribute("windowtype") ===
-                "navigator:browser"
-            ) {
-              win.gBrowser.removeTabsProgressListener(this);
+          this._initialized = true;
+        }
+        this._triggerHandler = triggerHandler;
+      },
+
+      uninit() {
+        if (this._initialized) {
+          Services.obs.removeObserver(
+            this,
+            "SiteProtection:ContentBlockingEvent"
+          );
+          Services.obs.removeObserver(
+            this,
+            "SiteProtection:ContentBlockingMilestone"
+          );
+          EveryWindow.unregisterCallback(this.id);
+          this.onLocationChange = null;
+          this._initialized = false;
+        }
+        this._triggerHandler = null;
+        this._events = [];
+        this._sessionPageLoad = 0;
+      },
+
+      observe(aSubject, aTopic, aData) {
+        switch (aTopic) {
+          case "SiteProtection:ContentBlockingEvent":
+            const { browser, host, event } = aSubject.wrappedJSObject;
+            for (let ev of this._events) {
+              if ((ev & event) !== ev) {
+                continue;
+              }
+              this._triggerHandler(browser, {
+                id: "trackingProtection",
+                param: {
+                  host,
+                  type: ev,
+                },
+                context: {
+                  pageLoad: this._sessionPageLoad,
+                },
+              });
             }
             break;
+          case "SiteProtection:ContentBlockingMilestone":
+            if (this._events.includes(aSubject.wrappedJSObject.event)) {
+              this._triggerHandler(
+                Services.wm.getMostRecentBrowserWindow().gBrowser
+                  .selectedBrowser,
+                {
+                  id: "trackingProtection",
+                  context: {
+                    pageLoad: this._sessionPageLoad,
+                  },
+                  param: {
+                    type: aSubject.wrappedJSObject.event,
+                  },
+                }
+              );
+            }
+            break;
+        }
+      },
+
+      _onLocationChange(
+        aBrowser,
+        aWebProgress,
+        aRequest,
+        aLocationURI,
+        aFlags
+      ) {
+        // Some websites trigger redirect events after they finish loading even
+        // though the location remains the same. This results in onLocationChange
+        // events to be fired twice.
+        const isSameDocument = !!(
+          aFlags & Ci.nsIWebProgressListener.LOCATION_CHANGE_SAME_DOCUMENT
+        );
+        if (
+          ["http", "https"].includes(aLocationURI.scheme) &&
+          aWebProgress.isTopLevel &&
+          !isSameDocument
+        ) {
+          this._sessionPageLoad += 1;
         }
       },
     },

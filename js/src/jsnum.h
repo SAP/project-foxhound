@@ -40,7 +40,7 @@ class StringBuffer;
 
 extern MOZ_MUST_USE bool InitRuntimeNumberState(JSRuntime* rt);
 
-#if !EXPOSE_INTL_API
+#if !ENABLE_INTL_API
 extern void FinishRuntimeNumberState(JSRuntime* rt);
 #endif
 
@@ -60,9 +60,9 @@ extern JSString* NumberToStringHelperPure(JSContext* cx, double d);
 extern JSAtom* NumberToAtom(JSContext* cx, double d);
 
 template <AllowGC allowGC>
-extern JSFlatString* Int32ToString(JSContext* cx, int32_t i);
+extern JSLinearString* Int32ToString(JSContext* cx, int32_t i);
 
-extern JSFlatString* Int32ToStringHelperPure(JSContext* cx, int32_t i);
+extern JSLinearString* Int32ToStringHelperPure(JSContext* cx, int32_t i);
 
 extern JSAtom* Int32ToAtom(JSContext* cx, int32_t si);
 
@@ -76,7 +76,7 @@ extern bool IsInteger(const Value& val);
 extern MOZ_MUST_USE bool JS_FASTCALL
 NumberValueToStringBuffer(JSContext* cx, const Value& v, StringBuffer& sb);
 
-extern JSFlatString* IndexToString(JSContext* cx, uint32_t index);
+extern JSLinearString* IndexToString(JSContext* cx, uint32_t index);
 
 /*
  * Usually a small amount of static storage is enough, but sometimes we need
@@ -219,10 +219,7 @@ bool ToNumericSlow(JSContext* cx, JS::MutableHandleValue vp);
 // BigInt proposal section 3.1.6
 MOZ_ALWAYS_INLINE MOZ_MUST_USE bool ToNumeric(JSContext* cx,
                                               JS::MutableHandleValue vp) {
-  if (vp.isNumber()) {
-    return true;
-  }
-  if (vp.isBigInt()) {
+  if (vp.isNumeric()) {
     return true;
   }
   return ToNumericSlow(cx, vp);

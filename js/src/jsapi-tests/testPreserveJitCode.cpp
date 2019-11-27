@@ -10,6 +10,7 @@
 #include "jsapi-tests/tests.h"
 
 #include "vm/JSObject-inl.h"
+#include "vm/JSScript-inl.h"
 
 using namespace JS;
 
@@ -34,8 +35,6 @@ unsigned countIonScripts(JSObject* global) {
 }
 
 bool testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts) {
-  cx->options().setBaseline(true);
-  cx->options().setIon(true);
   cx->runtime()->setOffthreadIonCompilationEnabled(false);
 
   RootedObject global(cx, createTestGlobal(preserveJitCode));
@@ -44,7 +43,7 @@ bool testPreserveJitCode(bool preserveJitCode, unsigned remainingIonScripts) {
 
   // The Ion JIT may be unavailable due to --disable-ion or lack of support
   // for this platform.
-  if (!js::jit::IsIonEnabled(cx)) {
+  if (!js::jit::IsIonEnabled()) {
     knownFail = true;
   }
 

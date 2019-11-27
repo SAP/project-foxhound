@@ -158,19 +158,19 @@ class Builtin(object):
 builtinNames = [
     Builtin('boolean', 'bool', 'bool'),
     Builtin('void', 'void', 'libc::c_void'),
-    Builtin('octet', 'uint8_t', 'libc::uint8_t', False, True),
-    Builtin('short', 'int16_t', 'libc::int16_t', True, True),
-    Builtin('long', 'int32_t', 'libc::int32_t', True, True),
-    Builtin('long long', 'int64_t', 'libc::int64_t', True, False),
-    Builtin('unsigned short', 'uint16_t', 'libc::uint16_t', False, True),
-    Builtin('unsigned long', 'uint32_t', 'libc::uint32_t', False, True),
-    Builtin('unsigned long long', 'uint64_t', 'libc::uint64_t', False, False),
+    Builtin('octet', 'uint8_t', 'u8', False, True),
+    Builtin('short', 'int16_t', 'i16', True, True),
+    Builtin('long', 'int32_t', 'i32', True, True),
+    Builtin('long long', 'int64_t', 'i64', True, False),
+    Builtin('unsigned short', 'uint16_t', 'u16', False, True),
+    Builtin('unsigned long', 'uint32_t', 'u32', False, True),
+    Builtin('unsigned long long', 'uint64_t', 'u64', False, False),
     Builtin('float', 'float', 'libc::c_float', True, False),
     Builtin('double', 'double', 'libc::c_double', True, False),
     Builtin('char', 'char', 'libc::c_char', True, False),
     Builtin('string', 'char *', '*const libc::c_char', False, False),
-    Builtin('wchar', 'char16_t', 'libc::int16_t', False, False),
-    Builtin('wstring', 'char16_t *', '*const libc::int16_t', False, False),
+    Builtin('wchar', 'char16_t', 'i16', False, False),
+    Builtin('wstring', 'char16_t *', '*const i16', False, False),
 ]
 
 builtinMap = {}
@@ -679,7 +679,7 @@ class Interface(object):
         if self.attributes.function:
             has_method = False
             for member in self.members:
-                if member.kind is 'method':
+                if member.kind == 'method':
                     if has_method:
                         raise IDLError(
                             "interface '%s' has multiple methods, but marked 'function'" %
@@ -1243,7 +1243,7 @@ class Param(object):
             return self.realtype.nativeType(self.paramtype, **kwargs)
         except IDLError as e:
             raise IDLError(e.message, self.location)
-        except TypeError as e:
+        except TypeError:
             raise IDLError("Unexpected parameter attribute", self.location)
 
     def rustType(self):
@@ -1257,7 +1257,7 @@ class Param(object):
             return self.realtype.rustType(self.paramtype, **kwargs)
         except IDLError as e:
             raise IDLError(e.message, self.location)
-        except TypeError as e:
+        except TypeError:
             raise IDLError("Unexpected parameter attribute", self.location)
 
     def toIDL(self):

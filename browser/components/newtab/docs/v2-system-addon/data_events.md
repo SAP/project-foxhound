@@ -1,6 +1,6 @@
 # Metrics we collect
 
-By default, the about:newtab and about:home pages in Firefox (the pages you see when you open a new tab and when you start the browser), will send data back to Mozilla servers about usage of these pages.  The intent is to collect data in order to improve the user's experience while using Activity Stream.  Data about your specific browsing behaior or the sites you visit is **never transmitted to any Mozilla server**.  At any time, it is easy to **turn off** this data collection by [opting out of Firefox telemetry](https://support.mozilla.org/kb/share-telemetry-data-mozilla-help-improve-firefox).
+By default, the about:newtab, about:welcome and about:home pages in Firefox (the pages you see when you open a new tab and when you start the browser), will send data back to Mozilla servers about usage of these pages.  The intent is to collect data in order to improve the user's experience while using Activity Stream.  Data about your specific browsing behaior or the sites you visit is **never transmitted to any Mozilla server**.  At any time, it is easy to **turn off** this data collection by [opting out of Firefox telemetry](https://support.mozilla.org/kb/share-telemetry-data-mozilla-help-improve-firefox).
 
 Data is sent to our servers in the form of discreet HTTPS 'pings' or messages whenever you do some action on the Activity Stream about:home, about:newtab or about:welcome pages.  We try to minimize the amount and frequency of pings by batching them together.  Pings are sent in [JSON serialized format](http://www.json.org/).
 
@@ -131,8 +131,8 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
   "source": "TOP_SITES",
   "action_position": 2,
   "value": {
-    "card_type": ["pinned" | "search"],
-    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image"],
+    "card_type": ["pinned" | "search" | "spoc"],
+    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image" | "custom_screenshot"],
     // only exists if its card_type = "search"
     "search_vendor": "google"
   }
@@ -157,6 +157,43 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
   "value": {
     "search_vendor": "google"
   }
+
+  // Basic metadata
+  "action": "activity_stream_event",
+  "page": ["about:newtab" | "about:home" | "about:welcome" | "unknown"],
+  "client_id": "26288a14-5cc4-d14f-ae0a-bb01ef45be9c",
+  "session_id": "005deed0-e3e4-4c02-a041-17405fd703f6",
+  "addon_version": "20180710100040",
+  "locale": "en-US",
+  "user_prefs": 7
+}
+```
+
+#### Showing privacy information
+
+```js
+{
+  "event": "SHOW_PRIVACY_INFO",
+  "source": "TOP_SITES",
+  "action_position": 2,
+
+  // Basic metadata
+  "action": "activity_stream_event",
+  "page": ["about:newtab" | "about:home" | "about:welcome" | "unknown"],
+  "client_id": "26288a14-5cc4-d14f-ae0a-bb01ef45be9c",
+  "session_id": "005deed0-e3e4-4c02-a041-17405fd703f6",
+  "addon_version": "20180710100040",
+  "locale": "en-US",
+  "user_prefs": 7
+}
+```
+
+#### Clicking on privacy information link
+
+```js
+{
+  "event": "CLICK_PRIVACY_INFO",
+  "source": "DS_PRIVACY_MODAL",
 
   // Basic metadata
   "action": "activity_stream_event",
@@ -199,7 +236,7 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
   "action_position": 2,
   "value": {
     "card_type": "pinned",
-    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image"]
+    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image" | "custom_screenshot"]
   }
 
   // Basic metadata
@@ -221,8 +258,8 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
   "source": "TOP_SITES",
   "action_position": 2,
   "value": {
-    "card_type": ["pinned" | "search"],
-    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image"],
+    "card_type": ["pinned" | "search" | "spoc"],
+    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image" | "custom_screenshot"],
     // only exists if its card_type = "search"
     "search_vendor": "google"
   }
@@ -291,7 +328,7 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
   "action_position": 2,
   "value": {
     "card_type": "pinned",
-    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image"]
+    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image" | "custom_screenshot"]
   }
 
   // Basic metadata
@@ -314,7 +351,7 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
   "action_position": 2,
   "value": {
     "card_type": "pinned",
-    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image"]
+    "icon_type": ["screenshot_with_icon" | "screenshot" | "tippytop" | "rich_icon" | "no_image" | "custom_screenshot"]
   }
 
   // Basic metadata
@@ -409,7 +446,7 @@ A user event ping includes some basic metadata (tab id, addon version, etc.) as 
 
 ```js
 {
-  "event": ["SUBMIT_EMAIL" | "SKIPPED_SIGNIN"],
+  "event": ["SUBMIT_EMAIL" | "SUBMIT_SIGNIN" | "SKIPPED_SIGNIN"],
   "value": {
     "has_flow_params": false,
   }
@@ -1098,5 +1135,25 @@ This reports when a user has seen or clicked a badge/notification in the browser
   "source": "CFR",
   "message_id": "FXA_ACCOUNTS_BADGE",
   "event": ["CLICK" | "IMPRESSION"],
+}
+```
+
+## Panel interaction pings
+
+This reports when a user opens the panel, views messages and clicks on a message.
+For message impressions we concatenate the ids of all messages in the panel.
+
+```
+{
+  "locale": "en-US",
+  "client_id": "9da773d8-4356-f54f-b7cf-6134726bcf3d",
+  "version": "70.0a1",
+  "release_channel": "default",
+  "addon_version": "20190712095934",
+  "action": "cfr_user_event",
+  "source": "CFR",
+  "message_id": "WHATS_NEW_70",
+  "event": ["CLICK" | "IMPRESSION"],
+  "value": { "view": ["application_menu" | "toolbar_dropdown"] }
 }
 ```

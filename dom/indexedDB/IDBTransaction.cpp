@@ -360,11 +360,9 @@ void IDBTransaction::OnRequestFinished(bool aActorDestroyedNormally) {
       MOZ_ASSERT(!mSentCommitOrAbort);
       mSentCommitOrAbort = true;
 #endif
-      IDB_LOG_MARK(
-          "IndexedDB %s: Child  Transaction[%lld]: "
+      IDB_LOG_MARK_CHILD_TRANSACTION(
           "Request actor was killed, transaction will be aborted",
-          "IndexedDB %s: C T[%lld]: IDBTransaction abort", IDB_LOG_ID_STRING(),
-          LoggingSerialNumber());
+          "IDBTransaction abort", LoggingSerialNumber());
     }
   }
 }
@@ -380,11 +378,9 @@ void IDBTransaction::SendCommit() {
   // number to keep in sync with the parent.
   const uint64_t requestSerialNumber = IDBRequest::NextSerialNumber();
 
-  IDB_LOG_MARK(
-      "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
-      "All requests complete, committing transaction",
-      "IndexedDB %s: C T[%lld] R[%llu]: IDBTransaction commit",
-      IDB_LOG_ID_STRING(), LoggingSerialNumber(), requestSerialNumber);
+  IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
+      "All requests complete, committing transaction", "IDBTransaction commit",
+      LoggingSerialNumber(), requestSerialNumber);
 
   if (mMode == VERSION_CHANGE) {
     MOZ_ASSERT(mBackgroundActor.mVersionChangeBackgroundActor);
@@ -409,12 +405,9 @@ void IDBTransaction::SendAbort(nsresult aResultCode) {
   // number to keep in sync with the parent.
   const uint64_t requestSerialNumber = IDBRequest::NextSerialNumber();
 
-  IDB_LOG_MARK(
-      "IndexedDB %s: Child  Transaction[%lld] Request[%llu]: "
-      "Aborting transaction with result 0x%x",
-      "IndexedDB %s: C T[%lld] R[%llu]: IDBTransaction abort (0x%x)",
-      IDB_LOG_ID_STRING(), LoggingSerialNumber(), requestSerialNumber,
-      aResultCode);
+  IDB_LOG_MARK_CHILD_TRANSACTION_REQUEST(
+      "Aborting transaction with result 0x%x", "IDBTransaction abort (0x%x)",
+      LoggingSerialNumber(), requestSerialNumber, aResultCode);
 
   if (mMode == VERSION_CHANGE) {
     MOZ_ASSERT(mBackgroundActor.mVersionChangeBackgroundActor);
@@ -741,6 +734,10 @@ void IDBTransaction::FireCompleteOrAbortEvents(nsresult aResult) {
     event = CreateGenericEvent(this, nsDependentString(kCompleteEventType),
                                eDoesNotBubble, eNotCancelable);
     MOZ_ASSERT(event);
+
+    // If we hit this assertion, it probably means transaction object on the
+    // parent process doesn't propagate error properly.
+    MOZ_ASSERT(NS_SUCCEEDED(mAbortCode));
   } else {
     if (aResult == NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR) {
       mDatabase->SetQuotaExceeded();
@@ -753,20 +750,20 @@ void IDBTransaction::FireCompleteOrAbortEvents(nsresult aResult) {
     event = CreateGenericEvent(this, nsDependentString(kAbortEventType),
                                eDoesBubble, eNotCancelable);
     MOZ_ASSERT(event);
+
+    if (NS_SUCCEEDED(mAbortCode)) {
+      mAbortCode = aResult;
+    }
   }
 
   if (NS_SUCCEEDED(mAbortCode)) {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld]: "
-        "Firing 'complete' event",
-        "IndexedDB %s: C T[%lld]: IDBTransaction 'complete' event",
-        IDB_LOG_ID_STRING(), mLoggingSerialNumber);
+    IDB_LOG_MARK_CHILD_TRANSACTION("Firing 'complete' event",
+                                   "IDBTransaction 'complete' event",
+                                   mLoggingSerialNumber);
   } else {
-    IDB_LOG_MARK(
-        "IndexedDB %s: Child  Transaction[%lld]: "
-        "Firing 'abort' event with error 0x%x",
-        "IndexedDB %s: C T[%lld]: IDBTransaction 'abort' event (0x%x)",
-        IDB_LOG_ID_STRING(), mLoggingSerialNumber, mAbortCode);
+    IDB_LOG_MARK_CHILD_TRANSACTION("Firing 'abort' event with error 0x%x",
+                                   "IDBTransaction 'abort' event (0x%x)",
+                                   mLoggingSerialNumber, mAbortCode);
   }
 
   IgnoredErrorResult rv;

@@ -16,6 +16,7 @@ from taskgraph.transforms.job import job_description_schema
 from taskgraph.util.attributes import keymatch
 from taskgraph.util.schema import (
     resolve_keyed_by,
+    optionally_keyed_by,
 )
 from taskgraph.util.treeherder import join_symbol, split_symbol
 
@@ -45,15 +46,21 @@ source_test_description_schema = Schema({
 
     # These fields can be keyed by "platform", and are otherwise identical to
     # job descriptions.
-    Required('worker-type'): Any(
-        job_description_schema['worker-type'],
-        {'by-platform': {basestring: job_description_schema['worker-type']}},
-    ),
-    Required('worker'): Any(
-        job_description_schema['worker'],
-        {'by-platform': {basestring: job_description_schema['worker']}},
-    ),
+    Required('worker-type'): optionally_keyed_by(
+        'platform', job_description_schema['worker-type']),
+
+    Required('worker'): optionally_keyed_by(
+        'platform', job_description_schema['worker']),
+
     Optional('python-version'): [int],
+    # If true, the DECISION_TASK_ID env will be populated.
+    Optional('require-decision-task-id'): bool,
+
+    # A list of artifacts to install from 'fetch' tasks.
+    Optional('fetches'): {
+        basestring: optionally_keyed_by(
+            'platform', job_description_schema['fetches'][basestring]),
+    },
 })
 
 transforms = TransformSequence()
@@ -173,6 +180,7 @@ def handle_platform(config, jobs):
     try-related attributes.
     """
     fields = [
+        'fetches.toolchain',
         'worker-type',
         'worker',
     ]
@@ -212,4 +220,20 @@ def handle_shell(config, jobs):
             resolve_keyed_by(job, field, item_name=job['name'])
 
         del job['shell']
+        yield job
+
+
+@transforms.add
+def add_decision_task_id_to_env(config, jobs):
+    """
+    Creates the `DECISION_TASK_ID` environment variable in tasks that set the
+    `require-decision-task-id` config.
+    """
+    for job in jobs:
+        if not job.pop('require-decision-task-id', False):
+            yield job
+            continue
+
+        env = job['worker'].setdefault('env', {})
+        env['DECISION_TASK_ID'] = os.environ.get('TASK_ID', '')
         yield job

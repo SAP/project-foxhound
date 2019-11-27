@@ -14,7 +14,6 @@
 #include "nsCOMPtr.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMWindow.h"
 #include "nsIFrame.h"
 #include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
@@ -67,7 +66,7 @@ static already_AddRefed<dom::Element> ElementFromPoint(
 
 static bool ShouldZoomToElement(const nsCOMPtr<dom::Element>& aElement) {
   if (nsIFrame* frame = aElement->GetPrimaryFrame()) {
-    if (frame->GetDisplay() == StyleDisplay::Inline) {
+    if (frame->StyleDisplay()->IsInlineFlow()) {
       return false;
     }
   }

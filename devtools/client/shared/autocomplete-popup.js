@@ -1,4 +1,3 @@
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -339,7 +338,10 @@ AutocompletePopup.prototype = {
   },
 
   _scrollElementIntoViewIfNeeded: function(element) {
-    const quads = element.getBoxQuads({ relativeTo: this.tooltip.panel });
+    const quads = element.getBoxQuads({
+      relativeTo: this.tooltip.panel,
+      createFramesForSuppressedWhitespace: false,
+    });
     if (!quads || !quads[0]) {
       return;
     }

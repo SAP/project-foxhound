@@ -321,18 +321,6 @@
       }
     }
 
-    /**
-     * Passes DOM events to the on_<event type> methods.
-     */
-    handleEvent(event) {
-      let methodName = "on_" + event.type;
-      if (methodName in this) {
-        this[methodName](event);
-      } else {
-        throw new Error("Unrecognized event: " + event.type);
-      }
-    }
-
     on_mousedown(event) {
       if (event.button != 0 || this.disabled) {
         return;
@@ -621,6 +609,8 @@
         ariaFocusedItem.classList.remove("keyboard-focused-tab");
         ariaFocusedItem.id = "";
         this.selectedItem.removeAttribute("aria-activedescendant");
+        let evt = new CustomEvent("AriaFocus");
+        this.selectedItem.dispatchEvent(evt);
       }
 
       if (setNewItem) {
@@ -631,6 +621,8 @@
           "aria-activedescendant",
           this.ACTIVE_DESCENDANT_ID
         );
+        let evt = new CustomEvent("AriaFocus");
+        val.dispatchEvent(evt);
       }
 
       return val;
@@ -787,7 +779,9 @@
         direction: aDir,
         wrap: aWrap,
       });
-      this._selectNewTab(newTab, aDir, aWrap);
+      if (newTab && newTab != startTab) {
+        this._selectNewTab(newTab, aDir, aWrap);
+      }
     }
 
     appendItem(label, value) {

@@ -6,15 +6,20 @@
 
 #include "ContentEventHandler.h"
 
+#include "mozilla/Assertions.h"
+#include "mozilla/CheckedInt.h"
 #include "mozilla/ContentIterator.h"
+#include "mozilla/EditorUtils.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLBRElement.h"
 #include "mozilla/dom/HTMLUnknownElement.h"
 #include "mozilla/dom/Selection.h"
+#include "mozilla/dom/Text.h"
 #include "nsCaret.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
@@ -481,20 +486,17 @@ nsresult ContentEventHandler::QueryContentRect(
   return NS_OK;
 }
 
-// Editor places a bogus BR node under its root content if the editor doesn't
-// have any text. This happens even for single line editors.
+// Editor places a padding <br> element under its root content if the editor
+// doesn't have any text. This happens even for single line editors.
 // When we get text content and when we change the selection,
-// we don't want to include the bogus BRs at the end.
+// we don't want to include the padding <br> elements at the end.
 static bool IsContentBR(nsIContent* aContent) {
-  return aContent->IsHTMLElement(nsGkAtoms::br) &&
-         !aContent->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
-                                             nsGkAtoms::moz, eIgnoreCase) &&
-         !aContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                             nsGkAtoms::mozeditorbogusnode,
-                                             nsGkAtoms::_true, eIgnoreCase);
+  HTMLBRElement* brElement = HTMLBRElement::FromNode(aContent);
+  return brElement && !brElement->IsPaddingForEmptyLastLine() &&
+         !brElement->IsPaddingForEmptyEditor();
 }
 
-static bool IsMozBR(nsIContent* aContent) {
+static bool IsPaddingBR(nsIContent* aContent) {
   return aContent->IsHTMLElement(nsGkAtoms::br) && !IsContentBR(aContent);
 }
 
@@ -504,14 +506,22 @@ static void ConvertToNativeNewlines(nsString& aString) {
 #endif
 }
 
-static void AppendString(nsAString& aString, Text* aText) {
+static void AppendString(nsString& aString, Text* aText) {
+  uint32_t oldXPLength = aString.Length();
   aText->TextFragment().AppendTo(aString);
+  if (aText->HasFlag(NS_MAYBE_MASKED)) {
+    EditorUtils::MaskString(aString, aText, oldXPLength, 0);
+  }
 }
 
-static void AppendSubString(nsAString& aString, Text* aText, uint32_t aXPOffset,
+static void AppendSubString(nsString& aString, Text* aText, uint32_t aXPOffset,
                             uint32_t aXPLength) {
-  aText->TextFragment().AppendTo(aString, int32_t(aXPOffset),
-                                 int32_t(aXPLength));
+  uint32_t oldXPLength = aString.Length();
+  aText->TextFragment().AppendTo(aString, static_cast<int32_t>(aXPOffset),
+                                 static_cast<int32_t>(aXPLength));
+  if (aText->HasFlag(NS_MAYBE_MASKED)) {
+    EditorUtils::MaskString(aString, aText, oldXPLength, aXPOffset);
+  }
 }
 
 #if defined(XP_WIN)
@@ -983,8 +993,7 @@ nsresult ContentEventHandler::ExpandToClusterBoundary(nsIContent* aContent,
   // If the frame isn't available, we only can check surrogate pair...
   const nsTextFragment* text = &aContent->AsText()->TextFragment();
   NS_ENSURE_TRUE(text, NS_ERROR_FAILURE);
-  if (NS_IS_LOW_SURROGATE(text->CharAt(*aXPOffset)) &&
-      NS_IS_HIGH_SURROGATE(text->CharAt(*aXPOffset - 1))) {
+  if (text->IsLowSurrogateFollowingHighSurrogateAt(*aXPOffset)) {
     *aXPOffset += aForward ? 1 : -1;
   }
   return NS_OK;
@@ -1308,8 +1317,8 @@ nsresult ContentEventHandler::OnQuerySelectedText(
   nsINode* const endNode = mFirstSelectedRawRange.GetEndContainer();
 
   // Make sure the selection is within the root content range.
-  if (!nsContentUtils::ContentIsDescendantOf(startNode, mRootContent) ||
-      !nsContentUtils::ContentIsDescendantOf(endNode, mRootContent)) {
+  if (!startNode->IsInclusiveDescendantOf(mRootContent) ||
+      !endNode->IsInclusiveDescendantOf(mRootContent)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -1465,7 +1474,7 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
       int32_t offsetInNode =
           node == aRawRange.GetStartContainer() ? aRawRange.StartOffset() : 0;
       if (static_cast<uint32_t>(offsetInNode) < node->Length()) {
-        nodePosition.Set(node, offsetInNode);
+        nodePosition = {node, offsetInNode};
         break;
       }
       continue;
@@ -1474,8 +1483,8 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
     // If the element node causes a line break before it, it's the first
     // node causing text.
     if (ShouldBreakLineBefore(node->AsContent(), mRootContent) ||
-        IsMozBR(node->AsContent())) {
-      nodePosition.Set(node, 0);
+        IsPaddingBR(node->AsContent())) {
+      nodePosition = {node, 0};
     }
   }
 
@@ -1542,13 +1551,14 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
     }
 
     if (node->IsText()) {
-      uint32_t offset;
+      CheckedInt<int32_t> offset;
       if (node == aRawRange.GetEndContainer()) {
         offset = aRawRange.EndOffset();
       } else {
         offset = node->Length();
       }
-      nodePosition.Set(node, offset);
+
+      nodePosition = {node, offset.value()};
 
       // If the text node is empty or the last node of the range but the index
       // is 0, we should store current position but continue looking for
@@ -1561,8 +1571,8 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
     }
 
     if (ShouldBreakLineBefore(node->AsContent(), mRootContent) ||
-        IsMozBR(node->AsContent())) {
-      nodePosition.Set(node, 0);
+        IsPaddingBR(node->AsContent())) {
+      nodePosition = {node, 0};
       break;
     }
   }
@@ -1596,7 +1606,9 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(const RawRange& aRawRange) {
   // at least one text frame.
   if (nodePosition.Offset() &&
       nodePosition.Offset() == static_cast<uint32_t>(start)) {
-    nodePosition.Set(nodePosition.Container(), nodePosition.Offset() - 1);
+    const CheckedInt<int32_t> newNodePositionOffset{nodePosition.Offset() - 1};
+
+    nodePosition = {nodePosition.Container(), newNodePositionOffset.value()};
     GetFrameForTextRect(nodePosition.Container(), nodePosition.Offset(), true,
                         &lastFrame);
     if (NS_WARN_IF(!lastFrame)) {
@@ -1613,7 +1625,7 @@ ContentEventHandler::GetLineBreakerRectBefore(nsIFrame* aFrame) {
   // open tag causes a line break or moz-<br> for computing empty last line's
   // rect.
   MOZ_ASSERT(ShouldBreakLineBefore(aFrame->GetContent(), mRootContent) ||
-             IsMozBR(aFrame->GetContent()));
+             IsPaddingBR(aFrame->GetContent()));
 
   nsIFrame* frameForFontMetrics = aFrame;
 
@@ -1873,7 +1885,7 @@ nsresult ContentEventHandler::OnQueryTextRectArray(
     // it represents empty line at the last of current block.  Therefore,
     // we need to compute its rect too.
     else if (ShouldBreakLineBefore(firstContent, mRootContent) ||
-             IsMozBR(firstContent)) {
+             IsPaddingBR(firstContent)) {
       nsRect brRect;
       // If the frame is not a <br> frame, we need to compute the caret rect
       // with last character's rect before firstContent if there is.
@@ -2522,8 +2534,7 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
 
   nsIFrame* targetFrame = nsLayoutUtils::GetFrameForPoint(rootFrame, ptInRoot);
   if (!targetFrame || !targetFrame->GetContent() ||
-      !nsContentUtils::ContentIsDescendantOf(targetFrame->GetContent(),
-                                             mRootContent)) {
+      !targetFrame->GetContent()->IsInclusiveDescendantOf(mRootContent)) {
     // There is no character at the point.
     aEvent->mSucceeded = true;
     return NS_OK;
@@ -2536,8 +2547,7 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
   nsIFrame::ContentOffsets tentativeCaretOffsets =
       targetFrame->GetContentOffsetsFromPoint(ptInTarget);
   if (!tentativeCaretOffsets.content ||
-      !nsContentUtils::ContentIsDescendantOf(tentativeCaretOffsets.content,
-                                             mRootContent)) {
+      !tentativeCaretOffsets.content->IsInclusiveDescendantOf(mRootContent)) {
     // There is no character nor tentative caret point at the point.
     aEvent->mSucceeded = true;
     return NS_OK;

@@ -32,7 +32,8 @@ var UrlbarTokenizer = {
   REGEXP_LIKE_PROTOCOL: /^[A-Z+.-]+:\/*(?!\/)/i,
   REGEXP_USERINFO_INVALID_CHARS: /[^\w.~%!$&'()*+,;=:-]/,
   REGEXP_HOSTPORT_INVALID_CHARS: /[^\[\]A-Z0-9.:-]/i,
-  REGEXP_HOSTPORT_IP_LIKE: /^[a-f0-9\.\[\]:]+$/i,
+  REGEXP_SINGLE_WORD_HOST: /^[^.:]$/i,
+  REGEXP_HOSTPORT_IP_LIKE: /^(?=(.*[.:].*){2})[a-f0-9\.\[\]:]+$/i,
   // This accepts partial IPv4.
   REGEXP_HOSTPORT_INVALID_IP: /\.{2,}|\d{5,}|\d{4,}(?![:\]])|^\.|^(\d+\.){4,}\d+$|^\d{4,}$/,
   // This only accepts complete IPv4.
@@ -158,7 +159,7 @@ var UrlbarTokenizer = {
    * @returns {boolean} whether the token looks like an origin.
    */
   looksLikeOrigin(token) {
-    if (token.length == 0) {
+    if (!token.length) {
       return false;
     }
     let atIndex = token.indexOf("@");
@@ -182,7 +183,8 @@ var UrlbarTokenizer = {
       !this.REGEXP_LIKE_PROTOCOL.test(hostPort) &&
       !this.REGEXP_USERINFO_INVALID_CHARS.test(userinfo) &&
       !this.REGEXP_HOSTPORT_INVALID_CHARS.test(hostPort) &&
-      (!this.REGEXP_HOSTPORT_IP_LIKE.test(hostPort) ||
+      (this.REGEXP_SINGLE_WORD_HOST.test(hostPort) ||
+        !this.REGEXP_HOSTPORT_IP_LIKE.test(hostPort) ||
         !this.REGEXP_HOSTPORT_INVALID_IP.test(hostPort))
     );
   },
@@ -312,7 +314,7 @@ function filterTokens(tokens) {
   }
 
   // Handle restriction characters.
-  if (restrictions.length > 0) {
+  if (restrictions.length) {
     // We can apply two kind of restrictions: type (bookmark, search, ...) and
     // matching (url, title). These kind of restrictions can be combined, but we
     // can only have one restriction per kind.

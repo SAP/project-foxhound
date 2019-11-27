@@ -3328,7 +3328,7 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
     wr::IpcResourceUpdateQueue& aResources,
     const layers::StackingContextHelper& aSc) {
   LayoutDeviceRect outerRect = LayoutDeviceRect::FromUnknownRect(mOuterRect);
-  wr::LayoutRect roundedRect = wr::ToRoundedLayoutRect(outerRect);
+  wr::LayoutRect roundedRect = wr::ToLayoutRect(outerRect);
   wr::LayoutRect clipRect = roundedRect;
   wr::BorderSide side[4];
   NS_FOR_CSS_SIDES(i) {
@@ -3345,7 +3345,7 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
   if (mLocalClip) {
     LayoutDeviceRect localClip =
         LayoutDeviceRect::FromUnknownRect(mLocalClip.value());
-    clipRect = wr::ToRoundedLayoutRect(localClip.Intersect(outerRect));
+    clipRect = wr::ToLayoutRect(localClip.Intersect(outerRect));
   }
 
   Range<const wr::BorderSide> wrsides(side, 4);
@@ -3593,7 +3593,7 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
   if (!mClip.IsEmpty()) {
     LayoutDeviceRect clipRect =
         LayoutDeviceRect::FromAppUnits(mClip, appUnitsPerDevPixel);
-    clip = wr::ToRoundedLayoutRect(clipRect);
+    clip = wr::ToLayoutRect(clipRect);
   }
 
   ImgDrawResult drawResult = ImgDrawResult::SUCCESS;
@@ -3652,8 +3652,8 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
           mImageSize.width / appUnitsPerDevPixel,
           mImageSize.height / appUnitsPerDevPixel,
           mFill,
-          wr::ToSideOffsets2D_i32(slice[0], slice[1], slice[2], slice[3]),
-          wr::ToSideOffsets2D_f32(outset[0], outset[1], outset[2], outset[3]),
+          wr::ToDeviceIntSideOffsets(slice[0], slice[1], slice[2], slice[3]),
+          wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2], outset[3]),
           wr::ToRepeatMode(mRepeatModeHorizontal),
           wr::ToRepeatMode(mRepeatModeVertical)};
 
@@ -3684,10 +3684,10 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
             wr::ToBorderWidths(widths[0], widths[1], widths[2], widths[3]),
             (float)(mImageSize.width) / appUnitsPerDevPixel,
             (float)(mImageSize.height) / appUnitsPerDevPixel, mFill,
-            wr::ToSideOffsets2D_i32(slice[0], slice[1], slice[2], slice[3]),
+            wr::ToDeviceIntSideOffsets(slice[0], slice[1], slice[2], slice[3]),
             wr::ToLayoutPoint(startPoint), wr::ToLayoutPoint(endPoint), stops,
             extendMode,
-            wr::ToSideOffsets2D_f32(outset[0], outset[1], outset[2],
+            wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2],
                                     outset[3]));
       } else {
         aBuilder.PushBorderRadialGradient(
@@ -3695,7 +3695,7 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
             wr::ToBorderWidths(widths[0], widths[1], widths[2], widths[3]),
             mFill, wr::ToLayoutPoint(lineStart),
             wr::ToLayoutSize(gradientRadius), stops, extendMode,
-            wr::ToSideOffsets2D_f32(outset[0], outset[1], outset[2],
+            wr::ToLayoutSideOffsets(outset[0], outset[1], outset[2],
                                     outset[3]));
       }
       break;

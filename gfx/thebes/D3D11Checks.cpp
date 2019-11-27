@@ -9,7 +9,9 @@
 #include "GfxDriverInfo.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/layers/TextureD3D11.h"
@@ -139,7 +141,7 @@ bool D3D11Checks::DoesDeviceWork() {
   if (checked) return result;
   checked = true;
 
-  if (StaticPrefs::gfx_direct2d_force_enabled() ||
+  if (StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
       gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
     result = true;
     return true;
@@ -200,7 +202,7 @@ static bool DoesTextureSharingWorkInternal(ID3D11Device* device,
     return false;
   }
 
-  if (StaticPrefs::gfx_direct2d_force_enabled() ||
+  if (StaticPrefs::gfx_direct2d_force_enabled_AtStartup() ||
       gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
     return true;
   }
@@ -212,7 +214,7 @@ static bool DoesTextureSharingWorkInternal(ID3D11Device* device,
       gfxInfo->GetAdapterVendorID(vendorID);
       gfxInfo->GetAdapterVendorID2(vendorID2);
       if (vendorID.EqualsLiteral("0x8086") && vendorID2.IsEmpty()) {
-        if (!StaticPrefs::layers_amd_switchable_gfx_enabled()) {
+        if (!StaticPrefs::layers_amd_switchable_gfx_enabled_AtStartup()) {
           return false;
         }
         gfxCriticalError(CriticalLog::DefaultOptions(false))

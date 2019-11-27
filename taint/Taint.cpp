@@ -260,8 +260,6 @@ void TaintRange::fromBase64()
     resize(convertBaseBegin(begin_, 6, 8), convertBaseEnd(end_, 6, 8));
 }
 
-StringTaint::StringTaint() : ranges_(nullptr) { }
-
 StringTaint::StringTaint(TaintRange range)
 {
     ranges_ = new std::vector<TaintRange>;
@@ -291,12 +289,6 @@ StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
 {
     ranges_ = other.ranges_;
     other.ranges_ = nullptr;
-}
-
-
-StringTaint::~StringTaint()
-{
-    clear();
 }
 
 StringTaint& StringTaint::operator=(const StringTaint& other)
@@ -357,7 +349,6 @@ void StringTaint::shift(uint32_t index, int amount)
     MOZ_ASSERT(index + amount >= 0);        // amount can be negative
 
     auto ranges = new std::vector<TaintRange>();
-    StringTaint newtaint;
     for (auto& range : *this) {
         if (range.begin() >= index) {
             ranges->emplace_back(range.begin() + amount, range.end() + amount, range.flow());

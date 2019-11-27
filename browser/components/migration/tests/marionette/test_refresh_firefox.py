@@ -7,6 +7,16 @@ from marionette_harness import MarionetteTestCase
 from marionette_driver.errors import NoAlertPresentException
 
 
+# Holds info about things we need to cleanup after the tests are done.
+class PendingCleanup:
+    desktop_backup_path = None
+    reset_profile_path = None
+    reset_profile_local_path = None
+
+    def __init__(self, profile_name_to_remove):
+        self.profile_name_to_remove = profile_name_to_remove
+
+
 class TestFirefoxRefresh(MarionetteTestCase):
     _sandbox = "firefox-refresh"
 
@@ -185,7 +195,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
           }
         """, script_args=(self._expectedURLs,))  # NOQA: E501
 
-    def createSync(self):
+    def createFxa(self):
         # This script will write an entry to the login manager and create
         # a signedInUser.json in the profile dir.
         self.runAsyncCode("""
@@ -195,6 +205,13 @@ class TestFirefoxRefresh(MarionetteTestCase):
           let data = {email: "test@test.com", uid: "uid", keyFetchToken: "top-secret"};
           storage.initialize(data);
           storage.finalize().then(resolve);
+        """)
+
+    def createSync(self):
+        # This script will write the canonical preference which indicates a user
+        # is signed into sync.
+        self.marionette.execute_script("""
+            Services.prefs.setStringPref("services.sync.username", "test@test.com");
         """)
 
     def checkPassword(self):
@@ -382,11 +399,10 @@ class TestFirefoxRefresh(MarionetteTestCase):
         """)  # NOQA: E501
         self.assertSequenceEqual(tabURIs, self._expectedURLs)
 
-    def checkSync(self, hasMigrated):
+    def checkFxA(self):
         result = self.runAsyncCode("""
           Cu.import("resource://gre/modules/FxAccountsStorage.jsm");
           let resolve = arguments[arguments.length - 1];
-          let prefs = new global.Preferences("services.sync.");
           let storage = new FxAccountsStorageManager();
           let result = {};
           storage.initialize();
@@ -394,7 +410,6 @@ class TestFirefoxRefresh(MarionetteTestCase):
             result.accountData = data;
             return storage.finalize();
           }).then(() => {
-            result.prefUsername = prefs.get("username");
             resolve(result);
           }).catch(err => {
             resolve(err.toString());
@@ -406,20 +421,24 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.assertEqual(result["accountData"]["email"], "test@test.com")
         self.assertEqual(result["accountData"]["uid"], "uid")
         self.assertEqual(result["accountData"]["keyFetchToken"], "top-secret")
-        if hasMigrated:
-            # This test doesn't actually configure sync itself, so the username
-            # pref only exists after migration.
-            self.assertEqual(result["prefUsername"], "test@test.com")
 
-    def checkProfile(self, hasMigrated=False):
+    def checkSync(self, expect_sync_user):
+        pref_value = self.marionette.execute_script("""
+            return Services.prefs.getStringPref("services.sync.username", null);
+        """)
+        expected_value = "test@test.com" if expect_sync_user else None
+        self.assertEqual(pref_value, expected_value)
+
+    def checkProfile(self, has_migrated=False, expect_sync_user=True):
         self.checkPassword()
         self.checkBookmarkInMenu()
         self.checkHistory()
         self.checkFormHistory()
         self.checkFormAutofill()
         self.checkCookie()
-        self.checkSync(hasMigrated)
-        if hasMigrated:
+        self.checkFxA()
+        self.checkSync(expect_sync_user)
+        if has_migrated:
             self.checkBookmarkToolbarVisibility()
             self.checkSession()
 
@@ -432,6 +451,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.createFormAutofill()
         self.createCookie()
         self.createSession()
+        self.createFxa()
         self.createSync()
 
     def setUpScriptData(self):
@@ -470,11 +490,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         MarionetteTestCase.setUp(self)
         self.setUpScriptData()
 
-        self.reset_profile_path = None
-        self.reset_profile_local_path = None
-        self.desktop_backup_path = None
-
-        self.createProfileData()
+        self.cleanups = []
 
     def tearDown(self):
         # Force yet another restart with a clean profile to disconnect from the
@@ -499,31 +515,32 @@ class TestFirefoxRefresh(MarionetteTestCase):
             else:
                 raise
 
-        if self.desktop_backup_path:
-            shutil.rmtree(self.desktop_backup_path,
-                          ignore_errors=False, onerror=handleRemoveReadonly)
-
-        if self.reset_profile_path:
-            # Remove ourselves from profiles.ini
-            self.runCode("""
-              let name = arguments[0];
-              let profile = global.profSvc.getProfileByName(name);
-              profile.remove(false)
-              global.profSvc.flush();
-            """, script_args=(self.profileNameToRemove,))
-            # Remove the local profile dir if it's not the same as the profile dir:
-            different_path = self.reset_profile_local_path != self.reset_profile_path
-            if self.reset_profile_local_path and different_path:
-                shutil.rmtree(self.reset_profile_local_path,
+        for cleanup in self.cleanups:
+            if cleanup.desktop_backup_path:
+                shutil.rmtree(cleanup.desktop_backup_path,
                               ignore_errors=False, onerror=handleRemoveReadonly)
 
-            # And delete all the files.
-            shutil.rmtree(self.reset_profile_path,
-                          ignore_errors=False, onerror=handleRemoveReadonly)
+            if cleanup.reset_profile_path:
+                # Remove ourselves from profiles.ini
+                self.runCode("""
+                  let name = arguments[0];
+                  let profile = global.profSvc.getProfileByName(name);
+                  profile.remove(false)
+                  global.profSvc.flush();
+                """, script_args=(cleanup.profile_name_to_remove,))
+                # Remove the local profile dir if it's not the same as the profile dir:
+                different_path = cleanup.reset_profile_local_path != cleanup.reset_profile_path
+                if cleanup.reset_profile_local_path and different_path:
+                    shutil.rmtree(cleanup.reset_profile_local_path,
+                                  ignore_errors=False, onerror=handleRemoveReadonly)
+
+                # And delete all the files.
+                shutil.rmtree(cleanup.reset_profile_path,
+                              ignore_errors=False, onerror=handleRemoveReadonly)
 
     def doReset(self):
         profileName = "marionette-test-profile-" + str(int(time.time() * 1000))
-        self.profileNameToRemove = profileName
+        cleanup = PendingCleanup(profileName)
         self.runCode("""
           // Ensure the current (temporary) profile is in profiles.ini:
           let profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
@@ -552,14 +569,14 @@ class TestFirefoxRefresh(MarionetteTestCase):
         self.setUpScriptData()
 
         # Determine the new profile path (we'll need to remove it when we're done)
-        [self.reset_profile_path, self.reset_profile_local_path] = self.runCode("""
+        [cleanup.reset_profile_path, cleanup.reset_profile_local_path] = self.runCode("""
           let profD = Services.dirsvc.get("ProfD", Ci.nsIFile);
           let localD = Services.dirsvc.get("ProfLD", Ci.nsIFile);
           return [profD.path, localD.path];
         """)
 
         # Determine the backup path
-        self.desktop_backup_path = self.runCode("""
+        cleanup.desktop_backup_path = self.runCode("""
           let container;
           try {
             container = Services.dirsvc.get("Desk", Ci.nsIFile);
@@ -573,16 +590,34 @@ class TestFirefoxRefresh(MarionetteTestCase):
           return container.path;
         """, script_args=(profileLeafName,))  # NOQA: E501
 
-        self.assertTrue(os.path.isdir(self.reset_profile_path),
+        self.assertTrue(os.path.isdir(cleanup.reset_profile_path),
                         "Reset profile path should be present")
-        self.assertTrue(os.path.isdir(self.desktop_backup_path),
+        self.assertTrue(os.path.isdir(cleanup.desktop_backup_path),
                         "Backup profile path should be present")
-        self.assertIn(self.profileNameToRemove, self.reset_profile_path)
+        self.assertIn(cleanup.profile_name_to_remove, cleanup.reset_profile_path)
+        return cleanup
 
-    def testReset(self):
-        self.checkProfile()
+    def testResetEverything(self):
+        self.createProfileData()
 
-        self.doReset()
+        self.checkProfile(expect_sync_user=True)
+
+        this_cleanup = self.doReset()
+        self.cleanups.append(this_cleanup)
 
         # Now check that we're doing OK...
-        self.checkProfile(hasMigrated=True)
+        self.checkProfile(has_migrated=True, expect_sync_user=True)
+
+    def testFxANoSync(self):
+        # This test doesn't need to repeat all the non-sync tests...
+        # Setup FxA but *not* sync
+        self.createFxa()
+
+        self.checkFxA()
+        self.checkSync(False)
+
+        this_cleanup = self.doReset()
+        self.cleanups.append(this_cleanup)
+
+        self.checkFxA()
+        self.checkSync(False)

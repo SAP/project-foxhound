@@ -7,6 +7,7 @@ from __future__ import absolute_import, unicode_literals
 import argparse
 import collections
 import inspect
+import sys
 import types
 
 from .base import MachError
@@ -29,9 +30,6 @@ class _MachCommand(object):
         '_parser',
         'arguments',
         'argument_group_names',
-
-        # When `conditions` are met, rename this command to the following name.
-        'conditional_name',
 
         # Describes how dispatch is performed.
 
@@ -56,8 +54,7 @@ class _MachCommand(object):
     )
 
     def __init__(self, name=None, subcommand=None, category=None,
-                 description=None, conditions=None, parser=None,
-                 conditional_name=None):
+                 description=None, conditions=None, parser=None):
         self.name = name
         self.subcommand = subcommand
         self.category = category
@@ -66,7 +63,6 @@ class _MachCommand(object):
         self._parser = parser
         self.arguments = []
         self.argument_group_names = []
-        self.conditional_name = conditional_name
 
         self.cls = None
         self.pass_context = None
@@ -114,7 +110,8 @@ def CommandProvider(cls):
     # Tell mach driver whether to pass context argument to __init__.
     pass_context = False
 
-    if inspect.ismethod(cls.__init__):
+    isfunc = inspect.ismethod if sys.version_info < (3, 0) else inspect.isfunction
+    if isfunc(cls.__init__):
         spec = inspect.getargspec(cls.__init__)
 
         if len(spec.args) > 2:
@@ -289,7 +286,7 @@ class CommandArgument(object):
             # These are the assertions we make in dispatcher.py about
             # those types of CommandArguments.
             assert len(args) == 1
-            assert all(k in ('default', 'nargs', 'help', 'group') for k in kwargs)
+            assert all(k in ('default', 'nargs', 'help', 'group', 'metavar') for k in kwargs)
         self._command_args = (args, kwargs)
 
     def __call__(self, func):

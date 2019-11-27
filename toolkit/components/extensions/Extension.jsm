@@ -5,10 +5,16 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-var EXPORTED_SYMBOLS = ["Dictionary", "Extension", "ExtensionData", "Langpack"];
+var EXPORTED_SYMBOLS = [
+  "Dictionary",
+  "Extension",
+  "ExtensionData",
+  "Langpack",
+  "Management",
+  "UninstallObserver",
+];
 
 /* exported Extension, ExtensionData */
-/* globals Extension ExtensionData */
 
 /*
  * This file is the main entry point for extensions. When an extension
@@ -141,6 +147,7 @@ const CHILD_SHUTDOWN_TIMEOUT_MS = 8000;
 
 // Permissions that are only available to privileged extensions.
 const PRIVILEGED_PERMS = new Set([
+  "activityLog",
   "mozillaAddons",
   "geckoViewAddons",
   "telemetry",
@@ -263,6 +270,14 @@ var UninstallObserver = {
     }
   },
 
+  // AddonTestUtils will call this as necessary.
+  uninit() {
+    if (this.initialized) {
+      AddonManager.removeAddonListener(this);
+      this.initialized = false;
+    }
+  },
+
   onUninstalling(addon) {
     let extension = GlobalManager.extensionMap.get(addon.id);
     if (extension) {
@@ -288,14 +303,14 @@ var UninstallObserver = {
       // Clear any IndexedDB storage created by the extension
       // If LSNG is enabled, this also clears localStorage.
       let baseURI = Services.io.newURI(`moz-extension://${uuid}/`);
-      let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let principal = Services.scriptSecurityManager.createContentPrincipal(
         baseURI,
         {}
       );
       Services.qms.clearStoragesForPrincipal(principal);
 
       // Clear any storage.local data stored in the IDBBackend.
-      let storagePrincipal = Services.scriptSecurityManager.createCodebasePrincipal(
+      let storagePrincipal = Services.scriptSecurityManager.createContentPrincipal(
         baseURI,
         {
           userContextId: WEBEXT_STORAGE_USER_CONTEXT_ID,
@@ -923,7 +938,7 @@ class ExtensionData {
       // Check if there's a root directory `/localization` in the langpack.
       // If there is one, add it with the name `toolkit` as a FileSource.
       const entries = await this.readDirectory("localization");
-      if (entries.length > 0) {
+      if (entries.length) {
         l10nRegistrySources.toolkit = "";
       }
 
@@ -1388,10 +1403,9 @@ class ExtensionData {
         "webextPerms.sideloadHeader",
         ["<>"]
       );
-      let key =
-        result.msgs.length == 0
-          ? "webextPerms.sideloadTextNoPerms"
-          : "webextPerms.sideloadText2";
+      let key = !result.msgs.length
+        ? "webextPerms.sideloadTextNoPerms"
+        : "webextPerms.sideloadText2";
       result.text = bundle.GetStringFromName(key);
       result.acceptText = bundle.GetStringFromName(
         "webextPerms.sideloadEnable.label"
@@ -1636,7 +1650,7 @@ class Extension extends ExtensionData {
         this.permissions.add(perm);
       }
 
-      if (permissions.origins.length > 0) {
+      if (permissions.origins.length) {
         let patterns = this.whiteListedHosts.patterns.map(host => host.pattern);
 
         this.whiteListedHosts = new MatchPatternSet(
@@ -1757,7 +1771,7 @@ class Extension extends ExtensionData {
   }
 
   createPrincipal(uri = this.baseURI, originAttributes = {}) {
-    return Services.scriptSecurityManager.createCodebasePrincipal(
+    return Services.scriptSecurityManager.createContentPrincipal(
       uri,
       originAttributes
     );
@@ -1885,6 +1899,7 @@ class Extension extends ExtensionData {
       whiteListedHosts: this.whiteListedHosts.patterns.map(pat => pat.pattern),
       permissions: this.permissions,
       optionalPermissions: this.optionalPermissions,
+      isPrivileged: this.isPrivileged,
     };
   }
 
@@ -2130,6 +2145,7 @@ class Extension extends ExtensionData {
       id: this.id,
       mozExtensionHostname: this.uuid,
       baseURL: this.resourceURL,
+      isPrivileged: this.isPrivileged,
       allowedOrigins: new MatchPatternSet([]),
       localizeCallback() {},
       readyPromise,
@@ -2143,6 +2159,7 @@ class Extension extends ExtensionData {
     pendingExtensions.set(this.id, {
       mozExtensionHostname: this.uuid,
       baseURL: this.resourceURL,
+      isPrivileged: this.isPrivileged,
     });
     sharedData.set("extensions/pending", pendingExtensions);
 
@@ -2168,12 +2185,24 @@ class Extension extends ExtensionData {
 
       // We automatically add permissions to system/built-in extensions.
       // Extensions expliticy stating not_allowed will never get permission.
-      if (
-        !allowPrivateBrowsingByDefault &&
-        this.manifest.incognito !== "not_allowed" &&
-        !this.permissions.has(PRIVATE_ALLOWED_PERMISSION)
-      ) {
-        if (this.isPrivileged && !this.addonData.temporarilyInstalled) {
+      if (!allowPrivateBrowsingByDefault) {
+        let isAllowed = this.permissions.has(PRIVATE_ALLOWED_PERMISSION);
+        if (this.manifest.incognito === "not_allowed") {
+          // If an extension previously had permission, but upgrades/downgrades to
+          // a version that specifies "not_allowed" in manifest, remove the
+          // permission.
+          if (isAllowed) {
+            ExtensionPermissions.remove(this.id, {
+              permissions: [PRIVATE_ALLOWED_PERMISSION],
+              origins: [],
+            });
+            this.permissions.delete(PRIVATE_ALLOWED_PERMISSION);
+          }
+        } else if (
+          !isAllowed &&
+          this.isPrivileged &&
+          !this.addonData.temporarilyInstalled
+        ) {
           // Add to EP so it is preserved after ADDON_INSTALL.  We don't wait on the add here
           // since we are pushing the value into this.permissions.  EP will eventually save.
           ExtensionPermissions.add(this.id, {
@@ -2470,7 +2499,7 @@ class Langpack extends ExtensionData {
 
   async startup(reason) {
     this.chromeRegistryHandle = null;
-    if (this.startupData.chromeEntries.length > 0) {
+    if (this.startupData.chromeEntries.length) {
       const manifestURI = Services.io.newURI(
         "manifest.json",
         null,

@@ -22,7 +22,8 @@
 #include "LayersLogging.h"
 #include "TextureD3D11.h"
 #include "gfxConfig.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "FxROutputHandler.h"
 
 namespace mozilla {
 namespace layers {
@@ -30,7 +31,6 @@ namespace layers {
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 using namespace mozilla::layers::mlg;
-using namespace std;
 
 // Defined in CompositorD3D11.cpp.
 bool CanUsePartialPresents(ID3D11Device* aDevice);
@@ -323,7 +323,7 @@ RefPtr<MLGRenderTarget> MLGSwapChainD3D11::AcquireBackBuffer() {
 
   if (!mRT) {
     MLGRenderTargetFlags flags = MLGRenderTargetFlags::Default;
-    if (StaticPrefs::layers_mlgpu_enable_depth_buffer()) {
+    if (StaticPrefs::layers_mlgpu_enable_depth_buffer_AtStartup()) {
       flags |= MLGRenderTargetFlags::ZBuffer;
     }
 
@@ -380,8 +380,6 @@ void MLGSwapChainD3D11::UpdateBackBufferContents(ID3D11Texture2D* aBack) {
 }
 
 bool MLGSwapChainD3D11::ResizeBuffers(const IntSize& aSize) {
-  mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
-
   // We have to clear all references to the old backbuffer before resizing.
   mRT = nullptr;
 
@@ -415,6 +413,17 @@ void MLGSwapChainD3D11::Present() {
 
   // See bug 1260611 comment #28 for why we do this.
   mParent->InsertPresentWaitQuery();
+
+  if (mWidget->AsWindows()->HasFxrOutputHandler()) {
+    // There is a Firefox Reality handler for this swapchain. Update this
+    // window's contents to the VR window.
+    FxROutputHandler* fxrHandler = mWidget->AsWindows()->GetFxrOutputHandler();
+    if (fxrHandler->TryInitialize(mSwapChain, mDevice)) {
+      RefPtr<ID3D11DeviceContext> context;
+      mDevice->GetImmediateContext(getter_AddRefs(context));
+      fxrHandler->UpdateOutput(context);
+    }
+  }
 
   HRESULT hr;
   if (mCanUsePartialPresents && mSwapChain1) {
@@ -1272,10 +1281,13 @@ bool MLGDeviceD3D11::InitInputLayout(D3D11_INPUT_ELEMENT_DESC* aDesc,
   return true;
 }
 
-TextureFactoryIdentifier MLGDeviceD3D11::GetTextureFactoryIdentifier() const {
+TextureFactoryIdentifier MLGDeviceD3D11::GetTextureFactoryIdentifier(
+    widget::CompositorWidget* aWidget) const {
   TextureFactoryIdentifier ident(GetLayersBackend(), XRE_GetProcessType(),
                                  GetMaxTextureSize());
-
+  if (aWidget) {
+    ident.mUseCompositorWnd = !!aWidget->AsWindows()->GetCompositorHwnd();
+  }
   if (mSyncObject) {
     ident.mSyncHandle = mSyncObject->GetSyncHandle();
   }

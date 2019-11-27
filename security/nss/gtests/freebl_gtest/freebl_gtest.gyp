@@ -23,6 +23,7 @@
         '<(DEPTH)/lib/dev/dev.gyp:nssdev',
         '<(DEPTH)/lib/pki/pki.gyp:nsspki',
         '<(DEPTH)/lib/ssl/ssl.gyp:ssl',
+        '<(DEPTH)/lib/libpkix/libpkix.gyp:libpkix',
       ],
     },
     {
@@ -34,6 +35,7 @@
         'ecl_unittest.cc',
         'ghash_unittest.cc',
         'rsa_unittest.cc',
+        'cmac_unittests.cc',
         '<(DEPTH)/gtests/common/gtests.cc'
       ],
       'dependencies': [

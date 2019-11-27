@@ -19,6 +19,9 @@
 #include "nsReadableUtils.h"
 #include "nsSandboxFlags.h"
 
+#include "mozilla/dom/Document.h"
+#include "mozilla/StaticPrefs_security.h"
+
 #define DEFAULT_PORT -1
 
 static mozilla::LogModule* GetCspUtilsLog() {
@@ -97,7 +100,7 @@ bool CSP_ShouldResponseInheritCSP(nsIChannel* aChannel) {
   nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
   NS_ENSURE_SUCCESS(rv, false);
 
-  bool isAbout = (NS_SUCCEEDED(uri->SchemeIs("about", &isAbout)) && isAbout);
+  bool isAbout = uri->SchemeIs("about");
   if (isAbout) {
     nsAutoCString aboutSpec;
     rv = uri->GetSpec(aboutSpec);
@@ -109,12 +112,42 @@ bool CSP_ShouldResponseInheritCSP(nsIChannel* aChannel) {
     }
   }
 
-  bool isBlob = (NS_SUCCEEDED(uri->SchemeIs("blob", &isBlob)) && isBlob);
-  bool isData = (NS_SUCCEEDED(uri->SchemeIs("data", &isData)) && isData);
-  bool isFS = (NS_SUCCEEDED(uri->SchemeIs("filesystem", &isFS)) && isFS);
-  bool isJS = (NS_SUCCEEDED(uri->SchemeIs("javascript", &isJS)) && isJS);
+  return uri->SchemeIs("blob") || uri->SchemeIs("data") ||
+         uri->SchemeIs("filesystem") || uri->SchemeIs("javascript");
+}
 
-  return isBlob || isData || isFS || isJS;
+void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
+                           const nsAString& aPolicyStr) {
+  if (!StaticPrefs::security_csp_enable() || aDoc.IsLoadedAsData()) {
+    return;
+  }
+
+  nsAutoString policyStr(
+      nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
+          aPolicyStr));
+
+  if (policyStr.IsEmpty()) {
+    return;
+  }
+
+  nsCOMPtr<nsIContentSecurityPolicy> csp = aDoc.GetCsp();
+  if (!csp) {
+    MOZ_ASSERT(false, "how come there is no CSP");
+    return;
+  }
+
+  // Multiple CSPs (delivered through either header of meta tag) need to
+  // be joined together, see:
+  // https://w3c.github.io/webappsec/specs/content-security-policy/#delivery-html-meta-element
+  nsresult rv =
+      csp->AppendPolicy(policyStr,
+                        false,  // csp via meta tag can not be report only
+                        true);  // delivered through the meta tag
+  NS_ENSURE_SUCCESS_VOID(rv);
+  if (nsPIDOMWindowInner* inner = aDoc.GetInnerWindow()) {
+    inner->SetCsp(csp);
+  }
+  aDoc.ApplySettingsFromCSP(false);
 }
 
 void CSP_GetLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
@@ -268,6 +301,8 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_DTD:
     case nsIContentPolicy::TYPE_OTHER:
     case nsIContentPolicy::TYPE_SPECULATIVE:
+    case nsIContentPolicy::TYPE_INTERNAL_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
       return nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
 
     // csp shold not block top level loads, e.g. in case
@@ -281,6 +316,7 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
       return nsIContentSecurityPolicy::NO_DIRECTIVE;
 
     // Fall through to error for all other directives
+    // Note that we should never end up here for navigate-to
     default:
       MOZ_ASSERT(false, "Can not map nsContentPolicyType to CSPDirective");
   }
@@ -650,14 +686,8 @@ bool nsCSPHostSrc::permits(nsIURI* aUri, const nsAString& aNonce,
     // future compatibility we support it in CSP according to the spec,
     // see: 4.2.2 Matching Source Expressions Note, that whitelisting any of
     // these schemes would call nsCSPSchemeSrc::permits().
-    bool isBlobScheme =
-        (NS_SUCCEEDED(aUri->SchemeIs("blob", &isBlobScheme)) && isBlobScheme);
-    bool isDataScheme =
-        (NS_SUCCEEDED(aUri->SchemeIs("data", &isDataScheme)) && isDataScheme);
-    bool isFileScheme =
-        (NS_SUCCEEDED(aUri->SchemeIs("filesystem", &isFileScheme)) &&
-         isFileScheme);
-    if (isBlobScheme || isDataScheme || isFileScheme) {
+    if (aUri->SchemeIs("blob") || aUri->SchemeIs("data") ||
+        aUri->SchemeIs("filesystem")) {
       return false;
     }
 
@@ -846,6 +876,25 @@ bool nsCSPNonceSrc::permits(nsIURI* aUri, const nsAString& aNonce,
     CSPUTILSLOG(("nsCSPNonceSrc::permits, aUri: %s, aNonce: %s",
                  aUri->GetSpecOrDefault().get(),
                  NS_ConvertUTF16toUTF8(aNonce).get()));
+  }
+
+  if (aReportOnly && aWasRedirected && aNonce.IsEmpty()) {
+    /* Fix for Bug 1505412
+     *  If we land here, we're currently handling a script-preload which got
+     *  redirected. Preloads do not have any info about the nonce assiociated.
+     *  Because of Report-Only the preload passes the 1st CSP-check so the
+     *  preload does not get retried with a nonce attached.
+     *  Currently we're relying on the script-manager to
+     *  provide a fake loadinfo to check the preloads against csp.
+     *  So during HTTPChannel->OnRedirect we cant check csp for this case.
+     *  But as the script-manager already checked the csp,
+     *  a report would already have been send,
+     *  if the nonce didnt match.
+     *  So we can pass the check here for Report-Only Cases.
+     */
+    MOZ_ASSERT(aParserCreated == false,
+               "Skipping nonce-check is only allowed for Preloads");
+    return true;
   }
 
   // nonces can not be invalidated by strict-dynamic
@@ -1423,6 +1472,31 @@ bool nsCSPPolicy::hasDirective(CSPDirective aDir) const {
     }
   }
   return false;
+}
+
+bool nsCSPPolicy::allowsNavigateTo(nsIURI* aURI, bool aWasRedirected,
+                                   bool aEnforceWhitelist) const {
+  bool allowsNavigateTo = true;
+
+  for (unsigned long i = 0; i < mDirectives.Length(); i++) {
+    if (mDirectives[i]->equals(
+            nsIContentSecurityPolicy::NAVIGATE_TO_DIRECTIVE)) {
+      // Early return if we can skip the whitelist AND 'unsafe-allow-redirects'
+      // is present.
+      if (!aEnforceWhitelist &&
+          mDirectives[i]->allows(CSP_UNSAFE_ALLOW_REDIRECTS, EmptyString(),
+                                 false)) {
+        return true;
+      }
+      // Otherwise, check against the whitelist.
+      if (!mDirectives[i]->permits(aURI, EmptyString(), aWasRedirected, false,
+                                   false, false)) {
+        allowsNavigateTo = false;
+      }
+    }
+  }
+
+  return allowsNavigateTo;
 }
 
 /*

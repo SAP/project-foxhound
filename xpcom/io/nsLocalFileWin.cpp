@@ -7,6 +7,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/Utf8.h"
 
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
@@ -56,6 +57,7 @@
 #include "mozIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWidget.h"
+#include "mozilla/ShellHeaderOnlyUtils.h"
 #include "mozilla/WidgetUtils.h"
 
 using namespace mozilla;
@@ -2953,7 +2955,7 @@ nsLocalFile::GetPersistentDescriptor(nsACString& aPersistentDescriptor) {
 
 NS_IMETHODIMP
 nsLocalFile::SetPersistentDescriptor(const nsACString& aPersistentDescriptor) {
-  if (IsUTF8(aPersistentDescriptor)) {
+  if (IsUtf8(aPersistentDescriptor)) {
     return InitWithPath(NS_ConvertUTF8toUTF16(aPersistentDescriptor));
   } else {
     return InitWithNativePath(aPersistentDescriptor);
@@ -3040,16 +3042,14 @@ nsLocalFile::Launch() {
   }
 
   // use the app registry name to launch a shell execute....
-  SHELLEXECUTEINFOW seinfo;
-  memset(&seinfo, 0, sizeof(seinfo));
-  seinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
-  seinfo.fMask = SEE_MASK_ASYNCOK;
-  seinfo.hwnd = GetMostRecentNavigatorHWND();
-  seinfo.lpVerb = nullptr;
-  seinfo.lpFile = mResolvedPath.get();
-  seinfo.lpParameters = nullptr;
-  seinfo.lpDirectory = nullptr;
-  seinfo.nShow = SW_SHOWNORMAL;
+  _bstr_t execPath(mResolvedPath.get());
+
+  _variant_t args;
+  // Pass VT_ERROR/DISP_E_PARAMNOTFOUND to omit an optional RPC parameter
+  // to execute a file with the default verb.
+  _variant_t verbDefault(DISP_E_PARAMNOTFOUND, VT_ERROR);
+  _variant_t workingDir;
+  _variant_t showCmd(SW_SHOWNORMAL);
 
   // Use the directory of the file we're launching as the working
   // directory. That way if we have a self extracting EXE it won't
@@ -3057,18 +3057,32 @@ nsLocalFile::Launch() {
   WCHAR workingDirectory[MAX_PATH + 1] = {L'\0'};
   wcsncpy(workingDirectory, mResolvedPath.get(), MAX_PATH);
   if (PathRemoveFileSpecW(workingDirectory)) {
-    seinfo.lpDirectory = workingDirectory;
+    workingDir = workingDirectory;
   } else {
     NS_WARNING("Could not set working directory for launched file.");
   }
 
-  if (ShellExecuteExW(&seinfo)) {
+  // Ask Explorer to ShellExecute on our behalf, as some applications such as
+  // Skype for Business do not start correctly when inheriting our process's
+  // migitation policies.
+  mozilla::LauncherVoidResult shellExecuteOk = mozilla::ShellExecuteByExplorer(
+      execPath, args, verbDefault, workingDir, showCmd);
+  if (shellExecuteOk.isOk()) {
     return NS_OK;
   }
-  DWORD r = GetLastError();
+  DWORD r = shellExecuteOk.inspectErr().AsWin32Error().value();
   // if the file has no association, we launch windows'
   // "what do you want to do" dialog
   if (r == SE_ERR_NOASSOC) {
+    SHELLEXECUTEINFOW seinfo;
+    memset(&seinfo, 0, sizeof(seinfo));
+    seinfo.cbSize = sizeof(SHELLEXECUTEINFOW);
+    seinfo.fMask = SEE_MASK_ASYNCOK;
+    seinfo.hwnd = GetMostRecentNavigatorHWND();
+    seinfo.lpVerb = nullptr;
+    seinfo.lpDirectory = workingDirectory;
+    seinfo.nShow = SW_SHOWNORMAL;
+
     nsAutoString shellArg;
     shellArg.AssignLiteral(u"shell32.dll,OpenAs_RunDLL ");
     shellArg.Append(mResolvedPath);

@@ -121,6 +121,11 @@ class JSAPITest {
     return JSAPITestString("<<error converting value to string>>");
   }
 
+  JSAPITestString toSource(char c) {
+    char buf[2] = {c, '\0'};
+    return JSAPITestString(buf);
+  }
+
   JSAPITestString toSource(long v) {
     char buf[40];
     sprintf(buf, "%ld", v);
@@ -466,6 +471,8 @@ class TestJSPrincipals : public JSPrincipals {
     MOZ_ASSERT(false, "not implemented");
     return false;
   }
+
+  bool isSystemOrAddonPrincipal() override { return true; }
 };
 
 // A class that simulates externally memory-managed data, for testing with

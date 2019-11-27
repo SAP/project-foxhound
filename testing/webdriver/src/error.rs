@@ -1,5 +1,6 @@
 use base64::DecodeError;
 use http::StatusCode;
+use serde::de::{Deserialize, Deserializer};
 use serde::ser::{Serialize, Serializer};
 use serde_json;
 use std::borrow::Cow;
@@ -146,6 +147,16 @@ impl Serialize for ErrorStatus {
         S: Serializer,
     {
         self.error_code().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ErrorStatus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let error_string = String::deserialize(deserializer)?;
+        Ok(ErrorStatus::from(error_string))
     }
 }
 
@@ -362,31 +373,30 @@ impl From<Box<dyn Error>> for WebDriverError {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
-    use crate::test::check_serialize;
+    use crate::test::assert_ser;
 
     #[test]
     fn test_json_webdriver_error() {
-        let json = r#"{"value":{
-            "error":"unknown error",
-            "message":"foo bar",
-            "stacktrace":"foo\nbar"
-        }}"#;
-        let data = WebDriverError {
+        let json = json!({"value": {
+            "error": "unknown error",
+            "message": "foo bar",
+            "stacktrace": "foo\nbar",
+        }});
+        let error = WebDriverError {
             error: ErrorStatus::UnknownError,
             message: "foo bar".into(),
             stack: "foo\nbar".into(),
             delete_session: true,
         };
 
-        check_serialize(&json, &data);
+        assert_ser(&error, json);
     }
 
     #[test]
     fn test_json_error_status() {
-        let json = format!(r#""unknown error""#);
-        let data = ErrorStatus::UnknownError;
-
-        check_serialize(&json, &data);
+        assert_ser(&ErrorStatus::UnknownError, json!("unknown error"));
     }
 }

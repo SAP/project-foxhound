@@ -19,6 +19,12 @@ loader.lazyRequireGetter(
 );
 loader.lazyRequireGetter(
   this,
+  "auditKeyboard",
+  "devtools/server/actors/accessibility/audit/keyboard",
+  true
+);
+loader.lazyRequireGetter(
+  this,
   "auditTextLabel",
   "devtools/server/actors/accessibility/audit/text-label",
   true
@@ -36,6 +42,12 @@ loader.lazyRequireGetter(
   true
 );
 loader.lazyRequireGetter(this, "events", "devtools/shared/event-emitter");
+loader.lazyRequireGetter(
+  this,
+  "getBounds",
+  "devtools/server/actors/highlighters/utils/accessibility",
+  true
+);
 
 const RELATIONS_TO_IGNORE = new Set([
   Ci.nsIAccessibleRelation.RELATION_CONTAINING_APPLICATION,
@@ -457,8 +469,9 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     const { walker } = this;
     walker.clearStyles(win);
     const contrastRatio = await getContrastRatioFor(rawNode.parentNode, {
-      bounds,
+      bounds: getBounds(win, bounds),
       win,
+      appliedColorMatrix: this.walker.colorMatrix,
     });
 
     walker.restoreStyles(win);
@@ -480,6 +493,9 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
     switch (type) {
       case AUDIT_TYPE.CONTRAST:
         return this._getContrastRatio();
+      case AUDIT_TYPE.KEYBOARD:
+        // Determine if keyboard accessibility is lacking where it is necessary.
+        return auditKeyboard(this.rawAccessible);
       case AUDIT_TYPE.TEXT_LABEL:
         // Determine if text alternative is missing for an accessible where it
         // is necessary.
@@ -510,12 +526,37 @@ const AccessibleActor = ActorClassWithSpec(accessibleSpec, {
       auditTypes = auditTypes.filter(auditType => types.includes(auditType));
     }
 
-    // More audit steps will be added here in the near future. In addition to
-    // colour contrast ratio we will add autits for to the missing names,
-    // invalid states, etc. (For example see bug 1518808).
-    this._auditing = Promise.all(
-      auditTypes.map(auditType => this._getAuditByType(auditType))
-    )
+    // For some reason keyboard checks for focus styling affect values (that are
+    // used by other types of checks (text names and values)) returned by
+    // accessible objects. This happens only when multiple checks are run at the
+    // same time (asynchronously) and the audit might return unexpected
+    // failures. We thus split the execution of the checks into two parts, first
+    // performing keyboard checks and only after the rest of the checks. See bug
+    // 1594743 for more detail.
+    let keyboardAuditResult;
+    const keyboardAuditIndex = auditTypes.indexOf(AUDIT_TYPE.KEYBOARD);
+    if (keyboardAuditIndex > -1) {
+      // If we are performing a keyboard audit, remove its value from the
+      // complete list and run it.
+      auditTypes.splice(keyboardAuditIndex, 1);
+      keyboardAuditResult = this._getAuditByType(AUDIT_TYPE.KEYBOARD);
+    }
+
+    this._auditing = Promise.resolve(keyboardAuditResult)
+      .then(keyboardResult => {
+        const audits = auditTypes.map(auditType =>
+          this._getAuditByType(auditType)
+        );
+
+        // If we are also performing a keyboard audit, add its type and its
+        // result back to the complete list of audits.
+        if (keyboardAuditIndex > -1) {
+          auditTypes.splice(keyboardAuditIndex, 0, AUDIT_TYPE.KEYBOARD);
+          audits.splice(keyboardAuditIndex, 0, keyboardResult);
+        }
+
+        return Promise.all(audits);
+      })
       .then(results => {
         if (this.isDefunct || this.isDestroyed) {
           return null;

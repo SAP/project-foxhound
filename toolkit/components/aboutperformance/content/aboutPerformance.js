@@ -269,7 +269,7 @@ var State = {
    */
   async update() {
     // If the buffer is empty, add one value for bootstraping purposes.
-    if (this._buffer.length == 0) {
+    if (!this._buffer.length) {
       this._latest = await this._promiseSnapshot();
       this._buffer.push(this._latest);
       await wait(BUFFER_SAMPLING_RATE_MS * 1.1);
@@ -482,6 +482,17 @@ var State = {
     }
     return counters;
   },
+
+  getMaxEnergyImpact(counters) {
+    return Math.max(
+      ...counters.map(c => {
+        return Control._computeEnergyImpact(
+          c.dispatchesSincePrevious,
+          c.durationSincePrevious
+        );
+      })
+    );
+  },
 };
 
 var View = {
@@ -503,22 +514,52 @@ var View = {
     row.parentNode.insertBefore(this._fragment, row.nextSibling);
     this._fragment = document.createDocumentFragment();
   },
-  displayEnergyImpact(elt, energyImpact) {
+  displayEnergyImpact(elt, energyImpact, maxEnergyImpact) {
     if (!energyImpact) {
       elt.textContent = "–";
+      elt.style.setProperty("--bar-width", 0);
     } else {
-      let impact = "high";
+      let impact;
+      let barWidth;
+      const mediumEnergyImpact = 25;
       if (energyImpact < 1) {
         impact = "low";
-      } else if (energyImpact < 25) {
+        // Width 0-10%.
+        barWidth = 10 * energyImpact;
+      } else if (energyImpact < mediumEnergyImpact) {
         impact = "medium";
+        // Width 10-50%.
+        barWidth = (10 + 2 * energyImpact) * (5 / 6);
+      } else {
+        impact = "high";
+        // Width 50-100%.
+        let energyImpactFromZero = energyImpact - mediumEnergyImpact;
+        if (maxEnergyImpact > 100) {
+          barWidth =
+            50 +
+            (energyImpactFromZero / (maxEnergyImpact - mediumEnergyImpact)) *
+              50;
+        } else {
+          barWidth = 50 + energyImpactFromZero * (2 / 3);
+        }
       }
       document.l10n.setAttributes(elt, "energy-impact-" + impact, {
         value: energyImpact,
       });
+      if (maxEnergyImpact != -1) {
+        elt.style.setProperty("--bar-width", barWidth);
+      }
     }
   },
-  appendRow(name, energyImpact, memory, tooltip, type, image = "") {
+  appendRow(
+    name,
+    energyImpact,
+    memory,
+    tooltip,
+    type,
+    maxEnergyImpact = -1,
+    image = ""
+  ) {
     let row = document.createElement("tr");
 
     let elt = document.createElement("td");
@@ -544,14 +585,13 @@ var View = {
     row.appendChild(elt);
 
     elt = document.createElement("td");
-    if (type == "system-addon") {
-      type = "addon";
-    }
-    document.l10n.setAttributes(elt, "type-" + type);
+    let typeLabelType = type == "system-addon" ? "addon" : type;
+    document.l10n.setAttributes(elt, "type-" + typeLabelType);
     row.appendChild(elt);
 
     elt = document.createElement("td");
-    this.displayEnergyImpact(elt, energyImpact);
+    elt.classList.add("energy-impact");
+    this.displayEnergyImpact(elt, energyImpact, maxEnergyImpact);
     row.appendChild(elt);
 
     elt = document.createElement("td");
@@ -749,6 +789,8 @@ var Control = {
   // The force parameter can force a full update even when the mouse has been
   // moved recently.
   async _updateDisplay(force = false) {
+    let counters = State.getCounters();
+    let maxEnergyImpact = State.getMaxEnergyImpact(counters);
     // If the mouse has been moved recently, update the data displayed
     // without moving any item to avoid the risk of users clicking an action
     // button for the wrong item.
@@ -763,7 +805,7 @@ var Control = {
         id,
         dispatchesSincePrevious,
         durationSincePrevious,
-      } of State.getCounters()) {
+      } of counters) {
         let energyImpact = this._computeEnergyImpact(
           dispatchesSincePrevious,
           durationSincePrevious
@@ -779,7 +821,11 @@ var Control = {
           // risk of making other rows move up or down.
           const kEnergyImpactColumn = 2;
           let elt = row.childNodes[kEnergyImpactColumn];
-          View.displayEnergyImpact(elt, energyImpactPerId.get(row.windowId));
+          View.displayEnergyImpact(
+            elt,
+            energyImpactPerId.get(row.windowId),
+            maxEnergyImpact
+          );
         }
         row = row.nextSibling;
       }
@@ -796,7 +842,7 @@ var Control = {
     let openItems = this._openItems;
     this._openItems = new Set();
 
-    let counters = this._sortCounters(State.getCounters());
+    counters = this._sortCounters(counters);
     for (let {
       id,
       name,
@@ -823,6 +869,7 @@ var Control = {
           durationSincePrevious: Math.ceil(durationSincePrevious / 1000),
         },
         type,
+        maxEnergyImpact,
         image
       );
       row.windowId = id;

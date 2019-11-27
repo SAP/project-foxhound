@@ -21,45 +21,39 @@ using namespace js;
 
 using mozilla::Maybe;
 
-/* static */
-bool GlobalObject::initAsyncFunction(JSContext* cx,
-                                     Handle<GlobalObject*> global) {
-  if (global->getReservedSlot(ASYNC_FUNCTION_PROTO).isObject()) {
-    return true;
-  }
-
+JSObject* js::InitAsyncFunction(JSContext* cx, Handle<GlobalObject*> global) {
   RootedObject asyncFunctionProto(
       cx, NewSingletonObjectWithFunctionPrototype(cx, global));
   if (!asyncFunctionProto) {
-    return false;
+    return nullptr;
   }
 
   if (!DefineToStringTag(cx, asyncFunctionProto, cx->names().AsyncFunction)) {
-    return false;
+    return nullptr;
   }
 
   RootedObject proto(
       cx, GlobalObject::getOrCreateFunctionConstructor(cx, cx->global()));
   if (!proto) {
-    return false;
+    return nullptr;
   }
   HandlePropertyName name = cx->names().AsyncFunction;
   RootedObject asyncFunction(
-      cx, NewFunctionWithProto(cx, AsyncFunctionConstructor, 1,
-                               JSFunction::NATIVE_CTOR, nullptr, name, proto));
+      cx,
+      NewFunctionWithProto(cx, AsyncFunctionConstructor, 1,
+                           FunctionFlags::NATIVE_CTOR, nullptr, name, proto));
   if (!asyncFunction) {
-    return false;
+    return nullptr;
   }
   if (!LinkConstructorAndPrototype(cx, asyncFunction, asyncFunctionProto,
                                    JSPROP_PERMANENT | JSPROP_READONLY,
                                    JSPROP_READONLY)) {
-    return false;
+    return nullptr;
   }
 
-  global->setReservedSlot(ASYNC_FUNCTION, ObjectValue(*asyncFunction));
-  global->setReservedSlot(ASYNC_FUNCTION_PROTO,
-                          ObjectValue(*asyncFunctionProto));
-  return true;
+  global->setConstructor(JSProto_AsyncFunction, ObjectValue(*asyncFunction));
+  global->setPrototype(JSProto_AsyncFunction, ObjectValue(*asyncFunctionProto));
+  return asyncFunction;
 }
 
 enum class ResumeKind { Normal, Throw };
@@ -170,7 +164,7 @@ JSObject* js::AsyncFunctionResolve(
   return promise;
 }
 
-const Class AsyncFunctionGeneratorObject::class_ = {
+const JSClass AsyncFunctionGeneratorObject::class_ = {
     "AsyncFunctionGenerator",
     JSCLASS_HAS_RESERVED_SLOTS(AsyncFunctionGeneratorObject::RESERVED_SLOTS)};
 

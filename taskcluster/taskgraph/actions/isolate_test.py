@@ -6,6 +6,7 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
+import copy
 import json
 import logging
 import os
@@ -31,24 +32,39 @@ def get_failures(task_id):
     MOZHARNESS_TEST_PATHS.  If no appropriate test path can be
     determined, nothing is returned.
     """
-    re_test = re.compile(r'"test": "([^"]+)"')
-    re_bad_test = re.compile(r'(Last test finished|'
-                             r'Main app process exited normally|'
-                             r'[(]SimpleTest/TestRunner.js[)]|'
-                             r'remoteautomation.py|'
-                             r'unknown test url|'
-                             r'https?://localhost:\d+/\d+/\d+/.*[.]html)')
+    re_bad_tests = [
+        re.compile(r'Last test finished'),
+        re.compile(r'LeakSanitizer'),
+        re.compile(r'Main app process exited normally'),
+        re.compile(r'ShutdownLeaks'),
+        re.compile(r'[(]SimpleTest/TestRunner.js[)]'),
+        re.compile(r'automation.py'),
+        re.compile(r'https?://localhost:\d+/\d+/\d+/.*[.]html'),
+        re.compile(r'jsreftest'),
+        re.compile(r'leakcheck'),
+        re.compile(r'mozrunner-startup'),
+        re.compile(r'pid: '),
+        re.compile(r'remoteautomation.py'),
+        re.compile(r'unknown test url'),
+    ]
     re_extract_tests = [
-        re.compile(r'(?:^[^:]+:)?(?:https?|file):[^ ]+/reftest/tests/([^ ]+)'),
-        re.compile(r'(?:^[^:]+:)?(?:https?|file):[^:]+:[0-9]+/tests/([^ ]+)'),
-        re.compile(r'xpcshell-[^ ]+\.ini:(.*)'),
+        re.compile(r'"test": "(?:[^:]+:)?(?:https?|file):[^ ]+/reftest/tests/([^ "]+)'),
+        re.compile(r'"test": "(?:[^:]+:)?(?:https?|file):[^:]+:[0-9]+/tests/([^ "]+)'),
+        re.compile(r'xpcshell-?[^ "]*\.ini:([^ "]+)'),
+        re.compile(r'/tests/([^ "]+) - finished .*'),
+        re.compile(r'"test": "([^ "]+)"'),
+        re.compile(r'"message": "Error running command run_test with arguments '
+                   '[(]<wptrunner[.]wpttest[.]TestharnessTest ([^>]+)>'),
+        re.compile(r'"message": "TEST-[^ ]+ [|] ([^ "]+)[^|]*[|]')
     ]
 
-    def munge_test_path(test_path):
-        if re_bad_test.search(test_path):
-            return None
+    def munge_test_path(line):
+        test_path = None
+        for r in re_bad_tests:
+            if r.search(line):
+                return None
         for r in re_extract_tests:
-            m = r.match(test_path)
+            m = r.search(line)
             if m:
                 test_path = m.group(1)
                 break
@@ -58,41 +74,38 @@ def get_failures(task_id):
     tests = set()
     artifacts = list_artifacts(task_id)
     for artifact in artifacts:
-        if 'name' in artifact and artifact['name'].endswith('errorsummary.log'):
-            stream = get_artifact(task_id, artifact['name'])
-            if stream:
-                # Read all of the content from the stream and split
-                # the lines out since on macosx and windows, the first
-                # line is empty.
-                for line in stream.read().split('\n'):
-                    if len(tests) > 4:
-                        # The number of tasks created is determined by
-                        # the `times` value and the number of distinct
-                        # tests and directories as:
-                        # times * (1 + len(tests) + len(dirs)).
-                        # Since the maximum value of `times`
-                        # specifiable in the Treeherder UI is 100, the
-                        # number of tasks created can reach a very
-                        # large value depending on the number of
-                        # unique tests.  During testing, it was found
-                        # that 10 distinct tests were sufficient to
-                        # cause the action task to exceed the
-                        # maxRunTime of 1800 seconds resulting in it
-                        # being aborted.  We limit the number of
-                        # distinct tests and thereby the number of
-                        # distinct test directories to a maximum of 5
-                        # to keep the action task from timing out.
-                        break
-                    line = line.strip()
-                    match = re_test.search(line)
-                    if match:
-                        test_path = munge_test_path(match.group(1))
-                        if test_path:
-                            tests.add(test_path)
-                            test_dir = os.path.dirname(test_path)
-                            if test_dir:
-                                dirs.add(test_dir)
-            break
+        if 'name' not in artifact or not artifact['name'].endswith('errorsummary.log'):
+            continue
+
+        stream = get_artifact(task_id, artifact['name'])
+        if not stream:
+            continue
+
+        # The number of tasks created is determined by the
+        # `times` value and the number of distinct tests and
+        # directories as: times * (1 + len(tests) + len(dirs)).
+        # Since the maximum value of `times` specifiable in the
+        # Treeherder UI is 100, the number of tasks created can
+        # reach a very large value depending on the number of
+        # unique tests.  During testing, it was found that 10
+        # distinct tests were sufficient to cause the action task
+        # to exceed the maxRunTime of 1800 seconds resulting in it
+        # being aborted.  We limit the number of distinct tests
+        # and thereby the number of distinct test directories to a
+        # maximum of 5 to keep the action task from timing out.
+
+        for line in stream.read().split('\n'):
+            test_path = munge_test_path(line.strip())
+
+            if test_path:
+                tests.add(test_path)
+                test_dir = os.path.dirname(test_path)
+                if test_dir:
+                    dirs.add(test_dir)
+
+            if len(tests) > 4:
+                break
+
     return {'dirs': sorted(dirs), 'tests': sorted(tests)}
 
 
@@ -119,8 +132,14 @@ def create_isolate_failure_tasks(task_definition, failures, level, times):
         suite = suite[:suite.index('-chunked')]
     if '-coverage' in suite:
         suite = suite[:suite.index('-coverage')]
+    is_wpt = 'web-platform-tests' in suite
 
-    command = task_definition['payload']['command']
+    # command is a copy of task_definition['payload']['command'] from the original task.
+    # It is used to create the new version containing the
+    # task_definition['payload']['command'] with repeat_args which is updated every time
+    # through the failure_group loop.
+
+    command = copy.deepcopy(task_definition['payload']['command'])
 
     th_dict['groupSymbol'] = th_dict['groupSymbol'] + '-I'
     th_dict['tier'] = 3
@@ -147,12 +166,26 @@ def create_isolate_failure_tasks(task_definition, failures, level, times):
         else:
             task_definition['payload']['command'] = command
 
+        # saved_command is a saved version of the
+        # task_definition['payload']['command'] with the repeat
+        # arguments. We need to save it since
+        # task_definition['payload']['command'] will be modified in the failure_path loop
+        # when we are isolating web-platform-tests.
+
+        saved_command = copy.deepcopy(task_definition['payload']['command'])
+
         for failure_path in failures[failure_group]:
             th_dict['symbol'] = symbol + failure_group_suffix
-            if is_windows:
+            if is_windows and not is_wpt:
                 failure_path = '\\'.join(failure_path.split('/'))
-            task_definition['payload']['env']['MOZHARNESS_TEST_PATHS'] = json.dumps(
-                {suite: [failure_path]})
+            if is_wpt:
+                include_args = ['--include={}'.format(failure_path)]
+                task_definition['payload']['command'] = add_args_to_command(
+                    saved_command,
+                    extra_args=include_args)
+            else:
+                task_definition['payload']['env']['MOZHARNESS_TEST_PATHS'] = json.dumps(
+                    {suite: [failure_path]})
 
             logger.info("Creating task for path {} with command {}".format(
                 failure_path,

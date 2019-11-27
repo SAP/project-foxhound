@@ -2,16 +2,18 @@ const { FinderIterator } = ChromeUtils.import(
   "resource://gre/modules/FinderIterator.jsm"
 );
 
+let finderIterator = new FinderIterator();
+
 var gFindResults = [];
 // Stub the method that instantiates nsIFind and does all the interaction with
 // the docShell to be searched through.
-FinderIterator._iterateDocument = function*(word, window, finder) {
+finderIterator._iterateDocument = function*(word, window, finder) {
   for (let range of gFindResults) {
     yield range;
   }
 };
 
-FinderIterator._rangeStartsInLink = fakeRange => fakeRange.startsInLink;
+finderIterator._rangeStartsInLink = fakeRange => fakeRange.startsInLink;
 
 function FakeRange(textContent, startsInLink = false) {
   this.startContainer = {};
@@ -46,7 +48,7 @@ add_task(async function test_start() {
   prepareIterator(findText, rangeCount);
 
   let count = 0;
-  await FinderIterator.start({
+  await finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -60,14 +62,45 @@ add_task(async function test_start() {
   });
 
   Assert.equal(rangeCount, count, "Amount of ranges yielded should match!");
-  Assert.ok(!FinderIterator.running, "Running state should match");
+  Assert.ok(!finderIterator.running, "Running state should match");
   Assert.equal(
-    FinderIterator._previousRanges.length,
+    finderIterator._previousRanges.length,
     rangeCount,
     "Ranges cache should match"
   );
 
-  FinderIterator.reset();
+  finderIterator.reset();
+});
+
+add_task(async function test_subframes() {
+  let findText = "test";
+  let rangeCount = 300;
+  prepareIterator(findText, rangeCount);
+
+  let count = 0;
+  await finderIterator.start({
+    caseSensitive: false,
+    entireWord: false,
+    finder: gMockFinder,
+    listener: {
+      onIteratorRangeFound(range) {
+        ++count;
+        Assert.equal(range.toString(), findText, "Text content should match");
+      },
+    },
+    word: findText,
+    useSubFrames: true,
+  });
+
+  Assert.equal(rangeCount, count, "Amount of ranges yielded should match!");
+  Assert.ok(!finderIterator.running, "Running state should match");
+  Assert.equal(
+    finderIterator._previousRanges.length,
+    rangeCount,
+    "Ranges cache should match"
+  );
+
+  finderIterator.reset();
 });
 
 add_task(async function test_valid_arguments() {
@@ -77,7 +110,7 @@ add_task(async function test_valid_arguments() {
 
   let count = 0;
 
-  await FinderIterator.start({
+  await finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -89,7 +122,7 @@ add_task(async function test_valid_arguments() {
     word: findText,
   });
 
-  let params = FinderIterator._previousParams;
+  let params = finderIterator._previousParams;
   Assert.ok(!params.linksOnly, "Default for linksOnly is false");
   Assert.ok(!params.useCache, "Default for useCache is false");
   Assert.equal(params.word, findText, "Words should match");
@@ -97,7 +130,7 @@ add_task(async function test_valid_arguments() {
   count = 0;
   Assert.throws(
     () =>
-      FinderIterator.start({
+      finderIterator.start({
         entireWord: false,
         listener: {
           onIteratorRangeFound(range) {
@@ -109,11 +142,11 @@ add_task(async function test_valid_arguments() {
     /Missing required option 'caseSensitive'/,
     "Should throw when missing an argument"
   );
-  FinderIterator.reset();
+  finderIterator.reset();
 
   Assert.throws(
     () =>
-      FinderIterator.start({
+      finderIterator.start({
         caseSensitive: false,
         listener: {
           onIteratorRangeFound(range) {
@@ -125,11 +158,11 @@ add_task(async function test_valid_arguments() {
     /Missing required option 'entireWord'/,
     "Should throw when missing an argument"
   );
-  FinderIterator.reset();
+  finderIterator.reset();
 
   Assert.throws(
     () =>
-      FinderIterator.start({
+      finderIterator.start({
         caseSensitive: false,
         entireWord: false,
         listener: {
@@ -142,11 +175,11 @@ add_task(async function test_valid_arguments() {
     /Missing required option 'finder'/,
     "Should throw when missing an argument"
   );
-  FinderIterator.reset();
+  finderIterator.reset();
 
   Assert.throws(
     () =>
-      FinderIterator.start({
+      finderIterator.start({
         caseSensitive: true,
         entireWord: false,
         finder: gMockFinder,
@@ -155,11 +188,11 @@ add_task(async function test_valid_arguments() {
     /Missing valid, required option 'listener'/,
     "Should throw when missing an argument"
   );
-  FinderIterator.reset();
+  finderIterator.reset();
 
   Assert.throws(
     () =>
-      FinderIterator.start({
+      finderIterator.start({
         caseSensitive: false,
         entireWord: true,
         finder: gMockFinder,
@@ -172,7 +205,7 @@ add_task(async function test_valid_arguments() {
     /Missing required option 'word'/,
     "Should throw when missing an argument"
   );
-  FinderIterator.reset();
+  finderIterator.reset();
 
   Assert.equal(count, 0, "No ranges should've been counted");
 });
@@ -183,7 +216,7 @@ add_task(async function test_stop() {
   prepareIterator(findText, rangeCount);
 
   let count = 0;
-  let whenDone = FinderIterator.start({
+  let whenDone = finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -195,13 +228,13 @@ add_task(async function test_stop() {
     word: findText,
   });
 
-  FinderIterator.stop();
+  finderIterator.stop();
 
   await whenDone;
 
   Assert.equal(count, 0, "Number of ranges should be 0");
 
-  FinderIterator.reset();
+  finderIterator.reset();
 });
 
 add_task(async function test_reset() {
@@ -210,7 +243,7 @@ add_task(async function test_reset() {
   prepareIterator(findText, rangeCount);
 
   let count = 0;
-  let whenDone = FinderIterator.start({
+  let whenDone = finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -222,20 +255,20 @@ add_task(async function test_reset() {
     word: findText,
   });
 
-  Assert.ok(FinderIterator.running, "Yup, running we are");
+  Assert.ok(finderIterator.running, "Yup, running we are");
   Assert.equal(count, 0, "Number of ranges should match 0");
   Assert.equal(
-    FinderIterator.ranges.length,
+    finderIterator.ranges.length,
     0,
     "Number of ranges should match 0"
   );
 
-  FinderIterator.reset();
+  finderIterator.reset();
 
-  Assert.ok(!FinderIterator.running, "Nope, running we are not");
-  Assert.equal(FinderIterator.ranges.length, 0, "No ranges after reset");
+  Assert.ok(!finderIterator.running, "Nope, running we are not");
+  Assert.equal(finderIterator.ranges.length, 0, "No ranges after reset");
   Assert.equal(
-    FinderIterator._previousRanges.length,
+    finderIterator._previousRanges.length,
     0,
     "No ranges after reset"
   );
@@ -252,7 +285,7 @@ add_task(async function test_parallel_starts() {
 
   // Start off the iterator.
   let count = 0;
-  let whenDone = FinderIterator.start({
+  let whenDone = finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -265,10 +298,10 @@ add_task(async function test_parallel_starts() {
   });
 
   await new Promise(resolve => gMockWindow.setTimeout(resolve, 120));
-  Assert.ok(FinderIterator.running, "We ought to be running here");
+  Assert.ok(finderIterator.running, "We ought to be running here");
 
   let count2 = 0;
-  let whenDone2 = FinderIterator.start({
+  let whenDone2 = finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -282,22 +315,22 @@ add_task(async function test_parallel_starts() {
 
   // Let the iterator run for a little while longer before we assert the world.
   await new Promise(resolve => gMockWindow.setTimeout(resolve, 10));
-  FinderIterator.stop();
+  finderIterator.stop();
 
-  Assert.ok(!FinderIterator.running, "Stop means stop");
+  Assert.ok(!finderIterator.running, "Stop means stop");
 
   await whenDone;
   await whenDone2;
 
   Assert.greater(
     count,
-    FinderIterator.kIterationSizeMax,
+    finderIterator.kIterationSizeMax,
     "At least one range should've been found"
   );
   Assert.less(count, rangeCount, "Not all ranges should've been found");
   Assert.greater(
     count2,
-    FinderIterator.kIterationSizeMax,
+    finderIterator.kIterationSizeMax,
     "At least one range should've been found"
   );
   Assert.less(count2, rangeCount, "Not all ranges should've been found");
@@ -308,7 +341,7 @@ add_task(async function test_parallel_starts() {
     "The second start was later, but should have caught up"
   );
 
-  FinderIterator.reset();
+  finderIterator.reset();
 });
 
 add_task(async function test_allowDistance() {
@@ -318,7 +351,7 @@ add_task(async function test_allowDistance() {
 
   // Start off the iterator.
   let count = 0;
-  let whenDone = FinderIterator.start({
+  let whenDone = finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -331,7 +364,7 @@ add_task(async function test_allowDistance() {
   });
 
   let count2 = 0;
-  let whenDone2 = FinderIterator.start({
+  let whenDone2 = finderIterator.start({
     caseSensitive: false,
     entireWord: false,
     finder: gMockFinder,
@@ -344,7 +377,7 @@ add_task(async function test_allowDistance() {
   });
 
   let count3 = 0;
-  let whenDone3 = FinderIterator.start({
+  let whenDone3 = finderIterator.start({
     allowDistance: 1,
     caseSensitive: false,
     entireWord: false,
@@ -375,5 +408,5 @@ add_task(async function test_allowDistance() {
     "The first iterator invocation should yield all results"
   );
 
-  FinderIterator.reset();
+  finderIterator.reset();
 });

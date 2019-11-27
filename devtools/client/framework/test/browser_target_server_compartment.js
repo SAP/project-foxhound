@@ -1,5 +1,3 @@
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
-/* vim: set ft=javascript ts=2 et sw=2 tw=80: */
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
@@ -41,10 +39,10 @@ async function testChromeTab() {
   const target = await TargetFactory.forTab(tab);
   await target.attach();
 
-  const [, threadClient] = await target.attachThread();
-  await threadClient.resume();
+  const [, threadFront] = await target.attachThread();
+  await threadFront.resume();
 
-  const { sources } = await threadClient.getSources();
+  const { sources } = await threadFront.getSources();
   ok(
     sources.find(s => s.url == CHROME_PAGE),
     "The thread actor is able to attach to the chrome page and its sources"
@@ -78,12 +76,14 @@ async function testChromeTab() {
 // Test that Main process Target can debug chrome scripts
 async function testMainProcess() {
   const { DevToolsLoader } = ChromeUtils.import(
-    "resource://devtools/shared/Loader.jsm",
-    {}
+    "resource://devtools/shared/Loader.jsm"
   );
-  const customLoader = new DevToolsLoader();
-  customLoader.invisibleToDebugger = true;
-  const { DebuggerServer } = customLoader.require("devtools/server/main");
+  const customLoader = new DevToolsLoader({
+    invisibleToDebugger: true,
+  });
+  const { DebuggerServer } = customLoader.require(
+    "devtools/server/debugger-server"
+  );
   const { DebuggerClient } = require("devtools/shared/client/debugger-client");
 
   DebuggerServer.init();
@@ -107,9 +107,9 @@ async function testMainProcess() {
   const target = await client.mainRoot.getMainProcess();
   await target.attach();
 
-  const [, threadClient] = await target.attachThread();
-  await threadClient.resume();
-  const { sources } = await threadClient.getSources();
+  const [, threadFront] = await target.attachThread();
+  await threadFront.resume();
+  const { sources } = await threadFront.getSources();
   ok(
     sources.find(
       s => s.url == "resource://devtools/client/framework/devtools.js"

@@ -17,7 +17,7 @@
 #include "gfxCrashReporterUtils.h"
 #include "gfxWindowsPlatform.h"
 #include "mfapi.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/layers/D3D11ShareHandleImage.h"
@@ -593,7 +593,8 @@ class D3D11DXVA2Manager : public DXVA2Manager {
                             ID3D11Texture2D** aOutTexture) override;
 
   HRESULT ConfigureForSize(IMFMediaType* aInputType,
-                           gfx::YUVColorSpace aColorSpace, uint32_t aWidth,
+                           gfx::YUVColorSpace aColorSpace,
+                           gfx::ColorRange aColorRange, uint32_t aWidth,
                            uint32_t aHeight) override;
 
   bool IsD3D11() override { return true; }
@@ -625,7 +626,8 @@ class D3D11DXVA2Manager : public DXVA2Manager {
   UINT mDeviceManagerToken = 0;
   RefPtr<IMFMediaType> mInputType;
   GUID mInputSubType;
-  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::BT601;
+  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::UNKNOWN;
+  gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
 };
 
 bool D3D11DXVA2Manager::SupportsConfig(IMFMediaType* aType, float aFramerate) {
@@ -680,7 +682,7 @@ D3D11DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
         gfx::SurfaceFormat::NV12);
 
     if (ImageBridgeChild::GetSingleton() &&
-        StaticPrefs::media_wmf_use_sync_texture() &&
+        StaticPrefs::media_wmf_use_sync_texture_AtStartup() &&
         mDevice != DeviceManagerDx::Get()->GetCompositorDevice()) {
       // We use a syncobject to avoid the cost of the mutex lock when
       // compositing, and because it allows color conversion ocurring directly
@@ -695,7 +697,7 @@ D3D11DXVA2Manager::Init(layers::KnowsCompositor* aKnowsCompositor,
   } else {
     mTextureClientAllocator = new D3D11RecycleAllocator(
         aKnowsCompositor, mDevice, gfx::SurfaceFormat::NV12);
-    if (StaticPrefs::media_wmf_use_sync_texture()) {
+    if (StaticPrefs::media_wmf_use_sync_texture_AtStartup()) {
       // We use a syncobject to avoid the cost of the mutex lock when
       // compositing, and because it allows color conversion ocurring directly
       // from this texture DXVA does not seem to accept IDXGIKeyedMutex textures
@@ -888,7 +890,7 @@ D3D11DXVA2Manager::CopyToImage(IMFSample* aVideoSample,
   MOZ_ASSERT(mTextureClientAllocator);
 
   RefPtr<D3D11ShareHandleImage> image = new D3D11ShareHandleImage(
-      gfx::IntSize(mWidth, mHeight), aRegion, mYUVColorSpace);
+      gfx::IntSize(mWidth, mHeight), aRegion, mYUVColorSpace, mColorRange);
 
   // Retrieve the DXGI_FORMAT for the current video sample.
   RefPtr<IMFMediaBuffer> buffer;
@@ -1022,7 +1024,8 @@ D3D11DXVA2Manager::CopyToBGRATexture(ID3D11Texture2D* aInTexture,
     hr = inputType->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
     NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
-    hr = ConfigureForSize(inputType, mYUVColorSpace, desc.Width, desc.Height);
+    hr = ConfigureForSize(inputType, mYUVColorSpace, mColorRange, desc.Width,
+                          desc.Height);
     NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
   }
 
@@ -1089,13 +1092,14 @@ D3D11DXVA2Manager::CopyToBGRATexture(ID3D11Texture2D* aInTexture,
 HRESULT
 D3D11DXVA2Manager::ConfigureForSize(IMFMediaType* aInputType,
                                     gfx::YUVColorSpace aColorSpace,
+                                    gfx::ColorRange aColorRange,
                                     uint32_t aWidth, uint32_t aHeight) {
   GUID subType = {0};
   HRESULT hr = aInputType->GetGUID(MF_MT_SUBTYPE, &subType);
   NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
 
   if (subType == mInputSubType && aWidth == mWidth && aHeight == mHeight &&
-      mYUVColorSpace == aColorSpace) {
+      mYUVColorSpace == aColorSpace && mColorRange == aColorRange) {
     // If the media type hasn't changed, don't reconfigure.
     return S_OK;
   }
@@ -1153,6 +1157,7 @@ D3D11DXVA2Manager::ConfigureForSize(IMFMediaType* aInputType,
   mInputType = inputType;
   mInputSubType = subType;
   mYUVColorSpace = aColorSpace;
+  mColorRange = aColorRange;
   if (mTextureClientAllocator) {
     gfx::SurfaceFormat format = [&]() {
       if (subType == MFVideoFormat_NV12) {

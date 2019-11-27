@@ -4,45 +4,25 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-var { PrivateBrowsingUtils } = ChromeUtils.import(
-  "resource://gre/modules/PrivateBrowsingUtils.jsm"
-);
-var { BrowserUtils } = ChromeUtils.import(
-  "resource://gre/modules/BrowserUtils.jsm"
-);
-var { XPCOMUtils } = ChromeUtils.import(
-  "resource://gre/modules/XPCOMUtils.jsm"
-);
-var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
 XPCOMUtils.defineLazyModuleGetters(this, {
-  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
-  SpellCheckHelper: "resource://gre/modules/InlineSpellChecker.jsm",
   LoginHelper: "resource://gre/modules/LoginHelper.jsm",
   LoginManagerContextMenu: "resource://gre/modules/LoginManagerContextMenu.jsm",
-  WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.jsm",
-  ContextualIdentityService:
-    "resource://gre/modules/ContextualIdentityService.jsm",
   DevToolsShim: "chrome://devtools-startup/content/DevToolsShim.jsm",
-  NetUtil: "resource://gre/modules/NetUtil.jsm",
 });
-
-XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
-  Components.Constructor(
-    "@mozilla.org/referrer-info;1",
-    "nsIReferrerInfo",
-    "init"
-  )
-);
 
 var gContextMenuContentData = null;
 
 function openContextMenu(aMessage, aBrowser, aActor) {
+  if (BrowserHandler.kiosk) {
+    // Don't display context menus in kiosk mode
+    return;
+  }
   let data = aMessage.data;
   let browser = aBrowser;
   let actor = aActor;
   let spellInfo = data.spellInfo;
   let frameReferrerInfo = data.frameReferrerInfo;
+  let linkReferrerInfo = data.linkReferrerInfo;
   let principal = data.principal;
   let storagePrincipal = data.storagePrincipal;
 
@@ -58,6 +38,10 @@ function openContextMenu(aMessage, aBrowser, aActor) {
 
   if (frameReferrerInfo) {
     frameReferrerInfo = E10SUtils.deserializeReferrerInfo(frameReferrerInfo);
+  }
+
+  if (linkReferrerInfo) {
+    linkReferrerInfo = E10SUtils.deserializeReferrerInfo(linkReferrerInfo);
   }
 
   // For now, JS Window Actors don't deserialize Principals automatically, so we
@@ -95,6 +79,7 @@ function openContextMenu(aMessage, aBrowser, aActor) {
     charSet: data.charSet,
     referrerInfo: E10SUtils.deserializeReferrerInfo(data.referrerInfo),
     frameReferrerInfo,
+    linkReferrerInfo,
     contentType: data.contentType,
     contentDisposition: data.contentDisposition,
     frameOuterWindowID: data.frameOuterWindowID,
@@ -267,6 +252,7 @@ nsContextMenu.prototype = {
     this.onCTPPlugin = context.onCTPPlugin;
     this.onDRMMedia = context.onDRMMedia;
     this.onPiPVideo = context.onPiPVideo;
+    this.onMediaStreamVideo = context.onMediaStreamVideo;
     this.onEditable = context.onEditable;
     this.onImage = context.onImage;
     this.onKeywordField = context.onKeywordField;
@@ -319,7 +305,7 @@ nsContextMenu.prototype = {
     const { gBrowser } = this.browser.ownerGlobal;
 
     this.textSelected = this.selectionInfo.text;
-    this.isTextSelected = this.textSelected.length != 0;
+    this.isTextSelected = !!this.textSelected.length;
     this.webExtBrowserType = this.browser.getAttribute(
       "webextension-view-type"
     );
@@ -442,9 +428,9 @@ nsContextMenu.prototype = {
     var shouldShow =
       this.onSaveableLink || isMailtoInternal || this.onPlainTextLink;
     var isWindowPrivate = PrivateBrowsingUtils.isWindowPrivate(window);
-    var showContainers = Services.prefs.getBoolPref(
-      "privacy.userContext.enabled"
-    );
+    let showContainers =
+      Services.prefs.getBoolPref("privacy.userContext.enabled") &&
+      ContextualIdentityService.getPublicIdentities().length;
     this.showItem("context-openlink", shouldShow && !isWindowPrivate);
     this.showItem(
       "context-openlinkprivate",
@@ -694,14 +680,7 @@ nsContextMenu.prototype = {
       this.setItemAttr("context-frameOsPid", "label", "PID: " + frameOsPid);
     }
 
-    let showSearchSelect =
-      !this.inAboutDevtoolsToolbox &&
-      (this.isTextSelected || this.onLink) &&
-      !this.onImage;
-    this.showItem("context-searchselect", showSearchSelect);
-    if (showSearchSelect) {
-      this.formatSearchContextItem();
-    }
+    this.showAndFormatSearchContextItem();
 
     // srcdoc cannot be opened separately due to concerns about web
     // content with about:srcdoc in location bar masquerading as trusted
@@ -892,6 +871,7 @@ nsContextMenu.prototype = {
           "media.videocontrols.picture-in-picture.enabled"
         ) &&
         this.onVideo &&
+        !this.onMediaStreamVideo &&
         !this.target.ownerDocument.fullscreen;
       this.showItem("context-video-pictureinpicture", shouldDisplay);
     }
@@ -975,10 +955,14 @@ nsContextMenu.prototype = {
   initPasswordManagerItems() {
     let loginFillInfo =
       gContextMenuContentData && gContextMenuContentData.loginFillInfo;
+    let documentURI = gContextMenuContentData.documentURIObject;
 
     // If we could not find a password field we
     // don't want to show the form fill option.
-    let showFill = loginFillInfo && loginFillInfo.passwordField.found;
+    let showFill =
+      loginFillInfo &&
+      loginFillInfo.passwordField.found &&
+      !documentURI.schemeIs("about");
 
     // Disable the fill option if the user hasn't unlocked with their master password
     // or if the password field or target field are disabled.
@@ -1014,20 +998,28 @@ nsContextMenu.prototype = {
       return;
     }
 
-    let documentURI = gContextMenuContentData.documentURIObject;
+    let formOrigin = LoginHelper.getLoginOrigin(documentURI.spec);
     let fragment = LoginManagerContextMenu.addLoginsToMenu(
       this.targetIdentifier,
       this.browser,
-      documentURI
+      formOrigin
     );
     let isGeneratedPasswordEnabled =
       LoginHelper.generationAvailable && LoginHelper.generationEnabled;
     let canFillGeneratedPassword =
-      this.onPassword && isGeneratedPasswordEnabled;
+      this.onPassword &&
+      isGeneratedPasswordEnabled &&
+      Services.logins.getLoginSavingEnabled(formOrigin);
 
     this.showItem("fill-login-no-logins", !fragment);
     this.showItem("fill-login-generated-password", canFillGeneratedPassword);
     this.showItem("generated-password-separator", canFillGeneratedPassword);
+
+    this.setItemAttr(
+      "fill-login-generated-password",
+      "disabled",
+      PrivateBrowsingUtils.isWindowPrivate(window)
+    );
 
     if (!fragment) {
       return;
@@ -1077,7 +1069,9 @@ nsContextMenu.prototype = {
       params[p] = extra[p];
     }
 
-    let referrerInfo = gContextMenuContentData.referrerInfo;
+    let referrerInfo = this.onLink
+      ? gContextMenuContentData.linkReferrerInfo
+      : gContextMenuContentData.referrerInfo;
     // If we want to change userContextId, we must be sure that we don't
     // propagate the referrer.
     if (
@@ -1262,7 +1256,7 @@ nsContextMenu.prototype = {
       gContextMenuContentData.docLocation,
       null,
       null,
-      this.frameOuterWindowID,
+      this.actor.browsingContext,
       this.browser
     );
   },
@@ -1324,7 +1318,7 @@ nsContextMenu.prototype = {
     }
 
     // Cache this because we fetch the data async
-    let { documentURIObject } = gContextMenuContentData;
+    let referrerInfo = gContextMenuContentData.referrerInfo;
 
     this.actor.saveVideoFrameAsImage(this.targetIdentifier).then(dataURL => {
       // FIXME can we switch this to a blob URL?
@@ -1334,7 +1328,7 @@ nsContextMenu.prototype = {
         "SaveImageTitle",
         true, // bypass cache
         false, // don't skip prompt for where to save
-        documentURIObject, // referrer
+        referrerInfo, // referrer info
         null, // document
         null, // content type
         null, // content disposition
@@ -1429,7 +1423,7 @@ nsContextMenu.prototype = {
     dialogTitle,
     bypassCache,
     doc,
-    docURI,
+    referrerInfo,
     windowID,
     linkDownload,
     isContentWindowPrivate
@@ -1497,7 +1491,7 @@ nsContextMenu.prototype = {
             dialogTitle,
             bypassCache,
             false,
-            docURI,
+            referrerInfo,
             doc,
             isContentWindowPrivate,
             this._triggeringPrincipal
@@ -1579,12 +1573,6 @@ nsContextMenu.prototype = {
     channel.loadFlags |= flags;
 
     if (channel instanceof Ci.nsIHttpChannel) {
-      let referrerInfo = new ReferrerInfo(
-        Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-        true,
-        docURI
-      );
-
       channel.referrerInfo = referrerInfo;
       if (channel instanceof Ci.nsIHttpChannelInternal) {
         channel.forceAllowThirdPartyCookie = true;
@@ -1608,6 +1596,10 @@ nsContextMenu.prototype = {
 
   // Save URL of clicked-on link.
   saveLink() {
+    let referrerInfo = this.onLink
+      ? gContextMenuContentData.linkReferrerInfo
+      : gContextMenuContentData.referrerInfo;
+
     let isContentWindowPrivate = this.ownerDoc.isPrivate;
     this.saveHelper(
       this.linkURL,
@@ -1615,7 +1607,7 @@ nsContextMenu.prototype = {
       null,
       true,
       this.ownerDoc,
-      gContextMenuContentData.documentURIObject,
+      referrerInfo,
       this.frameOuterWindowID,
       this.linkDownload,
       isContentWindowPrivate
@@ -1633,7 +1625,7 @@ nsContextMenu.prototype = {
   saveMedia() {
     let doc = this.ownerDoc;
     let isContentWindowPrivate = this.ownerDoc.isPrivate;
-    let referrerURI = gContextMenuContentData.documentURIObject;
+    let referrerInfo = gContextMenuContentData.referrerInfo;
     let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
     if (this.onCanvas) {
       // Bypass cache, since it's a data: URL.
@@ -1644,7 +1636,7 @@ nsContextMenu.prototype = {
           "SaveImageTitle",
           true,
           false,
-          referrerURI,
+          referrerInfo,
           null,
           null,
           null,
@@ -1660,7 +1652,7 @@ nsContextMenu.prototype = {
         "SaveImageTitle",
         false,
         false,
-        referrerURI,
+        referrerInfo,
         null,
         gContextMenuContentData.contentType,
         gContextMenuContentData.contentDisposition,
@@ -1675,7 +1667,7 @@ nsContextMenu.prototype = {
         dialogTitle,
         false,
         doc,
-        referrerURI,
+        referrerInfo,
         this.frameOuterWindowID,
         "",
         isContentWindowPrivate
@@ -1695,11 +1687,11 @@ nsContextMenu.prototype = {
   },
 
   playPlugin() {
-    gPluginHandler.contextMenuCommand(this.browser, this.target, "play");
+    this.actor.pluginCommand("play", this.targetIdentifier);
   },
 
   hidePlugin() {
-    gPluginHandler.contextMenuCommand(this.browser, this.target, "hide");
+    this.actor.pluginCommand("hide", this.targetIdentifier);
   },
 
   // Generate email address and put it on clipboard.
@@ -1944,16 +1936,39 @@ nsContextMenu.prototype = {
   },
 
   // Formats the 'Search <engine> for "<selection or link text>"' context menu.
-  formatSearchContextItem() {
-    var menuItem = document.getElementById("context-searchselect");
+  showAndFormatSearchContextItem() {
+    const docIsPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
+    const privatePref = "browser.search.separatePrivateDefault.ui.enabled";
+    let showSearchSelect =
+      !this.inAboutDevtoolsToolbox &&
+      (this.isTextSelected || this.onLink) &&
+      !this.onImage;
+    // Don't show the private search item when we're already in a private
+    // browsing window.
+    let showPrivateSearchSelect =
+      showSearchSelect &&
+      !docIsPrivate &&
+      Services.prefs.getBoolPref(privatePref);
+
+    let menuItem = document.getElementById("context-searchselect");
+    let menuItemPrivate = document.getElementById(
+      "context-searchselect-private"
+    );
+    menuItem.hidden = !showSearchSelect;
+    menuItemPrivate.hidden = !showPrivateSearchSelect;
+    // If we're not showing the menu items, we can skip formatting the labels.
+    if (!showSearchSelect) {
+      return;
+    }
+
     let selectedText = this.isTextSelected
       ? this.textSelected
       : this.linkTextStr;
 
     // Store searchTerms in context menu item so we know what to search onclick
-    menuItem.searchTerms = selectedText;
-    menuItem.principal = this.principal;
-    menuItem.csp = this.csp;
+    menuItem.searchTerms = menuItemPrivate.searchTerms = selectedText;
+    menuItem.principal = menuItemPrivate.principal = this.principal;
+    menuItem.csp = menuItemPrivate.csp = this.csp;
 
     // Copied to alert.js' prefillAlertInfo().
     // If the JS character after our truncation point is a trail surrogate,
@@ -1969,14 +1984,33 @@ nsContextMenu.prototype = {
 
     // format "Search <engine> for <selection>" string to show in menu
     let engineName = Services.search.defaultEngine.name;
-    var menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearch", [
-      engineName,
+    let privateEngineName = Services.search.defaultPrivateEngine.name;
+    menuItem.usePrivate = docIsPrivate;
+    let menuLabel = gNavigatorBundle.getFormattedString("contextMenuSearch", [
+      docIsPrivate ? privateEngineName : engineName,
       selectedText,
     ]);
     menuItem.label = menuLabel;
     menuItem.accessKey = gNavigatorBundle.getString(
       "contextMenuSearch.accesskey"
     );
+
+    if (showPrivateSearchSelect) {
+      let otherEngine = engineName != privateEngineName;
+      let accessKey = "contextMenuPrivateSearch.accesskey";
+      if (otherEngine) {
+        menuItemPrivate.label = gNavigatorBundle.getFormattedString(
+          "contextMenuPrivateSearchOtherEngine",
+          [privateEngineName]
+        );
+        accessKey = "contextMenuPrivateSearchOtherEngine.accesskey";
+      } else {
+        menuItemPrivate.label = gNavigatorBundle.getString(
+          "contextMenuPrivateSearch"
+        );
+      }
+      menuItemPrivate.accessKey = gNavigatorBundle.getString(accessKey);
+    }
   },
 
   createContainerMenu(aEvent) {

@@ -9,13 +9,15 @@
  *
  * See InspectorUtils.h for documentation on these methods.
  */
-[Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled"]
+[Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled",
+ Exposed=Window]
 namespace InspectorUtils {
   // documentOnly tells whether user and UA sheets should get included.
   sequence<StyleSheet> getAllStyleSheets(Document document, optional boolean documentOnly = false);
   sequence<CSSStyleRule> getCSSStyleRules(
     Element element,
-    optional [TreatNullAs=EmptyString] DOMString pseudo = "");
+    optional [TreatNullAs=EmptyString] DOMString pseudo = "",
+    optional boolean relevantLinkVisited = false);
   unsigned long getRuleLine(CSSRule rule);
   unsigned long getRuleColumn(CSSRule rule);
   unsigned long getRelativeRuleLine(CSSRule rule);
@@ -29,7 +31,8 @@ namespace InspectorUtils {
       Element element,
       CSSStyleRule rule,
       unsigned long selectorIndex,
-      optional [TreatNullAs=EmptyString] DOMString pseudo = "");
+      optional [TreatNullAs=EmptyString] DOMString pseudo = "",
+      optional boolean includeVisitedStyle = false);
   boolean isInheritedProperty(DOMString property);
   sequence<DOMString> getCSSPropertyNames(optional PropertyNamesOptions options = {});
   sequence<PropertyPref> getCSSPropertyPrefs();
@@ -74,6 +77,8 @@ namespace InspectorUtils {
   [Throws] void parseStyleSheet(CSSStyleSheet sheet, DOMString input);
   boolean isCustomElementName([TreatNullAs=EmptyString] DOMString name,
                               DOMString? namespaceURI);
+
+  boolean isElementThemed(Element element);
 };
 
 dictionary PropertyNamesOptions {
@@ -132,7 +137,8 @@ dictionary InspectorFontFeature {
   required DOMString languageSystem;
 };
 
-[Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled"]
+[Func="nsContentUtils::IsCallerChromeOrFuzzingEnabled",
+ Exposed=Window]
 interface InspectorFontFace {
   // An indication of how we found this font during font-matching.
   // Note that the same physical font may have been found in multiple ways within a range.

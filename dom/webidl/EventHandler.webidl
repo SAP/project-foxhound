@@ -22,8 +22,7 @@ typedef OnBeforeUnloadEventHandlerNonNull? OnBeforeUnloadEventHandler;
 callback OnErrorEventHandlerNonNull = any ((Event or DOMString) event, optional DOMString source, optional unsigned long lineno, optional unsigned long column, optional any error);
 typedef OnErrorEventHandlerNonNull? OnErrorEventHandler;
 
-[NoInterfaceObject]
-interface GlobalEventHandlers {
+interface mixin GlobalEventHandlers {
            attribute EventHandler onabort;
            attribute EventHandler onblur;
 // We think the spec is wrong here. See OnErrorEventHandlerForNodes/Window
@@ -51,6 +50,8 @@ interface GlobalEventHandlers {
            attribute EventHandler ondurationchange;
            attribute EventHandler onemptied;
            attribute EventHandler onended;
+           [Pref="dom.formdata.event.enabled"]
+           attribute EventHandler onformdata;
            attribute EventHandler oninput;
            attribute EventHandler oninvalid;
            attribute EventHandler onkeydown;
@@ -141,8 +142,7 @@ interface GlobalEventHandlers {
            attribute EventHandler onwebkittransitionend;
 };
 
-[NoInterfaceObject]
-interface WindowEventHandlers {
+interface mixin WindowEventHandlers {
            attribute EventHandler onafterprint;
            attribute EventHandler onbeforeprint;
            attribute OnBeforeUnloadEventHandler onbeforeunload;
@@ -163,8 +163,7 @@ interface WindowEventHandlers {
            attribute EventHandler onunload;
 };
 
-[NoInterfaceObject]
-interface DocumentAndElementEventHandlers {
+interface mixin DocumentAndElementEventHandlers {
   attribute EventHandler oncopy;
   attribute EventHandler oncut;
   attribute EventHandler onpaste;
@@ -175,12 +174,10 @@ interface DocumentAndElementEventHandlers {
 // whether an ErrorEvent was fired. We don't do that, and until we do we'll
 // need to distinguish between onerror on Window or on nodes.
 
-[NoInterfaceObject]
-interface OnErrorEventHandlerForNodes {
+interface mixin OnErrorEventHandlerForNodes {
            attribute EventHandler onerror;
 };
 
-[NoInterfaceObject]
-interface OnErrorEventHandlerForWindow {
+interface mixin OnErrorEventHandlerForWindow {
            attribute OnErrorEventHandler onerror;
 };

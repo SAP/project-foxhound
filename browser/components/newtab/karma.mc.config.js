@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 const path = require("path");
 
 const PATHS = {
@@ -44,7 +48,15 @@ module.exports = function(config) {
     reporters: [
       "coverage-istanbul", // require("karma-coverage")
       "mocha", // require("karma-mocha-reporter")
+
+      // for bin/try-runner.js to parse the output easily
+      "json", // require("karma-json-reporter")
     ],
+    jsonReporter: {
+      // So this doesn't get interleaved with other karma output
+      stdout: false,
+      outputFile: path.join("logs", "karma-run-results.json"),
+    },
     coverageIstanbulReporter: {
       reports: ["html", "text-summary"],
       dir: PATHS.coverageReportingPath,

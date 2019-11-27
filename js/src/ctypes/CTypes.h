@@ -14,6 +14,7 @@
 #include "prlink.h"
 
 #include "ctypes/typedefs.h"
+#include "gc/ZoneAllocator.h"
 #include "js/AllocPolicy.h"
 #include "js/GCHashTable.h"
 #include "js/UniquePtr.h"
@@ -324,8 +325,8 @@ static_assert(sizeof(UnbarrieredFieldInfo) == sizeof(FieldInfo),
               "unbarriered mType");
 
 // Hash policy for FieldInfos.
-struct FieldHashPolicy : DefaultHasher<JSFlatString*> {
-  typedef JSFlatString* Key;
+struct FieldHashPolicy : DefaultHasher<JSLinearString*> {
+  typedef JSLinearString* Key;
   typedef Key Lookup;
 
   template <typename CharT>
@@ -356,12 +357,14 @@ struct FieldHashPolicy : DefaultHasher<JSFlatString*> {
   }
 };
 
-using FieldInfoHash = GCHashMap<js::HeapPtr<JSFlatString*>, FieldInfo,
-                                FieldHashPolicy, SystemAllocPolicy>;
+using FieldInfoHash = GCHashMap<js::HeapPtr<JSLinearString*>, FieldInfo,
+                                FieldHashPolicy, ZoneAllocPolicy>;
 
 // Descriptor of ABI, return type, argument types, and variadicity for a
 // FunctionType.
 struct FunctionInfo {
+  explicit FunctionInfo(JS::Zone* zone) : mArgTypes(zone), mFFITypes(zone) {}
+
   // Initialized in NewFunctionInfo when !mIsVariadic, but only later, in
   // FunctionType::Call, when mIsVariadic. Not always consistent with
   // mFFITypes, due to lazy initialization when mIsVariadic.
@@ -376,12 +379,12 @@ struct FunctionInfo {
 
   // A fixed array of known parameter types, excluding any variadic
   // parameters (if mIsVariadic).
-  GCVector<HeapPtr<JSObject*>, 0, SystemAllocPolicy> mArgTypes;
+  GCVector<HeapPtr<JSObject*>, 0, ZoneAllocPolicy> mArgTypes;
 
   // A variable array of ffi_type*s corresponding to both known parameter
   // types and dynamic (variadic) parameter types. Longer than mArgTypes
   // only if mIsVariadic.
-  Vector<ffi_type*, 0, SystemAllocPolicy> mFFITypes;
+  Vector<ffi_type*, 0, ZoneAllocPolicy> mFFITypes;
 
   // Flag indicating whether the function behaves like a C function with
   // ... as the final formal parameter.
@@ -564,7 +567,8 @@ MOZ_MUST_USE bool DefineInternal(JSContext* cx, JSObject* typeObj,
                                  JSObject* fieldsObj);
 
 const FieldInfoHash* GetFieldInfo(JSObject* obj);
-const FieldInfo* LookupField(JSContext* cx, JSObject* obj, JSFlatString* name);
+const FieldInfo* LookupField(JSContext* cx, JSObject* obj,
+                             JSLinearString* name);
 JSObject* BuildFieldsArray(JSContext* cx, JSObject* obj);
 UniquePtrFFIType BuildFFIType(JSContext* cx, JSObject* obj);
 }  // namespace StructType

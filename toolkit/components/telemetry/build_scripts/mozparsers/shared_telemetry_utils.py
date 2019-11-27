@@ -28,7 +28,8 @@ SUPPORTED_PRODUCTS = {
     'firefox': 'Firefox',
     'fennec': 'Fennec',
     'geckoview': 'Geckoview',
-    'all': 'All',
+    'geckoview_streaming': 'GeckoviewStreaming',
+    'thunderbird': 'Thunderbird',
 }
 
 SUPPORTED_OPERATING_SYSTEMS = [
@@ -118,6 +119,8 @@ def canonical_os(os):
 
 
 def product_name_to_enum(product):
+    if not is_valid_product(product):
+        raise ParserError("Invalid product {}".format(product))
     return PRODUCT_ENUM_PREFIX + SUPPORTED_PRODUCTS.get(product)
 
 
@@ -242,8 +245,8 @@ def load_yaml_file(filename):
     try:
         with open(filename, 'r') as f:
             return yaml.safe_load(f)
-    except IOError, e:
+    except IOError as e:
         raise ParserError('Error opening ' + filename + ': ' + e.message)
-    except ValueError, e:
+    except ValueError as e:
         raise ParserError('Error parsing processes in {}: {}'
                           .format(filename, e.message))

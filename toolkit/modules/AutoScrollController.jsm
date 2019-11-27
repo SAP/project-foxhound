@@ -70,107 +70,81 @@ class AutoScrollController {
     return aNode instanceof content.XULElement;
   }
 
-  getXBLNodes(parent, array) {
-    let content = parent.ownerGlobal;
-    let anonNodes = content.document.getAnonymousNodes(parent);
-    let nodes = Array.from(anonNodes || parent.childNodes || []);
-    for (let node of nodes) {
-      if (node.nodeName == "children") {
-        return true;
-      }
-      if (this.getXBLNodes(node, array)) {
-        array.push(node);
-        return true;
-      }
+  computeWindowScrollDirection(global) {
+    if (!global.scrollbars.visible) {
+      return null;
     }
-    return false;
+    if (global.scrollMaxX != global.scrollMinX) {
+      return global.scrollMaxY != global.scrollMinY ? "NSEW" : "EW";
+    }
+    if (global.scrollMaxY != global.scrollMinY) {
+      return "NS";
+    }
+    return null;
   }
 
-  *parentNodeIterator(aNode) {
-    let content = aNode.ownerGlobal;
-
-    while (aNode) {
-      yield aNode;
-
-      let parent = aNode.parentNode;
-      if (parent && parent instanceof content.XULElement) {
-        let anonNodes = content.document.getAnonymousNodes(parent);
-        if (anonNodes && !Array.from(anonNodes).includes(aNode)) {
-          // XBL elements are skipped by parentNode property.
-          // Yield elements between parent and <children> here.
-          let nodes = [];
-          this.getXBLNodes(parent, nodes);
-          for (let node of nodes) {
-            yield node;
-          }
-        }
-      }
-
-      aNode = parent;
+  computeNodeScrollDirection(node) {
+    if (!this.isScrollableElement(node)) {
+      return null;
     }
-  }
 
-  findNearestScrollableElement(aNode) {
-    let content = aNode.ownerGlobal;
+    let global = node.ownerGlobal;
 
     // this is a list of overflow property values that allow scrolling
     const scrollingAllowed = ["scroll", "auto"];
 
+    let cs = global.getComputedStyle(node);
+    let overflowx = cs.getPropertyValue("overflow-x");
+    let overflowy = cs.getPropertyValue("overflow-y");
+    // we already discarded non-multiline selects so allow vertical
+    // scroll for multiline ones directly without checking for a
+    // overflow property
+    let scrollVert =
+      node.scrollTopMax &&
+      (node instanceof global.HTMLSelectElement ||
+        scrollingAllowed.includes(overflowy));
+
+    // do not allow horizontal scrolling for select elements, it leads
+    // to visual artifacts and is not the expected behavior anyway
+    if (
+      !(node instanceof global.HTMLSelectElement) &&
+      node.scrollLeftMin != node.scrollLeftMax &&
+      scrollingAllowed.includes(overflowx)
+    ) {
+      return scrollVert ? "NSEW" : "EW";
+    }
+
+    if (scrollVert) {
+      return "NS";
+    }
+
+    return null;
+  }
+
+  findNearestScrollableElement(aNode) {
     // go upward in the DOM and find any parent element that has a overflow
     // area and can therefore be scrolled
     this._scrollable = null;
-    for (let node of this.parentNodeIterator(aNode)) {
+    for (let node = aNode; node; node = node.flattenedTreeParentNode) {
       // do not use overflow based autoscroll for <html> and <body>
       // Elements or non-html/non-xul elements such as svg or Document nodes
       // also make sure to skip select elements that are not multiline
-      if (!this.isScrollableElement(node)) {
-        continue;
-      }
-
-      var overflowx = node.ownerGlobal
-        .getComputedStyle(node)
-        .getPropertyValue("overflow-x");
-      var overflowy = node.ownerGlobal
-        .getComputedStyle(node)
-        .getPropertyValue("overflow-y");
-      // we already discarded non-multiline selects so allow vertical
-      // scroll for multiline ones directly without checking for a
-      // overflow property
-      var scrollVert =
-        node.scrollTopMax &&
-        (node instanceof content.HTMLSelectElement ||
-          scrollingAllowed.includes(overflowy));
-
-      // do not allow horizontal scrolling for select elements, it leads
-      // to visual artifacts and is not the expected behavior anyway
-      if (
-        !(node instanceof content.HTMLSelectElement) &&
-        node.scrollLeftMin != node.scrollLeftMax &&
-        scrollingAllowed.includes(overflowx)
-      ) {
-        this._scrolldir = scrollVert ? "NSEW" : "EW";
-        this._scrollable = node;
-        break;
-      } else if (scrollVert) {
-        this._scrolldir = "NS";
+      let direction = this.computeNodeScrollDirection(node);
+      if (direction) {
+        this._scrolldir = direction;
         this._scrollable = node;
         break;
       }
     }
 
     if (!this._scrollable) {
-      this._scrollable = aNode.ownerGlobal;
-      if (this._scrollable.scrollMaxX != this._scrollable.scrollMinX) {
-        this._scrolldir =
-          this._scrollable.scrollMaxY != this._scrollable.scrollMinY
-            ? "NSEW"
-            : "EW";
-      } else if (this._scrollable.scrollMaxY != this._scrollable.scrollMinY) {
-        this._scrolldir = "NS";
-      } else if (this._scrollable.frameElement) {
-        this.findNearestScrollableElement(this._scrollable.frameElement);
-      } else {
-        this._scrollable = null; // abort scrolling
+      let direction = this.computeWindowScrollDirection(aNode.ownerGlobal);
+      if (direction) {
+        this._scrolldir = direction;
+        this._scrollable = aNode.ownerGlobal;
+      } else if (aNode.ownerGlobal.frameElement) {
+        // FIXME(emilio): This won't work with Fission.
+        this.findNearestScrollableElement(aNode.ownerGlobal.frameElement);
       }
     }
   }

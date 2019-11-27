@@ -20,9 +20,9 @@ here = os.path.dirname(__file__)
 
 BUILDCONFIG = {
     'topobjdir': buildconfig.topobjdir,
-    'MOZ_APP_NAME': buildconfig.substs.get('MOZ_APP_NAME'),
-    'OMNIJAR_NAME': buildconfig.substs.get('OMNIJAR_NAME'),
-    'MOZ_MACBUNDLE_NAME': buildconfig.substs.get('MOZ_MACBUNDLE_NAME'),
+    'MOZ_APP_NAME': buildconfig.substs.get('MOZ_APP_NAME', 'nightly'),
+    'OMNIJAR_NAME': buildconfig.substs.get('OMNIJAR_NAME', 'omni.ja'),
+    'MOZ_MACBUNDLE_NAME': buildconfig.substs.get('MOZ_MACBUNDLE_NAME', 'Nightly.app'),
 }
 
 basic_file = """TN:Compartment_5f7f5c30251800
@@ -161,6 +161,14 @@ baz
 fin
 """
 
+srcdir_prefix_files = """//@line 1 "/src/dir/foo.js"
+bazfoobar
+//@line 2 "$SRCDIR/path/file.js"
+@foo@
+//@line 3 "/src/dir/foo.js"
+bazbarfoo
+"""
+
 
 class TestLineRemapping(unittest.TestCase):
     def setUp(self):
@@ -196,6 +204,17 @@ class TestLineRemapping(unittest.TestCase):
             "10,11": ('path2/test.js', 3),
             "12,13": ('path/baz.js', 1),
             "14,15": ('f.js', 6),
+        }
+
+        self.assertEqual(actual, expected)
+
+    def test_map_srcdir_prefix(self):
+        with TempFile(srcdir_prefix_files) as fname:
+            actual = chrome_map.generate_pp_info(fname, '/src/dir')
+        expected = {
+            "2,3": ('foo.js', 1),
+            "4,5": ('path/file.js', 2),
+            "6,7": ('foo.js', 3),
         }
 
         self.assertEqual(actual, expected)
@@ -332,8 +351,8 @@ class TestUrlFinder(unittest.TestCase):
             shutil.move(self._old_chrome_info_file, self._chrome_map_file)
 
     def test_jar_paths(self):
-        app_name = buildconfig.substs.get('MOZ_APP_NAME')
-        omnijar_name = buildconfig.substs.get('OMNIJAR_NAME')
+        app_name = BUILDCONFIG['MOZ_APP_NAME']
+        omnijar_name = BUILDCONFIG['OMNIJAR_NAME']
 
         paths = [
             ('jar:file:///home/worker/workspace/build/application/' + app_name +

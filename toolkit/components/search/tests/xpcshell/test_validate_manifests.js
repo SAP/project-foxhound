@@ -31,7 +31,7 @@ async function getSearchExtensions() {
     .slice(2)
     .reduce((acc, line) => {
       let parts = line.split(" ");
-      if (parts.length > 2 && parts[1] !== "list.json") {
+      if (parts.length > 2 && !parts[1].endsWith(".json")) {
         // When the directory listing comes from omni jar each engine
         // has a trailing slash (engine/) which we dont get locally, or want.
         acc.push(parts[1].split("/")[0]);
@@ -43,7 +43,7 @@ async function getSearchExtensions() {
 add_task(async function test_validate_manifest() {
   let searchExtensions = await getSearchExtensions();
   ok(
-    searchExtensions.length > 0,
+    !!searchExtensions.length,
     `Found ${searchExtensions.length} search extensions`
   );
   for (const xpi of searchExtensions) {

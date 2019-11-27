@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 this.runtime = class extends ExtensionAPI {
@@ -38,7 +42,6 @@ this.runtime = class extends ExtensionAPI {
           }
 
           function checkOptions(options) {
-            let toProxyScript = false;
             if (typeof options !== "object") {
               return [
                 false,
@@ -47,21 +50,10 @@ this.runtime = class extends ExtensionAPI {
             }
 
             for (let key of Object.keys(options)) {
-              if (key === "toProxyScript") {
-                let value = options[key];
-                if (typeof value !== "boolean") {
-                  return [
-                    false,
-                    "runtime.sendMessage's options.toProxyScript argument is invalid",
-                  ];
-                }
-                toProxyScript = value;
-              } else {
-                return [false, `Unexpected property ${key}`];
-              }
+              return [false, `Unexpected property ${key}`];
             }
 
-            return [true, { toProxyScript }];
+            return [true, {}];
           }
 
           if (!args.length) {

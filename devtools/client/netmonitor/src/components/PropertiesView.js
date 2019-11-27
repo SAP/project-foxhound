@@ -13,13 +13,20 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-
+const {
+  connect,
+} = require("devtools/client/shared/redux/visibility-handler-connect");
+const {
+  setTargetSearchResult,
+} = require("devtools/client/netmonitor/src/actions/search");
 const { FILTER_SEARCH_DELAY } = require("../constants");
 
 // Components
 const TreeViewClass = require("devtools/client/shared/components/tree/TreeView");
 const PropertiesViewContextMenu = require("../widgets/PropertiesViewContextMenu");
-const TreeView = createFactory(TreeViewClass);
+const JSONPreview = createFactory(
+  require("devtools/client/netmonitor/src/components/JSONPreview")
+);
 
 loader.lazyGetter(this, "SearchBox", function() {
   return createFactory(require("devtools/client/shared/components/SearchBox"));
@@ -36,16 +43,13 @@ loader.lazyGetter(this, "HTMLPreview", function() {
   return createFactory(require("./HtmlPreview"));
 });
 
-loader.lazyGetter(this, "Rep", function() {
-  return require("devtools/client/shared/components/reps/reps").REPS.Rep;
-});
-loader.lazyGetter(this, "MODE", function() {
-  return require("devtools/client/shared/components/reps/reps").MODE;
-});
+// Constants
+const {
+  AUTO_EXPAND_MAX_LEVEL,
+  AUTO_EXPAND_MAX_NODES,
+} = require("../constants");
 
 const { div, tr, td, pre } = dom;
-const AUTO_EXPAND_MAX_LEVEL = 7;
-const AUTO_EXPAND_MAX_NODES = 50;
 const EDITOR_CONFIG_ID = "EDITOR_CONFIG";
 const HTML_PREVIEW_ID = "HTML_PREVIEW";
 
@@ -67,10 +71,13 @@ class PropertiesView extends Component {
       provider: PropTypes.object,
       enableInput: PropTypes.bool,
       expandableStrings: PropTypes.bool,
+      expandedNodes: PropTypes.object,
       filterPlaceHolder: PropTypes.string,
       sectionNames: PropTypes.array,
       openLink: PropTypes.func,
       cropLimit: PropTypes.number,
+      targetSearchResult: PropTypes.object,
+      resetTargetSearchResult: PropTypes.func,
     };
   }
 
@@ -95,9 +102,23 @@ class PropertiesView extends Component {
     this.getRowClass = this.getRowClass.bind(this);
     this.onFilter = this.onFilter.bind(this);
     this.renderRowWithExtras = this.renderRowWithExtras.bind(this);
-    this.renderValueWithRep = this.renderValueWithRep.bind(this);
     this.shouldRenderSearchBox = this.shouldRenderSearchBox.bind(this);
     this.updateFilterText = this.updateFilterText.bind(this);
+  }
+
+  /**
+   * Update only if:
+   * 1) The rendered object has changed
+   * 2) The user selected another search result target.
+   * 3) Internal state changes
+   */
+  shouldComponentUpdate(nextProps, nextState) {
+    return (
+      this.state !== nextState ||
+      this.props.object !== nextProps.object ||
+      (this.props.targetSearchResult !== nextProps.targetSearchResult &&
+        nextProps.targetSearchResult !== null)
+    );
   }
 
   getRowClass(object, sectionNames) {
@@ -119,31 +140,21 @@ class PropertiesView extends Component {
   renderRowWithExtras(props) {
     const { level, name, value, path } = props.member;
 
-    // To prevent performance issues, switch from SourceEditor to pre()
-    // if response size is greater than specified limit.
-    let responseTextComponent = SourceEditor(value);
-    const limit = Services.prefs.getIntPref(
-      "devtools.netmonitor.response.ui.limit"
-    );
-    if (value && value.text && value.text.length > limit) {
-      responseTextComponent = div(
-        { className: "responseTextContainer" },
-        pre({}, value.text)
-      );
-    }
-
     // Display source editor when specifying to EDITOR_CONFIG_ID along with config
     if (level === 1 && name === EDITOR_CONFIG_ID) {
       return tr(
         { key: EDITOR_CONFIG_ID, className: "editor-row-container" },
-        td({ colSpan: 2 }, responseTextComponent)
+        td({ colSpan: 2 }, this.renderResponseText(props))
       );
     }
 
     // Similar to the source editor, display a preview when specifying HTML_PREVIEW_ID
     if (level === 1 && name === HTML_PREVIEW_ID) {
       return tr(
-        { key: HTML_PREVIEW_ID, className: "response-preview-container" },
+        {
+          key: HTML_PREVIEW_ID,
+          className: "response-preview-container",
+        },
         td({ colSpan: 2 }, HTMLPreview(value))
       );
     }
@@ -157,6 +168,52 @@ class PropertiesView extends Component {
     }
 
     return TreeRow(props);
+  }
+
+  renderResponseText(props) {
+    const { value } = props.member;
+    let responseTextComponent = SourceEditor(value);
+
+    // To prevent performance issues, switch from SourceEditor to pre()
+    // if response size is greater than specified limit.
+    const limit = Services.prefs.getIntPref(
+      "devtools.netmonitor.response.ui.limit"
+    );
+
+    // Scroll to specified line if the user clicks on search results.
+    const scrollToLine = element => {
+      const { targetSearchResult, resetTargetSearchResult } = this.props;
+
+      // The following code is responsible for scrolling given line
+      // to visible view-port.
+      // It gets the <div> child element representing the target
+      // line (by index) and uses `scrollIntoView` API to make sure
+      // it's visible to the user.
+      if (element && targetSearchResult && targetSearchResult.line) {
+        const child = element.children[targetSearchResult.line - 1];
+        if (child) {
+          const range = document.createRange();
+          range.selectNode(child);
+          document.getSelection().addRange(range);
+          child.scrollIntoView({ block: "center" });
+        }
+        resetTargetSearchResult();
+      }
+    };
+
+    if (value && value.text && value.text.length > limit) {
+      responseTextComponent = div(
+        { className: "responseTextContainer" },
+        pre(
+          { ref: element => scrollToLine(element) },
+          value.text.split(/\r\n|\r|\n/).map((line, index) => {
+            return div({ key: index }, line);
+          })
+        )
+      );
+    }
+
+    return responseTextComponent;
   }
 
   onContextMenuRow(member, evt) {
@@ -174,33 +231,6 @@ class PropertiesView extends Component {
       }
       this.contextMenu.open(evt, { member, object: this.props.object });
     }
-  }
-
-  renderValueWithRep(props) {
-    const { member } = props;
-
-    // Hide strings with following conditions
-    // 1. this row is a togglable section and content is object ('cause it shouldn't hide
-    //    when string or number)
-    // 2. the `value` object has a `value` property, only happened in Cookies panel
-    // Put 2 here to not dup this method
-    if (
-      (member.level === 0 && member.type === "object") ||
-      (typeof member.value === "object" && member.value && member.value.value)
-    ) {
-      return null;
-    }
-
-    return Rep(
-      Object.assign(props, {
-        // FIXME: A workaround for the issue in StringRep
-        // Force StringRep to crop the text every time
-        member: Object.assign({}, member, { open: false }),
-        mode: MODE.TINY,
-        cropLimit: this.props.cropLimit,
-        noGrip: true,
-      })
-    );
   }
 
   sectionIsSearchable(object, section) {
@@ -230,6 +260,7 @@ class PropertiesView extends Component {
       decorator,
       enableInput,
       expandableStrings,
+      expandedNodes,
       filterPlaceHolder,
       object,
       renderRow,
@@ -237,6 +268,7 @@ class PropertiesView extends Component {
       sectionNames,
       openLink,
       provider,
+      selected,
     } = this.props;
 
     return div(
@@ -251,36 +283,41 @@ class PropertiesView extends Component {
             placeholder: filterPlaceHolder,
           })
         ),
-      div(
-        { className: "tree-container" },
-        TreeView({
-          object,
-          provider,
-          columns: [
-            {
-              id: "value",
-              width: "100%",
-            },
-          ],
-          decorator: decorator || {
-            getRowClass: rowObject => this.getRowClass(rowObject, sectionNames),
+      JSONPreview({
+        object,
+        provider,
+        columns: [
+          {
+            id: "value",
+            width: "100%",
           },
-          enableInput,
-          expandableStrings,
-          useQuotes: false,
-          expandedNodes: TreeViewClass.getExpandedNodes(object, {
+        ],
+        decorator: decorator || {
+          getRowClass: rowObject => this.getRowClass(rowObject, sectionNames),
+        },
+        enableInput,
+        expandableStrings,
+        useQuotes: false,
+        expandedNodes:
+          expandedNodes ||
+          TreeViewClass.getExpandedNodes(object, {
             maxLevel: AUTO_EXPAND_MAX_LEVEL,
             maxNodes: AUTO_EXPAND_MAX_NODES,
           }),
-          onFilter: props => this.onFilter(props, sectionNames),
-          renderRow: renderRow || this.renderRowWithExtras,
-          renderValue: renderValue || this.renderValueWithRep,
-          openLink,
-          onContextMenuRow: this.onContextMenuRow,
-        })
-      )
+        onFilter: props => this.onFilter(props, sectionNames),
+        renderRow: renderRow || this.renderRowWithExtras,
+        renderValue,
+        openLink,
+        onContextMenuRow: this.onContextMenuRow,
+        selected,
+      })
     );
   }
 }
 
-module.exports = PropertiesView;
+module.exports = connect(
+  null,
+  dispatch => ({
+    resetTargetSearchResult: () => dispatch(setTargetSearchResult(null)),
+  })
+)(PropertiesView);

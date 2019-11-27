@@ -11,7 +11,11 @@ const EXPORTED_SYMBOLS = ["LoginTestUtils"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
+let { Assert: AssertCls } = ChromeUtils.import(
+  "resource://testing-common/Assert.jsm"
+);
+let Assert = AssertCls;
+
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
@@ -23,6 +27,10 @@ const LoginInfo = Components.Constructor(
 );
 
 this.LoginTestUtils = {
+  setAssertReporter(reporterFunc) {
+    Assert = new AssertCls(Cu.waiveXrays(reporterFunc));
+  },
+
   /**
    * Forces the storage module to save all data, and the Login Manager service
    * to replace the storage module with a newly initialized instance.
@@ -40,6 +48,37 @@ this.LoginTestUtils = {
     for (let origin of Services.logins.getAllDisabledHosts()) {
       Services.logins.setLoginSavingEnabled(origin, true);
     }
+  },
+
+  /**
+   * Add a new login to the store
+   */
+  async addLogin({
+    username,
+    password,
+    origin = "https://example.com",
+    formActionOrigin,
+  }) {
+    const login = LoginTestUtils.testData.formLogin({
+      origin,
+      formActionOrigin: formActionOrigin || origin,
+      username,
+      password,
+    });
+    let storageChangedPromised = TestUtils.topicObserved(
+      "passwordmgr-storage-changed",
+      (_, data) => data == "addLogin"
+    );
+    Services.logins.addLogin(login);
+    let [savedLogin] = await storageChangedPromised;
+    return savedLogin;
+  },
+
+  resetGeneratedPasswordsCache() {
+    let { LoginManagerParent } = ChromeUtils.import(
+      "resource://gre/modules/LoginManagerParent.jsm"
+    );
+    LoginManagerParent._generatedPasswordsByPrincipalOrigin.clear();
   },
 
   /**
@@ -262,6 +301,23 @@ this.LoginTestUtils.testData = {
         "form_field_password"
       ),
 
+      // Logins can be saved on non-default ports
+      new LoginInfo(
+        "https://www7.example.com:8080",
+        "https://www7.example.com:8080",
+        null,
+        "8080_username",
+        "8080_pass"
+      ),
+
+      new LoginInfo(
+        "https://www7.example.com:8080",
+        null,
+        "My dev server",
+        "8080_username2",
+        "8080_pass2"
+      ),
+
       // --- Examples of authentication logins (subdomains of example.org) ---
 
       // Simple HTTP authentication login.
@@ -367,6 +423,26 @@ this.LoginTestUtils.testData = {
         "the username",
         "the password two"
       ),
+
+      // -- file:/// URIs throw accessing nsIURI.host
+
+      new LoginInfo(
+        "file:///",
+        "file:///",
+        null,
+        "file: username",
+        "file: password"
+      ),
+
+      // -- javascript: URIs throw accessing nsIURI.host.
+      // They should only be used for the formActionOrigin.
+      new LoginInfo(
+        "https://js.example.com",
+        "javascript:",
+        null,
+        "javascript: username",
+        "javascript: password"
+      ),
     ];
   },
 };
@@ -422,5 +498,56 @@ this.LoginTestUtils.masterPassword = {
 
   disable() {
     this._set(false);
+  },
+};
+
+/**
+ * Utilities related to interacting with login fields in content.
+ */
+this.LoginTestUtils.loginField = {
+  checkPasswordMasked(field, expected, msg) {
+    let { editor } = field;
+    let valueLength = field.value.length;
+    Assert.equal(
+      editor.autoMaskingEnabled,
+      expected,
+      `Check autoMaskingEnabled: ${msg}`
+    );
+    Assert.equal(editor.unmaskedStart, 0, `unmaskedStart is 0: ${msg}`);
+    if (expected) {
+      Assert.equal(editor.unmaskedEnd, 0, `Password is masked: ${msg}`);
+    } else {
+      Assert.equal(
+        editor.unmaskedEnd,
+        valueLength,
+        `Unmasked to the end: ${msg}`
+      );
+    }
+  },
+};
+
+this.LoginTestUtils.generation = {
+  LENGTH: 15,
+  REGEX: /^[a-km-np-zA-HJ-NP-Z2-9]{15}$/,
+};
+
+this.LoginTestUtils.telemetry = {
+  async waitForEventCount(count, process = "content", category = "pwmgr") {
+    let events = await TestUtils.waitForCondition(() => {
+      let events = Services.telemetry.snapshotEvents(
+        Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
+        false
+      )[process];
+
+      if (!events) {
+        return null;
+      }
+
+      events = events.filter(e => e[1] == category);
+      dump(`Waiting for ${count} events, got ${events.length}\n`);
+      return events.length == count ? events : null;
+    }, "waiting for telemetry event count of: " + count);
+    Assert.equal(events.length, count, "waiting for telemetry event count");
+    return events;
   },
 };

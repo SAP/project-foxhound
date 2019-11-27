@@ -11,7 +11,6 @@
 #include "mozilla/dom/WorkerPrivate.h"
 
 #include "jsapi.h"
-#include "js/StableStringChars.h"
 #include "js/Warnings.h"  // JS::{Get,}WarningReporter
 #include "xpcpublic.h"
 #include "nsIGlobalObject.h"
@@ -29,7 +28,6 @@ namespace mozilla {
 namespace dom {
 
 static MOZ_THREAD_LOCAL(ScriptSettingsStackEntry*) sScriptSettingsTLS;
-static bool sScriptSettingsTLSInitialized;
 
 class ScriptSettingsStack {
  public:
@@ -118,14 +116,11 @@ void InitScriptSettings() {
   }
 
   sScriptSettingsTLS.set(nullptr);
-  sScriptSettingsTLSInitialized = true;
 }
 
 void DestroyScriptSettings() {
   MOZ_ASSERT(sScriptSettingsTLS.get() == nullptr);
 }
-
-bool ScriptSettingsInitialized() { return sScriptSettingsTLSInitialized; }
 
 ScriptSettingsStackEntry::ScriptSettingsStackEntry(nsIGlobalObject* aGlobal,
                                                    Type aType)
@@ -295,11 +290,11 @@ void AutoJSAPI::InitInternal(nsIGlobalObject* aGlobalObject, JSObject* aGlobal,
 
   mCx = aCx;
   mIsMainThread = aIsMainThread;
-  mGlobalObject = aGlobalObject;
   if (aGlobal) {
     JS::AssertObjectIsNotGray(aGlobal);
   }
   mAutoNullableRealm.emplace(mCx, aGlobal);
+  mGlobalObject = aGlobalObject;
 
   ScriptSettingsStack::Push(this);
 
@@ -452,15 +447,15 @@ void WarningOnlyErrorReporter(JSContext* aCx, JSErrorReport* aRep) {
   if (!NS_IsMainThread()) {
     // Reporting a warning on workers is a bit complicated because we have to
     // climb our parent chain until we get to the main thread.  So go ahead and
-    // just go through the worker ReportError codepath here.
+    // just go through the worker or worklet ReportError codepath here.
     //
     // That said, it feels like we should be able to short-circuit things a bit
     // here by posting an appropriate runnable to the main thread directly...
     // Worth looking into sometime.
-    WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
-    MOZ_ASSERT(worker);
+    CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::GetFor(aCx);
+    MOZ_ASSERT(ccjscx);
 
-    worker->ReportError(aCx, JS::ConstUTF8CharsZ(), aRep);
+    ccjscx->ReportError(aRep, JS::ConstUTF8CharsZ());
     return;
   }
 
@@ -519,19 +514,18 @@ void AutoJSAPI::ReportException() {
         xpcReport->LogToConsoleWithStack(stack, stackGlobal);
       }
     } else {
-      // On a worker, we just use the worker error reporting mechanism and don't
-      // bother with xpc::ErrorReport.  This will ensure that all the right
-      // events (which are a lot more complicated than in the window case) get
-      // fired.
-      WorkerPrivate* worker = GetCurrentThreadWorkerPrivate();
-      MOZ_ASSERT(worker);
-      MOZ_ASSERT(worker->GetJSContext() == cx());
+      // On a worker or worklet, we just use the error reporting mechanism and
+      // don't bother with xpc::ErrorReport.  This will ensure that all the
+      // right worker events (which are a lot more complicated than in the
+      // window case) get fired.
+      CycleCollectedJSContext* ccjscx = CycleCollectedJSContext::GetFor(cx());
+      MOZ_ASSERT(ccjscx);
       // Before invoking ReportError, put the exception back on the context,
       // because it may want to put it in its error events and has no other way
       // to get hold of it.  After we invoke ReportError, clear the exception on
       // cx(), just in case ReportError didn't.
       JS::SetPendingExceptionAndStack(cx(), exn, exnStack);
-      worker->ReportError(cx(), jsReport.toStringResult(), jsReport.report());
+      ccjscx->ReportError(jsReport.report(), jsReport.toStringResult());
       ClearException();
     }
   } else {
@@ -628,21 +622,21 @@ void AutoEntryScript::DocshellEntryMonitor::Entry(
   }
 
   nsCOMPtr<nsIDocShell> docShellForJSRunToCompletion = window->GetDocShell();
-  nsString filename;
-  uint32_t lineNumber = 0;
 
-  JS::AutoStableStringChars functionName(aCx);
+  nsAutoJSString functionName;
   if (rootedFunction) {
     JS::Rooted<JSString*> displayId(aCx,
                                     JS_GetFunctionDisplayId(rootedFunction));
     if (displayId) {
-      if (!functionName.initTwoByte(aCx, displayId)) {
+      if (!functionName.init(aCx, displayId)) {
         JS_ClearPendingException(aCx);
         return;
       }
     }
   }
 
+  nsString filename;
+  uint32_t lineNumber = 0;
   if (!rootedScript) {
     rootedScript = JS_GetFunctionScript(aCx, rootedFunction);
   }
@@ -651,13 +645,9 @@ void AutoEntryScript::DocshellEntryMonitor::Entry(
     lineNumber = JS_GetScriptBaseLineNumber(aCx, rootedScript);
   }
 
-  if (!filename.IsEmpty() || functionName.isTwoByte()) {
-    const char16_t* functionNameChars =
-        functionName.isTwoByte() ? functionName.twoByteChars() : nullptr;
-
+  if (!filename.IsEmpty() || !functionName.IsEmpty()) {
     docShellForJSRunToCompletion->NotifyJSRunToCompletionStart(
-        mReason, functionNameChars, filename.BeginReading(), lineNumber,
-        aAsyncStack, aAsyncCause);
+        mReason, functionName, filename, lineNumber, aAsyncStack, aAsyncCause);
   }
 }
 
@@ -678,11 +668,23 @@ AutoIncumbentScript::AutoIncumbentScript(nsIGlobalObject* aGlobalObject)
 
 AutoIncumbentScript::~AutoIncumbentScript() { ScriptSettingsStack::Pop(this); }
 
-AutoNoJSAPI::AutoNoJSAPI() : ScriptSettingsStackEntry(nullptr, eNoJSAPI) {
+AutoNoJSAPI::AutoNoJSAPI(JSContext* aCx)
+    : ScriptSettingsStackEntry(nullptr, eNoJSAPI),
+      JSAutoNullableRealm(aCx, nullptr),
+      mCx(aCx) {
+  // Make sure we don't seem to have an incumbent global due to
+  // whatever script is running right now.
+  JS::HideScriptedCaller(aCx);
+
+  // Make sure the fallback GetIncumbentGlobal() behavior and
+  // GetEntryGlobal() both return null.
   ScriptSettingsStack::Push(this);
 }
 
-AutoNoJSAPI::~AutoNoJSAPI() { ScriptSettingsStack::Pop(this); }
+AutoNoJSAPI::~AutoNoJSAPI() {
+  ScriptSettingsStack::Pop(this);
+  JS::UnhideScriptedCaller(mCx);
+}
 
 }  // namespace dom
 

@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
@@ -40,7 +44,9 @@ this.DownloadsManager = class DownloadsManager {
       description:
         DownloadsViewUI.getSizeWithUnits(download) ||
         DownloadsCommon.strings.sizeUnknown,
-      referrer: download.source.referrer,
+      referrer: download.source.referrerInfo
+        ? download.source.referrerInfo.originalReferrer.spec
+        : null,
       date_added: download.endTime,
     };
   }

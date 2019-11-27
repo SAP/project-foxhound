@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 use jsapi::root::*;
 use heap::Heap;
 use std::os::raw::c_void;
@@ -234,7 +238,7 @@ extern "C" {
                           aObj: JS::HandleObject,
                           aHandler: *const ::libc::c_void)
                           -> *mut JSObject;
-    pub fn GetWindowProxyClass() -> *const js::Class;
+    pub fn GetWindowProxyClass() -> *const JSClass;
     pub fn GetProxyPrivate(obj: *mut JSObject) -> JS::Value;
     pub fn SetProxyPrivate(obj: *mut JSObject, private: *const JS::Value);
     pub fn GetProxyReservedSlot(obj: *mut JSObject, slot: u32) -> JS::Value;

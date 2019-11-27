@@ -8,11 +8,6 @@
 // the urlbar also shows the URLs embedded in action URIs unescaped.  See bug
 // 1233672.
 
-XPCOMUtils.defineLazyModuleGetters(this, {
-  UrlbarResult: "resource:///modules/UrlbarResult.jsm",
-  UrlbarUtils: "resource:///modules/UrlbarUtils.jsm",
-});
-
 add_task(async function injectJSON() {
   let inputStrs = [
     'http://example.com/ ", "url": "bar',
@@ -35,16 +30,12 @@ add_task(async function injectJSON() {
 add_task(function losslessDecode() {
   let urlNoScheme = "example.com/\u30a2\u30a4\u30a6\u30a8\u30aa";
   let url = "http://" + urlNoScheme;
-  if (Services.prefs.getBoolPref("browser.urlbar.quantumbar", true)) {
-    const result = new UrlbarResult(
-      UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
-      UrlbarUtils.RESULT_SOURCE.TABS,
-      { url }
-    );
-    gURLBar.setValueFromResult(result);
-  } else {
-    gURLBar.textValue = url;
-  }
+  const result = new UrlbarResult(
+    UrlbarUtils.RESULT_TYPE.TAB_SWITCH,
+    UrlbarUtils.RESULT_SOURCE.TABS,
+    { url }
+  );
+  gURLBar.setValueFromResult(result);
   // Since this is directly setting textValue, it is expected to be trimmed.
   Assert.equal(
     gURLBar.inputField.value,
@@ -67,7 +58,7 @@ add_task(async function actionURILosslessDecode() {
   // moz-action.
   do {
     EventUtils.synthesizeKey("KEY_ArrowDown");
-  } while (UrlbarTestUtils.getSelectedIndex(window) != 0);
+  } while (UrlbarTestUtils.getSelectedRowIndex(window) != 0);
 
   let result = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
 
@@ -116,18 +107,6 @@ async function checkInput(inputStr) {
   );
   let expectedVisitURL = fixupInfo.fixedURI.spec;
 
-  if (!UrlbarPrefs.get("quantumbar")) {
-    let type = "visiturl";
-    let params = {
-      url: expectedVisitURL,
-      input: inputStr,
-    };
-    for (let key in params) {
-      params[key] = encodeURIComponent(params[key]);
-    }
-    expectedVisitURL = "moz-action:" + type + "," + JSON.stringify(params);
-  }
-
   Assert.equal(result.url, expectedVisitURL, "Should have the correct URL");
   Assert.equal(
     result.title,
@@ -147,9 +126,7 @@ async function checkInput(inputStr) {
   );
   Assert.equal(
     result.displayed.action,
-    Services.strings
-      .createBundle("chrome://global/locale/autocomplete.properties")
-      .GetStringFromName("visit"),
+    UrlbarUtils.strings.GetStringFromName("visit"),
     "Should be displaying the correct action text"
   );
 }

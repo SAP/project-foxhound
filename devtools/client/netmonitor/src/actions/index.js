@@ -12,15 +12,19 @@ const sort = require("./sort");
 const timingMarkers = require("./timing-markers");
 const ui = require("./ui");
 const webSockets = require("./web-sockets");
+const search = require("./search");
+const requestBlocking = require("./request-blocking");
 
 Object.assign(
   exports,
   batching,
   filters,
   requests,
+  search,
   selection,
   sort,
   timingMarkers,
   ui,
-  webSockets
+  webSockets,
+  requestBlocking
 );

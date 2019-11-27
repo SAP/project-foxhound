@@ -11,6 +11,7 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
+#include "mozilla/net/DNSRequestChild.h"
 #include "mozilla/Preferences.h"
 #include "nsDebugImpl.h"
 #include "nsThreadManager.h"
@@ -22,7 +23,7 @@
 #endif
 
 #ifdef MOZ_WEBRTC
-#  include "mozilla/net/WebrtcProxyChannelChild.h"
+#  include "mozilla/net/WebrtcTCPSocketChild.h"
 #endif
 
 namespace mozilla {
@@ -115,6 +116,12 @@ void SocketProcessChild::ActorDestroy(ActorDestroyReason aWhy) {
 void SocketProcessChild::CleanUp() {
   LOG(("SocketProcessChild::CleanUp\n"));
 
+  for (auto iter = mSocketProcessBridgeParentMap.Iter(); !iter.Done();
+       iter.Next()) {
+    if (!iter.Data()->Closed()) {
+      iter.Data()->Close();
+    }
+  }
   NS_ShutdownXPCOM(nullptr);
 }
 
@@ -186,23 +193,37 @@ void SocketProcessChild::DestroySocketProcessBridgeParent(ProcessId aId) {
   mSocketProcessBridgeParentMap.Remove(aId);
 }
 
-PWebrtcProxyChannelChild* SocketProcessChild::AllocPWebrtcProxyChannelChild(
-    const PBrowserOrId& browser) {
+PWebrtcTCPSocketChild* SocketProcessChild::AllocPWebrtcTCPSocketChild(
+    const Maybe<TabId>& tabId) {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing object
   MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcProxyChannelChild should not be called on"
+      "AllocPWebrtcTCPSocketChild should not be called on"
       " socket child");
   return nullptr;
 }
 
-bool SocketProcessChild::DeallocPWebrtcProxyChannelChild(
-    PWebrtcProxyChannelChild* aActor) {
+bool SocketProcessChild::DeallocPWebrtcTCPSocketChild(
+    PWebrtcTCPSocketChild* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelChild* child =
-      static_cast<WebrtcProxyChannelChild*>(aActor);
+  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
   child->ReleaseIPDLReference();
 #endif
+  return true;
+}
+
+PDNSRequestChild* SocketProcessChild::AllocPDNSRequestChild(
+    const nsCString& aHost, const OriginAttributes& aOriginAttributes,
+    const uint32_t& aFlags) {
+  // We don't allocate here: instead we always use IPDL constructor that takes
+  // an existing object
+  MOZ_ASSERT_UNREACHABLE("AllocPDNSRequestChild should not be called on child");
+  return nullptr;
+}
+
+bool SocketProcessChild::DeallocPDNSRequestChild(PDNSRequestChild* aChild) {
+  DNSRequestChild* p = static_cast<DNSRequestChild*>(aChild);
+  p->ReleaseIPDLReference();
   return true;
 }
 

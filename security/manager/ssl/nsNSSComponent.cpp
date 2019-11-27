@@ -683,9 +683,16 @@ nsNSSComponent::HasActiveSmartCards(bool* result) {
   AutoSECMODListReadLock secmodLock;
   SECMODModuleList* list = SECMOD_GetDefaultModuleList();
   while (list) {
-    if (SECMOD_HasRemovableSlots(list->module)) {
+    SECMODModule* module = list->module;
+    if (SECMOD_HasRemovableSlots(module)) {
       *result = true;
       return NS_OK;
+    }
+    for (int i = 0; i < module->slotCount; i++) {
+      if (!PK11_IsFriendly(module->slots[i])) {
+        *result = true;
+        return NS_OK;
+      }
     }
     list = list->next;
   }
@@ -700,20 +707,11 @@ nsNSSComponent::HasUserCertsInstalled(bool* result) {
 
   BlockUntilLoadableRootsLoaded();
 
-  *result = false;
-  UniqueCERTCertList certList(CERT_FindUserCertsByUsage(
-      CERT_GetDefaultCertDB(), certUsageSSLClient, false, true, nullptr));
-  if (!certList) {
-    return NS_OK;
-  }
+  // FindNonCACertificatesWithPrivateKeys won't ever return an empty list, so
+  // all we need to do is check if this is null or not.
+  UniqueCERTCertList certList(FindNonCACertificatesWithPrivateKeys());
+  *result = !!certList;
 
-  // check if the list is empty
-  if (CERT_LIST_END(CERT_LIST_HEAD(certList), certList)) {
-    return NS_OK;
-  }
-
-  // The list is not empty, meaning at least one cert is installed
-  *result = true;
   return NS_OK;
 }
 
@@ -1004,6 +1002,7 @@ static const bool ALPN_ENABLED_DEFAULT = false;
 static const bool ENABLED_0RTT_DATA_DEFAULT = false;
 static const bool HELLO_DOWNGRADE_CHECK_DEFAULT = false;
 static const bool ENABLED_POST_HANDSHAKE_AUTH_DEFAULT = false;
+static const bool DELEGATED_CREDENTIALS_ENABLED_DEFAULT = false;
 
 static void ConfigureTLSSessionIdentifiers() {
   bool disableSessionIdentifiers =
@@ -1250,7 +1249,7 @@ void nsNSSComponent::UpdateCertVerifierWithEnterpriseRoots() {
 // Enable the TLS versions given in the prefs, defaulting to TLS 1.0 (min) and
 // TLS 1.2 (max) when the prefs aren't set or set to invalid values.
 nsresult nsNSSComponent::setEnabledTLSVersions() {
-  // keep these values in sync with security-prefs.js
+  // Keep these values in sync with all.js.
   // 1 means TLS 1.0, 2 means TLS 1.1, etc.
   static const uint32_t PSM_DEFAULT_MIN_TLS_VERSION = 1;
   static const uint32_t PSM_DEFAULT_MAX_TLS_VERSION = 4;
@@ -1259,6 +1258,14 @@ nsresult nsNSSComponent::setEnabledTLSVersions() {
                                                PSM_DEFAULT_MIN_TLS_VERSION);
   uint32_t maxFromPrefs = Preferences::GetUint("security.tls.version.max",
                                                PSM_DEFAULT_MAX_TLS_VERSION);
+
+  // This override should be removed when PSM_DEFAULT_MIN_TLS_VERSION is
+  // increased to 3 in March 2020, see bug 1579285.
+  bool enableDeprecated =
+      Preferences::GetBool("security.tls.version.enable-deprecated", false);
+  if (enableDeprecated) {
+    minFromPrefs = std::min(minFromPrefs, PSM_DEFAULT_MIN_TLS_VERSION);
+  }
 
   SSLVersionRange defaults = {
       SSL_LIBRARY_VERSION_3_0 + PSM_DEFAULT_MIN_TLS_VERSION,
@@ -1570,7 +1577,10 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
 #ifndef ANDROID
   PRErrorCode savedPRErrorCode1;
 #endif  // ifndef ANDROID
-  SECStatus srv = ::mozilla::psm::InitializeNSS(profilePath, false, !safeMode);
+  PKCS11DBConfig safeModeDBConfig =
+      safeMode ? PKCS11DBConfig::DoNotLoadModules : PKCS11DBConfig::LoadModules;
+  SECStatus srv = ::mozilla::psm::InitializeNSS(
+      profilePath, NSSDBConfig::ReadWrite, safeModeDBConfig);
   if (srv == SECSuccess) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("initialized NSS in r/w mode"));
 #ifndef ANDROID
@@ -1583,7 +1593,8 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
   PRErrorCode savedPRErrorCode2;
 #endif  // ifndef ANDROID
   // That failed. Try read-only mode.
-  srv = ::mozilla::psm::InitializeNSS(profilePath, true, !safeMode);
+  srv = ::mozilla::psm::InitializeNSS(profilePath, NSSDBConfig::ReadOnly,
+                                      safeModeDBConfig);
   if (srv == SECSuccess) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("initialized NSS in r-o mode"));
     return NS_OK;
@@ -1610,7 +1621,8 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
     // problem, but for some reason the combination of read-only and no-moddb
     // flags causes NSS initialization to fail, so unfortunately we have to use
     // read-write mode.
-    srv = ::mozilla::psm::InitializeNSS(profilePath, false, false);
+    srv = ::mozilla::psm::InitializeNSS(profilePath, NSSDBConfig::ReadWrite,
+                                        PKCS11DBConfig::DoNotLoadModules);
     if (srv == SECSuccess) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("FIPS may be the problem"));
       // Unload NSS so we can attempt to fix this situation for the user.
@@ -1636,12 +1648,14 @@ static nsresult InitializeNSSWithFallbacks(const nsACString& profilePath,
 #  endif
         return rv;
       }
-      srv = ::mozilla::psm::InitializeNSS(profilePath, false, true);
+      srv = ::mozilla::psm::InitializeNSS(profilePath, NSSDBConfig::ReadWrite,
+                                          PKCS11DBConfig::LoadModules);
       if (srv == SECSuccess) {
         MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("initialized in r/w mode"));
         return NS_OK;
       }
-      srv = ::mozilla::psm::InitializeNSS(profilePath, true, true);
+      srv = ::mozilla::psm::InitializeNSS(profilePath, NSSDBConfig::ReadOnly,
+                                          PKCS11DBConfig::LoadModules);
       if (srv == SECSuccess) {
         MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("initialized in r-o mode"));
         return NS_OK;
@@ -1760,6 +1774,11 @@ nsresult nsNSSComponent::InitializeNSS() {
       Preferences::GetBool("security.tls.enable_post_handshake_auth",
                            ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
 
+  SSL_OptionSetDefault(
+      SSL_ENABLE_DELEGATED_CREDENTIALS,
+      Preferences::GetBool("security.tls.enable_delegated_credentials",
+                           DELEGATED_CREDENTIALS_ENABLED_DEFAULT));
+
   rv = InitializeCipherSuite();
   MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
   if (NS_FAILED(rv)) {
@@ -1769,10 +1788,6 @@ nsresult nsNSSComponent::InitializeNSS() {
   }
 
   mozilla::pkix::RegisterErrorTable();
-
-  if (PK11_IsFIPS()) {
-    Telemetry::Accumulate(Telemetry::FIPS_ENABLED, true);
-  }
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("NSS Initialization done\n"));
 
@@ -1903,7 +1918,8 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
     NS_ConvertUTF16toUTF8 prefName(someData);
 
     if (prefName.EqualsLiteral("security.tls.version.min") ||
-        prefName.EqualsLiteral("security.tls.version.max")) {
+        prefName.EqualsLiteral("security.tls.version.max") ||
+        prefName.EqualsLiteral("security.tls.version.enable-deprecated")) {
       (void)setEnabledTLSVersions();
     } else if (prefName.EqualsLiteral("security.tls.hello_downgrade_check")) {
       bool enableDowngradeCheck = Preferences::GetBool(
@@ -1936,6 +1952,12 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
           SSL_ENABLE_POST_HANDSHAKE_AUTH,
           Preferences::GetBool("security.tls.enable_post_handshake_auth",
                                ENABLED_POST_HANDSHAKE_AUTH_DEFAULT));
+    } else if (prefName.EqualsLiteral(
+                   "security.tls.enable_delegated_credentials")) {
+      SSL_OptionSetDefault(
+          SSL_ENABLE_DELEGATED_CREDENTIALS,
+          Preferences::GetBool("security.tls.enable_delegated_credentials",
+                               DELEGATED_CREDENTIALS_ENABLED_DEFAULT));
     } else if (prefName.EqualsLiteral(
                    "security.ssl.disable_session_identifiers")) {
       ConfigureTLSSessionIdentifiers();
@@ -2142,12 +2164,84 @@ already_AddRefed<SharedCertVerifier> GetDefaultCertVerifier() {
   if (!nssComponent) {
     return nullptr;
   }
+  nsresult rv = nssComponent->BlockUntilLoadableRootsLoaded();
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
   RefPtr<SharedCertVerifier> result;
-  nsresult rv = nssComponent->GetDefaultCertVerifier(getter_AddRefs(result));
+  rv = nssComponent->GetDefaultCertVerifier(getter_AddRefs(result));
   if (NS_FAILED(rv)) {
     return nullptr;
   }
   return result.forget();
+}
+
+// Lists all private keys on all modules and returns a list of any corresponding
+// certificates. Returns null if no such certificates can be found. Also returns
+// null if an error is encountered, because this is called as part of the client
+// auth data callback, and NSS ignores any errors returned by the callback.
+UniqueCERTCertList FindNonCACertificatesWithPrivateKeys() {
+  MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+          ("FindNonCACertificatesWithPrivateKeys"));
+  UniqueCERTCertList certsWithPrivateKeys(CERT_NewCertList());
+  if (!certsWithPrivateKeys) {
+    return nullptr;
+  }
+
+  AutoSECMODListReadLock secmodLock;
+  SECMODModuleList* list = SECMOD_GetDefaultModuleList();
+  while (list) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("  module '%s'", list->module->commonName));
+    for (int i = 0; i < list->module->slotCount; i++) {
+      PK11SlotInfo* slot = list->module->slots[i];
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("    slot '%s'", PK11_GetSlotName(slot)));
+      // We may need to log in to be able to find private keys.
+      if (PK11_Authenticate(slot, true, nullptr) != SECSuccess) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("    (couldn't authenticate)"));
+        continue;
+      }
+      UniqueSECKEYPrivateKeyList privateKeys(
+          PK11_ListPrivKeysInSlot(slot, nullptr, nullptr));
+      if (!privateKeys) {
+        MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("      (no private keys)"));
+        continue;
+      }
+      for (SECKEYPrivateKeyListNode* node = PRIVKEY_LIST_HEAD(privateKeys);
+           !PRIVKEY_LIST_END(node, privateKeys);
+           node = PRIVKEY_LIST_NEXT(node)) {
+        UniqueCERTCertList certs(PK11_GetCertsMatchingPrivateKey(node->key));
+        if (!certs) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                  ("      PK11_GetCertsMatchingPrivateKey encountered an error "
+                   "- returning"));
+          return nullptr;
+        }
+        if (CERT_LIST_EMPTY(certs)) {
+          MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("      (no certs for key)"));
+          continue;
+        }
+        for (CERTCertListNode* n = CERT_LIST_HEAD(certs);
+             !CERT_LIST_END(n, certs); n = CERT_LIST_NEXT(n)) {
+          if (!CERT_IsCACert(n->cert, nullptr)) {
+            MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+                    ("      found '%s'", n->cert->subjectName));
+            UniqueCERTCertificate cert(CERT_DupCertificate(n->cert));
+            if (CERT_AddCertToListTail(certsWithPrivateKeys.get(),
+                                       cert.get()) == SECSuccess) {
+              Unused << cert.release();
+            }
+          }
+        }
+      }
+    }
+    list = list->next;
+  }
+  if (CERT_LIST_EMPTY(certsWithPrivateKeys)) {
+    return nullptr;
+  }
+  return certsWithPrivateKeys;
 }
 
 }  // namespace psm

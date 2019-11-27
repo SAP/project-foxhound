@@ -59,15 +59,6 @@ test path(s):
 Please check spelling and make sure there are mochitests living there.
 '''.lstrip()
 
-ROBOCOP_TESTS_NOT_FOUND = '''
-The robocop command could not find any tests under the following
-test path(s):
-
-{}
-
-Please check spelling and make sure the named tests exist.
-'''.lstrip()
-
 SUPPORTED_APPS = ['firefox', 'android', 'thunderbird']
 
 parser = None
@@ -177,7 +168,7 @@ class MochitestRunner(MozbuildObject):
             options.manifestFile = manifest
 
         # Firefox for Android doesn't use e10s
-        if options.app is None or 'geckoview' not in options.app:
+        if options.app is not None and 'geckoview' not in options.app:
             options.e10s = False
             print("using e10s=False for non-geckoview app")
 
@@ -191,32 +182,6 @@ class MochitestRunner(MozbuildObject):
         import runjunit
         options = Namespace(**kwargs)
         return runjunit.run_test_harness(parser, options)
-
-    def run_robocop_test(self, context, tests, **kwargs):
-        host_ret = verify_host_bin()
-        if host_ret != 0:
-            return host_ret
-
-        import imp
-        path = os.path.join(self.mochitest_dir, 'runrobocop.py')
-        with open(path, 'r') as fh:
-            imp.load_module('runrobocop', fh, path,
-                            ('.py', 'r', imp.PY_SOURCE))
-        import runrobocop
-
-        options = Namespace(**kwargs)
-
-        from manifestparser import TestManifest
-        if tests and not options.manifestFile:
-            manifest = TestManifest()
-            manifest.tests.extend(tests)
-            options.manifestFile = manifest
-
-        # robocop only used for Firefox for Android - non-e10s
-        options.e10s = False
-        print("using e10s=False for robocop")
-
-        return runrobocop.run_test_harness(parser, options)
 
 # parser
 
@@ -356,6 +321,11 @@ class MachCommands(MachCommandBase):
         test_paths = kwargs['test_paths']
         kwargs['test_paths'] = []
 
+        if kwargs.get('debugger', None):
+            import mozdebug
+            if not mozdebug.get_debugger_info(kwargs.get('debugger')):
+                sys.exit(1)
+
         mochitest = self._spawn(MochitestRunner)
         tests = []
         if resolve_tests:
@@ -448,17 +418,16 @@ class MachCommands(MachCommandBase):
             return 1
 
         if buildapp == 'android':
-            from mozrunner.devices.android_device import grant_runtime_permissions
             from mozrunner.devices.android_device import verify_android_device
             app = kwargs.get('app')
             if not app:
                 app = "org.mozilla.geckoview.test"
             device_serial = kwargs.get('deviceSerial')
+            install = not kwargs.get('no_install')
 
             # verify installation
-            verify_android_device(self, install=True, xre=False, network=True,
+            verify_android_device(self, install=install, xre=False, network=True,
                                   app=app, device_serial=device_serial)
-            grant_runtime_permissions(self, app, device_serial=device_serial)
             run_mochitest = mochitest.run_android_test
         else:
             run_mochitest = mochitest.run_desktop_test
@@ -498,18 +467,20 @@ class GeckoviewJunitCommands(MachCommandBase):
              conditions=[conditions.is_android],
              description='Run remote geckoview junit tests.',
              parser=setup_junit_argument_parser)
-    def run_junit(self, **kwargs):
+    @CommandArgument('--no-install', help='Do not try to install application on device before ' +
+                     'running (default: False)',
+                     action='store_true',
+                     default=False)
+    def run_junit(self, no_install, **kwargs):
         self._ensure_state_subdir_exists('.')
 
-        from mozrunner.devices.android_device import (grant_runtime_permissions,
-                                                      get_adb_path,
+        from mozrunner.devices.android_device import (get_adb_path,
                                                       verify_android_device)
         # verify installation
         app = kwargs.get('app')
         device_serial = kwargs.get('deviceSerial')
-        verify_android_device(self, install=True, xre=False, app=app,
+        verify_android_device(self, install=not no_install, xre=False, app=app,
                               device_serial=device_serial)
-        grant_runtime_permissions(self, app, device_serial=device_serial)
 
         if not kwargs.get('adbPath'):
             kwargs['adbPath'] = get_adb_path(self)
@@ -523,60 +494,6 @@ class GeckoviewJunitCommands(MachCommandBase):
 
         mochitest = self._spawn(MochitestRunner)
         return mochitest.run_geckoview_junit_test(self._mach_context, **kwargs)
-
-
-@CommandProvider
-class RobocopCommands(MachCommandBase):
-
-    @Command('robocop', category='testing',
-             conditions=[conditions.is_android],
-             description='Run a Robocop test.',
-             parser=setup_argument_parser)
-    @CommandArgument('--serve', default=False, action='store_true',
-                     help='Run no tests but start the mochi.test web server '
-                     'and launch Fennec with a test profile.')
-    def run_robocop(self, serve=False, **kwargs):
-        if serve:
-            kwargs['autorun'] = False
-
-        if not kwargs.get('robocopIni'):
-            kwargs['robocopIni'] = os.path.join(self.topobjdir, '_tests', 'testing',
-                                                'mochitest', 'robocop.ini')
-
-        from mozbuild.controller.building import BuildDriver
-        self._ensure_state_subdir_exists('.')
-
-        test_paths = kwargs['test_paths']
-        kwargs['test_paths'] = []
-
-        from moztest.resolve import TestResolver
-        resolver = self._spawn(TestResolver)
-        tests = list(resolver.resolve_tests(paths=test_paths, cwd=self._mach_context.cwd,
-                                            flavor='instrumentation', subsuite='robocop'))
-        driver = self._spawn(BuildDriver)
-        driver.install_tests(tests)
-
-        if len(tests) < 1:
-            print(ROBOCOP_TESTS_NOT_FOUND.format('\n'.join(
-                sorted(list(test_paths)))))
-            return 1
-
-        from mozrunner.devices.android_device import grant_runtime_permissions, get_adb_path
-        from mozrunner.devices.android_device import verify_android_device
-        # verify installation
-        app = kwargs.get('app')
-        if not app:
-            kwargs['app'] = app = self.substs["ANDROID_PACKAGE_NAME"]
-        device_serial = kwargs.get('deviceSerial')
-        verify_android_device(self, install=True, xre=False, network=True,
-                              app=app, device_serial=device_serial)
-        grant_runtime_permissions(self, app, device_serial=device_serial)
-
-        if not kwargs['adbPath']:
-            kwargs['adbPath'] = get_adb_path(self)
-
-        mochitest = self._spawn(MochitestRunner)
-        return mochitest.run_robocop_test(self._mach_context, tests, **kwargs)
 
 
 # NOTE python/mach/mach/commands/commandinfo.py references this function
@@ -619,4 +536,8 @@ class DeprecatedCommands(MachCommandBase):
 
     @Command('mochitest-a11y', category='testing', conditions=[REMOVED])
     def mochitest_a11y(self):
+        pass
+
+    @Command('robocop', category='testing', conditions=[REMOVED])
+    def robocop(self):
         pass

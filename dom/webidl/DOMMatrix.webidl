@@ -11,10 +11,12 @@
  */
 
 [Pref="layout.css.DOMMatrix.enabled",
- Constructor(optional (DOMString or sequence<unrestricted double>) init),
  Exposed=(Window,Worker),
  Serializable]
 interface DOMMatrixReadOnly {
+    [Throws]
+    constructor(optional (DOMString or sequence<unrestricted double> or DOMMatrixReadOnly) init);
+
     [NewObject, Throws] static DOMMatrixReadOnly fromMatrix(optional DOMMatrixInit other = {});
     [NewObject, Throws] static DOMMatrixReadOnly fromFloat32Array(Float32Array array32);
     [NewObject, Throws] static DOMMatrixReadOnly fromFloat64Array(Float64Array array64);
@@ -83,21 +85,18 @@ interface DOMMatrixReadOnly {
     DOMPoint                   transformPoint(optional DOMPointInit point = {});
     [Throws] Float32Array      toFloat32Array();
     [Throws] Float64Array      toFloat64Array();
-    [Exposed=Window]           stringifier;
+    [Exposed=Window, Throws]   stringifier;
     [Default] object           toJSON();
 };
 
 [Pref="layout.css.DOMMatrix.enabled",
- Constructor,
- Constructor(DOMString transformList),
- Constructor(DOMMatrixReadOnly other),
- Constructor(Float32Array array32),
- Constructor(Float64Array array64),
- Constructor(sequence<unrestricted double> numberSequence),
  Exposed=(Window,Worker),
  Serializable,
  LegacyWindowAlias=WebKitCSSMatrix]
 interface DOMMatrix : DOMMatrixReadOnly {
+    [Throws]
+    constructor(optional (DOMString or sequence<unrestricted double> or DOMMatrixReadOnly) init);
+
     [NewObject, Throws] static DOMMatrix fromMatrix(optional DOMMatrixInit other = {});
     [NewObject, Throws] static DOMMatrix fromFloat32Array(Float32Array array32);
     [NewObject, Throws] static DOMMatrix fromFloat64Array(Float64Array array64);

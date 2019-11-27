@@ -6,18 +6,18 @@
 #ifndef nsViewSourceChannel_h___
 #define nsViewSourceChannel_h___
 
-#include "nsString.h"
-#include "nsCOMPtr.h"
-#include "nsIViewSourceChannel.h"
-#include "nsIURI.h"
-#include "nsIStreamListener.h"
-#include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsICachingChannel.h"
-#include "nsIApplicationCacheChannel.h"
-#include "nsIFormPOSTActionChannel.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/net/NeckoChannelParams.h"
+#include "nsCOMPtr.h"
+#include "nsIApplicationCacheChannel.h"
+#include "nsICachingChannel.h"
+#include "nsIFormPOSTActionChannel.h"
+#include "nsIHttpChannel.h"
+#include "nsIHttpChannelInternal.h"
+#include "nsIStreamListener.h"
+#include "nsIURI.h"
+#include "nsIViewSourceChannel.h"
+#include "nsString.h"
 
 class nsViewSourceChannel final : public nsIViewSourceChannel,
                                   public nsIStreamListener,
@@ -30,6 +30,7 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUEST
   NS_DECL_NSICHANNEL
+  NS_DECL_NSIIDENTCHANNEL
   NS_DECL_NSIVIEWSOURCECHANNEL
   NS_DECL_NSISTREAMLISTENER
   NS_DECL_NSIREQUESTOBSERVER
@@ -46,7 +47,7 @@ class nsViewSourceChannel final : public nsIViewSourceChannel,
   nsViewSourceChannel()
       : mIsDocument(false), mOpened(false), mIsSrcdocChannel(false) {}
 
-  MOZ_MUST_USE nsresult Init(nsIURI* uri);
+  MOZ_MUST_USE nsresult Init(nsIURI* uri, nsILoadInfo* aLoadInfo);
 
   MOZ_MUST_USE nsresult InitSrcdoc(nsIURI* aURI, nsIURI* aBaseURI,
                                    const nsAString& aSrcdoc,

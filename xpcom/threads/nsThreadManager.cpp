@@ -6,6 +6,7 @@
 
 #include "nsThreadManager.h"
 #include "nsThread.h"
+#include "nsThreadPool.h"
 #include "nsThreadUtils.h"
 #include "nsIClassInfoImpl.h"
 #include "nsTArray.h"
@@ -35,6 +36,80 @@ static MOZ_THREAD_LOCAL(bool) sTLSIsMainThread;
 static MOZ_THREAD_LOCAL(PRThread*) gTlsCurrentVirtualThread;
 
 bool NS_IsMainThreadTLSInitialized() { return sTLSIsMainThread.initialized(); }
+
+class BackgroundEventTarget final : public nsIEventTarget {
+ public:
+  NS_DECL_THREADSAFE_ISUPPORTS
+  NS_DECL_NSIEVENTTARGET_FULL
+
+  BackgroundEventTarget() = default;
+
+  nsresult Init();
+
+  nsresult Shutdown();
+
+ private:
+  ~BackgroundEventTarget() = default;
+
+  nsCOMPtr<nsIThreadPool> mPool;
+};
+
+NS_IMPL_ISUPPORTS(BackgroundEventTarget, nsIEventTarget)
+
+nsresult BackgroundEventTarget::Init() {
+  nsCOMPtr<nsIThreadPool> pool(new nsThreadPool());
+  NS_ENSURE_TRUE(pool, NS_ERROR_FAILURE);
+
+  nsresult rv = pool->SetName(NS_LITERAL_CSTRING("BackgroundThreadPool"));
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Use potentially more conservative stack size.
+  rv = pool->SetThreadStackSize(nsIThreadManager::kThreadPoolStackSize);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // For now just one thread. Can increase easily later if we want.
+  rv = pool->SetThreadLimit(1);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Leave threads alive for up to 5 minutes
+  rv = pool->SetIdleThreadTimeout(300000);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  pool.swap(mPool);
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP_(bool)
+BackgroundEventTarget::IsOnCurrentThreadInfallible() {
+  return mPool->IsOnCurrentThread();
+}
+
+NS_IMETHODIMP
+BackgroundEventTarget::IsOnCurrentThread(bool* aValue) {
+  return mPool->IsOnCurrentThread(aValue);
+}
+
+NS_IMETHODIMP
+BackgroundEventTarget::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
+                                uint32_t aFlags) {
+  return mPool->Dispatch(std::move(aRunnable), aFlags);
+}
+
+NS_IMETHODIMP
+BackgroundEventTarget::DispatchFromScript(nsIRunnable* aRunnable,
+                                          uint32_t aFlags) {
+  return mPool->Dispatch(aRunnable, aFlags);
+}
+
+NS_IMETHODIMP
+BackgroundEventTarget::DelayedDispatch(already_AddRefed<nsIRunnable> aRunnable,
+                                       uint32_t) {
+  nsCOMPtr<nsIRunnable> dropRunnable(aRunnable);
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+nsresult BackgroundEventTarget::Shutdown() { return mPool->Shutdown(); }
 
 extern "C" {
 // This uses the C language linkage because it's exposed to Rust
@@ -194,6 +269,9 @@ void nsThreadManager::InitializeShutdownObserver() {
   ClearOnShutdown(&gShutdownObserveHelper);
 }
 
+nsThreadManager::nsThreadManager()
+    : mCurThreadIndex(0), mMainPRThread(nullptr), mInitialized(false) {}
+
 nsresult nsThreadManager::Init() {
   // Child processes need to initialize the thread manager before they
   // initialize XPCOM in order to set up the crash reporter. This leads to
@@ -239,6 +317,14 @@ nsresult nsThreadManager::Init() {
   AbstractThread::InitTLS();
   AbstractThread::InitMainThread();
 
+  // Initialize the background event target.
+  RefPtr<BackgroundEventTarget> target(new BackgroundEventTarget());
+
+  rv = target->Init();
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  mBackgroundEventTarget = target.forget();
+
   mInitialized = true;
 
   return NS_OK;
@@ -258,6 +344,8 @@ void nsThreadManager::Shutdown() {
 
   // Empty the main thread event queue before we begin shutting down threads.
   NS_ProcessPendingEvents(mMainThread);
+
+  static_cast<BackgroundEventTarget*>(mBackgroundEventTarget.get())->Shutdown();
 
   {
     // We gather the threads from the hashtable into a list, so that we avoid
@@ -299,6 +387,8 @@ void nsThreadManager::Shutdown() {
   // main thread is special we do it manually here after we're sure all events
   // have been processed.
   mMainThread->SetObserver(nullptr);
+
+  mBackgroundEventTarget = nullptr;
 
   // Release main thread object.
   mMainThread = nullptr;
@@ -355,6 +445,16 @@ nsThread* nsThreadManager::CreateCurrentThread(
   }
 
   return thread.get();  // reference held in TLS
+}
+
+nsresult nsThreadManager::DispatchToBackgroundThread(nsIRunnable* aEvent,
+                                                     uint32_t aDispatchFlags) {
+  if (!mInitialized) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIEventTarget> backgroundTarget(mBackgroundEventTarget);
+  return backgroundTarget->Dispatch(aEvent, aDispatchFlags);
 }
 
 nsThread* nsThreadManager::GetCurrentThread() {

@@ -25,7 +25,7 @@ namespace mozilla {
 namespace net {
 
 //-------------------------------------------------------------------
-protocol PHttpChannel
+refcounted protocol PHttpChannel
 {
   manager PNecko;
 
@@ -44,17 +44,12 @@ parent:
 
   // Reports approval/veto of redirect by child process redirect observers
   async Redirect2Verify(nsresult result, RequestHeaderTuples changedHeaders,
-                        ChildLoadInfoForwarderArgs loadInfoForwarder,
+                        uint32_t sourceRequestBlockingReason,
+                        ChildLoadInfoForwarderArgs targetLoadInfoForwarder,
                         uint32_t loadFlags, nsIReferrerInfo referrerInfo,
                         URIParams? apiRedirectTo,
                         CorsPreflightArgs? corsPreflightArgs,
                         bool chooseAppcache);
-
-  // Sent to the parent in order signal that the child side listeners have been
-  // set up and the parent side of the channel can be opened.
-  // The passed loadInfo needs to be set on the channel - since the channel
-  // moved to a new process it now has different properties.
-  async CrossProcessRedirectDone(nsresult result, LoadInfoArgs? loadInfo);
 
   // For document loads we keep this protocol open after child's
   // OnStopRequest, and send this msg (instead of __delete__) to allow
@@ -192,6 +187,8 @@ child:
   async OriginalCacheInputStreamAvailable(IPCStream? stream);
 
   async AltDataCacheInputStreamAvailable(IPCStream? stream);
+
+  async OverrideReferrerInfoDuringBeginConnect(nsIReferrerInfo referrerInfo);
 
 both:
   // After receiving this message, the parent also calls

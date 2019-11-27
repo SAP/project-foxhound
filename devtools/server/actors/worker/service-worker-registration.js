@@ -51,6 +51,11 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
       this._conn = conn;
       this._registration = registration;
       this._pushSubscriptionActor = null;
+
+      // A flag to know if preventShutdown has been called and we should
+      // try to allow the shutdown of the SW when the actor is destroyed
+      this._preventedShutdown = false;
+
       this._registration.addListener(this);
 
       this._createServiceWorkerActors();
@@ -72,9 +77,10 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
 
       const newestWorker = activeWorker || waitingWorker || installingWorker;
 
-      const isNewE10sImplementation = swm.isParentInterceptEnabled();
+      const isParentInterceptEnabled = swm.isParentInterceptEnabled();
       const isMultiE10sWithOldImplementation =
-        Services.appinfo.browserTabsRemoteAutostart && !isNewE10sImplementation;
+        Services.appinfo.browserTabsRemoteAutostart &&
+        !isParentInterceptEnabled;
       return {
         actor: this.actorID,
         scope: registration.scope,
@@ -87,11 +93,24 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
         // - In non-e10s or new implementaion: check if we have an active worker
         active: isMultiE10sWithOldImplementation ? true : !!activeWorker,
         lastUpdateTime: registration.lastUpdateTime,
+        traits: {
+          isParentInterceptEnabled,
+        },
       };
     },
 
     destroy() {
       protocol.Actor.prototype.destroy.call(this);
+
+      // Ensure resuming the service worker in case the connection drops
+      if (
+        swm.isParentInterceptEnabled() &&
+        this._registration.activeWorker &&
+        this._preventedShutdown
+      ) {
+        this.allowShutdown();
+      }
+
       Services.obs.removeObserver(this, PushService.subscriptionModifiedTopic);
       this._registration.removeListener(this);
       this._registration = null;
@@ -128,6 +147,24 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
     },
 
     start() {
+      if (swm.isParentInterceptEnabled()) {
+        const { activeWorker } = this._registration;
+
+        // TODO: don't return "started" if there's no active worker.
+        if (activeWorker) {
+          // This starts up the Service Worker if it's not already running.
+          // Note that with parent-intercept (i.e. swm.isParentInterceptEnabled /
+          // dom.serviceWorkers.parent_intercept=true), the Service Workers exist
+          // in content processes but are managed from the parent process. This is
+          // why we call `attachDebugger` here (in the parent process) instead of
+          // in a process script.
+          activeWorker.attachDebugger();
+          activeWorker.detachDebugger();
+        }
+
+        return { type: "started" };
+      }
+
       if (!_serviceWorkerProcessScriptLoaded) {
         Services.ppmm.loadProcessScript(
           "resource://devtools/server/actors/worker/service-worker-process.js",
@@ -169,6 +206,68 @@ const ServiceWorkerRegistrationActor = protocol.ActorClassWithSpec(
       swm.propagateUnregister(principal, unregisterCallback, scope);
 
       return { type: "unregistered" };
+    },
+
+    push() {
+      if (!swm.isParentInterceptEnabled()) {
+        throw new Error(
+          "ServiceWorkerRegistrationActor.push can only be used " +
+            "in parent-intercept mode"
+        );
+      }
+
+      const { principal, scope } = this._registration;
+      const originAttributes = ChromeUtils.originAttributesToSuffix(
+        principal.originAttributes
+      );
+      swm.sendPushEvent(originAttributes, scope);
+    },
+
+    /**
+     * Prevent the current active worker to shutdown after the idle timeout.
+     */
+    preventShutdown() {
+      if (!swm.isParentInterceptEnabled()) {
+        // In non parent-intercept mode, this is handled by the WorkerTargetActor attach().
+        throw new Error(
+          "ServiceWorkerRegistrationActor.preventShutdown can only be used " +
+            "in parent-intercept mode"
+        );
+      }
+
+      if (!this._registration.activeWorker) {
+        throw new Error(
+          "ServiceWorkerRegistrationActor.preventShutdown could not find " +
+            "activeWorker in parent-intercept mode"
+        );
+      }
+
+      // attachDebugger has to be called from the parent process in parent-intercept mode.
+      this._registration.activeWorker.attachDebugger();
+      this._preventedShutdown = true;
+    },
+
+    /**
+     * Allow the current active worker to shut down again.
+     */
+    allowShutdown() {
+      if (!swm.isParentInterceptEnabled()) {
+        // In non parent-intercept mode, this is handled by the WorkerTargetActor detach().
+        throw new Error(
+          "ServiceWorkerRegistrationActor.allowShutdown can only be used " +
+            "in parent-intercept mode"
+        );
+      }
+
+      if (!this._registration.activeWorker) {
+        throw new Error(
+          "ServiceWorkerRegistrationActor.allowShutdown could not find " +
+            "activeWorker in parent-intercept mode"
+        );
+      }
+
+      this._registration.activeWorker.detachDebugger();
+      this._preventedShutdown = false;
     },
 
     getPushSubscription() {

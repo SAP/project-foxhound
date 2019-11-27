@@ -39,6 +39,7 @@
 // form submission
 #include "HTMLFormSubmissionConstants.h"
 #include "mozilla/dom/FormData.h"
+#include "mozilla/dom/FormDataEvent.h"
 #include "mozilla/Telemetry.h"
 #include "nsIFormSubmitObserver.h"
 #include "nsIObserverService.h"
@@ -117,7 +118,8 @@ HTMLFormElement::HTMLFormElement(
       mDeferSubmission(false),
       mNotifiedObservers(false),
       mNotifiedObserversResult(false),
-      mEverTriedInvalidSubmit(false) {
+      mEverTriedInvalidSubmit(false),
+      mIsConstructingEntryList(false) {
   // We start out valid.
   AddStatesSilently(NS_EVENT_STATE_VALID);
 }
@@ -297,7 +299,7 @@ static void CollectOrphans(nsINode* aRemovalRoot,
 #endif
     if (node->HasFlag(MAYBE_ORPHAN_FORM_ELEMENT)) {
       node->UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
-      if (!nsContentUtils::ContentIsDescendantOf(node, aRemovalRoot)) {
+      if (!node->IsInclusiveDescendantOf(aRemovalRoot)) {
         node->ClearForm(true, false);
 
         // When a form control loses its form owner, its state can change.
@@ -338,7 +340,7 @@ static void CollectOrphans(nsINode* aRemovalRoot,
 #endif
     if (node->HasFlag(MAYBE_ORPHAN_FORM_ELEMENT)) {
       node->UnsetFlags(MAYBE_ORPHAN_FORM_ELEMENT);
-      if (!nsContentUtils::ContentIsDescendantOf(node, aRemovalRoot)) {
+      if (!node->IsInclusiveDescendantOf(aRemovalRoot)) {
         node->ClearForm(true);
 
 #ifdef DEBUG
@@ -504,7 +506,8 @@ nsresult HTMLFormElement::DoSubmitOrReset(WidgetEvent* aEvent,
   if (eFormSubmit == aMessage) {
     // Don't submit if we're not in a document or if we're in
     // a sandboxed frame and form submit is disabled.
-    if (!doc || (doc->GetSandboxFlags() & SANDBOXED_FORMS)) {
+    if (mIsConstructingEntryList || !doc ||
+        (doc->GetSandboxFlags() & SANDBOXED_FORMS)) {
       return NS_OK;
     }
     return DoSubmit(aEvent);
@@ -555,6 +558,14 @@ nsresult HTMLFormElement::DoSubmit(WidgetEvent* aEvent) {
   // prepare the submission object
   //
   nsresult rv = BuildSubmission(getter_Transfers(submission), aEvent);
+
+  // Don't raise an error if form cannot navigate.
+  if (StaticPrefs::dom_formdata_event_enabled() &&
+      rv == NS_ERROR_NOT_AVAILABLE) {
+    mIsSubmitting = false;
+    return NS_OK;
+  }
+
   if (NS_FAILED(rv)) {
     mIsSubmitting = false;
     return rv;
@@ -607,16 +618,32 @@ nsresult HTMLFormElement::BuildSubmission(HTMLFormSubmission** aFormSubmission,
   nsresult rv;
 
   //
+  // Walk over the form elements and call SubmitNamesValues() on them to get
+  // their data.
+  //
+  auto encoding = GetSubmitEncoding()->OutputEncoding();
+  RefPtr<FormData> formData =
+      new FormData(GetOwnerGlobal(), encoding, originatingElement);
+  rv = ConstructEntryList(formData);
+  NS_ENSURE_SUBMIT_SUCCESS(rv);
+
+  // Step 9. If form cannot navigate, then return.
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#form-submission-algorithm
+  if (StaticPrefs::dom_formdata_event_enabled() && !GetComposedDoc()) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  //
   // Get the submission object
   //
-  rv = HTMLFormSubmission::GetFromForm(this, originatingElement,
+  rv = HTMLFormSubmission::GetFromForm(this, originatingElement, encoding,
                                        aFormSubmission);
   NS_ENSURE_SUBMIT_SUCCESS(rv);
 
   //
   // Dump the data into the submission object
   //
-  rv = WalkFormElements(*aFormSubmission);
+  rv = formData->CopySubmissionDataTo(*aFormSubmission);
   NS_ENSURE_SUBMIT_SUCCESS(rv);
 
   return NS_OK;
@@ -634,9 +661,8 @@ nsresult HTMLFormElement::SubmitSubmission(
 
   // If there is no link handler, then we won't actually be able to submit.
   Document* doc = GetComposedDoc();
-  nsCOMPtr<nsISupports> container = doc ? doc->GetContainer() : nullptr;
-  nsCOMPtr<nsILinkHandler> linkHandler(do_QueryInterface(container));
-  if (!linkHandler || IsEditable()) {
+  nsCOMPtr<nsIDocShell> container = doc ? doc->GetDocShell() : nullptr;
+  if (!container || IsEditable()) {
     mIsSubmitting = false;
     return NS_OK;
   }
@@ -652,9 +678,8 @@ nsresult HTMLFormElement::SubmitSubmission(
   // STATE_STOP.  As a result, we have to make sure that we simply pretend
   // we're not submitting when submitting to a JS URL.  That's kinda bogus, but
   // there we are.
-  bool schemeIsJavaScript = false;
-  if (NS_SUCCEEDED(actionURI->SchemeIs("javascript", &schemeIsJavaScript)) &&
-      schemeIsJavaScript) {
+  bool schemeIsJavaScript = actionURI->SchemeIs("javascript");
+  if (schemeIsJavaScript) {
     mIsSubmitting = false;
   }
 
@@ -701,7 +726,7 @@ nsresult HTMLFormElement::SubmitSubmission(
 
     nsAutoString target;
     aFormSubmission->GetTarget(target);
-    rv = linkHandler->OnLinkClickSync(
+    rv = nsDocShell::Cast(container)->OnLinkClickSync(
         this, actionURI, target, VoidString(), postDataStream, nullptr, false,
         getter_AddRefs(docShell), getter_AddRefs(mSubmittingRequest),
         aFormSubmission->IsInitiatedFromUserInput());
@@ -740,7 +765,7 @@ nsresult HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
   // Only ask the user about posting from a secure URI to an insecure URI if
   // this element is in the root document. When this is not the case, the mixed
   // content blocker will take care of security for us.
-  Document* parent = OwnerDoc()->GetParentDocument();
+  Document* parent = OwnerDoc()->GetInProcessParentDocument();
   bool isRootDocument = (!parent || nsContentUtils::IsChromeDoc(parent));
   if (!isRootDocument) {
     return NS_OK;
@@ -751,20 +776,10 @@ nsresult HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
     *aCancelSubmit = true;
     return NS_OK;
   }
-  nsCOMPtr<nsIURI> principalURI;
-  nsresult rv = principal->GetURI(getter_AddRefs(principalURI));
-  if (NS_FAILED(rv)) {
-    return rv;
+  bool formIsHTTPS = principal->SchemeIs("https");
+  if (principal->IsSystemPrincipal() || principal->GetIsExpandedPrincipal()) {
+    formIsHTTPS = OwnerDoc()->GetDocumentURI()->SchemeIs("https");
   }
-  if (!principalURI) {
-    principalURI = OwnerDoc()->GetDocumentURI();
-  }
-  bool formIsHTTPS;
-  rv = principalURI->SchemeIs("https", &formIsHTTPS);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
   if (!formIsHTTPS) {
     return NS_OK;
   }
@@ -799,7 +814,7 @@ nsresult HTMLFormElement::DoSecureToInsecureSubmitCheck(nsIURI* aActionURL,
   if (!stringBundleService) {
     return NS_ERROR_FAILURE;
   }
-  rv = stringBundleService->CreateBundle(
+  nsresult rv = stringBundleService->CreateBundle(
       "chrome://global/locale/browser.properties",
       getter_AddRefs(stringBundle));
   if (NS_FAILED(rv)) {
@@ -864,8 +879,16 @@ nsresult HTMLFormElement::NotifySubmitObservers(nsIURI* aActionURL,
   return rv;
 }
 
-nsresult HTMLFormElement::WalkFormElements(
-    HTMLFormSubmission* aFormSubmission) {
+nsresult HTMLFormElement::ConstructEntryList(FormData* aFormData) {
+  MOZ_ASSERT(aFormData, "Must have FormData!");
+  bool isFormDataEventEnabled = StaticPrefs::dom_formdata_event_enabled();
+  if (isFormDataEventEnabled && mIsConstructingEntryList) {
+    // Step 2.2 of https://xhr.spec.whatwg.org/#dom-formdata.
+    return NS_ERROR_DOM_INVALID_STATE_ERR;
+  }
+
+  AutoRestore<bool> resetConstructingEntryList(mIsConstructingEntryList);
+  mIsConstructingEntryList = true;
   // This shouldn't be called recursively, so use a rather large value
   // for the preallocated buffer.
   AutoTArray<RefPtr<nsGenericHTMLFormElement>, 100> sortedControls;
@@ -879,10 +902,56 @@ nsresult HTMLFormElement::WalkFormElements(
   //
   for (uint32_t i = 0; i < len; ++i) {
     // Tell the control to submit its name/value pairs to the submission
-    sortedControls[i]->SubmitNamesValues(aFormSubmission);
+    sortedControls[i]->SubmitNamesValues(aFormData);
+  }
+
+  if (isFormDataEventEnabled) {
+    FormDataEventInit init;
+    init.mBubbles = true;
+    init.mCancelable = false;
+    init.mFormData = aFormData;
+    RefPtr<FormDataEvent> event =
+        FormDataEvent::Constructor(this, NS_LITERAL_STRING("formdata"), init);
+    event->SetTrusted(true);
+
+    EventDispatcher::DispatchDOMEvent(ToSupports(this), nullptr, event, nullptr,
+                                      nullptr);
   }
 
   return NS_OK;
+}
+
+NotNull<const Encoding*> HTMLFormElement::GetSubmitEncoding() {
+  nsAutoString acceptCharsetValue;
+  GetAttr(kNameSpaceID_None, nsGkAtoms::acceptcharset, acceptCharsetValue);
+
+  int32_t charsetLen = acceptCharsetValue.Length();
+  if (charsetLen > 0) {
+    int32_t offset = 0;
+    int32_t spPos = 0;
+    // get charset from charsets one by one
+    do {
+      spPos = acceptCharsetValue.FindChar(char16_t(' '), offset);
+      int32_t cnt = ((-1 == spPos) ? (charsetLen - offset) : (spPos - offset));
+      if (cnt > 0) {
+        nsAutoString uCharset;
+        acceptCharsetValue.Mid(uCharset, offset, cnt);
+
+        auto encoding = Encoding::ForLabelNoReplacement(uCharset);
+        if (encoding) {
+          return WrapNotNull(encoding);
+        }
+      }
+      offset = spPos + 1;
+    } while (spPos != -1);
+  }
+  // if there are no accept-charset or all the charset are not supported
+  // Get the charset from document
+  Document* doc = GetComposedDoc();
+  if (doc) {
+    return doc->GetDocumentCharacterSet();
+  }
+  return UTF_8_ENCODING;
 }
 
 // nsIForm
@@ -1486,7 +1555,7 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
 
     actionURL = docURI;
   } else {
-    nsCOMPtr<nsIURI> baseURL = GetBaseURI();
+    nsIURI* baseURL = GetBaseURI();
     NS_ASSERTION(baseURL, "No Base URL found in Form Submit!\n");
     if (!baseURL) {
       return NS_OK;  // No base URL -> exit early, see Bug 30721
@@ -1509,9 +1578,7 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
   // Potentially the page uses the CSP directive 'upgrade-insecure-requests'. In
   // such a case we have to upgrade the action url from http:// to https://.
   // If the actionURL is not http, then there is nothing to do.
-  bool isHttpScheme = false;
-  rv = actionURL->SchemeIs("http", &isHttpScheme);
-  NS_ENSURE_SUCCESS(rv, rv);
+  bool isHttpScheme = actionURL->SchemeIs("http");
   if (isHttpScheme && document->GetUpgradeInsecureRequests(false)) {
     // let's use the old specification before the upgrade for logging
     AutoTArray<nsString, 2> params;

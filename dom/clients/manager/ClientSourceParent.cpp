@@ -141,7 +141,7 @@ IPCResult ClientSourceParent::RecvInheritController(
   // In parent-side intercept mode we must tell the parent-side SWM about
   // this controller inheritence.  In legacy client-side mode this is done
   // from the ClientSource instead.
-  if (!ServiceWorkerParentInterceptEnabled()) {
+  if (ServiceWorkerParentInterceptEnabled()) {
     nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
         "ClientSourceParent::RecvInheritController",
         [clientInfo = mClientInfo, controller = mController.ref()]() {
@@ -241,7 +241,7 @@ bool ClientSourceParent::IsFrozen() const { return mFrozen; }
 
 bool ClientSourceParent::ExecutionReady() const { return mExecutionReady; }
 
-RefPtr<GenericPromise> ClientSourceParent::ExecutionReadyPromise() {
+RefPtr<GenericNonExclusivePromise> ClientSourceParent::ExecutionReadyPromise() {
   // Only call if ClientSourceParent::ExecutionReady() is false; otherwise,
   // the promise will never resolve
   MOZ_ASSERT(!mExecutionReady);

@@ -16,7 +16,7 @@ const { DebuggerClient } = require("devtools/shared/client/debugger-client");
 const {
   ActorRegistry,
 } = require("devtools/server/actors/utils/actor-registry");
-const { DebuggerServer } = require("devtools/server/main");
+const { DebuggerServer } = require("devtools/server/debugger-server");
 
 const PATH = "browser/devtools/server/tests/browser/";
 const TEST_DOMAIN = "http://test1.example.org";
@@ -82,7 +82,7 @@ async function initLayoutFrontForUrl(url) {
 
 async function initAccessibilityFrontForUrl(url) {
   const target = await addTabTarget(url);
-  const inspector = await target.getInspector();
+  const inspector = await target.getFront("inspector");
   const walker = inspector.walker;
   const accessibility = await target.getFront("accessibility");
 
@@ -113,8 +113,7 @@ async function initPerfFront() {
 
 async function initInspectorFront(url) {
   const target = await addTabTarget(url);
-
-  const inspector = await target.getInspector();
+  const inspector = await target.getFront("inspector");
   const walker = inspector.walker;
 
   return { inspector, walker, target };

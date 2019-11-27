@@ -23,7 +23,7 @@
 #include "nsXULAppAPI.h"
 #include "nsIXULAppInfo.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/gfx/Logging.h"
@@ -150,8 +150,8 @@ static const char* GetPrefNameForFeature(int32_t aFeature) {
     case nsIGfxInfo::FEATURE_STAGEFRIGHT:
       name = BLACKLIST_PREF_BRANCH "stagefright";
       break;
-    case nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION:
-      name = BLACKLIST_PREF_BRANCH "webrtc.hw.acceleration";
+    case nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_H264:
+      name = BLACKLIST_PREF_BRANCH "webrtc.hw.acceleration.h264";
       break;
     case nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_ENCODE:
       name = BLACKLIST_PREF_BRANCH "webrtc.hw.acceleration.encode";
@@ -193,6 +193,9 @@ static const char* GetPrefNameForFeature(int32_t aFeature) {
     case nsIGfxInfo::FEATURE_VP9_HW_DECODE:
       // We don't provide prefs for these features as these are
       // not handling downloadable blocklist.
+      break;
+    case nsIGfxInfo::FEATURE_GL_SWIZZLE:
+      name = BLACKLIST_PREF_BRANCH "gl.swizzle";
       break;
     default:
       MOZ_ASSERT_UNREACHABLE("Unexpected nsIGfxInfo feature?!");
@@ -289,6 +292,10 @@ static OperatingSystem BlacklistOSToOperatingSystem(const nsAString& os) {
     return OperatingSystem::OSX10_12;
   else if (os.EqualsLiteral("Darwin 17"))
     return OperatingSystem::OSX10_13;
+  else if (os.EqualsLiteral("Darwin 18"))
+    return OperatingSystem::OSX10_14;
+  else if (os.EqualsLiteral("Darwin 19"))
+    return OperatingSystem::OSX10_15;
   else if (os.EqualsLiteral("Android"))
     return OperatingSystem::Android;
   // For historical reasons, "All" in blocklist means "All Windows"
@@ -345,8 +352,8 @@ static int32_t BlacklistFeatureToGfxFeature(const nsAString& aFeature) {
     return nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_ENCODE;
   else if (aFeature.EqualsLiteral("WEBRTC_HW_ACCELERATION_DECODE"))
     return nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_DECODE;
-  else if (aFeature.EqualsLiteral("WEBRTC_HW_ACCELERATION"))
-    return nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION;
+  else if (aFeature.EqualsLiteral("WEBRTC_HW_ACCELERATION_H264"))
+    return nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_H264;
   else if (aFeature.EqualsLiteral("CANVAS2D_ACCELERATION"))
     return nsIGfxInfo::FEATURE_CANVAS2D_ACCELERATION;
   else if (aFeature.EqualsLiteral("DX_INTEROP2"))
@@ -365,6 +372,8 @@ static int32_t BlacklistFeatureToGfxFeature(const nsAString& aFeature) {
     return nsIGfxInfo::FEATURE_DX_NV12;
   // We do not support FEATURE_VP8_HW_DECODE and FEATURE_VP9_HW_DECODE
   // in downloadable blocklist.
+  else if (aFeature.EqualsLiteral("GL_SWIZZLE"))
+    return nsIGfxInfo::FEATURE_GL_SWIZZLE;
 
   // If we don't recognize the feature, it may be new, and something
   // this version doesn't understand.  So, nothing to do.  This is
@@ -601,7 +610,12 @@ nsresult GfxInfoBase::Init() {
 NS_IMETHODIMP
 GfxInfoBase::GetFeatureStatus(int32_t aFeature, nsACString& aFailureId,
                               int32_t* aStatus) {
-  int32_t blocklistAll = StaticPrefs::gfx_blocklist_all();
+  // Ignore the gfx.blocklist.all pref on release and beta.
+#if defined(RELEASE_OR_BETA)
+  int32_t blocklistAll = 0;
+#else
+  int32_t blocklistAll = StaticPrefs::gfx_blocklist_all_AtStartup();
+#endif
   if (blocklistAll > 0) {
     gfxCriticalErrorOnce(gfxCriticalError::DefaultOptions(false))
         << "Forcing blocklisting all features";
@@ -1006,7 +1020,7 @@ void GfxInfoBase::EvaluateDownloadedBlacklist(
                         nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_DECODE,
                         nsIGfxInfo::FEATURE_WEBGL_MSAA,
                         nsIGfxInfo::FEATURE_STAGEFRIGHT,
-                        nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION,
+                        nsIGfxInfo::FEATURE_WEBRTC_HW_ACCELERATION_H264,
                         nsIGfxInfo::FEATURE_CANVAS2D_ACCELERATION,
                         nsIGfxInfo::FEATURE_VP8_HW_DECODE,
                         nsIGfxInfo::FEATURE_VP9_HW_DECODE,
@@ -1019,6 +1033,7 @@ void GfxInfoBase::EvaluateDownloadedBlacklist(
                         nsIGfxInfo::FEATURE_DX_NV12,
                         nsIGfxInfo::FEATURE_DX_P010,
                         nsIGfxInfo::FEATURE_DX_P016,
+                        nsIGfxInfo::FEATURE_GL_SWIZZLE,
                         0};
 
   // For every feature we know about, we evaluate whether this blacklist has a

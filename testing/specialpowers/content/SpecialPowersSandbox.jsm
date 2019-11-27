@@ -44,13 +44,6 @@ class SpecialPowersSandbox {
     }
   }
 
-  static getCallerInfo(frame) {
-    return {
-      filename: frame.filename,
-      lineNumber: frame.lineNumber,
-    };
-  }
-
   get Assert() {
     if (!this._Assert) {
       this._Assert = new Assert((err, message, stack) => {
@@ -68,7 +61,12 @@ class SpecialPowersSandbox {
         `(operator ${err.operator})`;
     }
 
-    this.reportCallback({ name, diag, passed: !err, stack });
+    this.reportCallback({
+      name,
+      diag,
+      passed: !err,
+      stack: stack && stack.formattedStack,
+    });
   }
 
   execute(task, args, caller) {

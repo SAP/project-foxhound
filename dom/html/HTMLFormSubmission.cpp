@@ -8,7 +8,6 @@
 
 #include "nsCOMPtr.h"
 #include "nsIForm.h"
-#include "nsILinkHandler.h"
 #include "mozilla/dom/Document.h"
 #include "nsGkAtoms.h"
 #include "nsIFormControl.h"
@@ -37,7 +36,7 @@
 
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 namespace dom {
@@ -246,9 +245,7 @@ nsresult FSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
   *aPostDataStream = nullptr;
 
   if (mMethod == NS_FORM_METHOD_POST) {
-    bool isMailto = false;
-    aURI->SchemeIs("mailto", &isMailto);
-    if (isMailto) {
+    if (aURI->SchemeIs("mailto")) {
       nsAutoCString path;
       rv = aURI->GetPathQueryRef(path);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -284,10 +281,7 @@ nsresult FSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
 
   } else {
     // Get the full query string
-    bool schemeIsJavaScript;
-    rv = aURI->SchemeIs("javascript", &schemeIsJavaScript);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (schemeIsJavaScript) {
+    if (aURI->SchemeIs("javascript")) {
       return NS_OK;
     }
 
@@ -667,9 +661,7 @@ nsresult FSTextPlain::GetEncodedSubmission(nsIURI* aURI,
   // XXX HACK We are using the standard URL mechanism to give the body to the
   // mailer instead of passing the post data stream to it, since that sounds
   // hard.
-  bool isMailto = false;
-  aURI->SchemeIs("mailto", &isMailto);
-  if (isMailto) {
+  if (aURI->SchemeIs("mailto")) {
     nsAutoCString path;
     rv = aURI->GetPathQueryRef(path);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -763,40 +755,6 @@ nsresult EncodingFormSubmission::EncodeVal(const nsAString& aStr,
 
 namespace {
 
-NotNull<const Encoding*> GetSubmitEncoding(nsGenericHTMLElement* aForm) {
-  nsAutoString acceptCharsetValue;
-  aForm->GetAttr(kNameSpaceID_None, nsGkAtoms::acceptcharset,
-                 acceptCharsetValue);
-
-  int32_t charsetLen = acceptCharsetValue.Length();
-  if (charsetLen > 0) {
-    int32_t offset = 0;
-    int32_t spPos = 0;
-    // get charset from charsets one by one
-    do {
-      spPos = acceptCharsetValue.FindChar(char16_t(' '), offset);
-      int32_t cnt = ((-1 == spPos) ? (charsetLen - offset) : (spPos - offset));
-      if (cnt > 0) {
-        nsAutoString uCharset;
-        acceptCharsetValue.Mid(uCharset, offset, cnt);
-
-        auto encoding = Encoding::ForLabelNoReplacement(uCharset);
-        if (encoding) {
-          return WrapNotNull(encoding);
-        }
-      }
-      offset = spPos + 1;
-    } while (spPos != -1);
-  }
-  // if there are no accept-charset or all the charset are not supported
-  // Get the charset from document
-  Document* doc = aForm->GetComposedDoc();
-  if (doc) {
-    return doc->GetDocumentCharacterSet();
-  }
-  return UTF_8_ENCODING;
-}
-
 void GetEnumAttr(nsGenericHTMLElement* aContent, nsAtom* atom,
                  int32_t* aValue) {
   const nsAttrValue* value = aContent->GetParsedAttr(atom);
@@ -810,7 +768,7 @@ void GetEnumAttr(nsGenericHTMLElement* aContent, nsAtom* atom,
 /* static */
 nsresult HTMLFormSubmission::GetFromForm(
     HTMLFormElement* aForm, nsGenericHTMLElement* aOriginatingElement,
-    HTMLFormSubmission** aFormSubmission) {
+    NotNull<const Encoding*>& aEncoding, HTMLFormSubmission** aFormSubmission) {
   // Get all the information necessary to encode the form data
   NS_ASSERTION(aForm->GetComposedDoc(),
                "Should have doc if we're building submission!");
@@ -873,17 +831,14 @@ nsresult HTMLFormSubmission::GetFromForm(
     GetEnumAttr(aForm, nsGkAtoms::method, &method);
   }
 
-  // Get encoding
-  auto encoding = GetSubmitEncoding(aForm)->OutputEncoding();
-
   // Choose encoder
   if (method == NS_FORM_METHOD_POST && enctype == NS_FORM_ENCTYPE_MULTIPART) {
-    *aFormSubmission = new FSMultipartFormData(actionURL, target, encoding,
+    *aFormSubmission = new FSMultipartFormData(actionURL, target, aEncoding,
                                                aOriginatingElement);
   } else if (method == NS_FORM_METHOD_POST &&
              enctype == NS_FORM_ENCTYPE_TEXTPLAIN) {
     *aFormSubmission =
-        new FSTextPlain(actionURL, target, encoding, aOriginatingElement);
+        new FSTextPlain(actionURL, target, aEncoding, aOriginatingElement);
   } else {
     Document* doc = aForm->OwnerDoc();
     if (enctype == NS_FORM_ENCTYPE_MULTIPART ||
@@ -901,7 +856,7 @@ nsresult HTMLFormSubmission::GetFromForm(
 
       SendJSWarning(doc, "ForgotPostWarning", args);
     }
-    *aFormSubmission = new FSURLEncoded(actionURL, target, encoding, method,
+    *aFormSubmission = new FSURLEncoded(actionURL, target, aEncoding, method,
                                         doc, aOriginatingElement);
   }
 

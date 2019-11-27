@@ -9,7 +9,6 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"  // for Event
-#include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/dom/Document.h"
 #include "nsIDocShell.h"
@@ -127,8 +126,7 @@ static eEventAction GetActionForEvent(Event* aEvent) {
 
 NS_IMETHODIMP
 PrintPreviewUserEventSuppressor::HandleEvent(Event* aEvent) {
-  nsCOMPtr<nsIContent> content =
-      do_QueryInterface(aEvent ? aEvent->GetOriginalTarget() : nullptr);
+  nsCOMPtr<nsIContent> content = do_QueryInterface(aEvent->GetOriginalTarget());
   if (content && !content->IsXULElement()) {
     eEventAction action = GetActionForEvent(aEvent);
     switch (action) {
@@ -142,7 +140,7 @@ PrintPreviewUserEventSuppressor::HandleEvent(Event* aEvent) {
           Document* doc = content->GetUncomposedDoc();
           NS_ASSERTION(doc, "no document");
 
-          Document* parentDoc = doc->GetParentDocument();
+          Document* parentDoc = doc->GetInProcessParentDocument();
           NS_ASSERTION(parentDoc, "no parent document");
 
           nsCOMPtr<nsPIDOMWindowOuter> win = parentDoc->GetWindow();

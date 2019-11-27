@@ -16,13 +16,18 @@
 <?xml-stylesheet href="chrome://browser/skin/preferences/in-content/containers.css"?>
 <?xml-stylesheet href="chrome://browser/skin/preferences/in-content/privacy.css"?>
 
-<!DOCTYPE page>
+<!DOCTYPE window>
 
-<page xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-      xmlns:html="http://www.w3.org/1999/xhtml"
-      role="document"
-      data-l10n-id="pref-page"
-      data-l10n-attrs="title">
+<!-- @CSP: The 'oncommand' handler for 'focusSearch1' can not easily be rewritten (see Bug 371900)
+     hence we are allowing the inline handler in the script-src directive using the hash
+     sha512-X8+p/CqXeMdssOoFOf5RV+RpkvnN9pukQ20acGc7LqMgfYLW+lR0WAYT66OtSTpFHE/Qgx/ZCBs2RMc4QrA8FQ==
+     Additionally we should remove 'unsafe-inline' from style-src, see Bug 1579160 -->
+<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+        xmlns:html="http://www.w3.org/1999/xhtml"
+        csp="default-src chrome:; script-src chrome: 'sha512-X8+p/CqXeMdssOoFOf5RV+RpkvnN9pukQ20acGc7LqMgfYLW+lR0WAYT66OtSTpFHE/Qgx/ZCBs2RMc4QrA8FQ=='; img-src chrome: moz-icon: https: data:; style-src chrome: data: 'unsafe-inline'; object-src 'none'"
+        role="document"
+        data-l10n-id="pref-page"
+        data-l10n-attrs="title">
 
   <linkset>
     <html:link rel="localization" href="branding/brand.ftl"/>
@@ -58,10 +63,6 @@
   <script src="chrome://browser/content/preferences/in-content/findInPage.js"/>
   <script src="chrome://browser/content/preferences/in-content/subdialogs.js"/>
 
-  <stringbundle id="bundleBrand"
-                src="chrome://branding/locale/brand.properties"/>
-  <stringbundle id="bundlePreferences"
-                src="chrome://browser/locale/preferences/preferences.properties"/>
   <stringbundle id="pkiBundle"
                 src="chrome://pippki/locale/pippki.properties"/>
   <stringbundle id="browserBundle"
@@ -159,6 +160,8 @@
     </vbox>
 
     <keyset>
+      <!-- If you change the code within the oncommand handler of 'focusSearch1' you have to update the current hash of
+           sha512-X8+p/CqXeMdssOoFOf5RV+RpkvnN9pukQ20acGc7LqMgfYLW+lR0WAYT66OtSTpFHE/Qgx/ZCBs2RMc4QrA8FQ== within the CSP above. -->
       <key data-l10n-id="focus-search" key="" modifiers="accel" id="focusSearch1" oncommand="gSearchResultsPane.searchInput.focus();"/>
     </keyset>
 
@@ -178,20 +181,20 @@
                      data-l10n-id="managed-notice"/>
             </hbox>
           </hbox>
-          <textbox
-            is="search-textbox" id="searchInput"
+          <search-textbox
+            id="searchInput"
             data-l10n-id="search-input-box"
-            data-l10n-attrs="style"
-            hidden="true" clickSelectsAll="true"/>
+            data-l10n-attrs="placeholder, style"
+            hidden="true"/>
         </hbox>
         <vbox id="mainPrefPane">
-#include searchResults.xul
-#include main.xul
-#include home.xul
-#include search.xul
-#include privacy.xul
-#include containers.xul
-#include sync.xul
+#include searchResults.inc.xul
+#include main.inc.xul
+#include home.inc.xul
+#include search.inc.xul
+#include privacy.inc.xul
+#include containers.inc.xul
+#include sync.inc.xul
         </vbox>
       </vbox>
     </vbox>
@@ -214,4 +217,4 @@
     </vbox>
   </vbox>
   </stack>
-</page>
+</window>

@@ -24,7 +24,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/RangeBoundary.h"
 #include "mozilla/RangeUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 
 #include "nsCOMPtr.h"
@@ -273,7 +273,7 @@ bool IsValidSelectionPoint(nsFrameSelection* aFrameSel, nsINode* aNode) {
   }
 
   limiter = aFrameSel->GetAncestorLimiter();
-  return !limiter || nsContentUtils::ContentIsDescendantOf(aNode, limiter);
+  return !limiter || aNode->IsInclusiveDescendantOf(limiter);
 }
 
 namespace mozilla {
@@ -769,9 +769,9 @@ void Selection::SetAnchorFocusRange(int32_t indx) {
   }
 }
 
-static nsresult CompareToRangeStart(nsINode* aCompareNode,
-                                    int32_t aCompareOffset, nsRange* aRange,
-                                    int32_t* aCmp) {
+static nsresult CompareToRangeStart(const nsINode* aCompareNode,
+                                    int32_t aCompareOffset,
+                                    const nsRange* aRange, int32_t* aCmp) {
   nsINode* start = aRange->GetStartContainer();
   NS_ENSURE_STATE(aCompareNode && start);
   // If the nodes that we're comparing are not in the same document or in the
@@ -787,8 +787,9 @@ static nsresult CompareToRangeStart(nsINode* aCompareNode,
   return NS_OK;
 }
 
-static nsresult CompareToRangeEnd(nsINode* aCompareNode, int32_t aCompareOffset,
-                                  nsRange* aRange, int32_t* aCmp) {
+static nsresult CompareToRangeEnd(const nsINode* aCompareNode,
+                                  int32_t aCompareOffset, const nsRange* aRange,
+                                  int32_t* aCmp) {
   nsINode* end = aRange->GetEndContainer();
   NS_ENSURE_STATE(aCompareNode && end);
   // If the nodes that we're comparing are not in the same document or in the
@@ -814,9 +815,9 @@ static nsresult CompareToRangeEnd(nsINode* aCompareNode, int32_t aCompareOffset,
 //    the index of this item.
 
 nsresult Selection::FindInsertionPoint(
-    nsTArray<RangeData>* aElementArray, nsINode* aPointNode,
+    const nsTArray<RangeData>* aElementArray, const nsINode* aPointNode,
     int32_t aPointOffset,
-    nsresult (*aComparator)(nsINode*, int32_t, nsRange*, int32_t*),
+    nsresult (*aComparator)(const nsINode*, int32_t, const nsRange*, int32_t*),
     int32_t* aPoint) {
   *aPoint = 0;
   int32_t beginSearch = 0;
@@ -825,7 +826,7 @@ nsresult Selection::FindInsertionPoint(
   if (endSearch) {
     int32_t center = endSearch - 1;  // Check last index, then binary search
     do {
-      nsRange* range = (*aElementArray)[center].mRange;
+      const nsRange* range = (*aElementArray)[center].mRange;
 
       int32_t cmp;
       nsresult rv = aComparator(aPointNode, aPointOffset, range, &cmp);
@@ -1048,7 +1049,7 @@ nsresult Selection::MaybeAddRangeAndTruncateOverlaps(nsRange* aRange,
   nsresult rv =
       GetIndicesForInterval(aRange->GetStartContainer(), aRange->StartOffset(),
                             aRange->GetEndContainer(), aRange->EndOffset(),
-                            false, &startIndex, &endIndex);
+                            false, startIndex, endIndex);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (endIndex == -1) {
@@ -1191,14 +1192,15 @@ nsresult Selection::Clear(nsPresContext* aPresContext) {
 //    Compares the range beginning or ending point, and returns true if it
 //    exactly matches the given DOM point.
 
-static inline bool RangeMatchesBeginPoint(nsRange* aRange, nsINode* aNode,
+static inline bool RangeMatchesBeginPoint(const nsRange* aRange,
+                                          const nsINode* aNode,
                                           int32_t aOffset) {
   return aRange->GetStartContainer() == aNode &&
          static_cast<int32_t>(aRange->StartOffset()) == aOffset;
 }
 
-static inline bool RangeMatchesEndPoint(nsRange* aRange, nsINode* aNode,
-                                        int32_t aOffset) {
+static inline bool RangeMatchesEndPoint(const nsRange* aRange,
+                                        const nsINode* aNode, int32_t aOffset) {
   return aRange->GetEndContainer() == aNode &&
          static_cast<int32_t>(aRange->EndOffset()) == aOffset;
 }
@@ -1207,11 +1209,12 @@ static inline bool RangeMatchesEndPoint(nsRange* aRange, nsINode* aNode,
 //
 //    Utility method for checking equivalence of two ranges.
 
-bool Selection::EqualsRangeAtPoint(nsINode* aBeginNode, int32_t aBeginOffset,
-                                   nsINode* aEndNode, int32_t aEndOffset,
-                                   int32_t aRangeIndex) {
+bool Selection::EqualsRangeAtPoint(const nsINode* aBeginNode,
+                                   int32_t aBeginOffset,
+                                   const nsINode* aEndNode, int32_t aEndOffset,
+                                   int32_t aRangeIndex) const {
   if (aRangeIndex >= 0 && aRangeIndex < (int32_t)mRanges.Length()) {
-    nsRange* range = mRanges[aRangeIndex].mRange;
+    const nsRange* range = mRanges[aRangeIndex].mRange;
     if (RangeMatchesBeginPoint(range, aBeginNode, aBeginOffset) &&
         RangeMatchesEndPoint(range, aEndNode, aEndOffset))
       return true;
@@ -1245,7 +1248,7 @@ nsresult Selection::GetRangesForIntervalArray(
   int32_t startIndex, endIndex;
   nsresult res =
       GetIndicesForInterval(aBeginNode, aBeginOffset, aEndNode, aEndOffset,
-                            aAllowAdjacent, &startIndex, &endIndex);
+                            aAllowAdjacent, startIndex, endIndex);
   NS_ENSURE_SUCCESS(res, res);
 
   if (startIndex == -1 || endIndex == -1) return NS_OK;
@@ -1258,30 +1261,16 @@ nsresult Selection::GetRangesForIntervalArray(
   return NS_OK;
 }
 
-// Selection::GetIndicesForInterval
-//
-//    Works on the same principle as GetRangesForIntervalArray above, however
-//    instead this returns the indices into mRanges between which the
-//    overlapping ranges lie.
-
-nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
-                                          int32_t aBeginOffset,
-                                          nsINode* aEndNode, int32_t aEndOffset,
-                                          bool aAllowAdjacent,
-                                          int32_t* aStartIndex,
-                                          int32_t* aEndIndex) {
-  int32_t startIndex;
-  int32_t endIndex;
-
-  if (!aStartIndex) aStartIndex = &startIndex;
-  if (!aEndIndex) aEndIndex = &endIndex;
-
-  *aStartIndex = -1;
-  *aEndIndex = -1;
+nsresult Selection::GetIndicesForInterval(
+    const nsINode* aBeginNode, int32_t aBeginOffset, const nsINode* aEndNode,
+    int32_t aEndOffset, bool aAllowAdjacent, int32_t& aStartIndex,
+    int32_t& aEndIndex) const {
+  aStartIndex = -1;
+  aEndIndex = -1;
 
   if (mRanges.Length() == 0) return NS_OK;
 
-  bool intervalIsCollapsed =
+  const bool intervalIsCollapsed =
       aBeginNode == aEndNode && aBeginOffset == aEndOffset;
 
   // Ranges that end before the given interval and begin after the given
@@ -1293,7 +1282,7 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
   }
 
   if (endsBeforeIndex == 0) {
-    nsRange* endRange = mRanges[endsBeforeIndex].mRange;
+    const nsRange* endRange = mRanges[endsBeforeIndex].mRange;
 
     // If the interval is strictly before the range at index 0, we can optimize
     // by returning now - all ranges start after the given interval
@@ -1307,7 +1296,7 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
     if (!aAllowAdjacent && !(endRange->Collapsed() && intervalIsCollapsed))
       return NS_OK;
   }
-  *aEndIndex = endsBeforeIndex;
+  aEndIndex = endsBeforeIndex;
 
   int32_t beginsAfterIndex;
   if (NS_FAILED(FindInsertionPoint(&mRanges, aBeginNode, aBeginOffset,
@@ -1329,7 +1318,7 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
     // final case, we need to increment endsBeforeIndex, until one of the
     // first two possibilites hold
     while (endsBeforeIndex < (int32_t)mRanges.Length()) {
-      nsRange* endRange = mRanges[endsBeforeIndex].mRange;
+      const nsRange* endRange = mRanges[endsBeforeIndex].mRange;
       if (!RangeMatchesBeginPoint(endRange, aEndNode, aEndOffset)) break;
       endsBeforeIndex++;
     }
@@ -1345,7 +1334,7 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
     // final case, we only need to take action if both those ranges exist, and
     // we are pointing to the collapsed range - we need to point to the
     // adjacent range
-    nsRange* beginRange = mRanges[beginsAfterIndex].mRange;
+    const nsRange* beginRange = mRanges[beginsAfterIndex].mRange;
     if (beginsAfterIndex > 0 && beginRange->Collapsed() &&
         RangeMatchesEndPoint(beginRange, aBeginNode, aBeginOffset)) {
       beginRange = mRanges[beginsAfterIndex - 1].mRange;
@@ -1357,7 +1346,7 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
     // need to take action is when the range at beginsAfterIndex ends on
     // the given interval's start point, but that range isn't collapsed (a
     // collapsed range should be included in the returned results).
-    nsRange* beginRange = mRanges[beginsAfterIndex].mRange;
+    const nsRange* beginRange = mRanges[beginsAfterIndex].mRange;
     if (RangeMatchesEndPoint(beginRange, aBeginNode, aBeginOffset) &&
         !beginRange->Collapsed())
       beginsAfterIndex++;
@@ -1367,7 +1356,7 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
     // represents the point at the end of the interval - this range should be
     // included
     if (endsBeforeIndex < (int32_t)mRanges.Length()) {
-      nsRange* endRange = mRanges[endsBeforeIndex].mRange;
+      const nsRange* endRange = mRanges[endsBeforeIndex].mRange;
       if (RangeMatchesBeginPoint(endRange, aEndNode, aEndOffset) &&
           endRange->Collapsed())
         endsBeforeIndex++;
@@ -1377,8 +1366,8 @@ nsresult Selection::GetIndicesForInterval(nsINode* aBeginNode,
   NS_ASSERTION(beginsAfterIndex <= endsBeforeIndex, "Is mRanges not ordered?");
   NS_ENSURE_STATE(beginsAfterIndex <= endsBeforeIndex);
 
-  *aStartIndex = beginsAfterIndex;
-  *aEndIndex = endsBeforeIndex;
+  aStartIndex = beginsAfterIndex;
+  aEndIndex = endsBeforeIndex;
   return NS_OK;
 }
 
@@ -3145,10 +3134,10 @@ Element* Selection::GetCommonEditingHostForAllRanges() {
     if (editingHost == foundEditingHost) {
       continue;
     }
-    if (nsContentUtils::ContentIsDescendantOf(foundEditingHost, editingHost)) {
+    if (foundEditingHost->IsInclusiveDescendantOf(editingHost)) {
       continue;
     }
-    if (nsContentUtils::ContentIsDescendantOf(editingHost, foundEditingHost)) {
+    if (editingHost->IsInclusiveDescendantOf(foundEditingHost)) {
       editingHost = foundEditingHost;
       continue;
     }

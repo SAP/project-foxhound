@@ -12,8 +12,11 @@
 #ifndef nsSyncLoadService_h__
 #define nsSyncLoadService_h__
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "nscore.h"
-#include "mozilla/net/ReferrerPolicy.h"
+#include "nsIContentPolicy.h"
+#include "nsILoadInfo.h"
+#include "nsIReferrerInfo.h"
 
 class nsICookieSettings;
 class nsIInputStream;
@@ -49,7 +52,7 @@ class nsSyncLoadService {
       nsIURI* aURI, nsContentPolicyType aContentPolicyType,
       nsIPrincipal* aLoaderPrincipal, nsSecurityFlags aSecurityFlags,
       nsILoadGroup* aLoadGroup, nsICookieSettings* aCookieSettings,
-      bool aForceToXML, mozilla::net::ReferrerPolicy aReferrerPolicy,
+      bool aForceToXML, mozilla::dom::ReferrerPolicy aReferrerPolicy,
       mozilla::dom::Document** aResult);
 
   /**

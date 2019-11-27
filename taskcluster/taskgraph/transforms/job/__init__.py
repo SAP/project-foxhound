@@ -14,13 +14,15 @@ from __future__ import absolute_import, print_function, unicode_literals
 import copy
 import logging
 import json
-import os
+
+import mozpack.path as mozpath
 
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import (
     validate_schema,
     Schema,
 )
+from taskgraph.util.python_path import import_sibling_modules
 from taskgraph.util.taskcluster import get_artifact_prefix
 from taskgraph.util.workertypes import worker_type_implementation
 from taskgraph.transforms.task import task_description_schema
@@ -158,6 +160,18 @@ def get_attribute(dict, key, attributes, attribute_name):
 @transforms.add
 def use_fetches(config, jobs):
     artifact_names = {}
+    aliases = {}
+
+    if config.kind == 'toolchain':
+        jobs = list(jobs)
+        for job in jobs:
+            run = job.get('run', {})
+            label = 'toolchain-{}'.format(job['name'])
+            get_attribute(
+                artifact_names, label, run, 'toolchain-artifact')
+            value = run.get('toolchain-alias')
+            if value:
+                aliases['toolchain-{}'.format(value)] = label
 
     for task in config.kind_dependencies_tasks:
         if task.kind in ('fetch', 'toolchain'):
@@ -165,6 +179,9 @@ def use_fetches(config, jobs):
                 artifact_names, task.label, task.attributes,
                 '{kind}-artifact'.format(kind=task.kind),
             )
+            value = task.attributes.get('{}-alias'.format(task.kind))
+            if value:
+                aliases['{}-{}'.format(task.kind, value)] = task.label
 
     for job in jobs:
         fetches = job.pop('fetches', None)
@@ -175,20 +192,26 @@ def use_fetches(config, jobs):
         job_fetches = []
         name = job.get('name', job.get('label'))
         dependencies = job.setdefault('dependencies', {})
+        worker = job.setdefault('worker', {})
         prefix = get_artifact_prefix(job)
         for kind, artifacts in fetches.items():
             if kind in ('fetch', 'toolchain'):
                 for fetch_name in artifacts:
                     label = '{kind}-{name}'.format(kind=kind, name=fetch_name)
+                    label = aliases.get(label, label)
                     if label not in artifact_names:
                         raise Exception('Missing fetch job for {kind}-{name}: {fetch}'.format(
                             kind=config.kind, name=name, fetch=fetch_name))
 
                     path = artifact_names[label]
                     if not path.startswith('public/'):
-                        raise Exception(
-                            'Non-public artifacts not supported for {kind}-{name}: '
-                            '{fetch}'.format(kind=config.kind, name=name, fetch=fetch_name))
+                        # Use taskcluster-proxy and request appropriate scope.  For example, add
+                        # 'scopes: [queue:get-artifact:path/to/*]' for 'path/to/artifact.tar.xz'.
+                        worker['taskcluster-proxy'] = True
+                        dirname = mozpath.dirname(path)
+                        scope = 'queue:get-artifact:{}/*'.format(dirname)
+                        if scope not in job.setdefault('scopes', []):
+                            job['scopes'].append(scope)
 
                     dependencies[label] = label
                     job_fetches.append({
@@ -196,6 +219,9 @@ def use_fetches(config, jobs):
                         'task': '<{label}>'.format(label=label),
                         'extract': True,
                     })
+
+                    if kind == 'toolchain' and fetch_name.endswith('-sccache'):
+                        job['needs-sccache'] = True
             else:
                 if kind not in dependencies:
                     raise Exception("{name} can't fetch {kind} artifacts because "
@@ -212,7 +238,8 @@ def use_fetches(config, jobs):
                         extract = artifact.get('extract', True)
 
                     fetch = {
-                        'artifact': '{prefix}/{path}'.format(prefix=prefix, path=path),
+                        'artifact': '{prefix}/{path}'.format(prefix=prefix, path=path)
+                                    if not path.startswith('/') else path[1:],
                         'task': '<{dep}>'.format(dep=kind),
                         'extract': extract,
                     }
@@ -220,14 +247,10 @@ def use_fetches(config, jobs):
                         fetch['dest'] = dest
                     job_fetches.append(fetch)
 
-        env = job.setdefault('worker', {}).setdefault('env', {})
+        env = worker.setdefault('env', {})
         env['MOZ_FETCHES'] = {'task-reference': json.dumps(job_fetches, sort_keys=True)}
-
-        if job['worker']['os'] in ('windows', 'macosx'):
-            env.setdefault('MOZ_FETCHES_DIR', 'fetches')
-        else:
-            workdir = job['run'].get('workdir', '/builds/worker')
-            env.setdefault('MOZ_FETCHES_DIR', '{}/fetches'.format(workdir))
+        # The path is normalized to an absolute path in run-task
+        env.setdefault('MOZ_FETCHES_DIR', 'fetches')
 
         yield job
 
@@ -236,7 +259,8 @@ def use_fetches(config, jobs):
 def make_task_description(config, jobs):
     """Given a build description, create a task description"""
     # import plugin modules first, before iterating over jobs
-    import_all()
+    import_sibling_modules(exceptions=('common.py',))
+
     for job in jobs:
         if 'label' not in job:
             if 'name' not in job:
@@ -322,11 +346,3 @@ def configure_taskdesc_for_run(config, job, taskdesc, worker_implementation):
                 "In job.run using {!r}/{!r} for job {!r}:".format(
                     job['run']['using'], worker_implementation, job['label']))
     func(config, job, taskdesc)
-
-
-def import_all():
-    """Import all modules that are siblings of this one, triggering the decorator
-    above in the process."""
-    for f in os.listdir(os.path.dirname(__file__)):
-        if f.endswith('.py') and f not in ('commmon.py', '__init__.py'):
-            __import__('taskgraph.transforms.job.' + f[:-3])

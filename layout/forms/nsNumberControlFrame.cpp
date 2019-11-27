@@ -172,8 +172,8 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     // will be fixed later.
     const nsSize dummyContainerSize;
     ReflowChild(outerWrapperFrame, aPresContext, wrappersDesiredSize,
-                wrapperReflowInput, myWM, wrapperOffset, dummyContainerSize, 0,
-                childStatus);
+                wrapperReflowInput, myWM, wrapperOffset, dummyContainerSize,
+                ReflowChildFlags::Default, childStatus);
     MOZ_ASSERT(childStatus.IsFullyComplete(),
                "We gave our child unconstrained available block-size, "
                "so it should be complete");
@@ -211,7 +211,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     // Place the child
     FinishReflowChild(outerWrapperFrame, aPresContext, wrappersDesiredSize,
                       &wrapperReflowInput, myWM, wrapperOffset, borderBoxSize,
-                      0);
+                      ReflowChildFlags::Default);
 
     if (!aReflowInput.mStyleDisplay->IsContainLayout()) {
       nsSize contentBoxSize =
@@ -419,7 +419,7 @@ nsresult nsNumberControlFrame::SetFormProperty(nsAtom* aName,
   return GetTextFieldFrame()->SetFormProperty(aName, aValue);
 }
 
-HTMLInputElement* nsNumberControlFrame::GetAnonTextControl() {
+HTMLInputElement* nsNumberControlFrame::GetAnonTextControl() const {
   return HTMLInputElement::FromNode(mTextField);
 }
 
@@ -572,6 +572,25 @@ bool nsNumberControlFrame::ShouldUseNativeStyleForSpinner() const {
              StyleAppearance::SpinnerDownbutton &&
          !PresContext()->HasAuthorSpecifiedRules(
              spinDownFrame, STYLES_DISABLING_NATIVE_THEMING);
+}
+
+bool nsNumberControlFrame::GetNaturalBaselineBOffset(
+    WritingMode aWM, BaselineSharingGroup aGroup, nscoord* aBaseline) const {
+  if (StyleDisplay()->IsContainLayout()) {
+    return false;
+  }
+  nsIFrame* inner = GetAnonTextControl()->GetPrimaryFrame();
+  nscoord baseline;
+  DebugOnly<bool> hasBaseline = inner->GetNaturalBaselineBOffset(
+      aWM, BaselineSharingGroup::First, &baseline);
+  MOZ_ASSERT(hasBaseline);
+  nsPoint offset = inner->GetOffsetToIgnoringScrolling(this);
+  baseline += aWM.IsVertical() ? offset.x : offset.y;
+  if (aGroup == BaselineSharingGroup::Last) {
+    baseline = BSize(aWM) - baseline;
+  }
+  *aBaseline = baseline;
+  return true;
 }
 
 void nsNumberControlFrame::AppendAnonymousContentTo(

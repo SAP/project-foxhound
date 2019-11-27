@@ -9,7 +9,10 @@ import { bindActionCreators, combineReducers } from "redux";
 import ReactDOM from "react-dom";
 const { Provider } = require("react-redux");
 
+import ToolboxProvider from "devtools/client/framework/store-provider";
 import { isFirefoxPanel, isDevelopment, isTesting } from "devtools-environment";
+import { AppConstants } from "devtools-modules";
+
 import SourceMaps, {
   startSourceMapWorker,
   stopSourceMapWorker,
@@ -28,7 +31,7 @@ import type { Panel } from "../client/firefox/types";
 
 let parser;
 
-function renderPanel(component, store) {
+function renderPanel(component, store, panel: Panel) {
   const root = document.createElement("div");
   root.className = "launchpad-root theme-body";
   root.style.setProperty("flex", "1");
@@ -39,7 +42,15 @@ function renderPanel(component, store) {
   mount.appendChild(root);
 
   ReactDOM.render(
-    React.createElement(Provider, { store }, React.createElement(component)),
+    React.createElement(
+      Provider,
+      { store },
+      React.createElement(
+        ToolboxProvider,
+        { store: panel.getToolboxStore() },
+        React.createElement(component)
+      )
+    ),
     root
   );
 }
@@ -55,9 +66,10 @@ export function bootstrapStore(
   panel: Panel,
   initialState: Object
 ) {
+  const debugJsModules = AppConstants.AppConstants.DEBUG_JS_MODULES == "1";
   const createStore = configureStore({
     log: prefs.logging || isTesting(),
-    timing: isDevelopment(),
+    timing: debugJsModules || isDevelopment(),
     makeThunkArgs: (args, state) => {
       return { ...args, client, ...workers, panel };
     },
@@ -106,9 +118,9 @@ export function teardownWorkers() {
   search.stop();
 }
 
-export function bootstrapApp(store: any) {
+export function bootstrapApp(store: any, panel: Panel) {
   if (isFirefoxPanel()) {
-    renderPanel(App, store);
+    renderPanel(App, store, panel);
   } else {
     const { renderRoot } = require("devtools-launchpad");
     renderRoot(React, ReactDOM, App, store);

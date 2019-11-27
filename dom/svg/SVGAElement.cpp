@@ -198,34 +198,19 @@ SVGAElement::IsAttributeMapped(const nsAtom* name) const {
 
 int32_t SVGAElement::TabIndexDefault() { return 0; }
 
-static bool IsNodeInEditableRegion(nsINode* aNode) {
-  while (aNode) {
-    if (aNode->IsEditable()) {
-      return true;
-    }
-    aNode = aNode->GetParent();
-  }
-  return false;
-}
-
 bool SVGAElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   bool isFocusable = false;
   if (IsSVGFocusable(&isFocusable, aTabIndex)) {
     return isFocusable;
   }
 
-  // cannot focus links if there is no link handler
-  Document* doc = GetComposedDoc();
-  if (doc) {
-    nsPresContext* presContext = doc->GetPresContext();
-    if (presContext && !presContext->GetLinkHandler()) {
-      return false;
-    }
+  if (!OwnerDoc()->LinkHandlingEnabled()) {
+    return false;
   }
 
   // Links that are in an editable region should never be focusable, even if
   // they are in a contenteditable="false" region.
-  if (IsNodeInEditableRegion(this)) {
+  if (nsContentUtils::IsNodeInEditableRegion(this)) {
     if (aTabIndex) {
       *aTabIndex = -1;
     }
@@ -281,12 +266,12 @@ bool SVGAElement::IsLink(nsIURI** aURI) const {
                       eCaseMatters) != Element::ATTR_VALUE_NO_MATCH &&
       FindAttrValueIn(kNameSpaceID_XLink, nsGkAtoms::actuate, sActuateVals,
                       eCaseMatters) != Element::ATTR_VALUE_NO_MATCH) {
-    nsCOMPtr<nsIURI> baseURI = GetBaseURI();
     // Get absolute URI
     nsAutoString str;
     const uint8_t idx = useBareHref ? HREF : XLINK_HREF;
     mStringAttributes[idx].GetAnimValue(str, this);
-    nsContentUtils::NewURIWithDocumentCharset(aURI, str, OwnerDoc(), baseURI);
+    nsContentUtils::NewURIWithDocumentCharset(aURI, str, OwnerDoc(),
+                                              GetBaseURI());
     // must promise out param is non-null if we return true
     return !!*aURI;
   }

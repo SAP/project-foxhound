@@ -29,12 +29,12 @@
 #include "js/Value.h"              // JS::Value
 #include "util/CompleteFile.h"     // js::FileContents, js::ReadCompleteFile
 #include "util/StringBuffer.h"     // js::StringBuffer
-#include "vm/Debugger.h"           // js::Debugger
 #include "vm/EnvironmentObject.h"  // js::CreateNonSyntacticEnvironmentChain
 #include "vm/Interpreter.h"        // js::Execute
 #include "vm/JSContext.h"          // JSContext
 
-#include "vm/JSContext-inl.h"  // JSContext::check
+#include "debugger/DebugAPI-inl.h"  // js::DebugAPI
+#include "vm/JSContext-inl.h"       // JSContext::check
 
 using mozilla::Utf8Unit;
 
@@ -216,11 +216,12 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
   using frontend::CreateScriptSourceObject;
   using frontend::FullParseHandler;
   using frontend::ParseGoal;
+  using frontend::ParseInfo;
   using frontend::Parser;
-  using frontend::UsedNameTracker;
 
   CompileOptions options(cx);
-  UsedNameTracker usedNames(cx);
+  LifoAllocScope allocScope(&cx->tempLifoAlloc());
+  ParseInfo parseInfo(cx, allocScope);
 
   Rooted<ScriptSourceObject*> sourceObject(cx);
   sourceObject = CreateScriptSourceObject(cx, options, mozilla::Nothing());
@@ -229,10 +230,10 @@ JS_PUBLIC_API bool JS_Utf8BufferIsCompilableUnit(JSContext* cx,
   }
 
   JS::AutoSuppressWarningReporter suppressWarnings(cx);
-  Parser<FullParseHandler, char16_t> parser(
-      cx, cx->tempLifoAlloc(), options, chars.get(), length,
-      /* foldConstants = */ true, usedNames, nullptr, nullptr, sourceObject,
-      ParseGoal::Script);
+  Parser<FullParseHandler, char16_t> parser(cx, options, chars.get(), length,
+                                            /* foldConstants = */ true,
+                                            parseInfo, nullptr, nullptr,
+                                            sourceObject, ParseGoal::Script);
   if (!parser.checkOptions() || !parser.parse()) {
     // We ran into an error. If it was because we ran out of source, we
     // return false so our caller knows to try to collect more buffered
@@ -347,7 +348,7 @@ class FunctionCompiler {
 
     RootedFunction fun(
         cx_,
-        NewScriptedFunction(cx_, 0, JSFunction::INTERPRETED_NORMAL,
+        NewScriptedFunction(cx_, 0, FunctionFlags::INTERPRETED_NORMAL,
                             nameIsIdentifier_ ? HandleAtom(nameAtom_) : nullptr,
                             /* proto = */ nullptr, gc::AllocKind::FUNCTION,
                             TenuredObject, enclosingEnv));
@@ -434,7 +435,7 @@ JS_PUBLIC_API void JS::ExposeScriptToDebugger(JSContext* cx,
 
   MOZ_ASSERT(script->hideScriptFromDebugger());
   script->clearHideScriptFromDebugger();
-  Debugger::onNewScript(cx, script);
+  DebugAPI::onNewScript(cx, script);
 }
 
 MOZ_NEVER_INLINE static bool ExecuteScript(JSContext* cx, HandleObject scope,
@@ -462,7 +463,7 @@ static bool ExecuteScript(JSContext* cx, HandleObjectVector envChain,
     if (!script) {
       return false;
     }
-    js::Debugger::onNewScript(cx, script);
+    js::DebugAPI::onNewScript(cx, script);
   }
 
   return ExecuteScript(cx, env, script, rval);
@@ -504,7 +505,7 @@ JS_PUBLIC_API bool JS::CloneAndExecuteScript(JSContext* cx,
       return false;
     }
 
-    js::Debugger::onNewScript(cx, script);
+    js::DebugAPI::onNewScript(cx, script);
   }
   return ExecuteScript(cx, globalLexical, script, rval.address());
 }
@@ -521,7 +522,7 @@ JS_PUBLIC_API bool JS::CloneAndExecuteScript(JSContext* cx,
       return false;
     }
 
-    js::Debugger::onNewScript(cx, script);
+    js::DebugAPI::onNewScript(cx, script);
   }
   return ExecuteScript(cx, envChain, script, rval.address());
 }

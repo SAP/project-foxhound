@@ -142,6 +142,13 @@ gfx::YUVColorSpace WebRenderTextureHost::GetYUVColorSpace() const {
   return gfx::YUVColorSpace::UNKNOWN;
 }
 
+gfx::ColorRange WebRenderTextureHost::GetColorRange() const {
+  if (mWrappedTextureHost) {
+    return mWrappedTextureHost->GetColorRange();
+  }
+  return TextureHost::GetColorRange();
+}
+
 gfx::IntSize WebRenderTextureHost::GetSize() const {
   if (!mWrappedTextureHost) {
     return gfx::IntSize();
@@ -210,7 +217,7 @@ void WebRenderTextureHost::PushResourceUpdates(
     wr::TransactionBuilder& aResources, ResourceUpdateOp aOp,
     const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID) {
   MOZ_ASSERT(mWrappedTextureHost);
-  MOZ_ASSERT(mExternalImageId == aExtID || SupportsWrNativeTexture());
+  MOZ_ASSERT(mExternalImageId == aExtID);
 
   mWrappedTextureHost->PushResourceUpdates(aResources, aOp, aImageKeys, aExtID);
 }
@@ -224,10 +231,6 @@ void WebRenderTextureHost::PushDisplayItems(
 
   mWrappedTextureHost->PushDisplayItems(aBuilder, aBounds, aClip, aFilter,
                                         aImageKeys);
-}
-
-bool WebRenderTextureHost::SupportsWrNativeTexture() {
-  return mWrappedTextureHost->SupportsWrNativeTexture();
 }
 
 bool WebRenderTextureHost::NeedsYFlip() const {

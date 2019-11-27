@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { Button } from "../../components/Button/Button";
 import React from "react";
 import { RichText } from "../../components/RichText/RichText";
@@ -173,7 +177,7 @@ export class SubmitFormSnippet extends React.PureComponent {
     const bodyText = isSuccess
       ? { success_text: content.success_text }
       : { error_text: content.error_text };
-    const retryButtonText = content.scene1_button_label;
+    const retryButtonText = content.retry_button_label;
     return (
       <SnippetBase {...this.props}>
         <div className="submissionStatus">

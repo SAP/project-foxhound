@@ -219,19 +219,19 @@ BrowserElementParent::OpenWindowInProcess(BrowsingContext* aOpenerWindow,
                                           nsIURI* aURI, const nsAString& aName,
                                           const nsACString& aFeatures,
                                           bool aForceNoOpener,
-                                          mozIDOMWindowProxy** aReturnWindow) {
-  *aReturnWindow = nullptr;
+                                          BrowsingContext** aReturnBC) {
+  *aReturnBC = nullptr;
 
   // If we call window.open from an <iframe> inside an <iframe mozbrowser>,
   // it's as though the top-level document inside the <iframe mozbrowser>
   // called window.open.  (Indeed, in the OOP case, the inner <iframe> lives
   // out-of-process, so we couldn't touch it if we tried.)
   //
-  // GetScriptableTop gets us the <iframe mozbrowser>'s window; we'll use its
-  // frame element, rather than aOpenerWindow's frame element, as our "opener
-  // frame element" below.
+  // GetInProcessScriptableTop gets us the <iframe mozbrowser>'s window; we'll
+  // use its frame element, rather than aOpenerWindow's frame element, as our
+  // "opener frame element" below.
   nsCOMPtr<nsPIDOMWindowOuter> win =
-      aOpenerWindow->GetDOMWindow()->GetScriptableTop();
+      aOpenerWindow->GetDOMWindow()->GetInProcessScriptableTop();
 
   nsCOMPtr<Element> openerFrameElement = win->GetFrameElementInternal();
   NS_ENSURE_TRUE(openerFrameElement, BrowserElementParent::OPEN_WINDOW_IGNORED);
@@ -267,11 +267,9 @@ BrowserElementParent::OpenWindowInProcess(BrowsingContext* aOpenerWindow,
   nsCOMPtr<nsIDocShell> docshell = frameLoader->GetDocShell(IgnoreErrors());
   NS_ENSURE_TRUE(docshell, BrowserElementParent::OPEN_WINDOW_IGNORED);
 
-  nsCOMPtr<nsPIDOMWindowOuter> window = docshell->GetWindow();
-  window.forget(aReturnWindow);
+  docshell->GetBrowsingContextXPCOM(aReturnBC);
 
-  return !!*aReturnWindow ? opened
-                          : BrowserElementParent::OPEN_WINDOW_CANCELLED;
+  return *aReturnBC ? opened : BrowserElementParent::OPEN_WINDOW_CANCELLED;
 }
 
 }  // namespace mozilla

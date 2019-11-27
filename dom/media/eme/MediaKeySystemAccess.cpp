@@ -20,7 +20,7 @@
 #include "mozilla/EMEUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsDOMString.h"
 #include "nsIObserverService.h"
 #include "nsMimeTypes.h"
@@ -34,7 +34,6 @@
 #endif
 #ifdef MOZ_WIDGET_ANDROID
 #  include "AndroidDecoderModule.h"
-#  include "FennecJNIWrappers.h"
 #  include "GeneratedJNIWrappers.h"
 #endif
 

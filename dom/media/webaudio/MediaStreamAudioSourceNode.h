@@ -8,8 +8,9 @@
 #define MediaStreamAudioSourceNode_h_
 
 #include "AudioNode.h"
-#include "DOMMediaStream.h"
 #include "AudioNodeEngine.h"
+#include "DOMMediaStream.h"
+#include "PrincipalChangeObserver.h"
 
 namespace mozilla {
 
@@ -61,9 +62,11 @@ class MediaStreamAudioSourceNode
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  void DestroyMediaStream() override;
+  void DestroyMediaTrack() override;
 
   uint16_t NumberOfInputs() const override { return 0; }
+
+  DOMMediaStream* GetMediaStream() { return mInputStream; }
 
   const char* NodeType() const override { return "MediaStreamAudioSourceNode"; }
 
@@ -75,7 +78,7 @@ class MediaStreamAudioSourceNode
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const override;
 
   // Attaches to aTrack so that its audio content will be used as input.
-  void AttachToTrack(const RefPtr<MediaStreamTrack>& aTrack);
+  void AttachToTrack(const RefPtr<MediaStreamTrack>& aTrack, ErrorResult& aRv);
 
   // Detaches from the currently attached track if there is one.
   void DetachFromTrack();

@@ -371,8 +371,7 @@ bool CanRecordEvent(const StaticMutexAutoLock& lock, const EventKey& eventKey,
 bool IsExpired(const EventKey& key) { return key.id == kExpiredEventId; }
 
 EventRecordArray* GetEventRecordsForProcess(const StaticMutexAutoLock& lock,
-                                            ProcessID processType,
-                                            const EventKey& eventKey) {
+                                            ProcessID processType) {
   EventRecordArray* eventRecords = nullptr;
   if (!gEventRecords.Get(uint32_t(processType), &eventRecords)) {
     eventRecords = new EventRecordArray();
@@ -443,7 +442,9 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
 
   // Fixup the process id only for non-builtin (e.g. supporting build faster)
   // dynamic events.
-  if (eventKey->dynamic && !(*gDynamicEventInfo)[eventKey->id].builtin) {
+  auto dynamicNonBuiltin =
+      eventKey->dynamic && !(*gDynamicEventInfo)[eventKey->id].builtin;
+  if (dynamicNonBuiltin) {
     processType = ProcessID::Dynamic;
   }
 
@@ -462,7 +463,7 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
   // Count the number of times this event has been recorded, even if its
   // category does not have recording enabled.
   TelemetryScalar::SummarizeEvent(UniqueEventName(category, method, object),
-                                  processType, eventKey->dynamic);
+                                  processType, dynamicNonBuiltin);
 
   // Check whether this event's category has recording enabled
   if (!gEnabledCategories.GetEntry(GetCategory(lock, *eventKey))) {
@@ -475,8 +476,7 @@ RecordEventResult RecordEvent(const StaticMutexAutoLock& lock,
     return RecordEventResult::Ok;
   }
 
-  EventRecordArray* eventRecords =
-      GetEventRecordsForProcess(lock, processType, *eventKey);
+  EventRecordArray* eventRecords = GetEventRecordsForProcess(lock, processType);
   eventRecords->AppendElement(EventRecord(timestamp, *eventKey, value, extra));
 
   // Notify observers when we hit the "event" ping event record limit.
@@ -1292,7 +1292,7 @@ nsresult TelemetryEvent::CreateSnapshots(uint32_t aDataset, bool aClear,
     snapshotter(gEventRecords);
     if (aClear) {
       gEventRecords.Clear();
-      for (auto pair : leftovers) {
+      for (auto& pair : leftovers) {
         gEventRecords.Put(pair.first(),
                           new EventRecordArray(std::move(pair.second())));
       }

@@ -7,20 +7,26 @@
  * https://w3c.github.io/reporting/#interface-reporting-observer
  */
 
-[Pref="dom.reporting.enabled"]
+[Pref="dom.reporting.enabled",
+ Exposed=Window]
 interface ReportBody {
 };
 
-[Pref="dom.reporting.enabled"]
+[Pref="dom.reporting.enabled",
+ Exposed=Window]
 interface Report {
   readonly attribute DOMString type;
   readonly attribute DOMString url;
   readonly attribute ReportBody? body;
 };
 
-[Constructor(ReportingObserverCallback callback, optional ReportingObserverOptions options = {}),
- Pref="dom.reporting.enabled"]
+[Pref="dom.reporting.enabled",
+ Exposed=Window]
 interface ReportingObserver {
+  [Throws]
+  constructor(ReportingObserverCallback callback,
+              optional ReportingObserverOptions options = {});
+
   void observe();
   void disconnect();
   ReportList takeRecords();
@@ -35,7 +41,8 @@ dictionary ReportingObserverOptions {
 
 typedef sequence<Report> ReportList;
 
-[Pref="dom.reporting.enabled"]
+[Pref="dom.reporting.enabled",
+ Exposed=Window]
 interface DeprecationReportBody : ReportBody {
   readonly attribute DOMString id;
   readonly attribute Date? anticipatedRemoval;
@@ -45,10 +52,12 @@ interface DeprecationReportBody : ReportBody {
   readonly attribute unsigned long? columnNumber;
 };
 
-[Constructor(), Deprecated="DeprecatedTestingInterface",
+[Deprecated="DeprecatedTestingInterface",
  Pref="dom.reporting.testing.enabled",
  Exposed=(Window,DedicatedWorker)]
 interface TestingDeprecatedInterface {
+  constructor();
+
   [Deprecated="DeprecatedTestingMethod"]
   void deprecatedMethod();
 

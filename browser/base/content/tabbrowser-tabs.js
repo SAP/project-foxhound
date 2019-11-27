@@ -53,7 +53,7 @@
       this._scrollButtonWidth = 0;
       this._lastNumPinned = 0;
       this._pinnedTabsLayoutCache = null;
-      this._animateElement = this.arrowScrollbox._scrollButtonDown;
+      this._animateElement = this.arrowScrollbox;
       this._tabClipWidth = Services.prefs.getIntPref(
         "browser.tabs.tabClipWidth"
       );
@@ -66,11 +66,6 @@
 
       var tab = this.allTabs[0];
       tab.label = this.emptyTabTitle;
-
-      this.newTabButton.setAttribute(
-        "tooltiptext",
-        GetDynamicShortcutTooltipText("tabs-newtab-button")
-      );
 
       window.addEventListener("resize", this);
 
@@ -342,13 +337,13 @@
         case KeyEvent.DOM_VK_SPACE:
           if (visibleTabs[lastFocusedTabIndex].multiselected) {
             gBrowser.removeFromMultiSelectedTabs(
-              visibleTabs[lastFocusedTabIndex]
+              visibleTabs[lastFocusedTabIndex],
+              { isLastMultiSelectChange: false }
             );
           } else {
-            gBrowser.addToMultiSelectedTabs(
-              visibleTabs[lastFocusedTabIndex],
-              false
-            );
+            gBrowser.addToMultiSelectedTabs(visibleTabs[lastFocusedTabIndex], {
+              isLastMultiSelectChange: true,
+            });
           }
           break;
         default:
@@ -523,12 +518,11 @@
       // return to avoid drawing the drop indicator
       var pixelsToScroll = 0;
       if (this.getAttribute("overflow") == "true") {
-        var targetAnonid = event.originalTarget.getAttribute("anonid");
-        switch (targetAnonid) {
-          case "scrollbutton-up":
+        switch (event.originalTarget) {
+          case arrowScrollbox._scrollButtonUp:
             pixelsToScroll = arrowScrollbox.scrollIncrement * -1;
             break;
-          case "scrollbutton-down":
+          case arrowScrollbox._scrollButtonDown:
             pixelsToScroll = arrowScrollbox.scrollIncrement;
             break;
         }
@@ -751,7 +745,7 @@
         let replace = !!targetTab;
         let newIndex = this._getDropIndex(event, true);
         let urls = links.map(link => link.url);
-
+        let csp = browserDragAndDrop.getCSP(event);
         let triggeringPrincipal = browserDragAndDrop.getTriggeringPrincipal(
           event
         );
@@ -779,6 +773,7 @@
             newIndex,
             userContextId,
             triggeringPrincipal,
+            csp,
           });
         })();
       }
@@ -910,7 +905,7 @@
     }
 
     get newTabButton() {
-      return this.querySelector(".tabs-newtab-button");
+      return this.querySelector("#tabs-newtab-button");
     }
 
     // Accessor for tabs.  arrowScrollbox has two non-tab elements at the
@@ -960,7 +955,7 @@
 
     _initializeArrowScrollbox() {
       let arrowScrollbox = this.arrowScrollbox;
-      arrowScrollbox.addEventListener(
+      arrowScrollbox.shadowRoot.addEventListener(
         "underflow",
         event => {
           // Ignore underflow events:
@@ -990,7 +985,7 @@
         true
       );
 
-      arrowScrollbox.addEventListener("overflow", event => {
+      arrowScrollbox.shadowRoot.addEventListener("overflow", event => {
         // Ignore overflow events:
         // - from nested scrollable elements
         // - for vertical orientation
@@ -1006,7 +1001,7 @@
         this._handleTabSelect(true);
       });
 
-      // Override scrollbox.xml method, since our scrollbox's children are
+      // Override arrowscrollbox.js method, since our scrollbox's children are
       // inherited from the scrollbox binding parent (this).
       arrowScrollbox._getScrollableElements = () => {
         return this.allTabs.filter(arrowScrollbox._canScrollToElement);
@@ -1063,7 +1058,7 @@
                 "menupopup"
               );
               if (parent.id) {
-                popup.id = "newtab-popup";
+                popup.id = parent.id + "-popup";
               } else {
                 popup.setAttribute("anonid", "newtab-popup");
               }
@@ -1088,6 +1083,15 @@
 
               parent.setAttribute("type", "menu");
             }
+
+            // Update tooltip text and evict from tooltip cache
+            if (containersEnabled) {
+              nodeToTooltipMap[parent.id] = "newTabContainer.tooltip";
+            } else {
+              nodeToTooltipMap[parent.id] = "newTabButton.tooltip";
+            }
+
+            gDynamicTooltipCache.delete(parent.id);
           }
 
           break;
@@ -1733,6 +1737,7 @@
           if (relatedTarget && relatedTarget.ownerDocument == document) {
             break;
           }
+        // fall through
         case "mousemove":
           if (document.getElementById("tabContextMenu").state != "open") {
             this._unlockTabSizing();

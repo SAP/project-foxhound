@@ -162,7 +162,7 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   void NotifyNotUsed(PTextureParent* aTexture,
                      uint64_t aTransactionId) override;
   void SendAsyncMessage(
-      const InfallibleTArray<AsyncParentMessageData>& aMessage) override;
+      const nsTArray<AsyncParentMessageData>& aMessage) override;
 
   // ShmemAllocator
   bool AllocShmem(size_t aSize,
@@ -245,15 +245,17 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual mozilla::ipc::IPCResult RecvRequestNotifyAfterRemotePaint() = 0;
   virtual mozilla::ipc::IPCResult RecvAllPluginsCaptured() = 0;
   virtual mozilla::ipc::IPCResult RecvBeginRecording(
-      const TimeStamp& aRecordingStart) = 0;
-  virtual mozilla::ipc::IPCResult RecvEndRecording() = 0;
+      const TimeStamp& aRecordingStart, BeginRecordingResolver&& aResolve) = 0;
+  virtual mozilla::ipc::IPCResult RecvEndRecording(bool* aOutSuccess) = 0;
   virtual mozilla::ipc::IPCResult RecvInitialize(
       const LayersId& rootLayerTreeId) = 0;
   virtual mozilla::ipc::IPCResult RecvGetFrameUniformity(
       FrameUniformityData* data) = 0;
   virtual mozilla::ipc::IPCResult RecvWillClose() = 0;
   virtual mozilla::ipc::IPCResult RecvPause() = 0;
+  virtual mozilla::ipc::IPCResult RecvRequestFxrOutput() = 0;
   virtual mozilla::ipc::IPCResult RecvResume() = 0;
+  virtual mozilla::ipc::IPCResult RecvResumeAsync() = 0;
   virtual mozilla::ipc::IPCResult RecvNotifyChildCreated(
       const LayersId& id, CompositorOptions* compositorOptions) = 0;
   virtual mozilla::ipc::IPCResult RecvMapAndNotifyChildCreated(
@@ -273,6 +275,7 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) = 0;
   virtual mozilla::ipc::IPCResult RecvInitPCanvasParent(
       Endpoint<PCanvasParent>&& aEndpoint) = 0;
+  virtual mozilla::ipc::IPCResult RecvReleasePCanvasParent() = 0;
 
   bool mCanSend;
 
@@ -319,7 +322,9 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       FrameUniformityData* aOutData) override;
   mozilla::ipc::IPCResult RecvWillClose() override;
   mozilla::ipc::IPCResult RecvPause() override;
+  mozilla::ipc::IPCResult RecvRequestFxrOutput() override;
   mozilla::ipc::IPCResult RecvResume() override;
+  mozilla::ipc::IPCResult RecvResumeAsync() override;
   mozilla::ipc::IPCResult RecvNotifyChildCreated(
       const LayersId& child, CompositorOptions* aOptions) override;
   mozilla::ipc::IPCResult RecvMapAndNotifyChildCreated(
@@ -340,7 +345,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   mozilla::ipc::IPCResult RecvStartFrameTimeRecording(
       const int32_t& aBufferSize, uint32_t* aOutStartIndex) override;
   mozilla::ipc::IPCResult RecvStopFrameTimeRecording(
-      const uint32_t& aStartIndex, InfallibleTArray<float>* intervals) override;
+      const uint32_t& aStartIndex, nsTArray<float>* intervals) override;
 
   mozilla::ipc::IPCResult RecvCheckContentOnlyTDR(
       const uint32_t& sequenceNum, bool* isContentOnlyTDR) override {
@@ -355,8 +360,9 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   mozilla::ipc::IPCResult RecvAllPluginsCaptured() override;
   mozilla::ipc::IPCResult RecvBeginRecording(
-      const TimeStamp& aRecordingStart) override;
-  mozilla::ipc::IPCResult RecvEndRecording() override;
+      const TimeStamp& aRecordingStart,
+      BeginRecordingResolver&& aResolve) override;
+  mozilla::ipc::IPCResult RecvEndRecording(bool* aOutSuccess) override;
 
   void NotifyMemoryPressure() override;
   void AccumulateMemoryReport(wr::MemoryReport*) override;
@@ -388,6 +394,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       LayerTransactionParent* aLayerTree) override {
     return mCompositionManager;
   }
+  void SetFixedLayerMargins(ScreenIntCoord aTop, ScreenIntCoord aBottom);
 
   PTextureParent* AllocPTextureParent(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
@@ -398,6 +405,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   mozilla::ipc::IPCResult RecvInitPCanvasParent(
       Endpoint<PCanvasParent>&& aEndpoint) final;
+
+  mozilla::ipc::IPCResult RecvReleasePCanvasParent() final;
 
   bool IsSameProcess() const override;
 
@@ -467,6 +476,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
    */
   void ScheduleRotationOnCompositorThread(const TargetConfig& aTargetConfig,
                                           bool aIsFirstPaint);
+
+  static void ScheduleForcedComposition(const LayersId& aLayersId);
 
   /**
    * Returns the unique layer tree identifier that corresponds to the root
@@ -685,6 +696,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   void ResumeComposition();
   void ResumeCompositionAndResize(int x, int y, int width, int height);
   void Invalidate();
+  bool IsPaused() { return mPaused; }
 
  protected:
   void ForceComposition();
@@ -753,6 +765,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   TimeStamp mFwdTime;
 
   bool mPaused;
+  bool mHaveCompositionRecorder;
+  bool mIsForcedFirstPaint;
 
   bool mUseExternalSurfaceSize;
   gfx::IntSize mEGLSurfaceSize;
@@ -778,7 +792,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   // mSelfRef is cleared in DeferredDestroy which is scheduled by ActorDestroy.
   RefPtr<CompositorBridgeParent> mSelfRef;
   RefPtr<CompositorAnimationStorage> mAnimationStorage;
-  RefPtr<CompositionRecorder> mCompositionRecorder;
 
   TimeDuration mPaintTime;
 

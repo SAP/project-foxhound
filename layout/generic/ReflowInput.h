@@ -207,13 +207,26 @@ struct SizeComputationInput {
     // scrollbar
     bool mAssumingVScrollbar : 1;
 
-    // Is frame (a) not dirty and (b) a different inline-size than before?
+    // Is frame a different inline-size than before?
     bool mIsIResize : 1;
 
-    // Is frame (a) not dirty and (b) a different block-size than before or
-    // (potentially) in a context where percent block-sizes have a different
-    // basis?
+    // Is frame (potentially) a different block-size than before?
+    // This includes cases where the block-size is 'auto' and the
+    // contents or width have changed.
     bool mIsBResize : 1;
+
+    // Has this frame changed block-size in a way that affects
+    // block-size percentages on frames for which it is the containing
+    // block?  This includes a change between 'auto' and a length that
+    // doesn't actually change the frame's block-size.  It does not
+    // include cases where the block-size is 'auto' and the frame's
+    // contents have changed.
+    //
+    // In the current code, this is only true when mIsBResize is also
+    // true, although it doesn't necessarily need to be that way (e.g.,
+    // in the case of a frame changing from 'auto' to a length that
+    // produces the same height).
+    bool mIsBResizeForPercentages : 1;
 
     // tables are splittable, this should happen only inside a page and never
     // insider a column frame
@@ -225,9 +238,24 @@ struct SizeComputationInput {
     // nsColumnSetFrame is balancing columns
     bool mIsColumnBalancing : 1;
 
+    // True if ColumnSetWrapperFrame has a constrained block-size, and is going
+    // to consume all of its block-size in this fragment. This bit is passed to
+    // nsColumnSetFrame to determine whether to give up balancing and create
+    // overflow columns.
+    bool mColumnSetWrapperHasNoBSizeLeft : 1;
+
     // nsFlexContainerFrame is reflowing this child to measure its intrinsic
     // BSize.
     bool mIsFlexContainerMeasuringBSize : 1;
+
+    // If this flag is set, the BSize of this frame should be considered
+    // indefinite for the purposes of percent resolution on child frames (we
+    // should behave as if ComputedBSize() were NS_UNCONSTRAINEDSIZE when doing
+    // percent resolution against this.ComputedBSize()).  For example: flex
+    // items may have their ComputedBSize() resolved ahead-of-time by their
+    // flex container, and yet their BSize might have to be considered
+    // indefinite per https://drafts.csswg.org/css-flexbox/#definite-sizes
+    bool mTreatBSizeAsIndefinite : 1;
 
     // a "fake" reflow input made in order to be the parent of a real one
     bool mDummyParentReflowInput : 1;
@@ -284,6 +312,17 @@ struct SizeComputationInput {
     // line with the ellipsis flag and clear it.
     // This flag is not inherited into descendant ReflowInputs.
     bool mApplyLineClamp : 1;
+
+    // Is this frame or one of its ancestors being reflowed in a different
+    // continuation than the one in which it was previously reflowed?  In
+    // other words, has it moved to a different column or page than it was in
+    // the previous reflow?
+    //
+    // FIXME: For now, we only ensure that this is set correctly for blocks.
+    // This is okay because the only thing that uses it only cares about
+    // whether there's been a fragment change within the same block formatting
+    // context.
+    bool mMovedBlockFragments : 1;
   };
 
 #ifdef DEBUG
@@ -684,6 +723,13 @@ struct ReflowInput : public SizeComputationInput {
   bool IsBResizeForWM(mozilla::WritingMode aWM) const {
     return aWM.IsOrthogonalTo(mWritingMode) ? mFlags.mIsIResize
                                             : mFlags.mIsBResize;
+  }
+  bool IsBResizeForPercentagesForWM(mozilla::WritingMode aWM) const {
+    // This uses the relatively-accurate mIsBResizeForPercentages flag
+    // when the writing modes are parallel, and is a bit more
+    // pessimistic when orthogonal.
+    return !aWM.IsOrthogonalTo(mWritingMode) ? mFlags.mIsBResizeForPercentages
+                                             : IsIResize();
   }
   void SetHResize(bool aValue) {
     if (mWritingMode.IsVertical()) {

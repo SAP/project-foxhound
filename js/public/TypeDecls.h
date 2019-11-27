@@ -26,12 +26,13 @@ typedef uint8_t jsbytecode;
 
 class JSAtom;
 struct JSContext;
+struct JSClass;
 class JSFunction;
+class JSFreeOp;
 class JSObject;
 struct JSRuntime;
 class JSScript;
 class JSString;
-struct JSFreeOp;
 
 namespace js {
 class TempAllocPolicy;
@@ -45,7 +46,7 @@ typedef unsigned char Latin1Char;
 
 class Symbol;
 class BigInt;
-union Value;
+class Value;
 
 class Compartment;
 class Realm;

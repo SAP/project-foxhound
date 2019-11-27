@@ -28,6 +28,7 @@
 #include "wasm/WasmGenerator.h"
 #include "wasm/WasmIonCompile.h"
 #include "wasm/WasmOpIter.h"
+#include "wasm/WasmProcess.h"
 #include "wasm/WasmSignalHandlers.h"
 #include "wasm/WasmValidate.h"
 
@@ -141,6 +142,7 @@ SharedCompileArgs CompileArgs::build(JSContext* cx,
   target->sharedMemoryEnabled = sharedMemory;
   target->forceTiering = forceTiering;
   target->gcEnabled = gc;
+  target->hugeMemory = wasm::IsHugeMemoryEnabled();
 
   return target;
 }
@@ -345,7 +347,7 @@ static double CodesizeCutoff(SystemClass cls) {
 // performance increase is nil or negative once the program moves beyond one
 // socket.  However, few browser users have such systems.
 
-static double EffectiveCores(SystemClass cls, uint32_t cores) {
+static double EffectiveCores(uint32_t cores) {
   if (cores <= 3) {
     return pow(cores, 0.9);
   }
@@ -393,7 +395,7 @@ static bool TieringBeneficial(uint32_t codeSize) {
   // bother.
 
   double cutoffSize = CodesizeCutoff(cls);
-  double effectiveCores = EffectiveCores(cls, cores);
+  double effectiveCores = EffectiveCores(cores);
 
   if ((codeSize / effectiveCores) < cutoffSize) {
     return false;
@@ -435,13 +437,17 @@ CompilerEnvironment::CompilerEnvironment(const CompileArgs& args)
 CompilerEnvironment::CompilerEnvironment(CompileMode mode, Tier tier,
                                          OptimizedBackend optimizedBackend,
                                          DebugEnabled debugEnabled,
-                                         bool gcTypesConfigured)
+                                         bool refTypesConfigured,
+                                         bool gcTypesConfigured,
+                                         bool hugeMemory)
     : state_(InitialWithModeTierDebug),
       mode_(mode),
       tier_(tier),
       optimizedBackend_(optimizedBackend),
       debug_(debugEnabled),
-      gcTypes_(gcTypesConfigured) {}
+      refTypes_(refTypesConfigured),
+      gcTypes_(gcTypesConfigured),
+      hugeMemory_(hugeMemory) {}
 
 void CompilerEnvironment::computeParameters(bool gcFeatureOptIn) {
   MOZ_ASSERT(state_ == InitialWithModeTierDebug);
@@ -466,6 +472,7 @@ void CompilerEnvironment::computeParameters(Decoder& d, bool gcFeatureOptIn) {
   bool debugEnabled = args_->debugEnabled;
   bool craneliftEnabled = args_->craneliftEnabled;
   bool forceTiering = args_->forceTiering;
+  bool hugeMemory = args_->hugeMemory;
 
   bool hasSecondTier = ionEnabled || craneliftEnabled;
   MOZ_ASSERT_IF(gcEnabled || debugEnabled, baselineEnabled);
@@ -495,6 +502,8 @@ void CompilerEnvironment::computeParameters(Decoder& d, bool gcFeatureOptIn) {
 
   debug_ = debugEnabled ? DebugEnabled::True : DebugEnabled::False;
   gcTypes_ = gcEnabled;
+  refTypes_ = !craneliftEnabled;
+  hugeMemory_ = hugeMemory;
   state_ = Computed;
 }
 
@@ -565,9 +574,9 @@ SharedModule wasm::CompileBuffer(const CompileArgs& args,
   Decoder d(bytecode.bytes, 0, error, warnings);
 
   CompilerEnvironment compilerEnv(args);
-  ModuleEnvironment env(
-      args.gcEnabled, &compilerEnv,
-      args.sharedMemoryEnabled ? Shareable::True : Shareable::False);
+  ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
+                                          ? Shareable::True
+                                          : Shareable::False);
   if (!DecodeModuleEnvironment(d, &env)) {
     return nullptr;
   }
@@ -594,17 +603,19 @@ void wasm::CompileTier2(const CompileArgs& args, const Bytes& bytecode,
   Decoder d(bytecode, 0, &error);
 
   bool gcTypesConfigured = false;  // No optimized backend support yet
+  bool refTypesConfigured = !args.craneliftEnabled;
   OptimizedBackend optimizedBackend = args.craneliftEnabled
                                           ? OptimizedBackend::Cranelift
                                           : OptimizedBackend::Ion;
 
   CompilerEnvironment compilerEnv(CompileMode::Tier2, Tier::Optimized,
                                   optimizedBackend, DebugEnabled::False,
-                                  gcTypesConfigured);
+                                  refTypesConfigured, gcTypesConfigured,
+                                  args.hugeMemory);
 
-  ModuleEnvironment env(
-      gcTypesConfigured, &compilerEnv,
-      args.sharedMemoryEnabled ? Shareable::True : Shareable::False);
+  ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
+                                          ? Shareable::True
+                                          : Shareable::False);
   if (!DecodeModuleEnvironment(d, &env)) {
     return;
   }
@@ -712,9 +723,9 @@ SharedModule wasm::CompileStreaming(
     const Atomic<bool>& cancelled, UniqueChars* error,
     UniqueCharsVector* warnings) {
   CompilerEnvironment compilerEnv(args);
-  ModuleEnvironment env(
-      args.gcEnabled, &compilerEnv,
-      args.sharedMemoryEnabled ? Shareable::True : Shareable::False);
+  ModuleEnvironment env(&compilerEnv, args.sharedMemoryEnabled
+                                          ? Shareable::True
+                                          : Shareable::False);
 
   {
     Decoder d(envBytes, 0, error, warnings);

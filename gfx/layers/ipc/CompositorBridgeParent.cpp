@@ -27,7 +27,9 @@
 #include "mozilla/AutoRestore.h"      // for AutoRestore
 #include "mozilla/ClearOnShutdown.h"  // for ClearOnShutdown
 #include "mozilla/DebugOnly.h"        // for DebugOnly
-#include "mozilla/StaticPrefs.h"      // for StaticPrefs
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/gfx/2D.h"         // for DrawTarget
 #include "mozilla/gfx/Point.h"      // for IntSize
@@ -112,7 +114,6 @@ namespace layers {
 
 using namespace mozilla::ipc;
 using namespace mozilla::gfx;
-using namespace std;
 
 using base::ProcessId;
 using base::Thread;
@@ -151,7 +152,7 @@ void CompositorBridgeParentBase::NotifyNotUsed(PTextureParent* aTexture,
 }
 
 void CompositorBridgeParentBase::SendAsyncMessage(
-    const InfallibleTArray<AsyncParentMessageData>& aMessage) {
+    const nsTArray<AsyncParentMessageData>& aMessage) {
   Unused << SendParentAsyncMessages(aMessage);
 }
 
@@ -234,7 +235,7 @@ CompositorBridgeParent::LayerTreeState::~LayerTreeState() {
   }
 }
 
-typedef map<LayersId, CompositorBridgeParent::LayerTreeState> LayerTreeMap;
+typedef std::map<LayersId, CompositorBridgeParent::LayerTreeState> LayerTreeMap;
 LayerTreeMap sIndirectLayerTrees;
 StaticAutoPtr<mozilla::Monitor> sIndirectLayerTreesLock;
 
@@ -266,7 +267,7 @@ inline void CompositorBridgeParent::ForEachIndirectLayerTree(
  * compositions without having to keep references to the
  * compositor
  */
-typedef map<uint64_t, CompositorBridgeParent*> CompositorMap;
+typedef std::map<uint64_t, CompositorBridgeParent*> CompositorMap;
 static StaticAutoPtr<CompositorMap> sCompositorMap;
 
 void CompositorBridgeParent::Setup() {
@@ -320,6 +321,8 @@ CompositorBridgeParent::CompositorBridgeParent(
       mVsyncRate(aVsyncRate),
       mPendingTransaction{0},
       mPaused(false),
+      mHaveCompositionRecorder(false),
+      mIsForcedFirstPaint(false),
       mUseExternalSurfaceSize(aUseExternalSurfaceSize),
       mEGLSurfaceSize(aSurfaceSize),
       mOptions(aOptions),
@@ -357,6 +360,11 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvInitialize(
   MOZ_ASSERT(XRE_IsGPUProcess());
 
   mRootLayerTreeID = aRootLayerTreeId;
+#ifdef XP_WIN
+  if (XRE_IsGPUProcess()) {
+    mWidget->AsWindows()->SetRootLayerTreeID(mRootLayerTreeID);
+  }
+#endif
 
   Initialize();
   return IPC_OK();
@@ -404,7 +412,7 @@ LayersId CompositorBridgeParent::RootLayerTreeId() {
 }
 
 CompositorBridgeParent::~CompositorBridgeParent() {
-  InfallibleTArray<PTextureParent*> textures;
+  nsTArray<PTextureParent*> textures;
   ManagedPTextureParent(textures);
   // We expect all textures to be destroyed by now.
   MOZ_DIAGNOSTIC_ASSERT(textures.Length() == 0);
@@ -416,7 +424,7 @@ CompositorBridgeParent::~CompositorBridgeParent() {
 
 void CompositorBridgeParent::ForceIsFirstPaint() {
   if (mWrBridge) {
-    mWrBridge->ForceIsFirstPaint();
+    mIsForcedFirstPaint = true;
   } else {
     mCompositionManager->ForceIsFirstPaint();
   }
@@ -496,7 +504,6 @@ void CompositorBridgeParent::StopAndClearResources() {
   }
 
   if (mCompositor) {
-    mCompositor->DetachWidget();
     mCompositor->Destroy();
     mCompositor = nullptr;
   }
@@ -533,7 +540,21 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvPause() {
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvRequestFxrOutput() {
+#ifdef XP_WIN
+  // Continue forwarding the request to the Widget + SwapChain
+  mWidget->AsWindows()->RequestFxrOutput();
+#endif
+
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvResume() {
+  ResumeComposition();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvResumeAsync() {
   ResumeComposition();
   return IPC_OK();
 }
@@ -618,7 +639,7 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvStartFrameTimeRecording(
 }
 
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvStopFrameTimeRecording(
-    const uint32_t& aStartIndex, InfallibleTArray<float>* intervals) {
+    const uint32_t& aStartIndex, nsTArray<float>* intervals) {
   if (mLayerManager) {
     mLayerManager->StopFrameTimeRecording(aStartIndex, *intervals);
   } else if (mWrBridge) {
@@ -1420,6 +1441,20 @@ void CompositorBridgeParent::SetConfirmedTargetAPZC(
   mApzUpdater->RunOnControllerThread(selector, task.forget());
 }
 
+void CompositorBridgeParent::SetFixedLayerMargins(ScreenIntCoord aTop,
+                                                  ScreenIntCoord aBottom) {
+  if (AsyncCompositionManager* manager = GetCompositionManager(nullptr)) {
+    manager->SetFixedLayerMargins(aTop, aBottom);
+  }
+
+  if (mApzcTreeManager) {
+    mApzcTreeManager->SetFixedLayerMargins(aTop, aBottom);
+  }
+
+  Invalidate();
+  ScheduleComposition();
+}
+
 void CompositorBridgeParent::InitializeLayerManager(
     const nsTArray<LayersBackend>& aBackendHints) {
   NS_ASSERTION(!mLayerManager, "Already initialised mLayerManager");
@@ -1631,6 +1666,30 @@ void CompositorBridgeParent::NotifyVsync(const VsyncEvent& aVsync,
   obs->NotifyVsync(aVsync);
 }
 
+/* static */
+void CompositorBridgeParent::ScheduleForcedComposition(
+    const LayersId& aLayersId) {
+  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_GPU);
+  MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
+
+  MonitorAutoLock lock(*sIndirectLayerTreesLock);
+  auto it = sIndirectLayerTrees.find(aLayersId);
+  if (it == sIndirectLayerTrees.end()) {
+    return;
+  }
+
+  CompositorBridgeParent* cbp = it->second.mParent;
+  if (!cbp || !cbp->mWidget) {
+    return;
+  }
+
+  if (cbp->mWrBridge) {
+    cbp->mWrBridge->ScheduleForcedGenerateFrame();
+  } else if (cbp->CanComposite()) {
+    cbp->mCompositorScheduler->ScheduleComposition();
+  }
+}
+
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvNotifyChildCreated(
     const LayersId& child, CompositorOptions* aOptions) {
   MonitorAutoLock lock(*sIndirectLayerTreesLock);
@@ -1682,6 +1741,14 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
   RefPtr<ContentCompositorBridgeParent> cpcp;
   RefPtr<WebRenderBridgeParent> childWrBridge;
 
+  // Before adopting the child, save the old compositor's root content
+  // controller. We may need this to clear old layer transforms associated
+  // with the child.
+  // This is outside the lock because GetGeckoContentControllerForRoot()
+  // does its own locking.
+  RefPtr<GeckoContentController> oldRootController =
+      GetGeckoContentControllerForRoot(child);
+
   {  // scope lock
     MonitorAutoLock lock(*sIndirectLayerTreesLock);
     // If child is already belong to this CompositorBridgeParent,
@@ -1732,13 +1799,29 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
   }
 
   if (oldApzUpdater) {
-    // We don't support moving a child from an APZ-enabled compositor to a
+    // We don't fully support moving a child from an APZ-enabled compositor to a
     // APZ-disabled compositor. The mOptions assertion above should already
     // ensure this, since APZ-ness is one of the things in mOptions. Note
     // however it is possible for mApzUpdater to be non-null here with
     // oldApzUpdater null, because the child may not have been previously
     // composited.
     MOZ_ASSERT(mApzUpdater);
+
+    // As this nonetheless can happen (if e.g. a WebExtension moves a tab
+    // into a popup window), try to handle it gracefully by clearing the
+    // old layer transforms associated with the child. (Since the new compositor
+    // is APZ-disabled, there will be nothing to update the transforms going
+    // forward.)
+    if (!mApzUpdater && oldRootController) {
+      // Tell the old APZCTreeManager not to send any more layer transforms
+      // for this layers ids.
+      oldApzUpdater->MarkAsDetached(child);
+
+      // Clear the current transforms.
+      nsTArray<MatrixMessage> clear;
+      clear.AppendElement(MatrixMessage(Nothing(), ScreenRect(), child));
+      oldRootController->NotifyLayerTransforms(clear);
+    }
   }
   if (mApzUpdater) {
     if (parent) {
@@ -1760,7 +1843,8 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
   MOZ_ASSERT(mWidget);
 
 #ifdef XP_WIN
-  if (mWidget && DeviceManagerDx::Get()->CanUseDComp()) {
+  if (mWidget && (DeviceManagerDx::Get()->CanUseDComp() ||
+                  gfxVars::UseWebRenderFlipSequentialWin())) {
     mWidget->AsWindows()->EnsureCompositorWindow();
   }
 #endif
@@ -1777,7 +1861,7 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     // Same as for mApzUpdater, but for the sampler thread.
     mApzSampler->SetWebRenderWindowId(windowId);
   }
-  InfallibleTArray<RefPtr<wr::WebRenderAPI>> apis;
+  nsTArray<RefPtr<wr::WebRenderAPI>> apis;
   apis.AppendElement(
       wr::WebRenderAPI::Create(this, std::move(widget), windowId, aSize));
   if (!apis[0]) {
@@ -1786,14 +1870,14 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     return mWrBridge;
   }
 
-  if (StaticPrefs::gfx_webrender_split_render_roots()) {
+  if (StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     apis.AppendElement(
         apis[0]->CreateDocument(aSize, 1, wr::RenderRoot::Content));
     apis.AppendElement(
         apis[0]->CreateDocument(aSize, 2, wr::RenderRoot::Popover));
   }
 
-  InfallibleTArray<RefPtr<wr::WebRenderAPI>> clonedApis;
+  nsTArray<RefPtr<wr::WebRenderAPI>> clonedApis;
   for (auto& api : apis) {
     wr::TransactionBuilder txn;
     txn.SetRootPipeline(aPipelineId);
@@ -1801,7 +1885,12 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     clonedApis.AppendElement(api->Clone());
   }
 
-  mAsyncImageManager = new AsyncImagePipelineManager(std::move(clonedApis));
+  bool useCompositorWnd = false;
+#ifdef XP_WIN
+  useCompositorWnd = !!mWidget->AsWindows()->GetCompositorHwnd();
+#endif
+  mAsyncImageManager =
+      new AsyncImagePipelineManager(std::move(clonedApis), useCompositorWnd);
   RefPtr<AsyncImagePipelineManager> asyncMgr = mAsyncImageManager;
   RefPtr<CompositorAnimationStorage> animStorage = GetAnimationStorage();
   mWrBridge = new WebRenderBridgeParent(this, aPipelineId, mWidget, nullptr,
@@ -1950,8 +2039,8 @@ already_AddRefed<IAPZCTreeManager> CompositorBridgeParent::GetAPZCTreeManager(
 static void InsertVsyncProfilerMarker(TimeStamp aVsyncTimestamp) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   if (profiler_thread_is_being_profiled()) {
-    profiler_add_marker("VsyncTimestamp", JS::ProfilingCategoryPair::GRAPHICS,
-                        MakeUnique<VsyncMarkerPayload>(aVsyncTimestamp));
+    PROFILER_ADD_MARKER_WITH_PAYLOAD("VsyncTimestamp", GRAPHICS,
+                                     VsyncMarkerPayload, (aVsyncTimestamp));
   }
 }
 #endif
@@ -2098,6 +2187,11 @@ void CompositorBridgeParent::NotifyPipelineRendered(
     mWrBridge->RemoveEpochDataPriorTo(aEpoch);
 
     if (!mPaused) {
+      if (mIsForcedFirstPaint) {
+        uiController->NotifyFirstPaint();
+        mIsForcedFirstPaint = false;
+      }
+
       TransactionId transactionId = mWrBridge->FlushTransactionIdsForEpoch(
           aEpoch, aCompositeStartId, aCompositeStart, aRenderStart,
           aCompositeEnd, uiController);
@@ -2232,7 +2326,7 @@ static CompositorBridgeParent::LayerTreeState* GetStateForRoot(
   // the mApzcTreeManagerParent from that. This should also work with nested
   // content processes, because RootLayerTreeId() will bypass any intermediate
   // processes' ids and go straight to the root.
-  if (state) {
+  if (state && state->mParent) {
     LayersId rootLayersId = state->mParent->RootLayerTreeId();
     itr = sIndirectLayerTrees.find(rootLayersId);
     state = (sIndirectLayerTrees.end() != itr) ? &itr->second : nullptr;
@@ -2277,6 +2371,10 @@ bool CompositorBridgeParent::DeallocPTextureParent(PTextureParent* actor) {
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvInitPCanvasParent(
     Endpoint<PCanvasParent>&& aEndpoint) {
   MOZ_CRASH("PCanvasParent shouldn't be created via CompositorBridgeParent.");
+}
+
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvReleasePCanvasParent() {
+  MOZ_CRASH("PCanvasParent shouldn't be released via CompositorBridgeParent.");
 }
 
 bool CompositorBridgeParent::IsSameProcess() const {
@@ -2484,19 +2582,40 @@ int32_t RecordContentFrameTime(
   int32_t fracLatencyNorm = lround(latencyNorm * 100.0);
 
 #ifdef MOZ_GECKO_PROFILER
-  if (profiler_is_active()) {
+  if (profiler_can_accept_markers()) {
     class ContentFramePayload : public ProfilerMarkerPayload {
      public:
       ContentFramePayload(const mozilla::TimeStamp& aStartTime,
                           const mozilla::TimeStamp& aEndTime)
           : ProfilerMarkerPayload(aStartTime, aEndTime) {}
-      virtual void StreamPayload(SpliceableJSONWriter& aWriter,
-                                 const TimeStamp& aProcessStartTime,
-                                 UniqueStacks& aUniqueStacks) override {
+      mozilla::BlocksRingBuffer::Length TagAndSerializationBytes()
+          const override {
+        return CommonPropsTagAndSerializationBytes();
+      }
+      void SerializeTagAndPayload(
+          mozilla::BlocksRingBuffer::EntryWriter& aEntryWriter) const override {
+        static const DeserializerTag tag = TagForDeserializer(Deserialize);
+        SerializeTagAndCommonProps(tag, aEntryWriter);
+      }
+      void StreamPayload(SpliceableJSONWriter& aWriter,
+                         const TimeStamp& aProcessStartTime,
+                         UniqueStacks& aUniqueStacks) const override {
         StreamCommonProps("CONTENT_FRAME_TIME", aWriter, aProcessStartTime,
                           aUniqueStacks);
       }
+
+     private:
+      explicit ContentFramePayload(CommonProps&& aCommonProps)
+          : ProfilerMarkerPayload(std::move(aCommonProps)) {}
+      static mozilla::UniquePtr<ProfilerMarkerPayload> Deserialize(
+          mozilla::BlocksRingBuffer::EntryReader& aEntryReader) {
+        ProfilerMarkerPayload::CommonProps props =
+            DeserializeCommonProps(aEntryReader);
+        return UniquePtr<ProfilerMarkerPayload>(
+            new ContentFramePayload(std::move(props)));
+      }
     };
+    AUTO_PROFILER_STATS(add_marker_with_ContentFramePayload);
     profiler_add_marker_for_thread(
         profiler_current_thread_id(), JS::ProfilingCategoryPair::GRAPHICS,
         "CONTENT_FRAME_TIME",
@@ -2604,32 +2723,42 @@ int32_t RecordContentFrameTime(
 }
 
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvBeginRecording(
-    const TimeStamp& aRecordingStart) {
-  if (mLayerManager) {
-    mCompositionRecorder = new CompositionRecorder(aRecordingStart);
-    mLayerManager->SetCompositionRecorder(do_AddRef(mCompositionRecorder));
-  } else if (mWrBridge) {
-    RefPtr<WebRenderCompositionRecorder> recorder =
-        new WebRenderCompositionRecorder(aRecordingStart,
-                                         mWrBridge->PipelineId());
-    mCompositionRecorder = recorder;
-    mWrBridge->SetCompositionRecorder(std::move(recorder));
+    const TimeStamp& aRecordingStart, BeginRecordingResolver&& aResolve) {
+  if (mHaveCompositionRecorder) {
+    aResolve(false);
+    return IPC_OK();
   }
+
+  if (mLayerManager) {
+    mLayerManager->SetCompositionRecorder(
+        MakeUnique<CompositionRecorder>(aRecordingStart));
+  } else if (mWrBridge) {
+    mWrBridge->SetCompositionRecorder(MakeUnique<WebRenderCompositionRecorder>(
+        aRecordingStart, mWrBridge->PipelineId()));
+  }
+
+  mHaveCompositionRecorder = true;
+  aResolve(true);
 
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording() {
-  if (mLayerManager) {
-    mLayerManager->SetCompositionRecorder(nullptr);
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording(
+    bool* aOutSuccess) {
+  if (!mHaveCompositionRecorder) {
+    *aOutSuccess = false;
+    return IPC_OK();
   }
 
-  // If we are using WebRender, the |RenderThread| will have a handle to this
-  // |WebRenderCompositionRecorder|, which it will release once the frames have
-  // been written.
+  if (mLayerManager) {
+    mLayerManager->WriteCollectedFrames();
+  } else if (mWrBridge) {
+    mWrBridge->WriteCollectedFrames();
+  }
 
-  mCompositionRecorder->WriteCollectedFrames();
-  mCompositionRecorder = nullptr;
+  mHaveCompositionRecorder = false;
+  *aOutSuccess = true;
+
   return IPC_OK();
 }
 

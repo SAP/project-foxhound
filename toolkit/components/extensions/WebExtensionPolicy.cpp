@@ -10,6 +10,7 @@
 
 #include "mozilla/AddonManagerWebAPI.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/StaticPrefs_extensions.h"
 #include "nsEscape.h"
 #include "nsIObserver.h"
 #include "nsISubstitutingProtocolHandler.h"
@@ -132,6 +133,7 @@ WebExtensionPolicy::WebExtensionPolicy(GlobalObject& aGlobal,
       mName(aInit.mName),
       mContentSecurityPolicy(aInit.mContentSecurityPolicy),
       mLocalizeCallback(aInit.mLocalizeCallback),
+      mIsPrivileged(aInit.mIsPrivileged),
       mPermissions(new AtomSet(aInit.mPermissions)) {
   if (!ParseGlobs(aGlobal, aInit.mWebAccessibleResources, mWebAccessiblePaths,
                   aRv)) {
@@ -388,9 +390,9 @@ NS_IMPL_ISUPPORTS(AtomSetPref, nsIObserver, nsISupportsWeakReference)
 /* static */
 bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
   // With the exception of top-level about:blank documents with null
-  // principals, we never match documents that have non-codebase principals,
+  // principals, we never match documents that have non-content principals,
   // including those with null principals or system principals.
-  if (aDoc.Principal() && !aDoc.Principal()->GetIsCodebasePrincipal()) {
+  if (aDoc.Principal() && !aDoc.Principal()->GetIsContentPrincipal()) {
     return true;
   }
 
@@ -669,8 +671,7 @@ NS_IMPL_CYCLE_COLLECTING_RELEASE(MozDocumentMatcher)
 
 /* static */
 already_AddRefed<DocumentObserver> DocumentObserver::Constructor(
-    GlobalObject& aGlobal, dom::MozDocumentCallback& aCallbacks,
-    ErrorResult& aRv) {
+    GlobalObject& aGlobal, dom::MozDocumentCallback& aCallbacks) {
   RefPtr<DocumentObserver> matcher =
       new DocumentObserver(aGlobal.GetAsSupports(), aCallbacks);
   return matcher.forget();
@@ -773,7 +774,7 @@ bool WindowShouldMatchActiveTab(nsPIDOMWindowOuter* aWin) {
     return false;
   }
 
-  nsCOMPtr<nsPIDOMWindowOuter> parent = aWin->GetParent();
+  nsCOMPtr<nsPIDOMWindowOuter> parent = aWin->GetInProcessParent();
   MOZ_ASSERT(parent != nullptr);
   return WindowShouldMatchActiveTab(parent);
 }
@@ -830,7 +831,7 @@ nsIPrincipal* DocInfo::Principal() const {
 }
 
 const URLInfo& DocInfo::PrincipalURL() const {
-  if (!(Principal() && Principal()->GetIsCodebasePrincipal())) {
+  if (!(Principal() && Principal()->GetIsContentPrincipal())) {
     return URL();
   }
 

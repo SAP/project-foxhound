@@ -30,6 +30,7 @@ function addonStudyRecipeFactory(overrides = {}) {
 // Test that enroll is not called if recipe is already enrolled and update does nothing
 // if recipe is unchanged
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([addonStudyFactory()]),
@@ -72,6 +73,7 @@ decorate_task(
 // Test that if the add-on fails to install, the database is cleaned up and the
 // error is correctly reported.
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -109,6 +111,7 @@ decorate_task(
 
 // Ensure that the database is clean and error correctly reported if hash check fails
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -149,6 +152,7 @@ decorate_task(
 
 // Ensure that the database is clean and error correctly reported if there is a metadata mismatch
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -190,6 +194,7 @@ decorate_task(
 
 // Test that in the case of a study add-on conflicting with a non-study add-on, the study does not enroll
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -244,6 +249,7 @@ decorate_task(
 
 // Test a successful enrollment
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -306,18 +312,24 @@ decorate_task(
         extensionApiId: recipe.arguments.extensionApiId,
         extensionHash: extensionDetails.hash,
         extensionHashAlgorithm: extensionDetails.hash_algorithm,
+        enrollmentId: study.enrollmentId,
       },
       "study data should be stored"
     );
     ok(study.studyStartDate, "a start date should be assigned");
     is(study.studyEndDate, null, "an end date should not be assigned");
+    ok(NormandyTestUtils.isUuid(study.enrollmentId));
 
     sendEventStub.assertEvents([
       [
         "enroll",
         "addon_study",
         recipe.arguments.name,
-        { addonId: FIXTURE_ADDON_ID, addonVersion: "1.0" },
+        {
+          addonId: FIXTURE_ADDON_ID,
+          addonVersion: "1.0",
+          enrollmentId: study.enrollmentId,
+        },
       ],
     ]);
 
@@ -333,6 +345,7 @@ decorate_task(
 
 // Test a successful update
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -388,6 +401,7 @@ decorate_task(
           addonId: FIXTURE_ADDON_ID,
           addonVersion: "2.0",
           branch: AddonStudies.NO_BRANCHES_MARKER,
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -412,6 +426,7 @@ decorate_task(
 
 // Test update fails when addon ID does not match
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -459,6 +474,7 @@ decorate_task(
         recipe.arguments.name,
         {
           reason: "addon-id-mismatch",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -473,6 +489,7 @@ decorate_task(
 
 // Test update fails when original addon does not exist
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -519,6 +536,7 @@ decorate_task(
         recipe.arguments.name,
         {
           reason: "addon-does-not-exist",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -536,6 +554,7 @@ decorate_task(
 
 // Test update fails when download fails
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -584,6 +603,7 @@ decorate_task(
         {
           reason: "download-failure",
           detail: "ERROR_NETWORK_FAILURE",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -598,6 +618,7 @@ decorate_task(
 
 // Test update fails when hash check fails
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -647,6 +668,7 @@ decorate_task(
         {
           reason: "download-failure",
           detail: "ERROR_INCORRECT_HASH",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -661,6 +683,7 @@ decorate_task(
 
 // Test update fails on downgrade when study version is greater than extension version
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -709,6 +732,7 @@ decorate_task(
         recipe.arguments.name,
         {
           reason: "no-downgrade",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -723,6 +747,7 @@ decorate_task(
 
 // Test update fails when there is a version mismatch with metadata
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -774,6 +799,7 @@ decorate_task(
         recipe.arguments.name,
         {
           reason: "metadata-mismatch",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -799,6 +825,7 @@ decorate_task(
 
 // Test that unenrolling fails if the study doesn't exist
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   AddonStudies.withStudies(),
   async function unenrollNonexistent(studies) {
@@ -813,6 +840,7 @@ decorate_task(
 
 // Test that unenrolling an inactive experiment fails
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   AddonStudies.withStudies([addonStudyFactory({ active: false })]),
   withSendEventStub,
@@ -829,6 +857,7 @@ decorate_task(
 // test a successful unenrollment
 const testStopId = "testStop@example.com";
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   AddonStudies.withStudies([
     addonStudyFactory({
@@ -862,6 +891,7 @@ decorate_task(
           addonId,
           addonVersion: study.addonVersion,
           reason: "test-reason",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -870,6 +900,7 @@ decorate_task(
 
 // If the add-on for a study isn't installed, a warning should be logged, but the action is still successful
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   AddonStudies.withStudies([
     addonStudyFactory({
@@ -893,6 +924,7 @@ decorate_task(
           addonId: study.addonId,
           addonVersion: study.addonVersion,
           reason: "unknown",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -903,6 +935,7 @@ decorate_task(
 
 // Test that the action respects the study opt-out
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -938,6 +971,7 @@ decorate_task(
 
 // Test that the action does not enroll paused recipes
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   withSendEventStub,
@@ -969,6 +1003,7 @@ decorate_task(
 
 // Test that the action updates paused recipes
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -1023,6 +1058,7 @@ decorate_task(
         {
           addonId: FIXTURE_ADDON_ID,
           addonVersion: "2.0",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -1034,6 +1070,7 @@ decorate_task(
 
 // Test that update method works for legacy studies with no hash
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   withMockNormandyApi,
   AddonStudies.withStudies([
@@ -1095,6 +1132,7 @@ decorate_task(
         {
           addonId: "normandydriver-a@example.com",
           addonVersion: "2.0",
+          enrollmentId: study.enrollmentId,
         },
       ],
     ]);
@@ -1117,6 +1155,7 @@ decorate_task(
 
 // Test that enroll is not called if recipe is already enrolled
 decorate_task(
+  withStudiesEnabled,
   ensureAddonCleanup,
   AddonStudies.withStudies([addonStudyFactory()]),
   async function enrollTwiceFail([study]) {

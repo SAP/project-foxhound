@@ -22,12 +22,18 @@ export const helpers = {
     const hasInterrupt =
       interruptCleared === true ? false : Boolean(message.content);
     const hasTriplets = Boolean(message.bundle && message.bundle.length);
+    // Allow 1) falsy to not render a header 2) default welcome 3) custom header
+    const tripletsHeaderId =
+      message.tripletsHeaderId === undefined
+        ? "onboarding-welcome-header"
+        : message.tripletsHeaderId;
     const UTMTerm = message.utm_term || "";
     return {
       hasTriplets,
       hasInterrupt,
       interrupt: hasInterrupt ? message : null,
       triplets: hasTriplets ? message.bundle : null,
+      tripletsHeaderId,
       UTMTerm,
     };
   },
@@ -55,6 +61,7 @@ export class FirstRun extends React.PureComponent {
 
       interrupt: undefined,
       triplets: undefined,
+      tripletsHeaderId: "",
 
       isInterruptVisible: false,
       isTripletsContainerVisible: false,
@@ -69,6 +76,11 @@ export class FirstRun extends React.PureComponent {
     this.closeTriplets = this.closeTriplets.bind(this);
 
     helpers.addFluent(this.props.document);
+    // Update utm campaign parameters by appending channel for
+    // differentiating campaign in amplitude
+    if (this.props.appUpdateChannel) {
+      BASE_PARAMS.utm_campaign += `-${this.props.appUpdateChannel}`;
+    }
   }
 
   static getDerivedStateFromProps(props, state) {
@@ -82,6 +94,7 @@ export class FirstRun extends React.PureComponent {
         hasInterrupt,
         interrupt,
         triplets,
+        tripletsHeaderId,
         UTMTerm,
       } = helpers.selectInterruptAndTriplets(message, interruptCleared);
 
@@ -94,6 +107,7 @@ export class FirstRun extends React.PureComponent {
 
         interrupt,
         triplets,
+        tripletsHeaderId,
 
         isInterruptVisible: hasInterrupt,
         isTripletsContainerVisible: hasTriplets,
@@ -167,6 +181,7 @@ export class FirstRun extends React.PureComponent {
     const {
       interrupt,
       triplets,
+      tripletsHeaderId,
       isInterruptVisible,
       isTripletsContainerVisible,
       isTripletsContentVisible,
@@ -180,6 +195,7 @@ export class FirstRun extends React.PureComponent {
         {isInterruptVisible ? (
           <Interrupt
             document={props.document}
+            cards={triplets}
             message={interrupt}
             onNextScene={this.closeInterrupt}
             UTMTerm={UTMTerm}
@@ -195,6 +211,7 @@ export class FirstRun extends React.PureComponent {
           <Triplets
             document={props.document}
             cards={triplets}
+            headerId={tripletsHeaderId}
             showCardPanel={isTripletsContainerVisible}
             showContent={isTripletsContentVisible}
             hideContainer={this.closeTriplets}

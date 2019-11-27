@@ -323,12 +323,13 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
 
   void jump(JitCode* code) { branch(code); }
 
-  void jump(TrampolinePtr code) {
-    auto target = ImmPtr(code.value);
+  void jump(ImmPtr ptr) {
     BufferOffset bo = m_buffer.nextOffset();
-    addPendingJump(bo, target, RelocationKind::HARDCODED);
-    ma_jump(target);
+    addPendingJump(bo, ptr, RelocationKind::HARDCODED);
+    ma_jump(ptr);
   }
+
+  void jump(TrampolinePtr code) { jump(ImmPtr(code.value)); }
 
   void splitTag(Register src, Register dest) {
     ma_dsrl(dest, src, Imm32(JSVAL_TAG_SHIFT));
@@ -411,7 +412,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
   }
   void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType type);
-  void unboxPrivate(const ValueOperand& src, Register dest);
 
   void notBoolean(const ValueOperand& val) {
     as_xori(val.valueReg(), val.valueReg(), 1);
@@ -478,8 +478,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
 
   // higher level tag testing code
   Address ToPayload(Address value) { return value; }
-
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label);
 
   template <typename T>
   void loadUnboxedValue(const T& address, MIRType type, AnyRegister dest) {
@@ -726,8 +724,6 @@ class MacroAssemblerMIPS64Compat : public MacroAssemblerMIPS64 {
                         Register tmp);
 
  public:
-  CodeOffset labelForPatch() { return CodeOffset(nextOffset().getOffset()); }
-
   void lea(Operand addr, Register dest) {
     ma_daddu(dest, addr.baseReg(), Imm32(addr.disp()));
   }

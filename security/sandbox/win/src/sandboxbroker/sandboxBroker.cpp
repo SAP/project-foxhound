@@ -15,6 +15,7 @@
 #include "mozilla/Logging.h"
 #include "mozilla/NSPRLogModulesParser.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
@@ -162,6 +163,56 @@ SandboxBroker::SandboxBroker() {
   }
 }
 
+#define WSTRING(STRING) L"" STRING
+
+static void AddMozLogRulesToPolicy(sandbox::TargetPolicy* aPolicy,
+                                   const base::EnvironmentMap& aEnvironment) {
+  auto it = aEnvironment.find(ENVIRONMENT_LITERAL("MOZ_LOG_FILE"));
+  if (it == aEnvironment.end()) {
+    it = aEnvironment.find(ENVIRONMENT_LITERAL("NSPR_LOG_FILE"));
+  }
+  if (it == aEnvironment.end()) {
+    return;
+  }
+
+  char const* logFileModules = getenv("MOZ_LOG");
+  if (!logFileModules) {
+    return;
+  }
+
+  // MOZ_LOG files have a standard file extension appended.
+  std::wstring logFileName(it->second);
+  logFileName.append(WSTRING(MOZ_LOG_FILE_EXTENSION));
+
+  // Allow for rotation number if rotate is on in the MOZ_LOG settings.
+  bool rotate = false;
+  NSPRLogModulesParser(
+      logFileModules,
+      [&rotate](const char* aName, LogLevel aLevel, int32_t aValue) {
+        if (strcmp(aName, "rotate") == 0) {
+          // Less or eq zero means to turn rotate off.
+          rotate = aValue > 0;
+        }
+      });
+  if (rotate) {
+    logFileName.append(L".?");
+  }
+
+  // Allow for %PID token in the filename. We don't allow it in the dir path, if
+  // specified, because we have to use a wildcard as we don't know the PID yet.
+  auto pidPos = logFileName.find(WSTRING(MOZ_LOG_PID_TOKEN));
+  auto lastSlash = logFileName.find_last_of(L"/\\");
+  if (pidPos != std::wstring::npos &&
+      (lastSlash == std::wstring::npos || lastSlash < pidPos)) {
+    logFileName.replace(pidPos, strlen(MOZ_LOG_PID_TOKEN), L"*");
+  }
+
+  aPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                   sandbox::TargetPolicy::FILES_ALLOW_ANY, logFileName.c_str());
+}
+
+#undef WSTRING
+
 bool SandboxBroker::LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
                               base::EnvironmentMap& aEnvironment,
                               GeckoProcessType aProcessType,
@@ -196,47 +247,9 @@ bool SandboxBroker::LaunchApp(const wchar_t* aPath, const wchar_t* aArguments,
 #endif
 
   // Enable the child process to write log files when setup
-  wchar_t const* logFileName = nullptr;
-  auto it = aEnvironment.find(ENVIRONMENT_LITERAL("MOZ_LOG_FILE"));
-  if (it != aEnvironment.end()) {
-    logFileName = (it->second).c_str();
-  }
-  char const* logFileModules = getenv("MOZ_LOG");
-  if (logFileName && logFileModules) {
-    bool rotate = false;
-    NSPRLogModulesParser(
-        logFileModules,
-        [&rotate](const char* aName, LogLevel aLevel, int32_t aValue) mutable {
-          if (strcmp(aName, "rotate") == 0) {
-            // Less or eq zero means to turn rotate off.
-            rotate = aValue > 0;
-          }
-        });
+  AddMozLogRulesToPolicy(mPolicy, aEnvironment);
 
-    if (rotate) {
-      wchar_t logFileNameWild[MAX_PATH + 2];
-      _snwprintf(logFileNameWild, sizeof(logFileNameWild), L"%s.?",
-                 logFileName);
-
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                       sandbox::TargetPolicy::FILES_ALLOW_ANY, logFileNameWild);
-    } else {
-      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                       sandbox::TargetPolicy::FILES_ALLOW_ANY, logFileName);
-    }
-  }
-
-  logFileName = nullptr;
-  it = aEnvironment.find(ENVIRONMENT_LITERAL("NSPR_LOG_FILE"));
-  if (it != aEnvironment.end()) {
-    logFileName = (it->second).c_str();
-  }
-  if (logFileName) {
-    mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
-                     sandbox::TargetPolicy::FILES_ALLOW_ANY, logFileName);
-  }
-
-  // Ceate the sandboxed process
+  // Create the sandboxed process
   PROCESS_INFORMATION targetInfo = {0};
   sandbox::ResultCode result;
   sandbox::ResultCode last_warning = sandbox::SBOX_ALL_OK;
@@ -502,6 +515,21 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       sandbox::SBOX_ALL_OK == result,
       "SetDelayedIntegrityLevel should never fail, what happened?");
 
+  // SetLockdownDefaultDacl causes audio to fail for Windows 8.1 and earlier.
+  // Bug 1564842 tracks removing the Win10 or later restriction, once we can
+  // work around that problem.
+  if (aSandboxLevel > 5 && IsWin10OrLater()) {
+    mPolicy->SetLockdownDefaultDacl();
+  }
+
+  if (aSandboxLevel > 4) {
+    result = mPolicy->SetAlternateDesktop(false);
+    if (NS_WARN_IF(result != sandbox::SBOX_ALL_OK)) {
+      LOG_W("SetAlternateDesktop failed, result: %i, last error: %x", result,
+            ::GetLastError());
+    }
+  }
+
   sandbox::MitigationFlags mitigations =
       sandbox::MITIGATION_BOTTOM_UP_ASLR | sandbox::MITIGATION_HEAP_TERMINATE |
       sandbox::MITIGATION_SEHOP | sandbox::MITIGATION_DEP_NO_ATL_THUNK |
@@ -515,14 +543,6 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
   }
 #endif
 
-  if (aSandboxLevel > 4) {
-    result = mPolicy->SetAlternateDesktop(false);
-    if (NS_WARN_IF(result != sandbox::SBOX_ALL_OK)) {
-      LOG_W("SetAlternateDesktop failed, result: %i, last error: %x", result,
-            ::GetLastError());
-    }
-  }
-
   if (aSandboxLevel > 3) {
     // If we're running from a network drive then we can't block loading from
     // remote locations. Strangely using MITIGATION_IMAGE_LOAD_NO_LOW_LABEL in
@@ -531,6 +551,18 @@ void SandboxBroker::SetSecurityLevelForContentProcess(int32_t aSandboxLevel,
       mitigations |= sandbox::MITIGATION_IMAGE_LOAD_NO_REMOTE |
                      sandbox::MITIGATION_IMAGE_LOAD_NO_LOW_LABEL;
     }
+  }
+
+  // On Windows 7, where Win32k lockdown is not supported, the Chromium
+  // sandbox does something weird that breaks COM instantiation.
+  if (StaticPrefs::security_sandbox_content_win32k_disable() &&
+      IsWin8OrLater()) {
+    mitigations |= sandbox::MITIGATION_WIN32K_DISABLE;
+    result =
+        mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_WIN32K_LOCKDOWN,
+                         sandbox::TargetPolicy::FAKE_USER_GDI_INIT, nullptr);
+    MOZ_RELEASE_ASSERT(sandbox::SBOX_ALL_OK == result,
+                       "Failed to set FAKE_USER_GDI_INIT policy.");
   }
 
   result = mPolicy->SetProcessMitigations(mitigations);
@@ -807,7 +839,8 @@ bool SandboxBroker::SetSecurityLevelForRDDProcess() {
 
   mitigations = sandbox::MITIGATION_STRICT_HANDLE_CHECKS |
                 sandbox::MITIGATION_DYNAMIC_CODE_DISABLE |
-                sandbox::MITIGATION_DLL_SEARCH_ORDER;
+                sandbox::MITIGATION_DLL_SEARCH_ORDER |
+                sandbox::MITIGATION_FORCE_MS_SIGNED_BINS;
 
   result = mPolicy->SetDelayedProcessMitigations(mitigations);
   SANDBOX_ENSURE_SUCCESS(result,
@@ -1204,6 +1237,15 @@ bool SandboxBroker::SetSecurityLevelForGMPlugin(SandboxLevel aLevel) {
       sandbox::TargetPolicy::SUBSYS_REGISTRY,
       sandbox::TargetPolicy::REG_ALLOW_READONLY,
       L"HKEY_LOCAL_MACHINE\\System\\CurrentControlSet\\Control\\Srp\\\\GP\\");
+  SANDBOX_ENSURE_SUCCESS(
+      result,
+      "With these static arguments AddRule should never fail, what happened?");
+
+  // The GMP process needs to be able to share memory with the main process for
+  // crash reporting.
+  result =
+      mPolicy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
+                       sandbox::TargetPolicy::HANDLES_DUP_BROKER, L"Section");
   SANDBOX_ENSURE_SUCCESS(
       result,
       "With these static arguments AddRule should never fail, what happened?");

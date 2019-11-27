@@ -12,7 +12,9 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/RemoteDecoderManagerParent.h"
 #include "mozilla/dom/ContentParent.h"
@@ -384,8 +386,8 @@ void GPUProcessManager::OnProcessLaunchComplete(GPUProcessHost* aHost) {
 static bool ShouldLimitDeviceResets(uint32_t count, int32_t deltaMilliseconds) {
   // We decide to limit by comparing the amount of resets that have happened
   // and time since the last reset to two prefs.
-  int32_t timeLimit = StaticPrefs::gfx_device_reset_threshold_ms();
-  int32_t countLimit = StaticPrefs::gfx_device_reset_limit();
+  int32_t timeLimit = StaticPrefs::gfx_device_reset_threshold_ms_AtStartup();
+  int32_t countLimit = StaticPrefs::gfx_device_reset_limit_AtStartup();
 
   bool hasTimeLimit = timeLimit >= 0;
   bool hasCountLimit = countLimit >= 0;
@@ -450,6 +452,11 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
         .ForceDisable(gfx::FeatureStatus::Unavailable,
                       "Failed to render WebRender",
                       NS_LITERAL_CSTRING("FEATURE_FAILURE_WEBRENDER_RENDER"));
+  } else if (aError == wr::WebRenderError::NEW_SURFACE) {
+    gfx::gfxConfig::GetFeature(gfx::Feature::WEBRENDER)
+        .ForceDisable(
+            gfx::FeatureStatus::Unavailable, "Failed to create new surface",
+            NS_LITERAL_CSTRING("FEATURE_FAILURE_WEBRENDER_NEW_SURFACE"));
   } else {
     MOZ_ASSERT_UNREACHABLE("Invalid value");
   }
@@ -805,12 +812,11 @@ RefPtr<CompositorSession> GPUProcessManager::CreateRemoteSession(
     }
     apz = static_cast<APZCTreeManagerChild*>(papz);
 
-    PAPZInputBridgeChild* pinput =
-        mGPUChild->SendPAPZInputBridgeConstructor(aRootLayerTreeId);
-    if (!pinput) {
+    RefPtr<APZInputBridgeChild> pinput = new APZInputBridgeChild();
+    if (!mGPUChild->SendPAPZInputBridgeConstructor(pinput, aRootLayerTreeId)) {
       return nullptr;
     }
-    apz->SetInputBridge(static_cast<APZInputBridgeChild*>(pinput));
+    apz->SetInputBridge(pinput);
   }
 
   RefPtr<RemoteCompositorSession> session = new RemoteCompositorSession(

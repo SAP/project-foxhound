@@ -8,9 +8,9 @@
 
 #include <utility>
 
+#include "debugger/DebugAPI.h"
 #include "jit/JitFrames.h"
 #include "vm/ArgumentsObject.h"
-#include "vm/Debugger.h"
 
 #include "jit/JitFrames-inl.h"
 #include "vm/EnvironmentObject-inl.h"

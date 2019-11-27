@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 "use strict";
 
 // This file expects tabTracker to be defined in the global scope (e.g.
@@ -106,7 +110,7 @@ function registerEvent(
 
   let listenerDetails = {
     addonId: extension.id,
-    extension: extension.policy,
+    policy: extension.policy,
     blockingAllowed,
   };
   WebRequest[eventName].addListener(listener, filter2, info2, listenerDetails);
@@ -166,7 +170,7 @@ this.webRequest = class extends ExtensionAPI {
         getSecurityInfo: function(requestId, options = {}) {
           return WebRequest.getSecurityInfo({
             id: requestId,
-            extension: context.extension.policy,
+            policy: context.extension.policy,
             remoteTab: context.xulBrowser.frameLoader.remoteTab,
             options,
           });

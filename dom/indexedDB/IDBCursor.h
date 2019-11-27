@@ -58,12 +58,15 @@ class IDBCursor final : public nsISupports, public nsWrapperCache {
 
   indexedDB::BackgroundCursorChild* mBackgroundActor;
 
+  // TODO: mRequest, mSourceObjectStore and mSourceIndex could be made const if
+  // Bug 1575173 is resolved. They are initialized in the constructor and never
+  // modified/cleared.
   RefPtr<IDBRequest> mRequest;
   RefPtr<IDBObjectStore> mSourceObjectStore;
   RefPtr<IDBIndex> mSourceIndex;
 
   // mSourceObjectStore or mSourceIndex will hold this alive.
-  IDBTransaction* mTransaction;
+  IDBTransaction* const mTransaction;
 
   // These are cycle-collected!
   JS::Heap<JS::Value> mCachedKey;
@@ -87,20 +90,19 @@ class IDBCursor final : public nsISupports, public nsWrapperCache {
 
  public:
   static already_AddRefed<IDBCursor> Create(
-      indexedDB::BackgroundCursorChild* aBackgroundActor, const Key& aKey,
+      indexedDB::BackgroundCursorChild* aBackgroundActor, Key aKey,
       StructuredCloneReadInfo&& aCloneInfo);
 
   static already_AddRefed<IDBCursor> Create(
-      indexedDB::BackgroundCursorChild* aBackgroundActor, const Key& aKey);
+      indexedDB::BackgroundCursorChild* aBackgroundActor, Key aKey);
 
   static already_AddRefed<IDBCursor> Create(
-      indexedDB::BackgroundCursorChild* aBackgroundActor, const Key& aKey,
-      const Key& aSortKey, const Key& aPrimaryKey,
-      StructuredCloneReadInfo&& aCloneInfo);
+      indexedDB::BackgroundCursorChild* aBackgroundActor, Key aKey,
+      Key aSortKey, Key aPrimaryKey, StructuredCloneReadInfo&& aCloneInfo);
 
   static already_AddRefed<IDBCursor> Create(
-      indexedDB::BackgroundCursorChild* aBackgroundActor, const Key& aKey,
-      const Key& aSortKey, const Key& aPrimaryKey);
+      indexedDB::BackgroundCursorChild* aBackgroundActor, Key aKey,
+      Key aSortKey, Key aPrimaryKey);
 
   static Direction ConvertDirection(IDBCursorDirection aDirection);
 
@@ -166,7 +168,7 @@ class IDBCursor final : public nsISupports, public nsWrapperCache {
 
  private:
   IDBCursor(Type aType, indexedDB::BackgroundCursorChild* aBackgroundActor,
-            const Key& aKey);
+            Key aKey);
 
   ~IDBCursor();
 

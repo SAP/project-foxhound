@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-/*
+/**
  * nsILoginManagerStorage implementation for the JSON back-end.
  */
 
@@ -55,6 +55,24 @@ this.LoginManagerStorage_json.prototype = {
       );
     }
     return this.__crypto;
+  },
+
+  __decryptedPotentiallyVulnerablePasswords: null,
+  get _decryptedPotentiallyVulnerablePasswords() {
+    if (!this.__decryptedPotentiallyVulnerablePasswords) {
+      this._store.ensureDataReady();
+      this.__decryptedPotentiallyVulnerablePasswords = [];
+      for (const potentiallyVulnerablePassword of this._store.data
+        .potentiallyVulnerablePasswords) {
+        const decryptedPotentiallyVulnerablePassword = this._crypto.decrypt(
+          potentiallyVulnerablePassword.encryptedPassword
+        );
+        this.__decryptedPotentiallyVulnerablePasswords.push(
+          decryptedPotentiallyVulnerablePassword
+        );
+      }
+    }
+    return this.__decryptedPotentiallyVulnerablePasswords;
   },
 
   initialize() {
@@ -117,7 +135,22 @@ this.LoginManagerStorage_json.prototype = {
     return this._store._save();
   },
 
-  addLogin(login, preEncrypted = false) {
+  addLogin(
+    login,
+    preEncrypted = false,
+    plaintextUsername = null,
+    plaintextPassword = null
+  ) {
+    if (
+      preEncrypted &&
+      (typeof plaintextUsername != "string" ||
+        typeof plaintextPassword != "string")
+    ) {
+      throw new Error(
+        "plaintextUsername and plaintextPassword are required when preEncrypted is true"
+      );
+    }
+
     this._store.ensureDataReady();
 
     // Throws if there are bogus values.
@@ -129,6 +162,8 @@ this.LoginManagerStorage_json.prototype = {
 
     // Clone the login, so we don't modify the caller's object.
     let loginClone = login.clone();
+    loginClone.username = preEncrypted ? plaintextUsername : login.username;
+    loginClone.password = preEncrypted ? plaintextPassword : login.password;
 
     // Initialize the nsILoginMetaInfo fields, unless the caller gave us values
     loginClone.QueryInterface(Ci.nsILoginMetaInfo);
@@ -235,8 +270,9 @@ this.LoginManagerStorage_json.prototype = {
         newLogin.httpRealm
       );
 
-      if (logins.some(login => newLogin.matches(login, true))) {
-        throw new Error("This login already exists.");
+      let matchingLogin = logins.find(login => newLogin.matches(login, true));
+      if (matchingLogin) {
+        throw LoginHelper.createLoginAlreadyExistsError(matchingLogin.guid);
       }
     }
 
@@ -266,6 +302,23 @@ this.LoginManagerStorage_json.prototype = {
     LoginHelper.notifyStorageChanged("modifyLogin", [oldStoredLogin, newLogin]);
   },
 
+  async recordBreachAlertDismissal(loginGUID) {
+    this._store.ensureDataReady();
+    const dismissedBreachAlertsByLoginGUID = this._store._data
+      .dismissedBreachAlertsByLoginGUID;
+
+    dismissedBreachAlertsByLoginGUID[loginGUID] = {
+      timeBreachAlertDismissed: new Date().getTime(),
+    };
+
+    return this._store.saveSoon();
+  },
+
+  getBreachAlertDismissalsByLoginGUID() {
+    this._store.ensureDataReady();
+    return this._store._data.dismissedBreachAlertsByLoginGUID;
+  },
+
   /**
    * @return {nsILoginInfo[]}
    */
@@ -275,12 +328,14 @@ this.LoginManagerStorage_json.prototype = {
     // decrypt entries for caller.
     logins = this._decryptLogins(logins);
 
-    this.log("_getAllLogins: returning", logins.length, "logins.");
+    this.log("getAllLogins: returning", logins.length, "logins.");
     return logins;
   },
 
   /**
-   * Returns an array of nsILoginInfo.
+   * Returns an array of nsILoginInfo. If decryption of a login
+   * fails due to a corrupt entry, the login is not included in
+   * the resulting array.
    *
    * @resolve {nsILoginInfo[]}
    */
@@ -298,6 +353,29 @@ this.LoginManagerStorage_json.prototype = {
 
     let result = [];
     for (let i = 0; i < logins.length; i++) {
+      if (!usernames[i] || !passwords[i]) {
+        // If the username or password is blank it means that decryption may have
+        // failed during decryptMany but we can't differentiate an empty string
+        // value from a failure so we attempt to decrypt again and check the
+        // result.
+        let login = logins[i];
+        try {
+          this._crypto.decrypt(login.username);
+          this._crypto.decrypt(login.password);
+        } catch (e) {
+          // If decryption failed (corrupt entry?), just skip it.
+          // Rethrow other errors (like canceling entry of a master pw)
+          if (e.result == Cr.NS_ERROR_FAILURE) {
+            this.log(
+              "Could not decrypt login:",
+              login.QueryInterface(Ci.nsILoginMetaInfo).guid
+            );
+            continue;
+          }
+          throw e;
+        }
+      }
+
       logins[i].username = usernames[i];
       logins[i].password = passwords[i];
       result.push(logins[i]);
@@ -418,8 +496,8 @@ this.LoginManagerStorage_json.prototype = {
               }
               break;
             }
-          // fall through
           // Normal cases.
+          // fall through
           case "httpRealm":
           case "id":
           case "usernameField":
@@ -494,6 +572,9 @@ this.LoginManagerStorage_json.prototype = {
 
     this.log("Removing all logins");
     this._store.data.logins = [];
+    this._store.data.potentiallyVulnerablePasswords = [];
+    this.__decryptedPotentiallyVulnerablePasswords = null;
+    this._store.data.dismissedBreachAlertsByLoginGUID = {};
     this._store.saveSoon();
 
     LoginHelper.notifyStorageChanged("removeAllLogins", null);
@@ -536,6 +617,37 @@ this.LoginManagerStorage_json.prototype = {
 
     this.log("_countLogins: counted logins:", logins.length);
     return logins.length;
+  },
+
+  addPotentiallyVulnerablePassword(login) {
+    this._store.ensureDataReady();
+    // this breached password is already stored
+    if (this.isPotentiallyVulnerablePassword(login)) {
+      return;
+    }
+    this.__decryptedPotentiallyVulnerablePasswords.push(login.password);
+
+    this._store.data.potentiallyVulnerablePasswords.push({
+      encryptedPassword: this._crypto.encrypt(login.password),
+    });
+    this._store.saveSoon();
+  },
+
+  isPotentiallyVulnerablePassword(login) {
+    return this._decryptedPotentiallyVulnerablePasswords.includes(
+      login.password
+    );
+  },
+
+  clearAllPotentiallyVulnerablePasswords() {
+    this._store.ensureDataReady();
+    if (!this._store.data.potentiallyVulnerablePasswords.length) {
+      // No need to write to disk
+      return;
+    }
+    this._store.data.potentiallyVulnerablePasswords = [];
+    this._store.saveSoon();
+    this.__decryptedPotentiallyVulnerablePasswords = null;
   },
 
   get uiBusy() {

@@ -7,7 +7,6 @@
 #ifndef mozilla_ShellHeaderOnlyUtils_h
 #define mozilla_ShellHeaderOnlyUtils_h
 
-#include "mozilla/LauncherResult.h"
 #include "mozilla/WinHeaderOnlyUtils.h"
 
 #include <objbase.h>
@@ -126,6 +125,12 @@ inline LauncherVoidResult ShellExecuteByExplorer(const _bstr_t& aPath,
     return LAUNCHER_ERROR_FROM_HRESULT(hr);
   }
 
+  // Passing the foreground privilege so that the shell can launch an
+  // application in the foreground.  If CoAllowSetForegroundWindow fails,
+  // we continue because it's not fatal.
+  hr = ::CoAllowSetForegroundWindow(shellDisp, nullptr);
+  MOZ_ASSERT(SUCCEEDED(hr));
+
   // shellapi.h macros interfere with the correct naming of the method being
   // called on IShellDispatch2. Temporarily remove that definition.
 #if defined(ShellExecute)
@@ -134,7 +139,7 @@ inline LauncherVoidResult ShellExecuteByExplorer(const _bstr_t& aPath,
 #endif  // defined(ShellExecute)
 
   // 4. Now call IShellDispatch2::ShellExecute to ask Explorer to execute.
-  hr = shellDisp->ShellExecute(aPath, aArgs, aVerb, aWorkingDir, aShowCmd);
+  hr = shellDisp->ShellExecute(aPath, aArgs, aWorkingDir, aVerb, aShowCmd);
   if (FAILED(hr)) {
     return LAUNCHER_ERROR_FROM_HRESULT(hr);
   }
@@ -155,7 +160,7 @@ inline LauncherVoidResult ShellExecuteByExplorer(const _bstr_t& aPath,
 using UniqueAbsolutePidl =
     UniquePtr<RemovePointer<PIDLIST_ABSOLUTE>::Type, CoTaskMemFreeDeleter>;
 
-inline LauncherResult<PIDLIST_ABSOLUTE> ShellParseDisplayName(
+inline LauncherResult<UniqueAbsolutePidl> ShellParseDisplayName(
     const wchar_t* aPath) {
   PIDLIST_ABSOLUTE rawAbsPidl = nullptr;
   SFGAOF sfgao;
@@ -164,7 +169,7 @@ inline LauncherResult<PIDLIST_ABSOLUTE> ShellParseDisplayName(
     return LAUNCHER_ERROR_FROM_HRESULT(hr);
   }
 
-  return rawAbsPidl;
+  return UniqueAbsolutePidl(rawAbsPidl);
 }
 
 }  // namespace mozilla

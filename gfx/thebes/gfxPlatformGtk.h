@@ -32,7 +32,7 @@ class gfxPlatformGtk : public gfxPlatform {
   }
 
   void ReadSystemFontList(
-      InfallibleTArray<mozilla::dom::SystemFontListEntry>* retValue) override;
+      nsTArray<mozilla::dom::SystemFontListEntry>* retValue) override;
 
   already_AddRefed<gfxASurface> CreateOffscreenSurface(
       const IntSize& aSize, gfxImageFormat aFormat) override;
@@ -57,8 +57,6 @@ class gfxPlatformGtk : public gfxPlatform {
    * Calls XFlush if xrender is enabled.
    */
   void FlushContentDrawing() override;
-
-  FT_Library GetFTLibrary() override;
 
   static int32_t GetFontScaleDPI();
   static double GetFontScaleFactor();
@@ -103,7 +101,10 @@ class gfxPlatformGtk : public gfxPlatform {
     mWaylandFrameDelay = aFrameDelay;
   }
   int64_t GetWaylandFrameDelay() { return mWaylandFrameDelay; }
+  bool UseWaylandDMABufSurfaces();
 #endif
+
+  bool IsX11Display() { return mIsX11Display; }
 
  protected:
   void InitPlatformGPUProcessPrefs() override;
@@ -114,6 +115,7 @@ class gfxPlatformGtk : public gfxPlatform {
  private:
   void GetPlatformCMSOutputProfile(void*& mem, size_t& size) override;
 
+  bool mIsX11Display;
 #ifdef MOZ_X11
   Display* mCompositorDisplay;
 #endif

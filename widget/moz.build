@@ -83,7 +83,7 @@ DIRS += ['headless']
 # multiple implementations of widget can be built on the same
 # source tree.
 #
-if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk':
     DIRS += ['gtk']
 
     if CONFIG['MOZ_X11']:
@@ -117,6 +117,7 @@ XPIDL_SOURCES += [
     'nsIPrintSettingsService.idl',
     'nsIScreen.idl',
     'nsIScreenManager.idl',
+    'nsISharePicker.idl',
     'nsISound.idl',
     'nsITransferable.idl',
 ]
@@ -186,6 +187,7 @@ UNIFIED_SOURCES += [
     'GfxDriverInfo.cpp',
     'GfxInfoBase.cpp',
     'GfxInfoCollector.cpp',
+    'IMEData.cpp',
     'InProcessCompositorWidget.cpp',
     'InputData.cpp',
     'nsAutoRollup.cpp',
@@ -208,7 +210,6 @@ UNIFIED_SOURCES += [
     'PuppetBidiKeyboard.cpp',
     'PuppetWidget.cpp',
     'Screen.cpp',
-    'ScreenManager.cpp',
     'SharedWidgetUtils.cpp',
     'TextEventDispatcher.cpp',
     'VsyncDispatcher.cpp',
@@ -240,6 +241,7 @@ if CONFIG['MOZ_XUL'] and CONFIG['NS_PRINTING']:
 SOURCES += [
     'nsBaseDragService.cpp',
     'nsBaseWidget.cpp',
+    'ScreenManager.cpp',
 ]
 
 if CONFIG['MOZ_INSTRUMENT_EVENT_LOOP']:
@@ -270,17 +272,17 @@ if toolkit in ('cocoa', 'windows'):
         'nsBaseClipboard.cpp',
     ]
 
-if toolkit in {'gtk3', 'cocoa', 'windows',
+if toolkit in {'gtk', 'cocoa', 'windows',
                'android', 'uikit'}:
     UNIFIED_SOURCES += [
         'nsBaseFilePicker.cpp',
     ]
 
-if toolkit in ('gtk3', 'windows', 'cocoa', 'android'):
+if toolkit in ('gtk', 'windows', 'cocoa', 'android'):
     UNIFIED_SOURCES += [
         'nsNativeTheme.cpp',
     ]
-if toolkit == 'gtk3':
+if toolkit == 'gtk':
     XPIDL_SOURCES += [
         'nsIApplicationChooser.idl',
     ]
@@ -309,7 +311,7 @@ if toolkit == 'windows':
         'windows/PCompositorWidget.ipdl',
         'windows/PlatformWidgetTypes.ipdlh',
     ]
-elif 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT'] and CONFIG['MOZ_X11']:
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk' and CONFIG['MOZ_X11']:
     IPDL_SOURCES = [
         'gtk/PCompositorWidget.ipdl',
         'gtk/PlatformWidgetTypes.ipdlh',
@@ -322,12 +324,8 @@ else:
         'PlatformWidgetTypes.ipdlh',
     ]
 
-widget_dir = toolkit
-if widget_dir == 'gtk3':
-    widget_dir = 'gtk'
-
 LOCAL_INCLUDES += [
-    '/widget/%s' % widget_dir,
+    '/widget/%s' % toolkit,
 ]
 FINAL_LIBRARY = 'xul'
 

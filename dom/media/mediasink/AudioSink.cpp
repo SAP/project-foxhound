@@ -11,7 +11,7 @@
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla {
@@ -299,6 +299,12 @@ void AudioSink::Drained() {
   SINK_LOG("Drained");
   mPlaybackComplete = true;
   mEndedPromise.ResolveIfExists(true, __func__);
+}
+
+void AudioSink::Errored() {
+  SINK_LOG("Errored");
+  mPlaybackComplete = true;
+  mEndedPromise.RejectIfExists(NS_ERROR_FAILURE, __func__);
 }
 
 void AudioSink::CheckIsAudible(const AudioData* aData) {

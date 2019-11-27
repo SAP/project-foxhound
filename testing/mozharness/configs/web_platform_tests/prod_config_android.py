@@ -14,7 +14,7 @@ config = {
         "--host-key-path=%(test_path)s/tests/tools/certs/web-platform.test.key",
         "--host-cert-path=%(test_path)s/tests/tools/certs/web-platform.test.pem",
         "--certutil-binary=%(xre_path)s/certutil",
-        "--product=fennec",
+        "--product=firefox_android",
     ],
     "avds_dir": "/builds/worker/workspace/build/.android",
     "binary_path": "/tmp",
@@ -25,5 +25,4 @@ config = {
     "minidump_stackwalk_path": "linux64-minidump_stackwalk",
     "per_test_category": "web-platform",
     "tooltool_cache": os.environ.get("TOOLTOOL_CACHE"),
-    "tooltool_servers": ['http://taskcluster/tooltool.mozilla-releng.net/'],
 }

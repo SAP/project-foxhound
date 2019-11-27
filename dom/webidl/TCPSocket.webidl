@@ -27,7 +27,8 @@ enum TCPReadyState {
   "closed",
 };
 
-[NoInterfaceObject]
+[NoInterfaceObject,
+ Exposed=Window]
 interface LegacyMozTCPSocket {
   /**
    * Legacy constructor for API compatibility.
@@ -39,10 +40,13 @@ interface LegacyMozTCPSocket {
   TCPServerSocket listen(unsigned short port, optional ServerSocketOptions options = {}, optional unsigned short backlog = 0);
 };
 
-[Constructor(DOMString host, unsigned short port, optional SocketOptions options = {}),
- Func="mozilla::dom::TCPSocket::ShouldTCPSocketExist",
+[Func="mozilla::dom::TCPSocket::ShouldTCPSocketExist",
  Exposed=Window]
 interface TCPSocket : EventTarget {
+  [Throws]
+  constructor(DOMString host, unsigned short port,
+              optional SocketOptions options = {});
+
   /**
    * Upgrade an insecure connection to use TLS. Throws if the ready state is not OPEN.
    */

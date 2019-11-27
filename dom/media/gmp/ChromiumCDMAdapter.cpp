@@ -11,6 +11,7 @@
 #include "gmp-api/gmp-video-codec.h"
 #include "WidevineUtils.h"
 #include "GMPLog.h"
+#include "mozilla/HelperMacros.h"
 #include "mozilla/Move.h"
 
 #ifdef XP_WIN
@@ -46,16 +47,14 @@ ChromiumCDMAdapter::ChromiumCDMAdapter(
 void ChromiumCDMAdapter::SetAdaptee(PRLibrary* aLib) { mLib = aLib; }
 
 void* ChromiumCdmHost(int aHostInterfaceVersion, void* aUserData) {
-  GMP_LOG("ChromiumCdmHostFunc(%d, %p)", aHostInterfaceVersion, aUserData);
+  GMP_LOG_DEBUG("ChromiumCdmHostFunc(%d, %p)", aHostInterfaceVersion,
+                aUserData);
   if (aHostInterfaceVersion != cdm::Host_9::kVersion &&
       aHostInterfaceVersion != cdm::Host_10::kVersion) {
     return nullptr;
   }
   return aUserData;
 }
-
-#define STRINGIFY(s) _STRINGIFY(s)
-#define _STRINGIFY(s) #s
 
 #ifdef MOZILLA_OFFICIAL
 static cdm::HostFile TakeToCDMHostFile(HostFileData& aHostFileData) {
@@ -66,7 +65,7 @@ static cdm::HostFile TakeToCDMHostFile(HostFileData& aHostFileData) {
 #endif
 
 GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
-  GMP_LOG("ChromiumCDMAdapter::GMPInit");
+  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPInit");
   sPlatform = aPlatformAPI;
   if (!mLib) {
     return GMPGenericErr;
@@ -76,24 +75,24 @@ GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
   // Note: we must call the VerifyCdmHost_0 function if it's present before
   // we call the initialize function.
   auto verify = reinterpret_cast<decltype(::VerifyCdmHost_0)*>(
-      PR_FindFunctionSymbol(mLib, STRINGIFY(VerifyCdmHost_0)));
+      PR_FindFunctionSymbol(mLib, MOZ_STRINGIFY(VerifyCdmHost_0)));
   if (verify) {
     nsTArray<cdm::HostFile> files;
     for (HostFileData& hostFile : mHostFiles) {
       files.AppendElement(TakeToCDMHostFile(hostFile));
     }
     bool result = verify(files.Elements(), files.Length());
-    GMP_LOG("%s VerifyCdmHost_0 returned %d", __func__, result);
+    GMP_LOG_DEBUG("%s VerifyCdmHost_0 returned %d", __func__, result);
   }
 #endif
 
   auto init = reinterpret_cast<decltype(::INITIALIZE_CDM_MODULE)*>(
-      PR_FindFunctionSymbol(mLib, STRINGIFY(INITIALIZE_CDM_MODULE)));
+      PR_FindFunctionSymbol(mLib, MOZ_STRINGIFY(INITIALIZE_CDM_MODULE)));
   if (!init) {
     return GMPGenericErr;
   }
 
-  GMP_LOG(STRINGIFY(INITIALIZE_CDM_MODULE) "()");
+  GMP_LOG_DEBUG(MOZ_STRINGIFY(INITIALIZE_CDM_MODULE) "()");
   init();
 
   return GMPNoErr;
@@ -101,15 +100,15 @@ GMPErr ChromiumCDMAdapter::GMPInit(const GMPPlatformAPI* aPlatformAPI) {
 
 GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
                                      void** aPluginAPI, uint32_t aDecryptorId) {
-  GMP_LOG("ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p",
-          aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this);
+  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p",
+                aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this);
   bool isCDM10 = !strcmp(aAPIName, CHROMIUM_CDM_API);
   bool isCDM9 = !strcmp(aAPIName, CHROMIUM_CDM_API_BACKWARD_COMPAT);
   if (isCDM9 || isCDM10) {
     auto create = reinterpret_cast<decltype(::CreateCdmInstance)*>(
         PR_FindFunctionSymbol(mLib, "CreateCdmInstance"));
     if (!create) {
-      GMP_LOG(
+      GMP_LOG_DEBUG(
           "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p "
           "FAILED to find CreateCdmInstance",
           aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this);
@@ -122,26 +121,26 @@ GMPErr ChromiumCDMAdapter::GMPGetAPI(const char* aAPIName, void* aHostAPI,
                        mozilla::ArrayLength(EME_KEY_SYSTEM_WIDEVINE) - 1,
                        &ChromiumCdmHost, aHostAPI);
     if (!cdm) {
-      GMP_LOG(
+      GMP_LOG_DEBUG(
           "ChromiumCDMAdapter::GMPGetAPI(%s, 0x%p, 0x%p, %u) this=0x%p "
           "FAILED to create cdm version %d",
           aAPIName, aHostAPI, aPluginAPI, aDecryptorId, this, version);
       return GMPGenericErr;
     }
-    GMP_LOG("cdm: 0x%p, version: %d", cdm, version);
+    GMP_LOG_DEBUG("cdm: 0x%p, version: %d", cdm, version);
     *aPluginAPI = cdm;
   }
   return *aPluginAPI ? GMPNoErr : GMPNotImplementedErr;
 }
 
 void ChromiumCDMAdapter::GMPShutdown() {
-  GMP_LOG("ChromiumCDMAdapter::GMPShutdown()");
+  GMP_LOG_DEBUG("ChromiumCDMAdapter::GMPShutdown()");
 
   decltype(::DeinitializeCdmModule)* deinit;
   deinit =
       (decltype(deinit))(PR_FindFunctionSymbol(mLib, "DeinitializeCdmModule"));
   if (deinit) {
-    GMP_LOG("DeinitializeCdmModule()");
+    GMP_LOG_DEBUG("DeinitializeCdmModule()");
     deinit();
   }
 }
@@ -186,8 +185,8 @@ DWORD WINAPI QueryDosDeviceWHook(LPCWSTR lpDeviceName, LPWSTR lpTargetPath,
   }
   PodCopy(lpTargetPath, device.c_str(), device.size());
   lpTargetPath[device.size()] = 0;
-  GMP_LOG("QueryDosDeviceWHook %S -> %S", lpDeviceName, lpTargetPath);
-  return name.size();
+  GMP_LOG_DEBUG("QueryDosDeviceWHook %S -> %S", lpDeviceName, lpTargetPath);
+  return device.size();
 }
 
 static std::vector<std::wstring> GetDosDeviceNames() {

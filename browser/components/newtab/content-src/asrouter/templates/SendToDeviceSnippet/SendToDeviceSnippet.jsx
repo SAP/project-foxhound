@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this file,
+ * You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 import { isEmailOrPhoneNumber } from "./isEmailOrPhoneNumber";
 import React from "react";
 import schema from "./SendToDeviceSnippet.schema.json";
@@ -38,6 +42,7 @@ function addDefaultValues(props) {
     ...props,
     content: {
       scene1_button_label: schema.properties.scene1_button_label.default,
+      retry_button_label: schema.properties.retry_button_label.default,
       scene2_dismiss_button_text:
         schema.properties.scene2_dismiss_button_text.default,
       scene2_button_label: schema.properties.scene2_button_label.default,

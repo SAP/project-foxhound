@@ -274,7 +274,7 @@ PROT_ListManager.prototype.setUpdateCheckTimer = function(updateUrl, delay) {
 /**
  * Acts as a nsIUrlClassifierCallback for getTables.
  */
-PROT_ListManager.prototype.kickoffUpdate_ = function(onDiskTableData) {
+PROT_ListManager.prototype.kickoffUpdate_ = function() {
   this.startingUpdate_ = false;
   var initialUpdateDelay = 3000;
   // Add a fuzz of 0-1 minutes for both v2 and v4 according to Bug 1305478.
@@ -359,7 +359,7 @@ PROT_ListManager.prototype.maybeToggleUpdateChecking = function() {
     if (!this.startingUpdate_) {
       this.startingUpdate_ = true;
       // check the current state of tables in the database
-      this.dbService_.getTables(this.kickoffUpdate_.bind(this));
+      this.kickoffUpdate_();
     }
   } else {
     log("Stopping managing lists (if currently active)");
@@ -564,7 +564,7 @@ PROT_ListManager.prototype.makeUpdateRequest_ = function(updateUrl, tableData) {
   log("update request: " + JSON.stringify(streamerMap, undefined, 2) + "\n");
 
   // Don't send an empty request.
-  if (streamerMap.requestPayload.length > 0) {
+  if (streamerMap.requestPayload.length) {
     this.makeUpdateRequestForEntry_(
       updateUrl,
       streamerMap.tableList,

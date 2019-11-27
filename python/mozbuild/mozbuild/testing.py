@@ -4,17 +4,19 @@
 
 from __future__ import absolute_import, print_function, unicode_literals
 
-import cPickle as pickle
 import os
 import sys
 
-import mozpack.path as mozpath
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
-from mozpack.copier import FileCopier
-from mozpack.manifests import InstallManifest
 
 import manifestparser
-
+import mozpack.path as mozpath
+from mozpack.copier import FileCopier
+from mozpack.manifests import InstallManifest
 
 # These definitions provide a single source of truth for modules attempting
 # to get a view of all tests for a build. Used by the emitter to figure out
@@ -66,16 +68,17 @@ TEST_MANIFESTS = dict(
     XPCSHELL_TESTS=('xpcshell', 'xpcshell', '.', True),
 )
 
-# Reftests have their own manifest format and are processed separately.
+# reftests, wpt, and puppeteer all have their own manifest formats
+# and are processed separately
 REFTEST_FLAVORS = ('crashtest', 'reftest')
-
-# Web platform tests have their own manifest format and are processed separately.
+PUPPETEER_FLAVORS = ('puppeteer',)
 WEB_PLATFORM_TESTS_FLAVORS = ('web-platform-tests',)
 
 
 def all_test_flavors():
     return ([v[0] for v in TEST_MANIFESTS.values()] +
             list(REFTEST_FLAVORS) +
+            list(PUPPETEER_FLAVORS) +
             list(WEB_PLATFORM_TESTS_FLAVORS))
 
 

@@ -33,15 +33,15 @@ add_task(async function test_switchtab_override() {
   EventUtils.synthesizeKey("KEY_ArrowDown");
   let result = await UrlbarTestUtils.getDetailsOfResultAt(
     window,
-    UrlbarTestUtils.getSelectedIndex(window)
+    UrlbarTestUtils.getSelectedRowIndex(window)
   );
   Assert.equal(result.type, UrlbarUtils.RESULT_TYPE.TAB_SWITCH);
 
   // Check to see if the switchtab label is visible and
   // all other labels are hidden
-  const allLabels = document.getElementById("urlbar-display-box").children;
+  const allLabels = document.getElementById("urlbar-label-box").children;
   for (let label of allLabels) {
-    if (label.id == "switchtab") {
+    if (label.id == "urlbar-label-switchtab") {
       Assert.ok(BrowserTestUtils.is_visible(label));
     } else {
       Assert.ok(BrowserTestUtils.is_hidden(label));
@@ -75,11 +75,9 @@ add_task(async function test_switchtab_override() {
     EventUtils.synthesizeKey("KEY_Shift", { type: "keyup" });
   });
 
-  let attribute = UrlbarPrefs.get("quantumbar")
-    ? "actionoverride"
-    : "noactions";
+  let attribute = "actionoverride";
   Assert.ok(
-    UrlbarTestUtils.getPanel(window).hasAttribute(attribute),
+    gURLBar.view.panel.hasAttribute(attribute),
     "We should be overriding"
   );
 
@@ -89,7 +87,7 @@ add_task(async function test_switchtab_override() {
 
   // Blurring the urlbar should have cleared the override.
   Assert.ok(
-    !UrlbarTestUtils.getPanel(window).hasAttribute(attribute),
+    !gURLBar.view.panel.hasAttribute(attribute),
     "We should not be overriding anymore"
   );
 

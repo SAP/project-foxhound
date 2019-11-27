@@ -82,13 +82,13 @@ mod box_shadow;
 mod capture;
 mod clip;
 mod clip_scroll_tree;
+mod composite;
 mod debug_colors;
 mod debug_font_data;
 mod debug_render;
 #[cfg(feature = "debugger")]
 mod debug_server;
 mod device;
-mod display_list_flattener;
 mod ellipse;
 mod filterdata;
 mod frame_builder;
@@ -98,8 +98,6 @@ mod gamma_lut;
 mod glyph_cache;
 mod glyph_rasterizer;
 mod gpu_cache;
-#[cfg(feature = "pathfinder")]
-mod gpu_glyph_renderer;
 mod gpu_types;
 mod hit_test;
 mod image;
@@ -110,11 +108,15 @@ mod prim_store;
 mod print_tree;
 mod record;
 mod render_backend;
+mod render_target;
+mod render_task_graph;
+mod render_task_cache;
 mod render_task;
 mod renderer;
 mod resource_cache;
 mod scene;
-mod scene_builder;
+mod scene_builder_thread;
+mod scene_building;
 mod screen_capture;
 mod segment;
 mod shade;
@@ -122,7 +124,6 @@ mod spatial_node;
 mod storage;
 mod texture_allocator;
 mod texture_cache;
-mod tiling;
 mod util;
 
 mod shader_source {
@@ -174,14 +175,6 @@ pub extern crate euclid;
 extern crate fxhash;
 extern crate gleam;
 extern crate num_traits;
-#[cfg(feature = "pathfinder")]
-extern crate pathfinder_font_renderer;
-#[cfg(feature = "pathfinder")]
-extern crate pathfinder_gfx_utils;
-#[cfg(feature = "pathfinder")]
-extern crate pathfinder_partitioner;
-#[cfg(feature = "pathfinder")]
-extern crate pathfinder_path_utils;
 extern crate plane_split;
 extern crate rayon;
 #[cfg(feature = "ron")]
@@ -208,17 +201,19 @@ pub extern crate api;
 extern crate webrender_build;
 
 #[doc(hidden)]
-pub use crate::device::{build_shader_strings, UploadMethod, VertexUsageHint};
-pub use crate::device::{ProgramBinary, ProgramCache, ProgramCacheObserver};
+pub use crate::device::{build_shader_strings, UploadMethod, VertexUsageHint, get_gl_target};
+pub use crate::device::{ProgramBinary, ProgramCache, ProgramCacheObserver, FormatDesc};
 pub use crate::device::Device;
 pub use crate::frame_builder::ChasePrimitive;
+pub use crate::prim_store::PrimitiveDebugId;
 pub use crate::profiler::{ProfilerHooks, set_profiler_hooks};
 pub use crate::renderer::{
     AsyncPropertySampler, CpuProfile, DebugFlags, OutputImageHandler, RendererKind, ExternalImage,
     ExternalImageHandler, ExternalImageSource, GpuProfile, GraphicsApi, GraphicsApiInfo,
     PipelineInfo, Renderer, RendererOptions, RenderResults, RendererStats, SceneBuilderHooks,
-    ThreadListener, ShaderPrecacheFlags, MAX_VERTEX_TEXTURE_WIDTH,
+    ThreadListener, ShaderPrecacheFlags, MAX_VERTEX_TEXTURE_WIDTH, PresentConfig,
 };
 pub use crate::screen_capture::{AsyncScreenshotHandle, RecordedFrameHandle};
 pub use crate::shade::{Shaders, WrShaders};
 pub use api as webrender_api;
+pub use webrender_build::shader::ProgramSourceDigest;

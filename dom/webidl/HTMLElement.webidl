@@ -12,8 +12,10 @@
  * and create derivative works of this document.
  */
 
-[HTMLConstructor]
+[Exposed=Window]
 interface HTMLElement : Element {
+  [HTMLConstructor] constructor();
+
   // metadata attributes
   [CEReactions]
            attribute DOMString title;
@@ -22,8 +24,6 @@ interface HTMLElement : Element {
   //         attribute boolean translate;
   [CEReactions, SetterThrows, Pure]
            attribute DOMString dir;
-  [Constant]
-  readonly attribute DOMStringMap dataset;
 
   [CEReactions, GetterThrows, Pure]
            attribute [TreatNullAs=EmptyString] DOMString innerText;
@@ -33,10 +33,6 @@ interface HTMLElement : Element {
            attribute boolean hidden;
   [NeedsCallerType]
   void click();
-  [CEReactions, SetterThrows, Pure]
-           attribute long tabIndex;
-  [Throws]
-  void blur();
   [CEReactions, SetterThrows, Pure]
            attribute DOMString accessKey;
   [Pure]
@@ -62,10 +58,6 @@ interface HTMLElement : Element {
   //readonly attribute boolean? commandHidden;
   //readonly attribute boolean? commandDisabled;
   //readonly attribute boolean? commandChecked;
-
-  // styling
-  [PutForwards=cssText, Constant]
-  readonly attribute CSSStyleDeclaration style;
 };
 
 // http://dev.w3.org/csswg/cssom-view/#extensions-to-the-htmlelement-interface
@@ -78,8 +70,7 @@ partial interface HTMLElement {
   readonly attribute long offsetHeight;
 };
 
-[NoInterfaceObject]
-interface TouchEventHandlers {
+interface mixin TouchEventHandlers {
   [Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
            attribute EventHandler ontouchstart;
   [Func="nsGenericHTMLElement::LegacyTouchAPIEnabled"]
@@ -90,10 +81,12 @@ interface TouchEventHandlers {
            attribute EventHandler ontouchcancel;
 };
 
-HTMLElement implements GlobalEventHandlers;
-HTMLElement implements HTMLOrSVGOrXULElementMixin;
-HTMLElement implements DocumentAndElementEventHandlers;
-HTMLElement implements TouchEventHandlers;
-HTMLElement implements OnErrorEventHandlerForNodes;
+HTMLElement includes GlobalEventHandlers;
+HTMLElement includes HTMLOrForeignElement;
+HTMLElement includes DocumentAndElementEventHandlers;
+HTMLElement includes ElementCSSInlineStyle;
+HTMLElement includes TouchEventHandlers;
+HTMLElement includes OnErrorEventHandlerForNodes;
 
+[Exposed=Window]
 interface HTMLUnknownElement : HTMLElement {};

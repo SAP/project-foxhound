@@ -10,7 +10,6 @@ const {
 } = require("devtools/client/shared/vendor/react");
 const EventEmitter = require("devtools/shared/event-emitter");
 const { Provider } = require("devtools/client/shared/vendor/react-redux");
-const ObjectClient = require("devtools/shared/client/object-client");
 const ExtensionSidebarComponent = createFactory(
   require("./components/ExtensionSidebar")
 );
@@ -71,28 +70,19 @@ class ExtensionSidebar {
             this.emit("extension-page-unmount", containerEl);
           },
           serviceContainer: {
-            createObjectClient: object => {
-              return new ObjectClient(
-                this.inspector.toolbox.target.client,
-                object
-              );
-            },
-            releaseActor: actor => {
-              if (!actor) {
-                return;
-              }
-              this.inspector.toolbox.target.client.release(actor);
-            },
             highlightDomElement: async (grip, options = {}) => {
-              const { highlighter } = this.inspector;
+              // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
               const nodeFront = await this.inspector.walker.gripToNodeFront(
                 grip
               );
-              return highlighter.highlight(nodeFront, options);
+              return nodeFront.highlighterFront.highlight(nodeFront, options);
             },
-            unHighlightDomElement: (forceHide = false) => {
-              const { highlighter } = this.inspector;
-              return highlighter.unhighlight(forceHide);
+            unHighlightDomElement: async grip => {
+              // TODO: Bug1574506 - Use the contextual WalkerFront for gripToNodeFront.
+              const nodeFront = await this.inspector.walker.gripToNodeFront(
+                grip
+              );
+              return nodeFront.highlighterFront.unhighlight();
             },
             openNodeInInspector: async grip => {
               const { walker } = this.inspector;

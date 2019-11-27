@@ -333,7 +333,9 @@ static_assert(nsIContentPolicy::TYPE_INVALID == 0 &&
                   nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD == 43 &&
                   nsIContentPolicy::TYPE_SPECULATIVE == 44 &&
                   nsIContentPolicy::TYPE_INTERNAL_MODULE == 45 &&
-                  nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD == 46,
+                  nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD == 46 &&
+                  nsIContentPolicy::TYPE_INTERNAL_DTD == 47 &&
+                  nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD == 48,
               "nsContentPolicyType values are as expected");
 
 namespace {
@@ -2509,17 +2511,7 @@ nsresult ReadResponse(mozIStorageConnection* aConn, EntryId aEntryId,
     return rv;
   }
 
-#ifdef NIGHTLY_BUILD
-  bool shouldUpdateTo26 = false;
-  if (nullPadding && aSavedResponseOut->mValue.type() == ResponseType::Opaque) {
-    // XXXtt: This should be removed in the future (e.g. Nightly 58) by
-    // bug 1398167.
-    shouldUpdateTo26 = true;
-    aSavedResponseOut->mValue.paddingSize() = 0;
-  } else if (nullPadding) {
-#else
   if (nullPadding) {
-#endif  // NIGHTLY_BUILD
     MOZ_DIAGNOSTIC_ASSERT(aSavedResponseOut->mValue.type() !=
                           ResponseType::Opaque);
     aSavedResponseOut->mValue.paddingSize() =
@@ -2542,21 +2534,6 @@ nsresult ReadResponse(mozIStorageConnection* aConn, EntryId aEntryId,
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-
-#ifdef NIGHTLY_BUILD
-  if (shouldUpdateTo26) {
-    // XXXtt: This is a quick fix for not updating properly in Nightly 57.
-    // Note: This should be removed in the future (e.g. Nightly 58) by
-    // bug 1398167.
-    rv = aConn->ExecuteSimpleSQL(
-        NS_LITERAL_CSTRING("UPDATE entries SET response_padding_size = 0 "
-                           "WHERE response_type = 4 "  // opaque response
-                           "AND response_padding_size IS NULL"));
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-#endif  // NIGHTLY_BUILD
 
   rv = aConn->CreateStatement(NS_LITERAL_CSTRING("SELECT "
                                                  "name, "

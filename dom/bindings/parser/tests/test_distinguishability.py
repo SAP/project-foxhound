@@ -59,8 +59,6 @@ def WebIDLTest(parser, harness):
         void passKid(Kid arg);
         void passParent(Parent arg);
         void passGrandparent(Grandparent arg);
-        void passImplemented(Implemented arg);
-        void passImplementedParent(ImplementedParent arg);
         void passUnrelated1(Unrelated1 arg);
         void passUnrelated2(Unrelated2 arg);
         void passArrayBuffer(ArrayBuffer arg);
@@ -70,9 +68,6 @@ def WebIDLTest(parser, harness):
       interface Kid : Parent {};
       interface Parent : Grandparent {};
       interface Grandparent {};
-      interface Implemented : ImplementedParent {};
-      Parent implements Implemented;
-      interface ImplementedParent {};
       interface Unrelated1 {};
       interface Unrelated2 {};
     """)
@@ -156,8 +151,7 @@ def WebIDLTest(parser, harness):
     argTypes = [ "long", "short", "long?", "short?", "boolean",
                  "boolean?", "DOMString", "ByteString", "Enum", "Enum2",
                  "Interface", "Interface?",
-                 "AncestorInterface", "UnrelatedInterface",
-                 "ImplementedInterface", "CallbackInterface",
+                 "AncestorInterface", "UnrelatedInterface", "CallbackInterface",
                  "CallbackInterface?", "CallbackInterface2",
                  "object", "Callback", "Callback2", "Dict",
                  "Dict2", "sequence<long>", "sequence<short>",
@@ -166,7 +160,7 @@ def WebIDLTest(parser, harness):
                  "record<ByteString, long>",
                  "Date", "Date?", "any",
                  "Promise<any>", "Promise<any>?",
-                 "USVString", "ArrayBuffer", "ArrayBufferView", "SharedArrayBuffer",
+                 "USVString", "JSString", "ArrayBuffer", "ArrayBufferView", "SharedArrayBuffer",
                  "Uint8Array", "Uint16Array",
                  "(long or Callback)", "(long or Dict)",
     ]
@@ -183,14 +177,14 @@ def WebIDLTest(parser, harness):
     primitives = numerics + booleans
     nonNumerics = allBut(argTypes, numerics + unions)
     nonBooleans = allBut(argTypes, booleans)
-    strings = [ "DOMString", "ByteString", "Enum", "Enum2", "USVString" ]
+    strings = [ "DOMString", "ByteString", "Enum", "Enum2", "USVString", "JSString" ]
     nonStrings = allBut(argTypes, strings)
     nonObjects = primitives + strings
     objects = allBut(argTypes, nonObjects )
     bufferSourceTypes = ["ArrayBuffer", "ArrayBufferView", "Uint8Array", "Uint16Array"]
     sharedBufferSourceTypes = ["SharedArrayBuffer"]
     interfaces = [ "Interface", "Interface?", "AncestorInterface",
-                   "UnrelatedInterface", "ImplementedInterface" ] + bufferSourceTypes + sharedBufferSourceTypes
+                   "UnrelatedInterface" ] + bufferSourceTypes + sharedBufferSourceTypes
     nullables = (["long?", "short?", "boolean?", "Interface?",
                   "CallbackInterface?", "Dict", "Dict2",
                   "Date?", "any", "Promise<any>?"] +
@@ -202,7 +196,7 @@ def WebIDLTest(parser, harness):
     notRelatedInterfaces = (nonObjects + ["UnrelatedInterface"] +
                             otherObjects + dates + sequences + bufferSourceTypes + sharedBufferSourceTypes)
     records = [ "record<DOMString, object>", "record<USVString, Dict>",
-                "record<ByteString, long>" ]
+                "record<ByteString, long>" ] # JSString not supported in records
 
     # Build a representation of the distinguishability table as a dict
     # of dicts, holding True values where needed, holes elsewhere.
@@ -222,6 +216,7 @@ def WebIDLTest(parser, harness):
     setDistinguishable("DOMString", nonStrings)
     setDistinguishable("ByteString", nonStrings)
     setDistinguishable("USVString", nonStrings)
+    setDistinguishable("JSString", nonStrings)
     setDistinguishable("Enum", nonStrings)
     setDistinguishable("Enum2", nonStrings)
     setDistinguishable("Interface", notRelatedInterfaces)
@@ -229,7 +224,6 @@ def WebIDLTest(parser, harness):
     setDistinguishable("AncestorInterface", notRelatedInterfaces)
     setDistinguishable("UnrelatedInterface",
                        allBut(argTypes, ["object", "UnrelatedInterface"]))
-    setDistinguishable("ImplementedInterface", notRelatedInterfaces)
     setDistinguishable("CallbackInterface", nonUserObjects)
     setDistinguishable("CallbackInterface?", allBut(nonUserObjects, nullables))
     setDistinguishable("CallbackInterface2", nonUserObjects)
@@ -244,6 +238,7 @@ def WebIDLTest(parser, harness):
                        allBut(argTypes, sequences + ["object"]))
     setDistinguishable("record<DOMString, object>", nonUserObjects)
     setDistinguishable("record<USVString, Dict>", nonUserObjects)
+    # JSString not supported in records
     setDistinguishable("record<ByteString, long>", nonUserObjects)
     setDistinguishable("Date", allBut(argTypes, dates + ["object"]))
     setDistinguishable("Date?", allBut(argTypes, dates + nullables + ["object"]))
@@ -270,8 +265,6 @@ def WebIDLTest(parser, harness):
           interface Interface : AncestorInterface {};
           interface AncestorInterface {};
           interface UnrelatedInterface {};
-          interface ImplementedInterface {};
-          Interface implements ImplementedInterface;
           callback interface CallbackInterface {};
           callback interface CallbackInterface2 {};
           callback Callback = any();

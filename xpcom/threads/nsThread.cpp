@@ -33,7 +33,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
 #include "mozilla/SystemGroup.h"
 #include "nsXPCOMPrivate.h"
 #include "mozilla/ChaosMode.h"
@@ -565,7 +564,8 @@ void nsThread::InitCommon() {
 
     pthread_attr_destroy(&attr);
 #elif defined(XP_WIN)
-    static const DynamicallyLinkedFunctionPtr<GetCurrentThreadStackLimitsFn>
+    static const StaticDynamicallyLinkedFunctionPtr<
+        GetCurrentThreadStackLimitsFn>
         sGetStackLimits(L"kernel32.dll", "GetCurrentThreadStackLimits");
 
     if (sGetStackLimits) {
@@ -1223,6 +1223,7 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
       currentPerformanceCounter = mCurrentPerformanceCounter;
 
       event->Run();
+      mEvents->DidRunEvent();
 
       mozilla::TimeDuration duration;
       // Remember the last 50ms+ task on mainthread for Long Task.
@@ -1237,11 +1238,10 @@ nsThread::ProcessNextEvent(bool aMayWait, bool* aResult) {
           mLastLongTaskEnd = now;
 #ifdef MOZ_GECKO_PROFILER
           if (profiler_thread_is_being_profiled()) {
-            profiler_add_marker(
+            PROFILER_ADD_MARKER_WITH_PAYLOAD(
                 (priority != EventQueuePriority::Idle) ? "LongTask"
                                                        : "LongIdleTask",
-                JS::ProfilingCategoryPair::OTHER,
-                MakeUnique<LongTaskMarkerPayload>(mCurrentEventStart, now));
+                OTHER, LongTaskMarkerPayload, (mCurrentEventStart, now));
           }
 #endif
         }

@@ -10,6 +10,8 @@
 #include "mozilla/dom/PWindowGlobal.h"
 #include "mozilla/dom/Promise.h"
 #include "js/Promise.h"
+#include "xpcprivate.h"
+#include "nsIXPConnect.h"
 
 namespace mozilla {
 namespace dom {
@@ -31,6 +33,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(JSWindowActor)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPendingQueries)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWrappedJS)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(JSWindowActor)
@@ -38,17 +41,17 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(JSWindowActor)
 JSWindowActor::JSWindowActor() : mNextQueryId(0) {}
 
 void JSWindowActor::StartDestroy() {
-  DestroyCallback(DestroyCallbackFunction::WillDestroy);
+  InvokeCallback(CallbackFunction::WillDestroy);
 }
 
 void JSWindowActor::AfterDestroy() {
-  DestroyCallback(DestroyCallbackFunction::DidDestroy);
+  InvokeCallback(CallbackFunction::DidDestroy);
 }
 
-void JSWindowActor::DestroyCallback(DestroyCallbackFunction callback) {
+void JSWindowActor::InvokeCallback(CallbackFunction callback) {
   AutoEntryScript aes(GetParentObject(), "JSWindowActor destroy callback");
   JSContext* cx = aes.cx();
-  MozActorDestroyCallbacks callbacksHolder;
+  MozJSWindowActorCallbacks callbacksHolder;
   NS_ENSURE_TRUE_VOID(GetWrapper());
   JS::Rooted<JS::Value> val(cx, JS::ObjectValue(*GetWrapper()));
   if (NS_WARN_IF(!callbacksHolder.Init(cx, val))) {
@@ -56,15 +59,39 @@ void JSWindowActor::DestroyCallback(DestroyCallbackFunction callback) {
   }
 
   // Destroy callback is optional.
-  if (callback == DestroyCallbackFunction::WillDestroy) {
+  if (callback == CallbackFunction::WillDestroy) {
     if (callbacksHolder.mWillDestroy.WasPassed()) {
       callbacksHolder.mWillDestroy.Value()->Call(this);
     }
-  } else {
+  } else if (callback == CallbackFunction::DidDestroy) {
     if (callbacksHolder.mDidDestroy.WasPassed()) {
       callbacksHolder.mDidDestroy.Value()->Call(this);
     }
+  } else {
+    if (callbacksHolder.mActorCreated.WasPassed()) {
+      callbacksHolder.mActorCreated.Value()->Call(this);
+    }
   }
+}
+
+nsresult JSWindowActor::QueryInterfaceActor(const nsIID& aIID, void** aPtr) {
+  if (!mWrappedJS) {
+    AutoEntryScript aes(GetParentObject(), "JSWindowActor query interface");
+    JSContext* cx = aes.cx();
+
+    JS::Rooted<JSObject*> self(cx, GetWrapper());
+    JSAutoRealm ar(cx, self);
+
+    RefPtr<nsXPCWrappedJS> wrappedJS;
+    nsresult rv = nsXPCWrappedJS::GetNewOrUsed(
+        cx, self, NS_GET_IID(nsISupports), getter_AddRefs(wrappedJS));
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    mWrappedJS = do_QueryInterface(wrappedJS);
+    MOZ_ASSERT(mWrappedJS);
+  }
+
+  return mWrappedJS->QueryInterface(aIID, aPtr);
 }
 
 void JSWindowActor::RejectPendingQueries() {
@@ -85,11 +112,10 @@ void JSWindowActor::SetName(const nsAString& aName) {
 void JSWindowActor::SendAsyncMessage(JSContext* aCx,
                                      const nsAString& aMessageName,
                                      JS::Handle<JS::Value> aObj,
-                                     JS::Handle<JS::Value> aTransfers,
                                      ErrorResult& aRv) {
   ipc::StructuredCloneData data;
-  if (!nsFrameMessageManager::GetParamsForMessage(aCx, aObj, aTransfers,
-                                                  data)) {
+  if (!nsFrameMessageManager::GetParamsForMessage(
+          aCx, aObj, JS::UndefinedHandleValue, data)) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
     return;
   }
@@ -104,10 +130,10 @@ void JSWindowActor::SendAsyncMessage(JSContext* aCx,
 
 already_AddRefed<Promise> JSWindowActor::SendQuery(
     JSContext* aCx, const nsAString& aMessageName, JS::Handle<JS::Value> aObj,
-    JS::Handle<JS::Value> aTransfers, ErrorResult& aRv) {
+    ErrorResult& aRv) {
   ipc::StructuredCloneData data;
-  if (!nsFrameMessageManager::GetParamsForMessage(aCx, aObj, aTransfers,
-                                                  data)) {
+  if (!nsFrameMessageManager::GetParamsForMessage(
+          aCx, aObj, JS::UndefinedHandleValue, data)) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
     return nullptr;
   }

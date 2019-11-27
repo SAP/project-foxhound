@@ -98,13 +98,15 @@ l10n_description_schema = schema.extend({
 
     # Docker image required for task.  We accept only in-tree images
     # -- generally desktop-build or android-build -- for now.
-    Required('docker-image'): _by_platform(Any(
+    Required('docker-image', default=None): _by_platform(Any(
         # an in-tree generated docker image (from `taskcluster/docker/<name>`)
         {'in-tree': basestring},
         None,
     )),
 
-    Optional('toolchains'): _by_platform([basestring]),
+    Optional('fetches'): {
+        basestring: _by_platform([basestring]),
+    },
 
     # The set of secret names to which the task has access; these are prefixed
     # with `project/releng/gecko/{treeherder.kind}/level-{level}/`.  Setting
@@ -234,7 +236,7 @@ def handle_keyed_by(config, jobs):
         "run-time",
         "docker-image",
         "secrets",
-        "toolchains",
+        "fetches.toolchain",
         "tooltool",
         "env",
         "ignore-locales",
@@ -383,6 +385,7 @@ def make_job_description(config, jobs):
         if job.get('extra'):
             job_description['extra'] = job['extra']
 
+        job_description['run']['tooltool-downloads'] = job['tooltool']
         if job['worker-type'] == "b-win2012":
             job_description['worker'] = {
                 'os': 'windows',
@@ -396,14 +399,13 @@ def make_job_description(config, jobs):
                 'max-run-time': job['run-time'],
                 'chain-of-trust': True,
             }
-            job_description['run']['tooltool-downloads'] = job['tooltool']
             job_description['run']['need-xvfb'] = True
 
         if job.get('docker-image'):
             job_description['worker']['docker-image'] = job['docker-image']
 
-        if job.get('toolchains'):
-            job_description['toolchains'] = job['toolchains']
+        if job.get('fetches'):
+            job_description['fetches'] = job['fetches']
 
         if job.get('index'):
             job_description['index'] = {
