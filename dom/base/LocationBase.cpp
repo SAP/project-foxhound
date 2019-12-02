@@ -156,6 +156,10 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
 
 void LocationBase::SetHref(const nsAString& aHref,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
+
+  // Taintfox: location.href sink
+  ReportTaintSink(aHref, "location.href");
+
   DoSetHref(aHref, aSubjectPrincipal, false, aRv);
 }
 
@@ -218,6 +222,10 @@ void LocationBase::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
 
 void LocationBase::Replace(const nsAString& aUrl,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
+
+  // Taintfox: location.assign sink
+  ReportTaintSink(aUrl, "location.replace");
+
   DoSetHref(aUrl, aSubjectPrincipal, true, aRv);
 }
 
