@@ -50,7 +50,7 @@ node ('master') {
                 stage('Checkout') {
                     checkout([$class: 'GitSCM',
                         branches: [[name: '*/master']],
-                        extensions: [[$class: 'CloneOption', timeout: 120]],
+                        extensions: [[$class: 'CloneOption', timeout: 300]],
                         gitTool: 'Default',
                         depth: "1",
                         userRemoteConfigs: [[url: 'https://github.wdf.sap.corp/WebSecResearch/taintfox.git']]
@@ -60,6 +60,7 @@ node ('master') {
                 stage('Bootstrap') {
                     sh """#!/bin/bash
                           [ -s "$HOME/.nvm/nvm.sh" ] && \\. "$HOME/.nvm/nvm.sh"
+			  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.38.0
                           ./mach bootstrap --application-choice=browser --no-interactive 
                     """
                 }
