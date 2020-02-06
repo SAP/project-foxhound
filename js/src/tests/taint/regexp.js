@@ -13,7 +13,7 @@ function regexpTestString(url) {
 
 function regexpTest() {
     var url = "https://www.hello.com/#1234567890aaaaaaaabbbbbbbbccccccccdddddddd"
-    
+
     regexpTestString("https://www.hello.com/#1234567890");
     regexpTestString("https://www.hello.com/#1234567890aaaaaaaabbbbbbbbccccccccdddddddd");
 

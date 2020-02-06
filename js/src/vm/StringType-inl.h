@@ -75,7 +75,8 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
 // Create a thin inline string if possible, and a fat inline string if not.
 template <typename CharT>
 static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
-    JSContext* cx, HandleLinearString base, size_t start, size_t length) {
+  JSContext* cx, HandleLinearString base, size_t start, size_t length,
+  const StringTaint* optTaint) {
   MOZ_ASSERT(JSInlineString::lengthFits<CharT>(length));
 
   CharT* chars;
@@ -86,7 +87,9 @@ static MOZ_ALWAYS_INLINE JSInlineString* NewInlineString(
 
   // TaintFox: Copy taint information.
   s->initTaint();
-  if (base->isTainted()) {
+  if (optTaint != nullptr) {
+    s->setTaint(cx, *optTaint);
+  } else if (base->isTainted()) {
     StringTaint newTaint = base->taint().subtaint(start, start + length);
     s->setTaint(cx, newTaint);
   }
@@ -249,8 +252,8 @@ MOZ_ALWAYS_INLINE JSLinearString* JSDependentString::new_(
   if (useInline) {
     js::RootedLinearString base(cx, baseArg);
     return baseArg->hasLatin1Chars()
-               ? js::NewInlineString<JS::Latin1Char>(cx, base, start, length)
-               : js::NewInlineString<char16_t>(cx, base, start, length);
+      ? js::NewInlineString<JS::Latin1Char>(cx, base, start, length, &taint)
+      : js::NewInlineString<char16_t>(cx, base, start, length, &taint);
   }
 
   if (baseArg->isExternal() && !baseArg->ensureFlat(cx)) {

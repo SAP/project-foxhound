@@ -76,13 +76,24 @@ template <typename CharT>
 JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
   size_t len = length();
 
-  if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
-    return staticStr;
-  }
+  // Taintfox: propagate taint
+  StringTaint taint = this->taint();
+
+  // Taintfox: Disable static string return
+  // if (JSAtom* staticStr = cx->staticStrings().lookup(begin<CharT>(), len)) {
+  //   return staticStr;
+  // }
 
   if (JSInlineString::lengthFits<CharT>(len)) {
     mozilla::Range<const CharT> range(begin<CharT>(), len);
-    return NewInlineString<CanGC>(cx, range);
+    JSFlatString* str = NewInlineString<CanGC>(cx, range);
+
+    // TaintFox: Propagate taint to newly created string.
+    str->setTaint(cx, taint);
+    // Taintfox: clear the stringbuffer taint information
+    clearTaint();
+
+    return str;
   }
 
   if (!append('\0')) {
@@ -101,15 +112,8 @@ JSFlatString* StringBuffer::finishStringInternal(JSContext* cx) {
     return nullptr;
   }
 
-  /*
-   * The allocation was made on a TempAllocPolicy, so account for the string
-   * data on the string's zone.
-   */
-  // TaintFox: don't think this is needed, but might cause memory issues?
-  // cx->updateMallocCounter(sizeof(CharT) * len);
-
   // TaintFox: Propagate taint to newly created string.
-  str->setTaint(cx, taint());
+  str->setTaint(cx, taint);
   // Taintfox: clear the stringbuffer taint information
   clearTaint();
 
