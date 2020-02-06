@@ -1375,18 +1375,19 @@ static MOZ_MUST_USE bool EvalUtf8AndPrint(JSContext* cx, const char* bytes,
     // Print.
     // Taintfox
     if (result.isString() && result.toString()->isTainted()) {
-        PrintTaintedString(cx, &result);
+      PrintTaintedString(cx, &result);
     } else {
       RootedString str(cx, JS_ValueToSource(cx, result));
       if (!str) {
         return false;
       }
 
-    UniqueChars utf8chars = JS_EncodeStringToUTF8(cx, str);
-    if (!utf8chars) {
-      return false;
+      UniqueChars utf8chars = JS_EncodeStringToUTF8(cx, str);
+      if (!utf8chars) {
+        return false;
+      }
+      fprintf(gOutFile->fp, "%s\n", utf8chars.get());
     }
-    fprintf(gOutFile->fp, "%s\n", utf8chars.get());
   }
   return true;
 }
@@ -9193,7 +9194,6 @@ JS_FN_HELP("parseBin", BinParse, 1, 0,
 "cpuNow()",
 " Returns the approximate processor time used by the process since an arbitrary epoch, in seconds.\n"
 " Only the difference between two calls to `cpuNow()` is meaningful."),
-
 
     JS_FN_HELP("taint", Taint, 1, 0,
 "taint(str)",
