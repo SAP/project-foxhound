@@ -287,6 +287,19 @@ class MOZ_STACK_CLASS DOMString {
     }
   }
 
+  // Taintfox: get taint object
+  StringTaint& Taint() {
+    if (IsNull() || IsEmpty()) {
+      return mTaint;
+    } else if (HasStringBuffer()) {
+      return mStringBuffer->Taint();
+    } else if (HasLiteral() || HasAtom()) {
+      return mTaint;
+    } else {
+      return AsAString().Taint();
+    }
+  }
+
   // TaintFox: added for convenience
   uint32_t Length() {
     if (IsNull()) {

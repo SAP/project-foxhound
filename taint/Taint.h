@@ -33,8 +33,6 @@
  *   TaintOperation     An operation performed on tainted data. These could be
  *                      operations like substr(), replace(), concat(), ...
  *
- *   TaintSource        An alias for TaintOperation.
- *
  *   TaintFlow          Represent a flow of tainted data through the engine.
  *                      A flow is comprised of a source (e.g. location.hash)
  *                      as well as a set of operations that were performed on
@@ -125,6 +123,10 @@ class TaintOperation
     const std::vector<std::u16string>& arguments() const { return arguments_; }
     const TaintLocation& location() const { return location_; }
 
+    // Getter and setter to mark a taint source
+    bool isSource() const { return source_ != 0; }
+    void setSource() { source_ = 1; }
+
   private:
     // The operation name is owned by this instance. It will be copied from the
     // argument string during construction.
@@ -133,11 +135,11 @@ class TaintOperation
     // The argument strings are owned by node instances as well.
     std::vector<std::u16string> arguments_;
 
+    // Is this Operation a Source
+    uint8_t source_;
+
     TaintLocation location_;
 };
-
-// An alias to make the code at taint sources a bit more intuitive.
-typedef TaintOperation TaintSource;
 
 
 /*
@@ -160,7 +162,7 @@ class TaintNode
     // Constructs an intermediate node.
     TaintNode(TaintNode* parent, TaintOperation operation);
     // Constructs a root node.
-    TaintNode(TaintSource operation);
+    TaintNode(TaintOperation operation);
 
     // Increments the reference count of this object by one.
     void addref();
@@ -267,7 +269,7 @@ class TaintFlow
     explicit TaintFlow(TaintNode* head);
 
     // Construct a new taint flow from the provided taint source.
-    TaintFlow(TaintSource source);
+    TaintFlow(TaintOperation source);
 
     // Copying taint flows is an O(1) operation since it only requires
     // incrementing the reference count on the head node of the flow.
@@ -284,7 +286,7 @@ class TaintFlow
     TaintNode* head() const { return head_; }
 
     // Returns the source of this taint flow.
-    const TaintSource& source() const;
+    const TaintOperation& source() const;
 
     // Constructs a new taint node as child of the current head node and sets
     // the newly constructed node as head of this taint flow.
@@ -492,6 +494,9 @@ class StringTaint
 
     // Adds a taint operation to the taint flows of all ranges in this instance.
     StringTaint& extend(TaintOperation operation);
+
+    // Adds a taint operation to the taint flows of all ranges in this instance.
+    StringTaint& overlay(uint32_t begin, uint32_t end, TaintOperation operation);
 
     // Appends a taint range.
     //

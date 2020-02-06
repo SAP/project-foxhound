@@ -138,9 +138,9 @@ js::str_tainted(JSContext* cx, unsigned argc, Value* vp)
 
   // We store the string as argument for a manual taint operation. This way it's easy to see what
   // the original value of a manually tainted string was for debugging/testing.
-  StringTaint taint(0, str->length(), TaintSource("manual taint source",
-                                                  TaintLocationFromContext(cx),
-                                                  { taintarg(cx, str) }));
+  TaintOperation op = TaintOperation("manual taint source", TaintLocationFromContext(cx), { taintarg(cx, str) });
+  op.setSource();
+  StringTaint taint(0, str->length(), op);
 
   JSString* tainted_str = NewDependentString(cx, str, 0, str->length());
   if (!tainted_str)
@@ -190,6 +190,12 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
       if (!JS_DefineProperty(cx, node, "operation", operation, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
+        return false;
+
+      RootedValue isSource(cx);
+      isSource.setBoolean(taint_node.operation().isSource());
+
+      if (!JS_DefineProperty(cx, node, "source", isSource, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
 
       // Wrap the location

@@ -756,7 +756,6 @@ static TaintOperation GetTaintOperation(const char* name, const mozilla::dom::El
   return TaintOperation(name);
 }
 
-
 nsresult MarkTaintOperation(nsAString &str, const char* name)
 {
   if (!str.isTainted()) {
@@ -768,54 +767,57 @@ nsresult MarkTaintOperation(nsAString &str, const char* name)
   return NS_OK;
 }
 
+static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
+  operation.setSource();
+  str.Taint().overlay(0, str.Length(), operation);
+  return NS_OK;
+}
+
+static nsresult MarkTaintSource(mozilla::dom::DOMString &str, TaintOperation operation) {
+  operation.setSource();
+  str.Taint().overlay(0, str.Length(), operation);
+  return NS_OK;
+}
 
 nsresult MarkTaintSource(nsAString &str, const char* name)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name));
 }
 
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, arg)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, arg));
 }
 
 nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, element)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, element));
 }
 
 nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, element, str, attr)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, element, str, attr));
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name));
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, arg)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, arg));
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, arg)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, arg));
 }
 
 nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element)
 {
- str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, element)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, element));
 }
 
 nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
@@ -823,8 +825,7 @@ nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name
 {
   nsAutoString nsStr;
   str.ToString(nsStr);
-  str.AssignTaint(StringTaint(0, str.Length(), GetTaintOperation(name, element, nsStr, attr)));
-  return NS_OK;
+  return MarkTaintSource(str, GetTaintOperation(name, element, nsStr, attr));
 }
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)

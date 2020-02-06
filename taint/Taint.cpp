@@ -1,3 +1,9 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
+/* vim: set ts=8 sts=4 et sw=4 tw=80: */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "Taint.h"
 
 #include <algorithm>
@@ -6,16 +12,16 @@
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
 TaintLocation::TaintLocation(std::u16string filename, int32_t line, int32_t pos, std::u16string function)
-  : filename_(filename), line_(line), pos_(pos), function_(function) {}
+    : filename_(filename), line_(line), pos_(pos), function_(function) {}
 
 TaintLocation::TaintLocation()
-  : filename_(), line_(0), pos_(0), function_() {}
+    : filename_(), line_(0), pos_(0), function_() {}
 
 TaintLocation::TaintLocation(TaintLocation&& other)
-  : filename_(std::move(other.filename_)),
-    line_(std::move(other.line_)),
-    pos_(std::move(other.pos_)),
-    function_(std::move(other.function_)) {}
+    : filename_(std::move(other.filename_)),
+      line_(std::move(other.line_)),
+      pos_(std::move(other.pos_)),
+      function_(std::move(other.function_)) {}
 
 TaintLocation& TaintLocation::operator=(TaintLocation&& other)
 {
@@ -27,32 +33,34 @@ TaintLocation& TaintLocation::operator=(TaintLocation&& other)
 }
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::initializer_list<std::u16string> args)
-  : name_(name), arguments_(args), location_(location) {}
+    : name_(name), arguments_(args), source_(0), location_(location) {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location, std::vector<std::u16string> args)
-  : name_(name), arguments_(args), location_(location) {}
+    : name_(name), arguments_(args), source_(0), location_(location) {}
 
 TaintOperation::TaintOperation(const char* name, std::initializer_list<std::u16string> args)
-  : name_(name), arguments_(args), location_() {}
+    : name_(name), arguments_(args), source_(0), location_() {}
 
 TaintOperation::TaintOperation(const char* name, std::vector<std::u16string> args)
-  : name_(name), arguments_(args), location_() {}
+    : name_(name), arguments_(args), source_(0), location_() {}
 
 TaintOperation::TaintOperation(const char* name)
-  : name_(name), arguments_(), location_() {}
+    : name_(name), arguments_(), source_(0), location_() {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location)
-  : name_(name), arguments_(), location_(location) {}
+    : name_(name), arguments_(), source_(0), location_(location) {}
 
 TaintOperation::TaintOperation(TaintOperation&& other)
-  : name_(std::move(other.name_)),
-    arguments_(std::move(other.arguments_)),
-    location_(std::move(other.location_)) {}
+    : name_(std::move(other.name_)),
+      arguments_(std::move(other.arguments_)),
+      source_(other.source_),
+      location_(std::move(other.location_)) {}
 
 TaintOperation& TaintOperation::operator=(TaintOperation&& other)
 {
     name_ = std::move(other.name_);
     arguments_ = std::move(other.arguments_);
+    source_ = other.source_;
     location_ = std::move(other.location_);
     return *this;
 }
@@ -118,7 +126,7 @@ TaintFlow::TaintFlow() : head_(nullptr) { }
 
 TaintFlow::TaintFlow(TaintNode* head) : head_(head) { }
 
-TaintFlow::TaintFlow(TaintSource source) : head_(new TaintNode(source)) { }
+TaintFlow::TaintFlow(TaintOperation source) : head_(new TaintNode(source)) { }
 
 TaintFlow::TaintFlow(const TaintFlow& other) : head_(other.head_)
 {
@@ -150,7 +158,7 @@ TaintFlow& TaintFlow::operator=(const TaintFlow& other)
     return *this;
 }
 
-const TaintSource& TaintFlow::source() const
+const TaintOperation& TaintFlow::source() const
 {
     TaintNode* source = head_;
     while (source->parent() != nullptr)
@@ -260,10 +268,34 @@ void TaintRange::fromBase64()
     resize(convertBaseBegin(begin_, 6, 8), convertBaseEnd(end_, 6, 8));
 }
 
+#ifdef DEBUG
+
+static void check_ranges(const std::vector<TaintRange>* ranges)
+{
+    uint32_t last_end = 0;
+
+    if (!ranges) {
+        return;
+    }
+
+    for (auto& range : *ranges) {
+        MOZ_ASSERT(range.begin() < range.end());
+        MOZ_ASSERT(last_end <= range.begin());
+        last_end = range.end();
+    }
+}
+
+#define CHECK_RANGES(ranges) check_ranges((ranges))
+#else
+#define CHECK_RANGES(ranges)
+#endif
+
+
 StringTaint::StringTaint(TaintRange range)
 {
     ranges_ = new std::vector<TaintRange>;
     ranges_->push_back(range);
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint::StringTaint(uint32_t begin, uint32_t end, TaintOperation operation)
@@ -271,24 +303,28 @@ StringTaint::StringTaint(uint32_t begin, uint32_t end, TaintOperation operation)
     ranges_ = new std::vector<TaintRange>;
     TaintRange range(begin, end, TaintFlow(new TaintNode(operation)));
     ranges_->push_back(range);
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint::StringTaint(TaintFlow taint, uint32_t length)
 {
     ranges_ = new std::vector<TaintRange>;
-    ranges_->push_back(TaintRange(0, length, taint));
+    ranges_->emplace_back(0, length, taint);
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint::StringTaint(const StringTaint& other) : ranges_(nullptr)
 {
     if (other.ranges_)
         ranges_ = new std::vector<TaintRange>(*other.ranges_);
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint::StringTaint(StringTaint&& other) : ranges_(nullptr)
 {
     ranges_ = other.ranges_;
     other.ranges_ = nullptr;
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint& StringTaint::operator=(const StringTaint& other)
@@ -303,31 +339,37 @@ StringTaint& StringTaint::operator=(const StringTaint& other)
     else
         ranges_ = nullptr;
 
+    CHECK_RANGES(ranges_);
     return *this;
 }
 
 StringTaint& StringTaint::operator=(StringTaint&& other)
 {
     if (this == &other)
-      return *this;
+	return *this;
 
     clear();
 
     ranges_ = other.ranges_;
     other.ranges_ = nullptr;
 
+    CHECK_RANGES(ranges_);
     return *this;
 }
 
 void StringTaint::clear()
 {
-  delete ranges_;
-  ranges_ = nullptr;
+    delete ranges_;
+    ranges_ = nullptr;
 }
 
 void StringTaint::clearBetween(uint32_t begin, uint32_t end)
 {
     MOZ_ASSERT(begin <= end);
+
+    if (begin == end) {
+        return;
+    }
 
     auto ranges = new std::vector<TaintRange>();
     for (auto& range : *this) {
@@ -347,6 +389,10 @@ void StringTaint::clearBetween(uint32_t begin, uint32_t end)
 void StringTaint::shift(uint32_t index, int amount)
 {
     MOZ_ASSERT(index + amount >= 0);        // amount can be negative
+
+    if (0 == amount) {
+        return;
+    }
 
     auto ranges = new std::vector<TaintRange>();
     for (auto& range : *this) {
@@ -368,6 +414,10 @@ void StringTaint::insert(uint32_t index, const StringTaint& taint)
 {
     auto ranges = new std::vector<TaintRange>();
     auto it = begin();
+
+    if (!taint.ranges_) {
+        return;
+    }
 
     while (it != end() && it->begin() < index) {
         auto& range = *it;
@@ -411,6 +461,7 @@ void StringTaint::set(uint32_t index, const TaintFlow& flow)
         clearAt(index);
         insert(index, StringTaint(TaintRange(index, index+1, flow)));
     }
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
@@ -418,13 +469,19 @@ StringTaint StringTaint::subtaint(uint32_t begin, uint32_t end) const
     MOZ_ASSERT(begin <= end);
 
     StringTaint newtaint;
-    for (auto& range : *this) {
-        if (range.begin() < end && range.end() > begin)
-	  newtaint.append(TaintRange(std::max(range.begin(), begin) - begin,
-				     std::min(range.end(), end) - begin,
-				     range.flow()));
+    if (begin == end) {
+        return newtaint;
     }
 
+    for (auto& range : *this) {
+        if (range.begin() < end && range.end() > begin) {
+	    newtaint.append(TaintRange(std::max(range.begin(), begin) - begin,
+				       std::min(range.end(), end) - begin,
+				       range.flow()));
+        }
+    }
+
+    CHECK_RANGES(newtaint.ranges_);
     return newtaint;
 }
 
@@ -433,6 +490,85 @@ StringTaint& StringTaint::extend(TaintOperation operation)
     for (auto& range : *this)
         range.flow().extend(operation);
 
+    return *this;
+}
+
+StringTaint& StringTaint::overlay(uint32_t begin, uint32_t end, TaintOperation operation)
+{
+    MOZ_ASSERT(begin <= end);
+    CHECK_RANGES(ranges_);
+
+    if (begin == end) {
+        return *this;
+    }
+
+    // If there are no ranges, get out quick
+    if (!ranges_) {
+        ranges_ = new std::vector<TaintRange>();
+        ranges_->emplace_back(begin, end, TaintFlow(operation));
+        return *this;
+    }
+
+    auto ranges = new std::vector<TaintRange>();
+
+    auto current = this->begin();
+    auto next = this->begin();
+
+    // Move to second range
+    next++;
+
+    // Add overlap of overlay with space before first range
+    if (begin < current->begin()) {
+        ranges->emplace_back(begin, std::min(current->begin(), end), TaintFlow(operation));
+    }
+
+    while (current != this->end()) {
+        // Internal methods should ensure that ranges are self-consistent
+        MOZ_ASSERT(current->begin() <= current->end());
+
+        // If this range has *no* overlap with the overlay, just add the range
+        if ((end <= current->begin()) || (begin >= current->end())) {
+            ranges->emplace_back(current->begin(), current->end(), current->flow());
+        } else {
+	    // Non-overlap at the start of the range
+            if (begin > current->begin()) {
+		ranges->emplace_back(current->begin(), begin, current->flow());
+            }
+            // Overlap inside the range
+            if ((current->begin() < end) && (current->end() > begin)) {
+                ranges->emplace_back(std::max(current->begin(), begin),
+                                     std::min(current->end(), end),
+                                     TaintFlow::extend(current->flow(), operation));
+	    }
+	    // Non-overlap at the end of the range
+            if (end < current->end()) {
+                ranges->emplace_back(current->end(), end, current->flow());
+            }
+        }
+
+	// If we are not on the last range, check the gap to the next range
+	if (next != this->end()) {
+            MOZ_ASSERT(next->begin() <= next->end());
+            MOZ_ASSERT(next->begin() >= current->end());
+
+            // Overlap of the overlay with the gap to the next range
+            if ((current->end() < end) && (next->begin() > begin) && (next->begin() > current->end())) {
+                ranges->emplace_back(std::max(current->end(), begin),
+                                     std::min(next->begin(), end),
+                                     TaintFlow(operation));
+            }
+            next++;
+        }
+        current++;
+    }
+
+    // Add overlap of overlay with space after last range
+    if (end > ranges_->back().end()) {
+        ranges->emplace_back(std::max(ranges_->back().end(), begin), end, TaintFlow(operation));
+    }
+
+    // Finally assign the ranges
+    assign(ranges);
     return *this;
 }
 
@@ -453,7 +589,7 @@ StringTaint& StringTaint::append(TaintRange range)
     }
 
     ranges_->push_back(range);
-
+    CHECK_RANGES(ranges_);
     return *this;
 }
 
@@ -527,16 +663,17 @@ void StringTaint::assign(std::vector<TaintRange>* ranges)
         ranges_ = ranges;
     } else {
         ranges_ = nullptr;
-	// XXX is this really correct?
+        // XXX is this really correct?
         delete ranges;
     }
+    CHECK_RANGES(ranges_);
 }
 
 void StringTaint::removeOverlaps()
 {
     // Nothing to do if empty or only one range
     if (!ranges_ || ranges_->size() < 2) {
-	return;
+        return;
     }
 
     auto last = begin();
@@ -546,30 +683,31 @@ void StringTaint::removeOverlaps()
     current++;
 
     while (current != end()) {
-	// Internal methods should ensure that ranges are self-consistent
-	MOZ_ASSERT(last->begin() <= last->end());
-	MOZ_ASSERT(current->begin() <= current->end());
-	MOZ_ASSERT(current->begin() > last->begin());
-	// Check if two adjacent ranges overlap
-	if (last->end() > current->begin()) {
-	    // Assign current iterator
-	    *current = TaintRange(last->end(), current->end(), current->flow());
-	}
-	// Check we didn't make an invalid range
-	if (current->begin() >= current->end()) {
-	    current = ranges_->erase(current);
-	    // Don't need to set last it is still the previous range
-	} else {
-	    last = current;
-	    current++;
-	}
+        // Internal methods should ensure that ranges are self-consistent
+        MOZ_ASSERT(last->begin() <= last->end());
+        MOZ_ASSERT(current->begin() <= current->end());
+        MOZ_ASSERT(current->begin() > last->begin());
+        // Check if two adjacent ranges overlap
+        if (last->end() > current->begin()) {
+            // Assign current iterator
+            *current = TaintRange(last->end(), current->end(), current->flow());
+        }
+        // Check we didn't make an invalid range
+        if (current->begin() >= current->end()) {
+            current = ranges_->erase(current);
+            // Don't need to set last it is still the previous range
+        } else {
+            last = current;
+            current++;
+        }
     }
+    CHECK_RANGES(ranges_);
 }
 
 StringTaint& StringTaint::toBase64()
 {
     for (auto& range : *this) {
-	range.toBase64();
+        range.toBase64();
     }
     removeOverlaps();
 
@@ -579,7 +717,7 @@ StringTaint& StringTaint::toBase64()
 StringTaint& StringTaint::fromBase64()
 {
     for (auto& range : *this) {
-	range.fromBase64();
+        range.fromBase64();
     }
     removeOverlaps();
 
