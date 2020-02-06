@@ -1,21 +1,23 @@
+dist: bionic
 language: cpp
 
-services:
-  - docker
-
 git:
-  depth: 3
+ depth: 3
 
 cache:
-  directories:
-    - obj-tf-release
-
-before_install:
-  - docker build -t taintfox-dev --target taintfox-dev dockerfiles
+ ccache: true
+ cargo: true
+ directories:
+  - ${HOME}/.mozbuild
+  - ${HOME}/.cargo
+  - ${HOME}/.rustup
 
 install:
-  - true
+- cp taintfox_mozconfig_spidermonkey .mozconfig
+- ./mach bootstrap --application-choice=browser --no-interactive
+- sudo pip install six
 
 script:
-  - cp taintfox_mozconfig_ubuntu .mozconfig
-  - docker run --name taintfox-build -v $TRAVIS_BUILD_DIR:/usr/local/src/taintfox taintfox-dev
+- ./mach build
+- obj-spider-release/dist/bin/js js/src/Y.js
+- js/src/tests/jstests.py obj-spider-release/dist/bin/js taint
