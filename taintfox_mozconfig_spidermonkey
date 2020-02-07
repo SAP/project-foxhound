@@ -29,7 +29,7 @@ export MOZ_PACKAGE_JSSHELL=1
 # RELEASE BUILD
 #
 mk_add_options MOZ_OBJDIR=@TOPSRCDIR@/obj-spider-release
-ac_add_options --disable-tests
+#ac_add_options --disable-tests
 #ac_add_options --with-ccache
 ac_add_options --enable-project=js
 

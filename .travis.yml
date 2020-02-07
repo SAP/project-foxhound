@@ -4,14 +4,6 @@ language: cpp
 git:
  depth: 3
 
-cache:
- ccache: true
- cargo: true
- directories:
-  - ${HOME}/.mozbuild
-  - ${HOME}/.cargo
-  - ${HOME}/.rustup
-
 install:
 - cp taintfox_mozconfig_spidermonkey .mozconfig
 - ./mach bootstrap --application-choice=browser --no-interactive

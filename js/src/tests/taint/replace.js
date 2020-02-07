@@ -59,28 +59,43 @@ function strReplaceTest() {
     var b = a.replace("x", "y");
     assertNotHasTaintOperation(a, 'replace');
     assertLastTaintOperationEquals(b, 'replace');
-}
-
-function strReplaceFunctionCallTest() {
 
     // Test function call
     str = taint("aba");
     rep = str.replace("a", x => x+1)
+    assertNotTainted(rep.substring(0,2));
+    assertRangeTainted(rep, [2, 4]);
+    assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
+
+    str = "aba";
+    rep = str.replace(taint("a"), x => x+1)
+    assertNotTainted(rep.substring(2,2));
+    assertRangeTainted(rep, [0, 1]);
+    assertLastTaintOperationEquals(rep, 'replace');
+
+    str = taint("aba");
+    rep = str.replace(taint("a"), x => x+1)
+    assertNotTainted(rep.substring(1,1));
     assertRangeTainted(rep, [0, 1]);
     assertRangeTainted(rep, [2, 4]);
     assertLastTaintOperationEquals(rep, 'replace');
     assertNotHasTaintOperation(str, 'replace');
 
     str = taint("aba");
+    rep = str.replace(taint("a"), x => x+x)
+    assertFullTainted(rep)
+    assertLastTaintOperationEquals(rep, 'replace');
+    assertNotHasTaintOperation(str, 'replace');
+
+    str = taint("aba");
     rep = str.replace(/a/g, x => x+1)
-    assertRangeTainted(rep, [0, 1]);
     assertRangeTainted(rep, [2, 4]);
     assertLastTaintOperationEquals(rep, 'replace');
     assertNotHasTaintOperation(str, 'replace');
 }
 
 runTaintTest(strReplaceTest);
-runTaintTest(strReplaceFunctionCallTest);
 
 if (typeof reportCompare === 'function')
   reportCompare(true, true);
