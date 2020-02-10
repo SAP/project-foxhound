@@ -3114,12 +3114,6 @@ JS_GetStringTaint(const JSLinearString* str);
 extern JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint);
 
-extern JS_PUBLIC_API void
-JS_SetStringTaint(JSContext* cx, JSString* str, const char* source);
-
-extern JS_PUBLIC_API void
-JS_SetStringTaint(JSContext* cx, JS::MutableHandleValue value, const char* source);
-
 // Taintfox: Create new String Taint Location from the context
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name, JS::HandleValue args);

@@ -5976,19 +5976,21 @@ JS_SetStringTaint(JSContext* cx, JSString* str, const StringTaint& taint)
 }
 
 JS_PUBLIC_API void
-JS_SetStringTaint(JSContext* cx, JSString* str, const char* source)
+JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& op)
 {
-  if (str) {
-    JS_SetStringTaint(cx, str, StringTaint(0, str->length(), TaintOperationFromContext(cx, source)));
+  if (str->isTainted()) {
+    JS_SetStringTaint(cx, str, StringTaint(0, str->length(), op));
+  } else {
+    str->taint().overlay(0, str->length(), op);
   }
 }
 
 JS_PUBLIC_API void
-JS_SetStringTaint(JSContext* cx, JS::MutableHandleValue value, const char* source)
+JS_MarkTaintSource(JSContext* cx, JS::MutableHandleValue value, const TaintOperation& op)
 {
   if (value.isString()) {
     // If we have a string, set taint directly
-    JS_SetStringTaint(cx, value.toString(), source);
+    JS_MarkTaintSource(cx, value.toString(), op);
   } else if (value.isObject()) {
     // If it is an object, loop over contents
     // This function is used for convenience to taint all
@@ -5998,7 +6000,7 @@ JS_SetStringTaint(JSContext* cx, JS::MutableHandleValue value, const char* sourc
       for (size_t i = 0; i < obj->slotSpan(); i++) {
         JS::Value slot = obj->getSlot(i);
         if (slot.isString()) {
-          JS_SetStringTaint(cx, slot.toString(), source);
+          JS_MarkTaintSource(cx, slot.toString(), op);
         }
       }
     }
@@ -6139,22 +6141,6 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   RootedValue rval(cx);
   JS_CallFunction(cx, nullptr, report, arguments, &rval);
   MOZ_ASSERT(!cx->isExceptionPending());
-}
-
-JS_PUBLIC_API void
-JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& operation) {
-  if (str) {
-    str->taint().overlay(0, str->length(), operation);
-  }
-}
-
-JS_PUBLIC_API void
-JS_MarkTaintSource(JSContext* cx, JS::MutableHandleValue value, const TaintOperation& operation)
-{
-  if (value.isString()) {
-    JSString *str = value.toString();
-    JS_MarkTaintSource(cx, str, operation);
-  }
 }
 
 JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,
