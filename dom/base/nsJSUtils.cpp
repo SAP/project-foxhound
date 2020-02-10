@@ -37,6 +37,7 @@
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/Date.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
@@ -676,9 +677,8 @@ bool nsAutoJSString::init(const JS::Value& v) {
 
 LazyLogModule gTaintLog("Taint");
 
-static TaintOperation GetTaintOperation(const char* name)
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name)
 {
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
   if (cx) {
     return JS_GetTaintOperation(cx, name);
   }
@@ -686,9 +686,8 @@ static TaintOperation GetTaintOperation(const char* name)
   return TaintOperation(name);
 }
 
-static TaintOperation GetTaintOperation(const char* name, const nsAString& arg)
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsAString& arg)
 {
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
   if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
     if (mozilla::dom::ToJSValue(cx, arg, &argval)) {
@@ -699,9 +698,8 @@ static TaintOperation GetTaintOperation(const char* name, const nsAString& arg)
   return TaintOperation(name);
 }
 
-static TaintOperation GetTaintOperation(const char* name, const nsTArray<nsString> &args)
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
 {
-  JSContext *cx = nsContentUtils::GetCurrentJSContext();
   if (cx && JS::CurrentGlobalOrNull(cx)) {
     JS::RootedValue argval(cx);
 
@@ -713,7 +711,7 @@ static TaintOperation GetTaintOperation(const char* name, const nsTArray<nsStrin
   return TaintOperation(name);
 }
 
-static TaintOperation GetTaintOperation(const char* name, const mozilla::dom::Element* element)
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element)
 {
   if (element) {
     nsTArray<nsString> args;
@@ -722,13 +720,13 @@ static TaintOperation GetTaintOperation(const char* name, const mozilla::dom::El
     element->Describe(elementDesc);
     args.AppendElement(elementDesc);
 
-    return GetTaintOperation(name, args);
+    return GetTaintOperation(cx, name, args);
   }
 
   return TaintOperation(name);
 }
 
-static TaintOperation GetTaintOperation(const char* name, const mozilla::dom::Element* element,
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const mozilla::dom::Element* element,
                                         const nsAString &str, const nsAString &attr)
 {
   if (element) {
@@ -750,21 +748,23 @@ static TaintOperation GetTaintOperation(const char* name, const mozilla::dom::El
     attributeName.Append('"');
     args.AppendElement(attributeName);
 
-    return GetTaintOperation(name, args);
+    return GetTaintOperation(cx, name, args);
   }
 
   return TaintOperation(name);
 }
 
+static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* name)
+{
+  if (str.isTainted()) {
+    str.Taint().extend(GetTaintOperation(cx, name));
+  }
+  return NS_OK;
+}
+
 nsresult MarkTaintOperation(nsAString &str, const char* name)
 {
-  if (!str.isTainted()) {
-    return NS_OK;
-  }
-
-  str.Taint().extend(GetTaintOperation(name));
-
-  return NS_OK;
+  return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name);
 }
 
 static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
@@ -779,45 +779,61 @@ static nsresult MarkTaintSource(mozilla::dom::DOMString &str, TaintOperation ope
   return NS_OK;
 }
 
+nsresult MarkTaintSource(JSContext* cx, JSString* str, const char* name)
+{
+  TaintOperation op = GetTaintOperation(cx, name);
+  op.setSource();
+  JS_MarkTaintSource(cx, str, op);
+  return NS_OK;
+}
+
+nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const char* name)
+{
+  TaintOperation op = GetTaintOperation(cx, name);
+  op.setSource();
+  JS_MarkTaintSource(cx, aValue, op);
+  return NS_OK;
+}
+
 nsresult MarkTaintSource(nsAString &str, const char* name)
 {
-  return MarkTaintSource(str, GetTaintOperation(name));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
 }
 
 nsresult MarkTaintSource(nsAString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(name, arg));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
 }
 
 nsresult MarkTaintSourceElement(nsAString &str, const char* name, const mozilla::dom::Element* element)
 {
-  return MarkTaintSource(str, GetTaintOperation(name, element));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
 }
 
 nsresult MarkTaintSourceAttribute(nsAString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr)
 {
-  return MarkTaintSource(str, GetTaintOperation(name, element, str, attr));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, str, attr));
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name)
 {
-  return MarkTaintSource(str, GetTaintOperation(name));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name));
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsAString &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(name, arg));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
 }
 
 nsresult MarkTaintSource(mozilla::dom::DOMString &str, const char* name, const nsTArray<nsString> &arg)
 {
-  return MarkTaintSource(str, GetTaintOperation(name, arg));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg));
 }
 
 nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element)
 {
-  return MarkTaintSource(str, GetTaintOperation(name, element));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element));
 }
 
 nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
@@ -825,7 +841,7 @@ nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name
 {
   nsAutoString nsStr;
   str.ToString(nsStr);
-  return MarkTaintSource(str, GetTaintOperation(name, element, nsStr, attr));
+  return MarkTaintSource(str, GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, element, nsStr, attr));
 }
 
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg)
@@ -841,7 +857,7 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, 
   if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
     return NS_ERROR_FAILURE;
   }
-  
+
   JS::RootedValue argval(cx);
   if (!mozilla::dom::ToJSValue(cx, arg, &argval))
     return NS_ERROR_FAILURE;
@@ -879,7 +895,6 @@ nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name)
   return NS_OK;
 }
 
-
 nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg)
 {
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name, arg);
@@ -888,4 +903,15 @@ nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString
 nsresult ReportTaintSink(const nsAString &str, const char* name)
 {
   return ReportTaintSink(nsContentUtils::GetCurrentJSContext(), str, name);
+}
+
+nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name) {
+
+  if (!nsContentUtils::IsSafeToRunScript() || !JS::CurrentGlobalOrNull(cx)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JS_ReportTaintSink(cx, aValue, name);
+
+  return NS_OK;
 }

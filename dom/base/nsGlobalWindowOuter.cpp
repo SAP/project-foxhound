@@ -6069,6 +6069,9 @@ void nsGlobalWindowOuter::PostMessageMozOuter(JSContext* aCx,
       sourceBc, origin, this, providedPrincipal,
       callerInnerWindow ? callerInnerWindow->WindowID() : 0, callerDocumentURI);
 
+  // Taintfox: window.postMessage sink
+  ReportTaintSink(aCx, aMessage, "window.postMessage");
+
   JS::CloneDataPolicy clonePolicy;
   if (GetDocGroup() && callerInnerWindow &&
       callerInnerWindow->CanShareMemory(GetDocGroup()->AgentClusterId())) {
@@ -6078,9 +6081,6 @@ void nsGlobalWindowOuter::PostMessageMozOuter(JSContext* aCx,
   if (NS_WARN_IF(aError.Failed())) {
     return;
   }
-
-  // Taintfox: window.postMessage sink
-  JS_ReportTaintSink(aCx, aMessage, "window.postMessage");
 
   if (mDoc &&
       StaticPrefs::dom_separate_event_queue_for_post_message_enabled() &&

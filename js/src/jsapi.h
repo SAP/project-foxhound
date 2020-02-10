@@ -3128,9 +3128,11 @@ JS_GetTaintOperation(JSContext* cx, const char* name, JS::HandleValue args);
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name);
 
-// Taintfox add an operation to the taintflow of all taint ranges
 JS_PUBLIC_API void
-JS_ExtendStringTaint(JSContext* cx, JSString* str, const char* operation);
+JS_MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const TaintOperation& op);
+
+JS_PUBLIC_API void
+JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& operation);
 
 // TaintFox: Report tainted flows into a sink.
 //
@@ -3145,7 +3147,7 @@ extern JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink);
 
 extern JS_PUBLIC_API void
-JS_ReportTaintSink(JSContext* cx, JS::HandleValue str, const char* sink);
+JS_ReportTaintSink(JSContext* cx, JS::HandleValue val, const char* sink);
 
 namespace JS {
 

@@ -5979,7 +5979,7 @@ JS_PUBLIC_API void
 JS_SetStringTaint(JSContext* cx, JSString* str, const char* source)
 {
   if (str) {
-    JS_SetStringTaint(cx, str, StringTaint(0, str->length(), TaintOperation(source)));
+    JS_SetStringTaint(cx, str, StringTaint(0, str->length(), TaintOperationFromContext(cx, source)));
   }
 }
 
@@ -6015,14 +6015,6 @@ JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* sink)
 {
   return TaintOperationFromContext(cx, sink);
-}
-
-JS_PUBLIC_API void
-JS_ExtendStringTaint(JSContext* cx, JSString* str, const char* operation)
-{
-  if (str) {
-    str->taint().extend(TaintOperationFromContext(cx, operation));
-  }
 }
 
 JS_PUBLIC_API void
@@ -6147,6 +6139,22 @@ JS_ReportTaintSink(JSContext* cx, JS::HandleString str, const char* sink, JS::Ha
   RootedValue rval(cx);
   JS_CallFunction(cx, nullptr, report, arguments, &rval);
   MOZ_ASSERT(!cx->isExceptionPending());
+}
+
+JS_PUBLIC_API void
+JS_MarkTaintSource(JSContext* cx, JSString* str, const TaintOperation& operation) {
+  if (str) {
+    str->taint().overlay(0, str->length(), operation);
+  }
+}
+
+JS_PUBLIC_API void
+JS_MarkTaintSource(JSContext* cx, JS::MutableHandleValue value, const TaintOperation& operation)
+{
+  if (value.isString()) {
+    JSString *str = value.toString();
+    JS_MarkTaintSource(cx, str, operation);
+  }
 }
 
 JS_PUBLIC_API bool JS::FinishIncrementalEncoding(JSContext* cx,

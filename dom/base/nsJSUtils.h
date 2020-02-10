@@ -15,6 +15,7 @@
  */
 
 #include "mozilla/Assertions.h"
+#include "mozilla/dom/DOMString.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
@@ -355,6 +356,10 @@ nsresult MarkTaintSourceElement(mozilla::dom::DOMString &str, const char* name, 
 nsresult MarkTaintSourceAttribute(mozilla::dom::DOMString &str, const char* name, const mozilla::dom::Element* element,
                                   const nsAString &attr);
 
+nsresult MarkTaintSource(JSContext* aCx, JS::MutableHandle<JS::Value> aValue, const char* name);
+
+nsresult MarkTaintSource(JSContext* aCx, JSString* str, const char* name);
+
 // TaintFox: Report taint flows into DOM related sinks.
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name);
 
@@ -364,5 +369,8 @@ nsresult ReportTaintSink(const nsAString &str, const char* name);
 nsresult ReportTaintSink(JSContext *cx, const nsAString &str, const char* name, const nsAString &arg);
 
 nsresult ReportTaintSink(const nsAString &str, const char* name, const nsAString &arg);
+
+nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char* name);
+
 
 #endif /* nsJSUtils_h__ */

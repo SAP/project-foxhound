@@ -119,6 +119,9 @@ void LocalStorage::SetItem(const nsAString& aKey, const nsAString& aData,
     return;
   }
 
+  // TaintFox: localStorage.setItem sink.
+  ReportTaintSink(data, "localStorage.setItem");
+
   nsString old;
   aRv = mCache->SetItem(this, aKey, data, old);
   if (aRv.Failed()) {
@@ -129,8 +132,6 @@ void LocalStorage::SetItem(const nsAString& aKey, const nsAString& aData,
     OnChange(aKey, old, aData);
   }
 
-  // TaintFox: localStorage.setItem sink.
-  ReportTaintSink(aData, "localStorage.setItem");
 }
 
 void LocalStorage::RemoveItem(const nsAString& aKey,

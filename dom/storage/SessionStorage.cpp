@@ -81,7 +81,6 @@ void SessionStorage::GetItem(const nsAString& aKey, nsAString& aResult,
 
   // TaintFox: sessionStorage.getItem source
   MarkTaintSource(aResult, "sessionStorage.getItem");
-
 }
 
 void SessionStorage::GetSupportedNames(nsTArray<nsString>& aKeys) {
@@ -102,6 +101,9 @@ void SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
     return;
   }
 
+  // TaintFox: sessionStorage.setItem sink.
+  ReportTaintSink(aValue, "sessionStorage.setItem");
+
   nsString oldValue;
   nsresult rv = mCache->SetItem(DATASET, aKey, aValue, oldValue);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -112,9 +114,6 @@ void SessionStorage::SetItem(const nsAString& aKey, const nsAString& aValue,
   if (rv == NS_SUCCESS_DOM_NO_OPERATION) {
     return;
   }
-
-  // TaintFox: sessionStorage.setItem sink.
-  ReportTaintSink(aValue, "sessionStorage.setItem");
 
   BroadcastChangeNotification(aKey, oldValue, aValue);
 }

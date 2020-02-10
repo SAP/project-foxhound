@@ -2920,8 +2920,7 @@ static bool CloneProperties(JSContext* cx, HandleNativeObject selfHostedObject,
 static JSString* CloneString(JSContext* cx, JSLinearString* selfHostedString) {
   // TaintFox: TODO(samuel) just curious, can these ever be tainted?
   RootedString rooted(cx, selfHostedString);
-  if (selfHostedString->isTainted())
-      JS_ReportTaintSink(cx, rooted, "SelfHosting::CloneString");
+  JS_ReportTaintSink(cx, rooted, "SelfHosting::CloneString");
 
   size_t len = selfHostedString->length();
   {

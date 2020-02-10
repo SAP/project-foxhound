@@ -1933,9 +1933,7 @@ static bool CreateDynamicFunction(JSContext* cx, const CallArgs& args,
   }
   
   // TaintFox: Function.ctor sink.
-  if(functionText->isTainted()) {
-      JS_ReportTaintSink(cx, functionText, "Function.ctor");
-  }
+  JS_ReportTaintSink(cx, functionText, "Function.ctor");
 
   mozilla::Range<const char16_t> chars = stableChars.twoByteRange();
   SourceOwnership ownership = stableChars.maybeGiveOwnershipToCaller()

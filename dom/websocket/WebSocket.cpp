@@ -1875,8 +1875,10 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     jsString = JS_NewUCStringCopyN(cx, utf16Data.get(), utf16Data.Length());
     NS_ENSURE_TRUE(jsString, NS_ERROR_FAILURE);
 
+    // Propagate Taint
+    JS_SetStringTaint(cx, jsString, aData.Taint());
     // Taintfox: WebSocket.MessageEvent.data
-    JS_SetStringTaint(cx, jsString, "WebSocket.MessageEvent.data");
+    MarkTaintSource(cx, jsString, "WebSocket.MessageEvent.data");
 
     jsData.setString(jsString);
   }

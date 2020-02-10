@@ -5545,10 +5545,7 @@ void Document::GetCookie(nsAString& aCookie, ErrorResult& rv) {
     UTF_8_ENCODING->DecodeWithoutBOMHandling(cookie, aCookie);
 
     // TaintFox: document.cookie source.
-    // TODO(samuel) what's the use case for this?
-    if (!aCookie.isTainted() && aCookie.Length() > 0) {
-      MarkTaintSource(aCookie, "document.cookie");
-    }
+    MarkTaintSource(aCookie, "document.cookie");
   }
 }
 
@@ -5594,9 +5591,6 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& rv) {
       return;
     }
 
-    // TaintFox: document.cookie sink.
-    ReportTaintSink(aCookie, "document.cookie");
-
     nsCOMPtr<nsIChannel> channel(mChannel);
     if (!channel) {
       channel = CreateDummyChannelForCookies(principalURI);
@@ -5604,6 +5598,9 @@ void Document::SetCookie(const nsAString& aCookie, ErrorResult& rv) {
         return;
       }
     }
+
+    // TaintFox: document.cookie sink.
+    ReportTaintSink(aCookie, "document.cookie");
 
     NS_ConvertUTF16toUTF8 cookie(aCookie);
     service->SetCookieString(principalURI, nullptr, cookie, channel);

@@ -634,6 +634,9 @@ void LSObject::SetItem(const nsAString& aKey, const nsAString& aValue,
     return;
   }
 
+  // TaintFox: localStorage.setItem sink.
+  ReportTaintSink(aValue, "localStorage.setItem");
+
   LSNotifyInfo info;
   rv = mDatabase->SetItem(this, aKey, aValue, info);
   if (rv == NS_ERROR_FILE_NO_DEVICE_SPACE) {
@@ -648,8 +651,6 @@ void LSObject::SetItem(const nsAString& aKey, const nsAString& aValue,
     OnChange(aKey, info.oldValue(), aValue);
   }
 
-  // TaintFox: localStorage.setItem sink.
-  ReportTaintSink(aValue, "localStorage.setItem");
 }
 
 void LSObject::RemoveItem(const nsAString& aKey,

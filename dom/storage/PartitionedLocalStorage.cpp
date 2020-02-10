@@ -86,6 +86,9 @@ void PartitionedLocalStorage::SetItem(const nsAString& aKey,
     return;
   }
 
+  // TaintFox: localStorage.setItem sink.
+  ReportTaintSink(aValue, "localStorage.setItem");
+
   nsString oldValue;
   nsresult rv = mCache->SetItem(SessionStorageCache::eSessionSetType, aKey,
                                 aValue, oldValue);
@@ -98,8 +101,6 @@ void PartitionedLocalStorage::SetItem(const nsAString& aKey,
     return;
   }
 
-  // TaintFox: localStorage.setItem sink.
-  ReportTaintSink(aValue, "localStorage.setItem");
 }
 
 void PartitionedLocalStorage::RemoveItem(const nsAString& aKey,
